@@ -14,9 +14,9 @@ const StatusIcon = ({
         />
       );
     case "success":
-      return <CheckCircle size={16} className="text-green-500" />;
+      return <CheckCircle size={16} className="text-success" />;
     case "failed":
-      return <XCircle size={16} className="text-red-500" />;
+      return <XCircle size={16} className="text-error" />;
   }
 };
 

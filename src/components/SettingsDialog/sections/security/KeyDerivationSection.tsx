@@ -18,7 +18,7 @@ function KeyDerivationSection({
   return (
     <div className="space-y-4">
       <h4 className="sor-section-heading">
-        <Key className="w-4 h-4 text-purple-400" />
+        <Key className="w-4 h-4 text-accent" />
         Key Derivation (PBKDF2)
       </h4>
 
@@ -36,7 +36,7 @@ function KeyDerivationSection({
               <button
                 onClick={handleBenchmark}
                 disabled={isBenchmarking}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
               >
                 {isBenchmarking ? (
                   <>
@@ -73,7 +73,7 @@ function KeyDerivationSection({
 
         <label className="flex items-center space-x-3 cursor-pointer group pt-2">
           <Checkbox checked={settings.autoBenchmarkIterations} onChange={(v: boolean) => updateSettings({ autoBenchmarkIterations: v })} />
-          <Gauge className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-purple-400" />
+          <Gauge className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-accent" />
           <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
             {t("security.autoBenchmark")}
           </span>

@@ -1,6 +1,7 @@
 import React from "react";
 import { TOTPConfig } from "../../../types/settings/settings";
 import { Select } from "../../ui/forms";
+import type { TOTPOptionsMgr } from "./types";
 
 const ConfigEditRow: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => (
   <div className="bg-[var(--color-surface)] rounded-lg p-3 space-y-2">

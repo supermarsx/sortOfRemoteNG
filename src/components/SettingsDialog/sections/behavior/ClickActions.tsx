@@ -1,10 +1,11 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { MousePointer2 } from "lucide-react";
 import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<MousePointer2 className="w-4 h-4 text-blue-400" />}
+      icon={<MousePointer2 className="w-4 h-4 text-primary" />}
       title="Click Actions"
     />
     <p className="text-xs text-[var(--color-textMuted)]">

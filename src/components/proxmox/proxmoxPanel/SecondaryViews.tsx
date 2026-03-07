@@ -18,7 +18,7 @@ export const BackupsView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <ViewHeader
         icon={Archive}
-        color="text-amber-500"
+        color="text-warning"
         title={t("proxmox.backups.title", "Backup Jobs")}
         count={mgr.backupJobs.length}
         onRefresh={mgr.refreshBackups}
@@ -38,7 +38,7 @@ export const BackupsView: React.FC<SubProps> = ({ mgr }) => {
                   </div>
                 </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  job.enabled !== false ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"
+                  job.enabled !== false ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"
                 }`}>
                   {job.enabled !== false ? "enabled" : "disabled"}
                 </span>
@@ -92,9 +92,9 @@ export const FirewallView: React.FC<SubProps> = ({ mgr }) => {
                   <td className="py-1.5 pr-3">{rule.ruleType ?? "—"}</td>
                   <td className="py-1.5 pr-3">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                      rule.action === "ACCEPT" ? "bg-green-500/15 text-green-400" :
-                      rule.action === "DROP" ? "bg-red-500/15 text-red-400" :
-                      "bg-yellow-500/15 text-yellow-400"
+                      rule.action === "ACCEPT" ? "bg-success/15 text-success" :
+                      rule.action === "DROP" ? "bg-error/15 text-error" :
+                      "bg-warning/15 text-warning"
                     }`}>
                       {rule.action}
                     </span>
@@ -120,7 +120,7 @@ export const PoolsView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <ViewHeader
         icon={Boxes}
-        color="text-violet-500"
+        color="text-accent"
         title={t("proxmox.pools.title", "Resource Pools")}
         count={mgr.pools.length}
         onRefresh={mgr.refreshPools}
@@ -149,7 +149,7 @@ export const HaView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <ViewHeader
         icon={HeartPulse}
-        color="text-pink-500"
+        color="text-accent"
         title={t("proxmox.ha.title", "High Availability")}
         count={mgr.haResources.length}
         onRefresh={mgr.refreshHa}
@@ -205,7 +205,7 @@ export const CephView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <ViewHeader
         icon={Database}
-        color="text-red-500"
+        color="text-error"
         title={t("proxmox.ceph.title", "Ceph Storage")}
         count={mgr.cephPools.length}
         onRefresh={() => node && mgr.refreshCeph(node)}
@@ -243,7 +243,7 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
   return (
     <div className="p-6 overflow-y-auto flex-1">
       <h3 className="text-sm font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
-        <Terminal className="w-4 h-4 text-cyan-500" />
+        <Terminal className="w-4 h-4 text-info" />
         {t("proxmox.console.title", "Console Access")}
       </h3>
 
@@ -255,7 +255,7 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
           </h4>
           <button
             onClick={() => mgr.openNodeConsole(node)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-info hover:bg-info text-white text-xs font-medium transition-colors"
           >
             <Terminal className="w-3.5 h-3.5" />
             {t("proxmox.console.openNode", "Open Node Shell")} ({node})
@@ -278,13 +278,13 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
                   <div className="flex gap-1">
                     <button
                       onClick={() => node && mgr.openVncConsole(node, vm.vmid, "qemu")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors"
+                      className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
                     >
                       VNC
                     </button>
                     <button
                       onClick={() => node && mgr.openTermConsole(node, vm.vmid, "qemu")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 transition-colors"
+                      className="px-2 py-1 rounded text-[10px] font-medium bg-info/15 text-info hover:bg-info/25 transition-colors"
                     >
                       xterm
                     </button>
@@ -307,13 +307,13 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
                   <div className="flex gap-1">
                     <button
                       onClick={() => node && mgr.openVncConsole(node, ct.vmid, "lxc")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors"
+                      className="px-2 py-1 rounded text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
                     >
                       VNC
                     </button>
                     <button
                       onClick={() => node && mgr.openTermConsole(node, ct.vmid, "lxc")}
-                      className="px-2 py-1 rounded text-[10px] font-medium bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 transition-colors"
+                      className="px-2 py-1 rounded text-[10px] font-medium bg-info/15 text-info hover:bg-info/25 transition-colors"
                     >
                       xterm
                     </button>

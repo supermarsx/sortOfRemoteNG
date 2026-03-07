@@ -1,10 +1,11 @@
+import type { WaMgr, WaConfig } from "./types";
 import StatusBadge from "./StatusBadge";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React, { useState } from "react";
 import { CheckCircle, Phone, Save, Settings, Smartphone } from "lucide-react";
 
-const SettingsTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
+const SettingsTab: React.FC<{ wa: WaMgr }> = ({
   wa,
 }) => {
   const [accessToken, setAccessToken] = useState("");
@@ -108,7 +109,7 @@ const SettingsTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
       <ErrorMsg msg={wa.configure.error} />
 
       {wa.configured && (
-        <div className="flex items-center space-x-2 text-green-400 text-sm">
+        <div className="flex items-center space-x-2 text-success text-sm">
           <CheckCircle size={14} />
           <span>Cloud API configured</span>
         </div>

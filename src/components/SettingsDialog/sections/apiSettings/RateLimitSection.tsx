@@ -7,7 +7,7 @@ import type { Mgr } from "./types";
 export const RateLimitSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <Clock className="w-4 h-4 text-orange-400" />
+      <Clock className="w-4 h-4 text-warning" />
       {mgr.t("settings.api.rateLimit", "Rate Limiting")}
     </h4>
 

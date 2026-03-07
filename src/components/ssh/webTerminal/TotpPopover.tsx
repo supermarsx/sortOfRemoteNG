@@ -8,7 +8,7 @@ function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
       <button
         type="button"
         onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
-        className={`app-bar-button p-2 relative ${mgr.showTotpPanel ? "text-blue-400" : ""}`}
+        className={`app-bar-button p-2 relative ${mgr.showTotpPanel ? "text-primary" : ""}`}
         data-tooltip="2FA Codes"
         aria-label="2FA Codes"
       >

@@ -53,8 +53,8 @@ const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
   <span
     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
       ok
-        ? "bg-green-500/10 text-green-400"
-        : "bg-red-500/10 text-red-400"
+        ? "bg-success/10 text-success"
+        : "bg-error/10 text-error"
     }`}
   >
     {ok ? (
@@ -190,7 +190,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={mgr.startAgent}
             disabled={mgr.isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-[var(--color-text)] rounded-md hover:bg-green-500 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-success text-[var(--color-text)] rounded-md hover:bg-success/90 transition-colors disabled:opacity-50"
           >
             <Play className="w-4 h-4" />
             {t("sshAgent.actions.start", "Start Agent")}
@@ -200,7 +200,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               onClick={mgr.stopAgent}
               disabled={mgr.isLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-[var(--color-text)] rounded-md hover:bg-red-500 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-error text-[var(--color-text)] rounded-md hover:bg-error/90 transition-colors disabled:opacity-50"
             >
               <Square className="w-4 h-4" />
               {t("sshAgent.actions.stop", "Stop Agent")}
@@ -208,7 +208,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               onClick={mgr.restartAgent}
               disabled={mgr.isLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-[var(--color-text)] rounded-md hover:bg-amber-500 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-warning text-[var(--color-text)] rounded-md hover:bg-warning/90 transition-colors disabled:opacity-50"
             >
               <RefreshCw className="w-4 h-4" />
               {t("sshAgent.actions.restart", "Restart")}
@@ -246,7 +246,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 mgr.setLockPassphrase("");
               }}
               disabled={!mgr.lockPassphrase}
-              className="flex items-center gap-1 px-3 py-2 bg-amber-600 text-[var(--color-text)] rounded-md hover:bg-amber-500 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-2 bg-warning text-[var(--color-text)] rounded-md hover:bg-warning/90 disabled:opacity-50"
             >
               <Lock className="w-4 h-4" />
               {t("sshAgent.lock.lock", "Lock")}
@@ -258,7 +258,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 mgr.setLockPassphrase("");
               }}
               disabled={!mgr.lockPassphrase}
-              className="flex items-center gap-1 px-3 py-2 bg-green-600 text-[var(--color-text)] rounded-md hover:bg-green-500 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-2 bg-success text-[var(--color-text)] rounded-md hover:bg-success/90 disabled:opacity-50"
             >
               <Unlock className="w-4 h-4" />
               {t("sshAgent.lock.unlock", "Unlock")}
@@ -311,7 +311,7 @@ const KeysTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </button>
           <button
             onClick={mgr.removeAllKeys}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-red-600/10 text-red-500 rounded hover:bg-red-600/20"
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-error/10 text-error rounded hover:bg-error/20"
           >
             <Trash2 className="w-3 h-3" />
             {t("sshAgent.keys.removeAll", "Remove All")}
@@ -334,7 +334,7 @@ const KeysTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </div>
             <button
               onClick={() => mgr.removeKey(key.id)}
-              className="p-1 text-muted-foreground hover:text-red-500 transition-colors"
+              className="p-1 text-muted-foreground hover:text-error transition-colors"
               title={t("sshAgent.keys.remove", "Remove Key")}
             >
               <Trash2 className="w-4 h-4" />
@@ -406,7 +406,7 @@ const SystemAgentTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               </button>
             </div>
             {mgr.discoveredPath && mgr.discoveredPath !== mgr.systemAgentPath && (
-              <div className="mt-1 text-xs text-green-500">
+              <div className="mt-1 text-xs text-success">
                 {t("sshAgent.systemAgent.discovered", "Found")}: {mgr.discoveredPath}
               </div>
             )}
@@ -416,7 +416,7 @@ const SystemAgentTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               onClick={() => mgr.setSystemPath(mgr.systemAgentPath)}
               disabled={!mgr.systemAgentPath}
-              className="px-3 py-1.5 text-xs bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
             >
               {t("sshAgent.systemAgent.setPath", "Set Path")}
             </button>
@@ -424,7 +424,7 @@ const SystemAgentTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <button
                 onClick={mgr.connectSystemAgent}
                 disabled={mgr.isLoading}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-[var(--color-text)] rounded hover:bg-green-500 disabled:opacity-50"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-success text-[var(--color-text)] rounded hover:bg-success/90 disabled:opacity-50"
               >
                 <Link className="w-3 h-3" />
                 {t("sshAgent.systemAgent.connect", "Connect")}
@@ -432,7 +432,7 @@ const SystemAgentTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             ) : (
               <button
                 onClick={mgr.disconnectSystemAgent}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-600 text-[var(--color-text)] rounded hover:bg-red-500"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-error text-[var(--color-text)] rounded hover:bg-error/90"
               >
                 <Unlink className="w-3 h-3" />
                 {t("sshAgent.systemAgent.disconnect", "Disconnect")}
@@ -494,7 +494,7 @@ const ForwardingTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
           <button
             onClick={() => mgr.stopForwarding(s.id)}
-            className="p-1.5 text-red-500 hover:bg-red-600/10 rounded transition-colors"
+            className="p-1.5 text-error hover:bg-error/10 rounded transition-colors"
             title={t("sshAgent.forwarding.stop", "Stop")}
           >
             <Square className="w-4 h-4" />
@@ -699,7 +699,7 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </button>
           <button
             onClick={mgr.clearAudit}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-red-600/10 text-red-500 rounded hover:bg-red-600/20"
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-error/10 text-error rounded hover:bg-error/20"
           >
             <Trash2 className="w-3 h-3" />
             {t("sshAgent.audit.clear", "Clear")}
@@ -722,7 +722,7 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             >
               <span
                 className={`w-2 h-2 mt-1 rounded-full flex-shrink-0 ${
-                  entry.success ? "bg-green-500" : "bg-red-500"
+                  entry.success ? "bg-success" : "bg-error"
                 }`}
               />
               <div className="flex-1 min-w-0">

@@ -6,13 +6,13 @@
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
-  background: #2563eb;
+  background: var(--color-primary);
   color: var(--color-text);
   font-size: 0.875rem;
   font-weight: 500;
   transition: background-color 150ms ease;
 }
-.sor-btn-primary:hover { background: #1d4ed8; }
+.sor-btn-primary:hover { background: color-mix(in srgb, var(--color-primary) 85%, black); }
 .sor-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sor-btn-primary-sm {
@@ -22,13 +22,13 @@
   gap: 0.375rem;
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
-  background: #2563eb;
+  background: var(--color-primary);
   color: var(--color-text);
   font-size: 0.75rem;
   font-weight: 500;
   transition: background-color 150ms ease;
 }
-.sor-btn-primary-sm:hover { background: #1d4ed8; }
+.sor-btn-primary-sm:hover { background: color-mix(in srgb, var(--color-primary) 85%, black); }
 .sor-btn-primary-sm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sor-btn-secondary {
@@ -38,13 +38,13 @@
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
-  background: #4b5563;
+  background: var(--color-secondary);
   color: var(--color-text);
   font-size: 0.875rem;
   font-weight: 500;
   transition: background-color 150ms ease;
 }
-.sor-btn-secondary:hover { background: #6b7280; }
+.sor-btn-secondary:hover { background: color-mix(in srgb, var(--color-secondary) 80%, white); }
 .sor-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sor-btn-secondary-sm {
@@ -54,13 +54,13 @@
   gap: 0.375rem;
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
-  background: #4b5563;
+  background: var(--color-secondary);
   color: var(--color-text);
   font-size: 0.75rem;
   font-weight: 500;
   transition: background-color 150ms ease;
 }
-.sor-btn-secondary-sm:hover { background: #6b7280; }
+.sor-btn-secondary-sm:hover { background: color-mix(in srgb, var(--color-secondary) 80%, white); }
 .sor-btn-secondary-sm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sor-btn-danger {
@@ -70,13 +70,13 @@
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
-  background: #dc2626;
+  background: var(--color-error);
   color: var(--color-text);
   font-size: 0.875rem;
   font-weight: 500;
   transition: background-color 150ms ease;
 }
-.sor-btn-danger:hover { background: #b91c1c; }
+.sor-btn-danger:hover { background: color-mix(in srgb, var(--color-error) 85%, black); }
 .sor-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sor-btn-danger-sm {
@@ -86,13 +86,13 @@
   gap: 0.375rem;
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
-  background: #dc2626;
+  background: var(--color-error);
   color: var(--color-text);
   font-size: 0.75rem;
   font-weight: 500;
   transition: background-color 150ms ease;
 }
-.sor-btn-danger-sm:hover { background: #b91c1c; }
+.sor-btn-danger-sm:hover { background: color-mix(in srgb, var(--color-error) 85%, black); }
 .sor-btn-danger-sm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Icon buttons ────────────────────────────────────────────── */
@@ -106,7 +106,7 @@
   transition: color 150ms ease, background-color 150ms ease;
 }
 .sor-icon-btn:hover {
-  color: #60a5fa;
+  color: var(--color-primary);
   background: var(--color-border);
 }
 .sor-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -136,7 +136,7 @@
   transition: color 150ms ease, background-color 150ms ease;
 }
 .sor-icon-btn-danger:hover {
-  color: #f87171;
+  color: var(--color-error);
   background: var(--color-border);
 }
 .sor-icon-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }

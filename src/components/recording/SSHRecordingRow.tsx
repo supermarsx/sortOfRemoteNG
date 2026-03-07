@@ -39,7 +39,7 @@ export const SSHRecordingRow: React.FC<SSHRecordingRowProps> = ({
         onClick={onToggle}
         className="sor-recording-row"
       >
-        <Terminal size={16} className="text-green-400 flex-shrink-0" />
+        <Terminal size={16} className="text-success flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-[var(--color-text)] truncate">
             {recording.name}
@@ -95,7 +95,7 @@ export const SSHRecordingRow: React.FC<SSHRecordingRowProps> = ({
               />
               <button
                 onClick={rename.commitRename}
-                className="p-1 text-green-400 hover:text-green-300"
+                className="p-1 text-success hover:text-success"
               >
                 <Save size={14} />
               </button>

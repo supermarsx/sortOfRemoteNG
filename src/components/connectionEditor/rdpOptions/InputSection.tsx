@@ -11,7 +11,7 @@ const InputSection: React.FC<
 > = ({ rdp, updateRdp, detectingLayout, detectKeyboardLayout }) => (
   <Section
     title="Input"
-    icon={<Mouse size={14} className="text-yellow-400" />}
+    icon={<Mouse size={14} className="text-warning" />}
   >
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
@@ -31,7 +31,7 @@ const InputSection: React.FC<
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Keyboard Layout{" "}
         {rdp.input?.autoDetectLayout !== false && (
-          <span className="text-blue-400">(overridden by auto-detect)</span>
+          <span className="text-primary">(overridden by auto-detect)</span>
         )}
       </label>
       <div className="flex gap-2">

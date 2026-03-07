@@ -27,7 +27,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
               <span className="text-xs px-2 py-1 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] rounded">
                 {script.category}
               </span>
-              <span className="text-xs px-2 py-1 bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded">
+              <span className="text-xs px-2 py-1 bg-accent/20 text-accent dark:text-accent rounded">
                 {languageLabels[script.language]}
               </span>
               {script.id.startsWith('default-') && (
@@ -41,7 +41,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
                 {script.osTags.map(tag => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full"
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-primary/10 text-primary dark:text-primary rounded-full"
                   >
                     <span>{OS_TAG_ICONS[tag]}</span>
                     <span>{OS_TAG_LABELS[tag]}</span>
@@ -57,7 +57,7 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
               title={t('scriptManager.copyToClipboard', 'Copy to Clipboard')}
             >
               {mgr.copiedId === script.id ? (
-                <Check size={16} className="text-green-500" />
+                <Check size={16} className="text-success" />
               ) : (
                 <Copy size={16} />
               )}

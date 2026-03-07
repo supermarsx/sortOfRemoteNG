@@ -6,7 +6,7 @@ import { Checkbox, NumberInput, Select, Slider } from "../../ui/forms";
 const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
   <Section
     title="Display"
-    icon={<Monitor size={14} className="text-blue-400" />}
+    icon={<Monitor size={14} className="text-primary" />}
     defaultOpen
   >
     <div className="grid grid-cols-2 gap-3">

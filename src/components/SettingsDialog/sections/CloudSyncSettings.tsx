@@ -63,13 +63,6 @@ import SyncItemsGrid from "./cloudSync/SyncItemsGrid";
 import SyncStatusOverview from "./cloudSync/SyncStatusOverview";
 import type { CloudSyncSettingsProps, Mgr } from "./cloudSync/types";
 
-interface CloudSyncSettingsProps {
-  settings: GlobalSettings;
-  updateSettings: (updates: Partial<GlobalSettings>) => void;
-}
-
-type Mgr = ReturnType<typeof useCloudSyncSettings>;
-
 const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   settings,
   updateSettings,
@@ -88,7 +81,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
             mgr.enabledProviders.length === 0 ||
             mgr.isSyncing
           }
-          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
+          className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
         >
           <RefreshCw className="w-4 h-4" />
           Sync All

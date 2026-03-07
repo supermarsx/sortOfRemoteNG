@@ -16,7 +16,7 @@ function CommandInput({ mgr, t }: { mgr: Mgr; t: TFunc }) {
               "bulkSsh.commandPlaceholder",
               "Enter command to send to all selected sessions...",
             )}
-            className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500 font-mono text-sm resize-y min-h-[80px] max-h-[300px]"
+            className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-success/50 focus:border-success font-mono text-sm resize-y min-h-[80px] max-h-[300px]"
             rows={3}
             disabled={mgr.isExecuting || mgr.selectedCount === 0}
           />
@@ -29,7 +29,7 @@ function CommandInput({ mgr, t }: { mgr: Mgr; t: TFunc }) {
               mgr.selectedCount === 0 ||
               mgr.isExecuting
             }
-            className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2 font-medium"
+            className="flex-1 px-6 py-3 bg-success hover:bg-success/90 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2 font-medium"
           >
             {mgr.isExecuting ? (
               <>
@@ -46,7 +46,7 @@ function CommandInput({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           <button
             onClick={mgr.sendCancel}
             disabled={mgr.selectedCount === 0}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+            className="px-4 py-2 bg-error hover:bg-error/90 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
             title={t("bulkSsh.sendCancel", "Send Ctrl+C")}
           >
             <StopCircle size={14} />

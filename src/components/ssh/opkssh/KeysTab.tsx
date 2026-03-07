@@ -23,7 +23,7 @@ export const KeysTab: React.FC<KeysTabProps> = ({ mgr }) => {
       {/* Header with refresh */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
-          <Key size={14} className="text-amber-500" />
+          <Key size={14} className="text-warning" />
           {t("opkssh.sshKeys", "SSH Keys")}
           <span className="text-xs text-[var(--color-text-secondary)]">
             ({mgr.activeKeys.length})
@@ -53,7 +53,7 @@ export const KeysTab: React.FC<KeysTabProps> = ({ mgr }) => {
               key={key.id}
               className={`p-4 rounded-lg border bg-[var(--color-surface-raised)] ${
                 key.isExpired
-                  ? "border-red-500/30"
+                  ? "border-error/30"
                   : "border-[var(--color-border)]"
               }`}
             >
@@ -67,8 +67,8 @@ export const KeysTab: React.FC<KeysTabProps> = ({ mgr }) => {
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded ${
                         key.isExpired
-                          ? "bg-red-500/20 text-red-400"
-                          : "bg-green-500/20 text-green-400"
+                          ? "bg-error/20 text-error"
+                          : "bg-success/20 text-success"
                       }`}
                     >
                       {key.isExpired
@@ -128,7 +128,7 @@ export const KeysTab: React.FC<KeysTabProps> = ({ mgr }) => {
 
                 {/* Remove button */}
                 <button
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded text-red-400 hover:bg-red-500/10 border border-red-500/30 transition-colors"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded text-error hover:bg-error/10 border border-error/30 transition-colors"
                   onClick={() => mgr.removeKey(key.id)}
                   title={t("opkssh.removeKey", "Remove key")}
                 >

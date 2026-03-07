@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Modal, ModalBody, ModalHeader } from '../overlays/Modal';
 
-interface ConfirmDialogProps {
+export interface ConfirmDialogProps {
   isOpen: boolean;
   message: string;
   title?: string;
@@ -65,10 +65,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             onClick={onConfirm}
             className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
               variant === 'danger'
-                ? 'bg-red-600 hover:bg-red-700'
+                ? 'bg-error hover:bg-error/90'
                 : variant === 'warning'
-                ? 'bg-yellow-600 hover:bg-yellow-700'
-                : 'bg-blue-600 hover:bg-blue-700'
+                ? 'bg-warning hover:bg-warning/90'
+                : 'bg-primary hover:bg-primary/90'
             }`}
           >
             {confirmText}

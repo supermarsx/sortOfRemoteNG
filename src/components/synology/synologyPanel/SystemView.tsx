@@ -34,14 +34,14 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
         <div className="flex gap-2">
           <button
             onClick={mgr.rebootNas}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs hover:bg-amber-500/20 transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs hover:bg-warning/20 transition-colors"
           >
             <RefreshCw className="w-3 h-3" />
             {t("synology.system.reboot", "Reboot")}
           </button>
           <button
             onClick={mgr.shutdownNas}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs hover:bg-red-500/20 transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-error/10 border border-error/30 text-error text-xs hover:bg-error/20 transition-colors"
           >
             <PowerOff className="w-3 h-3" />
             {t("synology.system.shutdown", "Shutdown")}
@@ -87,13 +87,13 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
       {util?.cpu && (
         <section>
           <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-            <Cpu className="w-3.5 h-3.5 text-blue-500" />
+            <Cpu className="w-3.5 h-3.5 text-primary" />
             {t("synology.system.cpuUtil", "CPU Utilization")}
           </h4>
           <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-lg font-semibold text-blue-400">
+                <div className="text-lg font-semibold text-primary">
                   {util.cpu.system_load ?? 0}%
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
@@ -101,7 +101,7 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
                 </div>
               </div>
               <div>
-                <div className="text-lg font-semibold text-green-400">
+                <div className="text-lg font-semibold text-success">
                   {util.cpu.user_load ?? 0}%
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
@@ -109,7 +109,7 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
                 </div>
               </div>
               <div>
-                <div className="text-lg font-semibold text-gray-400">
+                <div className="text-lg font-semibold text-text-muted">
                   {100 -
                     (util.cpu.system_load ?? 0) -
                     (util.cpu.user_load ?? 0)}
@@ -128,13 +128,13 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
       {util?.memory && (
         <section>
           <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-            <MemoryStick className="w-3.5 h-3.5 text-purple-500" />
+            <MemoryStick className="w-3.5 h-3.5 text-accent" />
             {t("synology.system.memUtil", "Memory Utilization")}
           </h4>
           <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-lg font-semibold text-purple-400">
+                <div className="text-lg font-semibold text-accent">
                   {util.memory.physical_memory?.total_real ?? "—"}
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
@@ -142,7 +142,7 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
                 </div>
               </div>
               <div>
-                <div className="text-lg font-semibold text-green-400">
+                <div className="text-lg font-semibold text-success">
                   {util.memory.physical_memory?.avail_real ?? "—"}
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
@@ -150,7 +150,7 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
                 </div>
               </div>
               <div>
-                <div className="text-lg font-semibold text-amber-400">
+                <div className="text-lg font-semibold text-warning">
                   {util.memory.physical_memory?.buffer ?? "—"}
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">

@@ -90,7 +90,7 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
         </button>
         <button
           onClick={mgr.disconnect}
-          className="flex items-center justify-center p-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+          className="flex items-center justify-center p-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-error hover:bg-error/10 transition-colors"
           title={t("synology.disconnect", "Disconnect")}
         >
           <LogOut className="w-3.5 h-3.5" />

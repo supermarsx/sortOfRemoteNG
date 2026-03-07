@@ -1,13 +1,15 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Monitor } from "lucide-react";
+import { TextInput } from "../../../ui/forms";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput } from "../../../ui/forms";
 
 const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.scrollback", "Scrollback & Selection")}
-    icon={<Monitor className="w-4 h-4 text-slate-400" />}
+    icon={<Monitor className="w-4 h-4 text-text-muted" />}
     defaultOpen={false}
   >
     <NumberInput

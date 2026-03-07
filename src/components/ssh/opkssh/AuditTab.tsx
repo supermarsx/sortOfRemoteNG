@@ -66,7 +66,7 @@ export const AuditTab: React.FC<AuditTabProps> = ({ mgr }) => {
           </select>
         </div>
         <button
-          className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 transition-colors"
+          className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-success hover:bg-success/90 text-white disabled:opacity-50 transition-colors"
           onClick={handleAudit}
           disabled={mgr.isLoadingAudit}
         >
@@ -103,11 +103,11 @@ export const AuditTab: React.FC<AuditTabProps> = ({ mgr }) => {
             >
               <span className="flex items-center gap-1">
                 {entry.success ? (
-                  <CheckCircle size={10} className="text-green-500" />
+                  <CheckCircle size={10} className="text-success" />
                 ) : (
-                  <XCircle size={10} className="text-red-500" />
+                  <XCircle size={10} className="text-error" />
                 )}
-                <span className={entry.success ? "text-green-400" : "text-red-400"}>
+                <span className={entry.success ? "text-success" : "text-error"}>
                   {entry.success ? t("opkssh.ok", "OK") : t("opkssh.fail", "Fail")}
                 </span>
               </span>

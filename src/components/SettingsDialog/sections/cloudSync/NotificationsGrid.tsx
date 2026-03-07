@@ -6,7 +6,7 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
     <div className="grid grid-cols-2 gap-4">
       <label className="sor-toggle-card">
         <Checkbox checked={mgr.cloudSync.notifyOnSync} onChange={(v: boolean) => mgr.updateCloudSync({ notifyOnSync: v })} className="sor-checkbox-sm" />
-        <Bell className="w-4 h-4 text-blue-400" />
+        <Bell className="w-4 h-4 text-primary" />
         <span className="text-sm text-[var(--color-text)]">
           Notify on Sync
         </span>
@@ -14,7 +14,7 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
 
       <label className="sor-toggle-card">
         <Checkbox checked={mgr.cloudSync.notifyOnConflict} onChange={(v: boolean) => mgr.updateCloudSync({ notifyOnConflict: v })} className="sor-checkbox-sm" />
-        <AlertTriangle className="w-4 h-4 text-orange-400" />
+        <AlertTriangle className="w-4 h-4 text-warning" />
         <span className="text-sm text-[var(--color-text)]">
           Notify on Conflict
         </span>

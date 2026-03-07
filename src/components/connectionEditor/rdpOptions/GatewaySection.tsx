@@ -7,7 +7,7 @@ import { Checkbox, NumberInput, Select } from "../../ui/forms";
 const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
   <Section
     title="RDP Gateway"
-    icon={<Network size={14} className="text-cyan-400" />}
+    icon={<Network size={14} className="text-info" />}
   >
     <label className={CSS.label}>
       <Checkbox checked={rdp.gateway?.enabled ?? false} onChange={(v: boolean) => updateRdp("gateway", { enabled: v })} className="CSS.checkbox" />

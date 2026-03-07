@@ -20,7 +20,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
       {/* ── Proxy Keepalive ── */}
       <section>
         <h4 className="sor-section-heading">
-          <Wifi className="w-4 h-4 text-blue-400" />
+          <Wifi className="w-4 h-4 text-primary" />
           Internal Proxy Keepalive
         </h4>
         <p className="text-sm text-[var(--color-textSecondary)] mb-4">
@@ -76,7 +76,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           >
             <div>
               <span className="text-sm text-[var(--color-text)] flex items-center gap-1.5">
-                <RefreshCw size={14} className="text-green-400" />
+                <RefreshCw size={14} className="text-success" />
                 Auto-restart dead proxies
               </span>
               <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
@@ -113,7 +113,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
       {/* ── Bookmarks ── */}
       <section>
         <h4 className="sor-section-heading">
-          <Bookmark className="w-4 h-4 text-yellow-400" />
+          <Bookmark className="w-4 h-4 text-warning" />
           Bookmarks
         </h4>
 
@@ -122,7 +122,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           <label className="sor-settings-tile">
             <div>
               <span className="text-sm text-[var(--color-text)] flex items-center gap-1.5">
-                <Trash2 size={14} className="text-red-400" />
+                <Trash2 size={14} className="text-error" />
                 Confirm before deleting all bookmarks
               </span>
               <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">

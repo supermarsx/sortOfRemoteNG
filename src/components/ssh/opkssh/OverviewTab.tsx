@@ -23,7 +23,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
       {/* Binary status card */}
       <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
         <h3 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2 mb-3">
-          <Shield size={14} className="text-emerald-500" />
+          <Shield size={14} className="text-success" />
           {t("opkssh.binaryStatus", "opkssh Binary")}
         </h3>
 
@@ -31,9 +31,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
           <div className="space-y-2 text-xs">
             <div className="flex items-center gap-2">
               {binary.installed ? (
-                <CheckCircle size={14} className="text-green-500" />
+                <CheckCircle size={14} className="text-success" />
               ) : (
-                <XCircle size={14} className="text-red-500" />
+                <XCircle size={14} className="text-error" />
               )}
               <span className="text-[var(--color-text)]">
                 {binary.installed
@@ -59,7 +59,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
                 href={binary.downloadUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-emerald-500 hover:text-emerald-400 mt-1"
+                className="inline-flex items-center gap-1 text-success hover:text-success mt-1"
               >
                 <Download size={12} />
                 {t("opkssh.downloadBinary", "Download opkssh")}
@@ -68,7 +68,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
           </div>
         ) : (
           <button
-            className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+            className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-success hover:bg-success/90 text-white transition-colors"
             onClick={() => mgr.checkBinary()}
             disabled={mgr.isLoading}
           >
@@ -81,7 +81,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
       {/* Active keys summary */}
       <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
         <h3 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2 mb-3">
-          <Key size={14} className="text-amber-500" />
+          <Key size={14} className="text-warning" />
           {t("opkssh.activeKeys", "Active Keys")}
         </h3>
         <div className="text-xs text-[var(--color-text-secondary)]">
@@ -94,8 +94,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
                   key={key.id}
                   className={`flex items-center justify-between p-2 rounded bg-black/10 border ${
                     key.isExpired
-                      ? "border-red-500/30"
-                      : "border-green-500/30"
+                      ? "border-error/30"
+                      : "border-success/30"
                   }`}
                 >
                   <div>
@@ -112,8 +112,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded ${
                       key.isExpired
-                        ? "bg-red-500/20 text-red-400"
-                        : "bg-green-500/20 text-green-400"
+                        ? "bg-error/20 text-error"
+                        : "bg-success/20 text-success"
                     }`}
                   >
                     {key.isExpired
@@ -134,7 +134,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ mgr }) => {
         </h3>
         <div className="flex flex-wrap gap-2">
           <button
-            className="text-xs px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+            className="text-xs px-3 py-1.5 rounded bg-success hover:bg-success/90 text-white transition-colors"
             onClick={() => mgr.setActiveTab("login")}
           >
             {t("opkssh.loginOIDC", "Login with OIDC")}

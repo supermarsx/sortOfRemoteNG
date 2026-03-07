@@ -37,7 +37,7 @@ const MtuCheckCard = ({
             </span>
           </div>
           {results.mtuCheck.fragmentation_needed && (
-            <div className="text-[10px] text-yellow-500">
+            <div className="text-[10px] text-warning">
               ⚠{" "}
               {t(
                 "diagnostics.fragmentationNeeded",

@@ -115,7 +115,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
         data-tauri-drag-region
       >
         <div className="flex items-center gap-3">
-          <Monitor size={18} className="text-blue-400" />
+          <Monitor size={18} className="text-primary" />
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-tight">
               {t("app.title")}
@@ -125,7 +125,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             </div>
           </div>
           {collectionManager.getCurrentCollection() && (
-            <span className="text-[10px] text-blue-300 bg-blue-900/30 px-2 py-1 rounded">
+            <span className="text-[10px] text-primary bg-primary/30 px-2 py-1 rounded">
               {collectionManager.getCurrentCollection()?.name}
             </span>
           )}
@@ -157,7 +157,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           >
             <Pin
               size={14}
-              className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""}
+              className={isAlwaysOnTop ? "rotate-45 text-primary" : ""}
             />
           </button>
           <button
@@ -227,7 +227,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           {appSettings.showRdpSessionsIcon && (
             <button
               onClick={() => setRdpPanelOpen(prev => !prev)}
-              className={`app-bar-button p-2 ${rdpPanelOpen ? 'text-indigo-400' : ''}`}
+              className={`app-bar-button p-2 ${rdpPanelOpen ? 'text-accent' : ''}`}
               title="RDP Sessions"
             >
               <Cpu size={14} />
@@ -353,7 +353,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
           {appSettings.showErrorLogBar && (
             <button
               onClick={() => setShowErrorLog(!showErrorLog)}
-              className={`app-bar-button p-2 ${showErrorLog ? "text-red-400" : ""}`}
+              className={`app-bar-button p-2 ${showErrorLog ? "text-error" : ""}`}
               title="Toggle Error Log"
             >
               <Bug size={14} />

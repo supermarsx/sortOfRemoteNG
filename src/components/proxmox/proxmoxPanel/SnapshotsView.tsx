@@ -35,7 +35,7 @@ const SnapshotsView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-          <Camera className="w-4 h-4 text-indigo-500" />
+          <Camera className="w-4 h-4 text-accent" />
           {t("proxmox.snapshots.title", "Snapshots")}
           <span className="text-xs font-normal text-[var(--color-text-secondary)]">
             {vmType.toUpperCase()} {vmid}
@@ -56,13 +56,13 @@ const SnapshotsView: React.FC<SubProps> = ({ mgr }) => {
         </h4>
         <div className="flex flex-col gap-2">
           <input
-            className="w-full px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+            className="w-full px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-accent/50"
             placeholder={t("proxmox.snapshots.namePlaceholder", "Snapshot name")}
             value={newSnapName}
             onChange={(e) => setNewSnapName(e.target.value)}
           />
           <input
-            className="w-full px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+            className="w-full px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-accent/50"
             placeholder={t("proxmox.snapshots.descPlaceholder", "Description (optional)")}
             value={newSnapDesc}
             onChange={(e) => setNewSnapDesc(e.target.value)}
@@ -73,7 +73,7 @@ const SnapshotsView: React.FC<SubProps> = ({ mgr }) => {
                 type="checkbox"
                 checked={includeRam}
                 onChange={(e) => setIncludeRam(e.target.checked)}
-                className="w-4 h-4 rounded border-[var(--color-border)] text-indigo-500"
+                className="w-4 h-4 rounded border-[var(--color-border)] text-accent"
               />
               <span className="text-xs text-[var(--color-text-secondary)]">
                 {t("proxmox.snapshots.includeRam", "Include RAM state")}
@@ -83,7 +83,7 @@ const SnapshotsView: React.FC<SubProps> = ({ mgr }) => {
           <button
             onClick={handleCreate}
             disabled={!newSnapName.trim() || mgr.loading}
-            className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-600/50 text-white text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+            className="w-full py-2 rounded-lg bg-accent hover:bg-accent disabled:bg-accent/50 text-white text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />
             {t("proxmox.snapshots.createBtn", "Create Snapshot")}
@@ -106,7 +106,7 @@ const SnapshotsView: React.FC<SubProps> = ({ mgr }) => {
                 key={snap.name}
                 className="flex items-center gap-3 p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]"
               >
-                <Camera className="w-4 h-4 text-indigo-500 shrink-0" />
+                <Camera className="w-4 h-4 text-accent shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[var(--color-text)] truncate">{snap.name}</div>
                   {snap.description && (
@@ -127,7 +127,7 @@ const SnapshotsView: React.FC<SubProps> = ({ mgr }) => {
                         () => mgr.rollbackSnapshot(node, vmid, vmType, snap.name),
                       )
                     }
-                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-yellow-500 hover:bg-yellow-500/10 transition-colors"
+                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-warning hover:bg-warning/10 transition-colors"
                     title={t("proxmox.snapshots.rollback", "Rollback")}
                     disabled={mgr.loading}
                   >
@@ -141,7 +141,7 @@ const SnapshotsView: React.FC<SubProps> = ({ mgr }) => {
                         () => mgr.deleteSnapshot(node, vmid, vmType, snap.name),
                       )
                     }
-                    className="p-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
+                    className="p-1.5 rounded-lg border border-error/30 text-error hover:bg-error/10 transition-colors"
                     title={t("proxmox.snapshots.deleteBtn", "Delete")}
                     disabled={mgr.loading}
                   >

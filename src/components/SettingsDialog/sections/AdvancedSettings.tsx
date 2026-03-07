@@ -28,28 +28,28 @@ const LOG_LEVEL_CONFIG = [
     value: "debug",
     label: "Debug",
     icon: Bug,
-    color: "text-purple-400",
+    color: "text-accent",
     description: "All messages including debug info",
   },
   {
     value: "info",
     label: "Info",
     icon: Info,
-    color: "text-blue-400",
+    color: "text-primary",
     description: "Informational messages and above",
   },
   {
     value: "warn",
     label: "Warning",
     icon: AlertCircle,
-    color: "text-yellow-400",
+    color: "text-warning",
     description: "Warnings and errors only",
   },
   {
     value: "error",
     label: "Error",
     icon: AlertCircle,
-    color: "text-red-400",
+    color: "text-error",
     description: "Errors only",
   },
 ];
@@ -85,7 +85,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       {/* Tab Grouping Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <Layers className="w-4 h-4 text-blue-400" />
+          <Layers className="w-4 h-4 text-primary" />
           Tab Grouping
         </h4>
 
@@ -99,7 +99,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                 }
                 className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                   settings.tabGrouping === option.value
-                    ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                    ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
                     : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                 }`}
               >
@@ -117,7 +117,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       {/* Logging Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <FileText className="w-4 h-4 text-green-400" />
+          <FileText className="w-4 h-4 text-success" />
           Logging
         </h4>
 
@@ -136,7 +136,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                   }
                   className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                     settings.logLevel === level.value
-                      ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                      ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
                       : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                   }`}
                 >
@@ -157,14 +157,14 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       {/* Tab Naming Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <Tags className="w-4 h-4 text-purple-400" />
+          <Tags className="w-4 h-4 text-accent" />
           Tab Naming
         </h4>
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.hostnameOverride} onChange={(v: boolean) => updateSettings({ hostnameOverride: v })} />
-            <Terminal className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-purple-400" />
+            <Terminal className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-accent" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                 Override tab names with hostname
@@ -181,14 +181,14 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
       {/* Diagnostics Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <ShieldAlert className="w-4 h-4 text-yellow-400" />
+          <ShieldAlert className="w-4 h-4 text-warning" />
           Diagnostics
         </h4>
 
         <div className="sor-settings-card space-y-3">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.detectUnexpectedClose ?? true} onChange={(v: boolean) => updateSettings({ detectUnexpectedClose: v })} />
-            <ShieldAlert className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-yellow-400" />
+            <ShieldAlert className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                 Detect unexpected app close
@@ -223,7 +223,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                     autoSave: v,
                   },
                 })} />
-            <Save className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-blue-400" />
+            <Save className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                 Auto-save settings
@@ -248,7 +248,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                     showSaveButton: v,
                   },
                 })} />
-            <Save className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-green-400" />
+            <Save className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                 Show save button
@@ -273,7 +273,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
                     confirmBeforeReset: v,
                   },
                 })} />
-            <RotateCcw className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-orange-400" />
+            <RotateCcw className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                 Confirm before reset

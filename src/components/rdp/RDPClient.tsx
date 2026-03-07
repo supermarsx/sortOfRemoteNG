@@ -25,10 +25,10 @@ interface RDPClientProps {
 
 function getStatusColor(connectionStatus: string): string {
   switch (connectionStatus) {
-    case 'connected': return 'text-green-400';
-    case 'connecting': return 'text-yellow-400';
-    case 'reconnecting': return 'text-amber-400';
-    case 'error': return 'text-red-400';
+    case 'connected': return 'text-success';
+    case 'connecting': return 'text-warning';
+    case 'reconnecting': return 'text-warning';
+    case 'error': return 'text-error';
     default: return 'text-[var(--color-textSecondary)]';
   }
 }
@@ -48,7 +48,7 @@ const MagnifierOverlay: React.FC<{ mgr: RDPClientMgr }> = ({ mgr }) => (
   <>
     <canvas
       ref={mgr.magnifierCanvasRef}
-      className="absolute pointer-events-none border-2 border-blue-500 rounded-full shadow-lg shadow-blue-900/50"
+      className="absolute pointer-events-none border-2 border-primary rounded-full shadow-lg shadow-primary/30"
       style={{
         left: `${mgr.magnifierPos.x - 80}px`,
         top: `${mgr.magnifierPos.y - 80}px`,
@@ -58,7 +58,7 @@ const MagnifierOverlay: React.FC<{ mgr: RDPClientMgr }> = ({ mgr }) => (
       width={160}
       height={160}
     />
-    <div className="absolute top-2 right-2 bg-blue-600 bg-opacity-80 text-[var(--color-text)] text-xs px-2 py-1 rounded flex items-center gap-1">
+    <div className="absolute top-2 right-2 bg-primary bg-opacity-80 text-[var(--color-text)] text-xs px-2 py-1 rounded flex items-center gap-1">
       <ZoomIn size={12} />
       {mgr.magnifierZoom}x
     </div>

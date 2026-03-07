@@ -10,7 +10,7 @@ export const EnableSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = (
     <div className="sor-settings-card">
       <label className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={settings.restApi?.enabled || false} onChange={(v: boolean) => mgr.updateRestApi({ enabled: v })} />
-        <Power className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-blue-400" />
+        <Power className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
         <div>
           <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
             {mgr.t("settings.api.enable", "Enable API Server")}
@@ -27,7 +27,7 @@ export const EnableSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = (
       <div className="sor-settings-card">
         <label className="flex items-center space-x-3 cursor-pointer group">
           <Checkbox checked={settings.restApi?.startOnLaunch || false} onChange={(v: boolean) => mgr.updateRestApi({ startOnLaunch: v })} />
-          <Clock className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-green-400" />
+          <Clock className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
           <div>
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               {mgr.t("settings.api.startOnLaunch", "Start on Application Launch")}

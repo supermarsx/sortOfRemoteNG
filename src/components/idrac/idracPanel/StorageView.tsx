@@ -33,7 +33,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.storageControllers.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Database className="w-4 h-4 text-orange-400" />
+            <Database className="w-4 h-4 text-warning" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.storage.controllers", "RAID Controllers")}
             </h3>
@@ -62,7 +62,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                     {c.cacheSizeMib != null ? `${c.cacheSizeMib} MiB` : "—"}
                   </td>
                   <td className="py-1 text-center">
-                    <span className={c.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={c.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {c.status.health ?? "N/A"}
                     </span>
                   </td>
@@ -77,7 +77,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.virtualDisks.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <HardDrive className="w-4 h-4 text-blue-400" />
+            <HardDrive className="w-4 h-4 text-primary" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.storage.virtual_disks", "Virtual Disks")}
             </h3>
@@ -102,7 +102,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                   <td className="py-1 text-[var(--color-text-secondary)]">{vd.mediaType ?? "—"}</td>
                   <td className="py-1 text-right text-[var(--color-text)]">{vd.physicalDiskIds.length}</td>
                   <td className="py-1 text-center">
-                    <span className={vd.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={vd.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {vd.status.health ?? "N/A"}
                     </span>
                   </td>
@@ -117,7 +117,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.physicalDisks.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Disc className="w-4 h-4 text-green-400" />
+            <Disc className="w-4 h-4 text-success" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.storage.physical_disks", "Physical Disks")}
             </h3>
@@ -146,7 +146,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                     {pd.predictedMediaLifeLeftPercent != null ? `${pd.predictedMediaLifeLeftPercent}%` : "—"}
                   </td>
                   <td className="py-1 text-center">
-                    <span className={pd.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={pd.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {pd.status.health ?? "N/A"}
                     </span>
                   </td>
@@ -161,7 +161,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.enclosures.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Box className="w-4 h-4 text-purple-400" />
+            <Box className="w-4 h-4 text-accent" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.storage.enclosures", "Enclosures")}
             </h3>
@@ -182,7 +182,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                   <td className="py-1 text-[var(--color-text-secondary)]">{e.connector ?? "—"}</td>
                   <td className="py-1 text-right text-[var(--color-text)]">{e.slotCount ?? "—"}</td>
                   <td className="py-1 text-center">
-                    <span className={e.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={e.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {e.status.health ?? "N/A"}
                     </span>
                   </td>

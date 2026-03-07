@@ -113,7 +113,7 @@ const TOTPConfigRow: React.FC<{
   <div className="sor-selection-row cursor-default bg-[var(--color-border)] p-4">
     <div className="flex-1">
       <div className="flex items-center space-x-3 mb-2">
-        <Shield size={16} className="text-blue-400" />
+        <Shield size={16} className="text-primary" />
         <span className="text-[var(--color-text)] font-medium">
           {config.account}
         </span>
@@ -123,7 +123,7 @@ const TOTPConfigRow: React.FC<{
       </div>
 
       <div className="flex items-center space-x-4">
-        <div className="bg-[var(--color-surface)] rounded-lg px-4 py-2 font-mono text-2xl text-green-400">
+        <div className="bg-[var(--color-surface)] rounded-lg px-4 py-2 font-mono text-2xl text-success">
           {mgr.currentCodes[config.secret] || "------"}
         </div>
 
@@ -167,9 +167,9 @@ const TOTPConfigRow: React.FC<{
 );
 
 const TOTPInstructions: React.FC = () => (
-  <div className="mt-8 bg-blue-900/20 border border-blue-700 rounded-lg p-4">
-    <h3 className="text-blue-300 font-medium mb-2">How to use TOTP</h3>
-    <ul className="text-blue-200 text-sm space-y-1">
+  <div className="mt-8 bg-primary/20 border border-primary rounded-lg p-4">
+    <h3 className="text-primary font-medium mb-2">How to use TOTP</h3>
+    <ul className="text-primary text-sm space-y-1">
       <li>
         &bull; Install an authenticator app like Google Authenticator or Aegis
       </li>
@@ -210,8 +210,8 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
         onClose={onClose}
         title={
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Shield size={18} className="text-blue-500" />
+            <div className="p-2 bg-primary/20 rounded-lg">
+              <Shield size={18} className="text-primary" />
             </div>
             <h2 className="text-lg font-semibold text-[var(--color-text)]">
               TOTP Authenticator
@@ -221,7 +221,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
         actions={
           <button
             onClick={() => mgr.setShowAddForm(true)}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm"
+            className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm"
           >
             <Plus size={14} />
             <span>Add TOTP</span>

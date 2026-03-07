@@ -118,24 +118,24 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
         />
         <StatCard
           icon={Cpu}
-          iconColor="text-blue-500"
-          iconBg="bg-blue-500/15"
+          iconColor="text-primary"
+          iconBg="bg-primary/15"
           label={t("synology.dashboard.cpu", "CPU")}
           value={`${cpuPct}%`}
           sub={t("synology.dashboard.systemLoad", "System load")}
         />
         <StatCard
           icon={MemoryStick}
-          iconColor="text-purple-500"
-          iconBg="bg-purple-500/15"
+          iconColor="text-accent"
+          iconBg="bg-accent/15"
           label={t("synology.dashboard.memory", "Memory")}
           value={`${memPct}%`}
           sub={`${formatBytes(memUsed * 1024)} / ${formatBytes(memTotal * 1024)}`}
         />
         <StatCard
           icon={HardDrive}
-          iconColor="text-amber-500"
-          iconBg="bg-amber-500/15"
+          iconColor="text-warning"
+          iconBg="bg-warning/15"
           label={t("synology.dashboard.disks", "Disks")}
           value={String(disks.length)}
           sub={`${volumes.length} ${t("synology.dashboard.volumes", "volumes")}`}
@@ -152,12 +152,12 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
           <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] space-y-3">
             <ProgressBar
               pct={cpuPct}
-              color="bg-blue-500"
+              color="bg-primary"
               label={t("synology.dashboard.cpuUsage", "CPU Usage")}
             />
             <ProgressBar
               pct={memPct}
-              color="bg-purple-500"
+              color="bg-accent"
               label={t("synology.dashboard.memUsage", "Memory Usage")}
               detail={`${formatBytes(memUsed * 1024)} / ${formatBytes(memTotal * 1024)}`}
             />
@@ -166,7 +166,7 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
           {/* Network traffic */}
           <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="flex items-center gap-2 mb-3">
-              <Network className="w-4 h-4 text-green-500" />
+              <Network className="w-4 h-4 text-success" />
               <span className="text-xs font-medium text-[var(--color-text)]">
                 {t("synology.dashboard.network", "Network")}
               </span>
@@ -182,10 +182,10 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
                       {iface.device ?? `eth${i}`}
                     </span>
                     <div className="flex gap-3">
-                      <span className="text-green-400">
+                      <span className="text-success">
                         ↑ {formatBytes(iface.tx ?? 0)}/s
                       </span>
-                      <span className="text-blue-400">
+                      <span className="text-primary">
                         ↓ {formatBytes(iface.rx ?? 0)}/s
                       </span>
                     </div>
@@ -205,7 +205,7 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
       {volumes.length > 0 && (
         <section>
           <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3 flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-amber-500" />
+            <HardDrive className="w-4 h-4 text-warning" />
             {t("synology.dashboard.volumeStatus", "Volume Status")}
           </h3>
           <div className="space-y-2">
@@ -226,8 +226,8 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded ${
                         vol.status === "normal"
-                          ? "bg-green-500/15 text-green-400"
-                          : "bg-yellow-500/15 text-yellow-400"
+                          ? "bg-success/15 text-success"
+                          : "bg-warning/15 text-warning"
                       }`}
                     >
                       {vol.status}
@@ -237,9 +237,9 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
                     pct={pct}
                     color={
                       pct > 90
-                        ? "bg-red-500"
+                        ? "bg-error"
                         : pct > 70
-                          ? "bg-yellow-500"
+                          ? "bg-warning"
                           : "bg-teal-500"
                     }
                     label=""
@@ -256,7 +256,7 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
       {d?.hardware?.fans && d.hardware.fans.length > 0 && (
         <section>
           <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3 flex items-center gap-2">
-            <Thermometer className="w-4 h-4 text-red-500" />
+            <Thermometer className="w-4 h-4 text-error" />
             {t("synology.dashboard.thermal", "Thermal")}
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

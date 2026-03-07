@@ -23,7 +23,7 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       onClick={() => mgr.setActiveTab("export")}
       className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
         mgr.activeTab === "export"
-          ? "bg-blue-600 text-[var(--color-text)]"
+          ? "bg-primary text-[var(--color-text)]"
           : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
       }`}
     >
@@ -34,7 +34,7 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       onClick={() => mgr.setActiveTab("import")}
       className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
         mgr.activeTab === "import"
-          ? "bg-blue-600 text-[var(--color-text)]"
+          ? "bg-primary text-[var(--color-text)]"
           : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
       }`}
     >
@@ -59,8 +59,8 @@ export const ImportExport: React.FC<ImportExportProps> = ({
       {!embedded && (
         <DialogHeader
           icon={ArrowLeftRight}
-          iconColor="text-indigo-500"
-          iconBg="bg-indigo-500/20"
+          iconColor="text-accent"
+          iconBg="bg-accent/20"
           title="Import / Export Connections"
           onClose={onClose}
         />

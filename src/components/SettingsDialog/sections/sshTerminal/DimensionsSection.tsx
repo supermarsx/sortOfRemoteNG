@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Terminal, LayoutGrid } from "lucide-react";
@@ -7,7 +8,7 @@ import { NumberInput } from "../../../ui/forms";
 const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.dimensions", "Terminal Dimensions")}
-    icon={<LayoutGrid className="w-4 h-4 text-green-400" />}
+    icon={<LayoutGrid className="w-4 h-4 text-success" />}
     defaultOpen={false}
   >
     <Toggle

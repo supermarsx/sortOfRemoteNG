@@ -63,7 +63,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       {/* ─── Runtime ─────────────────────────────────────────── */}
       <div className="sor-settings-card">
         <h4 className="sor-section-heading">
-          <Cpu className="w-4 h-4 text-blue-400" />
+          <Cpu className="w-4 h-4 text-primary" />
           Runtime
         </h4>
 
@@ -91,7 +91,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       {/* ─── RDP Engine ──────────────────────────────────────── */}
       <div className="sor-settings-card">
         <h4 className="sor-section-heading">
-          <Layers className="w-4 h-4 text-cyan-400" />
+          <Layers className="w-4 h-4 text-info" />
           RDP Engine
         </h4>
 
@@ -99,8 +99,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           <div>
             <label className={labelClass}>Server-Side Renderer</label>
             <Select value={cfg.rdpServerRenderer} onChange={(v: string) => update({
-                  rdpServerRenderer: e.target
-                    .value as BackendConfig["rdpServerRenderer"],
+                  rdpServerRenderer: v as BackendConfig["rdpServerRenderer"],
                 })} options={[{ value: "auto", label: "Auto-detect" }, { value: "softbuffer", label: "Softbuffer (CPU)" }, { value: "wgpu", label: "wgpu (GPU)" }, { value: "webview", label: "WebView (default)" }]} className="selectClass" />
             <p className={descClass}>
               Rendering backend for server-side frame compositing
@@ -110,8 +109,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           <div>
             <label className={labelClass}>Codec Preference</label>
             <Select value={cfg.rdpCodecPreference} onChange={(v: string) => update({
-                  rdpCodecPreference: e.target
-                    .value as BackendConfig["rdpCodecPreference"],
+                  rdpCodecPreference: v as BackendConfig["rdpCodecPreference"],
                 })} options={[{ value: "auto", label: "Auto-negotiate" }, { value: "remotefx", label: "RemoteFX" }, { value: "gfx", label: "RDPGFX" }, { value: "h264", label: "H.264" }, { value: "bitmap", label: "Bitmap (legacy)" }]} className="selectClass" />
             <p className={descClass}>Preferred codec for RDP frame encoding</p>
           </div>
@@ -121,7 +119,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       {/* ─── Network ─────────────────────────────────────────── */}
       <div className="sor-settings-card">
         <h4 className="sor-section-heading">
-          <Network className="w-4 h-4 text-green-400" />
+          <Network className="w-4 h-4 text-success" />
           Network
         </h4>
 
@@ -150,7 +148,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       {/* ─── Storage ─────────────────────────────────────────── */}
       <div className="sor-settings-card">
         <h4 className="sor-section-heading">
-          <HardDrive className="w-4 h-4 text-amber-400" />
+          <HardDrive className="w-4 h-4 text-warning" />
           Storage
         </h4>
 
@@ -181,7 +179,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                   })
                 }
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  cfg.tempFileCleanupEnabled ? "bg-blue-600" : "bg-[var(--color-surfaceHover)]"
+                  cfg.tempFileCleanupEnabled ? "bg-primary" : "bg-[var(--color-surfaceHover)]"
                 }`}
               >
                 <span
@@ -210,7 +208,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       {/* ─── Security ────────────────────────────────────────── */}
       <div className="sor-settings-card">
         <h4 className="sor-section-heading">
-          <Shield className="w-4 h-4 text-red-400" />
+          <Shield className="w-4 h-4 text-error" />
           Security
         </h4>
 
@@ -218,8 +216,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           <div>
             <label className={labelClass}>Minimum TLS Version</label>
             <Select value={cfg.tlsMinVersion} onChange={(v: string) => update({
-                  tlsMinVersion: e.target
-                    .value as BackendConfig["tlsMinVersion"],
+                  tlsMinVersion: v as BackendConfig["tlsMinVersion"],
                 })} options={[{ value: "1.2", label: "TLS 1.2" }, { value: "1.3", label: "TLS 1.3" }]} className="selectClass" />
             <p className={descClass}>
               Minimum TLS version for all outgoing connections
@@ -229,8 +226,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           <div>
             <label className={labelClass}>Certificate Validation</label>
             <Select value={cfg.certValidationMode} onChange={(v: string) => update({
-                  certValidationMode: e.target
-                    .value as BackendConfig["certValidationMode"],
+                  certValidationMode: v as BackendConfig["certValidationMode"],
                 })} options={[{ value: "strict", label: "Strict (require valid CA chain)" }, { value: "tofu", label: "Trust on First Use" }, { value: "permissive", label: "Permissive (accept all)" }]} className="selectClass" />
             <p className={descClass}>
               How the backend validates remote server certificates
@@ -242,7 +238,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       {/* ─── Internal API Server ─────────────────────────────── */}
       <div className="sor-settings-card">
         <h4 className="sor-section-heading">
-          <Globe className="w-4 h-4 text-purple-400" />
+          <Globe className="w-4 h-4 text-accent" />
           Internal API Server
         </h4>
 
@@ -261,7 +257,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               update({ enableInternalApi: !cfg.enableInternalApi })
             }
             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              cfg.enableInternalApi ? "bg-blue-600" : "bg-[var(--color-surfaceHover)]"
+              cfg.enableInternalApi ? "bg-primary" : "bg-[var(--color-surfaceHover)]"
             }`}
           >
             <span

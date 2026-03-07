@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import React from "react";
 import { Calendar, Info } from "lucide-react";
 
@@ -7,7 +8,7 @@ const LastBackupInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="sor-section-card">
       <div className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-        <Info className="w-4 h-4 text-blue-400" />
+        <Info className="w-4 h-4 text-primary" />
         <span>
           Last backup:{" "}
           <span className="text-[var(--color-text)]">
@@ -17,7 +18,7 @@ const LastBackupInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
       {mgr.backup.differentialEnabled && mgr.backup.lastFullBackupTime && (
         <div className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)] mt-1">
-          <Calendar className="w-4 h-4 text-purple-400" />
+          <Calendar className="w-4 h-4 text-accent" />
           <span>
             Last full backup:{" "}
             <span className="text-[var(--color-text)]">

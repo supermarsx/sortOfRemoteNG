@@ -7,7 +7,7 @@ import { Checkbox, Select, Slider } from "../../../ui/forms";
 const TcpSocketDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Cable className="w-4 h-4 text-emerald-400" />
+      <Cable className="w-4 h-4 text-success" />
       TCP / Socket Defaults
     </h4>
     <p className="text-xs text-[var(--color-textMuted)]">

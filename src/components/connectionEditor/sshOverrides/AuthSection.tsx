@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import AuthMethodSelector from "./AuthMethodSelector";
 import OverrideToggle from "./OverrideToggle";
 import { Checkbox } from "../../ui/forms";

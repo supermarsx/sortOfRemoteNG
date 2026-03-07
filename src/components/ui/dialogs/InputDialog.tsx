@@ -75,7 +75,7 @@ export const InputDialog: React.FC<InputDialogProps> = ({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
-          className="w-full px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textSecondary)] focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          className="w-full px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textSecondary)] focus:outline-none focus:ring-2 focus:ring-primary text-sm"
         />
         <div className="flex justify-end space-x-3 mt-4">
           <button
@@ -87,7 +87,7 @@ export const InputDialog: React.FC<InputDialogProps> = ({
           <button
             onClick={() => canSubmit && onConfirm(value.trim())}
             disabled={!canSubmit}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-[var(--color-text)] rounded-md transition-colors text-sm"
+            className="px-4 py-2 bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-[var(--color-text)] rounded-md transition-colors text-sm"
           >
             {confirmText}
           </button>

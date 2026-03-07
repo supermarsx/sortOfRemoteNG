@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import React from "react";
 import { HardDrive } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
@@ -5,7 +6,7 @@ import { Checkbox, NumberInput } from "../../../ui/forms";
 const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <HardDrive className="w-4 h-4 text-purple-400" />
+      <HardDrive className="w-4 h-4 text-accent" />
       Differential Backups
     </h4>
 
@@ -23,7 +24,7 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
 
       {mgr.backup.differentialEnabled && (
-        <div className="space-y-2 pl-4 border-l-2 border-purple-500/30">
+        <div className="space-y-2 pl-4 border-l-2 border-accent/30">
           <label className="block text-sm text-[var(--color-textSecondary)]">
             Full backup every N backups
           </label>

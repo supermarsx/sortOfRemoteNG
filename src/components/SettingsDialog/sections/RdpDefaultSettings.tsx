@@ -1,7 +1,7 @@
 import React from "react";
 import SectionHeading from '../../ui/SectionHeading';
 import { MonitorDot } from "lucide-react";
-import selectClass from "./rdpDefaults/selectClass";
+import { selectClass, type RDPDefaultSettingsProps, type Rdp } from "./rdpDefaults/selectClass";
 import SessionManagement from "./rdpDefaults/SessionManagement";
 import SecurityDefaults from "./rdpDefaults/SecurityDefaults";
 import DisplayDefaults from "./rdpDefaults/DisplayDefaults";

@@ -190,7 +190,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                   }
                   className={`flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors ${
                     isActive
-                      ? "border-blue-500 bg-blue-500/10 text-blue-200"
+                      ? "border-primary bg-primary/10 text-primary"
                       : "border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
                   }`}
                   title={label}

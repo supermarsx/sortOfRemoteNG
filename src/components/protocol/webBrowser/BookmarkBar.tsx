@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import BarContextMenu from "./BarContextMenu";
 import BookmarkChip from "./BookmarkChip";
 import BookmarkContextMenu from "./BookmarkContextMenu";
@@ -20,7 +21,7 @@ const BookmarkBar: React.FC<SectionProps> = ({ mgr }) => {
     >
       <Star
         size={11}
-        className={`flex-shrink-0 ${mgr.isCurrentPageBookmarked ? "text-yellow-400" : "text-yellow-400/60"}`}
+        className={`flex-shrink-0 ${mgr.isCurrentPageBookmarked ? "text-warning" : "text-warning/60"}`}
         fill={mgr.isCurrentPageBookmarked ? "currentColor" : "none"}
       />
       {(mgr.connection?.httpBookmarks || []).map((bm, idx) =>

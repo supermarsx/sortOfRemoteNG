@@ -6,8 +6,8 @@ function EnableSyncToggle({ mgr }: { mgr: Mgr }) {
     <div className="sor-section-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-500/20 rounded-lg">
-            <Cloud className="w-5 h-5 text-blue-400" />
+          <div className="p-2 bg-primary/20 rounded-lg">
+            <Cloud className="w-5 h-5 text-primary" />
           </div>
           <div>
             <span className="text-[var(--color-text)] font-medium">

@@ -98,7 +98,7 @@ function SSHCommandHistoryPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30">
         <div className="flex items-center gap-2">
-          <History size={14} className="text-green-500" />
+          <History size={14} className="text-success" />
           <span className="text-sm font-medium text-[var(--color-text)]">
             {t("sshHistory.title", "Command History")}
           </span>
@@ -113,7 +113,7 @@ function SSHCommandHistoryPanel({
             onClick={() => setActiveTab("list")}
             className={`p-1 rounded transition-colors ${
               activeTab === "list"
-                ? "text-green-500 bg-green-500/10"
+                ? "text-success bg-success/10"
                 : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title={t("sshHistory.listView", "List view")}
@@ -124,7 +124,7 @@ function SSHCommandHistoryPanel({
             onClick={() => setActiveTab("stats")}
             className={`p-1 rounded transition-colors ${
               activeTab === "stats"
-                ? "text-green-500 bg-green-500/10"
+                ? "text-success bg-success/10"
                 : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title={t("sshHistory.statistics", "Statistics")}
@@ -136,7 +136,7 @@ function SSHCommandHistoryPanel({
               onClick={() => setActiveTab("settings")}
               className={`p-1 rounded transition-colors ${
                 activeTab === "settings"
-                  ? "text-green-500 bg-green-500/10"
+                  ? "text-success bg-success/10"
                   : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               }`}
               title={t("sshHistory.settings", "Settings")}
@@ -174,7 +174,7 @@ function SSHCommandHistoryPanel({
           {/* Clear */}
           <button
             onClick={() => mgr.clearHistory(true)}
-            className="p-1 rounded text-[var(--color-textSecondary)] hover:text-red-500 transition-colors"
+            className="p-1 rounded text-[var(--color-textSecondary)] hover:text-error transition-colors"
             title={t(
               "sshHistory.clearHistory",
               "Clear history (keep starred)",
@@ -195,7 +195,7 @@ function SSHCommandHistoryPanel({
 
       {/* Import result notification */}
       {importResult && (
-        <div className="px-3 py-1.5 text-xs bg-green-500/10 text-green-600 dark:text-green-400 border-b border-green-500/20">
+        <div className="px-3 py-1.5 text-xs bg-success/10 text-success dark:text-success border-b border-success/20">
           {importResult}
         </div>
       )}
@@ -235,7 +235,7 @@ function SSHCommandHistoryPanel({
             </label>
             <button
               onClick={handleExport}
-              className="text-xs px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+              className="text-xs px-3 py-1 bg-success hover:bg-success/90 text-white rounded transition-colors"
             >
               {t("sshHistory.downloadExport", "Download")}
             </button>
@@ -437,7 +437,7 @@ function SSHCommandHistoryPanel({
           <div className="pt-3 border-t border-[var(--color-border)]">
             <button
               onClick={() => mgr.clearHistory(false)}
-              className="text-xs px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+              className="text-xs px-3 py-1.5 bg-error hover:bg-error/90 text-white rounded transition-colors"
             >
               {t("sshHistory.deleteAll", "Delete All History")}
             </button>

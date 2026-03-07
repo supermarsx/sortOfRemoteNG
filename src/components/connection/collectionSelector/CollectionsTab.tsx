@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import { PasswordInput, Textarea} from '../../ui/forms';
 import { Database, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload } from "lucide-react";
 import { Checkbox } from "../../ui/forms";
@@ -13,7 +14,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
-              <p className="text-red-300 text-sm">{mgr.error}</p>
+              <p className="text-error text-sm">{mgr.error}</p>
             </div>
           )}
           <div className="space-y-4">
@@ -55,7 +56,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               <Checkbox checked={mgr.newCollection.isEncrypted} onChange={(v: boolean) => mgr.setNewCollection({
                     ...mgr.newCollection,
                     isEncrypted: v,
-                  })} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+                  })} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
                 Encrypt this collection
               </span>
@@ -125,7 +126,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
-              <p className="text-red-300 text-sm">{mgr.error}</p>
+              <p className="text-error text-sm">{mgr.error}</p>
             </div>
           )}
           <div className="space-y-4">
@@ -186,7 +187,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
-              <p className="text-red-300 text-sm">{mgr.error}</p>
+              <p className="text-error text-sm">{mgr.error}</p>
             </div>
           )}
           <div className="space-y-4">
@@ -205,7 +206,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               </div>
             )}
             <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.includePasswords} onChange={(v: boolean) => mgr.setIncludePasswords(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+              <Checkbox checked={mgr.includePasswords} onChange={(v: boolean) => mgr.setIncludePasswords(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
                 Include passwords
               </span>
@@ -252,7 +253,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
-              <p className="text-red-300 text-sm">{mgr.error}</p>
+              <p className="text-error text-sm">{mgr.error}</p>
             </div>
           )}
           <div className="space-y-4">
@@ -294,7 +295,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               />
             </div>
             <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.encryptImport} onChange={(v: boolean) => mgr.setEncryptImport(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+              <Checkbox checked={mgr.encryptImport} onChange={(v: boolean) => mgr.setEncryptImport(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
                 Encrypt imported collection
               </span>
@@ -361,7 +362,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           </h3>
           {mgr.error && (
             <div className="sor-alert-error">
-              <p className="text-red-300 text-sm">{mgr.error}</p>
+              <p className="text-error text-sm">{mgr.error}</p>
             </div>
           )}
           <div className="space-y-4">
@@ -401,7 +402,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               <Checkbox checked={mgr.editPassword.enableEncryption} onChange={(v: boolean) => mgr.setEditPassword((prev) => ({
                     ...prev,
                     enableEncryption: v,
-                  }))} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+                  }))} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
               <span className="text-[var(--color-textSecondary)]">
                 Encrypt this collection
               </span>
@@ -513,7 +514,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
           mgr.collections.map((collection) => (
             <div
               key={collection.id}
-              className="bg-[var(--color-border)]/60 rounded-lg p-4 hover:bg-[var(--color-border)]/80 hover:shadow-lg hover:shadow-blue-500/5 border border-transparent hover:border-[var(--color-border)] transition-all duration-200 cursor-pointer group"
+              className="bg-[var(--color-border)]/60 rounded-lg p-4 hover:bg-[var(--color-border)]/80 hover:shadow-lg hover:shadow-primary/30 border border-transparent hover:border-[var(--color-border)] transition-all duration-200 cursor-pointer group"
               onClick={() => mgr.handleSelectCollection(collection)}
             >
               <div className="flex items-center justify-between">
@@ -521,14 +522,14 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                   <div className="flex items-center space-x-2">
                     <Database
                       size={20}
-                      className="text-blue-400 group-hover:text-blue-300 transition-colors"
+                      className="text-primary group-hover:text-primary transition-colors"
                     />
                     {collection.isEncrypted && (
-                      <Lock size={16} className="text-yellow-400" />
+                      <Lock size={16} className="text-warning" />
                     )}
                   </div>
                   <div>
-                    <h4 className="text-[var(--color-text)] font-medium group-hover:text-blue-100 transition-colors">
+                    <h4 className="text-[var(--color-text)] font-medium group-hover:text-primary transition-colors">
                       {collection.name}
                     </h4>
                     {collection.description && (

@@ -31,7 +31,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
       {/* Data Management */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <Database className="w-4 h-4 text-blue-400" />
+          <Database className="w-4 h-4 text-primary" />
           Data Management
         </h4>
 
@@ -39,7 +39,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
-                <FolderX className="w-4 h-4 text-orange-400" />
+                <FolderX className="w-4 h-4 text-warning" />
                 Delete App Data
               </div>
               <p className="text-xs text-[var(--color-textMuted)] mt-1">
@@ -49,7 +49,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             </div>
             <button
               onClick={() => mgr.setConfirmAction("deleteData")}
-              className="px-4 py-2 text-sm rounded-lg bg-orange-600/20 text-orange-400 hover:bg-orange-600/30 border border-orange-600/30 transition-colors flex items-center gap-2"
+              className="px-4 py-2 text-sm rounded-lg bg-warning/20 text-warning hover:bg-warning/30 border border-warning/30 transition-colors flex items-center gap-2"
             >
               <Trash2 className="w-4 h-4" />
               Delete
@@ -60,7 +60,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
-                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <Trash2 className="w-4 h-4 text-error" />
                   Delete All Data & Collections
                 </div>
                 <p className="text-xs text-[var(--color-textMuted)] mt-1">
@@ -70,7 +70,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
               </div>
               <button
                 onClick={() => mgr.setConfirmAction("deleteAll")}
-                className="px-4 py-2 text-sm rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-600/30 transition-colors flex items-center gap-2"
+                className="px-4 py-2 text-sm rounded-lg bg-error/20 text-error hover:bg-error/30 border border-error/30 transition-colors flex items-center gap-2"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete All
@@ -83,7 +83,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
       {/* Reset Settings */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <RotateCcw className="w-4 h-4 text-yellow-400" />
+          <RotateCcw className="w-4 h-4 text-warning" />
           Reset Options
         </h4>
 
@@ -91,7 +91,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
-                <RotateCcw className="w-4 h-4 text-yellow-400" />
+                <RotateCcw className="w-4 h-4 text-warning" />
                 Reset All Settings
               </div>
               <p className="text-xs text-[var(--color-textMuted)] mt-1">
@@ -101,7 +101,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             </div>
             <button
               onClick={() => mgr.setConfirmAction("resetSettings")}
-              className="px-4 py-2 text-sm rounded-lg bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 border border-yellow-600/30 transition-colors flex items-center gap-2"
+              className="px-4 py-2 text-sm rounded-lg bg-warning/20 text-warning hover:bg-warning/30 border border-warning/30 transition-colors flex items-center gap-2"
             >
               <RotateCcw className="w-4 h-4" />
               Reset
@@ -113,7 +113,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
       {/* Restart Options */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <RefreshCw className="w-4 h-4 text-green-400" />
+          <RefreshCw className="w-4 h-4 text-success" />
           Restart Options
         </h4>
 
@@ -121,7 +121,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
-                <RefreshCw className="w-4 h-4 text-blue-400" />
+                <RefreshCw className="w-4 h-4 text-primary" />
                 Soft Restart
               </div>
               <p className="text-xs text-[var(--color-textMuted)] mt-1">
@@ -131,7 +131,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             </div>
             <button
               onClick={mgr.handleSoftRestart}
-              className="px-4 py-2 text-sm rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 border border-blue-600/30 transition-colors flex items-center gap-2"
+              className="px-4 py-2 text-sm rounded-lg bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30 transition-colors flex items-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />
               Reload
@@ -142,7 +142,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
-                  <Power className="w-4 h-4 text-green-400" />
+                  <Power className="w-4 h-4 text-success" />
                   Hard Restart
                 </div>
                 <p className="text-xs text-[var(--color-textMuted)] mt-1">
@@ -152,7 +152,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
               <button
                 onClick={mgr.handleHardRestart}
                 disabled={mgr.isLoading}
-                className="px-4 py-2 text-sm rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/30 transition-colors flex items-center gap-2 disabled:opacity-50"
+                className="px-4 py-2 text-sm rounded-lg bg-success/20 text-success hover:bg-success/30 border border-success/30 transition-colors flex items-center gap-2 disabled:opacity-50"
               >
                 {mgr.isLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -187,10 +187,10 @@ function renderConfirmDialog(mgr: Mgr) {
       <div className="bg-[var(--color-surface)] rounded-xl p-6 max-w-md w-full border border-[var(--color-border)] shadow-2xl">
         <div className="flex items-start gap-4">
           <div
-            className={`p-3 rounded-full ${action.danger ? "bg-red-500/20" : "bg-yellow-500/20"}`}
+            className={`p-3 rounded-full ${action.danger ? "bg-error/20" : "bg-warning/20"}`}
           >
             <AlertTriangle
-              className={`w-6 h-6 ${action.danger ? "text-red-400" : "text-yellow-400"}`}
+              className={`w-6 h-6 ${action.danger ? "text-error" : "text-warning"}`}
             />
           </div>
           <div className="flex-1">
@@ -213,8 +213,8 @@ function renderConfirmDialog(mgr: Mgr) {
                 disabled={mgr.isLoading}
                 className={`px-4 py-2 text-sm rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 ${
                   action.danger
-                    ? "bg-red-600 text-[var(--color-text)] hover:bg-red-700"
-                    : "bg-yellow-600 text-[var(--color-text)] hover:bg-yellow-700"
+                    ? "bg-error text-[var(--color-text)] hover:bg-error/90"
+                    : "bg-warning text-[var(--color-text)] hover:bg-warning/90"
                 }`}
               >
                 {mgr.isLoading && <Loader2 className="w-4 h-4 animate-spin" />}

@@ -1,10 +1,11 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { Clock, Wifi, Timer, Eye } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const IdleTimeout: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Timer className="w-4 h-4 text-orange-400" />}
+      icon={<Timer className="w-4 h-4 text-warning" />}
       title="Idle & Timeout"
     />
     <Card>

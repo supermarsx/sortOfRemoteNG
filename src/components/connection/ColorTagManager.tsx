@@ -45,7 +45,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
           className="p-6 border-b border-[var(--color-border)]"
           title={
             <h2 className="text-xl font-semibold text-[var(--color-text)] flex items-center space-x-2">
-              <Palette size={20} className="text-blue-400" />
+              <Palette size={20} className="text-primary" />
               <span>Color Tag Manager</span>
             </h2>
           }
@@ -240,7 +240,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                         {tag.name}
                       </span>
                       {tag.global && (
-                        <span className="ml-2 text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded">
+                        <span className="ml-2 text-xs text-primary bg-primary/30 px-2 py-1 rounded">
                           Global
                         </span>
                       )}

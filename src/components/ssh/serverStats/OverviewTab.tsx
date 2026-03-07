@@ -16,7 +16,7 @@ function formatBytes(bytes: number): string {
 
 function ProgressBar({ value, color }: { value: number; color: string }) {
   return (
-    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+    <div className="w-full h-2 bg-background dark:bg-surface rounded-full overflow-hidden">
       <div
         className={`h-full rounded-full transition-all duration-500 ${color}`}
         style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
@@ -26,9 +26,9 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
 }
 
 function usageColor(pct: number): string {
-  if (pct >= 90) return "bg-red-500";
-  if (pct >= 70) return "bg-amber-500";
-  return "bg-cyan-500";
+  if (pct >= 90) return "bg-error";
+  if (pct >= 70) return "bg-warning";
+  return "bg-info";
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({ snapshot }) => {
@@ -40,7 +40,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ snapshot }) => {
       {/* CPU Card */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Cpu size={16} className="text-cyan-500" />
+          <Cpu size={16} className="text-info" />
           <span className="text-sm font-semibold text-[var(--color-text)]">
             {t("serverStats.cpuUsage", "CPU Usage")}
           </span>
@@ -60,7 +60,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ snapshot }) => {
       {/* Memory Card */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <MemoryStick size={16} className="text-purple-500" />
+          <MemoryStick size={16} className="text-accent" />
           <span className="text-sm font-semibold text-[var(--color-text)]">
             {t("serverStats.memoryUsage", "Memory Usage")}
           </span>
@@ -82,7 +82,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ snapshot }) => {
       {/* Disk Card */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <HardDrive size={16} className="text-amber-500" />
+          <HardDrive size={16} className="text-warning" />
           <span className="text-sm font-semibold text-[var(--color-text)]">
             {t("serverStats.diskUsage", "Disk Usage")}
           </span>
@@ -117,7 +117,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ snapshot }) => {
       {/* Uptime Card */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Clock size={16} className="text-green-500" />
+          <Clock size={16} className="text-success" />
           <span className="text-sm font-semibold text-[var(--color-text)]">
             {t("serverStats.uptime", "Uptime")}
           </span>
@@ -130,7 +130,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ snapshot }) => {
       {/* System Card */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Server size={16} className="text-blue-500" />
+          <Server size={16} className="text-primary" />
           <span className="text-sm font-semibold text-[var(--color-text)]">
             {t("serverStats.systemInfo", "System")}
           </span>
@@ -145,7 +145,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ snapshot }) => {
       {/* Network Card */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Users size={16} className="text-indigo-500" />
+          <Users size={16} className="text-accent" />
           <span className="text-sm font-semibold text-[var(--color-text)]">
             {t("serverStats.networkOverview", "Network")}
           </span>

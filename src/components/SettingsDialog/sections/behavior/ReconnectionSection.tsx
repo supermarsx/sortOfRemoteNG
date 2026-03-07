@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { RefreshCw, Wifi, Bell } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";

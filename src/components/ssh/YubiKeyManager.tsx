@@ -75,8 +75,8 @@ const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
   <span
     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
       ok
-        ? "bg-green-500/10 text-green-400"
-        : "bg-red-500/10 text-red-400"
+        ? "bg-success/10 text-success"
+        : "bg-error/10 text-error"
     }`}
   >
     {ok ? (
@@ -108,7 +108,7 @@ const DangerConfirm: React.FC<{
   if (confirming) {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-xs text-red-400">
+        <span className="text-xs text-error">
           {t("yubikey.confirmPrompt", "Are you sure?")}
         </span>
         <button
@@ -116,7 +116,7 @@ const DangerConfirm: React.FC<{
             onConfirm();
             setConfirming(false);
           }}
-          className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-500"
+          className="px-2 py-1 text-xs bg-error text-white rounded hover:bg-error/90"
         >
           {t("yubikey.confirmYes", "Yes, proceed")}
         </button>
@@ -133,7 +133,7 @@ const DangerConfirm: React.FC<{
     <button
       onClick={() => setConfirming(true)}
       disabled={disabled}
-      className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-600/10 text-red-500 rounded hover:bg-red-600/20 disabled:opacity-50"
+      className="flex items-center gap-1 px-3 py-1.5 text-xs bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
     >
       <AlertTriangle className="w-3 h-3" />
       {label}
@@ -316,7 +316,7 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   <StatusBadge ok label={t("yubikey.devices.fips", "FIPS")} />
                 )}
                 {dev.config_locked && (
-                  <span className="flex items-center gap-1 text-amber-400">
+                  <span className="flex items-center gap-1 text-warning">
                     <Lock className="w-3 h-3" />
                     {t("yubikey.devices.configLocked", "Config Locked")}
                   </span>
@@ -490,14 +490,14 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   <button
                     onClick={() => mgr.pivDeleteCert(serial, slot as never)}
                     disabled={mgr.loading || !info?.has_cert}
-                    className="px-2 py-0.5 text-[10px] bg-red-600/10 text-red-500 rounded hover:bg-red-600/20 disabled:opacity-50"
+                    className="px-2 py-0.5 text-[10px] bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
                   >
                     {t("yubikey.piv.delCert", "Del Cert")}
                   </button>
                   <button
                     onClick={() => mgr.pivDeleteKey(serial, slot as never)}
                     disabled={mgr.loading || !info?.has_key}
-                    className="px-2 py-0.5 text-[10px] bg-red-600/10 text-red-500 rounded hover:bg-red-600/20 disabled:opacity-50"
+                    className="px-2 py-0.5 text-[10px] bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
                   >
                     {t("yubikey.piv.delKey", "Del Key")}
                   </button>
@@ -523,10 +523,10 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <span
                 className={
                   (mgr.pivPinStatus.pin_retries ?? 0) <= 1
-                    ? "text-red-400 font-bold"
+                    ? "text-error font-bold"
                     : (mgr.pivPinStatus.pin_retries ?? 0) <= 3
-                      ? "text-amber-400"
-                      : "text-green-400"
+                      ? "text-warning"
+                      : "text-success"
                 }
               >
                 {mgr.pivPinStatus.pin_retries}
@@ -538,23 +538,23 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <span
                 className={
                   (mgr.pivPinStatus.puk_retries ?? 0) <= 1
-                    ? "text-red-400 font-bold"
+                    ? "text-error font-bold"
                     : (mgr.pivPinStatus.puk_retries ?? 0) <= 3
-                      ? "text-amber-400"
-                      : "text-green-400"
+                      ? "text-warning"
+                      : "text-success"
                 }
               >
                 {mgr.pivPinStatus.puk_retries}
               </span>
             </div>
             {mgr.pivPinStatus.default_pin && (
-              <span className="flex items-center gap-1 text-amber-400">
+              <span className="flex items-center gap-1 text-warning">
                 <AlertTriangle className="w-3 h-3" />
                 {t("yubikey.piv.defaultPin", "Default PIN in use!")}
               </span>
             )}
             {mgr.pivPinStatus.default_puk && (
-              <span className="flex items-center gap-1 text-amber-400">
+              <span className="flex items-center gap-1 text-warning">
                 <AlertTriangle className="w-3 h-3" />
                 {t("yubikey.piv.defaultPuk", "Default PUK in use!")}
               </span>
@@ -665,7 +665,7 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 setUnblockForm({ puk: "", newPin: "" });
               }}
               disabled={!unblockForm.puk || !unblockForm.newPin || mgr.loading}
-              className="px-3 py-1.5 text-xs bg-amber-600 text-white rounded hover:bg-amber-500 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs bg-warning text-white rounded hover:bg-warning/90 disabled:opacity-50"
             >
               {t("yubikey.piv.unblockPin", "Unblock PIN")}
             </button>
@@ -683,8 +683,8 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
 
       {/* Danger Zone */}
-      <div className="border border-red-500/20 rounded-lg p-3">
-        <h4 className="text-xs text-red-400 font-medium mb-2">
+      <div className="border border-error/20 rounded-lg p-3">
+        <h4 className="text-xs text-error font-medium mb-2">
           {t("yubikey.dangerZone", "Danger Zone")}
         </h4>
         <DangerConfirm
@@ -786,7 +786,7 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               </span>
             )}
             {mgr.fido2PinStatus.force_change && (
-              <span className="text-amber-400 flex items-center gap-1">
+              <span className="text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 {t("yubikey.fido2.forceChange", "PIN change required")}
               </span>
@@ -898,7 +898,7 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     <Globe className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                     <span className="font-medium truncate">{cred.rp_id}</span>
                     {cred.discoverable && (
-                      <span className="px-1 py-0.5 bg-green-500/10 text-green-400 rounded text-[10px]">
+                      <span className="px-1 py-0.5 bg-success/10 text-success rounded text-[10px]">
                         {t("yubikey.fido2.discoverable", "Discoverable")}
                       </span>
                     )}
@@ -915,7 +915,7 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 <button
                   onClick={() => mgr.fido2DeleteCredential(serial, cred.credential_id, pinInput)}
                   disabled={!pinInput || mgr.loading}
-                  className="flex-shrink-0 p-1 text-red-500 hover:bg-red-500/10 rounded disabled:opacity-50"
+                  className="flex-shrink-0 p-1 text-error hover:bg-error/10 rounded disabled:opacity-50"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -946,8 +946,8 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
 
       {/* Danger Zone */}
-      <div className="border border-red-500/20 rounded-lg p-3">
-        <h4 className="text-xs text-red-400 font-medium mb-2">
+      <div className="border border-error/20 rounded-lg p-3">
+        <h4 className="text-xs text-error font-medium mb-2">
           {t("yubikey.dangerZone", "Danger Zone")}
         </h4>
         <DangerConfirm
@@ -1035,9 +1035,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     <div className="flex flex-wrap gap-1 mt-1">
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          acct.oath_type === "TOTP"
-                            ? "bg-blue-500/10 text-blue-400"
-                            : "bg-purple-500/10 text-purple-400"
+                          acct.oath_type === "Totp"
+                            ? "bg-primary/10 text-primary"
+                            : "bg-accent/10 text-accent"
                         }`}
                       >
                         {acct.oath_type}
@@ -1048,13 +1048,13 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground">
                         {acct.digits}d
                       </span>
-                      {acct.oath_type === "TOTP" && (
+                      {acct.oath_type === "Totp" && (
                         <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground">
                           {acct.period}s
                         </span>
                       )}
                       {acct.touch_required && (
-                        <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px]">
+                        <span className="px-1.5 py-0.5 bg-warning/10 text-warning rounded text-[10px]">
                           <Fingerprint className="w-3 h-3 inline" /> Touch
                         </span>
                       )}
@@ -1071,7 +1071,7 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     <button
                       onClick={() => mgr.oathDeleteAccount(serial, acct.credential_id)}
                       disabled={mgr.loading}
-                      className="p-1 text-red-500 hover:bg-red-500/10 rounded disabled:opacity-50"
+                      className="p-1 text-error hover:bg-error/10 rounded disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -1228,8 +1228,8 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
 
       {/* Danger Zone */}
-      <div className="border border-red-500/20 rounded-lg p-3">
-        <h4 className="text-xs text-red-400 font-medium mb-2">
+      <div className="border border-error/20 rounded-lg p-3">
+        <h4 className="text-xs text-error font-medium mb-2">
           {t("yubikey.dangerZone", "Danger Zone")}
         </h4>
         <DangerConfirm
@@ -1292,7 +1292,7 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <div className="text-xs text-muted-foreground space-y-0.5">
                 {slotCfg.slot_type && <div>{t("yubikey.otp.type", "Type")}: {slotCfg.slot_type}</div>}
                 {slotCfg.touch_required && (
-                  <span className="flex items-center gap-1 text-amber-400">
+                  <span className="flex items-center gap-1 text-warning">
                     <Fingerprint className="w-3 h-3" /> {t("yubikey.otp.touchRequired", "Touch Required")}
                   </span>
                 )}
@@ -1326,7 +1326,7 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <button
                 onClick={() => mgr.otpDeleteSlot(serial, slotId(idx))}
                 disabled={!slotCfg || mgr.loading}
-                className="px-2 py-0.5 text-[10px] bg-red-600/10 text-red-500 rounded hover:bg-red-600/20 disabled:opacity-50"
+                className="px-2 py-0.5 text-[10px] bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
               >
                 <Trash2 className="w-3 h-3 inline" />
               </button>
@@ -1578,7 +1578,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => { mgr.lockConfig(serial, lockCode); setLockCode(""); }}
             disabled={!lockCode || mgr.loading}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-amber-600 text-white rounded hover:bg-amber-500 disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-warning text-white rounded hover:bg-warning/90 disabled:opacity-50"
           >
             <Lock className="w-3 h-3" />
             {t("yubikey.config.lock", "Lock")}
@@ -1586,7 +1586,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => { mgr.unlockConfig(serial, lockCode); setLockCode(""); }}
             disabled={!lockCode || mgr.loading}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-success text-white rounded hover:bg-success/90 disabled:opacity-50"
           >
             <Unlock className="w-3 h-3" />
             {t("yubikey.config.unlock", "Unlock")}
@@ -1631,7 +1631,7 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.clearAudit()}
             disabled={mgr.loading}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-red-600/10 text-red-500 rounded hover:bg-red-600/20 disabled:opacity-50"
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50"
           >
             <Trash2 className="w-3 h-3" />
             {t("yubikey.audit.clear", "Clear")}
@@ -1654,7 +1654,7 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             >
               <span
                 className={`w-2 h-2 mt-1 rounded-full flex-shrink-0 ${
-                  entry.success ? "bg-green-500" : "bg-red-500"
+                  entry.success ? "bg-success" : "bg-error"
                 }`}
               />
               <div className="flex-1 min-w-0">
@@ -1694,7 +1694,7 @@ const YubiKeyManager: React.FC<YubiKeyManagerProps> = ({ isOpen, onClose }) => {
   const mgr = useYubiKey();
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="xl">
+    <Modal isOpen={isOpen} onClose={onClose} panelClassName="max-w-4xl">
       <ModalHeader
         onClose={onClose}
         title={

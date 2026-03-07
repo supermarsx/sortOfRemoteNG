@@ -36,15 +36,15 @@ const SessionManagerHeader: React.FC<{
 }> = ({ mgr, sessionCount, onClose }) => (
   <DialogHeader
     icon={Monitor}
-    iconColor="text-indigo-400"
-    iconBg="bg-indigo-600/20"
+    iconColor="text-accent"
+    iconBg="bg-accent/20"
     title="RDP Sessions"
     subtitle={`${sessionCount} active session${sessionCount !== 1 ? 's' : ''}`}
     onClose={onClose}
     actions={
       <>
         <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
-          <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-indigo-600 w-3.5 h-3.5" />
+          <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-accent w-3.5 h-3.5" />
           <span>Auto-refresh</span>
         </label>
         <button
@@ -120,7 +120,7 @@ const SessionInfoGrid: React.FC<{
         <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
           <span className="text-[var(--color-textMuted)] block">Phase</span>
           <span
-            className={`font-mono ${stats.phase === "active" ? "text-green-400" : "text-yellow-400"}`}
+            className={`font-mono ${stats.phase === "active" ? "text-success" : "text-warning"}`}
           >
             {stats.phase}
           </span>
@@ -151,7 +151,7 @@ const SessionRow: React.FC<{
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center space-x-2">
         <div
-          className={`w-2 h-2 rounded-full ${session.connected ? "bg-green-400" : "bg-red-400"}`}
+          className={`w-2 h-2 rounded-full ${session.connected ? "bg-success" : "bg-error"}`}
         />
         <span className="text-sm font-medium text-[var(--color-text)]">
           {session.host}:{session.port}
@@ -163,14 +163,14 @@ const SessionRow: React.FC<{
       <div className="flex items-center space-x-1">
         <button
           onClick={() => onDetach(session.id)}
-          className="sor-icon-btn-sm hover:text-yellow-400"
+          className="sor-icon-btn-sm hover:text-warning"
           title="Detach viewer (keep session running)"
         >
           <Unplug size={14} />
         </button>
         <button
           onClick={() => onDisconnect(session.id)}
-          className="sor-icon-btn-sm hover:text-red-400"
+          className="sor-icon-btn-sm hover:text-error"
           title="Disconnect session"
         >
           <PowerOff size={14} />
@@ -179,7 +179,7 @@ const SessionRow: React.FC<{
     </div>
     <SessionInfoGrid session={session} stats={stats} />
     {stats?.last_error && (
-      <div className="mt-2 px-2.5 py-1.5 bg-red-900/20 border border-red-800/50 rounded text-xs text-red-400 flex items-center gap-1.5">
+      <div className="mt-2 px-2.5 py-1.5 bg-error/20 border border-error/50 rounded text-xs text-error flex items-center gap-1.5">
         <AlertCircle size={12} />
         <span className="truncate">{stats.last_error}</span>
       </div>
@@ -222,7 +222,7 @@ const SessionFooter: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
       </div>
       <button
         onClick={mgr.handleDisconnectAll}
-        className="sor-option-chip text-xs bg-red-900/30 hover:bg-red-900/50 border-red-800/50 text-red-400"
+        className="sor-option-chip text-xs bg-error/20 hover:bg-error/30 border-error/50 text-error"
       >
         <Power size={12} />
         Disconnect All

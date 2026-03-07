@@ -1,5 +1,5 @@
 import { WebTerminalMgr } from "./types";
-import CertificateInfoPopup from "../../security/CertificateInfoPopup";
+import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
 import { Fingerprint } from "lucide-react";
 import { getStoredIdentity } from "../../../utils/auth/trustStore";
 

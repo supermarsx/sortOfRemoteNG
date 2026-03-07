@@ -21,7 +21,7 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
   render() {
     if (this.state.hasError) {
       return (
-        <div role="alert" className="p-4 text-red-500">
+        <div role="alert" className="p-4 text-error">
           Something went wrong.
         </div>
       );

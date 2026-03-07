@@ -48,24 +48,24 @@ type Mgr = ReturnType<typeof useCloudSyncStatus>;
 /* ── Helper icons ────────────────────────────────────────────────── */
 
 const OverallStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  if (mgr.isSyncing) return <Loader2 className="w-4 h-4 animate-spin text-blue-400" />;
+  if (mgr.isSyncing) return <Loader2 className="w-4 h-4 animate-spin text-primary" />;
   if (!mgr.hasSync) return <CloudOff className="w-4 h-4 text-[var(--color-textMuted)]" />;
   const statuses = mgr.enabledProviders.map((p) => mgr.config.providerStatus[p]?.lastSyncStatus);
-  if (statuses.some((s) => s === "failed")) return <AlertCircle className="w-4 h-4 text-red-400" />;
-  if (statuses.some((s) => s === "conflict")) return <AlertTriangle className="w-4 h-4 text-yellow-400" />;
-  if (statuses.every((s) => s === "success")) return <CheckCircle className="w-4 h-4 text-green-400" />;
+  if (statuses.some((s) => s === "failed")) return <AlertCircle className="w-4 h-4 text-error" />;
+  if (statuses.some((s) => s === "conflict")) return <AlertTriangle className="w-4 h-4 text-warning" />;
+  if (statuses.every((s) => s === "success")) return <CheckCircle className="w-4 h-4 text-success" />;
   return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
 };
 
 const ProviderStatusIcon: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({ mgr, provider }) => {
   const status = mgr.config.providerStatus[provider];
-  if (mgr.syncingProvider === provider) return <Loader2 className="w-3 h-3 animate-spin text-blue-400" />;
+  if (mgr.syncingProvider === provider) return <Loader2 className="w-3 h-3 animate-spin text-primary" />;
   if (!status?.lastSyncStatus) return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
   switch (status.lastSyncStatus) {
-    case "success": return <CheckCircle className="w-3 h-3 text-green-400" />;
-    case "failed": return <AlertCircle className="w-3 h-3 text-red-400" />;
-    case "conflict": return <AlertTriangle className="w-3 h-3 text-yellow-400" />;
-    case "partial": return <AlertTriangle className="w-3 h-3 text-orange-400" />;
+    case "success": return <CheckCircle className="w-3 h-3 text-success" />;
+    case "failed": return <AlertCircle className="w-3 h-3 text-error" />;
+    case "conflict": return <AlertTriangle className="w-3 h-3 text-warning" />;
+    case "partial": return <AlertTriangle className="w-3 h-3 text-warning" />;
     default: return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
   }
 };
@@ -78,7 +78,7 @@ const EmptyState: React.FC<{ mgr: Mgr; onOpenSettings?: () => void }> = ({ mgr, 
     <p className="text-sm text-[var(--color-textSecondary)] mb-4">
       {mgr.t("sync.noProviders", "No sync providers configured")}
     </p>
-    <button onClick={onOpenSettings} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+    <button onClick={onOpenSettings} className="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-medium transition-colors">
       {mgr.t("sync.configure", "Configure Sync")}
     </button>
   </div>
@@ -92,11 +92,11 @@ const OverallStatusBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <span className="text-[var(--color-textSecondary)]">{formatRelativeTime(mgr.getLastSyncTime())}</span>
     </div>
     <div className="flex gap-2">
-      <button onClick={mgr.handleTestAll} disabled={mgr.isTesting} className="flex items-center gap-1.5 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded transition-colors" title={mgr.t("sync.testAll", "Test All Connections")}>
+      <button onClick={mgr.handleTestAll} disabled={mgr.isTesting} className="flex items-center gap-1.5 px-2 py-1 text-xs bg-primary hover:bg-primary/90 disabled:opacity-50 rounded transition-colors" title={mgr.t("sync.testAll", "Test All Connections")}>
         {mgr.isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <TestTube className="w-3 h-3" />}
         {mgr.t("sync.test", "Test")}
       </button>
-      <button onClick={mgr.handleSyncAll} disabled={mgr.isSyncing} className="flex items-center gap-1.5 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded transition-colors">
+      <button onClick={mgr.handleSyncAll} disabled={mgr.isSyncing} className="flex items-center gap-1.5 px-2 py-1 text-xs bg-success hover:bg-success/90 disabled:opacity-50 rounded transition-colors">
         {mgr.isSyncing && !mgr.syncingProvider ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
         {mgr.t("sync.syncAll", "Sync All")}
       </button>
@@ -105,9 +105,9 @@ const OverallStatusBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 );
 
 const TestResultBadge: React.FC<{ result: SyncTestResult }> = ({ result }) => (
-  <div className={`mt-2 p-2 rounded text-xs ${result.success ? "bg-green-900/20 border border-green-800 text-green-300" : "bg-red-900/20 border border-red-800 text-red-300"}`}>
+  <div className={`mt-2 p-2 rounded text-xs ${result.success ? "bg-success/20 border border-success text-success" : "bg-error/20 border border-error text-error"}`}>
     <div className="flex items-center gap-2">
-      {result.success ? <FileCheck className="w-3.5 h-3.5 text-green-400" /> : <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
+      {result.success ? <FileCheck className="w-3.5 h-3.5 text-success" /> : <AlertCircle className="w-3.5 h-3.5 text-error" />}
       <span>{result.message}</span>
     </div>
     {result.latencyMs && (
@@ -132,10 +132,10 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({ mgr
           <ProviderStatusIcon mgr={mgr} provider={provider} />
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => mgr.handleTestProvider(provider)} disabled={mgr.testingProvider === provider} className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-blue-400 disabled:opacity-50" title={mgr.t("sync.testProvider", "Test Connection")}>
+          <button onClick={() => mgr.handleTestProvider(provider)} disabled={mgr.testingProvider === provider} className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-primary disabled:opacity-50" title={mgr.t("sync.testProvider", "Test Connection")}>
             {mgr.testingProvider === provider ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TestTube className="w-3.5 h-3.5" />}
           </button>
-          <button onClick={() => mgr.handleSyncProvider(provider)} disabled={mgr.syncingProvider === provider} className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-green-400 disabled:opacity-50" title={mgr.t("sync.syncProvider", "Sync Now")}>
+          <button onClick={() => mgr.handleSyncProvider(provider)} disabled={mgr.syncingProvider === provider} className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success disabled:opacity-50" title={mgr.t("sync.syncProvider", "Sync Now")}>
             {mgr.syncingProvider === provider ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           </button>
         </div>
@@ -145,7 +145,7 @@ const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({ mgr
         <span className="text-[var(--color-textSecondary)]">{formatRelativeTime(status?.lastSyncTime)}</span>
       </div>
       {status?.lastSyncError && (
-        <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">{status.lastSyncError}</div>
+        <div className="mt-2 p-2 bg-error/20 border border-error rounded text-xs text-error">{status.lastSyncError}</div>
       )}
       {testResult && <TestResultBadge result={testResult} />}
     </div>
@@ -171,7 +171,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
         <div>
           <ToolbarPopoverHeader
             title={mgr.t("sync.title", "Cloud Sync")}
-            icon={<Cloud className="w-5 h-5 text-blue-400" />}
+            icon={<Cloud className="w-5 h-5 text-primary" />}
             onClose={() => mgr.setIsOpen(false)}
             actions={
               <button onClick={onOpenSettings} className="sor-toolbar-popover-action-btn" title={mgr.t("sync.settings", "Sync Settings")}>

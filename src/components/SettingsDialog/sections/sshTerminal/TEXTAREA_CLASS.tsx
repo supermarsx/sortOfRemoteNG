@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 /* eslint-disable react-refresh/only-export-components */
 import React from "react";
 import { Zap } from "lucide-react";
@@ -5,12 +6,12 @@ import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimiti
 import { Textarea } from '../../../ui/forms';
 
 const TEXTAREA_CLASS =
-  "w-full px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500";
+  "w-full px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary";
 
 const AdvancedSSHSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.advancedSSH", "Advanced SSH Options")}
-    icon={<Zap className="w-4 h-4 text-amber-400" />}
+    icon={<Zap className="w-4 h-4 text-warning" />}
     defaultOpen={false}
   >
     <p className="text-xs text-[var(--color-textSecondary)] mb-4">
@@ -74,4 +75,5 @@ const AdvancedSSHSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   </SettingsCollapsibleSection>
 );
 
+export { AdvancedSSHSection };
 export default TEXTAREA_CLASS;

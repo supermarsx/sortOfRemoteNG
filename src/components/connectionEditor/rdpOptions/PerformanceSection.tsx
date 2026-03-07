@@ -10,7 +10,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
 }) => (
   <Section
     title="Performance"
-    icon={<Gauge size={14} className="text-orange-400" />}
+    icon={<Gauge size={14} className="text-warning" />}
     defaultOpen
   >
     {/* Connection speed */}

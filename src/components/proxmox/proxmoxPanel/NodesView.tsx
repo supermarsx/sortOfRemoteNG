@@ -15,7 +15,7 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
   return (
     <div className="p-6 overflow-y-auto flex-1">
       <h3 className="text-sm font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
-        <Server className="w-4 h-4 text-orange-500" />
+        <Server className="w-4 h-4 text-warning" />
         {t("proxmox.nodes.title", "Cluster Nodes")}
         <span className="text-xs font-normal text-[var(--color-text-secondary)]">
           ({mgr.nodes.length})
@@ -33,16 +33,16 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
               key={node.node}
               className={`rounded-xl border p-4 transition-colors ${
                 mgr.selectedNode === node.node
-                  ? "border-orange-500/40 bg-orange-500/5"
+                  ? "border-warning/40 bg-warning/5"
                   : "border-[var(--color-border)] bg-[var(--color-bg-secondary)]"
               }`}
             >
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${node.status === "online" ? "bg-green-500" : "bg-red-500"}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${node.status === "online" ? "bg-success" : "bg-error"}`} />
                   <span className="text-sm font-semibold text-[var(--color-text)]">{node.node}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    node.status === "online" ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
+                    node.status === "online" ? "bg-success/15 text-success" : "bg-error/15 text-error"
                   }`}>
                     {node.status}
                   </span>
@@ -50,7 +50,7 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => mgr.openNodeConsole(node.node)}
-                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-cyan-500 hover:bg-cyan-500/10 transition-colors"
+                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-info hover:bg-info/10 transition-colors"
                     title={t("proxmox.nodes.console", "Node Console")}
                   >
                     <Terminal className="w-3.5 h-3.5" />
@@ -63,7 +63,7 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
                         await mgr.refreshDashboard(); // Placeholder — the actual reboot is via invoke in mgr
                       },
                     )}
-                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-yellow-500 hover:bg-yellow-500/10 transition-colors"
+                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-warning hover:bg-warning/10 transition-colors"
                     title={t("proxmox.nodes.reboot", "Reboot")}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -76,7 +76,7 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
                         await mgr.refreshDashboard();
                       },
                     )}
-                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                    className="p-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:text-error hover:bg-error/10 transition-colors"
                     title={t("proxmox.nodes.shutdown", "Shutdown")}
                   >
                     <Power className="w-3.5 h-3.5" />
@@ -92,7 +92,7 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
                     label={t("proxmox.nodes.cpu", "CPU")}
                     pct={node.cpu * 100}
                     detail={`${(node.cpu * 100).toFixed(1)}%`}
-                    color="bg-blue-500"
+                    color="bg-primary"
                   />
                 )}
                 {node.mem != null && node.maxmem != null && node.maxmem > 0 && (
@@ -101,7 +101,7 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
                     label={t("proxmox.nodes.memory", "Memory")}
                     pct={(node.mem / node.maxmem) * 100}
                     detail={`${formatBytes(node.mem)} / ${formatBytes(node.maxmem)}`}
-                    color="bg-green-500"
+                    color="bg-success"
                   />
                 )}
                 {node.disk != null && node.maxdisk != null && node.maxdisk > 0 && (
@@ -110,7 +110,7 @@ const NodesView: React.FC<SubProps> = ({ mgr }) => {
                     label={t("proxmox.nodes.disk", "Disk")}
                     pct={(node.disk / node.maxdisk) * 100}
                     detail={`${formatBytes(node.disk)} / ${formatBytes(node.maxdisk)}`}
-                    color="bg-purple-500"
+                    color="bg-accent"
                   />
                 )}
               </div>

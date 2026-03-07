@@ -20,19 +20,19 @@ const IcmpStatusCard = ({
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             {results.icmpBlockade.likely_blocked ? (
-              <XCircle size={12} className="text-yellow-500" />
+              <XCircle size={12} className="text-warning" />
             ) : results.icmpBlockade.icmp_allowed ? (
-              <CheckCircle size={12} className="text-green-500" />
+              <CheckCircle size={12} className="text-success" />
             ) : (
-              <XCircle size={12} className="text-red-500" />
+              <XCircle size={12} className="text-error" />
             )}
             <span
               className={`text-xs ${
                 results.icmpBlockade.likely_blocked
-                  ? "text-yellow-500"
+                  ? "text-warning"
                   : results.icmpBlockade.icmp_allowed
-                    ? "text-green-500"
-                    : "text-red-500"
+                    ? "text-success"
+                    : "text-error"
               }`}
             >
               {results.icmpBlockade.likely_blocked

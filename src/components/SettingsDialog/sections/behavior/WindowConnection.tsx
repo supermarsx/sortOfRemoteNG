@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { AppWindow, Link, RefreshCw, TextCursorInput } from "lucide-react";
 import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
@@ -5,7 +6,7 @@ const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
   ({ s, u, t }) => (
     <div className="space-y-4">
       <SectionHeader
-        icon={<AppWindow className="w-4 h-4 text-purple-400" />}
+        icon={<AppWindow className="w-4 h-4 text-accent" />}
         title="Window & Connection"
       />
       <Card>

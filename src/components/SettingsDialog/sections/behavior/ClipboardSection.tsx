@@ -1,10 +1,11 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { Clipboard, ShieldAlert } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Clipboard className="w-4 h-4 text-amber-400" />}
+      icon={<Clipboard className="w-4 h-4 text-warning" />}
       title="Clipboard"
     />
     <Card>

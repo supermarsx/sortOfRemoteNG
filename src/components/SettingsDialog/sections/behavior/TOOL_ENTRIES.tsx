@@ -17,7 +17,7 @@ const TOOL_ENTRIES: { key: ToolEntryKey; label: string; icon: LucideIcon }[] = [
   { key: "windowsBackup", label: "Windows Backup", icon: HardDrive },
 ];
 
-const defaultToolDisplayModes: ToolDisplayModes = {
+export const defaultToolDisplayModes: ToolDisplayModes = {
   globalDefault: "popup",
   recordingManager: "inherit",
   macroManager: "inherit",

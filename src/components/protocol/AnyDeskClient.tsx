@@ -46,7 +46,7 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
     return (
       <div className="flex items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)]">
         <div className="text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
+          <AlertCircle className="mx-auto h-12 w-12 text-error mb-4" />
           <h3 className="text-lg font-medium mb-2">Connection Not Found</h3>
           <p className="text-[var(--color-textSecondary)]">The connection for this session could not be found.</p>
         </div>
@@ -58,7 +58,7 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
     <div className="flex flex-col h-full bg-[var(--color-background)] text-[var(--color-text)]">
       <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
         <div className="flex items-center space-x-3">
-          <Monitor className="h-5 w-5 text-blue-400" />
+          <Monitor className="h-5 w-5 text-primary" />
           <div>
             <h3 className="font-medium">{connection.name}</h3>
             <p className="text-sm text-[var(--color-textSecondary)]">AnyDesk Connection</p>
@@ -68,7 +68,7 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
 
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center max-w-md">
-          <Monitor className="mx-auto h-16 w-16 text-blue-400 mb-6" />
+          <Monitor className="mx-auto h-16 w-16 text-primary mb-6" />
           <h3 className="text-xl font-medium mb-4">AnyDesk Remote Desktop</h3>
           <p className="text-[var(--color-textSecondary)] mb-6">
             AnyDesk provides high-performance remote desktop access.
@@ -86,17 +86,17 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
           <button
             onClick={handleLaunchAnyDesk}
             disabled={isLaunching}
-            className="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-[var(--color-text)] font-medium rounded-lg transition-colors duration-200"
+            className="inline-flex items-center px-6 py-3 bg-primary hover:bg-primary/90 disabled:bg-primary text-[var(--color-text)] font-medium rounded-lg transition-colors duration-200"
           >
             <ExternalLink className="h-5 w-5 mr-2" />
             {isLaunching ? 'Launching AnyDesk...' : 'Launch AnyDesk'}
           </button>
 
           {error && (
-            <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg">
+            <div className="mt-4 p-4 bg-error/50 border border-error rounded-lg">
               <div className="flex items-center">
-                <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
-                <p className="text-sm text-red-300">{error}</p>
+                <AlertCircle className="h-5 w-5 text-error mr-2" />
+                <p className="text-sm text-error">{error}</p>
               </div>
             </div>
           )}

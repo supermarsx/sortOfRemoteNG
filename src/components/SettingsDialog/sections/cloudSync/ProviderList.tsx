@@ -28,7 +28,7 @@ function ProviderList({ mgr }: { mgr: Mgr }) {
               key={provider}
               className={`rounded-lg border transition-all ${
                 isEnabled
-                  ? "border-blue-500/50 bg-blue-500/10"
+                  ? "border-primary/50 bg-primary/10"
                   : "border-[var(--color-border)] bg-[var(--color-surface)]/50"
               }`}
             >

@@ -37,8 +37,8 @@ interface QuickConnectProps {
 const ConnectHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
   <DialogHeader
     icon={Zap}
-    iconColor="text-green-500"
-    iconBg="bg-green-500/20"
+    iconColor="text-success"
+    iconBg="bg-success/20"
     title="Quick Connect"
     sticky
     actions={
@@ -46,7 +46,7 @@ const ConnectHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
         type="submit"
         data-tooltip="Connect"
         aria-label="Connect"
-        className="p-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+        className="p-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors"
       >
         <Play size={16} />
       </button>

@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { LocalEchoModes, LineEditingModes } from "../../../../types/settings/settings";
 import { Keyboard } from "lucide-react";
@@ -7,7 +8,7 @@ import { Select } from "../../../ui/forms";
 const LineDisciplineSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.lineDiscipline", "Line Discipline")}
-    icon={<Keyboard className="w-4 h-4 text-purple-400" />}
+    icon={<Keyboard className="w-4 h-4 text-accent" />}
   >
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Select

@@ -30,8 +30,8 @@ export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
     >
       {/* Background glow effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
-        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-cyan-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-blue-500/6 rounded-full blur-3xl" />
+        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-info/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-primary/6 rounded-full blur-3xl" />
         <div className="absolute top-[50%] right-[25%] w-64 h-64 bg-teal-500/5 rounded-full blur-3xl" />
       </div>
 
@@ -39,8 +39,8 @@ export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
         {/* Header */}
         <DialogHeader
           icon={Server}
-          iconColor="text-cyan-600 dark:text-cyan-500"
-          iconBg="bg-cyan-500/20"
+          iconColor="text-info dark:text-info"
+          iconBg="bg-info/20"
           title={t("serverStats.title", "Server Stats")}
           badge={
             mgr.lastSnapshot
@@ -74,7 +74,7 @@ export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {/* Error banner */}
           {mgr.error && (
-            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
               <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
               <span>{mgr.error}</span>
             </div>
@@ -82,7 +82,7 @@ export const ServerStatsPanel: React.FC<ServerStatsPanelProps> = ({
 
           {/* Warnings */}
           {mgr.lastSnapshot && mgr.lastSnapshot.warnings.length > 0 && (
-            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-400">
+            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning">
               <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
               <div>
                 {mgr.lastSnapshot.warnings.map((w, i) => (

@@ -2,6 +2,12 @@ import React from "react";
 import SectionHeading from '../../ui/SectionHeading';
 import { Archive, Play } from "lucide-react";
 import { useBackupSettings } from "../../../hooks/settings/useBackupSettings";
+import type { GlobalSettings } from "../../../types/settings/settings";
+
+interface BackupSettingsProps {
+  settings: GlobalSettings;
+  updateSettings: (updates: Partial<GlobalSettings>) => void;
+}
 import locationPresetIcons from "./backup/locationPresetIcons";
 import EnableBackup from "./backup/EnableBackup";
 import DestinationSection from "./backup/DestinationSection";
@@ -26,7 +32,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
         <button
           onClick={mgr.handleRunBackupNow}
           disabled={!mgr.backup.destinationPath || mgr.isRunningBackup}
-          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
+          className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
         >
           <Play className="w-4 h-4" />
           Backup Now

@@ -54,7 +54,7 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Server className="w-4 h-4 text-orange-400" />
+          <Server className="w-4 h-4 text-warning" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">
             {t("idrac.system.server_info", "Server Information")}
           </h3>
@@ -75,7 +75,7 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
 
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Server className="w-4 h-4 text-blue-400" />
+          <Server className="w-4 h-4 text-primary" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">
             {t("idrac.system.idrac_info", "iDRAC Information")}
           </h3>

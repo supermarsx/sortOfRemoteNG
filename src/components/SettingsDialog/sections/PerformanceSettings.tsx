@@ -49,7 +49,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
       {/* Retry Settings Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <RefreshCw className="w-4 h-4 text-blue-400" />
+          <RefreshCw className="w-4 h-4 text-primary" />
           Connection Retry
         </h4>
 
@@ -77,14 +77,14 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
       {/* Monitoring Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <Gauge className="w-4 h-4 text-green-400" />
+          <Gauge className="w-4 h-4 text-success" />
           Performance Monitoring
         </h4>
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enablePerformanceTracking} onChange={(v: boolean) => updateSettings({ enablePerformanceTracking: v })} />
-            <Activity className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-green-400" />
+            <Activity className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Performance Tracking
             </span>
@@ -100,7 +100,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               </label>
               <NumberInput value={Math.round(settings.performancePollIntervalMs / 1000)} onChange={(v: number) => updateSettings({
                     performancePollIntervalMs:
-                      Math.max(1, parseInt(e.target.value || "0")) * 1000,
+                      Math.max(1, v) * 1000,
                   })} className="w-full" min={1} max={120} />
             </div>
 
@@ -128,14 +128,14 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
       {/* Status Checking Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <Wifi className="w-4 h-4 text-purple-400" />
+          <Wifi className="w-4 h-4 text-accent" />
           Status Checking
         </h4>
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableStatusChecking} onChange={(v: boolean) => updateSettings({ enableStatusChecking: v })} />
-            <Zap className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-purple-400" />
+            <Zap className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-accent" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Status Checking
             </span>
@@ -172,12 +172,12 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                       }
                       className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                         settings.statusCheckMethod === method.value
-                          ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                          ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
                           : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                       }`}
                     >
                       <Icon
-                        className={`w-5 h-5 mb-1 ${settings.statusCheckMethod === method.value ? "text-purple-400" : ""}`}
+                        className={`w-5 h-5 mb-1 ${settings.statusCheckMethod === method.value ? "text-accent" : ""}`}
                       />
                       <span className="text-sm font-medium">
                         {method.label}
@@ -197,14 +197,14 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
       {/* Logging Section */}
       <div className="space-y-4">
         <h4 className="sor-section-heading">
-          <FileText className="w-4 h-4 text-yellow-400" />
+          <FileText className="w-4 h-4 text-warning" />
           Action Logging
         </h4>
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableActionLog} onChange={(v: boolean) => updateSettings({ enableActionLog: v })} />
-            <History className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-yellow-400" />
+            <History className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Action Logging
             </span>

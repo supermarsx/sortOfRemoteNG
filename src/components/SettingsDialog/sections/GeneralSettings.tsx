@@ -41,7 +41,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<Globe className="w-4 h-4 text-blue-400" />}
+          icon={<Globe className="w-4 h-4 text-primary" />}
           title="Language & Timing"
         />
         <Card>
@@ -69,7 +69,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<Save className="w-4 h-4 text-green-400" />}
+          icon={<Save className="w-4 h-4 text-success" />}
           title="Autosave Settings"
         />
         <Card>
@@ -98,7 +98,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<AlertTriangle className="w-4 h-4 text-yellow-400" />}
+          icon={<AlertTriangle className="w-4 h-4 text-warning" />}
           title="Confirmation Warnings"
         />
         <Card>
@@ -138,7 +138,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       <div className="space-y-4">
         <SectionHeader
-          icon={<History className="w-4 h-4 text-cyan-400" />}
+          icon={<History className="w-4 h-4 text-info" />}
           title="Quick Connect History"
         />
         <Card>
@@ -157,7 +157,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               type="button"
               onClick={() => updateSettings({ quickConnectHistory: [] })}
               disabled={(settings.quickConnectHistory?.length ?? 0) === 0}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-red-600/20 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-error/20 hover:text-error disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Trash2 className="w-3 h-3" />
               Clear history

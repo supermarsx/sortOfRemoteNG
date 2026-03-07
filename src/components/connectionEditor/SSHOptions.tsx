@@ -87,7 +87,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="sor-form-label-icon">
-                      <Fingerprint size={14} className="text-green-400" />
+                      <Fingerprint size={14} className="text-success" />
                       Stored Host Keys ({records.length})
                     </label>
                     <button
@@ -96,7 +96,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                         clearAllTrustRecords(formData.id);
                         setFormData({ ...formData }); // force re-render
                       }}
-                      className="text-xs text-[var(--color-textMuted)] hover:text-red-400 transition-colors"
+                      className="text-xs text-[var(--color-textMuted)] hover:text-error transition-colors"
                     >
                       Clear all
                     </button>
@@ -140,7 +140,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                               );
                               setFormData({ ...formData }); // force re-render
                             }}
-                            className="text-[var(--color-textMuted)] hover:text-red-400 p-0.5 transition-colors flex-shrink-0"
+                            className="text-[var(--color-textMuted)] hover:text-error p-0.5 transition-colors flex-shrink-0"
                             title="Remove"
                           >
                             <Trash2 size={12} />
@@ -210,7 +210,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
               <button
                 type="button"
                 onClick={() => mgr.setShowKeyManager(true)}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-md transition-colors"
               >
                 <Key className="w-3.5 h-3.5" />
                 Manage Keys

@@ -196,7 +196,7 @@
 }
 
 .sor-option-item-selected {
-  color: #facc15;
+  color: var(--color-warning);
   font-weight: 600;
 }
 
@@ -266,19 +266,19 @@
 }
 
 .sor-metric-card-blue:hover {
-  border-color: color-mix(in srgb, #3b82f6 30%, var(--color-border));
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
 }
 
 .sor-metric-card-green:hover {
-  border-color: color-mix(in srgb, #22c55e 30%, var(--color-border));
+  border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-border));
 }
 
 .sor-metric-card-yellow:hover {
-  border-color: color-mix(in srgb, #eab308 30%, var(--color-border));
+  border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border));
 }
 
 .sor-metric-card-purple:hover {
-  border-color: color-mix(in srgb, #a855f7 30%, var(--color-border));
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
 }
 
 .sor-metric-summary-card {

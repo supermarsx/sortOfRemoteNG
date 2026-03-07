@@ -45,11 +45,11 @@ const TABS: { id: TabId; labelKey: string }[] = [
 ];
 
 const STRENGTH_META: Record<CredentialStrength, { color: string; label: string; pct: number }> = {
-  very_weak: { color: "bg-red-500", label: "Very Weak", pct: 10 },
-  weak: { color: "bg-orange-500", label: "Weak", pct: 30 },
-  fair: { color: "bg-yellow-500", label: "Fair", pct: 55 },
-  strong: { color: "bg-green-500", label: "Strong", pct: 80 },
-  very_strong: { color: "bg-emerald-400", label: "Very Strong", pct: 100 },
+  very_weak: { color: "bg-error", label: "Very Weak", pct: 10 },
+  weak: { color: "bg-warning", label: "Weak", pct: 30 },
+  fair: { color: "bg-warning", label: "Fair", pct: 55 },
+  strong: { color: "bg-success", label: "Strong", pct: 80 },
+  very_strong: { color: "bg-success", label: "Very Strong", pct: 100 },
 };
 
 type SortField = "label" | "connectionName" | "kind" | "ageDays" | "expiresAt" | "strength" | "lastRotated";
@@ -133,7 +133,7 @@ function CredentialDialog({ credential, onSave, onClose }: CredDialogProps) {
           <button onClick={onClose} className="sor-btn px-4 py-2 text-sm rounded border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-bgSecondary)]">
             {t("common.cancel")}
           </button>
-          <button onClick={() => onSave({ ...credential, ...form })} className="sor-btn-primary px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">
+          <button onClick={() => onSave({ ...credential, ...form })} className="sor-btn-primary px-4 py-2 text-sm rounded bg-primary text-white hover:bg-primary/90">
             {isEdit ? t("common.save") : t("common.add")}
           </button>
         </div>
@@ -272,7 +272,7 @@ export function CredentialManager() {
   if (creds.loading && creds.credentials.length === 0) {
     return (
       <div className="sor-credential-manager flex items-center justify-center h-64">
-        <RefreshCw className="animate-spin text-blue-400" size={24} />
+        <RefreshCw className="animate-spin text-primary" size={24} />
         <span className="ml-2 text-[var(--color-textSecondary)]">{t("common.loading")}</span>
       </div>
     );
@@ -282,7 +282,7 @@ export function CredentialManager() {
     <div className="sor-credential-manager flex flex-col h-full overflow-hidden text-[var(--color-textPrimary)]">
       {/* ---------- error banner ---------- */}
       {creds.error && (
-        <div className="sor-error-banner flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded px-3 py-2 mx-4 mt-2 text-sm text-red-400">
+        <div className="sor-error-banner flex items-center gap-2 bg-error/10 border border-error/30 rounded px-3 py-2 mx-4 mt-2 text-sm text-error">
           <AlertCircle size={14} /> {creds.error}
         </div>
       )}
@@ -291,7 +291,7 @@ export function CredentialManager() {
       {creds.alerts.filter((a) => !a.acknowledged).length > 0 && (
         <div className="sor-alerts mx-4 mt-2 space-y-1">
           {creds.alerts.filter((a) => !a.acknowledged).slice(0, 5).map((a) => (
-            <div key={a.id} className={`sor-alert flex items-center justify-between rounded px-3 py-1.5 text-xs ${a.severity === "critical" ? "bg-red-500/10 text-red-400" : a.severity === "warning" ? "bg-yellow-500/10 text-yellow-400" : "bg-blue-500/10 text-blue-400"}`}>
+            <div key={a.id} className={`sor-alert flex items-center justify-between rounded px-3 py-1.5 text-xs ${a.severity === "critical" ? "bg-error/10 text-error" : a.severity === "warning" ? "bg-warning/10 text-warning" : "bg-primary/10 text-primary"}`}>
               <span className="flex items-center gap-1"><Bell size={12} /> {a.message}</span>
               <button onClick={() => creds.acknowledgeAlert(a.id)} className="sor-btn-icon ml-2 hover:opacity-80"><Check size={12} /></button>
             </div>
@@ -302,20 +302,20 @@ export function CredentialManager() {
       {/* ---------- header ---------- */}
       <div className="sor-header flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <Key className="text-blue-400" size={20} />
+          <Key className="text-primary" size={20} />
           <h2 className="text-lg font-semibold">{t("credentials.title")}</h2>
         </div>
 
         {stats && (
           <div className="flex items-center gap-2 ml-2">
-            <span className="sor-badge rounded-full bg-blue-500/15 text-blue-400 px-2 py-0.5 text-xs">{stats.total} total</span>
-            <span className="sor-badge rounded-full bg-yellow-500/15 text-yellow-400 px-2 py-0.5 text-xs">{stats.expiringSoon} expiring</span>
-            <span className="sor-badge rounded-full bg-red-500/15 text-red-400 px-2 py-0.5 text-xs">{stats.expired} expired</span>
+            <span className="sor-badge rounded-full bg-primary/15 text-primary px-2 py-0.5 text-xs">{stats.total} total</span>
+            <span className="sor-badge rounded-full bg-warning/15 text-warning px-2 py-0.5 text-xs">{stats.expiringSoon} expiring</span>
+            <span className="sor-badge rounded-full bg-error/15 text-error px-2 py-0.5 text-xs">{stats.expired} expired</span>
           </div>
         )}
 
         <div className="flex items-center gap-2 ml-auto">
-          <button onClick={() => { setEditingCred(null); setShowDialog(true); }} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1.5 text-xs bg-blue-600 text-white hover:bg-blue-700">
+          <button onClick={() => { setEditingCred(null); setShowDialog(true); }} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1.5 text-xs bg-primary text-white hover:bg-primary/90">
             <Plus size={14} /> {t("credentials.addBtn")}
           </button>
           <button onClick={() => creds.generateAlerts()} className="sor-btn flex items-center gap-1 rounded border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-bgSecondary)]">
@@ -330,7 +330,7 @@ export function CredentialManager() {
       {/* ---------- tabs ---------- */}
       <div className="sor-tab-bar flex gap-1 px-4 pt-2 border-b border-[var(--color-border)]">
         {TABS.map((tb) => (
-          <button key={tb.id} onClick={() => setTab(tb.id)} className={`sor-tab px-3 py-2 text-xs font-medium rounded-t transition-colors ${tab === tb.id ? "bg-[var(--color-bgSecondary)] text-[var(--color-textPrimary)] border-b-2 border-blue-500" : "text-[var(--color-textSecondary)] hover:text-[var(--color-textPrimary)]"}`}>
+          <button key={tb.id} onClick={() => setTab(tb.id)} className={`sor-tab px-3 py-2 text-xs font-medium rounded-t transition-colors ${tab === tb.id ? "bg-[var(--color-bgSecondary)] text-[var(--color-textPrimary)] border-b-2 border-primary" : "text-[var(--color-textSecondary)] hover:text-[var(--color-textPrimary)]"}`}>
             {t(tb.labelKey)}
           </button>
         ))}
@@ -367,14 +367,14 @@ export function CredentialManager() {
                       <td className="px-3 py-2 text-[var(--color-textSecondary)]">{c.connectionName}</td>
                       <td className="px-3 py-2"><span className="sor-kind-badge rounded bg-[var(--color-bgSecondary)] px-1.5 py-0.5 text-xs">{c.kind.replace(/_/g, " ")}</span></td>
                       <td className="px-3 py-2">{c.ageDays}d</td>
-                      <td className={`px-3 py-2 ${c.isExpired ? "text-red-400" : ""}`}>{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}</td>
+                      <td className={`px-3 py-2 ${c.isExpired ? "text-error" : ""}`}>{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}</td>
                       <td className="px-3 py-2"><StrengthMeter strength={c.strength} /></td>
                       <td className="px-3 py-2 text-[var(--color-textSecondary)]">{c.lastRotated ? new Date(c.lastRotated).toLocaleDateString() : "—"}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
                           <button onClick={() => creds.recordRotation(c.id)} title={t("credentials.rotate")} className="sor-btn-icon p-1 rounded hover:bg-[var(--color-bgSecondary)]"><RotateCw size={14} /></button>
                           <button onClick={() => { setEditingCred(c); setShowDialog(true); }} title={t("common.edit")} className="sor-btn-icon p-1 rounded hover:bg-[var(--color-bgSecondary)]"><Edit size={14} /></button>
-                          <button onClick={() => creds.remove(c.id)} title={t("common.delete")} className="sor-btn-icon p-1 rounded hover:bg-red-500/10 text-red-400"><Trash2 size={14} /></button>
+                          <button onClick={() => creds.remove(c.id)} title={t("common.delete")} className="sor-btn-icon p-1 rounded hover:bg-error/10 text-error"><Trash2 size={14} /></button>
                         </div>
                       </td>
                     </tr>
@@ -394,18 +394,18 @@ export function CredentialManager() {
             </div>
             {expiringSoon.length === 0 ? (
               <div className="sor-empty flex flex-col items-center justify-center h-32 text-[var(--color-textSecondary)]">
-                <Check size={24} className="mb-2 text-green-400" />
+                <Check size={24} className="mb-2 text-success" />
                 <p className="text-sm">{t("credentials.noneExpiring")}</p>
               </div>
             ) : (
               <ul className="space-y-2">
                 {expiringSoon.map((c) => (
-                  <li key={c.id} className="sor-expiring-item flex items-center justify-between rounded border border-yellow-500/30 bg-yellow-500/5 px-4 py-2">
+                  <li key={c.id} className="sor-expiring-item flex items-center justify-between rounded border border-warning/30 bg-warning/5 px-4 py-2">
                     <div>
-                      <p className="text-sm font-medium text-yellow-300">{c.label}</p>
+                      <p className="text-sm font-medium text-warning">{c.label}</p>
                       <p className="text-xs text-[var(--color-textSecondary)]">{c.connectionName} — expires {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "?"}</p>
                     </div>
-                    <button onClick={() => creds.recordRotation(c.id)} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1 text-xs bg-yellow-600 text-white hover:bg-yellow-700">
+                    <button onClick={() => creds.recordRotation(c.id)} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1 text-xs bg-warning text-white hover:bg-warning/90">
                       <RotateCw size={12} /> {t("credentials.rotate")}
                     </button>
                   </li>
@@ -419,18 +419,18 @@ export function CredentialManager() {
         {tab === "expired" && (
           expiredList.length === 0 ? (
             <div className="sor-empty flex flex-col items-center justify-center h-32 text-[var(--color-textSecondary)]">
-              <Check size={24} className="mb-2 text-green-400" />
+              <Check size={24} className="mb-2 text-success" />
               <p className="text-sm">{t("credentials.noneExpired")}</p>
             </div>
           ) : (
             <ul className="space-y-2">
               {expiredList.map((c) => (
-                <li key={c.id} className="sor-expired-item flex items-center justify-between rounded border border-red-500/30 bg-red-500/5 px-4 py-2">
+                <li key={c.id} className="sor-expired-item flex items-center justify-between rounded border border-error/30 bg-error/5 px-4 py-2">
                   <div>
-                    <p className="text-sm font-medium text-red-400">{c.label}</p>
+                    <p className="text-sm font-medium text-error">{c.label}</p>
                     <p className="text-xs text-[var(--color-textSecondary)]">{c.connectionName} — expired {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : ""}</p>
                   </div>
-                  <button onClick={() => creds.recordRotation(c.id)} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1 text-xs bg-red-600 text-white hover:bg-red-700">
+                  <button onClick={() => creds.recordRotation(c.id)} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1 text-xs bg-error text-white hover:bg-error/90">
                     <RotateCw size={12} /> {t("credentials.rotateNow")}
                   </button>
                 </li>
@@ -444,7 +444,7 @@ export function CredentialManager() {
           <div className="space-y-3">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold">{t("credentials.groups.title")}</h3>
-              <button onClick={() => { const name = prompt(t("credentials.groups.namePrompt")); if (name) creds.createGroup(name, ""); }} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1.5 text-xs bg-blue-600 text-white hover:bg-blue-700">
+              <button onClick={() => { const name = prompt(t("credentials.groups.namePrompt")); if (name) creds.createGroup(name, ""); }} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1.5 text-xs bg-primary text-white hover:bg-primary/90">
                 <Plus size={14} /> {t("credentials.groups.create")}
               </button>
             </div>
@@ -466,7 +466,7 @@ export function CredentialManager() {
                           <span className="text-sm font-medium">{g.name}</span>
                           <span className="sor-badge rounded-full bg-[var(--color-bgSecondary)] px-2 py-0.5 text-xs text-[var(--color-textSecondary)]">{g.credentialIds.length} members</span>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); creds.deleteGroup(g.id); }} className="sor-btn-icon p-1 rounded hover:bg-red-500/10 text-red-400"><Trash2 size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); creds.deleteGroup(g.id); }} className="sor-btn-icon p-1 rounded hover:bg-error/10 text-error"><Trash2 size={14} /></button>
                       </div>
                       {expanded && (
                         <div className="px-4 pb-3 border-t border-[var(--color-border)]">
@@ -477,7 +477,7 @@ export function CredentialManager() {
                               {members.map((m) => (
                                 <li key={m.id} className="flex items-center justify-between text-xs text-[var(--color-textSecondary)] py-1">
                                   <span>{m.label} ({m.connectionName})</span>
-                                  <button onClick={() => creds.removeFromGroup(g.id, m.id)} className="sor-btn-icon p-0.5 rounded hover:bg-red-500/10 text-red-400"><X size={12} /></button>
+                                  <button onClick={() => creds.removeFromGroup(g.id, m.id)} className="sor-btn-icon p-0.5 rounded hover:bg-error/10 text-error"><X size={12} /></button>
                                 </li>
                               ))}
                             </ul>
@@ -505,7 +505,7 @@ export function CredentialManager() {
           <div className="space-y-3">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold">{t("credentials.policies.title")}</h3>
-              <button onClick={() => { const name = prompt(t("credentials.policies.namePrompt")); if (name) creds.addPolicy({ name, kind: "password", maxAgeDays: 90, warningDays: 14, requireMinStrength: "fair", minLength: 12, requireUppercase: true, requireLowercase: true, requireDigits: true, requireSpecial: false, forbidReuse: 3, enabled: true }); }} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1.5 text-xs bg-blue-600 text-white hover:bg-blue-700">
+              <button onClick={() => { const name = prompt(t("credentials.policies.namePrompt")); if (name) creds.addPolicy({ name, kind: "password", maxAgeDays: 90, warningDays: 14, requireMinStrength: "fair", minLength: 12, requireUppercase: true, requireLowercase: true, requireDigits: true, requireSpecial: false, forbidReuse: 3, enabled: true }); }} className="sor-btn-primary flex items-center gap-1 rounded px-3 py-1.5 text-xs bg-primary text-white hover:bg-primary/90">
                 <Plus size={14} /> {t("credentials.policies.create")}
               </button>
             </div>
@@ -521,10 +521,10 @@ export function CredentialManager() {
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="text-sm font-medium">{p.name}</h4>
                       <div className="flex items-center gap-1">
-                        <span className={`sor-badge rounded-full px-2 py-0.5 text-xs ${p.enabled ? "bg-green-500/15 text-green-400" : "bg-[var(--color-bgSecondary)] text-[var(--color-textSecondary)]"}`}>
+                        <span className={`sor-badge rounded-full px-2 py-0.5 text-xs ${p.enabled ? "bg-success/15 text-success" : "bg-[var(--color-bgSecondary)] text-[var(--color-textSecondary)]"}`}>
                           {p.enabled ? t("common.enabled") : t("common.disabled")}
                         </span>
-                        <button onClick={() => creds.removePolicy(p.id)} className="sor-btn-icon p-1 rounded hover:bg-red-500/10 text-red-400"><Trash2 size={14} /></button>
+                        <button onClick={() => creds.removePolicy(p.id)} className="sor-btn-icon p-1 rounded hover:bg-error/10 text-error"><Trash2 size={14} /></button>
                       </div>
                     </div>
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">

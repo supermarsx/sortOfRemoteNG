@@ -28,20 +28,20 @@ type Mgr = ReturnType<typeof useSyncBackupStatusBar>;
 /* ── Sub-components ──────────────────────────────────── */
 
 const SyncStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  if (mgr.isSyncing) return <Loader2 className="w-4 h-4 animate-spin text-blue-400" />;
+  if (mgr.isSyncing) return <Loader2 className="w-4 h-4 animate-spin text-primary" />;
   if (!mgr.hasSync) return <CloudOff className="w-4 h-4 text-[var(--color-textMuted)]" />;
   const statuses = mgr.enabledProviders.map((p) => mgr.config.providerStatus[p]?.lastSyncStatus);
-  if (statuses.some((s) => s === "failed")) return <AlertCircle className="w-4 h-4 text-red-400" />;
-  if (statuses.some((s) => s === "conflict")) return <AlertCircle className="w-4 h-4 text-yellow-400" />;
-  if (statuses.every((s) => s === "success")) return <CheckCircle className="w-4 h-4 text-green-400" />;
+  if (statuses.some((s) => s === "failed")) return <AlertCircle className="w-4 h-4 text-error" />;
+  if (statuses.some((s) => s === "conflict")) return <AlertCircle className="w-4 h-4 text-warning" />;
+  if (statuses.every((s) => s === "success")) return <CheckCircle className="w-4 h-4 text-success" />;
   return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
 };
 
 const BackupStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  if (mgr.isBackingUp || mgr.backupStatus?.isRunning) return <Loader2 className="w-4 h-4 animate-spin text-blue-400" />;
+  if (mgr.isBackingUp || mgr.backupStatus?.isRunning) return <Loader2 className="w-4 h-4 animate-spin text-primary" />;
   if (!mgr.backupStatus || mgr.backupStatus.backupCount === 0) return <Archive className="w-4 h-4 text-[var(--color-textMuted)]" />;
-  if (mgr.backupStatus.lastBackupStatus === "failed") return <AlertCircle className="w-4 h-4 text-red-400" />;
-  if (mgr.backupStatus.lastBackupStatus === "success") return <CheckCircle className="w-4 h-4 text-green-400" />;
+  if (mgr.backupStatus.lastBackupStatus === "failed") return <AlertCircle className="w-4 h-4 text-error" />;
+  if (mgr.backupStatus.lastBackupStatus === "success") return <CheckCircle className="w-4 h-4 text-success" />;
   return <HardDrive className="w-4 h-4 text-[var(--color-textSecondary)]" />;
 };
 
@@ -50,9 +50,9 @@ const ProviderRow: React.FC<{ provider: CloudSyncProvider; mgr: Mgr }> = ({ prov
   return (
     <div className="sor-status-item flex items-center justify-between p-2">
       <div className="flex items-center gap-2">
-        {status?.lastSyncStatus === "success" && <CheckCircle className="w-3 h-3 text-green-400" />}
-        {status?.lastSyncStatus === "failed" && <AlertCircle className="w-3 h-3 text-red-400" />}
-        {status?.lastSyncStatus === "conflict" && <AlertCircle className="w-3 h-3 text-yellow-400" />}
+        {status?.lastSyncStatus === "success" && <CheckCircle className="w-3 h-3 text-success" />}
+        {status?.lastSyncStatus === "failed" && <AlertCircle className="w-3 h-3 text-error" />}
+        {status?.lastSyncStatus === "conflict" && <AlertCircle className="w-3 h-3 text-warning" />}
         {!status?.lastSyncStatus && <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />}
         <span className="text-xs text-[var(--color-textSecondary)]">{PROVIDER_NAMES[provider]}</span>
       </div>
@@ -70,11 +70,11 @@ const CloudSyncSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="p-4 border-b border-[var(--color-border)]">
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
-        <Cloud className="w-4 h-4 text-blue-400" />
+        <Cloud className="w-4 h-4 text-primary" />
         <span className="text-sm font-medium text-[var(--color-textSecondary)]">{mgr.t("syncBackup.cloudSync", "Cloud Sync")}</span>
       </div>
       {mgr.hasSync && (
-        <button onClick={mgr.handleSyncAll} disabled={mgr.isSyncing} className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded">
+        <button onClick={mgr.handleSyncAll} disabled={mgr.isSyncing} className="flex items-center gap-1 px-2 py-1 text-xs bg-primary hover:bg-primary/90 disabled:opacity-50 rounded">
           {mgr.isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
           {mgr.t("syncBackup.syncAll", "Sync All")}
         </button>
@@ -102,10 +102,10 @@ const BackupSection: React.FC<{ mgr: Mgr; onBackupNow?: () => void }> = ({ mgr, 
   <div className="p-4">
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
-        <HardDrive className="w-4 h-4 text-green-400" />
+        <HardDrive className="w-4 h-4 text-success" />
         <span className="text-sm font-medium text-[var(--color-textSecondary)]">{mgr.t("syncBackup.localBackup", "Local Backup")}</span>
       </div>
-      <button onClick={mgr.handleBackupNow} disabled={mgr.isBackingUp || mgr.backupStatus?.isRunning} className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded">
+      <button onClick={mgr.handleBackupNow} disabled={mgr.isBackingUp || mgr.backupStatus?.isRunning} className="flex items-center gap-1 px-2 py-1 text-xs bg-success hover:bg-success/90 disabled:opacity-50 rounded">
         {mgr.isBackingUp || mgr.backupStatus?.isRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Archive className="w-3 h-3" />}
         {mgr.t("syncBackup.backupNow", "Backup Now")}
       </button>
@@ -115,8 +115,8 @@ const BackupSection: React.FC<{ mgr: Mgr; onBackupNow?: () => void }> = ({ mgr, 
         <div className="flex items-center justify-between text-xs">
           <span className="text-[var(--color-textSecondary)]">{mgr.t("syncBackup.lastBackup", "Last backup")}:</span>
           <div className="flex items-center gap-2">
-            {mgr.backupStatus.lastBackupStatus === "success" && <CheckCircle className="w-3 h-3 text-green-400" />}
-            {mgr.backupStatus.lastBackupStatus === "failed" && <AlertCircle className="w-3 h-3 text-red-400" />}
+            {mgr.backupStatus.lastBackupStatus === "success" && <CheckCircle className="w-3 h-3 text-success" />}
+            {mgr.backupStatus.lastBackupStatus === "failed" && <AlertCircle className="w-3 h-3 text-error" />}
             <span className="text-[var(--color-textSecondary)]">{formatRelativeTime(mgr.backupStatus.lastBackupTime)}</span>
           </div>
         </div>
@@ -132,7 +132,7 @@ const BackupSection: React.FC<{ mgr: Mgr; onBackupNow?: () => void }> = ({ mgr, 
           <span className="text-[var(--color-textMuted)]">{formatBytes(mgr.backupStatus.totalSizeBytes)}</span>
         </div>
         {mgr.backupStatus.lastError && (
-          <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">{mgr.backupStatus.lastError}</div>
+          <div className="mt-2 p-2 bg-error/20 border border-error rounded text-xs text-error">{mgr.backupStatus.lastError}</div>
         )}
       </div>
     ) : (
@@ -197,7 +197,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
           <CloudSyncSection mgr={mgr} />
           <BackupSection mgr={mgr} onBackupNow={onBackupNow} />
           <div className="px-4 py-2 border-t border-[var(--color-border)]">
-            <button onClick={onOpenSettings} className="w-full text-center text-xs text-blue-400 hover:text-blue-300">
+            <button onClick={onOpenSettings} className="w-full text-center text-xs text-primary hover:text-primary">
               {mgr.t("syncBackup.openSettings", "Open Sync & Backup Settings")}
             </button>
           </div>

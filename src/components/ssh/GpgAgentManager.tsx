@@ -80,8 +80,8 @@ const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
   <span
     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
       ok
-        ? "bg-green-500/10 text-green-400"
-        : "bg-red-500/10 text-red-400"
+        ? "bg-success/10 text-success"
+        : "bg-error/10 text-error"
     }`}
   >
     {ok ? (
@@ -95,13 +95,13 @@ const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
 
 const ValidityBadge: React.FC<{ validity: string }> = ({ validity }) => {
   const colors: Record<string, string> = {
-    ultimate: "bg-green-500/10 text-green-400",
-    full: "bg-blue-500/10 text-blue-400",
-    marginal: "bg-yellow-500/10 text-yellow-400",
-    never: "bg-red-500/10 text-red-400",
-    unknown: "bg-gray-500/10 text-gray-400",
-    revoked: "bg-red-500/10 text-red-400",
-    expired: "bg-orange-500/10 text-orange-400",
+    ultimate: "bg-success/10 text-success",
+    full: "bg-primary/10 text-primary",
+    marginal: "bg-warning/10 text-warning",
+    never: "bg-error/10 text-error",
+    unknown: "bg-text-secondary/10 text-text-muted",
+    revoked: "bg-error/10 text-error",
+    expired: "bg-warning/10 text-warning",
   };
   return (
     <span
@@ -116,12 +116,12 @@ const ValidityBadge: React.FC<{ validity: string }> = ({ validity }) => {
 
 const TrustBadge: React.FC<{ trust: string }> = ({ trust }) => {
   const colors: Record<string, string> = {
-    ultimate: "bg-purple-500/10 text-purple-400",
-    full: "bg-blue-500/10 text-blue-400",
-    marginal: "bg-yellow-500/10 text-yellow-400",
-    never: "bg-red-500/10 text-red-400",
-    unknown: "bg-gray-500/10 text-gray-400",
-    undefined: "bg-gray-500/10 text-gray-400",
+    ultimate: "bg-accent/10 text-accent",
+    full: "bg-primary/10 text-primary",
+    marginal: "bg-warning/10 text-warning",
+    never: "bg-error/10 text-error",
+    unknown: "bg-text-secondary/10 text-text-muted",
+    undefined: "bg-text-secondary/10 text-text-muted",
   };
   return (
     <span
@@ -274,7 +274,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={mgr.startAgent}
             disabled={mgr.loading}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-[var(--color-text)] rounded-md hover:bg-green-500 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-success text-[var(--color-text)] rounded-md hover:bg-success/90 transition-colors disabled:opacity-50"
           >
             <Activity className="w-4 h-4" />
             {t("gpgAgent.actions.start", "Start Agent")}
@@ -284,7 +284,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               onClick={mgr.stopAgent}
               disabled={mgr.loading}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-[var(--color-text)] rounded-md hover:bg-red-500 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-error text-[var(--color-text)] rounded-md hover:bg-error/90 transition-colors disabled:opacity-50"
             >
               <XCircle className="w-4 h-4" />
               {t("gpgAgent.actions.stop", "Stop Agent")}
@@ -292,7 +292,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               onClick={mgr.restartAgent}
               disabled={mgr.loading}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-[var(--color-text)] rounded-md hover:bg-amber-500 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-warning text-[var(--color-text)] rounded-md hover:bg-warning/90 transition-colors disabled:opacity-50"
             >
               <RefreshCw className="w-4 h-4" />
               {t("gpgAgent.actions.restart", "Restart")}
@@ -370,7 +370,7 @@ const KeyringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </button>
         <button
           onClick={() => setShowImport(!showImport)}
-          className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600/10 text-blue-400 rounded hover:bg-blue-600/20"
+          className="flex items-center gap-1 px-2 py-1 text-xs bg-primary/10 text-primary rounded hover:bg-primary/20"
         >
           <Upload className="w-3 h-3" />
           {t("gpgAgent.keyring.import", "Import")}
@@ -397,7 +397,7 @@ const KeyringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               mgr.fetchKeys(secretOnly);
             }}
             disabled={!importText.trim()}
-            className="px-3 py-1.5 text-xs bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
           >
             {t("gpgAgent.keyring.importBtn", "Import Key")}
           </button>
@@ -434,8 +434,8 @@ const KeyringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {key.is_secret && <KeyRound className="w-3 h-3 text-amber-400" />}
-                      {key.card_serial && <CreditCard className="w-3 h-3 text-blue-400" />}
+                      {key.is_secret && <KeyRound className="w-3 h-3 text-warning" />}
+                      {key.card_serial && <CreditCard className="w-3 h-3 text-primary" />}
                       <ValidityBadge validity={key.validity ?? "unknown"} />
                       <TrustBadge trust={key.owner_trust ?? "unknown"} />
                     </div>
@@ -487,7 +487,7 @@ const KeyringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                           <span>{u.name}</span>
                           {u.email && <span className="text-muted-foreground">&lt;{u.email}&gt;</span>}
                           {u.comment && <span className="text-muted-foreground">({u.comment})</span>}
-                          {u.is_revoked && <span className="text-red-400 text-[10px]">REVOKED</span>}
+                          {u.is_revoked && <span className="text-error text-[10px]">REVOKED</span>}
                         </div>
                       ))}
                     </div>
@@ -501,7 +501,7 @@ const KeyringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                           <span className="truncate w-24">{sk.fingerprint?.slice(-8)}</span>
                           <span>{sk.algorithm}</span>
                           <span className="text-muted-foreground">{sk.capabilities?.join(",")}</span>
-                          {sk.is_revoked && <span className="text-red-400">rev</span>}
+                          {sk.is_revoked && <span className="text-error">rev</span>}
                         </div>
                       ))}
                     </div>
@@ -515,7 +515,7 @@ const KeyringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       </button>
                       <button
                         onClick={() => mgr.deleteKey(key.fingerprint, false)}
-                        className="flex items-center gap-1 px-2 py-1 bg-red-600/10 text-red-500 rounded hover:bg-red-600/20"
+                        className="flex items-center gap-1 px-2 py-1 bg-error/10 text-error rounded hover:bg-error/20"
                       >
                         <Trash2 className="w-3 h-3" /> {t("gpgAgent.keyring.delete", "Delete")}
                       </button>
@@ -533,7 +533,7 @@ const KeyringTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       </button>
                       <button
                         onClick={() => mgr.genRevocation(key.fingerprint, "0", "No reason")}
-                        className="flex items-center gap-1 px-2 py-1 bg-orange-600/10 text-orange-400 rounded hover:bg-orange-600/20"
+                        className="flex items-center gap-1 px-2 py-1 bg-warning/10 text-warning rounded hover:bg-warning/20"
                       >
                         <ShieldAlert className="w-3 h-3" /> {t("gpgAgent.keyring.revoke", "Revocation")}
                       </button>
@@ -641,7 +641,7 @@ const SignVerifyTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={handleSign}
           disabled={!signKeyId || !signText || mgr.loading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
         >
           <FileKey className="w-4 h-4" />
           {t("gpgAgent.sign.signBtn", "Sign")}
@@ -688,7 +688,7 @@ const SignVerifyTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={handleVerify}
           disabled={!verifyData || mgr.loading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 text-[var(--color-text)] rounded hover:bg-green-500 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-success text-[var(--color-text)] rounded hover:bg-success/90 disabled:opacity-50"
         >
           <CheckCircle2 className="w-4 h-4" />
           {t("gpgAgent.verify.verifyBtn", "Verify")}
@@ -816,7 +816,7 @@ const EncryptDecryptTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={handleEncrypt}
           disabled={(!recipients.length && !symmetricOnly) || !plaintext || mgr.loading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
         >
           <Lock className="w-4 h-4" />
           {t("gpgAgent.encrypt.encryptBtn", "Encrypt")}
@@ -856,7 +856,7 @@ const EncryptDecryptTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={handleDecrypt}
           disabled={!ciphertext || mgr.loading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 text-[var(--color-text)] rounded hover:bg-green-500 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-success text-[var(--color-text)] rounded hover:bg-success/90 disabled:opacity-50"
         >
           <Unlock className="w-4 h-4" />
           {t("gpgAgent.decrypt.decryptBtn", "Decrypt")}
@@ -871,7 +871,7 @@ const EncryptDecryptTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
             {decResult.sigInfo && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <ShieldCheck className="w-3 h-3 text-green-400" />
+                <ShieldCheck className="w-3 h-3 text-success" />
                 {t("gpgAgent.decrypt.signedBy", "Signed by")}: {decResult.sigInfo}
               </div>
             )}
@@ -921,7 +921,7 @@ const TrustTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           onClick={mgr.updateTrustDb}
           disabled={mgr.loading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
         >
           <RefreshCw className="w-4 h-4" />
           {t("gpgAgent.trust.rebuild", "Rebuild Trust DB")}
@@ -975,7 +975,7 @@ const TrustTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               if (trustKeyId) mgr.setTrust(trustKeyId, trustLevel as any);
             }}
             disabled={!trustKeyId}
-            className="px-3 py-1.5 text-sm bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+            className="px-3 py-1.5 text-sm bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
           >
             {t("gpgAgent.trust.apply", "Apply")}
           </button>
@@ -1006,7 +1006,7 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </button>
         <button
           onClick={mgr.cardFetchKey}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600/10 text-blue-400 rounded hover:bg-blue-600/20"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary/10 text-primary rounded hover:bg-primary/20"
         >
           <Download className="w-4 h-4" />
           {t("gpgAgent.card.fetchKey", "Fetch Key from Card")}
@@ -1060,7 +1060,7 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   <span className="text-muted-foreground">{p.label}:</span>
                   <span
                     className={`font-semibold ${
-                      (p.value ?? 0) <= 1 ? "text-red-400" : ""
+                      (p.value ?? 0) <= 1 ? "text-error" : ""
                     }`}
                   >
                     {p.value ?? "—"}
@@ -1121,28 +1121,28 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => mgr.cardChangePin("user")}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-amber-600 text-[var(--color-text)] rounded hover:bg-amber-500"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-warning text-[var(--color-text)] rounded hover:bg-warning/90"
             >
               <Lock className="w-3 h-3" />
               {t("gpgAgent.card.changePin", "Change PIN")}
             </button>
             <button
               onClick={() => mgr.cardChangePin("admin")}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-amber-600 text-[var(--color-text)] rounded hover:bg-amber-500"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-warning text-[var(--color-text)] rounded hover:bg-warning/90"
             >
               <ShieldAlert className="w-3 h-3" />
               {t("gpgAgent.card.changeAdminPin", "Change Admin PIN")}
             </button>
             <button
               onClick={mgr.cardFactoryReset}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-red-600 text-[var(--color-text)] rounded hover:bg-red-500"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-error text-[var(--color-text)] rounded hover:bg-error/90"
             >
               <Trash2 className="w-3 h-3" />
               {t("gpgAgent.card.factoryReset", "Factory Reset")}
             </button>
             <button
               onClick={() => mgr.cardGenKey("sig", "rsa2048")}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-[var(--color-text)] rounded hover:bg-primary/90"
             >
               <Plus className="w-3 h-3" />
               {t("gpgAgent.card.genKey", "Generate Key on Card")}
@@ -1185,7 +1185,7 @@ const KeyserverTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <button
             onClick={() => mgr.searchKeyserver(query)}
             disabled={!query || mgr.loading}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
           >
             <Search className="w-4 h-4" />
             {t("gpgAgent.keyserver.searchBtn", "Search")}
@@ -1210,7 +1210,7 @@ const KeyserverTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 </div>
                 <button
                   onClick={() => mgr.fetchFromKeyserver(r.key_id)}
-                  className="flex items-center gap-1 px-2 py-1 bg-green-600/10 text-green-400 rounded hover:bg-green-600/20 flex-shrink-0 ml-2"
+                  className="flex items-center gap-1 px-2 py-1 bg-success/10 text-success rounded hover:bg-success/20 flex-shrink-0 ml-2"
                 >
                   <Download className="w-3 h-3" />
                   {t("gpgAgent.keyserver.fetch", "Fetch")}
@@ -1245,7 +1245,7 @@ const KeyserverTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               if (sendKeyId) mgr.sendToKeyserver(sendKeyId);
             }}
             disabled={!sendKeyId || mgr.loading}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-[var(--color-text)] rounded hover:bg-blue-500 disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:opacity-50"
           >
             <Upload className="w-4 h-4" />
             {t("gpgAgent.keyserver.sendBtn", "Send")}
@@ -1322,7 +1322,7 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </button>
           <button
             onClick={mgr.clearAudit}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-red-600/10 text-red-500 rounded hover:bg-red-600/20"
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-error/10 text-error rounded hover:bg-error/20"
           >
             <Trash2 className="w-3 h-3" />
             {t("gpgAgent.audit.clear", "Clear")}
@@ -1345,7 +1345,7 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             >
               <span
                 className={`w-2 h-2 mt-1 rounded-full flex-shrink-0 ${
-                  entry.success ? "bg-green-500" : "bg-red-500"
+                  entry.success ? "bg-success" : "bg-error"
                 }`}
               />
               <div className="flex-1 min-w-0">

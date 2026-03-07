@@ -29,7 +29,7 @@ type Mgr = ReturnType<typeof useTotpImport>;
 
 function Header({ onClose }: { onClose: () => void }) {
   return (
-    <DialogHeader variant="compact" icon={Upload} iconColor="text-blue-400" title="Import 2FA / TOTP Entries" onClose={onClose} />
+    <DialogHeader variant="compact" icon={Upload} iconColor="text-primary" title="Import 2FA / TOTP Entries" onClose={onClose} />
   );
 }
 
@@ -38,7 +38,7 @@ function SourceSelector({ m }: { m: Mgr }) {
     <div className="flex items-center gap-3">
       <label className="text-xs text-[var(--color-textSecondary)] w-16 flex-shrink-0">Source</label>
       <div className="relative flex-1">
-        <Select value={m.source} onChange={(v: string) => m.changeSource(v as any)} options={[...IMPORT_SOURCES.map((s) => ({ value: s.id, label: s.label }))]} className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] appearance-none outline-none focus:border-blue-500 pr-8" />
+        <Select value={m.source} onChange={(v: string) => m.changeSource(v as any)} options={[...IMPORT_SOURCES.map((s) => ({ value: s.id, label: s.label }))]} className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] appearance-none outline-none focus:border-primary pr-8" />
         <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
       </div>
     </div>
@@ -52,7 +52,7 @@ function DropZone({ m }: { m: Mgr }) {
       onDragLeave={() => m.setDragOver(false)}
       onDrop={m.handleDrop}
       onClick={() => m.fileInputRef.current?.click()}
-      className={`flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${m.dragOver ? "border-blue-500 bg-blue-500/10" : "border-[var(--color-border)] hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]/40"}`}
+      className={`flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${m.dragOver ? "border-primary bg-primary/10" : "border-[var(--color-border)] hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]/40"}`}
     >
       <FileUp size={24} className="text-[var(--color-textSecondary)] mb-2" />
       <span className="text-sm text-[var(--color-textSecondary)]">{m.fileName || "Drop file here or click to browse"}</span>
@@ -67,7 +67,7 @@ function QrHint({ m }: { m: Mgr }) {
     <div className="flex items-center gap-2 px-1">
       <QrCode size={14} className="text-[var(--color-textMuted)] flex-shrink-0" />
       <span className="text-[10px] text-[var(--color-textMuted)]">Paste a QR code image (Ctrl+V) or drop/browse an image file to scan</span>
-      {m.qrDecoding && <Loader2 size={12} className="text-blue-400 animate-spin flex-shrink-0" />}
+      {m.qrDecoding && <Loader2 size={12} className="text-primary animate-spin flex-shrink-0" />}
     </div>
   );
 }
@@ -78,15 +78,15 @@ function QrPreview({ m }: { m: Mgr }) {
       <div className="flex items-center gap-3 p-2 bg-[var(--color-surface)] rounded-lg">
         <img src={m.qrPreview} alt="QR preview" className="w-16 h-16 object-contain rounded" />
         <div className="flex-1 min-w-0">
-          {m.qrDecoding && <div className="flex items-center gap-2 text-xs text-blue-400"><Loader2 size={12} className="animate-spin" />Scanning QR code...</div>}
-          {m.qrError && <div className="text-xs text-red-400">{m.qrError}</div>}
+          {m.qrDecoding && <div className="flex items-center gap-2 text-xs text-primary"><Loader2 size={12} className="animate-spin" />Scanning QR code...</div>}
+          {m.qrError && <div className="text-xs text-error">{m.qrError}</div>}
         </div>
         <button onClick={m.clearQrPreview} className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded flex-shrink-0"><X size={14} /></button>
       </div>
     );
   }
   if (!m.qrPreview && m.qrError) {
-    return <div className="text-xs text-red-400 px-1">{m.qrError}</div>;
+    return <div className="text-xs text-error px-1">{m.qrError}</div>;
   }
   return null;
 }
@@ -98,10 +98,10 @@ function ResultsSummary({ m }: { m: Mgr }) {
       <div className="flex items-center gap-3">
         <span className="text-[var(--color-textSecondary)]">Detected: <span className="text-[var(--color-text)] font-medium">{m.result.source}</span></span>
         <span className="text-[var(--color-textSecondary)]">Found: <span className="text-[var(--color-text)] font-medium">{m.result.entries.length}</span> entries</span>
-        <span className="text-[var(--color-textSecondary)]">Selected: <span className="text-blue-400 font-medium">{m.selected.size}</span></span>
+        <span className="text-[var(--color-textSecondary)]">Selected: <span className="text-primary font-medium">{m.selected.size}</span></span>
       </div>
       {m.result.entries.length > 0 && (
-        <button onClick={m.toggleAll} className="sor-option-chip text-blue-400 hover:text-blue-300">
+        <button onClick={m.toggleAll} className="sor-option-chip text-primary hover:text-primary">
           {m.selected.size === m.result.entries.length ? "Deselect all" : "Select all"}
         </button>
       )}
@@ -112,9 +112,9 @@ function ResultsSummary({ m }: { m: Mgr }) {
 function ResultErrors({ m }: { m: Mgr }) {
   if (!m.result || m.result.errors.length === 0) return null;
   return (
-    <div className="px-5 py-2 bg-yellow-500/5 border-b border-yellow-500/20">
-      <div className="flex items-center gap-2 text-xs text-yellow-400"><AlertTriangle size={12} />{m.result.errors.length} warning{m.result.errors.length !== 1 ? "s" : ""}</div>
-      <div className="mt-1 max-h-16 overflow-y-auto">{m.result.errors.map((err, i) => <div key={i} className="text-[10px] text-yellow-500/70">{err}</div>)}</div>
+    <div className="px-5 py-2 bg-warning/5 border-b border-warning/20">
+      <div className="flex items-center gap-2 text-xs text-warning"><AlertTriangle size={12} />{m.result.errors.length} warning{m.result.errors.length !== 1 ? "s" : ""}</div>
+      <div className="mt-1 max-h-16 overflow-y-auto">{m.result.errors.map((err, i) => <div key={i} className="text-[10px] text-warning/70">{err}</div>)}</div>
     </div>
   );
 }
@@ -128,13 +128,13 @@ function EntryList({ m }: { m: Mgr }) {
         const isDuplicate = m.existingSet.has(entry.secret.toLowerCase());
         const isSelected = m.selected.has(i);
         return (
-          <div key={i} onClick={() => m.toggleEntry(i)} className={`sor-selection-row rounded-none border-x-0 border-t-0 border-b border-[var(--color-border)]/30 ${isSelected ? "sor-selection-row-selected bg-blue-900/10" : "hover:bg-[var(--color-surface)]/40"} ${isDuplicate ? "opacity-50" : ""}`}>
-            <div className="flex-shrink-0 text-[var(--color-textSecondary)]">{isSelected ? <CheckSquare size={16} className="text-blue-400" /> : <Square size={16} />}</div>
+          <div key={i} onClick={() => m.toggleEntry(i)} className={`sor-selection-row rounded-none border-x-0 border-t-0 border-b border-[var(--color-border)]/30 ${isSelected ? "sor-selection-row-selected bg-primary/10" : "hover:bg-[var(--color-surface)]/40"} ${isDuplicate ? "opacity-50" : ""}`}>
+            <div className="flex-shrink-0 text-[var(--color-textSecondary)]">{isSelected ? <CheckSquare size={16} className="text-primary" /> : <Square size={16} />}</div>
             <Shield size={14} className="text-[var(--color-textMuted)] flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-[var(--color-text)] font-medium truncate">{entry.issuer}</span>
-                {isDuplicate && <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">DUPLICATE</span>}
+                {isDuplicate && <span className="text-[9px] bg-warning/20 text-warning px-1.5 py-0.5 rounded">DUPLICATE</span>}
               </div>
               <div className="text-[10px] text-[var(--color-textSecondary)] truncate">{entry.account} · {entry.algorithm.toUpperCase()} · {entry.digits} digits · {entry.period}s</div>
             </div>
@@ -149,7 +149,7 @@ function Footer({ m, onClose }: { m: Mgr; onClose: () => void }) {
   return (
     <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]/40">
       <button onClick={onClose} className="sor-option-chip text-sm">Cancel</button>
-      <button onClick={m.handleImport} disabled={!m.result || m.selected.size === 0} className="flex items-center gap-2 px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+      <button onClick={m.handleImport} disabled={!m.result || m.selected.size === 0} className="flex items-center gap-2 px-4 py-1.5 text-sm bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
         <Check size={14} />
         Import {m.selected.size > 0 ? `(${m.selected.size})` : ""}
       </button>

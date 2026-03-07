@@ -51,11 +51,11 @@ const IconX: React.FC<{ className?: string }> = ({ className }) => (
 /* ------------------------------------------------------------------ */
 
 const STATUS_COLORS: Record<string, string> = {
-  healthy: "var(--sor-color-healthy, #22c55e)",
-  degraded: "var(--sor-color-degraded, #eab308)",
-  unhealthy: "var(--sor-color-unhealthy, #ef4444)",
-  unknown: "var(--sor-color-unknown, #94a3b8)",
-  unreachable: "var(--sor-color-unreachable, #dc2626)",
+  healthy: "var(--color-success)",
+  degraded: "var(--color-warning)",
+  unhealthy: "var(--color-error)",
+  unknown: "var(--color-textMuted)",
+  unreachable: "var(--color-error)",
 };
 
 const SEVERITY_CLASS: Record<string, string> = {
@@ -134,11 +134,11 @@ const QuickStatsCards: React.FC<QuickStatsCardsProps> = ({ stats, summary }) => 
   const avgLatency = summary?.averageLatencyMs ?? stats?.averageLatencyMs ?? 0;
 
   const cards = [
-    { label: t("dashboard.totalConnections", "Total"), value: total, color: "var(--sor-color-text, #e2e8f0)" },
+    { label: t("dashboard.totalConnections", "Total"), value: total, color: "var(--color-text)" },
     { label: t("dashboard.healthy", "Healthy"), value: healthy, color: STATUS_COLORS.healthy },
     { label: t("dashboard.degraded", "Degraded"), value: degraded, color: STATUS_COLORS.degraded },
     { label: t("dashboard.down", "Down"), value: down, color: STATUS_COLORS.unhealthy },
-    { label: t("dashboard.avgLatency", "Avg Latency"), value: formatLatency(avgLatency), color: "var(--sor-color-primary, #38bdf8)" },
+    { label: t("dashboard.avgLatency", "Avg Latency"), value: formatLatency(avgLatency), color: "var(--color-info)" },
   ];
 
   return (
@@ -261,8 +261,8 @@ const SparklineMini: React.FC<SparklineMiniProps> = ({ data }) => {
 
   return (
     <svg className="sor-dash-sparkline" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <path d={areaD} fill="var(--sor-color-primary-alpha, rgba(56,189,248,.15))" />
-      <path d={pathD} fill="none" stroke="var(--sor-color-primary, #38bdf8)" strokeWidth="1.5" />
+      <path d={areaD} fill="rgb(var(--color-primary-rgb) / 0.15)" />
+      <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth="1.5" />
     </svg>
   );
 };

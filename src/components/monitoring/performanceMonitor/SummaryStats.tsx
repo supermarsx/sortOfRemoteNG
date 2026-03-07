@@ -12,8 +12,8 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </h3>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="sor-metric-summary-card">
-          <div className="p-2 bg-blue-500/10 rounded-lg">
-            <Wifi className="text-blue-400" size={16} />
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Wifi className="text-primary" size={16} />
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">
@@ -25,8 +25,8 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
         </div>
         <div className="sor-metric-summary-card">
-          <div className="p-2 bg-green-500/10 rounded-lg">
-            <Activity className="text-green-400" size={16} />
+          <div className="p-2 bg-success/10 rounded-lg">
+            <Activity className="text-success" size={16} />
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">
@@ -38,8 +38,8 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
         </div>
         <div className="sor-metric-summary-card">
-          <div className="p-2 bg-yellow-500/10 rounded-lg">
-            <Cpu className="text-yellow-400" size={16} />
+          <div className="p-2 bg-warning/10 rounded-lg">
+            <Cpu className="text-warning" size={16} />
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">
@@ -51,8 +51,8 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
         </div>
         <div className="sor-metric-summary-card">
-          <div className="p-2 bg-purple-500/10 rounded-lg">
-            <HardDrive className="text-purple-400" size={16} />
+          <div className="p-2 bg-accent/10 rounded-lg">
+            <HardDrive className="text-accent" size={16} />
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">

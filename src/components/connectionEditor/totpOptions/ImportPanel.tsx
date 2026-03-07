@@ -1,4 +1,6 @@
 import React from "react";
+import { Textarea } from "../../ui/forms";
+import type { TOTPOptionsMgr } from "./types";
 
 const ImportPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.showImport) return null;
@@ -17,7 +19,7 @@ const ImportPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
         variant="form-xs" className="w-full h-20 font-mono resize-none"
       />
       {mgr.importError && (
-        <div className="text-[10px] text-red-400">{mgr.importError}</div>
+        <div className="text-[10px] text-error">{mgr.importError}</div>
       )}
       <div className="flex justify-end space-x-2">
         <button

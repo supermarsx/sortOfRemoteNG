@@ -31,13 +31,13 @@ export const RDPStatusBar: React.FC<RDPStatusBarProps> = ({
             <span>Encryption: TLS/NLA</span>
             {stats && (
               <>
-                <span className="text-green-400">{stats.fps.toFixed(0)} FPS</span>
+                <span className="text-success">{stats.fps.toFixed(0)} FPS</span>
                 <span>{'\u2193'}{formatBytes(stats.bytes_received)}</span>
                 <span>{'\u2191'}{formatBytes(stats.bytes_sent)}</span>
               </>
             )}
             {certFingerprint && (
-              <span className="text-cyan-400" title={`SHA256:${certFingerprint}`}>
+              <span className="text-info" title={`SHA256:${certFingerprint}`}>
                 Cert: {certFingerprint.slice(0, 11)}{'\u2026'}
               </span>
             )}
@@ -51,7 +51,7 @@ export const RDPStatusBar: React.FC<RDPStatusBarProps> = ({
         <Keyboard size={12} />
         {audioEnabled && <Volume2 size={12} />}
         {clipboardEnabled && <Copy size={12} />}
-        {magnifierActive && <Search size={12} className="text-blue-400" />}
+        {magnifierActive && <Search size={12} className="text-primary" />}
       </div>
     }
   />

@@ -18,7 +18,7 @@ function MacroRecordButton({ mgr }: { mgr: WebTerminalMgr }) {
   return (
     <button
       onClick={mgr.handleStopMacroRecording}
-      className="app-bar-button p-2 text-orange-400"
+      className="app-bar-button p-2 text-warning"
       data-tooltip="Stop Macro Recording"
       aria-label="Stop Macro Recording"
     >

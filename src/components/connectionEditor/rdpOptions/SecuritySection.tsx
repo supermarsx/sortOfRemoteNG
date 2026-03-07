@@ -4,6 +4,7 @@ import { Shield, ShieldAlert, Fingerprint, Trash2, Pencil, Network, Server } fro
 import { Connection, RDPConnectionSettings } from "../../../types/connection/connection";
 import { CredsspOracleRemediationPolicies, NlaModes, TlsVersions, CredsspVersions } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
+import type { RDPOptionsMgr } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox, Select } from "../../ui/forms";
 const SecuritySection: React.FC<
   SectionBaseProps & {
@@ -14,7 +15,7 @@ const SecuritySection: React.FC<
 > = ({ rdp, updateRdp, formData, setFormData, mgr }) => (
   <Section
     title="Security"
-    icon={<Shield size={14} className="text-red-400" />}
+    icon={<Shield size={14} className="text-error" />}
   >
     {/* CredSSP Master Toggle */}
     <div className="pb-2 mb-2 border-b border-[var(--color-border)]/60">
@@ -62,7 +63,7 @@ const SecuritySection: React.FC<
     {/* CredSSP Remediation */}
     <div className="pt-3 mt-2 border-t border-[var(--color-border)]/60">
       <div className="flex items-center gap-2 mb-3 text-sm text-[var(--color-textSecondary)]">
-        <ShieldAlert size={14} className="text-amber-400" />
+        <ShieldAlert size={14} className="text-warning" />
         <span className="font-medium">CredSSP Remediation</span>
         <span className="text-xs text-[var(--color-textMuted)] ml-1">(CVE-2018-0886)</span>
       </div>
@@ -240,7 +241,7 @@ const SecuritySection: React.FC<
           <button
             type="button"
             onClick={mgr.handleClearAllRdpTrust}
-            className="text-xs text-red-400 hover:text-red-300"
+            className="text-xs text-error hover:text-error"
           >
             Clear All
           </button>
@@ -267,7 +268,7 @@ const SecuritySection: React.FC<
                       mgr.setEditingNickname(r.identity.fingerprint);
                       mgr.setNicknameInput(r.nickname || "");
                     }}
-                    className="text-[var(--color-textMuted)] hover:text-blue-400"
+                    className="text-[var(--color-textMuted)] hover:text-primary"
                     title="Edit nickname"
                   >
                     <Pencil size={10} />
@@ -275,7 +276,7 @@ const SecuritySection: React.FC<
                   <button
                     type="button"
                     onClick={() => mgr.handleRemoveTrust(r)}
-                    className="text-[var(--color-textMuted)] hover:text-red-400"
+                    className="text-[var(--color-textMuted)] hover:text-error"
                     title="Remove trust"
                   >
                     <Trash2 size={10} />
@@ -294,7 +295,7 @@ const SecuritySection: React.FC<
                   <button
                     type="button"
                     onClick={() => mgr.handleSaveNickname(r)}
-                    className="text-xs text-green-400 hover:text-green-300"
+                    className="text-xs text-success hover:text-success"
                   >
                     Save
                   </button>

@@ -7,14 +7,14 @@ import type { Mgr } from "./types";
 export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <Shield className="w-4 h-4 text-green-400" />
+      <Shield className="w-4 h-4 text-success" />
       {mgr.t("settings.api.authentication", "Authentication")}
     </h4>
 
     <div className="sor-settings-card space-y-4">
       <label className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={settings.restApi?.authentication || false} onChange={(v: boolean) => mgr.updateRestApi({ authentication: v })} />
-        <Key className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-green-400" />
+        <Key className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-success" />
         <div>
           <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
             {mgr.t("settings.api.requireAuth", "Require Authentication")}
@@ -51,7 +51,7 @@ export const AuthenticationSection: React.FC<{ settings: GlobalSettings; mgr: Mg
             <button
               type="button"
               onClick={mgr.generateApiKey}
-              className="px-3 py-2 bg-blue-600 border border-blue-500 rounded-md text-[var(--color-text)] hover:bg-blue-500"
+              className="px-3 py-2 bg-primary border border-primary rounded-md text-[var(--color-text)] hover:bg-primary/90"
               title={mgr.t("settings.api.generateKey", "Generate New Key")}
             >
               <RefreshCw className="w-4 h-4" />

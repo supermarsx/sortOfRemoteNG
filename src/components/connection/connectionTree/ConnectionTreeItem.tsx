@@ -61,9 +61,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         data-connection-item="true"
         data-tauri-disable-drag="true"
         className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-[var(--color-border)]/50 transition-colors relative ${
-          isSelected ? "bg-blue-600/20 text-blue-400" : "text-[var(--color-textSecondary)]"
+          isSelected ? "bg-primary/20 text-primary" : "text-[var(--color-textSecondary)]"
         } ${isDragging ? "opacity-50 scale-95" : ""} ${
-          isDragOver && dropPosition === "inside" ? "bg-blue-500/20 ring-2 ring-blue-500/50 ring-inset" : ""
+          isDragOver && dropPosition === "inside" ? "bg-primary/20 ring-2 ring-primary/50 ring-inset" : ""
         }`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleSelect}
@@ -94,8 +94,8 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
           onDrop(connection.id, calcDropPosition(e.clientY, e.currentTarget.getBoundingClientRect()));
         }}
       >
-        {isDragOver && dropPosition === "before" && <div className="absolute left-0 right-0 top-0 h-0.5 bg-blue-500 z-10" />}
-        {isDragOver && dropPosition === "after" && <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-blue-500 z-10" />}
+        {isDragOver && dropPosition === "before" && <div className="absolute left-0 right-0 top-0 h-0.5 bg-primary z-10" />}
+        {isDragOver && dropPosition === "after" && <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-primary z-10" />}
 
         {connection.isGroup && (
           <button
@@ -108,15 +108,15 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
         <div className="flex items-center min-w-0 flex-1">
           {connection.isGroup ? (
-            isExpanded ? <FolderOpen size={16} className="mr-2 text-yellow-400" /> : <Folder size={16} className="mr-2 text-yellow-400" />
+            isExpanded ? <FolderOpen size={16} className="mr-2 text-warning" /> : <Folder size={16} className="mr-2 text-warning" />
           ) : (
             <ProtocolIcon size={16} className={`mr-2 ${getStatusColor(activeSession?.status)}`} />
           )}
           <span className="truncate text-sm">{connection.name}</span>
           {activeSession && (
             <div className={`ml-2 w-2 h-2 rounded-full ${
-              activeSession.status === "connected" ? "bg-green-400"
-                : activeSession.status === "connecting" ? "bg-yellow-400" : "bg-red-400"
+              activeSession.status === "connected" ? "bg-success"
+                : activeSession.status === "connecting" ? "bg-warning" : "bg-error"
             }`} />
           )}
         </div>

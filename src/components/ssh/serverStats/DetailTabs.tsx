@@ -105,7 +105,7 @@ function DiskDetail({ snapshot }: { snapshot: ServerStatsSnapshot }) {
                   <td className="py-1 pr-2 text-right text-[var(--color-text)]">{formatBytes(p.totalBytes)}</td>
                   <td className="py-1 pr-2 text-right text-[var(--color-text)]">{formatBytes(p.usedBytes)}</td>
                   <td className="py-1 pr-2 text-right text-[var(--color-text)]">{formatBytes(p.availableBytes)}</td>
-                  <td className={`py-1 text-right font-semibold ${p.usagePercent >= 90 ? "text-red-500" : p.usagePercent >= 70 ? "text-amber-500" : "text-[var(--color-text)]"}`}>
+                  <td className={`py-1 text-right font-semibold ${p.usagePercent >= 90 ? "text-error" : p.usagePercent >= 70 ? "text-warning" : "text-[var(--color-text)]"}`}>
                     {p.usagePercent}%
                   </td>
                 </tr>
@@ -195,7 +195,7 @@ function FirewallDetail({ snapshot, searchFilter }: { snapshot: ServerStatsSnaps
                 <tr key={i} className="border-b border-[var(--color-border)]">
                   <td className="py-1 pr-2 text-[var(--color-text-secondary)]">{r.ruleNumber}</td>
                   <td className="py-1 pr-2 text-[var(--color-text)]">{r.chain}</td>
-                  <td className={`py-1 pr-2 font-semibold ${r.target === "DROP" || r.target === "REJECT" || r.target === "DENY" ? "text-red-500" : "text-green-500"}`}>
+                  <td className={`py-1 pr-2 font-semibold ${r.target === "DROP" || r.target === "REJECT" || r.target === "DENY" ? "text-error" : "text-success"}`}>
                     {r.target}
                   </td>
                   <td className="py-1 pr-2 text-[var(--color-text)]">{r.protocol}</td>
@@ -211,7 +211,7 @@ function FirewallDetail({ snapshot, searchFilter }: { snapshot: ServerStatsSnaps
 
       {firewall.rawOutput && (
         <details className="mt-3">
-          <summary className="text-xs cursor-pointer text-cyan-500 hover:underline">
+          <summary className="text-xs cursor-pointer text-info hover:underline">
             {t("serverStats.showRaw", "Show raw output")}
           </summary>
           <pre className="mt-1 p-2 text-xs bg-black/20 rounded overflow-auto max-h-60 text-[var(--color-text-secondary)] font-mono whitespace-pre-wrap">
@@ -279,10 +279,10 @@ function PortsDetail({ snapshot, searchFilter }: { snapshot: ServerStatsSnapshot
                 <tr key={i} className="border-b border-[var(--color-border)]">
                   <td className="py-1 pr-2 text-[var(--color-text)]">{p.protocol}</td>
                   <td className="py-1 pr-2 font-mono text-[var(--color-text-secondary)]">{p.localAddress}</td>
-                  <td className="py-1 pr-2 font-mono text-cyan-500 font-semibold">{p.localPort}</td>
+                  <td className="py-1 pr-2 font-mono text-info font-semibold">{p.localPort}</td>
                   <td className="py-1 pr-2 text-[var(--color-text)]">{p.processName || "–"}</td>
                   <td className="py-1 pr-2 text-[var(--color-text-secondary)]">{p.pid || "–"}</td>
-                  <td className="py-1 text-green-500">{p.state}</td>
+                  <td className="py-1 text-success">{p.state}</td>
                 </tr>
               ))}
             </tbody>

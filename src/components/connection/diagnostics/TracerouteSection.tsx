@@ -28,7 +28,7 @@ const TracerouteSection = ({ mgr }: { mgr: DiagnosticsMgr }) => {
               key={i}
               className={`flex items-center gap-3 p-2 rounded ${
                 hop.timeout
-                  ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+                  ? "bg-warning/10 text-warning dark:text-warning"
                   : "bg-[var(--color-surface)] text-[var(--color-text)]"
               }`}
             >

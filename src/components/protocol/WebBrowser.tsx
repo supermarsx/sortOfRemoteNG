@@ -1,5 +1,10 @@
 import React from "react";
 import { useWebBrowser } from "../../hooks/protocol/useWebBrowser";
+import type { ConnectionSession } from "../../types/connection/connection";
+
+interface WebBrowserProps {
+  session: ConnectionSession;
+}
 import SecurityIcon from "./webBrowser/SecurityIcon";
 import RecordingControls from "./webBrowser/RecordingControls";
 import NavigationBar from "./webBrowser/NavigationBar";

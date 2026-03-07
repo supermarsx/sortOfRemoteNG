@@ -4,8 +4,8 @@ import { useProxyChainManager } from "../../hooks/network/useProxyChainManager";
 import Modal from "../ui/overlays/Modal";
 import DialogHeader from "../ui/overlays/DialogHeader";
 import SSHTunnelDialog from "../ssh/SSHTunnelDialog";
-import ProxyProfileEditor from "./ProxyProfileEditor";
-import ProxyChainEditor from "./ProxyChainEditor";
+import { ProxyProfileEditor } from "./ProxyProfileEditor";
+import { ProxyChainEditor } from "./ProxyChainEditor";
 import { ProxyChainMenuProps } from "./proxyChainMenu/types";
 import ProfilesTab from "./proxyChainMenu/ProfilesTab";
 import ChainsTab from "./proxyChainMenu/ChainsTab";
@@ -33,8 +33,8 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
         {/* Header */}
         <DialogHeader
           icon={Network}
-          iconColor="text-blue-500"
-          iconBg="bg-blue-500/20"
+          iconColor="text-primary"
+          iconBg="bg-primary/20"
           title="Proxy & VPN Chains"
           onClose={onClose}
           sticky
@@ -57,7 +57,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
               onClick={() => mgr.setActiveTab("profiles")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "profiles"
-                  ? "bg-blue-600 text-[var(--color-text)]"
+                  ? "bg-primary text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -68,7 +68,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
               onClick={() => mgr.setActiveTab("chains")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "chains"
-                  ? "bg-blue-600 text-[var(--color-text)]"
+                  ? "bg-primary text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -79,7 +79,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
               onClick={() => mgr.setActiveTab("tunnels")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "tunnels"
-                  ? "bg-blue-600 text-[var(--color-text)]"
+                  ? "bg-primary text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -90,7 +90,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
               onClick={() => mgr.setActiveTab("associations")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "associations"
-                  ? "bg-blue-600 text-[var(--color-text)]"
+                  ? "bg-primary text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >

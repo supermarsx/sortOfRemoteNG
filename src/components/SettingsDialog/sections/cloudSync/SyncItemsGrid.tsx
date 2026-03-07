@@ -18,32 +18,32 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
   }> = [
     {
       key: "syncConnections",
-      icon: <HardDrive className="w-4 h-4 text-blue-400" />,
+      icon: <HardDrive className="w-4 h-4 text-primary" />,
       label: "Connections",
     },
     {
       key: "syncSettings",
-      icon: <Settings className="w-4 h-4 text-purple-400" />,
+      icon: <Settings className="w-4 h-4 text-accent" />,
       label: "Settings",
     },
     {
       key: "syncSSHKeys",
-      icon: <Key className="w-4 h-4 text-yellow-400" />,
+      icon: <Key className="w-4 h-4 text-warning" />,
       label: "SSH Keys",
     },
     {
       key: "syncScripts",
-      icon: <FileKey className="w-4 h-4 text-green-400" />,
+      icon: <FileKey className="w-4 h-4 text-success" />,
       label: "Scripts",
     },
     {
       key: "syncColorTags",
-      icon: <Palette className="w-4 h-4 text-pink-400" />,
+      icon: <Palette className="w-4 h-4 text-accent" />,
       label: "Color Tags",
     },
     {
       key: "syncShortcuts",
-      icon: <Keyboard className="w-4 h-4 text-orange-400" />,
+      icon: <Keyboard className="w-4 h-4 text-warning" />,
       label: "Shortcuts",
     },
   ];

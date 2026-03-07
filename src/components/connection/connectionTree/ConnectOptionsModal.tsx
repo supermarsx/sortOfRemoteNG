@@ -87,7 +87,7 @@ function ConnectOptionsModal({ mgr }: { mgr: ConnectionTreeMgr }) {
           </label>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={close} className="px-3 py-2 text-sm text-[var(--color-textSecondary)] bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded-md">Cancel</button>
-            <button type="button" onClick={mgr.handleConnectOptionsSubmit} className="px-3 py-2 text-sm text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-md">Connect</button>
+            <button type="button" onClick={mgr.handleConnectOptionsSubmit} className="px-3 py-2 text-sm text-[var(--color-text)] bg-primary hover:bg-primary/90 rounded-md">Connect</button>
           </div>
         </div>
       </div>

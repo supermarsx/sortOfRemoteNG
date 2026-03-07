@@ -46,15 +46,15 @@ const ManagerHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
 }) => (
   <DialogHeader
     icon={ArrowUpDown}
-    iconColor="text-cyan-400"
-    iconBg="bg-cyan-600/20"
+    iconColor="text-info"
+    iconBg="bg-info/20"
     title="Internal Proxy Manager"
     subtitle={`${mgr.sessions.length} active session${mgr.sessions.length !== 1 ? 's' : ''} \u00b7 ${mgr.totalRequests} request${mgr.totalRequests !== 1 ? 's' : ''} proxied`}
     onClose={onClose}
     actions={
       <>
         <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
-          <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-cyan-600 w-3.5 h-3.5" />
+          <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-info w-3.5 h-3.5" />
           <span>Auto-refresh</span>
         </label>
         <button
@@ -88,7 +88,7 @@ const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             onClick={() => mgr.setActiveTab(tab.id)}
             className={`sor-tab-trigger ${
               mgr.activeTab === tab.id
-                ? "sor-tab-trigger-active border-cyan-500"
+                ? "sor-tab-trigger-active border-info"
                 : ""
             }`}
           >
@@ -115,7 +115,7 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       {mgr.sessions.length > 0 && (
         <button
           onClick={mgr.handleStopAll}
-          className="sor-option-chip text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 border-red-900/50"
+          className="sor-option-chip text-xs bg-error/30 hover:bg-error/50 text-error border-error/50"
         >
           <StopCircle size={12} />
           <span>Stop All</span>
@@ -144,7 +144,7 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                 <div className="flex items-center space-x-2 mb-1">
                   <Globe
                     size={14}
-                    className="text-cyan-400 flex-shrink-0"
+                    className="text-info flex-shrink-0"
                   />
                   <span className="text-[var(--color-text)] text-sm font-medium truncate">
                     {s.target_url}
@@ -169,7 +169,7 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                     </span>
                   </span>
                   {s.error_count > 0 && (
-                    <span className="flex items-center space-x-1 text-red-400">
+                    <span className="flex items-center space-x-1 text-error">
                       <AlertCircle size={10} />
                       <span>
                         {s.error_count} error
@@ -179,14 +179,14 @@ const SessionsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                   )}
                 </div>
                 {s.last_error && (
-                  <div className="mt-2 px-2 py-1 bg-red-900/20 border border-red-900/30 rounded text-xs text-red-400 truncate">
+                  <div className="mt-2 px-2 py-1 bg-error/20 border border-error/30 rounded text-xs text-error truncate">
                     Last error: {s.last_error}
                   </div>
                 )}
               </div>
               <button
                 onClick={() => mgr.handleStopSession(s.session_id)}
-                className="ml-3 p-1.5 hover:bg-red-900/30 rounded-lg text-[var(--color-textMuted)] hover:text-red-400 transition-colors"
+                className="ml-3 p-1.5 hover:bg-error/30 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
                 title="Stop session"
               >
                 <StopCircle size={14} />
@@ -265,7 +265,7 @@ const LogsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                   {entry.status}
                 </td>
                 <td
-                  className="px-3 py-1.5 text-red-400 truncate max-w-[8rem]"
+                  className="px-3 py-1.5 text-error truncate max-w-[8rem]"
                   title={entry.error || ""}
                 >
                   {entry.error || "—"}
@@ -284,7 +284,7 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     {/* Summary cards */}
     <div className="grid grid-cols-4 gap-3">
       <div className="sor-surface-card p-4 text-center">
-        <Activity size={20} className="mx-auto mb-2 text-cyan-400" />
+        <Activity size={20} className="mx-auto mb-2 text-info" />
         <p className="text-2xl font-bold text-[var(--color-text)]">
           {mgr.sessions.length}
         </p>
@@ -293,7 +293,7 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </p>
       </div>
       <div className="sor-surface-card p-4 text-center">
-        <ArrowUpDown size={20} className="mx-auto mb-2 text-blue-400" />
+        <ArrowUpDown size={20} className="mx-auto mb-2 text-primary" />
         <p className="text-2xl font-bold text-[var(--color-text)]">
           {mgr.totalRequests}
         </p>
@@ -302,7 +302,7 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </p>
       </div>
       <div className="sor-surface-card p-4 text-center">
-        <ServerCrash size={20} className="mx-auto mb-2 text-red-400" />
+        <ServerCrash size={20} className="mx-auto mb-2 text-error" />
         <p className="text-2xl font-bold text-[var(--color-text)]">
           {mgr.totalErrors}
         </p>
@@ -311,7 +311,7 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </p>
       </div>
       <div className="sor-surface-card p-4 text-center">
-        <CheckCircle2 size={20} className="mx-auto mb-2 text-green-400" />
+        <CheckCircle2 size={20} className="mx-auto mb-2 text-success" />
         <p className="text-2xl font-bold text-[var(--color-text)]">
           {mgr.errorRate}%
         </p>
@@ -353,17 +353,17 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                     >
                       {s.target_url}
                     </td>
-                    <td className="px-3 py-1.5 text-blue-400 font-mono">
+                    <td className="px-3 py-1.5 text-primary font-mono">
                       {s.request_count}
                     </td>
-                    <td className="px-3 py-1.5 text-red-400 font-mono">
+                    <td className="px-3 py-1.5 text-error font-mono">
                       {s.error_count}
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center space-x-2">
                         <div className="flex-1 h-1.5 bg-[var(--color-border)] rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${parseFloat(rate) > 10 ? "bg-red-500" : parseFloat(rate) > 0 ? "bg-yellow-500" : "bg-green-500"}`}
+                            className={`h-full rounded-full ${parseFloat(rate) > 10 ? "bg-error" : parseFloat(rate) > 0 ? "bg-warning" : "bg-success"}`}
                             style={{
                               width: `${Math.min(parseFloat(rate), 100)}%`,
                             }}
@@ -394,7 +394,7 @@ const StatsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <div className="text-xs text-[var(--color-textSecondary)] space-y-1.5">
         <p>
           The internal proxy uses Tauri&apos;s custom URI scheme protocol (
-          <code className="text-cyan-400">sortofremote-proxy://</code>) to
+          <code className="text-info">sortofremote-proxy://</code>) to
           mediate HTTP requests.
         </p>
         <p>

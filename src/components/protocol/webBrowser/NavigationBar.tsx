@@ -1,5 +1,6 @@
+import type { SectionProps } from "./types";
 import RecordingControls from "./RecordingControls";
-import SecurityIcon from "./SecurityIcon";
+import SecurityIcon, { AuthIcon } from "./SecurityIcon";
 import React from "react";
 import { ArrowLeft, ArrowRight, RotateCcw, ExternalLink, Shield, ShieldOff, Globe, Star, Copy, Download, ClipboardCopy } from "lucide-react";
 import RDPTotpPanel from "../../rdp/RDPTotpPanel";
@@ -72,7 +73,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
               title="SSL verification is disabled for this connection"
               className="flex items-center"
             >
-              <ShieldOff size={14} className="text-red-400" />
+              <ShieldOff size={14} className="text-error" />
             </span>
           )}
           <AuthIcon hasAuth={mgr.hasAuth} />
@@ -86,7 +87,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
           type="text"
           value={mgr.inputUrl}
           onChange={(e) => mgr.setInputUrl(e.target.value)}
-          className="w-full pr-4 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+          className="w-full pr-4 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
           style={{ paddingLeft: `${mgr.iconPadding}px` }}
           placeholder="Enter URL..."
         />
@@ -98,8 +99,8 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
       onClick={mgr.handleAddBookmark}
       className={`p-2 hover:bg-[var(--color-border)] rounded transition-colors ${
         mgr.isCurrentPageBookmarked
-          ? "text-yellow-400"
-          : "text-[var(--color-textSecondary)] hover:text-yellow-400"
+          ? "text-warning"
+          : "text-[var(--color-textSecondary)] hover:text-warning"
       }`}
       title={
         mgr.isCurrentPageBookmarked
@@ -138,7 +139,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
       <button
         type="button"
         onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
-        className={`p-2 rounded transition-colors relative ${mgr.showTotpPanel ? "text-blue-400 bg-blue-600/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
+        className={`p-2 rounded transition-colors relative ${mgr.showTotpPanel ? "text-primary bg-primary/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
         title="2FA Codes"
       >
         <Shield size={16} />

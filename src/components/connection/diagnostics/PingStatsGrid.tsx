@@ -32,12 +32,12 @@ const PingStatsGrid = ({
         {
           value: String(results.pings.filter((p) => p.success).length),
           label: t("diagnostics.successful", "Successful"),
-          color: "text-green-500",
+          color: "text-success",
         },
         {
           value: String(results.pings.filter((p) => !p.success).length),
           label: t("diagnostics.failed", "Failed"),
-          color: "text-red-500",
+          color: "text-error",
         },
       ].map((stat) => (
         <div

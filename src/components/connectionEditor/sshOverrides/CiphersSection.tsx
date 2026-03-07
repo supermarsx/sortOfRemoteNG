@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import CipherSelector from "./CipherSelector";
 import OverrideToggle from "./OverrideToggle";
 import { SSHConnectionConfig } from "../../../types/settings/settings";

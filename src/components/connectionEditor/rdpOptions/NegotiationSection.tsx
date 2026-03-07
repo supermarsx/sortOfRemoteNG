@@ -11,7 +11,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
 }) => (
   <Section
     title="Connection Negotiation"
-    icon={<Zap size={14} className="text-amber-400" />}
+    icon={<Zap size={14} className="text-warning" />}
   >
     <label className={CSS.label}>
       <Checkbox checked={rdp.negotiation?.autoDetect ?? false} onChange={(v: boolean) => updateRdp("negotiation", { autoDetect: v })} className="CSS.checkbox" />
@@ -75,7 +75,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
     {/* Load Balancing */}
     <div className="pt-3 mt-2 border-t border-[var(--color-border)]/60">
       <div className="flex items-center gap-2 mb-2 text-sm text-[var(--color-textSecondary)]">
-        <ToggleLeft size={14} className="text-blue-400" />
+        <ToggleLeft size={14} className="text-primary" />
         <span className="font-medium">Load Balancing</span>
       </div>
 

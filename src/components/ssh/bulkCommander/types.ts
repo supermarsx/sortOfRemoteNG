@@ -1,3 +1,5 @@
+import type { useBulkSSHCommander } from "../../../hooks/ssh/useBulkSSHCommander";
+import { useTranslation } from "react-i18next";
 
 // ─── Sub-components ─────────────────────────────────────────────
 

@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { IPProtocol } from "../../../types/settings/settings";
 import { Checkbox, Select } from "../../ui/forms";

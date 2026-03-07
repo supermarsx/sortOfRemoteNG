@@ -21,10 +21,10 @@ const ProtocolDeepDiagSection = ({
     return null;
 
   return (
-    <div className="bg-[var(--color-surfaceHover)]/50 border border-purple-500/30 rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 bg-purple-950/20 border-b border-purple-500/20">
-        <Microscope size={14} className="text-purple-400" />
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-purple-300">
+    <div className="bg-[var(--color-surfaceHover)]/50 border border-accent/30 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 bg-purple-950/20 border-b border-accent/20">
+        <Microscope size={14} className="text-accent" />
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-accent">
           {connection.protocol.toUpperCase()} Deep Diagnostics
         </h3>
         {protocolReport && (
@@ -39,14 +39,14 @@ const ProtocolDeepDiagSection = ({
       </div>
 
       {protocolDiagRunning && (
-        <div className="flex items-center gap-2 px-4 py-3 text-sm text-purple-400">
+        <div className="flex items-center gap-2 px-4 py-3 text-sm text-accent">
           <Loader2 size={14} className="animate-spin" />
           Running {connection.protocol.toUpperCase()} diagnostics…
         </div>
       )}
 
       {protocolDiagError && (
-        <div className="px-4 py-3 text-sm text-red-400">
+        <div className="px-4 py-3 text-sm text-error">
           Diagnostics failed: {protocolDiagError}
         </div>
       )}
@@ -57,13 +57,13 @@ const ProtocolDeepDiagSection = ({
             const isExpanded = expandedProtoStep === idx;
             const stepIcon =
               step.status === "pass" ? (
-                <CheckCircle size={14} className="text-green-400" />
+                <CheckCircle size={14} className="text-success" />
               ) : step.status === "fail" ? (
-                <XCircle size={14} className="text-red-400" />
+                <XCircle size={14} className="text-error" />
               ) : step.status === "warn" ? (
-                <AlertCircle size={14} className="text-yellow-400" />
+                <AlertCircle size={14} className="text-warning" />
               ) : step.status === "info" ? (
-                <Info size={14} className="text-blue-400" />
+                <Info size={14} className="text-primary" />
               ) : (
                 <Activity size={14} className="text-[var(--color-textMuted)]" />
               );
@@ -101,11 +101,11 @@ const ProtocolDeepDiagSection = ({
                   <p
                     className={`text-[10px] ${
                       step.status === "fail"
-                        ? "text-red-400"
+                        ? "text-error"
                         : step.status === "warn"
-                          ? "text-yellow-400"
+                          ? "text-warning"
                           : step.status === "info"
-                            ? "text-blue-400"
+                            ? "text-primary"
                             : "text-[var(--color-textSecondary)]"
                     }`}
                   >
@@ -132,12 +132,12 @@ const ProtocolDeepDiagSection = ({
               {protocolReport.summary}
             </p>
             {protocolReport.rootCauseHint && (
-              <div className="rounded-lg border border-yellow-500/30 bg-yellow-950/20 p-3">
-                <h4 className="text-[10px] font-semibold text-yellow-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <div className="rounded-lg border border-warning/30 bg-yellow-950/20 p-3">
+                <h4 className="text-[10px] font-semibold text-warning uppercase tracking-wider mb-1 flex items-center gap-1.5">
                   <AlertCircle size={10} />
                   Root Cause Analysis
                 </h4>
-                <pre className="text-[10px] text-yellow-200/80 whitespace-pre-wrap leading-relaxed">
+                <pre className="text-[10px] text-warning/80 whitespace-pre-wrap leading-relaxed">
                   {protocolReport.rootCauseHint}
                 </pre>
               </div>

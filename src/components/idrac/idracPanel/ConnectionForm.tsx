@@ -18,7 +18,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex flex-1 items-center justify-center p-8">
       <div className="w-full max-w-md space-y-6 bg-[var(--color-bg-secondary)] rounded-xl p-6 border border-[var(--color-border)]">
         <div className="flex items-center gap-3 mb-4">
-          <Server className="w-8 h-8 text-orange-400" />
+          <Server className="w-8 h-8 text-warning" />
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text)]">
               {t("idrac.connect_title", "Connect to Dell iDRAC")}
@@ -33,7 +33,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
         </div>
 
         {mgr.connectionError && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-error text-xs">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{mgr.connectionError}</span>
           </div>
@@ -46,7 +46,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("idrac.host", "iDRAC Host / IP")}
             </label>
             <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
               value={mgr.host}
               onChange={(e) => mgr.setHost(e.target.value)}
               placeholder="192.168.1.100"
@@ -60,7 +60,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("idrac.port", "Port")}
             </label>
             <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
               type="number"
               value={mgr.port}
               onChange={(e) => mgr.setPort(Number(e.target.value))}
@@ -74,7 +74,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("idrac.username", "Username")}
             </label>
             <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
               value={mgr.username}
               onChange={(e) => mgr.setUsername(e.target.value)}
               placeholder="root"
@@ -89,7 +89,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             </label>
             <div className="relative">
               <input
-                className="w-full px-3 py-2 pr-10 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                className="w-full px-3 py-2 pr-10 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
                 type={showPassword ? "text" : "password"}
                 value={mgr.password}
                 onChange={(e) => mgr.setPassword(e.target.value)}
@@ -115,7 +115,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("idrac.protocol", "Protocol (auto-detect if blank)")}
             </label>
             <select
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
               value={mgr.forceProtocol}
               onChange={(e) => mgr.setForceProtocol(e.target.value)}
               disabled={isConnecting}
@@ -133,7 +133,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               type="checkbox"
               checked={mgr.insecure}
               onChange={(e) => mgr.setInsecure(e.target.checked)}
-              className="rounded border-[var(--color-border)] text-orange-500 focus:ring-orange-500/50"
+              className="rounded border-[var(--color-border)] text-warning focus:ring-warning/50"
               disabled={isConnecting}
             />
             <span className="text-[10px] text-[var(--color-text-secondary)]">
@@ -145,7 +145,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
         <button
           onClick={() => mgr.connect()}
           disabled={isConnecting || !mgr.host || !mgr.username}
-          className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-2.5 rounded-lg bg-warning hover:bg-warning/90 text-white text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {isConnecting ? (
             <>

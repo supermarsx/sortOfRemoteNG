@@ -38,7 +38,7 @@ export const WebHarRecordingRow: React.FC<WebHarRecordingRowProps> = ({
         onClick={onToggle}
         className="sor-recording-row"
       >
-        <Globe size={16} className="text-cyan-400 flex-shrink-0" />
+        <Globe size={16} className="text-info flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-[var(--color-text)] truncate">
             {recording.name}
@@ -83,7 +83,7 @@ export const WebHarRecordingRow: React.FC<WebHarRecordingRowProps> = ({
                 />
                 <button
                   onClick={rename.commitRename}
-                  className="p-1 text-green-400 hover:text-green-300"
+                  className="p-1 text-success hover:text-success"
                 >
                   <Save size={14} />
                 </button>
@@ -137,7 +137,7 @@ export const WebHarRecordingRow: React.FC<WebHarRecordingRowProps> = ({
                     key={i}
                     className="border-t border-[var(--color-border)]/50 hover:bg-[var(--color-surface)]/60"
                   >
-                    <td className="py-1 px-2 font-mono text-blue-400">
+                    <td className="py-1 px-2 font-mono text-primary">
                       {entry.method}
                     </td>
                     <td
@@ -147,7 +147,7 @@ export const WebHarRecordingRow: React.FC<WebHarRecordingRowProps> = ({
                       {entry.url.replace(meta.target_url, "") || "/"}
                     </td>
                     <td
-                      className={`py-1 px-2 font-mono ${entry.status >= 400 ? "text-red-400" : entry.status >= 300 ? "text-yellow-400" : "text-green-400"}`}
+                      className={`py-1 px-2 font-mono ${entry.status >= 400 ? "text-error" : entry.status >= 300 ? "text-warning" : "text-success"}`}
                     >
                       {entry.status}
                     </td>

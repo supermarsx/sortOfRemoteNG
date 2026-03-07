@@ -27,7 +27,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
       {/* RustDesk Header */}
       <div className="sor-toolbar-row">
         <div className="flex items-center space-x-3">
-          <Monitor size={16} className="text-orange-400" />
+          <Monitor size={16} className="text-warning" />
           <span className="text-sm text-[var(--color-textSecondary)]">
             RustDesk - {session.hostname}
           </span>
@@ -103,14 +103,14 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
           <ConnectingSpinner
             message="Connecting to RustDesk..."
             detail={session.hostname}
-            color="border-orange-400"
+            color="border-warning"
           />
         )}
         
         {mgr.connectionStatus === 'error' && (
           <div className="text-center">
-            <WifiOff size={48} className="text-red-400 mx-auto mb-4" />
-            <p className="text-red-400 mb-2">RustDesk Connection Failed</p>
+            <WifiOff size={48} className="text-error mx-auto mb-4" />
+            <p className="text-error mb-2">RustDesk Connection Failed</p>
             <p className="text-[var(--color-textMuted)] text-sm">Unable to connect to {session.hostname}</p>
           </div>
         )}
@@ -118,7 +118,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
         {mgr.connectionStatus === 'connected' && (
           <div className="w-full h-full bg-[var(--color-surface)] flex items-center justify-center">
             <div className="text-center">
-              <Monitor size={64} className="text-orange-400 mx-auto mb-4" />
+              <Monitor size={64} className="text-warning mx-auto mb-4" />
               <h3 className="text-xl font-medium text-[var(--color-text)] mb-2">RustDesk Connected</h3>
               <p className="text-[var(--color-textSecondary)] mb-4">
                 Remote desktop session active with {session.hostname}
@@ -131,7 +131,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
                   <div>Quality: <span className="text-[var(--color-text)]">{mgr.settings.quality}</span></div>
                   <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
                 </div>
-                <div className="mt-3 p-2 bg-orange-900/20 border border-orange-700 rounded text-xs text-orange-300">
+                <div className="mt-3 p-2 bg-warning/20 border border-warning rounded text-xs text-warning">
                   <p>Note: RustDesk integration requires the RustDesk client to be installed and configured.</p>
                 </div>
               </div>

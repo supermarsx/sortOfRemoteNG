@@ -77,7 +77,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
-          <Server size={14} className="text-blue-500" />
+          <Server size={14} className="text-primary" />
           {t("opkssh.serverConfig", "Server Configuration")}
         </h3>
         <div className="flex items-center gap-2">
@@ -90,7 +90,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
             {t("opkssh.refresh", "Refresh")}
           </button>
           <button
-            className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-primary hover:bg-primary/90 text-white transition-colors"
             onClick={() => setShowInstall(!showInstall)}
           >
             <Download size={11} />
@@ -101,7 +101,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
 
       {/* Install panel */}
       {showInstall && (
-        <div className="p-4 rounded-lg border border-blue-500/30 bg-blue-500/10">
+        <div className="p-4 rounded-lg border border-primary/30 bg-primary/10">
           <h4 className="text-xs font-medium text-[var(--color-text)] mb-2">
             {t("opkssh.installServer", "Install opkssh on server")}
           </h4>
@@ -109,7 +109,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
             {t("opkssh.installDesc", "This runs the official install script via sudo. Make sure you have sudo access.")}
           </p>
           <button
-            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded bg-primary hover:bg-primary/90 text-white transition-colors disabled:opacity-50"
             onClick={handleInstall}
             disabled={mgr.isLoadingServer}
           >
@@ -132,7 +132,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
       {config && (
         <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-xs space-y-1">
           <div className="flex items-center gap-2">
-            <span className={config.installed ? "text-green-400" : "text-red-400"}>
+            <span className={config.installed ? "text-success" : "text-error"}>
               {config.installed
                 ? t("opkssh.serverInstalled", "opkssh installed")
                 : t("opkssh.serverNotInstalled", "opkssh not installed")}
@@ -147,7 +147,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
       {/* Providers section */}
       <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
         <h4 className="text-xs font-medium text-[var(--color-text)] flex items-center gap-2 mb-3">
-          <Shield size={12} className="text-purple-400" />
+          <Shield size={12} className="text-accent" />
           {t("opkssh.serverProviders", "Allowed Providers")}
           {config && (
             <span className="text-[var(--color-text-secondary)]">
@@ -170,7 +170,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
                   </div>
                 </div>
                 <button
-                  className="p-1 rounded text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="p-1 rounded text-error hover:bg-error/10 transition-colors"
                   onClick={() => mgr.removeServerProvider(sessionId, p.issuer)}
                   title={t("opkssh.removeProvider", "Remove provider")}
                 >
@@ -216,7 +216,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
               ))}
             </select>
             <button
-              className="flex items-center gap-1 px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 rounded bg-accent hover:bg-accent/90 text-white transition-colors disabled:opacity-50"
               onClick={handleAddProvider}
               disabled={!newProvIssuer || !newProvClientId}
             >
@@ -229,7 +229,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
       {/* Auth IDs: Global */}
       <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
         <h4 className="text-xs font-medium text-[var(--color-text)] flex items-center gap-2 mb-3">
-          <Globe size={12} className="text-blue-400" />
+          <Globe size={12} className="text-primary" />
           {t("opkssh.globalAuthIds", "Global Auth IDs")}
           {config && (
             <span className="text-[var(--color-text-secondary)]">
@@ -252,7 +252,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
                   <div className="text-[var(--color-text-secondary)]">{a.issuer}</div>
                 </div>
                 <button
-                  className="p-1 rounded text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="p-1 rounded text-error hover:bg-error/10 transition-colors"
                   onClick={() => mgr.removeServerIdentity(sessionId, a, "global")}
                   title={t("opkssh.removeIdentity", "Remove identity")}
                 >
@@ -294,7 +294,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
               onChange={(e) => setNewIssuer(e.target.value)}
             />
             <button
-              className="flex items-center gap-1 px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 rounded bg-primary hover:bg-primary/90 text-white transition-colors disabled:opacity-50"
               onClick={handleAddIdentity}
               disabled={!newPrincipal || !newIdentity || !newIssuer}
             >
@@ -327,7 +327,7 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
                   <div className="text-[var(--color-text-secondary)]">{a.issuer}</div>
                 </div>
                 <button
-                  className="p-1 rounded text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="p-1 rounded text-error hover:bg-error/10 transition-colors"
                   onClick={() => mgr.removeServerIdentity(sessionId, a, "user")}
                   title={t("opkssh.removeIdentity", "Remove identity")}
                 >

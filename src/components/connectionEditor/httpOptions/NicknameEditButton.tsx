@@ -51,7 +51,7 @@ function NicknameEditButton({
           onSaved();
         }}
         placeholder="Nickname…"
-        className="w-24 px-1.5 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)] text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-24 px-1.5 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)] text-xs focus:outline-none focus:ring-1 focus:ring-primary"
       />
     );
   }

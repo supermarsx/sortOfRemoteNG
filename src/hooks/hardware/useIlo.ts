@@ -228,7 +228,7 @@ export function useIlo(): UseIloReturn {
   const disconnect = useCallback(
     () =>
       wrap(async () => {
-        await invoke("ilo_disconnect");
+        await invoke<void>("ilo_disconnect");
         setConnected(false);
         setConfig(null);
       }),
@@ -264,13 +264,13 @@ export function useIlo(): UseIloReturn {
   );
 
   const setAssetTag = useCallback(
-    (tag: string) => wrap(() => invoke("ilo_set_asset_tag", { tag })),
+    (tag: string) => wrap(() => invoke<void>("ilo_set_asset_tag", { tag })),
     [wrap],
   );
 
   const setIndicatorLed = useCallback(
     (state: string) =>
-      wrap(() => invoke("ilo_set_indicator_led", { ledState: state })),
+      wrap(() => invoke<void>("ilo_set_indicator_led", { ledState: state })),
     [wrap],
   );
 
@@ -278,7 +278,7 @@ export function useIlo(): UseIloReturn {
 
   const powerAction = useCallback(
     (action: PowerAction) =>
-      wrap(() => invoke("ilo_power_action", { action })),
+      wrap(() => invoke<void>("ilo_power_action", { action })),
     [wrap],
   );
 
@@ -367,18 +367,18 @@ export function useIlo(): UseIloReturn {
 
   const insertVirtualMedia = useCallback(
     (url: string, mediaId?: string) =>
-      wrap(() => invoke("ilo_insert_virtual_media", { url, mediaId })),
+      wrap(() => invoke<void>("ilo_insert_virtual_media", { url, mediaId })),
     [wrap],
   );
 
   const ejectVirtualMedia = useCallback(
     (mediaId?: string) =>
-      wrap(() => invoke("ilo_eject_virtual_media", { mediaId })),
+      wrap(() => invoke<void>("ilo_eject_virtual_media", { mediaId })),
     [wrap],
   );
 
   const setVmBootOnce = useCallback(
-    () => wrap(() => invoke("ilo_set_vm_boot_once")),
+    () => wrap(() => invoke<void>("ilo_set_vm_boot_once")),
     [wrap],
   );
 
@@ -407,12 +407,12 @@ export function useIlo(): UseIloReturn {
   );
 
   const clearIml = useCallback(
-    () => wrap(() => invoke("ilo_clear_iml")),
+    () => wrap(() => invoke<void>("ilo_clear_iml")),
     [wrap],
   );
 
   const clearIloEventLog = useCallback(
-    () => wrap(() => invoke("ilo_clear_ilo_event_log")),
+    () => wrap(() => invoke<void>("ilo_clear_ilo_event_log")),
     [wrap],
   );
 
@@ -426,26 +426,26 @@ export function useIlo(): UseIloReturn {
   const createUser = useCallback(
     (username: string, password: string, role: string) =>
       wrap(() =>
-        invoke("ilo_create_user", { username, password, role }),
+        invoke<void>("ilo_create_user", { username, password, role }),
       ),
     [wrap],
   );
 
   const updatePassword = useCallback(
     (userId: string, newPassword: string) =>
-      wrap(() => invoke("ilo_update_password", { userId, newPassword })),
+      wrap(() => invoke<void>("ilo_update_password", { userId, newPassword })),
     [wrap],
   );
 
   const deleteUser = useCallback(
     (userId: string) =>
-      wrap(() => invoke("ilo_delete_user", { userId })),
+      wrap(() => invoke<void>("ilo_delete_user", { userId })),
     [wrap],
   );
 
   const setUserEnabled = useCallback(
     (userId: string, enabled: boolean) =>
-      wrap(() => invoke("ilo_set_user_enabled", { userId, enabled })),
+      wrap(() => invoke<void>("ilo_set_user_enabled", { userId, enabled })),
     [wrap],
   );
 
@@ -458,7 +458,7 @@ export function useIlo(): UseIloReturn {
 
   const setBiosAttributes = useCallback(
     (attrs: Record<string, unknown>) =>
-      wrap(() => invoke("ilo_set_bios_attributes", { attributes: attrs })),
+      wrap(() => invoke<void>("ilo_set_bios_attributes", { attributes: attrs })),
     [wrap],
   );
 
@@ -469,7 +469,7 @@ export function useIlo(): UseIloReturn {
 
   const setBootOverride = useCallback(
     (target: string) =>
-      wrap(() => invoke("ilo_set_boot_override", { target })),
+      wrap(() => invoke<void>("ilo_set_boot_override", { target })),
     [wrap],
   );
 
@@ -504,7 +504,7 @@ export function useIlo(): UseIloReturn {
 
   const importCertificate = useCallback(
     (certPem: string) =>
-      wrap(() => invoke("ilo_import_certificate", { certPem })),
+      wrap(() => invoke<void>("ilo_import_certificate", { certPem })),
     [wrap],
   );
 
@@ -529,12 +529,12 @@ export function useIlo(): UseIloReturn {
 
   const activateLicense = useCallback(
     (key: string) =>
-      wrap(() => invoke("ilo_activate_license", { key })),
+      wrap(() => invoke<void>("ilo_activate_license", { key })),
     [wrap],
   );
 
   const deactivateLicense = useCallback(
-    () => wrap(() => invoke("ilo_deactivate_license")),
+    () => wrap(() => invoke<void>("ilo_deactivate_license")),
     [wrap],
   );
 
@@ -548,13 +548,13 @@ export function useIlo(): UseIloReturn {
 
   const setMinTlsVersion = useCallback(
     (version: string) =>
-      wrap(() => invoke("ilo_set_min_tls_version", { version })),
+      wrap(() => invoke<void>("ilo_set_min_tls_version", { version })),
     [wrap],
   );
 
   const setIpmiOverLan = useCallback(
     (enabled: boolean) =>
-      wrap(() => invoke("ilo_set_ipmi_over_lan", { enabled })),
+      wrap(() => invoke<void>("ilo_set_ipmi_over_lan", { enabled })),
     [wrap],
   );
 
@@ -578,20 +578,20 @@ export function useIlo(): UseIloReturn {
 
   const addFederationGroup = useCallback(
     (name: string, key: string) =>
-      wrap(() => invoke("ilo_add_federation_group", { name, key })),
+      wrap(() => invoke<void>("ilo_add_federation_group", { name, key })),
     [wrap],
   );
 
   const removeFederationGroup = useCallback(
     (name: string) =>
-      wrap(() => invoke("ilo_remove_federation_group", { name })),
+      wrap(() => invoke<void>("ilo_remove_federation_group", { name })),
     [wrap],
   );
 
   // ── iLO Reset ───────────────────────────────────────────────────
 
   const resetIlo = useCallback(
-    () => wrap(() => invoke("ilo_reset")),
+    () => wrap(() => invoke<void>("ilo_reset")),
     [wrap],
   );
 

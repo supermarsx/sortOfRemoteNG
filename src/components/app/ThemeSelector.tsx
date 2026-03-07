@@ -22,7 +22,7 @@ const ThemeModeGrid: React.FC<{ mgr: Mgr; theme: Theme; onThemeChange: (t: Theme
         {mgr.themeOptions.map(({ value }) => {
           const Icon = getIcon(value);
           return (
-            <button key={value} onClick={() => onThemeChange(value as Theme)} className={`p-4 rounded-lg border-2 transition-colors flex flex-col items-center space-y-2 ${theme === value ? "border-blue-500 bg-blue-500/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"}`}>
+            <button key={value} onClick={() => onThemeChange(value as Theme)} className={`p-4 rounded-lg border-2 transition-colors flex flex-col items-center space-y-2 ${theme === value ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"}`}>
               <Icon size={24} className="text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-text)] font-medium capitalize">{value}</span>
             </button>
@@ -38,7 +38,7 @@ const ColorSchemeGrid: React.FC<{ mgr: Mgr; colorScheme: ColorScheme; onColorSch
     <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-3">Color Scheme</label>
     <div className="grid grid-cols-3 gap-3">
       {mgr.schemeOptions.map((scheme) => (
-        <button key={scheme.name} onClick={() => onColorSchemeChange(scheme.name as ColorScheme)} className={`p-4 rounded-lg border-2 transition-colors ${colorScheme === scheme.name ? "border-blue-500 bg-blue-500/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"}`}>
+        <button key={scheme.name} onClick={() => onColorSchemeChange(scheme.name as ColorScheme)} className={`p-4 rounded-lg border-2 transition-colors ${colorScheme === scheme.name ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"}`}>
           <div className="flex items-center space-x-2 mb-2">
             <Palette size={16} className="text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-text)] font-medium capitalize">{scheme.name}</span>
@@ -80,13 +80,13 @@ const CustomThemesList: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <li key={tName} className="flex items-center justify-between text-[var(--color-text)]">
           <span className="capitalize">{tName}</span>
           <div className="space-x-2 text-sm">
-            <button className="text-blue-400 hover:underline" onClick={() => mgr.handleEditTheme(tName)}>Edit</button>
-            <button className="text-red-400 hover:underline" onClick={() => mgr.handleRemoveTheme(tName)}>Delete</button>
+            <button className="text-primary hover:underline" onClick={() => mgr.handleEditTheme(tName)}>Edit</button>
+            <button className="text-error hover:underline" onClick={() => mgr.handleRemoveTheme(tName)}>Delete</button>
           </div>
         </li>
       ))}
     </ul>
-    <button className="mt-2 text-blue-400 text-sm hover:underline" onClick={mgr.handleAddTheme}>Add Theme</button>
+    <button className="mt-2 text-primary text-sm hover:underline" onClick={mgr.handleAddTheme}>Add Theme</button>
   </div>
 );
 
@@ -98,13 +98,13 @@ const CustomSchemesList: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <li key={s} className="flex items-center justify-between text-[var(--color-text)]">
           <span className="capitalize">{s}</span>
           <div className="space-x-2 text-sm">
-            <button className="text-blue-400 hover:underline" onClick={() => mgr.handleEditScheme(s)}>Edit</button>
-            <button className="text-red-400 hover:underline" onClick={() => mgr.handleRemoveScheme(s)}>Delete</button>
+            <button className="text-primary hover:underline" onClick={() => mgr.handleEditScheme(s)}>Edit</button>
+            <button className="text-error hover:underline" onClick={() => mgr.handleRemoveScheme(s)}>Delete</button>
           </div>
         </li>
       ))}
     </ul>
-    <button className="mt-2 text-blue-400 text-sm hover:underline" onClick={mgr.handleAddScheme}>Add Color Scheme</button>
+    <button className="mt-2 text-primary text-sm hover:underline" onClick={mgr.handleAddScheme}>Add Color Scheme</button>
   </div>
 );
 
@@ -112,16 +112,16 @@ const ImportExportSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="border-t border-[var(--color-border)] pt-4">
     <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-3">Import / Export</label>
     <div className="flex flex-wrap gap-3">
-      <button onClick={mgr.handleExportAll} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors text-sm">
+      <button onClick={mgr.handleExportAll} className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors text-sm">
         <Download size={16} />Export All Custom
       </button>
-      <button onClick={mgr.handleImportClick} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-lg transition-colors text-sm">
+      <button onClick={mgr.handleImportClick} className="flex items-center gap-2 px-4 py-2 bg-success hover:bg-success/90 text-[var(--color-text)] rounded-lg transition-colors text-sm">
         <Upload size={16} />Import from File
       </button>
       <input ref={mgr.fileInputRef} type="file" accept=".json" onChange={mgr.handleFileSelect} className="hidden" />
     </div>
     {mgr.importStatus && (
-      <div className={`mt-3 p-3 rounded-lg text-sm ${mgr.importStatus.includes('failed') ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/30'}`}>
+      <div className={`mt-3 p-3 rounded-lg text-sm ${mgr.importStatus.includes('failed') ? 'bg-error/20 text-error border border-error/30' : 'bg-success/20 text-success border border-success/30'}`}>
         <FileJson size={14} className="inline mr-2" />{mgr.importStatus}
       </div>
     )}

@@ -82,16 +82,16 @@ export const SshEventScriptsManager: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="flex h-[90vh] w-[95vw] max-w-[1600px] flex-col rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl">
+      <div className="flex h-[90vh] w-[95vw] max-w-[1600px] flex-col rounded-xl border border-theme-border bg-background shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-700 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-theme-border px-6 py-4">
           <div className="flex items-center gap-3">
             <span className="text-xl">⚡</span>
             <h2 className="text-lg font-semibold text-white">
               SSH Event Scripts
             </h2>
             {summary && (
-              <span className="rounded-full bg-neutral-700 px-2 py-0.5 text-xs text-neutral-300">
+              <span className="rounded-full bg-surfaceHover px-2 py-0.5 text-xs text-text-secondary">
                 {summary.totalScripts} scripts · {summary.enabledScripts}{" "}
                 enabled · {summary.totalChains} chains
               </span>
@@ -100,21 +100,21 @@ export const SshEventScriptsManager: React.FC<Props> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => exportScripts()}
-              className="rounded-lg border border-neutral-600 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+              className="rounded-lg border border-theme-border px-3 py-1.5 text-sm text-text-secondary hover:bg-surfaceHover"
               title="Export all scripts"
             >
               📤 Export
             </button>
             <button
               onClick={refresh}
-              className="rounded-lg border border-neutral-600 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+              className="rounded-lg border border-theme-border px-3 py-1.5 text-sm text-text-secondary hover:bg-surfaceHover"
               title="Refresh"
             >
               🔄
             </button>
             <button
               onClick={onClose}
-              className="rounded-lg px-3 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-white"
+              className="rounded-lg px-3 py-1.5 text-sm text-text-muted hover:bg-surfaceHover hover:text-theme-text"
             >
               ✕
             </button>
@@ -122,7 +122,7 @@ export const SshEventScriptsManager: React.FC<Props> = ({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-neutral-700">
+        <div className="flex border-b border-theme-border">
           {(
             [
               { key: "scripts", label: "Scripts", icon: "📜" },
@@ -136,8 +136,8 @@ export const SshEventScriptsManager: React.FC<Props> = ({
               onClick={() => setTab(t.key)}
               className={`px-5 py-2.5 text-sm font-medium transition-colors ${
                 tab === t.key
-                  ? "border-b-2 border-blue-500 text-blue-400"
-                  : "text-neutral-400 hover:text-neutral-200"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-text-muted hover:text-theme-text"
               }`}
             >
               {t.icon} {t.label}
@@ -147,7 +147,7 @@ export const SshEventScriptsManager: React.FC<Props> = ({
 
         {/* Error banner */}
         {error && (
-          <div className="mx-6 mt-3 rounded-lg border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+          <div className="mx-6 mt-3 rounded-lg border border-error bg-error/30 px-4 py-2 text-sm text-error">
             {error}
           </div>
         )}
@@ -287,20 +287,20 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
   return (
     <>
       {/* Left panel — script list */}
-      <div className="flex w-[380px] flex-col border-r border-neutral-700">
+      <div className="flex w-[380px] flex-col border-r border-theme-border">
         {/* Toolbar */}
-        <div className="space-y-2 border-b border-neutral-700 px-3 py-3">
+        <div className="space-y-2 border-b border-theme-border px-3 py-3">
           <div className="flex gap-2">
             <input
               type="text"
               placeholder="Search scripts…"
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              className="flex-1 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-sm text-white placeholder-neutral-500 focus:border-blue-500 focus:outline-none"
+              className="flex-1 rounded-lg border border-theme-border bg-surface px-3 py-1.5 text-sm text-white placeholder-text-muted focus:border-primary focus:outline-none"
             />
             <button
               onClick={() => setShowCreate(true)}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
+              className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90"
             >
               + New
             </button>
@@ -309,7 +309,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
             <select
               value={triggerFilter}
               onChange={(e) => setTriggerFilter(e.target.value)}
-              className="flex-1 rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
+              className="flex-1 rounded border border-theme-border bg-surface px-2 py-1 text-xs text-text-secondary"
             >
               <option value="">All Triggers</option>
               {TRIGGER_TYPES.map((t) => (
@@ -321,7 +321,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="flex-1 rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
+              className="flex-1 rounded border border-theme-border bg-surface px-2 py-1 text-xs text-text-secondary"
             >
               <option value="">All Categories</option>
               {categories.map((c) => (
@@ -332,7 +332,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
             </select>
           </div>
           {bulkSelected.size > 0 && (
-            <div className="flex items-center gap-2 text-xs text-neutral-400">
+            <div className="flex items-center gap-2 text-xs text-text-muted">
               <span>{bulkSelected.size} selected</span>
               <button
                 onClick={() => {
@@ -341,7 +341,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                   // eslint-disable-next-line @typescript-eslint/no-floating-promises
                   void Promise.all(ids.map((id) => deleteScript(id)));
                 }}
-                className="text-red-400 hover:text-red-300"
+                className="text-error hover:text-error"
               >
                 Delete
               </button>
@@ -354,7 +354,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                     ids.map((id) => toggleScript(id, true)),
                   );
                 }}
-                className="text-green-400 hover:text-green-300"
+                className="text-success hover:text-success"
               >
                 Enable
               </button>
@@ -367,7 +367,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                     ids.map((id) => toggleScript(id, false)),
                   );
                 }}
-                className="text-yellow-400 hover:text-yellow-300"
+                className="text-warning hover:text-warning"
               >
                 Disable
               </button>
@@ -378,11 +378,11 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
         {/* Script list */}
         <div className="flex-1 overflow-y-auto">
           {loading && scripts.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-neutral-500">
+            <div className="px-4 py-8 text-center text-sm text-text-secondary">
               Loading…
             </div>
           ) : scripts.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-neutral-500">
+            <div className="px-4 py-8 text-center text-sm text-text-secondary">
               No scripts found. Create your first SSH event script.
             </div>
           ) : (
@@ -396,9 +396,9 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                 <div
                   key={script.id}
                   onClick={() => selectScript(script)}
-                  className={`cursor-pointer border-b border-neutral-800 px-4 py-3 transition-colors hover:bg-neutral-800 ${
+                  className={`cursor-pointer border-b border-theme-border px-4 py-3 transition-colors hover:bg-surfaceHover ${
                     selectedScript?.id === script.id
-                      ? "border-l-2 border-l-blue-500 bg-neutral-800"
+                      ? "border-l-2 border-l-primary bg-surface"
                       : ""
                   }`}
                 >
@@ -415,8 +415,8 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                         <span
                           className={`h-2 w-2 rounded-full ${
                             script.enabled
-                              ? "bg-green-400"
-                              : "bg-neutral-600"
+                              ? "bg-success"
+                              : "bg-surfaceHover"
                           }`}
                         />
                         <span className="truncate text-sm font-medium text-white">
@@ -424,14 +424,14 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                         </span>
                       </div>
                       <div className="mt-1 flex gap-1.5">
-                        <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                        <span className="rounded bg-surfaceHover px-1.5 py-0.5 text-[10px] text-text-muted">
                           {triggerLabel}
                         </span>
-                        <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                        <span className="rounded bg-surfaceHover px-1.5 py-0.5 text-[10px] text-text-muted">
                           {script.language}
                         </span>
                         {s && s.totalRuns > 0 && (
-                          <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                          <span className="rounded bg-surfaceHover px-1.5 py-0.5 text-[10px] text-text-muted">
                             ×{s.totalRuns}
                           </span>
                         )}
@@ -447,7 +447,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                             connectionId,
                           });
                         }}
-                        className="rounded p-1 text-xs text-neutral-400 hover:bg-neutral-700 hover:text-green-400"
+                        className="rounded p-1 text-xs text-text-muted hover:bg-surfaceHover hover:text-success"
                         title="Run now"
                       >
                         ▶
@@ -457,7 +457,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                           e.stopPropagation();
                           void toggleScript(script.id, !script.enabled);
                         }}
-                        className="rounded p-1 text-xs text-neutral-400 hover:bg-neutral-700"
+                        className="rounded p-1 text-xs text-text-muted hover:bg-surfaceHover"
                         title={
                           script.enabled ? "Disable" : "Enable"
                         }
@@ -467,7 +467,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                     </div>
                   </div>
                   {script.description && (
-                    <p className="mt-1 truncate pl-5 text-xs text-neutral-500">
+                    <p className="mt-1 truncate pl-5 text-xs text-text-secondary">
                       {script.description}
                     </p>
                   )}
@@ -506,7 +506,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
             }
           />
         ) : (
-          <div className="flex flex-1 items-center justify-center text-neutral-500">
+          <div className="flex flex-1 items-center justify-center text-text-secondary">
             <div className="text-center">
               <p className="text-4xl">⚡</p>
               <p className="mt-3 text-sm">
@@ -514,7 +514,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
               </p>
               <button
                 onClick={() => setShowCreate(true)}
-                className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500"
+                className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm text-white hover:bg-primary/90"
               >
                 + Create Script
               </button>
@@ -526,14 +526,14 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
       {/* Delete confirmation */}
       {confirmDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-xl">
+          <div className="rounded-lg border border-theme-border bg-background p-6 shadow-xl">
             <p className="text-white">
               Delete this script? This cannot be undone.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setConfirmDelete(null)}
-                className="rounded px-3 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800"
+                className="rounded px-3 py-1.5 text-sm text-text-muted hover:bg-surfaceHover"
               >
                 Cancel
               </button>
@@ -542,7 +542,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
                   void deleteScript(confirmDelete);
                   setConfirmDelete(null);
                 }}
-                className="rounded bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-500"
+                className="rounded bg-error px-3 py-1.5 text-sm text-white hover:bg-error/90"
               >
                 Delete
               </button>
@@ -577,7 +577,7 @@ const ScriptDetail: React.FC<{
         <div>
           <h3 className="text-lg font-semibold text-white">{script.name}</h3>
           {script.description && (
-            <p className="mt-1 text-sm text-neutral-400">
+            <p className="mt-1 text-sm text-text-muted">
               {script.description}
             </p>
           )}
@@ -585,25 +585,25 @@ const ScriptDetail: React.FC<{
         <div className="flex gap-2">
           <button
             onClick={onRun}
-            className="rounded-lg bg-green-600 px-4 py-1.5 text-sm text-white hover:bg-green-500"
+            className="rounded-lg bg-success px-4 py-1.5 text-sm text-white hover:bg-success/90"
           >
             ▶ Run
           </button>
           <button
             onClick={onToggle}
-            className="rounded-lg border border-neutral-600 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+            className="rounded-lg border border-theme-border px-3 py-1.5 text-sm text-text-secondary hover:bg-surfaceHover"
           >
             {script.enabled ? "Disable" : "Enable"}
           </button>
           <button
             onClick={onDuplicate}
-            className="rounded-lg border border-neutral-600 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+            className="rounded-lg border border-theme-border px-3 py-1.5 text-sm text-text-secondary hover:bg-surfaceHover"
           >
             Duplicate
           </button>
           <button
             onClick={onDelete}
-            className="rounded-lg border border-red-800 px-3 py-1.5 text-sm text-red-400 hover:bg-red-900/40"
+            className="rounded-lg border border-error px-3 py-1.5 text-sm text-error hover:bg-error/40"
           >
             Delete
           </button>
@@ -650,7 +650,7 @@ const ScriptDetail: React.FC<{
 
       {/* Trigger details */}
       <Section title="Trigger Configuration">
-        <pre className="rounded-lg bg-neutral-800 p-3 text-xs text-neutral-300">
+        <pre className="rounded-lg bg-surface p-3 text-xs text-text-secondary">
           {JSON.stringify(script.trigger, null, 2)}
         </pre>
       </Section>
@@ -661,7 +661,7 @@ const ScriptDetail: React.FC<{
           {script.conditions.map((c, i) => (
             <pre
               key={i}
-              className="mb-2 rounded-lg bg-neutral-800 p-3 text-xs text-neutral-300"
+              className="mb-2 rounded-lg bg-surface p-3 text-xs text-text-secondary"
             >
               {JSON.stringify(c, null, 2)}
             </pre>
@@ -676,20 +676,20 @@ const ScriptDetail: React.FC<{
             {script.variables.map((v, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 rounded-lg bg-neutral-800 px-3 py-2"
+                className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2"
               >
-                <code className="text-sm font-medium text-blue-400">
+                <code className="text-sm font-medium text-primary">
                   {v.name}
                 </code>
-                <span className="rounded bg-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                <span className="rounded bg-surfaceHover px-1.5 py-0.5 text-[10px] text-text-muted">
                   {v.source.type}
                 </span>
                 {v.sensitive && (
-                  <span className="text-[10px] text-yellow-500">
+                  <span className="text-[10px] text-warning">
                     🔒 sensitive
                   </span>
                 )}
-                <span className="ml-auto text-xs text-neutral-500">
+                <span className="ml-auto text-xs text-text-secondary">
                   default: {v.defaultValue || "—"}
                 </span>
               </div>
@@ -700,7 +700,7 @@ const ScriptDetail: React.FC<{
 
       {/* Script content */}
       <Section title="Script Content">
-        <pre className="max-h-[40vh] overflow-auto rounded-lg bg-neutral-950 p-4 text-xs text-green-400">
+        <pre className="max-h-[40vh] overflow-auto rounded-lg bg-background p-4 text-xs text-success">
           {script.content}
         </pre>
       </Section>
@@ -710,18 +710,18 @@ const ScriptDetail: React.FC<{
         {script.tags.map((t) => (
           <span
             key={t}
-            className="rounded-full bg-blue-900/40 px-2.5 py-0.5 text-xs text-blue-300"
+            className="rounded-full bg-primary/40 px-2.5 py-0.5 text-xs text-primary"
           >
             #{t}
           </span>
         ))}
         {script.category && (
-          <span className="rounded-full bg-purple-900/40 px-2.5 py-0.5 text-xs text-purple-300">
+          <span className="rounded-full bg-accent/40 px-2.5 py-0.5 text-xs text-accent">
             📁 {script.category}
           </span>
         )}
       </div>
-      <div className="mt-2 text-xs text-neutral-600">
+      <div className="mt-2 text-xs text-text-muted">
         Created {new Date(script.createdAt).toLocaleString()} · Updated{" "}
         {new Date(script.updatedAt).toLocaleString()} · v{script.version}
         {script.author && ` · by ${script.author}`}
@@ -826,7 +826,7 @@ const CreateScriptForm: React.FC<{
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Login Banner Cleanup"
-            className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white placeholder-neutral-500 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white placeholder-text-muted focus:border-primary focus:outline-none"
           />
         </FormField>
 
@@ -837,7 +837,7 @@ const CreateScriptForm: React.FC<{
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What does this script do?"
             rows={2}
-            className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white placeholder-neutral-500 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white placeholder-text-muted focus:border-primary focus:outline-none"
           />
         </FormField>
 
@@ -847,7 +847,7 @@ const CreateScriptForm: React.FC<{
             <select
               value={triggerType}
               onChange={(e) => setTriggerType(e.target.value)}
-              className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             >
               {TRIGGER_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -862,7 +862,7 @@ const CreateScriptForm: React.FC<{
               onChange={(e) =>
                 setLanguage(e.target.value as ScriptLanguage)
               }
-              className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             >
               {SCRIPT_LANGUAGES.map((l) => (
                 <option key={l.value} value={l.value}>
@@ -877,7 +877,7 @@ const CreateScriptForm: React.FC<{
               onChange={(e) =>
                 setExecutionMode(e.target.value as ExecutionMode)
               }
-              className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             >
               {EXECUTION_MODES.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -895,7 +895,7 @@ const CreateScriptForm: React.FC<{
               type="number"
               value={delayMs}
               onChange={(e) => setDelayMs(Number(e.target.value))}
-              className="w-40 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-40 rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             />
           </FormField>
         )}
@@ -905,7 +905,7 @@ const CreateScriptForm: React.FC<{
               type="number"
               value={intervalMs}
               onChange={(e) => setIntervalMs(Number(e.target.value))}
-              className="w-40 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-40 rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             />
           </FormField>
         )}
@@ -916,7 +916,7 @@ const CreateScriptForm: React.FC<{
               value={cronExpr}
               onChange={(e) => setCronExpr(e.target.value)}
               placeholder="0 * * * *"
-              className="w-60 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white font-mono"
+              className="w-60 rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white font-mono"
             />
           </FormField>
         )}
@@ -927,7 +927,7 @@ const CreateScriptForm: React.FC<{
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
               placeholder="error|fail|warn"
-              className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white font-mono"
+              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white font-mono"
             />
           </FormField>
         )}
@@ -937,7 +937,7 @@ const CreateScriptForm: React.FC<{
               type="number"
               value={idleMs}
               onChange={(e) => setIdleMs(Number(e.target.value))}
-              className="w-40 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-40 rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             />
           </FormField>
         )}
@@ -949,7 +949,7 @@ const CreateScriptForm: React.FC<{
               type="text"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             />
           </FormField>
           <FormField label="Tags (comma-separated)">
@@ -958,7 +958,7 @@ const CreateScriptForm: React.FC<{
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
               placeholder="ssh, monitoring"
-              className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             />
           </FormField>
           <FormField label="Timeout (ms)">
@@ -966,7 +966,7 @@ const CreateScriptForm: React.FC<{
               type="number"
               value={timeoutMs}
               onChange={(e) => setTimeoutMs(Number(e.target.value))}
-              className="w-full rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
             />
           </FormField>
         </div>
@@ -978,7 +978,7 @@ const CreateScriptForm: React.FC<{
             onChange={(e) => setContent(e.target.value)}
             rows={14}
             spellCheck={false}
-            className="w-full rounded-lg border border-neutral-600 bg-neutral-950 px-4 py-3 font-mono text-sm text-green-400 placeholder-neutral-600 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-lg border border-theme-border bg-background px-4 py-3 font-mono text-sm text-success placeholder-text-muted focus:border-primary focus:outline-none"
           />
         </FormField>
       </div>
@@ -987,14 +987,14 @@ const CreateScriptForm: React.FC<{
       <div className="mt-6 flex justify-end gap-3">
         <button
           onClick={onCancel}
-          className="rounded-lg px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800"
+          className="rounded-lg px-4 py-2 text-sm text-text-muted hover:bg-surfaceHover"
         >
           Cancel
         </button>
         <button
           onClick={() => void handleSave()}
           disabled={!name.trim() || saving}
-          className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
         >
           {saving ? "Creating…" : "Create Script"}
         </button>
@@ -1018,12 +1018,12 @@ const ChainsTab: React.FC<{
       <h3 className="text-lg font-semibold text-white">
         Script Chains ({chains.length})
       </h3>
-      <p className="mt-1 text-sm text-neutral-400">
+      <p className="mt-1 text-sm text-text-muted">
         Define ordered pipelines of scripts that execute in sequence.
       </p>
 
       {chains.length === 0 ? (
-        <div className="mt-8 text-center text-neutral-500">
+        <div className="mt-8 text-center text-text-secondary">
           <p className="text-3xl">🔗</p>
           <p className="mt-2 text-sm">No chains defined yet.</p>
         </div>
@@ -1032,13 +1032,13 @@ const ChainsTab: React.FC<{
           {chains.map((chain) => (
             <div
               key={chain.id}
-              className="rounded-lg border border-neutral-700 bg-neutral-800 p-4"
+              className="rounded-lg border border-theme-border bg-surface p-4"
             >
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-medium text-white">{chain.name}</h4>
                   {chain.description && (
-                    <p className="text-sm text-neutral-400">
+                    <p className="text-sm text-text-muted">
                       {chain.description}
                     </p>
                   )}
@@ -1046,8 +1046,8 @@ const ChainsTab: React.FC<{
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs ${
                     chain.enabled
-                      ? "bg-green-900/40 text-green-400"
-                      : "bg-neutral-700 text-neutral-500"
+                      ? "bg-success/40 text-success"
+                      : "bg-surfaceHover text-text-secondary"
                   }`}
                 >
                   {chain.enabled ? "Enabled" : "Disabled"}
@@ -1059,9 +1059,9 @@ const ChainsTab: React.FC<{
                   return (
                     <React.Fragment key={i}>
                       {i > 0 && (
-                        <span className="text-neutral-600">→</span>
+                        <span className="text-text-muted">→</span>
                       )}
-                      <span className="rounded bg-neutral-700 px-2 py-0.5 text-xs text-neutral-300">
+                      <span className="rounded bg-surfaceHover px-2 py-0.5 text-xs text-text-secondary">
                         {s?.name ?? step.scriptId}
                       </span>
                     </React.Fragment>
@@ -1098,17 +1098,17 @@ const HistoryTab: React.FC<{
   const statusColor = (s: string) => {
     switch (s) {
       case "success":
-        return "text-green-400";
+        return "text-success";
       case "failed":
-        return "text-red-400";
+        return "text-error";
       case "timeout":
-        return "text-yellow-400";
+        return "text-warning";
       case "cancelled":
-        return "text-neutral-400";
+        return "text-text-muted";
       case "running":
-        return "text-blue-400";
+        return "text-primary";
       default:
-        return "text-neutral-300";
+        return "text-text-secondary";
     }
   };
 
@@ -1120,21 +1120,21 @@ const HistoryTab: React.FC<{
         </h3>
         <button
           onClick={() => void clearHistory()}
-          className="rounded-lg border border-neutral-600 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+          className="rounded-lg border border-theme-border px-3 py-1.5 text-sm text-text-secondary hover:bg-surfaceHover"
         >
           Clear
         </button>
       </div>
 
       {history.length === 0 ? (
-        <div className="mt-8 text-center text-neutral-500">
+        <div className="mt-8 text-center text-text-secondary">
           <p className="text-3xl">📊</p>
           <p className="mt-2 text-sm">No execution history yet.</p>
         </div>
       ) : (
         <div className="mt-4">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-neutral-700 text-xs text-neutral-400">
+            <thead className="border-b border-theme-border text-xs text-text-muted">
               <tr>
                 <th className="pb-2">Script</th>
                 <th className="pb-2">Trigger</th>
@@ -1148,18 +1148,18 @@ const HistoryTab: React.FC<{
               {history.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-b border-neutral-800 hover:bg-neutral-800/50"
+                  className="border-b border-theme-border hover:bg-surfaceHover/50"
                 >
                   <td className="py-2 text-white">{r.scriptName}</td>
-                  <td className="py-2 text-neutral-400">{r.triggerType}</td>
+                  <td className="py-2 text-text-muted">{r.triggerType}</td>
                   <td className={`py-2 ${statusColor(r.status)}`}>
                     {r.status}
                   </td>
-                  <td className="py-2 text-neutral-400">{r.durationMs}ms</td>
-                  <td className="py-2 text-neutral-400">
+                  <td className="py-2 text-text-muted">{r.durationMs}ms</td>
+                  <td className="py-2 text-text-muted">
                     {r.exitCode ?? "—"}
                   </td>
-                  <td className="py-2 text-neutral-500">
+                  <td className="py-2 text-text-secondary">
                     {new Date(r.startedAt).toLocaleString()}
                   </td>
                 </tr>
@@ -1169,11 +1169,11 @@ const HistoryTab: React.FC<{
 
           {/* Pagination */}
           {historyTotal > limit && (
-            <div className="mt-4 flex items-center gap-3 text-sm text-neutral-400">
+            <div className="mt-4 flex items-center gap-3 text-sm text-text-muted">
               <button
                 disabled={page === 0}
                 onClick={() => setPage((p) => p - 1)}
-                className="rounded px-2 py-1 hover:bg-neutral-800 disabled:opacity-30"
+                className="rounded px-2 py-1 hover:bg-surfaceHover disabled:opacity-30"
               >
                 ← Prev
               </button>
@@ -1183,7 +1183,7 @@ const HistoryTab: React.FC<{
               <button
                 disabled={(page + 1) * limit >= historyTotal}
                 onClick={() => setPage((p) => p + 1)}
-                className="rounded px-2 py-1 hover:bg-neutral-800 disabled:opacity-30"
+                className="rounded px-2 py-1 hover:bg-surfaceHover disabled:opacity-30"
               >
                 Next →
               </button>
@@ -1206,12 +1206,12 @@ const TimersTab: React.FC<{
     <h3 className="text-lg font-semibold text-white">
       Active Timers ({timers.length})
     </h3>
-    <p className="mt-1 text-sm text-neutral-400">
+    <p className="mt-1 text-sm text-text-muted">
       Interval, cron, and scheduled timers across all sessions.
     </p>
 
     {timers.length === 0 ? (
-      <div className="mt-8 text-center text-neutral-500">
+      <div className="mt-8 text-center text-text-secondary">
         <p className="text-3xl">⏱️</p>
         <p className="mt-2 text-sm">
           No active timers. Connect an SSH session with interval/cron scripts to
@@ -1223,18 +1223,18 @@ const TimersTab: React.FC<{
         {timers.map((t, i) => (
           <div
             key={i}
-            className="flex items-center justify-between rounded-lg border border-neutral-700 bg-neutral-800 px-4 py-3"
+            className="flex items-center justify-between rounded-lg border border-theme-border bg-surface px-4 py-3"
           >
             <div>
               <span className="font-medium text-white">{t.scriptName}</span>
-              <div className="mt-1 flex gap-2 text-xs text-neutral-400">
+              <div className="mt-1 flex gap-2 text-xs text-text-muted">
                 <span>Session: {t.sessionId}</span>
                 <span>·</span>
                 <span>Trigger: {t.triggerType}</span>
                 {t.intervalMs && <span>· Every {t.intervalMs}ms</span>}
               </div>
             </div>
-            <div className="text-right text-xs text-neutral-400">
+            <div className="text-right text-xs text-text-muted">
               {t.nextRunAt && (
                 <div>
                   Next: {new Date(t.nextRunAt).toLocaleTimeString()}
@@ -1242,7 +1242,7 @@ const TimersTab: React.FC<{
               )}
               <span
                 className={
-                  t.paused ? "text-yellow-500" : "text-green-500"
+                  t.paused ? "text-warning" : "text-success"
                 }
               >
                 {t.paused ? "⏸ Paused" : "▶ Running"}
@@ -1264,7 +1264,7 @@ const Section: React.FC<{
   children: React.ReactNode;
 }> = ({ title, children }) => (
   <div className="mt-6">
-    <h4 className="mb-2 text-sm font-medium text-neutral-300">{title}</h4>
+    <h4 className="mb-2 text-sm font-medium text-text-secondary">{title}</h4>
     {children}
   </div>
 );
@@ -1274,10 +1274,10 @@ const InfoCard: React.FC<{
   value: string;
   sub?: string;
 }> = ({ label, value, sub }) => (
-  <div className="rounded-lg border border-neutral-700 bg-neutral-800 px-4 py-3">
-    <div className="text-xs text-neutral-500">{label}</div>
+  <div className="rounded-lg border border-theme-border bg-surface px-4 py-3">
+    <div className="text-xs text-text-secondary">{label}</div>
     <div className="mt-0.5 text-sm font-medium text-white">{value}</div>
-    {sub && <div className="mt-0.5 text-xs text-neutral-500">{sub}</div>}
+    {sub && <div className="mt-0.5 text-xs text-text-secondary">{sub}</div>}
   </div>
 );
 
@@ -1286,7 +1286,7 @@ const FormField: React.FC<{
   children: React.ReactNode;
 }> = ({ label, children }) => (
   <div>
-    <label className="mb-1.5 block text-xs font-medium text-neutral-400">
+    <label className="mb-1.5 block text-xs font-medium text-text-muted">
       {label}
     </label>
     {children}

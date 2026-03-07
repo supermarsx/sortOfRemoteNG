@@ -6,7 +6,7 @@ import { Checkbox } from "../../ui/forms";
 const HyperVSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
   <Section
     title="Hyper-V / Enhanced Session"
-    icon={<Server size={14} className="text-violet-400" />}
+    icon={<Server size={14} className="text-accent" />}
   >
     <label className={CSS.label}>
       <Checkbox checked={rdp.hyperv?.useVmId ?? false} onChange={(v: boolean) => updateRdp("hyperv", { useVmId: v })} className="CSS.checkbox" />

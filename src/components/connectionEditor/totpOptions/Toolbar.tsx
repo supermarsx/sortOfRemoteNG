@@ -1,5 +1,6 @@
 import React from "react";
 import { Copy, Check, Download, Upload, FileUp, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
+import type { TOTPOptionsMgr } from "./types";
 
 const Toolbar: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => (
   <div className="flex items-center justify-end space-x-2 flex-wrap gap-y-1">
@@ -12,7 +13,7 @@ const Toolbar: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => (
       <Download size={11} />
       <span>Export</span>
       {mgr.copiedSecret === "export" && (
-        <Check size={10} className="text-green-400" />
+        <Check size={10} className="text-success" />
       )}
     </button>
     <button

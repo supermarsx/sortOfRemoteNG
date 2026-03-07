@@ -1,6 +1,8 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Settings2 } from "lucide-react";
+import { TextInput } from "../../../ui/forms";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 
 const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (

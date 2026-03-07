@@ -1,10 +1,11 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { Layers, Clock, ShieldAlert, Zap } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Layers className="w-4 h-4 text-cyan-400" />}
+      icon={<Layers className="w-4 h-4 text-info" />}
       title="Tab Behavior"
     />
     <Card>

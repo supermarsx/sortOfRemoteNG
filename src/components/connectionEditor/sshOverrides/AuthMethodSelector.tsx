@@ -28,7 +28,7 @@ const AuthMethodSelector: React.FC<{
             key={method}
             className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded cursor-pointer transition-colors ${
               value.includes(method)
-                ? "bg-green-600 text-[var(--color-text)]"
+                ? "bg-success text-[var(--color-text)]"
                 : "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-secondary)]"
             }`}
           >

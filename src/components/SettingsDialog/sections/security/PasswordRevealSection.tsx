@@ -12,7 +12,7 @@ function PasswordRevealSection({
     <div className="sor-settings-card space-y-4">
       <div>
         <h4 className="sor-section-heading">
-          <Eye className="w-4 h-4 text-blue-400" />
+          <Eye className="w-4 h-4 text-primary" />
           Password Reveal
         </h4>
         <p className="text-xs text-[var(--color-textMuted)] mt-1">

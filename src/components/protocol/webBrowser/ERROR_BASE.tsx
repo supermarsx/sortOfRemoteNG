@@ -1,12 +1,13 @@
+import type { SectionProps } from "./types";
 /* eslint-disable react-refresh/only-export-components */
 import React from "react";
 import { ExternalLink, Shield, ShieldAlert, AlertTriangle, ServerCrash, WifiOff, RefreshCw } from "lucide-react";
 
 const ERROR_BASE =
   "flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors";
-const ERROR_PRIMARY = `${ERROR_BASE} bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]`;
+const ERROR_PRIMARY = `${ERROR_BASE} bg-primary hover:bg-primary/90 text-[var(--color-text)]`;
 const ERROR_SECONDARY = `${ERROR_BASE} bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)]`;
-const ERROR_WARNING = `${ERROR_BASE} bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] disabled:opacity-50`;
+const ERROR_WARNING = `${ERROR_BASE} bg-warning hover:bg-warning/90 text-[var(--color-text)] disabled:opacity-50`;
 
 const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   const { loadError, session, handleRefresh, handleOpenExternal, hasAuth } =
@@ -23,15 +24,15 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   ) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <div className="w-16 h-16 rounded-full bg-orange-900/30 flex items-center justify-center mb-4">
-          <ShieldAlert size={32} className="text-orange-400" />
+        <div className="w-16 h-16 rounded-full bg-warning/30 flex items-center justify-center mb-4">
+          <ShieldAlert size={32} className="text-warning" />
         </div>
         <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
           Certificate Error
         </h3>
         <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
           The connection to{" "}
-          <span className="text-yellow-400">{session.hostname}</span> failed
+          <span className="text-warning">{session.hostname}</span> failed
           because the server&apos;s SSL/TLS certificate is not trusted.
         </p>
         <div className="sor-surface-card sor-web-error-panel text-left">
@@ -41,7 +42,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
           <ul className="sor-guidance-list sor-guidance-list-disc">
             <li>
               The server is using a{" "}
-              <span className="text-orange-400">self-signed certificate</span>
+              <span className="text-warning">self-signed certificate</span>
             </li>
             <li>
               The certificate chain is incomplete or issued by an untrusted CA
@@ -57,7 +58,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
           <ol className="sor-guidance-list sor-guidance-list-decimal">
             <li>
               Edit this connection and{" "}
-              <span className="text-blue-400">
+              <span className="text-primary">
                 uncheck &quot;Verify SSL Certificate&quot;
               </span>{" "}
               to trust self-signed certs
@@ -96,8 +97,8 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   ) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <div className="w-16 h-16 rounded-full bg-red-900/30 flex items-center justify-center mb-4">
-          <ServerCrash size={32} className="text-red-400" />
+        <div className="w-16 h-16 rounded-full bg-error/30 flex items-center justify-center mb-4">
+          <ServerCrash size={32} className="text-error" />
         </div>
         <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
           Internal Proxy Error
@@ -112,12 +113,12 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
           <ol className="sor-guidance-list sor-guidance-list-decimal">
             <li>
               Open the{" "}
-              <span className="text-blue-400">Internal Proxy Manager</span>{" "}
+              <span className="text-primary">Internal Proxy Manager</span>{" "}
               from the toolbar and check the proxy status
             </li>
             <li>
               Verify the target host{" "}
-              <span className="text-yellow-400">{session.hostname}</span> is
+              <span className="text-warning">{session.hostname}</span> is
               reachable on your network
             </li>
             <li>
@@ -142,8 +143,8 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   if (loadError.includes("timed out")) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
-          <WifiOff size={32} className="text-yellow-400" />
+        <div className="w-16 h-16 rounded-full bg-warning/30 flex items-center justify-center mb-4">
+          <WifiOff size={32} className="text-warning" />
         </div>
         <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
           Connection Timed Out
@@ -158,7 +159,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
           <ul className="sor-guidance-list sor-guidance-list-disc">
             <li>
               The server at{" "}
-              <span className="text-yellow-400">{session.hostname}</span> is
+              <span className="text-warning">{session.hostname}</span> is
               not responding
             </li>
             <li>A firewall is blocking the connection</li>
@@ -200,8 +201,8 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   if (loadError.includes("Authentication required")) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <div className="w-16 h-16 rounded-full bg-blue-900/30 flex items-center justify-center mb-4">
-          <Shield size={32} className="text-blue-400" />
+        <div className="w-16 h-16 rounded-full bg-primary/30 flex items-center justify-center mb-4">
+          <Shield size={32} className="text-primary" />
         </div>
         <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
           Authentication Required
@@ -217,7 +218,7 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
             <li>Edit this connection in the sidebar</li>
             <li>
               Set Authentication Type to{" "}
-              <span className="text-blue-400">Basic Authentication</span>
+              <span className="text-primary">Basic Authentication</span>
             </li>
             <li>Enter the correct username and password</li>
             <li>Save and reconnect</li>
@@ -233,8 +234,8 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   // Generic error
   return (
     <div className="flex flex-col items-center justify-center h-full text-center p-8">
-      <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
-        <AlertTriangle size={32} className="text-yellow-400" />
+      <div className="w-16 h-16 rounded-full bg-warning/30 flex items-center justify-center mb-4">
+        <AlertTriangle size={32} className="text-warning" />
       </div>
       <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
         Unable to Load Webpage
@@ -281,4 +282,5 @@ const ErrorPage: React.FC<SectionProps> = ({ mgr }) => {
   );
 };
 
+export { ErrorPage };
 export default ERROR_BASE;

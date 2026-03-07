@@ -1,6 +1,7 @@
 import React from "react";
 import { Star, ChevronRight, FolderOpen } from "lucide-react";
 import { HttpBookmarkItem } from "../../../types/connection/connection";
+import type { WebBrowserMgr } from "./types";
 import { PopoverSurface } from "../../ui/overlays/PopoverSurface";
 import { OptionEmptyState, OptionItemButton, OptionList } from "../../ui/display/OptionList";
 

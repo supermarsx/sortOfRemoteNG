@@ -19,16 +19,16 @@ const TlsVerifySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           Disable only for self-signed or untrusted certificates.
         </p>
       ) : (
-        <div className="flex items-start gap-2 mt-2 p-3 bg-red-900/30 border border-red-700/50 rounded-lg">
+        <div className="flex items-start gap-2 mt-2 p-3 bg-error/30 border border-error/50 rounded-lg">
           <AlertTriangle
             size={16}
-            className="text-red-400 flex-shrink-0 mt-0.5"
+            className="text-error flex-shrink-0 mt-0.5"
           />
           <div>
-            <p className="text-sm font-medium text-red-400">
+            <p className="text-sm font-medium text-error">
               SSL verification disabled
             </p>
-            <p className="text-xs text-red-300/70 mt-0.5">
+            <p className="text-xs text-error/70 mt-0.5">
               This connection will accept any certificate, including potentially
               malicious ones. Only use this for trusted internal servers with
               self-signed certificates.

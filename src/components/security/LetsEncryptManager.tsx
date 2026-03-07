@@ -62,23 +62,23 @@ const ErrorBanner: React.FC<{ error: string | null }> = ({ error }) => {
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const colours: Record<string, string> = {
     Active:
-      "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+      "bg-success/20 text-success border-success/30",
     Expired:
-      "bg-red-500/20 text-red-400 border-red-500/30",
+      "bg-error/20 text-error border-error/30",
     Revoked:
-      "bg-red-700/20 text-red-300 border-red-700/30",
+      "bg-error/20 text-error border-error/30",
     Pending:
-      "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+      "bg-warning/20 text-warning border-warning/30",
     RenewalScheduled:
-      "bg-blue-500/20 text-blue-400 border-blue-500/30",
+      "bg-primary/20 text-primary border-primary/30",
     Renewing:
-      "bg-blue-500/20 text-blue-400 border-blue-500/30",
+      "bg-primary/20 text-primary border-primary/30",
     Failed:
-      "bg-red-500/20 text-red-400 border-red-500/30",
+      "bg-error/20 text-error border-error/30",
   };
   const cls =
     colours[status] ??
-    "bg-gray-500/20 text-gray-300 border-gray-500/30";
+    "bg-text-secondary/20 text-text-secondary border-theme-border/30";
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}
@@ -138,9 +138,9 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             {s?.running ? (
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              <ShieldCheck className="w-5 h-5 text-success" />
             ) : (
-              <ShieldX className="w-5 h-5 text-red-400" />
+              <ShieldX className="w-5 h-5 text-error" />
             )}
             <h3 className="text-base font-semibold text-[var(--color-text)]">
               {t("letsEncrypt.serviceStatus", "Service Status")}
@@ -150,7 +150,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {!s?.running ? (
               <button
                 onClick={mgr.startService}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-success text-white rounded-md hover:bg-success/90 transition-colors"
               >
                 <Play className="w-3.5 h-3.5" />
                 {t("letsEncrypt.start", "Start")}
@@ -158,7 +158,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             ) : (
               <button
                 onClick={mgr.stopService}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-500 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-error text-white rounded-md hover:bg-error/90 transition-colors"
               >
                 <Square className="w-3.5 h-3.5" />
                 {t("letsEncrypt.stop", "Stop")}
@@ -184,19 +184,19 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               <span className="text-[var(--color-text-muted)]">
                 {t("letsEncrypt.activeCerts", "Active Certificates")}
               </span>
-              <p className="font-medium text-emerald-400">{s.active_certificates}</p>
+              <p className="font-medium text-success">{s.active_certificates}</p>
             </div>
             <div>
               <span className="text-[var(--color-text-muted)]">
                 {t("letsEncrypt.pendingRenewal", "Pending Renewal")}
               </span>
-              <p className="font-medium text-blue-400">{s.pending_renewal}</p>
+              <p className="font-medium text-primary">{s.pending_renewal}</p>
             </div>
             <div>
               <span className="text-[var(--color-text-muted)]">
                 {t("letsEncrypt.expired", "Expired")}
               </span>
-              <p className="font-medium text-red-400">{s.expired_certificates}</p>
+              <p className="font-medium text-error">{s.expired_certificates}</p>
             </div>
           </div>
         )}
@@ -210,12 +210,12 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("letsEncrypt.healthSummary", "Health Summary")}
           </h3>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-3 text-sm text-center">
-            <HealthStat label="Healthy" value={mgr.health.healthy} color="text-emerald-400" />
-            <HealthStat label="Warning" value={mgr.health.warning} color="text-yellow-400" />
-            <HealthStat label="Critical" value={mgr.health.critical} color="text-orange-400" />
-            <HealthStat label="Expired" value={mgr.health.expired} color="text-red-400" />
-            <HealthStat label="Revoked" value={mgr.health.revoked} color="text-red-300" />
-            <HealthStat label="Error" value={mgr.health.error} color="text-red-500" />
+            <HealthStat label="Healthy" value={mgr.health.healthy} color="text-success" />
+            <HealthStat label="Warning" value={mgr.health.warning} color="text-warning" />
+            <HealthStat label="Critical" value={mgr.health.critical} color="text-warning" />
+            <HealthStat label="Expired" value={mgr.health.expired} color="text-error" />
+            <HealthStat label="Revoked" value={mgr.health.revoked} color="text-error" />
+            <HealthStat label="Error" value={mgr.health.error} color="text-error" />
           </div>
         </div>
       )}
@@ -266,7 +266,7 @@ const CertificateCard: React.FC<{ cert: ManagedCertificate; mgr: Mgr }> = ({
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)] mt-2">
             {cert.issuer_cn && <span>Issuer: {cert.issuer_cn}</span>}
             {cert.not_after && (
-              <span className={urgent ? "text-red-400 font-medium" : ""}>
+              <span className={urgent ? "text-error font-medium" : ""}>
                 <Clock className="w-3 h-3 inline mr-1" />
                 Expires: {new Date(cert.not_after).toLocaleDateString()}
                 {daysLeft !== undefined && ` (${daysLeft}d)`}
@@ -276,7 +276,7 @@ const CertificateCard: React.FC<{ cert: ManagedCertificate; mgr: Mgr }> = ({
               <span>Challenge: {cert.preferred_challenge}</span>
             )}
             {cert.auto_renew && (
-              <span className="text-emerald-400">
+              <span className="text-success">
                 <RefreshCw className="w-3 h-3 inline mr-1" />
                 Auto-renew
               </span>
@@ -286,28 +286,28 @@ const CertificateCard: React.FC<{ cert: ManagedCertificate; mgr: Mgr }> = ({
         <div className="flex gap-1 ml-3 shrink-0">
           <button
             onClick={() => mgr.renewCertificate(cert.id)}
-            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-blue-400 transition-colors"
+            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-primary transition-colors"
             title={t("letsEncrypt.renew", "Renew")}
           >
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={() => mgr.fetchOcsp(cert.id)}
-            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-purple-400 transition-colors"
+            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-accent transition-colors"
             title={t("letsEncrypt.fetchOcsp", "Fetch OCSP")}
           >
             <ShieldCheck className="w-4 h-4" />
           </button>
           <button
             onClick={() => mgr.revokeCertificate(cert.id)}
-            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-orange-400 transition-colors"
+            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-warning transition-colors"
             title={t("letsEncrypt.revoke", "Revoke")}
           >
             <ShieldAlert className="w-4 h-4" />
           </button>
           <button
             onClick={() => mgr.removeCertificate(cert.id)}
-            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-red-400 transition-colors"
+            className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-error transition-colors"
             title={t("letsEncrypt.remove", "Remove")}
           >
             <Trash2 className="w-4 h-4" />
@@ -332,7 +332,7 @@ const RequestCertificateForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </label>
           <TextInput
             value={mgr.requestDomains}
-            onChange={(e) => mgr.setRequestDomains(e.target.value)}
+            onChange={(v) => mgr.setRequestDomains(v)}
             placeholder="example.com, *.example.com"
           />
         </div>
@@ -342,8 +342,8 @@ const RequestCertificateForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </label>
           <Select
             value={mgr.requestChallenge}
-            onChange={(e) =>
-              mgr.setRequestChallenge(e.target.value as "Http01" | "Dns01" | "TlsAlpn01")
+            onChange={(v) =>
+              mgr.setRequestChallenge(v as "Http01" | "Dns01" | "TlsAlpn01")
             }
             options={[
               { value: "Http01", label: "HTTP-01" },
@@ -398,7 +398,7 @@ const CertificatesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       {mgr.certificates.length === 0 ? (
         <EmptyState
-          icon={<FileCheck className="w-10 h-10" />}
+          icon={FileCheck}
           message={t("letsEncrypt.noCertificates", "No certificates yet")}
           hint={t(
             "letsEncrypt.noCertificatesHint",
@@ -443,7 +443,7 @@ const AccountCard: React.FC<{ account: AcmeAccount; mgr: Mgr }> = ({
       </div>
       <button
         onClick={() => mgr.removeAccount(account.id)}
-        className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-red-400 transition-colors"
+        className="p-1.5 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-error transition-colors"
         title={t("common.delete", "Delete")}
       >
         <Trash2 className="w-4 h-4" />
@@ -470,7 +470,7 @@ const AccountsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
       {mgr.accounts.length === 0 ? (
         <EmptyState
-          icon={<User className="w-10 h-10" />}
+          icon={User}
           message={t("letsEncrypt.noAccounts", "No ACME accounts")}
           hint={t(
             "letsEncrypt.noAccountsHint",
@@ -570,8 +570,8 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <Select
             value={cfg.environment}
             disabled={!mgr.editingConfig}
-            onChange={(e) =>
-              updateDraft({ environment: e.target.value as typeof cfg.environment })
+            onChange={(v) =>
+              updateDraft({ environment: v as typeof cfg.environment })
             }
             options={[
               { value: "LetsEncryptProduction", label: "Let's Encrypt (Production)" },
@@ -593,7 +593,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <TextInput
             value={cfg.contact_email}
             disabled={!mgr.editingConfig}
-            onChange={(e) => updateDraft({ contact_email: e.target.value })}
+            onChange={(v) => updateDraft({ contact_email: v })}
             placeholder="admin@example.com"
           />
         </div>
@@ -606,9 +606,9 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <Select
             value={cfg.preferred_challenge}
             disabled={!mgr.editingConfig}
-            onChange={(e) =>
+            onChange={(v) =>
               updateDraft({
-                preferred_challenge: e.target.value as typeof cfg.preferred_challenge,
+                preferred_challenge: v as typeof cfg.preferred_challenge,
               })
             }
             options={[
@@ -696,7 +696,7 @@ const HealthTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.health) {
     return (
       <EmptyState
-        icon={<Activity className="w-10 h-10" />}
+        icon={Activity}
         message={t("letsEncrypt.noHealthData", "No health data")}
         hint={t("letsEncrypt.noHealthDataHint", "Health checks run automatically.")}
       />
@@ -705,12 +705,12 @@ const HealthTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
   const h = mgr.health;
   const items: { label: string; value: number; icon: React.ReactNode; color: string }[] = [
-    { label: "Healthy", value: h.healthy, icon: <CheckCircle2 className="w-5 h-5" />, color: "text-emerald-400" },
-    { label: "Warning", value: h.warning, icon: <AlertTriangle className="w-5 h-5" />, color: "text-yellow-400" },
-    { label: "Critical", value: h.critical, icon: <AlertTriangle className="w-5 h-5" />, color: "text-orange-400" },
-    { label: "Expired", value: h.expired, icon: <XCircle className="w-5 h-5" />, color: "text-red-400" },
-    { label: "Revoked", value: h.revoked, icon: <ShieldX className="w-5 h-5" />, color: "text-red-300" },
-    { label: "Error", value: h.error, icon: <XCircle className="w-5 h-5" />, color: "text-red-500" },
+    { label: "Healthy", value: h.healthy, icon: <CheckCircle2 className="w-5 h-5" />, color: "text-success" },
+    { label: "Warning", value: h.warning, icon: <AlertTriangle className="w-5 h-5" />, color: "text-warning" },
+    { label: "Critical", value: h.critical, icon: <AlertTriangle className="w-5 h-5" />, color: "text-warning" },
+    { label: "Expired", value: h.expired, icon: <XCircle className="w-5 h-5" />, color: "text-error" },
+    { label: "Revoked", value: h.revoked, icon: <ShieldX className="w-5 h-5" />, color: "text-error" },
+    { label: "Error", value: h.error, icon: <XCircle className="w-5 h-5" />, color: "text-error" },
   ];
 
   return (
@@ -785,7 +785,7 @@ const EventsTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
       {mgr.events.length === 0 ? (
         <EmptyState
-          icon={<ScrollText className="w-10 h-10" />}
+          icon={ScrollText}
           message={t("letsEncrypt.noEvents", "No events recorded")}
           hint={t("letsEncrypt.noEventsHint", "Events will appear here as certificates are managed.")}
         />

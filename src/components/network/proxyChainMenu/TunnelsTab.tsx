@@ -75,11 +75,11 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                     <span
                       className={`px-2 py-0.5 text-xs rounded-full ${
                         tunnel.status === "connected"
-                          ? "bg-green-500/20 text-green-400"
+                          ? "bg-success/20 text-success"
                           : tunnel.status === "connecting"
-                            ? "bg-yellow-500/20 text-yellow-400"
+                            ? "bg-warning/20 text-warning"
                             : tunnel.status === "error"
-                              ? "bg-red-500/20 text-red-400"
+                              ? "bg-error/20 text-error"
                               : "bg-[var(--color-secondary)]/20 text-[var(--color-textSecondary)]"
                       }`}
                     >
@@ -94,7 +94,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                     {getTunnelInfo()}
                   </div>
                   {tunnel.error && (
-                    <div className="text-xs text-red-400 mt-1">
+                    <div className="text-xs text-error mt-1">
                       {tunnel.error}
                     </div>
                   )}
@@ -112,7 +112,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                     <button
                       onClick={() => mgr.handleConnectTunnel(tunnel.id)}
                       disabled={tunnel.status === "connecting"}
-                      className="p-2 text-[var(--color-textSecondary)] hover:text-green-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
+                      className="p-2 text-[var(--color-textSecondary)] hover:text-success hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
                       title="Connect"
                     >
                       <Play size={14} />
@@ -121,7 +121,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                   <button
                     onClick={() => mgr.handleEditTunnel(tunnel)}
                     disabled={tunnel.status === "connected"}
-                    className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
+                    className="p-2 text-[var(--color-textSecondary)] hover:text-primary hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
                     title="Edit"
                   >
                     <Edit2 size={14} />
@@ -129,7 +129,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                   <button
                     onClick={() => mgr.handleDeleteTunnel(tunnel.id)}
                     disabled={tunnel.status === "connected"}
-                    className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
+                    className="p-2 text-[var(--color-textSecondary)] hover:text-error hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
                     title="Delete"
                   >
                     <Trash2 size={14} />

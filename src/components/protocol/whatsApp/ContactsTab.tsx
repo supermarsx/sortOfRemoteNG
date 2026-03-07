@@ -1,9 +1,10 @@
+import type { WaMgr } from "./types";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React, { useState } from "react";
 import { AlertCircle, Building2, Check, CheckCircle, Link, Phone, PhoneCall, Users } from "lucide-react";
 
-const ContactsTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
+const ContactsTab: React.FC<{ wa: WaMgr }> = ({
   wa,
 }) => {
   const [phone, setPhone] = useState("");
@@ -62,7 +63,7 @@ const ContactsTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
       {checkResult !== null && (
         <div
           className={`text-sm flex items-center space-x-2 ${
-            checkResult ? "text-green-400" : "text-yellow-400"
+            checkResult ? "text-success" : "text-warning"
           }`}
         >
           {checkResult ? <CheckCircle size={14} /> : <AlertCircle size={14} />}

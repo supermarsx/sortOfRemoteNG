@@ -12,7 +12,7 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           value={mgr.scriptFilter}
           onChange={(e) => mgr.setScriptFilter(e.target.value)}
           placeholder={t("bulkSsh.searchScripts", "Search scripts...")}
-          className="sor-form-input-sm flex-1 placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-green-500"
+          className="sor-form-input-sm flex-1 placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-success"
         />
         {mgr.command.trim() && (
           <button
@@ -27,7 +27,7 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                 updatedAt: "",
               })
             }
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-md transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-success hover:bg-success/90 text-[var(--color-text)] rounded-md transition-colors"
           >
             <Save size={14} />
             {t("bulkSsh.saveAsScript", "Save Current")}
@@ -36,16 +36,16 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
       </div>
 
       {mgr.editingScript && (
-        <div className="px-4 py-3 border-b border-[var(--color-border)] bg-green-500/5 space-y-2">
+        <div className="px-4 py-3 border-b border-[var(--color-border)] bg-success/5 space-y-2">
           <div className="flex gap-2">
             <input
               type="text"
               value={mgr.newScriptName}
               onChange={(e) => mgr.setNewScriptName(e.target.value)}
               placeholder={t("bulkSsh.scriptName", "Script name")}
-              className="sor-form-input-sm flex-1 placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-green-500"
+              className="sor-form-input-sm flex-1 placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-success"
             />
-            <Select value={mgr.newScriptCategory} onChange={(v: string) => mgr.setNewScriptCategory(v)} options={[...mgr.categories.map((cat) => ({ value: cat, label: cat })), { value: 'Custom', label: 'Custom' }]} className="px-3 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500" />
+            <Select value={mgr.newScriptCategory} onChange={(v: string) => mgr.setNewScriptCategory(v)} options={[...mgr.categories.map((cat) => ({ value: cat, label: cat })), { value: 'Custom', label: 'Custom' }]} className="px-3 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-success" />
           </div>
           <div className="flex gap-2">
             <input
@@ -56,12 +56,12 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                 "bulkSsh.scriptDescription",
                 "Description (optional)",
               )}
-              className="sor-form-input-sm flex-1 placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-green-500"
+              className="sor-form-input-sm flex-1 placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-success"
             />
             <button
               onClick={mgr.saveCurrentAsScript}
               disabled={!mgr.newScriptName.trim()}
-              className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-[var(--color-surfaceHover)] disabled:opacity-50 text-[var(--color-text)] rounded-md transition-colors"
+              className="px-4 py-1.5 text-sm bg-success hover:bg-success/90 disabled:bg-[var(--color-surfaceHover)] disabled:opacity-50 text-[var(--color-text)] rounded-md transition-colors"
             >
               {t("common.save", "Save")}
             </button>
@@ -94,7 +94,7 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                 >
                   <FileCode
                     size={14}
-                    className="text-green-600 dark:text-green-500 flex-shrink-0"
+                    className="text-success dark:text-success flex-shrink-0"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-[var(--color-text)] truncate">
@@ -116,7 +116,7 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                         e.stopPropagation();
                         mgr.deleteScript(script.id);
                       }}
-                      className="p-1 text-[var(--color-textSecondary)] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="p-1 text-[var(--color-textSecondary)] hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
                       title={t("common.delete", "Delete")}
                     >
                       <Trash2 size={12} />

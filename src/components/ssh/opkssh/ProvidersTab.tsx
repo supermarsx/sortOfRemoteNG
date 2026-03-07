@@ -72,7 +72,7 @@ export const ProvidersTab: React.FC<ProvidersTabProps> = ({ mgr }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
-          <Settings size={14} className="text-violet-500" />
+          <Settings size={14} className="text-accent" />
           {t("opkssh.clientConfig", "Client Configuration")}
         </h3>
         <button
@@ -146,7 +146,7 @@ export const ProvidersTab: React.FC<ProvidersTabProps> = ({ mgr }) => {
                   </div>
                 </div>
                 <button
-                  className="p-1 rounded text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="p-1 rounded text-error hover:bg-error/10 transition-colors"
                   onClick={() => handleRemoveProvider(p.alias)}
                   title={t("opkssh.removeProvider", "Remove provider")}
                 >
@@ -203,7 +203,7 @@ export const ProvidersTab: React.FC<ProvidersTabProps> = ({ mgr }) => {
                 onChange={(e) => setNewScopes(e.target.value)}
               />
               <button
-                className="flex items-center justify-center gap-1 px-2 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50"
+                className="flex items-center justify-center gap-1 px-2 py-1 rounded bg-accent hover:bg-accent/90 text-white transition-colors disabled:opacity-50"
                 onClick={handleAddProvider}
                 disabled={!newAlias || !newIssuer || !newClientId}
               >

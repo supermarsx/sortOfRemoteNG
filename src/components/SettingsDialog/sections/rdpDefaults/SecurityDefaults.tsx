@@ -7,7 +7,7 @@ import { Checkbox } from "../../../ui/forms";
 const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Shield className="w-4 h-4 text-red-400" />
+      <Shield className="w-4 h-4 text-error" />
       Security Defaults
     </h4>
 

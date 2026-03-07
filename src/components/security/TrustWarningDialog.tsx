@@ -62,18 +62,18 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
         <div
           className={`flex items-center gap-3 px-6 py-4 border-b ${
             isMismatch
-              ? "border-red-700/50 bg-red-900/20"
-              : "border-yellow-700/50 bg-yellow-900/20"
+              ? "border-error/50 bg-error/20"
+              : "border-warning/50 bg-warning/20"
           } rounded-t-xl`}
         >
           {isMismatch ? (
-            <ShieldAlert size={28} className="text-red-400 flex-shrink-0" />
+            <ShieldAlert size={28} className="text-error flex-shrink-0" />
           ) : (
-            <ShieldCheck size={28} className="text-yellow-400 flex-shrink-0" />
+            <ShieldCheck size={28} className="text-warning flex-shrink-0" />
           )}
           <div>
             <h2
-              className={`text-lg font-semibold ${isMismatch ? "text-red-300" : "text-yellow-300"}`}
+              className={`text-lg font-semibold ${isMismatch ? "text-error" : "text-warning"}`}
             >
               {isMismatch
                 ? `${isTls ? "Certificate" : "Host Key"} Has Changed!`
@@ -89,17 +89,17 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
         <div className="px-6 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
           {isMismatch ? (
             <>
-              <div className="flex items-start gap-2 p-3 bg-red-900/20 border border-red-700/40 rounded-lg">
+              <div className="flex items-start gap-2 p-3 bg-error/20 border border-error/40 rounded-lg">
                 <AlertTriangle
                   size={16}
-                  className="text-red-400 flex-shrink-0 mt-0.5"
+                  className="text-error flex-shrink-0 mt-0.5"
                 />
-                <div className="text-sm text-red-300">
+                <div className="text-sm text-error">
                   <p className="font-medium">
                     The {identityLabel} presented by this server has changed
                     since the last connection.
                   </p>
-                  <p className="mt-1 text-red-300/80">
+                  <p className="mt-1 text-error/80">
                     This could indicate a man-in-the-middle attack, or the
                     server&apos;s {identityLabel} was legitimately rotated.
                     Proceed only if you trust this change.
@@ -134,8 +134,8 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 </div>
 
                 {/* Received now */}
-                <div className="bg-[var(--color-background)] rounded-lg p-3 border border-red-700/30">
-                  <p className="text-xs text-red-400 font-medium mb-2">
+                <div className="bg-[var(--color-background)] rounded-lg p-3 border border-error/30">
+                  <p className="text-xs text-error font-medium mb-2">
                     Received Now
                   </p>
                   <div className="flex items-center gap-1 mb-1">
@@ -144,7 +144,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                       Fingerprint
                     </span>
                   </div>
-                  <p className="text-[11px] font-mono text-red-300 break-all">
+                  <p className="text-[11px] font-mono text-error break-all">
                     {formatFingerprint(receivedIdentity.fingerprint)}
                   </p>
                 </div>
@@ -154,7 +154,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
             <>
               <p className="text-sm text-[var(--color-textSecondary)]">
                 The server at{" "}
-                <span className="text-yellow-400 font-medium">
+                <span className="text-warning font-medium">
                   {host}:{port}
                 </span>{" "}
                 presented a {identityLabel} that has not been seen before.
@@ -189,8 +189,8 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
             onClick={onAccept}
             className={`flex items-center gap-2 px-4 py-2 text-sm text-[var(--color-text)] rounded-lg transition-colors ${
               isMismatch
-                ? "bg-red-600 hover:bg-red-500"
-                : "bg-blue-600 hover:bg-blue-500"
+                ? "bg-error hover:bg-error/90"
+                : "bg-primary hover:bg-primary/90"
             }`}
           >
             {isMismatch ? (

@@ -731,7 +731,6 @@ export function useSSHCommandHistory(sessionId?: string) {
     importHistory,
 
     // Panel
-    isOpen: isOpen,
     togglePanel,
     openPanel,
     closePanel,

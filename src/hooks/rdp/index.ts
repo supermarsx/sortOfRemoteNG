@@ -6,6 +6,6 @@ export * from "./useRDPErrorScreen";
 export * from "./useRDPLogViewer";
 export * from "./useRDPOptions";
 export * from "./useRDPSessionManager";
-export * from "./useRDPSessionPanel";
+export { type PanelTab, useRDPSessionPanel } from "./useRDPSessionPanel";
 export * from "./useRDPTotpPanel";
 export * from "./useSessionThumbnails";

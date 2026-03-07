@@ -101,6 +101,8 @@ export interface YubiKeyDevice {
   has_nfc: boolean;
   usb_interfaces_enabled: YubiKeyInterface[];
   nfc_interfaces_enabled: YubiKeyInterface[];
+  usb_interfaces?: string[];
+  nfc_interfaces?: string[];
   serial_visible: boolean;
   device_name: string;
   is_fips: boolean;
@@ -121,6 +123,7 @@ export interface PivCertificate {
   not_before: string;
   not_after: string;
   fingerprint_sha256: string;
+  fingerprint?: string;
   algorithm: string;
   is_self_signed: boolean;
   key_usage: string[];
@@ -135,6 +138,7 @@ export interface PivSlotInfo {
   algorithm: PivAlgorithm | null;
   has_key: boolean;
   has_certificate: boolean;
+  has_cert?: boolean;
   certificate: PivCertificate | null;
   pin_policy: PinPolicy;
   touch_policy: TouchPolicy;
@@ -144,8 +148,12 @@ export interface PivSlotInfo {
 export interface PivPinStatus {
   pin_attempts_remaining: number;
   puk_attempts_remaining: number;
+  pin_retries?: number;
+  puk_retries?: number;
   pin_is_default: boolean;
   puk_is_default: boolean;
+  default_pin?: boolean;
+  default_puk?: boolean;
   management_key_is_default: boolean;
   management_key_type: ManagementKeyType;
 }
@@ -168,6 +176,7 @@ export interface Fido2Credential {
 
 export interface Fido2DeviceInfo {
   versions: string[];
+  version?: string;
   extensions: string[];
   aaguid: string;
   options: Record<string, boolean>;
@@ -177,6 +186,7 @@ export interface Fido2DeviceInfo {
   max_credential_id_length: number;
   firmware_version: string;
   remaining_discoverable_credentials: number;
+  max_creds_remaining?: number;
   force_pin_change: boolean;
   min_pin_length: number;
   certifications: string[];
@@ -190,7 +200,9 @@ export interface Fido2Algorithm {
 
 export interface Fido2PinStatus {
   pin_set: boolean;
+  is_set?: boolean;
   pin_retries: number;
+  retries?: number;
   uv_retries: number | null;
   force_change: boolean;
   min_length: number;
@@ -223,6 +235,7 @@ export interface OtpSlotConfig {
   configured: boolean;
   slot_type: OtpSlotType | null;
   require_touch: boolean;
+  touch_required?: boolean;
 }
 
 // ── Attestation ──────────────────────────────────────────────────────
@@ -270,14 +283,20 @@ export interface YubiKeyAuditEntry {
 export interface YubiKeyConfig {
   auto_detect: boolean;
   poll_interval_ms: number;
+  poll_interval?: number;
   ykman_path: string | null;
+  usb_interfaces?: string[];
+  nfc_interfaces?: string[];
   piv_default_algorithm: PivAlgorithm;
   piv_default_pin_policy: PinPolicy;
   piv_default_touch_policy: TouchPolicy;
+  piv_defaults?: { algorithm?: string; pin_policy?: string; touch_policy?: string };
   oath_default_algorithm: OathAlgorithm;
   oath_default_digits: number;
   oath_default_period: number;
+  oath_defaults?: { algorithm?: string; digits?: number; period?: number };
   fido2_uv_preferred: boolean;
   auto_generate_attestation: boolean;
   require_touch_for_crypto: boolean;
+  fido2_defaults?: { uv_preferred?: boolean; auto_attestation?: boolean; require_touch?: boolean };
 }

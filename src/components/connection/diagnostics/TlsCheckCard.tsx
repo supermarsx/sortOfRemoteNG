@@ -14,8 +14,8 @@ const TlsCheckCard = ({ results }: { results: DiagnosticResults }) => {
       {results.tlsCheck.tls_supported ? (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <CheckCircle size={12} className="text-green-500" />
-            <span className="text-xs text-green-500">
+            <CheckCircle size={12} className="text-success" />
+            <span className="text-xs text-success">
               {results.tlsCheck.tls_version || "TLS Supported"}
             </span>
             <span className="text-xs text-[var(--color-textMuted)]">
@@ -25,15 +25,15 @@ const TlsCheckCard = ({ results }: { results: DiagnosticResults }) => {
           {results.tlsCheck.certificate_valid !== undefined && (
             <div className="flex items-center gap-2">
               {results.tlsCheck.certificate_valid ? (
-                <CheckCircle size={10} className="text-green-500" />
+                <CheckCircle size={10} className="text-success" />
               ) : (
-                <XCircle size={10} className="text-yellow-500" />
+                <XCircle size={10} className="text-warning" />
               )}
               <span
                 className={`text-[10px] ${
                   results.tlsCheck.certificate_valid
-                    ? "text-green-500"
-                    : "text-yellow-500"
+                    ? "text-success"
+                    : "text-warning"
                 }`}
               >
                 {results.tlsCheck.certificate_valid
@@ -65,8 +65,8 @@ const TlsCheckCard = ({ results }: { results: DiagnosticResults }) => {
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <XCircle size={12} className="text-red-500" />
-          <span className="text-xs text-red-500">
+          <XCircle size={12} className="text-error" />
+          <span className="text-xs text-error">
             {results.tlsCheck.error ||
               t("diagnostics.tlsNotSupported", "TLS not supported")}
           </span>

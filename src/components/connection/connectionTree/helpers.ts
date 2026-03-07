@@ -27,9 +27,9 @@ export const getConnectionIcon = (connection: Connection) => {
 
 export const getStatusColor = (status?: string) => {
   switch (status) {
-    case "connected": return "text-green-400";
-    case "connecting": return "text-yellow-400";
-    case "error": return "text-red-400";
+    case "connected": return "text-success";
+    case "connecting": return "text-warning";
+    case "error": return "text-error";
     default: return "text-[var(--color-textSecondary)]";
   }
 };

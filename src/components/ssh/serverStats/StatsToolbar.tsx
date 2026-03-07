@@ -54,7 +54,7 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
 
       {/* Collect button */}
       <button
-        className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-700 text-white disabled:opacity-50 transition-colors"
+        className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-info hover:bg-info text-white disabled:opacity-50 transition-colors"
         onClick={() => mgr.collectStats()}
         disabled={mgr.isCollecting || !mgr.selectedSessionId}
         title={t("serverStats.collect", "Collect stats")}
@@ -89,7 +89,7 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
             key={key}
             className={`text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
               mgr.activeTab === key
-                ? "bg-cyan-600 text-white"
+                ? "bg-info text-white"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
             }`}
             onClick={() => mgr.setActiveTab(key)}
@@ -102,7 +102,7 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
         <button
           className={`text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
             mgr.showRawOutput
-              ? "bg-gray-600 text-white"
+              ? "bg-surfaceHover text-white"
               : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
           }`}
           onClick={() => mgr.setShowRawOutput(!mgr.showRawOutput)}

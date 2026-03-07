@@ -14,7 +14,7 @@ const VARIANT_CLASS: Record<SelectVariant, string> = {
 export type SelectVariant = 'settings' | 'form' | 'form-sm';
 
 export interface SelectOption {
-  value: string;
+  value: string | number;
   label: string;
   disabled?: boolean;
   title?: string;
@@ -22,13 +22,15 @@ export interface SelectOption {
 
 export interface SelectProps
   extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> {
-  value: string;
+  value: string | number;
   onChange: (value: string) => void;
   options: SelectOption[];
   /** Placeholder shown as a disabled first option. */
   placeholder?: string;
   /** Visual variant. Defaults to `"settings"`. */
   variant?: SelectVariant;
+  /** Label text (consumed by wrapper layouts, not rendered by Select itself). */
+  label?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export const Select: React.FC<SelectProps> = ({
   placeholder,
   variant = 'settings',
   className,
+  label: _label,
   ...rest
 }) => (
   <select

@@ -52,7 +52,7 @@ const ExtendedDiagnosticsCards = ({
                 </div>
               )}
               {results.ipGeoInfo.is_datacenter && (
-                <div className="text-[10px] text-yellow-500">
+                <div className="text-[10px] text-warning">
                   ⚠ {t("diagnostics.datacenterIp", "Datacenter IP")}
                 </div>
               )}
@@ -79,15 +79,15 @@ const ExtendedDiagnosticsCards = ({
                   size={12}
                   className={
                     results.asymmetricRouting.asymmetry_detected
-                      ? "text-yellow-500"
-                      : "text-green-500"
+                      ? "text-warning"
+                      : "text-success"
                   }
                 />
                 <span
                   className={`text-xs font-medium ${
                     results.asymmetricRouting.asymmetry_detected
-                      ? "text-yellow-500"
-                      : "text-green-500"
+                      ? "text-warning"
+                      : "text-success"
                   }`}
                 >
                   {results.asymmetricRouting.asymmetry_detected
@@ -139,15 +139,15 @@ const ExtendedDiagnosticsCards = ({
                   size={12}
                   className={
                     results.udpProbe.response_received
-                      ? "text-green-500"
-                      : "text-yellow-500"
+                      ? "text-success"
+                      : "text-warning"
                   }
                 />
                 <span
                   className={`text-xs font-medium ${
                     results.udpProbe.response_received
-                      ? "text-green-500"
-                      : "text-yellow-500"
+                      ? "text-success"
+                      : "text-warning"
                   }`}
                 >
                   {results.udpProbe.response_received
@@ -192,21 +192,21 @@ const ExtendedDiagnosticsCards = ({
                   size={12}
                   className={
                     results.leakageDetection.overall_status === "secure"
-                      ? "text-green-500"
+                      ? "text-success"
                       : results.leakageDetection.overall_status ===
                           "leak_detected"
-                        ? "text-red-500"
-                        : "text-yellow-500"
+                        ? "text-error"
+                        : "text-warning"
                   }
                 />
                 <span
                   className={`text-xs font-medium ${
                     results.leakageDetection.overall_status === "secure"
-                      ? "text-green-500"
+                      ? "text-success"
                       : results.leakageDetection.overall_status ===
                           "leak_detected"
-                        ? "text-red-500"
-                        : "text-yellow-500"
+                        ? "text-error"
+                        : "text-warning"
                   }`}
                 >
                   {results.leakageDetection.overall_status === "secure"
@@ -223,12 +223,12 @@ const ExtendedDiagnosticsCards = ({
                 </div>
               )}
               {results.leakageDetection.dns_leak_detected && (
-                <div className="text-[10px] text-red-500">
+                <div className="text-[10px] text-error">
                   ⚠ {t("diagnostics.dnsLeak", "DNS Leak Detected")}
                 </div>
               )}
               {results.leakageDetection.ip_mismatch_detected && (
-                <div className="text-[10px] text-red-500">
+                <div className="text-[10px] text-error">
                   ⚠ {t("diagnostics.ipMismatch", "IP Mismatch")}
                 </div>
               )}

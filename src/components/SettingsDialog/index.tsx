@@ -6,6 +6,7 @@ import {
   Gauge,
   Settings as SettingsIcon,
   Search,
+  X,
 } from "lucide-react";
 import GeneralSettings from "./sections/GeneralSettings";
 import ThemeSettings from "./sections/ThemeSettings";
@@ -102,14 +103,14 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
                 }}
                 className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-left transition-colors ${
                   mgr.activeTab === tab.id
-                    ? "bg-blue-600 text-[var(--color-text)]"
+                    ? "bg-primary text-[var(--color-text)]"
                     : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]"
                 }`}
               >
                 <Icon size={16} />
                 <span className="text-sm">{label}</span>
                 {mgr.searchQuery && sectionResults && (
-                  <span className="ml-auto text-[10px] bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded-full">
+                  <span className="ml-auto text-[10px] bg-primary/30 text-primary px-1.5 py-0.5 rounded-full">
                     {sectionResults.length}
                   </span>
                 )}
@@ -264,7 +265,7 @@ const BenchmarkOverlay: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         <div className="flex flex-col items-center text-center">
           <div className="relative mb-6">
             <div className="w-20 h-20 rounded-full border-4 border-[var(--color-border)] border-t-blue-500 animate-spin" />
-            <Gauge className="w-8 h-8 text-blue-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            <Gauge className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           </div>
           <h3 className="text-lg font-semibold text-[var(--color-text)] mb-2">
             {mgr.t("security.benchmarking", "Running Benchmark")}
@@ -320,7 +321,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 onClick={mgr.handleSave}
                 data-tooltip={mgr.t("settings.save")}
                 aria-label={mgr.t("settings.save")}
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                className="p-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors"
               >
                 <Save size={16} />
               </button>

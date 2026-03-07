@@ -74,12 +74,12 @@ export const SharesView: React.FC<SubProps> = ({ mgr }) => {
                 </div>
                 <div className="flex gap-1">
                   {f.is_aclmode && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary">
                       ACL
                     </span>
                   )}
                   {f.encryption !== undefined && f.encryption !== 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning">
                       <Lock className="w-3 h-3 inline" /> Encrypted
                     </span>
                   )}
@@ -115,7 +115,7 @@ export const NetworkView: React.FC<SubProps> = ({ mgr }) => {
               <div key={iface.id ?? iface.name} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium text-[var(--color-text)]">{iface.name ?? iface.id}</div>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${iface.status === "up" ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${iface.status === "up" ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                     {iface.status ?? "—"}
                   </span>
                 </div>
@@ -153,7 +153,7 @@ export const NetworkView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{rule.source_ip ?? "Any"}</td>
                     <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{rule.ports ?? "All"}</td>
                     <td className="py-1.5 pr-3">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${rule.action === "allow" ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${rule.action === "allow" ? "bg-success/15 text-success" : "bg-error/15 text-error"}`}>
                         {rule.action}
                       </span>
                     </td>
@@ -202,7 +202,7 @@ export const UsersView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{u.description ?? "—"}</td>
                     <td className="py-1.5 pr-3 text-[var(--color-text-secondary)]">{u.email ?? "—"}</td>
                     <td className="py-1.5 pr-3">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${u.expired === "false" || u.expired === undefined ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${u.expired === "false" || u.expired === undefined ? "bg-success/15 text-success" : "bg-error/15 text-error"}`}>
                         {u.expired === "true" ? "disabled" : "active"}
                       </span>
                     </td>
@@ -264,15 +264,15 @@ export const PackagesView: React.FC<SubProps> = ({ mgr }) => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${pkg.additional?.status === "running" ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${pkg.additional?.status === "running" ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                     {pkg.additional?.status ?? "stopped"}
                   </span>
                   {pkg.additional?.status === "running" ? (
-                    <button onClick={() => mgr.stopPackage(pkg.id)} className="p-1 rounded hover:bg-red-500/10 text-red-400 transition-colors" title="Stop">
+                    <button onClick={() => mgr.stopPackage(pkg.id)} className="p-1 rounded hover:bg-error/10 text-error transition-colors" title="Stop">
                       <Square className="w-3 h-3" />
                     </button>
                   ) : (
-                    <button onClick={() => mgr.startPackage(pkg.id)} className="p-1 rounded hover:bg-green-500/10 text-green-400 transition-colors" title="Start">
+                    <button onClick={() => mgr.startPackage(pkg.id)} className="p-1 rounded hover:bg-success/10 text-success transition-colors" title="Start">
                       <Play className="w-3 h-3" />
                     </button>
                   )}
@@ -302,7 +302,7 @@ export const ServicesView: React.FC<SubProps> = ({ mgr }) => {
         <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium text-[var(--color-text)]">SMB/CIFS</div>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.smbConfig.enable_smb ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.smbConfig.enable_smb ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
               {mgr.smbConfig.enable_smb ? "Enabled" : "Disabled"}
             </span>
           </div>
@@ -317,7 +317,7 @@ export const ServicesView: React.FC<SubProps> = ({ mgr }) => {
         <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium text-[var(--color-text)]">NFS</div>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.nfsConfig.enable_nfs ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.nfsConfig.enable_nfs ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
               {mgr.nfsConfig.enable_nfs ? "Enabled" : "Disabled"}
             </span>
           </div>
@@ -332,7 +332,7 @@ export const ServicesView: React.FC<SubProps> = ({ mgr }) => {
         <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium text-[var(--color-text)]">SSH</div>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.sshConfig.enable_ssh ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.sshConfig.enable_ssh ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
               {mgr.sshConfig.enable_ssh ? "Enabled" : "Disabled"}
             </span>
           </div>
@@ -352,7 +352,7 @@ export const ServicesView: React.FC<SubProps> = ({ mgr }) => {
             {mgr.services.map((svc) => (
               <div key={svc.id ?? svc.name} className="flex items-center justify-between p-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
                 <span className="text-xs font-medium text-[var(--color-text)]">{svc.name ?? svc.id}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${svc.enabled ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${svc.enabled ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                   {svc.enabled ? "running" : "stopped"}
                 </span>
               </div>
@@ -390,20 +390,20 @@ export const DockerView: React.FC<SubProps> = ({ mgr }) => {
                     <div className="text-[10px] text-[var(--color-text-secondary)] truncate">{c.image ?? "—"}</div>
                   </div>
                   <div className="flex items-center gap-2 ml-3">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.state === "running" ? "bg-green-500/15 text-green-400" : c.state === "exited" ? "bg-gray-500/15 text-gray-400" : "bg-yellow-500/15 text-yellow-400"}`}>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.state === "running" ? "bg-success/15 text-success" : c.state === "exited" ? "bg-text-secondary/15 text-text-muted" : "bg-warning/15 text-warning"}`}>
                       {c.state ?? c.status}
                     </span>
                     {c.state === "running" ? (
                       <>
-                        <button onClick={() => mgr.restartContainer(c.name ?? c.id ?? "")} className="p-1 rounded hover:bg-blue-500/10 text-blue-400 transition-colors" title="Restart">
+                        <button onClick={() => mgr.restartContainer(c.name ?? c.id ?? "")} className="p-1 rounded hover:bg-primary/10 text-primary transition-colors" title="Restart">
                           <RefreshCw className="w-3 h-3" />
                         </button>
-                        <button onClick={() => mgr.stopContainer(c.name ?? c.id ?? "")} className="p-1 rounded hover:bg-red-500/10 text-red-400 transition-colors" title="Stop">
+                        <button onClick={() => mgr.stopContainer(c.name ?? c.id ?? "")} className="p-1 rounded hover:bg-error/10 text-error transition-colors" title="Stop">
                           <Square className="w-3 h-3" />
                         </button>
                       </>
                     ) : (
-                      <button onClick={() => mgr.startContainer(c.name ?? c.id ?? "")} className="p-1 rounded hover:bg-green-500/10 text-green-400 transition-colors" title="Start">
+                      <button onClick={() => mgr.startContainer(c.name ?? c.id ?? "")} className="p-1 rounded hover:bg-success/10 text-success transition-colors" title="Start">
                         <Play className="w-3 h-3" />
                       </button>
                     )}
@@ -447,7 +447,7 @@ export const DockerView: React.FC<SubProps> = ({ mgr }) => {
             {mgr.dockerProjects.map((p) => (
               <div key={p.name} className="flex items-center justify-between p-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
                 <span className="text-xs font-medium text-[var(--color-text)]">{p.name}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.status === "running" ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.status === "running" ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                   {p.status}
                 </span>
               </div>
@@ -482,7 +482,7 @@ export const VmsView: React.FC<SubProps> = ({ mgr }) => {
                     {vm.vcpu_num ?? "—"} vCPU | {vm.vram_size ? `${vm.vram_size} MB` : "—"} RAM | {vm.autorun ? "Autostart" : "Manual"}
                   </div>
                 </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${vm.status === "running" ? "bg-green-500/15 text-green-400" : vm.status === "shutdown" ? "bg-gray-500/15 text-gray-400" : "bg-yellow-500/15 text-yellow-400"}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${vm.status === "running" ? "bg-success/15 text-success" : vm.status === "shutdown" ? "bg-text-secondary/15 text-text-muted" : "bg-warning/15 text-warning"}`}>
                   {vm.status}
                 </span>
               </div>
@@ -509,13 +509,13 @@ export const DownloadsView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.downloadStats && (
         <div className="grid grid-cols-2 gap-4">
           <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-center">
-            <div className="text-lg font-semibold text-green-400">
+            <div className="text-lg font-semibold text-success">
               {formatBytes(mgr.downloadStats.speed_download ?? 0)}/s
             </div>
             <div className="text-[10px] text-[var(--color-text-secondary)]">Download Speed</div>
           </div>
           <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-center">
-            <div className="text-lg font-semibold text-blue-400">
+            <div className="text-lg font-semibold text-primary">
               {formatBytes(mgr.downloadStats.speed_upload ?? 0)}/s
             </div>
             <div className="text-[10px] text-[var(--color-text-secondary)]">Upload Speed</div>
@@ -534,14 +534,14 @@ export const DownloadsView: React.FC<SubProps> = ({ mgr }) => {
               <div key={task.id} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-sm font-medium text-[var(--color-text)] truncate flex-1 min-w-0">{task.title}</div>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ml-2 ${task.status === "downloading" ? "bg-blue-500/15 text-blue-400" : task.status === "finished" ? "bg-green-500/15 text-green-400" : task.status === "paused" ? "bg-yellow-500/15 text-yellow-400" : "bg-gray-500/15 text-gray-400"}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ml-2 ${task.status === "downloading" ? "bg-primary/15 text-primary" : task.status === "finished" ? "bg-success/15 text-success" : task.status === "paused" ? "bg-warning/15 text-warning" : "bg-text-secondary/15 text-text-muted"}`}>
                     {task.status}
                   </span>
                 </div>
                 {task.status === "downloading" && (
                   <>
                     <div className="w-full h-1.5 rounded-full bg-[var(--color-bg)] overflow-hidden mb-1">
-                      <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
                     </div>
                     <div className="text-[10px] text-[var(--color-text-secondary)]">
                       {pct}% — {formatBytes(dl)} / {formatBytes(total)}
@@ -582,7 +582,7 @@ export const SurveillanceView: React.FC<SubProps> = ({ mgr }) => {
                     {cam.host ?? "—"} | {cam.model ?? "—"} | {cam.resolution ?? "—"}
                   </div>
                 </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${cam.enabled ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${cam.enabled ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                   {cam.enabled ? "enabled" : "disabled"}
                 </span>
               </div>
@@ -621,7 +621,7 @@ export const BackupView: React.FC<SubProps> = ({ mgr }) => {
                       {task.target_type ?? "—"} | Last: {task.last_backup_time ?? "—"}
                     </div>
                   </div>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${task.status === "idle" || task.status === "done" ? "bg-green-500/15 text-green-400" : task.status === "backing_up" ? "bg-blue-500/15 text-blue-400" : "bg-yellow-500/15 text-yellow-400"}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${task.status === "idle" || task.status === "done" ? "bg-success/15 text-success" : task.status === "backing_up" ? "bg-primary/15 text-primary" : "bg-warning/15 text-warning"}`}>
                     {task.status}
                   </span>
                 </div>
@@ -649,7 +649,7 @@ export const BackupView: React.FC<SubProps> = ({ mgr }) => {
                       {d.device_type ?? "—"} | {d.os_name ?? "—"}
                     </div>
                   </div>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${d.status === "online" ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${d.status === "online" ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                     {d.status}
                   </span>
                 </div>
@@ -680,9 +680,9 @@ export const SecurityView: React.FC<SubProps> = ({ mgr }) => {
         <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
           <div className="flex items-center gap-2 mb-2">
             {mgr.securityOverview.overall_status === "safe" ? (
-              <CheckCircle2 className="w-5 h-5 text-green-500" />
+              <CheckCircle2 className="w-5 h-5 text-success" />
             ) : (
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              <AlertTriangle className="w-5 h-5 text-warning" />
             )}
             <span className="text-sm font-medium text-[var(--color-text)]">
               {mgr.securityOverview.overall_status === "safe" ? "System Secure" : "Attention Needed"}
@@ -699,7 +699,7 @@ export const SecurityView: React.FC<SubProps> = ({ mgr }) => {
         <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-[var(--color-text)]">Auto Block</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.autoBlockConfig.enable ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.autoBlockConfig.enable ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
               {mgr.autoBlockConfig.enable ? "Enabled" : "Disabled"}
             </span>
           </div>
@@ -734,7 +734,7 @@ export const SecurityView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-1.5 pr-3">
                       <button
                         onClick={() => mgr.unblockIp(ip.ip)}
-                        className="flex items-center gap-1 px-2 py-1 rounded bg-green-500/10 border border-green-500/30 text-green-400 text-[10px] hover:bg-green-500/20 transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-success/10 border border-success/30 text-success text-[10px] hover:bg-success/20 transition-colors"
                       >
                         <Unlock className="w-3 h-3" />
                         Unblock
@@ -796,13 +796,13 @@ export const HardwareView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.hardwareInfo?.fans && mgr.hardwareInfo.fans.length > 0 && (
         <section>
           <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-            <Fan className="w-3.5 h-3.5 text-blue-500" />
+            <Fan className="w-3.5 h-3.5 text-primary" />
             Fans
           </h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {mgr.hardwareInfo.fans.map((fan, i) => (
               <div key={i} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-center">
-                <div className="text-lg font-semibold text-blue-400">
+                <div className="text-lg font-semibold text-primary">
                   {fan.speed ?? "—"} RPM
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
@@ -818,13 +818,13 @@ export const HardwareView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.hardwareInfo?.temps && mgr.hardwareInfo.temps.length > 0 && (
         <section>
           <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-            <Thermometer className="w-3.5 h-3.5 text-red-500" />
+            <Thermometer className="w-3.5 h-3.5 text-error" />
             Temperatures
           </h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {mgr.hardwareInfo.temps.map((temp, i) => (
+            {mgr.hardwareInfo.temps.map((temp: { value?: number; name?: string; status?: string }, i: number) => (
               <div key={i} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-center">
-                <div className={`text-lg font-semibold ${(temp.value ?? 0) > 60 ? "text-red-400" : (temp.value ?? 0) > 45 ? "text-yellow-400" : "text-green-400"}`}>
+                <div className={`text-lg font-semibold ${(temp.value ?? 0) > 60 ? "text-error" : (temp.value ?? 0) > 45 ? "text-warning" : "text-success"}`}>
                   {temp.value ?? "—"}°C
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
@@ -840,7 +840,7 @@ export const HardwareView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.upsInfo && (
         <section>
           <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <Zap className="w-3.5 h-3.5 text-warning" />
             UPS
           </h4>
           <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
@@ -878,7 +878,7 @@ export const HardwareView: React.FC<SubProps> = ({ mgr }) => {
                 <span className="text-xs text-[var(--color-text)]">
                   {entry.action ?? "—"} — {entry.day ?? "—"} at {entry.hour ?? "—"}:{String(entry.minute ?? 0).padStart(2, "0")}
                 </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${entry.enabled ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${entry.enabled ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                   {entry.enabled ? "active" : "disabled"}
                 </span>
               </div>
@@ -926,7 +926,7 @@ export const LogsView: React.FC<SubProps> = ({ mgr }) => {
                   <tr key={i} className="border-b border-[var(--color-border)]/30">
                     <td className="py-1 pr-3 text-[var(--color-text-secondary)] whitespace-nowrap">{log.time ?? "—"}</td>
                     <td className="py-1 pr-3">
-                      <span className={`text-[10px] px-1 py-0.5 rounded ${log.level === "err" || log.level === "error" ? "bg-red-500/15 text-red-400" : log.level === "warn" || log.level === "warning" ? "bg-yellow-500/15 text-yellow-400" : "bg-gray-500/15 text-gray-400"}`}>
+                      <span className={`text-[10px] px-1 py-0.5 rounded ${log.level === "err" || log.level === "error" ? "bg-error/15 text-error" : log.level === "warn" || log.level === "warning" ? "bg-warning/15 text-warning" : "bg-text-secondary/15 text-text-muted"}`}>
                         {log.level ?? "—"}
                       </span>
                     </td>
@@ -967,7 +967,7 @@ export const LogsView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-1 pr-3 text-[var(--color-text-secondary)]">{log.ip ?? "—"}</td>
                     <td className="py-1 pr-3 text-[var(--color-text-secondary)]">{log.service ?? "—"}</td>
                     <td className="py-1 pr-3">
-                      <span className={`text-[10px] px-1 py-0.5 rounded ${log.action === "login" ? "bg-green-500/15 text-green-400" : log.action === "logout" ? "bg-gray-500/15 text-gray-400" : "bg-red-500/15 text-red-400"}`}>
+                      <span className={`text-[10px] px-1 py-0.5 rounded ${log.action === "login" ? "bg-success/15 text-success" : log.action === "logout" ? "bg-text-secondary/15 text-text-muted" : "bg-error/15 text-error"}`}>
                         {log.action ?? "—"}
                       </span>
                     </td>
@@ -1000,7 +1000,7 @@ export const NotificationsView: React.FC<SubProps> = ({ mgr }) => {
           <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-[var(--color-text)]">Email Notifications</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.notificationConfig.email_enabled ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.notificationConfig.email_enabled ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                 {mgr.notificationConfig.email_enabled ? "Enabled" : "Disabled"}
               </span>
             </div>
@@ -1008,7 +1008,7 @@ export const NotificationsView: React.FC<SubProps> = ({ mgr }) => {
           <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-[var(--color-text)]">Push Notifications</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.notificationConfig.push_enabled ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.notificationConfig.push_enabled ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                 {mgr.notificationConfig.push_enabled ? "Enabled" : "Disabled"}
               </span>
             </div>
@@ -1016,7 +1016,7 @@ export const NotificationsView: React.FC<SubProps> = ({ mgr }) => {
           <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-[var(--color-text)]">SMS Notifications</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.notificationConfig.sms_enabled ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${mgr.notificationConfig.sms_enabled ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"}`}>
                 {mgr.notificationConfig.sms_enabled ? "Enabled" : "Disabled"}
               </span>
             </div>

@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { ScrollText, ArrowUpDown } from "lucide-react";
 import { Card, SectionHeader, SelectRow, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";

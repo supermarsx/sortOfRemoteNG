@@ -293,6 +293,7 @@ export interface NetworkOverview {
 
 export interface NetworkInterface {
   id: string;
+  name?: string;
   ip?: string;
   mask?: string;
   mac?: string;
@@ -305,11 +306,14 @@ export interface NetworkInterface {
 
 export interface FirewallRule {
   policy?: string;
+  action?: string;
   protocol?: string;
   ports?: string;
   source_ip?: string;
   direction?: string;
+  ruleType?: string;
   enabled?: boolean;
+  enable?: boolean;
 }
 
 export interface DhcpLease {
@@ -364,6 +368,7 @@ export interface CreateUserParams {
 export interface PackageInfo {
   id: string;
   name?: string;
+  dname?: string;
   version?: string;
   status?: string;
   is_uninstallable?: boolean;
@@ -373,6 +378,7 @@ export interface PackageInfo {
 export interface PackageAdditional {
   description?: string;
   description_enu?: string;
+  status?: string;
   dependent_packages?: Record<string, unknown>;
   dsm_apps?: string;
   dsm_app_page?: string;
@@ -397,6 +403,7 @@ export interface SmbConfig {
 
 export interface NfsConfig {
   enable_nfs?: boolean;
+  enable_nfs_v4?: boolean;
   nfs_version?: string;
 }
 
@@ -408,6 +415,7 @@ export interface SshConfig {
 
 // ─── Docker / Container Manager ─────────────────────────────────
 export interface DockerContainer {
+  id?: string;
   name: string;
   image: string;
   status?: string;
@@ -439,6 +447,7 @@ export interface DockerVolumeMount {
 export interface DockerImage {
   repository: string;
   tag: string;
+  tags?: string[];
   id?: string;
   created?: string;
   size?: number;
@@ -473,6 +482,7 @@ export interface DockerProject {
 export interface VmGuest {
   guest_id: string;
   guest_name: string;
+  name?: string;
   status?: string;
   description?: string;
   vcpu_num?: number;
@@ -513,6 +523,7 @@ export interface DownloadTask {
   username?: string;
   seedelapsed?: number;
   waiting_seconds?: number;
+  additional?: Record<string, unknown>;
 }
 
 export interface DownloadStationInfo {
@@ -549,6 +560,7 @@ export interface Camera {
   enabled?: boolean;
   recording?: boolean;
   host?: string;
+  resolution?: string;
 }
 
 export interface Recording {
@@ -585,6 +597,7 @@ export interface ActiveBackupDevice {
   device_id: string;
   device_name?: string;
   device_type?: string;
+  os_name?: string;
   status?: string;
   ip_address?: string;
   last_backup_time?: string;
@@ -593,7 +606,10 @@ export interface ActiveBackupDevice {
 // ─── Security ───────────────────────────────────────────────────
 export interface SecurityOverview {
   risk_count?: number;
+  risk_score?: number;
+  overall_status?: string;
   check_items?: SecurityCheckItem[];
+  items?: SecurityCheckItem[];
   last_scan_time?: string;
   is_scanning?: boolean;
 }
@@ -610,15 +626,17 @@ export interface BlockedIp {
   ip: string;
   reason?: string;
   expire?: string;
+  expire_time?: string;
   recorded_time?: string;
+  blocked_time?: string;
 }
 
 export interface CertificateInfo {
   id: string;
   desc?: string;
   is_default?: boolean;
-  issuer?: string;
-  subject?: string;
+  issuer?: string | { common_name?: string; [k: string]: unknown };
+  subject?: string | { common_name?: string; [k: string]: unknown };
   valid_from?: string;
   valid_till?: string;
   services?: CertificateService[];
@@ -633,7 +651,9 @@ export interface CertificateService {
 
 export interface AutoBlockConfig {
   enabled?: boolean;
+  enable?: boolean;
   login_attempts?: number;
+  login_attempts_minutes?: number;
   within_minutes?: number;
   expire_days?: number;
   allow_list?: string[];
@@ -651,11 +671,14 @@ export interface HardwareInfo {
   cpu_cores?: number;
   fans: FanInfo[];
   temperatures: TempSensor[];
+  temps?: TempSensor[];
 }
 
 export interface FanInfo {
   id: string;
+  name?: string;
   fan_speed?: number;
+  speed?: number;
   status?: string;
 }
 
@@ -671,7 +694,9 @@ export interface UpsInfo {
   ups_enable?: boolean;
   ups_mode?: string;
   ups_model?: string;
+  model?: string;
   ups_status?: string;
+  status?: string;
   battery_charge?: number;
   battery_runtime?: number;
   power_nominal?: number;
@@ -699,12 +724,17 @@ export interface LogEntry {
   user?: string;
   event?: string;
   description?: string;
+  descr?: string;
+  message?: string;
 }
 
 export interface ConnectionEntry {
   who?: string;
+  user?: string;
   ip?: string;
   type_field?: string;
+  service?: string;
+  action?: string;
   time?: string;
   from_field?: string;
   descr?: string;

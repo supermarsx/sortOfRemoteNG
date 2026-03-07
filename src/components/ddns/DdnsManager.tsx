@@ -78,7 +78,7 @@ const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
 }) => (
   <span
     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-      ok ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+      ok ? "bg-success/10 text-success" : "bg-error/10 text-error"
     }`}
   >
     {ok ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
@@ -88,7 +88,7 @@ const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
 
 const ErrorBanner: React.FC<{ error: string | null }> = ({ error }) =>
   error ? (
-    <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded bg-red-500/10 text-red-400 text-sm">
+    <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded bg-error/10 text-error text-sm">
       <AlertTriangle size={14} />
       {error}
     </div>
@@ -99,18 +99,18 @@ const DangerConfirm: React.FC<{
   onConfirm: () => void;
   onCancel: () => void;
 }> = ({ action, onConfirm, onCancel }) => (
-  <div className="flex items-center gap-3 p-3 rounded bg-red-500/10 border border-red-500/30 text-sm">
-    <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />
+  <div className="flex items-center gap-3 p-3 rounded bg-error/10 border border-error/30 text-sm">
+    <AlertTriangle size={16} className="text-error flex-shrink-0" />
     <span className="flex-1">Are you sure you want to {action}?</span>
     <button
       onClick={onConfirm}
-      className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs"
+      className="px-3 py-1 rounded bg-error hover:bg-error/80 text-[var(--color-text)] text-xs"
     >
       Confirm
     </button>
     <button
       onClick={onCancel}
-      className="px-3 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+      className="px-3 py-1 rounded bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-xs"
     >
       Cancel
     </button>
@@ -119,15 +119,15 @@ const DangerConfirm: React.FC<{
 
 const ProviderBadge: React.FC<{ provider: DdnsProvider }> = ({ provider }) => {
   const colours: Record<string, string> = {
-    Cloudflare: "bg-orange-500/10 text-orange-400",
-    NoIp: "bg-blue-500/10 text-blue-400",
-    DuckDns: "bg-yellow-500/10 text-yellow-400",
-    AfraidDns: "bg-purple-500/10 text-purple-400",
-    Custom: "bg-neutral-500/10 text-neutral-400",
+    Cloudflare: "bg-warning/10 text-warning",
+    NoIp: "bg-primary/10 text-primary",
+    DuckDns: "bg-warning/10 text-warning",
+    AfraidDns: "bg-accent/10 text-accent",
+    Custom: "bg-surface/50 text-text-secondary",
   };
   return (
     <span
-      className={`px-2 py-0.5 rounded text-xs font-medium ${colours[provider] ?? "bg-sky-500/10 text-sky-400"}`}
+      className={`px-2 py-0.5 rounded text-xs font-medium ${colours[provider] ?? "bg-info/10 text-info"}`}
     >
       {provider}
     </span>
@@ -137,32 +137,32 @@ const ProviderBadge: React.FC<{ provider: DdnsProvider }> = ({ provider }) => {
 const UpdateStatusBadge: React.FC<{ status: UpdateStatus }> = ({ status }) => {
   const map: Record<string, { cls: string; icon: React.ReactNode }> = {
     Success: {
-      cls: "bg-green-500/10 text-green-400",
+      cls: "bg-success/10 text-success",
       icon: <CheckCircle2 size={12} />,
     },
     NoChange: {
-      cls: "bg-blue-500/10 text-blue-400",
+      cls: "bg-primary/10 text-primary",
       icon: <CheckCircle2 size={12} />,
     },
     Failed: {
-      cls: "bg-red-500/10 text-red-400",
+      cls: "bg-error/10 text-error",
       icon: <XCircle size={12} />,
     },
     AuthError: {
-      cls: "bg-red-500/10 text-red-400",
+      cls: "bg-error/10 text-error",
       icon: <Shield size={12} />,
     },
     RateLimited: {
-      cls: "bg-yellow-500/10 text-yellow-400",
+      cls: "bg-warning/10 text-warning",
       icon: <Clock size={12} />,
     },
     Disabled: {
-      cls: "bg-neutral-500/10 text-neutral-400",
+      cls: "bg-surface/50 text-text-secondary",
       icon: <PowerOff size={12} />,
     },
   };
   const info = map[status] ?? {
-    cls: "bg-neutral-500/10 text-neutral-400",
+    cls: "bg-surface/50 text-text-secondary",
     icon: <AlertTriangle size={12} />,
   };
   return (
@@ -204,7 +204,7 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
       {mgr.profiles.map((p: DdnsProfile) => (
         <div
           key={p.id}
-          className="flex items-center gap-3 p-3 rounded bg-neutral-800/50 hover:bg-neutral-800 transition-colors"
+          className="flex items-center gap-3 p-3 rounded bg-surface/50 hover:bg-surfaceHover transition-colors"
         >
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -212,7 +212,7 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               <ProviderBadge provider={p.provider} />
               <StatusBadge ok={p.enabled} label={p.enabled ? "Enabled" : "Disabled"} />
             </div>
-            <div className="text-xs text-neutral-400 truncate">
+            <div className="text-xs text-text-muted truncate">
               {p.hostname && p.hostname !== "@"
                 ? `${p.hostname}.${p.domain}`
                 : p.domain}{" "}
@@ -222,7 +222,7 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           <div className="flex items-center gap-1">
             <button
               onClick={() => mgr.triggerUpdate(p.id)}
-              className="p-1.5 rounded hover:bg-neutral-700 text-neutral-400 hover:text-green-400"
+              className="p-1.5 rounded hover:bg-surfaceHover text-text-muted hover:text-success"
               title={t("ddns.profiles.update", "Trigger update")}
             >
               <Zap size={14} />
@@ -231,7 +231,7 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               onClick={() =>
                 p.enabled ? mgr.disableProfile(p.id) : mgr.enableProfile(p.id)
               }
-              className="p-1.5 rounded hover:bg-neutral-700 text-neutral-400 hover:text-yellow-400"
+              className="p-1.5 rounded hover:bg-surfaceHover text-text-muted hover:text-warning"
               title={p.enabled ? "Disable" : "Enable"}
             >
               {p.enabled ? <PowerOff size={14} /> : <Power size={14} />}
@@ -248,7 +248,7 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             ) : (
               <button
                 onClick={() => setConfirmDelete(p.id)}
-                className="p-1.5 rounded hover:bg-neutral-700 text-neutral-400 hover:text-red-400"
+                className="p-1.5 rounded hover:bg-surfaceHover text-text-muted hover:text-error"
                 title={t("ddns.profiles.delete", "Delete")}
               >
                 <Trash2 size={14} />
@@ -287,11 +287,11 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           ].map((s) => (
             <div
               key={s.label}
-              className="flex flex-col items-center p-3 rounded bg-neutral-800/50 text-center"
+              className="flex flex-col items-center p-3 rounded bg-surface/50 text-center"
             >
-              <s.icon size={18} className="mb-1 text-neutral-400" />
+              <s.icon size={18} className="mb-1 text-text-muted" />
               <span className="text-lg font-bold">{s.value}</span>
-              <span className="text-xs text-neutral-500">{s.label}</span>
+              <span className="text-xs text-text-secondary">{s.label}</span>
             </div>
           ))}
         </div>
@@ -299,15 +299,15 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 
       {/* IP addresses */}
       {mgr.systemStatus && (
-        <div className="flex items-center gap-4 p-3 rounded bg-neutral-800/50 text-sm">
+        <div className="flex items-center gap-4 p-3 rounded bg-surface/50 text-sm">
           <div className="flex items-center gap-2">
-            <Wifi size={14} className="text-neutral-400" />
-            <span className="text-neutral-500">IPv4:</span>
+            <Wifi size={14} className="text-text-muted" />
+            <span className="text-text-secondary">IPv4:</span>
             <span className="font-mono">{mgr.systemStatus.current_ipv4 ?? "—"}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Globe size={14} className="text-neutral-400" />
-            <span className="text-neutral-500">IPv6:</span>
+            <Globe size={14} className="text-text-muted" />
+            <span className="text-text-secondary">IPv6:</span>
             <span className="font-mono text-xs">
               {mgr.systemStatus.current_ipv6 ?? "—"}
             </span>
@@ -327,10 +327,10 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           {mgr.healthList.map((h: DdnsProfileHealth) => (
             <div
               key={h.profile_id}
-              className="flex items-center gap-3 p-3 rounded bg-neutral-800/50"
+              className="flex items-center gap-3 p-3 rounded bg-surface/50"
             >
               <div
-                className={`w-2 h-2 rounded-full ${h.is_healthy ? "bg-green-400" : "bg-red-400"}`}
+                className={`w-2 h-2 rounded-full ${h.is_healthy ? "bg-success" : "bg-error"}`}
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -339,14 +339,14 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                   </span>
                   <ProviderBadge provider={h.provider} />
                 </div>
-                <div className="text-xs text-neutral-400 truncate">
+                <div className="text-xs text-text-muted truncate">
                   {h.fqdn} ·{" "}
                   {h.current_ipv4 ?? "no IP"} ·{" "}
                   {h.success_count} ok / {h.failure_count} fail
                 </div>
               </div>
               {h.last_error && (
-                <span className="text-xs text-red-400 max-w-[200px] truncate">
+                <span className="text-xs text-error max-w-[200px] truncate">
                   {h.last_error}
                 </span>
               )}
@@ -392,7 +392,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         <select
           value={selectedCfProfile}
           onChange={(e) => setSelectedCfProfile(e.target.value)}
-          className="flex-1 px-3 py-2 rounded bg-neutral-800 border border-neutral-700 text-sm"
+          className="flex-1 px-3 py-2 rounded bg-surface border border-theme-border text-sm"
         >
           <option value="">
             {t("ddns.cloudflare.selectProfile", "Select profile...")}
@@ -408,7 +408,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             selectedCfProfile && mgr.cfListZones(selectedCfProfile)
           }
           disabled={!selectedCfProfile || mgr.loading}
-          className="px-3 py-2 rounded bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-sm"
+          className="px-3 py-2 rounded bg-warning hover:bg-warning/90 disabled:opacity-50 text-sm"
         >
           <Search size={14} className="inline mr-1" />
           {t("ddns.cloudflare.listZones", "List zones")}
@@ -418,7 +418,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
       {/* Zones */}
       {mgr.cfZones.length > 0 && (
         <div className="space-y-1">
-          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+          <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
             {t("ddns.cloudflare.zones", "Zones")}
           </h4>
           {mgr.cfZones.map((z: CloudflareZone) => (
@@ -431,8 +431,8 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               }}
               className={`w-full text-left flex items-center gap-2 p-2 rounded text-sm ${
                 selectedZone === z.id
-                  ? "bg-orange-500/20 border border-orange-500/40"
-                  : "bg-neutral-800/50 hover:bg-neutral-800"
+                  ? "bg-warning/20 border border-warning/40"
+                  : "bg-surface/50 hover:bg-surfaceHover"
               }`}
             >
               <Globe size={14} />
@@ -446,13 +446,13 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
       {/* Records */}
       {mgr.cfRecords.length > 0 && (
         <div className="space-y-1">
-          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+          <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
             {t("ddns.cloudflare.records", "DNS records")}
           </h4>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-neutral-500 border-b border-neutral-700">
+                <tr className="text-text-secondary border-b border-theme-border">
                   <th className="text-left py-1 px-2">Type</th>
                   <th className="text-left py-1 px-2">Name</th>
                   <th className="text-left py-1 px-2">Content</th>
@@ -463,7 +463,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               </thead>
               <tbody>
                 {mgr.cfRecords.map((r: CloudflareDnsRecord) => (
-                  <tr key={r.id} className="border-b border-neutral-800">
+                  <tr key={r.id} className="border-b border-theme-border">
                     <td className="py-1.5 px-2 font-mono">{r.record_type}</td>
                     <td className="py-1.5 px-2 font-mono truncate max-w-[200px]">
                       {r.name}
@@ -474,9 +474,9 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                     <td className="py-1.5 px-2">{r.ttl === 1 ? "Auto" : r.ttl}</td>
                     <td className="py-1.5 px-2">
                       {r.proxied ? (
-                        <Cloud size={14} className="text-orange-400" />
+                        <Cloud size={14} className="text-warning" />
                       ) : (
-                        <Globe size={14} className="text-neutral-500" />
+                        <Globe size={14} className="text-text-secondary" />
                       )}
                     </td>
                     <td className="py-1.5 px-2 text-right">
@@ -489,7 +489,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                             r.id,
                           )
                         }
-                        className="p-1 rounded hover:bg-neutral-700 text-neutral-400 hover:text-red-400"
+                        className="p-1 rounded hover:bg-surfaceHover text-text-muted hover:text-error"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -528,7 +528,7 @@ const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
       </button>
       <button
         onClick={() => mgr.getCurrentIps()}
-        className="px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-sm"
+        className="px-4 py-2 rounded bg-surfaceHover hover:bg-surfaceHover text-sm"
       >
         <Eye size={14} className="inline mr-1" />
         {t("ddns.ip.cached", "Show cached")}
@@ -536,27 +536,27 @@ const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
     </div>
 
     {mgr.ipResult && (
-      <div className="p-4 rounded bg-neutral-800/50 space-y-2">
+      <div className="p-4 rounded bg-surface/50 space-y-2">
         <h4 className="text-sm font-semibold">
           {t("ddns.ip.detectionResult", "Detection result")}
         </h4>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>
-            <span className="text-neutral-500">IPv4:</span>{" "}
+            <span className="text-text-secondary">IPv4:</span>{" "}
             <span className="font-mono">{mgr.ipResult.ipv4 ?? "—"}</span>
           </div>
           <div>
-            <span className="text-neutral-500">IPv6:</span>{" "}
+            <span className="text-text-secondary">IPv6:</span>{" "}
             <span className="font-mono text-xs">
               {mgr.ipResult.ipv6 ?? "—"}
             </span>
           </div>
           <div>
-            <span className="text-neutral-500">Service:</span>{" "}
+            <span className="text-text-secondary">Service:</span>{" "}
             {mgr.ipResult.service_used}
           </div>
           <div>
-            <span className="text-neutral-500">Latency:</span>{" "}
+            <span className="text-text-secondary">Latency:</span>{" "}
             {mgr.ipResult.latency_ms}ms
           </div>
         </div>
@@ -564,17 +564,17 @@ const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
     )}
 
     {mgr.currentIps[0] || mgr.currentIps[1] ? (
-      <div className="p-4 rounded bg-neutral-800/50 space-y-2">
+      <div className="p-4 rounded bg-surface/50 space-y-2">
         <h4 className="text-sm font-semibold">
           {t("ddns.ip.cached_title", "Cached IPs")}
         </h4>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>
-            <span className="text-neutral-500">IPv4:</span>{" "}
+            <span className="text-text-secondary">IPv4:</span>{" "}
             <span className="font-mono">{mgr.currentIps[0] ?? "—"}</span>
           </div>
           <div>
-            <span className="text-neutral-500">IPv6:</span>{" "}
+            <span className="text-text-secondary">IPv6:</span>{" "}
             <span className="font-mono text-xs">
               {mgr.currentIps[1] ?? "—"}
             </span>
@@ -603,7 +603,7 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         <button
           onClick={() => mgr.startScheduler()}
           disabled={mgr.loading}
-          className="px-4 py-2 rounded bg-green-600 hover:bg-green-700 disabled:opacity-50 text-sm"
+          className="px-4 py-2 rounded bg-success hover:bg-success/90 disabled:opacity-50 text-sm"
         >
           <Play size={14} className="inline mr-1" />
           {t("ddns.scheduler.start", "Start")}
@@ -611,14 +611,14 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         <button
           onClick={() => mgr.stopScheduler()}
           disabled={mgr.loading}
-          className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 disabled:opacity-50 text-sm"
+          className="px-4 py-2 rounded bg-error hover:bg-error/90 disabled:opacity-50 text-sm"
         >
           <Pause size={14} className="inline mr-1" />
           {t("ddns.scheduler.stop", "Stop")}
         </button>
         <button
           onClick={() => mgr.getSchedulerStatus()}
-          className="px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-sm"
+          className="px-4 py-2 rounded bg-surfaceHover hover:bg-surfaceHover text-sm"
         >
           <RefreshCw size={14} className="inline mr-1" />
           {t("ddns.scheduler.refresh", "Refresh")}
@@ -626,13 +626,13 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
       </div>
 
       {mgr.schedulerStatus && (
-        <div className="p-4 rounded bg-neutral-800/50 space-y-3">
+        <div className="p-4 rounded bg-surface/50 space-y-3">
           <div className="flex items-center gap-3">
             <StatusBadge
               ok={mgr.schedulerStatus.running}
               label={mgr.schedulerStatus.running ? "Running" : "Stopped"}
             />
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-text-secondary">
               {mgr.schedulerStatus.active_entries} active /{" "}
               {mgr.schedulerStatus.paused_entries} paused /{" "}
               {mgr.schedulerStatus.total_entries} total
@@ -643,7 +643,7 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-neutral-500 border-b border-neutral-700">
+                  <tr className="text-text-secondary border-b border-theme-border">
                     <th className="text-left py-1 px-2">Profile</th>
                     <th className="text-left py-1 px-2">Interval</th>
                     <th className="text-left py-1 px-2">Next run</th>
@@ -654,7 +654,7 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                   {mgr.schedulerStatus.entries.map((e) => (
                     <tr
                       key={e.profile_id}
-                      className="border-b border-neutral-800"
+                      className="border-b border-theme-border"
                     >
                       <td className="py-1.5 px-2 font-mono truncate max-w-[150px]">
                         {e.profile_id.slice(0, 8)}…
@@ -698,7 +698,7 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
     <div className="space-y-4">
       {/* Configuration */}
       {mgr.config && (
-        <div className="p-4 rounded bg-neutral-800/50 space-y-3">
+        <div className="p-4 rounded bg-surface/50 space-y-3">
           <h4 className="text-sm font-semibold flex items-center gap-2">
             <Settings size={14} />
             {t("ddns.config.title", "Configuration")}
@@ -731,7 +731,7 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               },
             ].map((item) => (
               <div key={item.label} className="flex justify-between">
-                <span className="text-neutral-500">{item.label}:</span>
+                <span className="text-text-secondary">{item.label}:</span>
                 <span className="font-mono">{item.value}</span>
               </div>
             ))}
@@ -755,7 +755,7 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
 
       {/* Provider capabilities */}
       {mgr.providers.length > 0 && (
-        <div className="p-4 rounded bg-neutral-800/50 space-y-3">
+        <div className="p-4 rounded bg-surface/50 space-y-3">
           <h4 className="text-sm font-semibold flex items-center gap-2">
             <Server size={14} />
             {t("ddns.config.providers", "Supported providers")} ({mgr.providers.length})
@@ -764,13 +764,13 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             {mgr.providers.map((p: ProviderCapabilities) => (
               <div
                 key={p.display_name}
-                className="flex items-center gap-2 p-2 rounded bg-neutral-900/50 text-xs"
+                className="flex items-center gap-2 p-2 rounded bg-surface/50 text-xs"
               >
                 <ProviderBadge provider={p.provider} />
                 <span className="flex-1 truncate">{p.display_name}</span>
                 <div className="flex gap-1">
                   {p.supports_ipv4 && (
-                    <span className="text-green-400" title="IPv4">
+                    <span className="text-success" title="IPv4">
                       4
                     </span>
                   )}
@@ -780,7 +780,7 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                     </span>
                   )}
                   {p.free_tier && (
-                    <span className="text-yellow-400" title="Free tier">
+                    <span className="text-warning" title="Free tier">
                       ★
                     </span>
                   )}
@@ -813,7 +813,7 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
       <div className="flex items-center gap-2">
         <button
           onClick={() => mgr.getAuditLog()}
-          className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+          className="px-3 py-1.5 rounded bg-surfaceHover hover:bg-surfaceHover text-xs"
         >
           <RefreshCw size={12} className="inline mr-1" />
           {t("ddns.audit.refresh", "Refresh")}
@@ -825,7 +825,7 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               navigator.clipboard.writeText(json);
             }
           }}
-          className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+          className="px-3 py-1.5 rounded bg-surfaceHover hover:bg-surfaceHover text-xs"
         >
           <Copy size={12} className="inline mr-1" />
           {t("ddns.audit.export", "Export")}
@@ -842,7 +842,7 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         ) : (
           <button
             onClick={() => setConfirmClear(true)}
-            className="px-3 py-1.5 rounded bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs"
+            className="px-3 py-1.5 rounded bg-error/20 hover:bg-error/30 text-error text-xs"
           >
             <Trash2 size={12} className="inline mr-1" />
             {t("ddns.audit.clear", "Clear")}
@@ -861,24 +861,24 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           {mgr.auditLog.map((e: DdnsAuditEntry) => (
             <div
               key={e.id}
-              className="flex items-start gap-2 p-2 rounded bg-neutral-800/50 text-xs"
+              className="flex items-start gap-2 p-2 rounded bg-surface/50 text-xs"
             >
               {e.success ? (
-                <CheckCircle2 size={12} className="text-green-400 mt-0.5 flex-shrink-0" />
+                <CheckCircle2 size={12} className="text-success mt-0.5 flex-shrink-0" />
               ) : (
-                <XCircle size={12} className="text-red-400 mt-0.5 flex-shrink-0" />
+                <XCircle size={12} className="text-error mt-0.5 flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{e.action}</span>
                   {e.provider && <ProviderBadge provider={e.provider} />}
-                  <span className="text-neutral-500">
+                  <span className="text-text-secondary">
                     {new Date(e.timestamp).toLocaleString()}
                   </span>
                 </div>
-                <div className="text-neutral-400 truncate">{e.detail}</div>
+                <div className="text-text-muted truncate">{e.detail}</div>
                 {e.error && (
-                  <div className="text-red-400 truncate">Error: {e.error}</div>
+                  <div className="text-error truncate">Error: {e.error}</div>
                 )}
               </div>
             </div>
@@ -908,15 +908,15 @@ const TabBar: React.FC<{
   onSelect: (t: DdnsTab) => void;
   t: TFunction;
 }> = ({ active, onSelect, t }) => (
-  <div className="flex gap-1 px-1 py-1 bg-neutral-900/50 rounded-lg mb-4 overflow-x-auto">
+  <div className="flex gap-1 px-1 py-1 bg-surface/50 rounded-lg mb-4 overflow-x-auto">
     {tabDefs.map((tab) => (
       <button
         key={tab.id}
         onClick={() => onSelect(tab.id)}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors ${
           active === tab.id
-            ? "bg-neutral-700 text-white"
-            : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
+            ? "bg-surfaceHover text-white"
+            : "text-text-muted hover:text-theme-text hover:bg-surfaceHover"
         }`}
       >
         <tab.icon size={14} />
@@ -969,7 +969,7 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
             <button
               onClick={() => mgr.triggerUpdateAll()}
               disabled={mgr.loading}
-              className="px-3 py-1.5 rounded bg-green-600 hover:bg-green-700 disabled:opacity-50 text-xs"
+              className="px-3 py-1.5 rounded bg-success hover:bg-success/90 disabled:opacity-50 text-xs"
             >
               <Zap size={12} className="inline mr-1" />
               {t("ddns.updateAll", "Update all")}
@@ -979,7 +979,7 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
                 const data = await mgr.exportProfiles();
                 if (data) navigator.clipboard.writeText(JSON.stringify(data, null, 2));
               }}
-              className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-xs"
+              className="px-3 py-1.5 rounded bg-surfaceHover hover:bg-surfaceHover text-xs"
             >
               <Download size={12} className="inline mr-1" />
               {t("ddns.export", "Export")}
@@ -987,7 +987,7 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-sm"
+            className="px-4 py-1.5 rounded bg-surfaceHover hover:bg-surfaceHover text-sm"
           >
             {t("common.close", "Close")}
           </button>

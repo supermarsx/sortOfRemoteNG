@@ -13,13 +13,13 @@ import type { SubProps } from "./types";
 import type { PowerAction } from "../../../types/hardware/idrac";
 
 const POWER_ACTIONS: { action: PowerAction; label: string; icon: React.FC<{ className?: string }>; variant: string }[] = [
-  { action: "on", label: "Power On", icon: Power, variant: "text-green-400 hover:bg-green-500/10" },
-  { action: "gracefulShutdown", label: "Graceful Shutdown", icon: PowerOff, variant: "text-amber-400 hover:bg-amber-500/10" },
-  { action: "forceOff", label: "Force Off", icon: PowerOff, variant: "text-red-400 hover:bg-red-500/10" },
-  { action: "gracefulRestart", label: "Graceful Restart", icon: RotateCcw, variant: "text-blue-400 hover:bg-blue-500/10" },
-  { action: "forceRestart", label: "Force Restart", icon: RotateCcw, variant: "text-orange-400 hover:bg-orange-500/10" },
-  { action: "powerCycle", label: "Power Cycle", icon: Zap, variant: "text-purple-400 hover:bg-purple-500/10" },
-  { action: "nmi", label: "NMI (Diagnostic)", icon: AlertTriangle, variant: "text-red-400 hover:bg-red-500/10" },
+  { action: "on", label: "Power On", icon: Power, variant: "text-success hover:bg-success/10" },
+  { action: "gracefulShutdown", label: "Graceful Shutdown", icon: PowerOff, variant: "text-warning hover:bg-warning/10" },
+  { action: "forceOff", label: "Force Off", icon: PowerOff, variant: "text-error hover:bg-error/10" },
+  { action: "gracefulRestart", label: "Graceful Restart", icon: RotateCcw, variant: "text-primary hover:bg-primary/10" },
+  { action: "forceRestart", label: "Force Restart", icon: RotateCcw, variant: "text-warning hover:bg-warning/10" },
+  { action: "powerCycle", label: "Power Cycle", icon: Zap, variant: "text-accent hover:bg-accent/10" },
+  { action: "nmi", label: "NMI (Diagnostic)", icon: AlertTriangle, variant: "text-error hover:bg-error/10" },
 ];
 
 const PowerView: React.FC<SubProps> = ({ mgr }) => {
@@ -39,13 +39,13 @@ const PowerView: React.FC<SubProps> = ({ mgr }) => {
       {/* Current state */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Power className="w-4 h-4 text-orange-400" />
+          <Power className="w-4 h-4 text-warning" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">
             {t("idrac.power.state", "Power State")}
           </h3>
           <span
             className={`ml-2 text-xs font-medium ${
-              mgr.powerState === "On" ? "text-green-400" : "text-red-400"
+              mgr.powerState === "On" ? "text-success" : "text-error"
             }`}
           >
             {mgr.powerState ?? "Unknown"}
@@ -79,7 +79,7 @@ const PowerView: React.FC<SubProps> = ({ mgr }) => {
       {pm && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Zap className="w-4 h-4 text-amber-400" />
+            <Zap className="w-4 h-4 text-warning" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.power.metrics", "Power Metrics")}
             </h3>
@@ -113,7 +113,7 @@ const PowerView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.powerSupplies.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Battery className="w-4 h-4 text-green-400" />
+            <Battery className="w-4 h-4 text-success" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.power.psu", "Power Supplies")}
             </h3>
@@ -152,8 +152,8 @@ const PowerView: React.FC<SubProps> = ({ mgr }) => {
                     <span
                       className={`${
                         psu.status.health?.toLowerCase() === "ok"
-                          ? "text-green-400"
-                          : "text-amber-400"
+                          ? "text-success"
+                          : "text-warning"
                       }`}
                     >
                       {psu.status.health ?? "N/A"}

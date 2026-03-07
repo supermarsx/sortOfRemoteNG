@@ -67,7 +67,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
               onClick={() => setExportFormat(format.value as any)}
               className={`p-4 rounded-lg border-2 transition-colors ${
                 exportFormat === format.value
-                  ? 'border-blue-500 bg-blue-500/20'
+                  ? 'border-primary bg-primary/20'
                   : 'border-[var(--color-border)] hover:border-[var(--color-border)]'
               }`}
             >
@@ -81,14 +81,14 @@ const ExportTab: React.FC<ExportTabProps> = ({
 
       <div className="space-y-4">
         <label className="flex items-center space-x-2">
-          <Checkbox checked={includePasswords} onChange={setIncludePasswords} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+          <Checkbox checked={includePasswords} onChange={setIncludePasswords} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
           <span className="text-[var(--color-textSecondary)]">Include passwords in export</span>
         </label>
 
         <label className="flex items-center space-x-2">
-          <Checkbox checked={exportEncrypted} onChange={setExportEncrypted} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+          <Checkbox checked={exportEncrypted} onChange={setExportEncrypted} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
           <span className="text-[var(--color-textSecondary)]">Encrypt export file</span>
-          <Lock size={16} className="text-yellow-400" />
+          <Lock size={16} className="text-warning" />
         </label>
 
         {exportEncrypted && (
@@ -109,7 +109,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       <button
         onClick={handleExport}
         disabled={isProcessing || connections.length === 0 || (exportEncrypted && !exportPassword)}
-        className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center space-x-2"
+        className="w-full py-3 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center space-x-2"
       >
         {isProcessing ? (
           <>

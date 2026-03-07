@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { ShieldAlert, Lock, User } from "lucide-react";
 
@@ -14,20 +15,21 @@ const SecurityIcon: React.FC<SectionProps> = ({ mgr }) => {
         className="hover:bg-[var(--color-border)] rounded p-0.5 transition-colors"
         title="View certificate information"
       >
-        <Lock size={14} className="text-green-400" />
+        <Lock size={14} className="text-success" />
       </button>
     );
   }
-  return <ShieldAlert size={14} className="text-yellow-400" />;
+  return <ShieldAlert size={14} className="text-warning" />;
 };
 
 const AuthIcon: React.FC<{ hasAuth: boolean }> = ({ hasAuth }) => {
   if (!hasAuth) return null;
   return (
     <span data-tooltip="Basic Authentication">
-      <User size={14} className="text-blue-400" />
+      <User size={14} className="text-primary" />
     </span>
   );
 };
 
+export { AuthIcon };
 export default SecurityIcon;

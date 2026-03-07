@@ -1,4 +1,9 @@
+import type { RDPConnectionSettings } from "../../../types/connection/connection";
+
 export interface SectionBaseProps {
-  rdp: Record<string, unknown>;
-  updateRdp: (updates: Record<string, unknown>) => void;
+  rdp: RDPConnectionSettings;
+  updateRdp: <K extends keyof RDPConnectionSettings>(
+    section: K,
+    patch: Partial<NonNullable<RDPConnectionSettings[K]>>,
+  ) => void;
 }

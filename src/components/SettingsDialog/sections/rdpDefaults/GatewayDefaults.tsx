@@ -9,7 +9,7 @@ import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Network className="w-4 h-4 text-cyan-400" />
+      <Network className="w-4 h-4 text-info" />
       RDP Gateway Defaults
     </h4>
 
@@ -47,8 +47,7 @@ const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
             Authentication Method
           </label>
           <Select value={rdp.gatewayAuthMethod ?? "ntlm"} onChange={(v: string) => update({
-                gatewayAuthMethod: e.target
-                  .value as GlobalSettings["rdpDefaults"]["gatewayAuthMethod"],
+                gatewayAuthMethod: v as GlobalSettings["rdpDefaults"]["gatewayAuthMethod"],
               })} options={[{ value: "ntlm", label: "NTLM" }, { value: "basic", label: "Basic" }, { value: "digest", label: "Digest" }, { value: "negotiate", label: "Negotiate (Kerberos/NTLM)" }, { value: "smartcard", label: "Smart Card" }]} className="selectClass" />
         </div>
 
@@ -57,8 +56,7 @@ const GatewayDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
             Transport Mode
           </label>
           <Select value={rdp.gatewayTransportMode ?? "auto"} onChange={(v: string) => update({
-                gatewayTransportMode: e.target
-                  .value as GlobalSettings["rdpDefaults"]["gatewayTransportMode"],
+                gatewayTransportMode: v as GlobalSettings["rdpDefaults"]["gatewayTransportMode"],
               })} options={[{ value: "auto", label: "Auto" }, { value: "http", label: "HTTP" }, { value: "udp", label: "UDP" }]} className="selectClass" />
         </div>
 

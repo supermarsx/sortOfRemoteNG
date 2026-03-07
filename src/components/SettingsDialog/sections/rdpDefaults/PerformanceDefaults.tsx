@@ -7,7 +7,7 @@ import { Checkbox, Slider } from "../../../ui/forms";
 const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Zap className="w-4 h-4 text-yellow-400" />
+      <Zap className="w-4 h-4 text-warning" />
       Performance / Frame Delivery Defaults
     </h4>
 

@@ -25,8 +25,8 @@ type Mgr = ReturnType<typeof useFileTransfer>;
 const ManagerHeader: React.FC<{ protocol: string }> = ({ protocol }) => (
   <DialogHeader
     icon={FolderUp}
-    iconColor="text-cyan-500"
-    iconBg="bg-cyan-500/20"
+    iconColor="text-info"
+    iconBg="bg-info/20"
     title={`File Transfer - ${protocol.toUpperCase()}`}
   />
 );
@@ -43,8 +43,8 @@ const FileToolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <button onClick={() => mgr.setShowUploadDialog(true)} className="sor-btn-primary-sm"><Upload size={14} /><span>Upload</span></button>
         {mgr.selectedFiles.size > 0 && (
           <>
-            <button onClick={mgr.handleDownload} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"><Download size={14} /><span>Download</span></button>
-            <button onClick={mgr.handleDelete} className="px-3 py-1 bg-red-600 hover:bg-red-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"><Trash2 size={14} /><span>Delete</span></button>
+            <button onClick={mgr.handleDownload} className="px-3 py-1 bg-success hover:bg-success/90 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"><Download size={14} /><span>Download</span></button>
+            <button onClick={mgr.handleDelete} className="px-3 py-1 bg-error hover:bg-error/90 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"><Trash2 size={14} /><span>Delete</span></button>
           </>
         )}
       </div>
@@ -62,7 +62,7 @@ const FileTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <thead className="bg-[var(--color-border)] sticky top-0">
           <tr>
             <th className="sor-th">
-              <Checkbox checked={mgr.selectedFiles.size === mgr.files.length && mgr.files.length > 0} onChange={(v: boolean) => mgr.handleSelectAll(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+              <Checkbox checked={mgr.selectedFiles.size === mgr.files.length && mgr.files.length > 0} onChange={(v: boolean) => mgr.handleSelectAll(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
             </th>
             <th className="sor-th">Name</th>
             <th className="sor-th">Size</th>
@@ -72,11 +72,11 @@ const FileTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]">
           {mgr.files.map((file) => (
-            <tr key={file.name} className={`hover:bg-[var(--color-border)] cursor-pointer ${mgr.selectedFiles.has(file.name) ? "bg-blue-900/20" : ""}`} onClick={() => mgr.handleFileSelect(file.name)} onDoubleClick={() => mgr.handleDoubleClick(file)}>
-              <td className="px-4 py-3"><Checkbox checked={mgr.selectedFiles.has(file.name)} onChange={() => mgr.handleFileSelect(file.name)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" /></td>
+            <tr key={file.name} className={`hover:bg-[var(--color-border)] cursor-pointer ${mgr.selectedFiles.has(file.name) ? "bg-primary/20" : ""}`} onClick={() => mgr.handleFileSelect(file.name)} onDoubleClick={() => mgr.handleDoubleClick(file)}>
+              <td className="px-4 py-3"><Checkbox checked={mgr.selectedFiles.has(file.name)} onChange={() => mgr.handleFileSelect(file.name)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" /></td>
               <td className="px-4 py-3 text-sm text-[var(--color-text)]">
                 <div className="flex items-center space-x-2">
-                  {file.type === "directory" ? <Folder size={16} className="text-blue-400" /> : <File size={16} className="text-[var(--color-textSecondary)]" />}
+                  {file.type === "directory" ? <Folder size={16} className="text-primary" /> : <File size={16} className="text-[var(--color-textSecondary)]" />}
                   <span>{file.name}</span>
                 </div>
               </td>
@@ -104,22 +104,22 @@ const TransferQueue: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <div key={transfer.id} className="sor-selection-row cursor-default bg-[var(--color-border)] p-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
-                {transfer.type === "upload" ? <Upload size={14} className="text-blue-400" /> : <Download size={14} className="text-green-400" />}
+                {transfer.type === "upload" ? <Upload size={14} className="text-primary" /> : <Download size={14} className="text-success" />}
                 <span className="text-[var(--color-text)] text-sm font-medium">{transfer.type === "upload" ? "Uploading" : "Downloading"}</span>
               </div>
               <span className="text-xs text-[var(--color-textSecondary)]">{getTransferProgress(transfer).toFixed(0)}%</span>
             </div>
             <p className="text-[var(--color-textSecondary)] text-sm truncate mb-2">{transfer.remotePath.split("/").pop()}</p>
             <div className="w-full bg-[var(--color-surfaceHover)] rounded-full h-2 mb-2">
-              <div className={`h-2 rounded-full transition-all duration-300 ${transfer.status === "error" ? "bg-red-500" : transfer.status === "completed" ? "bg-green-500" : "bg-blue-500"}`} style={{ width: `${getTransferProgress(transfer)}%` }} />
+              <div className={`h-2 rounded-full transition-all duration-300 ${transfer.status === "error" ? "bg-error" : transfer.status === "completed" ? "bg-success" : "bg-primary"}`} style={{ width: `${getTransferProgress(transfer)}%` }} />
             </div>
             <div className="flex justify-between text-xs text-[var(--color-textSecondary)]">
               <span>{formatFileSize(transfer.transferredSize)} / {formatFileSize(transfer.totalSize)}</span>
               <span className="capitalize">{transfer.status}</span>
             </div>
-            {transfer.error && <p className="text-red-400 text-xs mt-1">{transfer.error}</p>}
+            {transfer.error && <p className="text-error text-xs mt-1">{transfer.error}</p>}
             {transfer.status !== "active" && transfer.status !== "completed" && transfer.type === "download" && (
-              <button onClick={() => mgr.handleResumeTransfer(transfer.id)} className="mt-2 text-blue-400 text-xs hover:underline">Resume</button>
+              <button onClick={() => mgr.handleResumeTransfer(transfer.id)} className="mt-2 text-primary text-xs hover:underline">Resume</button>
             )}
           </div>
         ))
@@ -136,7 +136,7 @@ const UploadDialog: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Upload size={48} className="mx-auto text-[var(--color-textSecondary)] mb-4" />
         <p className="text-[var(--color-textSecondary)] mb-4">Drop files here or click to browse</p>
         <input type="file" multiple onChange={(e) => e.target.files && mgr.handleUpload(e.target.files)} className="hidden" id="file-upload" />
-        <label htmlFor="file-upload" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors cursor-pointer">Select Files</label>
+        <label htmlFor="file-upload" className="px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-md transition-colors cursor-pointer">Select Files</label>
       </div>
       <div className="flex justify-end space-x-3 mt-6">
         <button onClick={() => mgr.setShowUploadDialog(false)} className="sor-btn-secondary">Cancel</button>

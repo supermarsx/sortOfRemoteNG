@@ -22,7 +22,7 @@ const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
   return (
     <Section
       title="Local Resources"
-      icon={<HardDrive size={14} className="text-purple-400" />}
+      icon={<HardDrive size={14} className="text-accent" />}
     >
       {devices.map((d) => (
         <label key={d.key} className={CSS.label}>

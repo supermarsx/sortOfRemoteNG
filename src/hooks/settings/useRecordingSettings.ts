@@ -7,9 +7,9 @@ export function useRecordingSettings(
   settings: GlobalSettings,
   updateSettings: (updates: Partial<GlobalSettings>) => void,
 ) {
-  const recording = useMemo(() => ({ enabled: true, ...settings.recording }), [settings.recording]);
-  const rdpRec = useMemo(() => ({ enabled: true, ...settings.rdpRecording }), [settings.rdpRecording]);
-  const webRec = useMemo(() => ({ enabled: true, ...settings.webRecording }), [settings.webRecording]);
+  const recording = useMemo(() => ({ ...settings.recording }), [settings.recording]);
+  const rdpRec = useMemo(() => ({ ...settings.rdpRecording }), [settings.rdpRecording]);
+  const webRec = useMemo(() => ({ ...settings.webRecording }), [settings.webRecording]);
 
   const [sshCount, setSshCount] = useState(0);
   const [rdpCount, setRdpCount] = useState(0);

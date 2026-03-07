@@ -38,7 +38,7 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <div className="mt-3">
               <div className="flex items-center justify-between mb-2">
                 <label className="sor-form-label-icon">
-                  <Lock size={14} className="text-green-400" />
+                  <Lock size={14} className="text-success" />
                   Stored Certificates ({records.length})
                 </label>
                 <button
@@ -47,7 +47,7 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     clearAllTrustRecords(mgr.formData.id);
                     mgr.setFormData({ ...mgr.formData }); // force re-render
                   }}
-                  className="text-xs text-[var(--color-textMuted)] hover:text-red-400 transition-colors"
+                  className="text-xs text-[var(--color-textMuted)] hover:text-error transition-colors"
                 >
                   Clear all
                 </button>
@@ -91,7 +91,7 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                           );
                           mgr.setFormData({ ...mgr.formData }); // force re-render
                         }}
-                        className="text-[var(--color-textMuted)] hover:text-red-400 p-0.5 transition-colors flex-shrink-0"
+                        className="text-[var(--color-textMuted)] hover:text-error p-0.5 transition-colors flex-shrink-0"
                         title="Remove"
                       >
                         <Trash2 size={12} />

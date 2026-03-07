@@ -37,7 +37,7 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
           </button>
           <button
             onClick={mgr.commandHistory.togglePanel}
-            className={`app-bar-button p-2 ${mgr.commandHistory.isOpen ? "text-green-500" : ""}`}
+            className={`app-bar-button p-2 ${mgr.commandHistory.isOpen ? "text-success" : ""}`}
             data-tooltip="Command History"
             aria-label="Command History"
           >
@@ -45,7 +45,7 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
           </button>
           <button
             onClick={mgr.sendCancel}
-            className="app-bar-button p-2 hover:text-red-500"
+            className="app-bar-button p-2 hover:text-error"
             data-tooltip="Send Ctrl+C"
             aria-label="Send Ctrl+C"
           >
@@ -53,7 +53,7 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
           </button>
           <button
             onClick={mgr.disconnectSsh}
-            className="app-bar-button p-2 hover:text-red-500"
+            className="app-bar-button p-2 hover:text-error"
             data-tooltip="Disconnect"
             aria-label="Disconnect"
             disabled={mgr.status !== "connected"}

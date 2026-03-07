@@ -20,7 +20,7 @@ const HardwareView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.processors.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Cpu className="w-4 h-4 text-blue-400" />
+            <Cpu className="w-4 h-4 text-primary" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.hardware.processors", "Processors")}
             </h3>
@@ -47,7 +47,7 @@ const HardwareView: React.FC<SubProps> = ({ mgr }) => {
                     {p.currentSpeedMhz ? `${p.currentSpeedMhz} MHz` : p.maxSpeedMhz ? `${p.maxSpeedMhz} MHz` : "—"}
                   </td>
                   <td className="py-1 text-center">
-                    <span className={p.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={p.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {p.status.health ?? "N/A"}
                     </span>
                   </td>
@@ -62,7 +62,7 @@ const HardwareView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.memory.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <MemoryStick className="w-4 h-4 text-green-400" />
+            <MemoryStick className="w-4 h-4 text-success" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.hardware.memory", "Memory DIMMs")}
             </h3>
@@ -91,7 +91,7 @@ const HardwareView: React.FC<SubProps> = ({ mgr }) => {
                   </td>
                   <td className="py-1 text-[var(--color-text-secondary)]">{m.memoryType}</td>
                   <td className="py-1 text-center">
-                    <span className={m.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={m.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {m.status.health ?? "N/A"}
                     </span>
                   </td>
@@ -106,7 +106,7 @@ const HardwareView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.pcieDevices.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <CircuitBoard className="w-4 h-4 text-purple-400" />
+            <CircuitBoard className="w-4 h-4 text-accent" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.hardware.pcie", "PCIe Devices")}
             </h3>
@@ -129,7 +129,7 @@ const HardwareView: React.FC<SubProps> = ({ mgr }) => {
                   <td className="py-1 text-[var(--color-text-secondary)]">{d.deviceClass ?? "—"}</td>
                   <td className="py-1 text-[var(--color-text-secondary)]">{d.slotType ?? "—"}</td>
                   <td className="py-1 text-center">
-                    <span className={d.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={d.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {d.status.health ?? "N/A"}
                     </span>
                   </td>

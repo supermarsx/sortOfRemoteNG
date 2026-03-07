@@ -7,9 +7,9 @@ const cx = (...classes: Array<string | false | null | undefined>) =>
 export interface DialogHeaderProps {
   /** Lucide icon component */
   icon: LucideIcon;
-  /** Tailwind text-color class for the icon, e.g. "text-amber-400" */
+  /** Tailwind text-color class for the icon, e.g. "text-warning" */
   iconColor?: string;
-  /** Tailwind bg class for the icon pill (standard variant only), e.g. "bg-amber-500/20" */
+  /** Tailwind bg class for the icon pill (standard variant only), e.g. "bg-warning/20" */
   iconBg?: string;
   /** Dialog title */
   title: React.ReactNode;
@@ -31,8 +31,8 @@ export interface DialogHeaderProps {
 
 export const DialogHeader: React.FC<DialogHeaderProps> = ({
   icon: Icon,
-  iconColor = 'text-blue-400',
-  iconBg = 'bg-blue-500/20',
+  iconColor = 'text-primary',
+  iconBg = 'bg-primary/20',
   title,
   subtitle,
   badge,

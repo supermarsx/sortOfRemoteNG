@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import { Plus, Trash2, Edit, Copy, Search } from "lucide-react";
 
 function ProxiesTab({ mgr }: { mgr: Mgr }) {

@@ -1,3 +1,5 @@
+import type { useHTTPOptions } from "../../../hooks/connection/useHTTPOptions";
+import type { Connection } from "../../../types/connection/connection";
 
 export type Mgr = ReturnType<typeof useHTTPOptions>;
 

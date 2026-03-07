@@ -41,7 +41,7 @@ const AppearanceSection: React.FC<{
       <label className="text-sm text-[var(--color-textSecondary)]">Color Scheme</label>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
         {mgr.schemeOptions.map((option) => (
-          <button key={option.value} onClick={() => updateSettings({ colorScheme: option.value as ColorScheme })} className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all ${settings.colorScheme === option.value ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50" : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"}`}>
+          <button key={option.value} onClick={() => updateSettings({ colorScheme: option.value as ColorScheme })} className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all ${settings.colorScheme === option.value ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50" : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"}`}>
             <span className="w-3 h-3 rounded-full border border-black/30 flex-shrink-0" style={{ backgroundColor: option.color }} />
             <span className="truncate text-xs">{option.label}</span>
           </button>
@@ -102,7 +102,7 @@ const TransparencySection: React.FC<{
     <h4 className="sor-section-heading">
       <Eye className="w-4 h-4" />
       {mgr.t("settings.theme.transparency", "Window Transparency")}
-      <span className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded">Experimental</span>
+      <span className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-warning/20 text-warning border border-warning/30 rounded">Experimental</span>
     </h4>
     <p className="text-xs text-[var(--color-textMuted)]">Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default.</p>
     <div className="sor-settings-card">

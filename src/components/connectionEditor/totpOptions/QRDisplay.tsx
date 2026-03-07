@@ -1,4 +1,5 @@
 import React from "react";
+import type { TOTPOptionsMgr } from "./types";
 
 const QRDisplay: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.qrDataUrl) return null;

@@ -20,7 +20,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
             value={mgr.editName}
             onChange={(e) => mgr.setEditName(e.target.value)}
             placeholder={t('scriptManager.namePlaceholder', 'Enter script name')}
-            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
@@ -30,7 +30,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
               {t('scriptManager.language', 'Language')}
             </label>
-            <Select value={mgr.editLanguage} onChange={(v: string) => mgr.setEditLanguage(v as ScriptLanguage)} options={[{ value: "auto", label: "🔍 Auto Detect" }, { value: "bash", label: "🐚 Bash" }, { value: "sh", label: "📜 Shell (sh)" }, { value: "powershell", label: "⚡ PowerShell" }, { value: "batch", label: "🪟 Batch (cmd)" }]} className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500" />
+            <Select value={mgr.editLanguage} onChange={(v: string) => mgr.setEditLanguage(v as ScriptLanguage)} options={[{ value: "auto", label: "🔍 Auto Detect" }, { value: "bash", label: "🐚 Bash" }, { value: "sh", label: "📜 Shell (sh)" }, { value: "powershell", label: "⚡ PowerShell" }, { value: "batch", label: "🪟 Batch (cmd)" }]} className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-accent" />
           </div>
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
@@ -42,7 +42,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
               onChange={(e) => mgr.setEditCategory(e.target.value)}
               placeholder="Custom"
               list="script-categories"
-              className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+              className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-accent"
             />
             <datalist id="script-categories">
               {mgr.categories.map(cat => (
@@ -65,7 +65,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
                 onClick={() => mgr.toggleOsTag(tag)}
                 className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full border transition-colors ${
                   mgr.editOsTags.includes(tag)
-                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-600 dark:text-purple-400'
+                    ? 'bg-accent/20 border-accent/50 text-accent dark:text-accent'
                     : 'bg-[var(--color-surfaceHover)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]'
                 }`}
               >
@@ -89,7 +89,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
             value={mgr.editDescription}
             onChange={(e) => mgr.setEditDescription(e.target.value)}
             placeholder={t('scriptManager.descriptionPlaceholder', 'Brief description of what this script does')}
-            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
@@ -103,7 +103,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
               value={mgr.editScript}
               onChange={(e) => mgr.setEditScript(e.target.value)}
               placeholder={t('scriptManager.scriptPlaceholder', 'Enter your script here...')}
-              className="w-full h-64 px-4 py-3 text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono resize-y"
+              className="w-full h-64 px-4 py-3 text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-accent font-mono resize-y"
               spellCheck={false}
             />
           </div>

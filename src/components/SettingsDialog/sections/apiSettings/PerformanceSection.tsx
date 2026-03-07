@@ -7,7 +7,7 @@ import type { Mgr } from "./types";
 export const PerformanceSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <Cpu className="w-4 h-4 text-cyan-400" />
+      <Cpu className="w-4 h-4 text-info" />
       {mgr.t("settings.api.performance", "Performance")}
     </h4>
 

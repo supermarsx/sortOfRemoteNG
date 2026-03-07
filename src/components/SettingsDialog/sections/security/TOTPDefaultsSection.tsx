@@ -12,7 +12,7 @@ function TOTPDefaultsSection({
     <div className="sor-settings-card space-y-4">
       <div>
         <h4 className="sor-section-heading">
-          <Shield className="w-4 h-4 text-blue-400" />
+          <Shield className="w-4 h-4 text-primary" />
           2FA / TOTP Defaults
         </h4>
         <p className="text-xs text-[var(--color-textMuted)] mt-1">

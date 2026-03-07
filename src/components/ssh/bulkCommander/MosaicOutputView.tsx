@@ -31,7 +31,7 @@ function MosaicOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                   <div className="flex items-center gap-2">
                     <Terminal
                       size={12}
-                      className="text-green-600 dark:text-green-500"
+                      className="text-success dark:text-success"
                     />
                     <span className="text-sm font-medium text-[var(--color-text)] truncate">
                       {session.name}
@@ -39,16 +39,16 @@ function MosaicOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                   </div>
                   <div className="flex items-center gap-2">
                     {output?.status === "running" && (
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+                      <div className="w-2 h-2 bg-warning rounded-full animate-pulse" />
                     )}
                     {output?.status === "success" && (
                       <Check
                         size={12}
-                        className="text-green-600 dark:text-green-500"
+                        className="text-success dark:text-success"
                       />
                     )}
                     {output?.status === "error" && (
-                      <AlertCircle size={12} className="text-red-500" />
+                      <AlertCircle size={12} className="text-error" />
                     )}
                     <button
                       onClick={() => {
@@ -65,9 +65,9 @@ function MosaicOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                   </div>
                 </div>
                 <div className="flex-1 p-3 overflow-auto bg-[var(--color-background)]">
-                  <pre className="font-mono text-xs text-green-800 dark:text-green-400 whitespace-pre-wrap">
+                  <pre className="font-mono text-xs text-success dark:text-success whitespace-pre-wrap">
                     {output?.error ? (
-                      <span className="text-red-600 dark:text-red-400">
+                      <span className="text-error dark:text-error">
                         {output.error}
                       </span>
                     ) : (

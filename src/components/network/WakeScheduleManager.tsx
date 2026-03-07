@@ -29,8 +29,8 @@ const ScheduleRow: React.FC<{ s: WakeSchedule; mgr: Mgr }> = ({ s, mgr }) => {
       className={`sor-selection-row cursor-default ${isPast ? "opacity-60" : ""}`}
     >
       <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${isPast ? "bg-[var(--color-secondary)]/20" : "bg-green-500/20"}`}>
-          <Power size={16} className={isPast ? "text-[var(--color-textSecondary)]" : "text-green-500"} />
+        <div className={`p-2 rounded-lg ${isPast ? "bg-[var(--color-secondary)]/20" : "bg-success/20"}`}>
+          <Power size={16} className={isPast ? "text-[var(--color-textSecondary)]" : "text-success"} />
         </div>
         <div>
           <div className="text-sm font-mono text-[var(--color-text)]">{s.macAddress}</div>
@@ -40,17 +40,17 @@ const ScheduleRow: React.FC<{ s: WakeSchedule; mgr: Mgr }> = ({ s, mgr }) => {
             {s.recurrence && (
               <>
                 <Repeat size={10} className="ml-1" />
-                <span className="text-orange-400">{mgr.getRecurrenceLabel(s.recurrence)}</span>
+                <span className="text-warning">{mgr.getRecurrenceLabel(s.recurrence)}</span>
               </>
             )}
           </div>
         </div>
       </div>
       <div className="flex items-center gap-1">
-        <button onClick={() => mgr.handleEdit(s)} className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors" title="Edit schedule">
+        <button onClick={() => mgr.handleEdit(s)} className="p-2 text-[var(--color-textSecondary)] hover:text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Edit schedule">
           <Pencil size={14} />
         </button>
-        <button onClick={() => mgr.handleDelete(s)} className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Delete schedule">
+        <button onClick={() => mgr.handleDelete(s)} className="p-2 text-[var(--color-textSecondary)] hover:text-error hover:bg-error/10 rounded-lg transition-colors" title="Delete schedule">
           <Trash2 size={14} />
         </button>
       </div>
@@ -70,7 +70,7 @@ const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div>
       <label className="sor-form-label-xs">MAC Address</label>
-      <TextInput placeholder="00:11:22:33:44:55" variant="form" className="font-mono" value={mgr.form.macAddress} onChange={(e) => mgr.setForm({ ...mgr.form, macAddress: formatMac(e.target.value) })} />
+      <TextInput placeholder="00:11:22:33:44:55" variant="form" className="font-mono" value={mgr.form.macAddress} onChange={(v) => mgr.setForm({ ...mgr.form, macAddress: formatMac(v) })} />
     </div>
     <div>
       <label className="sor-form-label-xs">Wake Time</label>
@@ -79,7 +79,7 @@ const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="sor-form-label-xs">Broadcast Address</label>
-        <TextInput placeholder="255.255.255.255" variant="form" value={mgr.form.broadcastAddress ?? ""} onChange={(e) => mgr.setForm({ ...mgr.form, broadcastAddress: e.target.value })} />
+        <TextInput placeholder="255.255.255.255" variant="form" value={mgr.form.broadcastAddress ?? ""} onChange={(v) => mgr.setForm({ ...mgr.form, broadcastAddress: v })} />
       </div>
       <div>
         <label className="sor-form-label-xs">UDP Port</label>
@@ -90,7 +90,7 @@ const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <label className="sor-form-label-xs">Recurrence</label>
       <Select value={mgr.form.recurrence ?? ""} onChange={(v: string) => mgr.setForm({ ...mgr.form, recurrence: v as WakeRecurrence })} options={[{ value: "", label: mgr.t("wake.once", "Once") }, { value: "daily", label: mgr.t("wake.daily", "Daily") }, { value: "weekly", label: mgr.t("wake.weekly", "Weekly") }]} variant="form" />
     </div>
-    <button onClick={mgr.handleSubmit} disabled={!mgr.form.macAddress || mgr.form.macAddress.length < 17} className="w-full flex items-center justify-center space-x-2 bg-orange-600 hover:bg-orange-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-orange-500/20 disabled:shadow-none">
+    <button onClick={mgr.handleSubmit} disabled={!mgr.form.macAddress || mgr.form.macAddress.length < 17} className="w-full flex items-center justify-center space-x-2 bg-warning hover:bg-warning/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-warning/20 disabled:shadow-none">
       <Save size={16} />
       <span>{mgr.editing ? mgr.t("common.save", "Save") : mgr.t("common.add", "Add Schedule")}</span>
     </button>
@@ -120,15 +120,15 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
     >
       <div className="relative flex flex-1 min-h-0 flex-col">
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute w-[200px] h-[150px] bg-orange-500/8 rounded-full blur-[80px] top-[20%] left-[15%]" />
-          <div className="absolute w-[180px] h-[180px] bg-amber-500/6 rounded-full blur-[100px] bottom-[20%] right-[20%]" />
+          <div className="absolute w-[200px] h-[150px] bg-warning/8 rounded-full blur-[80px] top-[20%] left-[15%]" />
+          <div className="absolute w-[180px] h-[180px] bg-warning/6 rounded-full blur-[100px] bottom-[20%] right-[20%]" />
         </div>
 
         {/* Header */}
         <DialogHeader
           icon={Clock}
-          iconColor="text-orange-500"
-          iconBg="bg-orange-500/20"
+          iconColor="text-warning"
+          iconBg="bg-warning/20"
           title={mgr.t("wake.scheduleManager", "Wake Schedule Manager")}
           subtitle="Schedule automatic wake-up for devices"
           onClose={onClose}

@@ -16,9 +16,13 @@ const VARIANT_CLASS: Record<TextInputVariant, string> = {
 export type TextInputVariant = 'settings' | 'settings-sm' | 'form' | 'form-sm' | 'form-xs';
 
 export interface TextInputProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange'> {
   /** Visual variant. Defaults to `"form"`. */
   variant?: TextInputVariant;
+  /** Simplified string callback. */
+  onChange?: (value: string) => void;
+  /** Label text (consumed by wrapper layouts, not rendered by TextInput itself). */
+  label?: string;
 }
 
 /**
@@ -29,11 +33,12 @@ export interface TextInputProps
  * (passed through via `...rest`).
  */
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
-  ({ variant = 'form', className, ...rest }, ref) => (
+  ({ variant = 'form', className, label: _label, onChange, ...rest }, ref) => (
     <input
       ref={ref}
       type="text"
       className={cx(VARIANT_CLASS[variant], className)}
+      onChange={onChange ? (e) => onChange(e.target.value) : undefined}
       {...rest}
     />
   ),

@@ -8,8 +8,8 @@ function ScriptManagerHeader({ mgr }: { mgr: ScriptManagerMgr }) {
   return (
     <DialogHeader
       icon={FileCode}
-      iconColor="text-purple-600 dark:text-purple-400"
-      iconBg="bg-purple-500/20"
+      iconColor="text-accent dark:text-accent"
+      iconBg="bg-accent/20"
       title={t('scriptManager.title', 'Script Manager')}
       badge={`${mgr.filteredScripts.length} ${t('scriptManager.scripts', 'scripts')}`}
       onClose={mgr.onClose}

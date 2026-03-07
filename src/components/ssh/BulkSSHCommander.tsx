@@ -33,8 +33,8 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
     >
       {/* Background glow effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
-        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-green-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-emerald-500/6 rounded-full blur-3xl" />
+        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-success/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-success/6 rounded-full blur-3xl" />
         <div className="absolute top-[50%] right-[25%] w-64 h-64 bg-teal-500/5 rounded-full blur-3xl" />
       </div>
 
@@ -42,8 +42,8 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
         {/* Header */}
         <DialogHeader
           icon={Terminal}
-          iconColor="text-green-600 dark:text-green-500"
-          iconBg="bg-green-500/20"
+          iconColor="text-success dark:text-success"
+          iconBg="bg-success/20"
           title={t("bulkSsh.title", "Bulk SSH Commander")}
           badge={`${mgr.selectedCount}/${mgr.totalCount} ${t("bulkSsh.sessions", "sessions")}`}
           onClose={onClose}

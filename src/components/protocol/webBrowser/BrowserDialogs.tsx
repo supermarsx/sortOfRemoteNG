@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { TrustWarningDialog } from "../../security/TrustWarningDialog";
 import { InputDialog } from "../../ui/dialogs/InputDialog";

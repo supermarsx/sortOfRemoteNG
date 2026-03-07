@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import React from "react";
 import { Settings } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";

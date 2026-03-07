@@ -1,10 +1,11 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { Focus, Clock, ArrowLeftRight, Compass } from "lucide-react";
 import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const FocusNavigation: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<Focus className="w-4 h-4 text-emerald-400" />}
+      icon={<Focus className="w-4 h-4 text-success" />}
       title="Focus & Navigation"
     />
     <Card>

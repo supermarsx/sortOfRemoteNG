@@ -21,13 +21,13 @@ function EncryptionAlgorithmSection({
   return (
     <div className="space-y-4">
       <h4 className="sor-section-heading">
-        <Lock className="w-4 h-4 text-blue-400" />
+        <Lock className="w-4 h-4 text-primary" />
         {t("security.algorithm")}
       </h4>
 
       <div className="sor-settings-card space-y-4">
         <div data-setting-key="encryptionAlgorithm" className="flex items-center gap-3">
-          <Lock className="w-5 h-5 text-blue-400 flex-shrink-0" />
+          <Lock className="w-5 h-5 text-primary flex-shrink-0" />
           <div className="flex-1">
             <Select value={settings.encryptionAlgorithm} onChange={(v: string) =>
                 updateSettings({ encryptionAlgorithm: v as any })} options={[...ENCRYPTION_ALGORITHMS.map((algo) => ({ value: algo.value, label: `${algo.label}
@@ -38,7 +38,7 @@ function EncryptionAlgorithmSection({
         {selectedAlgo && (
           <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)]/60 rounded-md text-sm">
             {selectedAlgo.recommended && (
-              <span className="px-1.5 py-0.5 text-[10px] bg-green-600/30 text-green-400 rounded">
+              <span className="px-1.5 py-0.5 text-[10px] bg-success/30 text-success rounded">
                 Recommended
               </span>
             )}
@@ -50,7 +50,7 @@ function EncryptionAlgorithmSection({
 
         {mgr.validModes.length > 0 && (
           <div className="flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-purple-400 flex-shrink-0" />
+            <ShieldCheck className="w-5 h-5 text-accent flex-shrink-0" />
             <div className="flex-1 flex items-center gap-2">
               <span className="text-sm text-[var(--color-textSecondary)] whitespace-nowrap">
                 Mode:
@@ -63,7 +63,7 @@ function EncryptionAlgorithmSection({
 
         {settings.encryptionAlgorithm === "ChaCha20-Poly1305" && (
           <div className="sor-diag-card text-sm flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-purple-400" />
+            <ShieldCheck className="w-4 h-4 text-accent" />
             Stream cipher with built-in AEAD (no block mode needed)
           </div>
         )}

@@ -60,7 +60,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
 
           case 'ilo':
             return (
-              <div className="flex flex-col items-center justify-center h-full text-blue-400">
+              <div className="flex flex-col items-center justify-center h-full text-primary">
                 <Shield size={48} className="mb-4" />
                 <h3 className="text-lg font-medium mb-2">HP iLO Connected</h3>
                 <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
@@ -73,7 +73,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
                     <div>Protocol: <span className="text-[var(--color-text)]">HP iLO</span></div>
                     <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
                   </div>
-                  <div className="mt-3 p-2 bg-blue-900/20 border border-blue-700 rounded text-xs text-blue-300">
+                  <div className="mt-3 p-2 bg-primary/20 border border-primary rounded text-xs text-primary">
                     <p>Use the iLO panel to manage server power, health, virtual media, and more.</p>
                   </div>
                 </div>
@@ -82,7 +82,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
 
           case 'lenovo':
             return (
-              <div className="flex flex-col items-center justify-center h-full text-orange-400">
+              <div className="flex flex-col items-center justify-center h-full text-warning">
                 <Shield size={48} className="mb-4" />
                 <h3 className="text-lg font-medium mb-2">Lenovo XCC Connected</h3>
                 <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
@@ -95,7 +95,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
                     <div>Protocol: <span className="text-[var(--color-text)]">Lenovo XCC</span></div>
                     <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
                   </div>
-                  <div className="mt-3 p-2 bg-orange-900/20 border border-orange-700 rounded text-xs text-orange-300">
+                  <div className="mt-3 p-2 bg-warning/20 border border-warning rounded text-xs text-warning">
                     <p>Use the Lenovo panel to manage server power, health, virtual media, and more.</p>
                   </div>
                 </div>
@@ -104,7 +104,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
 
           case 'supermicro':
             return (
-              <div className="flex flex-col items-center justify-center h-full text-green-400">
+              <div className="flex flex-col items-center justify-center h-full text-success">
                 <Shield size={48} className="mb-4" />
                 <h3 className="text-lg font-medium mb-2">Supermicro BMC Connected</h3>
                 <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
@@ -117,7 +117,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
                     <div>Protocol: <span className="text-[var(--color-text)]">Supermicro IPMI/Redfish</span></div>
                     <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
                   </div>
-                  <div className="mt-3 p-2 bg-green-900/20 border border-green-700 rounded text-xs text-green-300">
+                  <div className="mt-3 p-2 bg-success/20 border border-success rounded text-xs text-success">
                     <p>Use the Supermicro panel to manage server power, health, virtual media, and more.</p>
                   </div>
                 </div>
@@ -126,7 +126,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
           
           case 'vnc':
             return (
-              <div className="flex flex-col items-center justify-center h-full text-blue-400">
+              <div className="flex flex-col items-center justify-center h-full text-primary">
                 <Monitor size={48} className="mb-4" />
                 <h3 className="text-lg font-medium mb-2">VNC Connected</h3>
                 <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
@@ -139,7 +139,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
                     <div>Protocol: <span className="text-[var(--color-text)]">VNC</span></div>
                     <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
                   </div>
-                  <div className="mt-3 p-2 bg-blue-900/20 border border-blue-700 rounded text-xs text-blue-300">
+                  <div className="mt-3 p-2 bg-primary/20 border border-primary rounded text-xs text-primary">
                     <p>Note: Full VNC client functionality would require additional browser plugins or native applications.</p>
                   </div>
                 </div>
@@ -148,7 +148,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
           
           default:
             return (
-              <div className="flex flex-col items-center justify-center h-full text-green-400">
+              <div className="flex flex-col items-center justify-center h-full text-success">
                 <Monitor size={48} className="mb-4" />
                 <h3 className="text-lg font-medium mb-2">Connected</h3>
                 <p className="text-sm text-center text-[var(--color-textSecondary)]">
@@ -160,14 +160,14 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
 
       case 'error':
         return (
-          <div className="flex flex-col items-center justify-center h-full text-red-400">
+          <div className="flex flex-col items-center justify-center h-full text-error">
             <AlertCircle size={48} className="mb-4" />
             <h3 className="text-lg font-medium mb-2">Connection Failed</h3>
             <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
               Unable to connect to {session.hostname}
             </p>
             <div className="space-y-2">
-              <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded transition-colors">
+              <button className="px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors">
                 Retry Connection
               </button>
               <p className="text-xs text-[var(--color-textMuted)] text-center">

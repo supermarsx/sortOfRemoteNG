@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import EnvironmentEditor from "./EnvironmentEditor";
 import OverrideToggle from "./OverrideToggle";
 

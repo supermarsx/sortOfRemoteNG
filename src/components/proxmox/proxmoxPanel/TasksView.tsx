@@ -17,9 +17,9 @@ const TasksView: React.FC<SubProps> = ({ mgr }) => {
 
   const statusIcon = (status?: string) => {
     switch (status) {
-      case "OK": return <CheckCircle className="w-3.5 h-3.5 text-green-500" />;
-      case "running": return <Clock className="w-3.5 h-3.5 text-blue-500 animate-pulse" />;
-      default: return <XCircle className="w-3.5 h-3.5 text-red-500" />;
+      case "OK": return <CheckCircle className="w-3.5 h-3.5 text-success" />;
+      case "running": return <Clock className="w-3.5 h-3.5 text-primary animate-pulse" />;
+      default: return <XCircle className="w-3.5 h-3.5 text-error" />;
     }
   };
 
@@ -27,7 +27,7 @@ const TasksView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-          <ListTodo className="w-4 h-4 text-cyan-500" />
+          <ListTodo className="w-4 h-4 text-info" />
           {t("proxmox.tasks.title", "Tasks")}
           <span className="text-xs font-normal text-[var(--color-text-secondary)]">
             ({mgr.tasks.length})
@@ -76,10 +76,10 @@ const TasksView: React.FC<SubProps> = ({ mgr }) => {
                   <td className="py-2 pr-3">
                     <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
                       task.status === "running"
-                        ? "bg-blue-500/15 text-blue-400"
+                        ? "bg-primary/15 text-primary"
                         : task.status === "OK"
-                        ? "bg-green-500/15 text-green-400"
-                        : "bg-red-500/15 text-red-400"
+                        ? "bg-success/15 text-success"
+                        : "bg-error/15 text-error"
                     }`}>
                       {task.status ?? "unknown"}
                     </span>
@@ -103,7 +103,7 @@ const TasksView: React.FC<SubProps> = ({ mgr }) => {
                               () => mgr.stopTask(node, task.upid!),
                             )
                           }
-                          className="p-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="p-1 rounded border border-error/30 text-error hover:bg-error/10 transition-colors"
                           title={t("proxmox.tasks.stop", "Stop")}
                         >
                           <StopCircle className="w-3 h-3" />
@@ -126,7 +126,7 @@ const TasksView: React.FC<SubProps> = ({ mgr }) => {
               {t("proxmox.tasks.detailTitle", "Task Log")}
             </h4>
             <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-              mgr.taskDetail.status === "running" ? "bg-blue-500/15 text-blue-400" : "bg-green-500/15 text-green-400"
+              mgr.taskDetail.status === "running" ? "bg-primary/15 text-primary" : "bg-success/15 text-success"
             }`}>
               {mgr.taskDetail.status}
             </span>

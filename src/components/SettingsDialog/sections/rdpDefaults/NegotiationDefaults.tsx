@@ -8,7 +8,7 @@ import { Checkbox, Select, Slider } from "../../../ui/forms";
 const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Zap className="w-4 h-4 text-amber-400" />
+      <Zap className="w-4 h-4 text-warning" />
       Connection Negotiation Defaults
     </h4>
 
@@ -28,8 +28,7 @@ const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
         Default Strategy
       </label>
       <Select value={rdp.negotiationStrategy ?? "nla-first"} onChange={(v: string) => update({
-            negotiationStrategy: e.target
-              .value as GlobalSettings["rdpDefaults"]["negotiationStrategy"],
+            negotiationStrategy: v as GlobalSettings["rdpDefaults"]["negotiationStrategy"],
           })} options={[{ value: "auto", label: "Auto (try all combinations)" }, { value: "nla-first", label: "NLA First (CredSSP → TLS → Plain)" }, { value: "tls-first", label: "TLS First (TLS → CredSSP → Plain)" }, { value: "nla-only", label: "NLA Only" }, { value: "tls-only", label: "TLS Only" }, { value: "plain-only", label: "Plain Only (DANGEROUS)" }]} className="selectClass" />
     </div>
 

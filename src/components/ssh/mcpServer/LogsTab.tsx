@@ -25,14 +25,14 @@ const levelIcons: Record<string, React.ElementType> = {
 };
 
 const levelColors: Record<string, string> = {
-  debug: "text-gray-400",
-  info: "text-blue-400",
-  notice: "text-cyan-400",
-  warning: "text-amber-400",
-  error: "text-red-400",
-  critical: "text-red-500",
-  alert: "text-red-600",
-  emergency: "text-red-700",
+  debug: "text-text-muted",
+  info: "text-primary",
+  notice: "text-info",
+  warning: "text-warning",
+  error: "text-error",
+  critical: "text-error",
+  alert: "text-error",
+  emergency: "text-error",
 };
 
 export const LogsTab: React.FC<McpTabProps> = ({ mgr }) => {
@@ -87,7 +87,7 @@ export const LogsTab: React.FC<McpTabProps> = ({ mgr }) => {
         </button>
         <button
           onClick={mgr.clearLogs}
-          className="p-1.5 rounded hover:bg-red-500/10 text-red-400"
+          className="p-1.5 rounded hover:bg-error/10 text-error"
           title={t("mcpServer.logs.clear", "Clear")}
         >
           <Trash2 size={12} />
@@ -98,7 +98,7 @@ export const LogsTab: React.FC<McpTabProps> = ({ mgr }) => {
       <div className="space-y-1 max-h-[60vh] overflow-y-auto scrollbar-thin">
         {filteredLogs.map((log) => {
           const Icon = levelIcons[log.level] || Info;
-          const color = levelColors[log.level] || "text-gray-400";
+          const color = levelColors[log.level] || "text-text-muted";
 
           return (
             <div

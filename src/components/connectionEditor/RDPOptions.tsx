@@ -1,4 +1,5 @@
 import { useRDPOptions, CSS } from "../../hooks/rdp/useRDPOptions";
+import type { Connection } from "../../types/connection/connection";
 import Section from "./rdpOptions/Section";
 import DisplaySection from "./rdpOptions/DisplaySection";
 import AudioSection from "./rdpOptions/AudioSection";
@@ -11,6 +12,11 @@ import HyperVSection from "./rdpOptions/HyperVSection";
 import NegotiationSection from "./rdpOptions/NegotiationSection";
 import AdvancedSection from "./rdpOptions/AdvancedSection";
 import TcpSection from "./rdpOptions/TcpSection";
+
+interface RDPOptionsProps {
+  formData: Partial<Connection>;
+  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+}
 
 export const RDPOptions: React.FC<RDPOptionsProps> = ({
   formData,

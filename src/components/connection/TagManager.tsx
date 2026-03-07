@@ -46,13 +46,13 @@ export const TagManager: React.FC<TagManagerProps> = ({
           {tags.map(tag => (
             <span
               key={tag}
-              className="inline-flex items-center px-2 py-0.5 bg-blue-600 text-[var(--color-text)] text-[11px] rounded-full"
+              className="inline-flex items-center px-2 py-0.5 bg-primary text-[var(--color-text)] text-[11px] rounded-full"
             >
               <Tag size={10} className="mr-1" />
               {tag}
               <button
                 onClick={() => handleRemoveTag(tag)}
-                className="ml-1 hover:bg-blue-700 rounded-full p-0.5"
+                className="ml-1 hover:bg-primary/90 rounded-full p-0.5"
               >
                 <X size={10} />
               </button>
@@ -91,13 +91,13 @@ export const TagManager: React.FC<TagManagerProps> = ({
               value={newTag}
               onChange={(e) => setNewTag(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleCreateTag()}
-              className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               placeholder="New tag name"
               autoFocus
             />
             <button
               onClick={handleCreateTag}
-              className="px-2 py-1 bg-green-600 hover:bg-green-700 text-[var(--color-text)] text-xs rounded transition-colors"
+              className="px-2 py-1 bg-success hover:bg-success/90 text-[var(--color-text)] text-xs rounded transition-colors"
             >
               Add
             </button>

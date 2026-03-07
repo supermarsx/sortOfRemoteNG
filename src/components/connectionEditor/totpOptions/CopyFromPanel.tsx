@@ -1,5 +1,6 @@
 import React from "react";
 import { Copy, ArrowDownToLine } from "lucide-react";
+import type { TOTPOptionsMgr } from "./types";
 
 const CopyFromPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.showCopyFrom) return null;

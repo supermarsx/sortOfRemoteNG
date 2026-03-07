@@ -22,6 +22,8 @@ export interface NumberInputProps
   variant?: NumberInputVariant;
   /** Clamp the output value between `min` and `max`. Defaults to `true`. */
   clamp?: boolean;
+  /** Label text (consumed by wrapper layouts, not rendered by NumberInput itself). */
+  label?: string;
 }
 
 /**
@@ -37,6 +39,7 @@ export const NumberInput: React.FC<NumberInputProps> = ({
   variant = 'settings',
   clamp = true,
   className,
+  label: _label,
   min,
   max,
   ...rest

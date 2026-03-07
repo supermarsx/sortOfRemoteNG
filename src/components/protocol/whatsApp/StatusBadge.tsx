@@ -2,10 +2,10 @@
 import React from "react";
 const StatusBadge: React.FC<{ state: string }> = ({ state }) => {
   const colors: Record<string, string> = {
-    active: "bg-green-500",
-    tokenExpired: "bg-yellow-500",
+    active: "bg-success",
+    tokenExpired: "bg-warning",
     disconnected: "bg-[var(--color-secondary)]",
-    error: "bg-red-500",
+    error: "bg-error",
   };
   return (
     <span

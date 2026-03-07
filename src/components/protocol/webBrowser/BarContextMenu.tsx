@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { Star, Trash2, FolderPlus } from "lucide-react";
 import { MenuSurface } from "../../ui/overlays/MenuSurface";

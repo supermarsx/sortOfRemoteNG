@@ -59,13 +59,13 @@ const NetworkView: React.FC<SubProps> = ({ mgr }) => {
             >
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                 iface.interfaceType === "bridge" ? "bg-teal-500/15" :
-                iface.interfaceType === "bond" ? "bg-blue-500/15" :
-                "bg-gray-500/15"
+                iface.interfaceType === "bond" ? "bg-primary/15" :
+                "bg-text-secondary/15"
               }`}>
                 {iface.interfaceType === "bridge" ? (
                   <Wifi className="w-4 h-4 text-teal-500" />
                 ) : (
-                  <Cable className="w-4 h-4 text-blue-500" />
+                  <Cable className="w-4 h-4 text-primary" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -77,7 +77,7 @@ const NetworkView: React.FC<SubProps> = ({ mgr }) => {
                     </span>
                   )}
                   {iface.active != null && (
-                    <span className={iface.active ? "text-green-400" : "text-gray-400"}>
+                    <span className={iface.active ? "text-success" : "text-text-muted"}>
                       {iface.active ? "active" : "inactive"}
                     </span>
                   )}

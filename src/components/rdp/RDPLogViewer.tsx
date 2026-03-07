@@ -27,9 +27,9 @@ interface RDPLogViewerProps {
 
 const LEVEL_CONFIG: Record<string, { icon: React.ElementType; color: string }> =
   {
-    info: { icon: Info, color: "text-blue-400" },
-    warn: { icon: AlertTriangle, color: "text-yellow-400" },
-    error: { icon: AlertCircle, color: "text-red-400" },
+    info: { icon: Info, color: "text-info" },
+    warn: { icon: AlertTriangle, color: "text-warning" },
+    error: { icon: AlertCircle, color: "text-error" },
     debug: { icon: Info, color: "text-[var(--color-textMuted)]" },
   };
 
@@ -71,7 +71,7 @@ export const RDPLogViewer: React.FC<RDPLogViewerProps> = ({
         )}
         <button
           onClick={() => mgr.setAutoScroll(!mgr.autoScroll)}
-          className={`p-1 rounded transition-colors ${mgr.autoScroll ? "text-indigo-400 bg-indigo-900/30" : "text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]"}`}
+          className={`p-1 rounded transition-colors ${mgr.autoScroll ? "text-accent bg-accent/30" : "text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]"}`}
           data-tooltip={mgr.autoScroll ? "Auto-scroll ON" : "Auto-scroll OFF"}
         >
           <ArrowDown size={12} />

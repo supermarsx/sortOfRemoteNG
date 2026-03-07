@@ -1,9 +1,10 @@
+import type { WaMgr } from "./types";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React, { useState } from "react";
 import { Download, Link, Trash2, Upload } from "lucide-react";
 
-const MediaTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
+const MediaTab: React.FC<{ wa: WaMgr }> = ({ wa }) => {
   const [uploadPath, setUploadPath] = useState("");
   const [uploadMime, setUploadMime] = useState("");
   const [lastMediaId, setLastMediaId] = useState("");
@@ -61,7 +62,7 @@ const MediaTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
         </button>
         <ErrorMsg msg={wa.uploadMediaFile.error} />
         {lastMediaId && (
-          <div className="text-green-400 text-xs">Media ID: {lastMediaId}</div>
+          <div className="text-success text-xs">Media ID: {lastMediaId}</div>
         )}
       </div>
 
@@ -87,7 +88,7 @@ const MediaTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
             {wa.downloadMedia.loading ? <LoadingSpinner /> : <Download size={14} />}
             <span>Download</span>
           </button>
-          <button onClick={handleDelete} className="sor-btn flex items-center space-x-1 text-red-400">
+          <button onClick={handleDelete} className="sor-btn flex items-center space-x-1 text-error">
             {wa.deleteMedia.loading ? <LoadingSpinner /> : <Trash2 size={14} />}
             <span>Delete</span>
           </button>

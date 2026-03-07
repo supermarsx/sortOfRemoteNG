@@ -18,7 +18,7 @@ function RecordingButton({ mgr }: { mgr: WebTerminalMgr }) {
   return (
     <button
       onClick={mgr.handleStopRecording}
-      className="app-bar-button p-2 text-red-400"
+      className="app-bar-button p-2 text-error"
       data-tooltip="Stop Recording"
       aria-label="Stop Recording"
     >

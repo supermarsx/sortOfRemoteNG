@@ -58,10 +58,10 @@ function fmtBytes(bytes: number): string {
 }
 
 function statusColor(code: number): string {
-  if (code < 300) return "bg-green-500";
-  if (code < 400) return "bg-yellow-500";
-  if (code < 500) return "bg-orange-500";
-  return "bg-red-500";
+  if (code < 300) return "bg-success";
+  if (code < 400) return "bg-warning";
+  if (code < 500) return "bg-warning";
+  return "bg-error";
 }
 
 /* ------------------------------------------------------------------ */
@@ -87,9 +87,9 @@ function Header({
   return (
     <div className="sor-replay-header flex items-center justify-between px-4 py-2 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
       <div className="flex items-center gap-3">
-        {s?.replayType === "terminal" && <Monitor size={16} className="text-green-400" />}
-        {s?.replayType === "video" && <Video size={16} className="text-blue-400" />}
-        {s?.replayType === "har" && <Globe size={16} className="text-purple-400" />}
+        {s?.replayType === "terminal" && <Monitor size={16} className="text-success" />}
+        {s?.replayType === "video" && <Video size={16} className="text-primary" />}
+        {s?.replayType === "har" && <Globe size={16} className="text-accent" />}
         <span className="text-sm font-medium text-[var(--color-text)]">
           {s?.title ?? t("replay.untitled")}
         </span>
@@ -189,7 +189,7 @@ function PlaybackControls({
       <select
         value={r.speed}
         onChange={(e) => r.setSpeed(Number(e.target.value))}
-        className="px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+        className="px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/50"
         title={t("replay.speed")}
       >
         {SPEEDS.map((s) => (
@@ -224,7 +224,7 @@ function Timeline({
         return (
           <div
             key={i}
-            className={`absolute top-0 bottom-0 ${seg.kind === "error" ? "bg-red-500" : seg.kind === "command" ? "bg-blue-500" : "bg-green-500"}`}
+            className={`absolute top-0 bottom-0 ${seg.kind === "error" ? "bg-error" : seg.kind === "command" ? "bg-primary" : "bg-success"}`}
             style={{ left: `${left}%`, width: `${width}%`, opacity }}
           />
         );
@@ -263,7 +263,7 @@ function TerminalPane({ r }: { r: Replay }) {
     );
   }
   return (
-    <pre className="sor-replay-terminal flex-1 overflow-auto bg-[#1e1e1e] text-green-300 p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap">
+    <pre className="sor-replay-terminal flex-1 overflow-auto bg-[#1e1e1e] text-success p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap">
       <code>{r.terminalFrame.text}</code>
     </pre>
   );
@@ -375,11 +375,11 @@ function HarStatsPanel({ r, t }: { r: Replay; t: (k: string) => string }) {
         {t("replay.avgLoadTime")}
       </span>
       <span className="flex items-center gap-1">
-        <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+        <span className="inline-block w-2 h-2 rounded-full bg-success" />
         {hs.successCount} ok
       </span>
       <span className="flex items-center gap-1">
-        <span className="inline-block w-2 h-2 rounded-full bg-red-500" />
+        <span className="inline-block w-2 h-2 rounded-full bg-error" />
         {hs.errorCount} {t("replay.errors")}
       </span>
       {Object.entries(hs.byStatus).length > 0 && (
@@ -438,7 +438,7 @@ function SidePanel({
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onSearch()}
               placeholder={t("replay.searchPlaceholder")}
-              className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+              className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
             <button onClick={onSearch} className="sor-option-chip p-1" title={t("replay.search")}>
               <Search size={14} />
@@ -453,7 +453,7 @@ function SidePanel({
                     className="w-full text-left px-1 py-0.5 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] truncate"
                     title={sr.context}
                   >
-                    <span className="text-blue-400">{fmtMs(sr.timeMs)}</span>{" "}
+                    <span className="text-primary">{fmtMs(sr.timeMs)}</span>{" "}
                     {sr.matchText}
                   </button>
                 </li>
@@ -478,7 +478,7 @@ function SidePanel({
             onChange={(e) => setAnnotationText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAddAnnotation()}
             placeholder={t("replay.addAnnotation")}
-            className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+            className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
           <button
             onClick={handleAddAnnotation}
@@ -502,7 +502,7 @@ function SidePanel({
               <div className="flex-1 min-w-0">
                 <button
                   onClick={() => r.seek(a.timeMs)}
-                  className="text-blue-400 hover:underline tabular-nums"
+                  className="text-primary hover:underline tabular-nums"
                 >
                   {fmtMs(a.timeMs)}
                 </button>
@@ -510,7 +510,7 @@ function SidePanel({
               </div>
               <button
                 onClick={() => r.removeAnnotation(a.id)}
-                className="opacity-0 group-hover:opacity-100 text-[var(--color-textMuted)] hover:text-red-400 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 text-[var(--color-textMuted)] hover:text-error transition-opacity"
                 title={t("replay.removeAnnotation")}
               >
                 <Trash2 size={12} />
@@ -535,7 +535,7 @@ function SidePanel({
             onChange={(e) => setBookmarkLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAddBookmark()}
             placeholder={t("replay.addBookmark")}
-            className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+            className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
           <button
             onClick={handleAddBookmark}
@@ -555,14 +555,14 @@ function SidePanel({
               <ChevronRight size={10} className="text-[var(--color-textMuted)]" />
               <button
                 onClick={() => r.seek(b.timeMs)}
-                className="text-blue-400 hover:underline tabular-nums"
+                className="text-primary hover:underline tabular-nums"
               >
                 {fmtMs(b.timeMs)}
               </button>
               <span className="flex-1 truncate text-[var(--color-textSecondary)]">{b.label}</span>
               <button
                 onClick={() => r.removeBookmark(b.id)}
-                className="opacity-0 group-hover:opacity-100 text-[var(--color-textMuted)] hover:text-red-400 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 text-[var(--color-textMuted)] hover:text-error transition-opacity"
                 title={t("replay.removeBookmark")}
               >
                 <Trash2 size={12} />
@@ -676,7 +676,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
     return (
       <div className="sor-replay-viewer flex items-center justify-center h-full bg-[var(--color-surface)]">
         <div className="flex flex-col items-center gap-3 text-[var(--color-textSecondary)]">
-          <Loader2 size={32} className="animate-spin text-blue-400" />
+          <Loader2 size={32} className="animate-spin text-primary" />
           <span className="text-sm">{t("replay.loading")}</span>
         </div>
       </div>
@@ -687,7 +687,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
   if (r.playbackState === "error" || r.error) {
     return (
       <div className="sor-replay-viewer flex items-center justify-center h-full bg-[var(--color-surface)]">
-        <div className="flex flex-col items-center gap-3 text-red-400 max-w-md text-center">
+        <div className="flex flex-col items-center gap-3 text-error max-w-md text-center">
           <AlertCircle size={32} />
           <span className="text-sm font-medium">{t("replay.errorTitle")}</span>
           <p className="text-xs text-[var(--color-textSecondary)]">

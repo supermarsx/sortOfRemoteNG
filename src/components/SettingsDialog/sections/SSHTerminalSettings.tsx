@@ -2,11 +2,12 @@ import React from "react";
 import SectionHeading from '../../ui/SectionHeading';
 import { useTranslation } from "react-i18next";
 import { SSHTerminalConfig, defaultSSHTerminalConfig } from "../../../types/settings/settings";
+import type { GlobalSettings } from "../../../types/settings/settings";
 import { Terminal } from "lucide-react";
 import Toggle from "./sshTerminal/Toggle";
 import LineHandlingSection from "./sshTerminal/LineHandlingSection";
 import LineDisciplineSection from "./sshTerminal/LineDisciplineSection";
-import BELL_STYLE_LABELS from "./sshTerminal/BELL_STYLE_LABELS";
+import BELL_STYLE_LABELS, { BellSection } from "./sshTerminal/BELL_STYLE_LABELS";
 import KeyboardSection from "./sshTerminal/KeyboardSection";
 import DimensionsSection from "./sshTerminal/DimensionsSection";
 import CharacterSetSection from "./sshTerminal/CharacterSetSection";
@@ -16,8 +17,13 @@ import TcpOptionsSection from "./sshTerminal/TcpOptionsSection";
 import SSHProtocolSection from "./sshTerminal/SSHProtocolSection";
 import ScrollbackSection from "./sshTerminal/ScrollbackSection";
 import MiscSection from "./sshTerminal/MiscSection";
-import TEXTAREA_CLASS from "./sshTerminal/TEXTAREA_CLASS";
+import TEXTAREA_CLASS, { AdvancedSSHSection } from "./sshTerminal/TEXTAREA_CLASS";
 import BackgroundSection from "./sshTerminal/BackgroundSection";
+
+interface SSHTerminalSettingsProps {
+  settings: GlobalSettings;
+  updateSettings: (updates: Partial<GlobalSettings>) => void;
+}
 
 export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
   settings,

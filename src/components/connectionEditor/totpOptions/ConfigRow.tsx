@@ -1,6 +1,7 @@
 import React from "react";
 import { Trash2, Copy, Check, Eye, EyeOff, Pencil, KeyRound } from "lucide-react";
 import { TOTPConfig } from "../../../types/settings/settings";
+import type { TOTPOptionsMgr } from "./types";
 
 const ConfigRow: React.FC<{ cfg: TOTPConfig; mgr: TOTPOptionsMgr }> = ({
   cfg,
@@ -32,7 +33,7 @@ const ConfigRow: React.FC<{ cfg: TOTPConfig; mgr: TOTPOptionsMgr }> = ({
               <div className="w-10 h-1 bg-[var(--color-border)] rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-1000 ${
-                    remaining <= 5 ? "bg-red-500" : "bg-[var(--color-secondary)]"
+                    remaining <= 5 ? "bg-error" : "bg-[var(--color-secondary)]"
                   }`}
                   style={{ width: `${progress * 100}%` }}
                 />
@@ -62,7 +63,7 @@ const ConfigRow: React.FC<{ cfg: TOTPConfig; mgr: TOTPOptionsMgr }> = ({
             title="Copy code"
           >
             {mgr.copiedSecret === cfg.secret ? (
-              <Check size={12} className="text-green-400" />
+              <Check size={12} className="text-success" />
             ) : (
               <Copy size={12} />
             )}
@@ -123,7 +124,7 @@ const ConfigRow: React.FC<{ cfg: TOTPConfig; mgr: TOTPOptionsMgr }> = ({
               <Copy size={10} />
               <span>Copy all</span>
               {mgr.copiedSecret === "backup" && (
-                <Check size={10} className="text-green-400" />
+                <Check size={10} className="text-success" />
               )}
             </button>
           </div>

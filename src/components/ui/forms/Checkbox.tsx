@@ -124,7 +124,7 @@ export const CheckboxField: React.FC<CheckboxFieldProps> = ({
         <>
           {checkbox}
           {icon && (
-            <div className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-blue-400 flex items-center">
+            <div className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary flex items-center">
               {icon}
             </div>
           )}

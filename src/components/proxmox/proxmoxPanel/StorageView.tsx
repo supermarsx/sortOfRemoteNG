@@ -26,7 +26,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-purple-500" />
+          <HardDrive className="w-4 h-4 text-accent" />
           {t("proxmox.storage.title", "Storage")}
           <span className="text-xs font-normal text-[var(--color-text-secondary)]">
             ({mgr.storage.length})
@@ -59,7 +59,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                     <div className="text-sm font-medium text-[var(--color-text)]">{s.storage}</div>
                     <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
                       <span className={`px-1.5 py-0.5 rounded ${
-                        s.active ? "bg-green-500/15 text-green-400" : "bg-gray-500/15 text-gray-400"
+                        s.active ? "bg-success/15 text-success" : "bg-text-secondary/15 text-text-muted"
                       }`}>
                         {s.active ? "active" : "inactive"}
                       </span>
@@ -76,7 +76,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                   <div className="h-1.5 rounded-full bg-[var(--color-border)]">
                     <div
                       className={`h-full rounded-full transition-all ${
-                        pct > 90 ? "bg-red-500" : pct > 70 ? "bg-yellow-500" : "bg-purple-500"
+                        pct > 90 ? "bg-error" : pct > 70 ? "bg-warning" : "bg-accent"
                       }`}
                       style={{ width: `${Math.min(100, pct)}%` }}
                     />

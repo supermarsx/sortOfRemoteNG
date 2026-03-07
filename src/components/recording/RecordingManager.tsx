@@ -33,7 +33,7 @@ interface RecordingManagerProps {
 /* ------------------------------------------------------------------ */
 
 const RecordingHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <DialogHeader variant="compact" icon={Disc} iconColor="text-red-400" title="Recording Manager" onClose={onClose} />
+  <DialogHeader variant="compact" icon={Disc} iconColor="text-error" title="Recording Manager" onClose={onClose} />
 );
 
 
@@ -51,22 +51,22 @@ const Toolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       />
     </div>
     {mgr.activeTab === "ssh" && mgr.sshRecordings.length > 0 && (
-      <button onClick={mgr.handleDeleteAllSsh} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded-lg">
+      <button onClick={mgr.handleDeleteAllSsh} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
         <Trash2 size={14} /> Clear All
       </button>
     )}
     {mgr.activeTab === "rdp" && mgr.rdpRecordings.length > 0 && (
-      <button onClick={mgr.handleDeleteAllRdp} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded-lg">
+      <button onClick={mgr.handleDeleteAllRdp} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
         <Trash2 size={14} /> Clear All
       </button>
     )}
     {mgr.activeTab === "web" && mgr.webRecordings.length > 0 && (
-      <button onClick={mgr.handleClearAllWeb} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded-lg">
+      <button onClick={mgr.handleClearAllWeb} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
         <Trash2 size={14} /> Clear All
       </button>
     )}
     {mgr.activeTab === "webVideo" && mgr.webVideoRecordings.length > 0 && (
-      <button onClick={mgr.handleClearAllWebVideo} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded-lg">
+      <button onClick={mgr.handleClearAllWebVideo} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-error hover:bg-error/10 rounded-lg">
         <Trash2 size={14} /> Clear All
       </button>
     )}
@@ -224,7 +224,7 @@ const WebVideoTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
             key={rec.id}
             className="flex items-center gap-3 px-5 py-3 hover:bg-[var(--color-surface)]/60"
           >
-            <Film size={16} className="text-purple-400 flex-shrink-0" />
+            <Film size={16} className="text-accent flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-[var(--color-text)] truncate">
                 {rec.name}
@@ -255,7 +255,7 @@ const WebVideoTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
               </button>
               <button
                 onClick={() => mgr.handleDeleteWebVideo(rec.id)}
-                className="sor-icon-btn-sm hover:text-red-400"
+                className="sor-icon-btn-sm hover:text-error"
                 title="Delete"
               >
                 <Trash2 size={14} />
@@ -290,10 +290,10 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
       <RecordingHeader onClose={onClose} />
       <TabBar
         tabs={[
-          { id: "ssh", label: "SSH Terminal", icon: Terminal, count: mgr.sshRecordings.length, activeColor: "border-green-500 text-green-400" },
-          { id: "rdp", label: "RDP Screen", icon: Monitor, count: mgr.rdpRecordings.length, activeColor: "border-blue-500 text-blue-400" },
-          { id: "web", label: "Web (HAR)", icon: Globe, count: mgr.webRecordings.length, activeColor: "border-cyan-500 text-cyan-400" },
-          { id: "webVideo", label: "Web (Video)", icon: Film, count: mgr.webVideoRecordings.length, activeColor: "border-purple-500 text-purple-400" },
+          { id: "ssh", label: "SSH Terminal", icon: Terminal, count: mgr.sshRecordings.length, activeColor: "border-success text-success" },
+          { id: "rdp", label: "RDP Screen", icon: Monitor, count: mgr.rdpRecordings.length, activeColor: "border-primary text-primary" },
+          { id: "web", label: "Web (HAR)", icon: Globe, count: mgr.webRecordings.length, activeColor: "border-info text-info" },
+          { id: "webVideo", label: "Web (Video)", icon: Film, count: mgr.webVideoRecordings.length, activeColor: "border-accent text-accent" },
         ]}
         activeTab={mgr.activeTab}
         onTabChange={mgr.switchTab}

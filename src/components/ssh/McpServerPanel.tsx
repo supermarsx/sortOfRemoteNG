@@ -58,17 +58,17 @@ export const McpServerPanel: React.FC<McpServerPanelProps> = ({
     >
       {/* Background glow effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
-        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-violet-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-indigo-500/6 rounded-full blur-3xl" />
-        <div className="absolute top-[50%] right-[25%] w-64 h-64 bg-blue-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-accent/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-accent/6 rounded-full blur-3xl" />
+        <div className="absolute top-[50%] right-[25%] w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
       </div>
 
       <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)] relative z-10">
         {/* Header */}
         <DialogHeader
           icon={Server}
-          iconColor="text-violet-600 dark:text-violet-500"
-          iconBg="bg-violet-500/20"
+          iconColor="text-accent dark:text-accent"
+          iconBg="bg-accent/20"
           title={t("mcpServer.title", "MCP Server")}
           badge={
             mgr.status?.running
@@ -86,12 +86,12 @@ export const McpServerPanel: React.FC<McpServerPanelProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {/* Error banner */}
           {mgr.error && (
-            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
               <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
               <span>{mgr.error}</span>
               <button
                 onClick={mgr.clearError}
-                className="ml-auto text-red-400/60 hover:text-red-400"
+                className="ml-auto text-error/60 hover:text-error"
               >
                 ×
               </button>

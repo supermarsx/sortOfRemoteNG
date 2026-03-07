@@ -69,7 +69,7 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
     <div className="sor-settings-card">
       <div className="flex items-center gap-2 mb-3">
-        <Lock size={16} className="text-green-400" />
+        <Lock size={16} className="text-success" />
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
           TLS Certificate Policy
         </h4>
@@ -88,7 +88,7 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <div className="sor-settings-card">
       <div className="flex items-center gap-2 mb-3">
-        <Fingerprint size={16} className="text-blue-400" />
+        <Fingerprint size={16} className="text-primary" />
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">
           SSH Host Key Policy
         </h4>
@@ -207,12 +207,12 @@ const ClearAllButton: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.showConfirmClear) {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-xs text-red-400">
+        <span className="text-xs text-error">
           Clear all stored identities?
         </span>
         <button
           onClick={mgr.handleClearAll}
-          className="px-3 py-1 text-xs bg-red-600 hover:bg-red-500 text-[var(--color-text)] rounded transition-colors"
+          className="px-3 py-1 text-xs bg-error hover:bg-error/90 text-[var(--color-text)] rounded transition-colors"
         >
           Yes, clear all
         </button>
@@ -240,7 +240,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div>
     <div className="flex items-center justify-between mb-3">
       <h4 className="sor-section-heading">
-        <ShieldAlert size={16} className="text-yellow-400" />
+        <ShieldAlert size={16} className="text-warning" />
         Stored Identities ({mgr.totalCount})
       </h4>
       <ClearAllButton mgr={mgr} />
@@ -466,12 +466,12 @@ function TrustRecordRow({
             </>
           )}
           {record.userApproved && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-900/50 text-green-400 border border-green-700/50">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/50 text-success border border-success/50">
               approved
             </span>
           )}
           {record.history && record.history.length > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-400 border border-yellow-700/50 flex items-center gap-0.5">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/50 text-warning border border-warning/50 flex items-center gap-0.5">
               <AlertTriangle size={8} />
               {record.history.length} change
               {record.history.length > 1 ? "s" : ""}
@@ -488,7 +488,7 @@ function TrustRecordRow({
       </div>
       <button
         onClick={() => onRemove(record)}
-        className="text-[var(--color-textMuted)] hover:text-red-400 p-1 transition-colors flex-shrink-0"
+        className="text-[var(--color-textMuted)] hover:text-error p-1 transition-colors flex-shrink-0"
         title="Remove stored identity"
       >
         <Trash2 size={14} />

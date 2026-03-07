@@ -45,6 +45,7 @@ export interface ClusterStatus {
 export interface ClusterResource {
   id?: string;
   type?: string;
+  resourceType?: string;
   node?: string;
   status?: string;
   vmid?: number;
@@ -494,6 +495,7 @@ export interface LxcStatusCurrent {
 export interface StorageSummary {
   storage: string;
   type?: string;
+  storageType?: string;
   content?: string;
   active?: number;
   enabled?: number;
@@ -538,6 +540,7 @@ export interface StorageConfig {
 export interface NetworkInterface {
   iface: string;
   type?: string;
+  interfaceType?: string;
   method?: string;
   method6?: string;
   active?: boolean;
@@ -616,6 +619,7 @@ export interface TaskSummary {
   starttime?: number;
   endtime?: number;
   type?: string;
+  taskType?: string;
   id?: string;
   user?: string;
   status?: string;
@@ -686,6 +690,7 @@ export interface VzdumpParams {
 export interface FirewallRule {
   pos?: number;
   type?: string;
+  ruleType?: string;
   action?: string;
   enabled?: number;
   comment?: string;

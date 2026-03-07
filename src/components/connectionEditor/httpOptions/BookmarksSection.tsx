@@ -6,13 +6,13 @@ const BookmarksSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="md:col-span-2">
     <div className="flex items-center justify-between mb-2">
       <label className="sor-form-label-icon">
-        <Star size={14} className="text-yellow-400" />
+        <Star size={14} className="text-warning" />
         Bookmarks ({(mgr.formData.httpBookmarks || []).length})
       </label>
       <button
         type="button"
         onClick={mgr.openAddBookmark}
-        className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+        className="text-xs text-primary hover:text-primary transition-colors flex items-center gap-1"
       >
         <Plus size={12} /> Add bookmark
       </button>
@@ -31,12 +31,12 @@ const BookmarksSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             {bm.isFolder ? (
               <FolderOpen
                 size={12}
-                className="text-blue-400/70 flex-shrink-0"
+                className="text-primary/70 flex-shrink-0"
               />
             ) : (
               <Star
                 size={12}
-                className="text-yellow-400/70 flex-shrink-0"
+                className="text-warning/70 flex-shrink-0"
               />
             )}
             <div className="flex-1 min-w-0">
@@ -115,7 +115,7 @@ const BookmarksSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                     httpBookmarks: bookmarks,
                   });
                 }}
-                className="text-[var(--color-textMuted)] hover:text-red-400 p-0.5 transition-colors"
+                className="text-[var(--color-textMuted)] hover:text-error p-0.5 transition-colors"
                 title="Remove"
               >
                 <Trash2 size={12} />

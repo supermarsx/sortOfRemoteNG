@@ -1,4 +1,9 @@
 
+import React from "react";
+import { MessageCircle, Send, LayoutTemplate, Image, Users, QrCode, Settings } from "lucide-react";
+import type { useWhatsApp } from "../../../hooks/protocol/useWhatsApp";
+export type { WaChatMessage, WaConfig, WaTemplateInfo, PairingState, QrCodeData } from "../../../types/protocols/whatsapp";
+export type WaMgr = ReturnType<typeof useWhatsApp>;
 
 export type TabId =
   | "chat"

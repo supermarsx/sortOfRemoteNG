@@ -23,25 +23,25 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
-                    <Wifi size={11} className="text-blue-400" />
+                    <Wifi size={11} className="text-primary" />
                     <span>Latency</span>
                   </div>
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
-                    <Activity size={11} className="text-green-400" />
+                    <Activity size={11} className="text-success" />
                     <span>Throughput</span>
                   </div>
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
-                    <Cpu size={11} className="text-yellow-400" />
+                    <Cpu size={11} className="text-warning" />
                     <span>CPU</span>
                   </div>
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
-                    <HardDrive size={11} className="text-purple-400" />
+                    <HardDrive size={11} className="text-accent" />
                     <span>Memory</span>
                   </div>
                 </th>
@@ -76,9 +76,9 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       <span
                         className={
                           metric.latency > mgr.avgLatency * 1.5
-                            ? "text-red-400"
+                            ? "text-error"
                             : metric.latency < mgr.avgLatency * 0.5
-                              ? "text-green-400"
+                              ? "text-success"
                               : ""
                         }
                       >
@@ -92,7 +92,7 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       <div className="flex items-center gap-2">
                         <div className="w-12 h-1.5 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${metric.cpuUsage > 80 ? "bg-red-500" : metric.cpuUsage > 50 ? "bg-yellow-500" : "bg-green-500"}`}
+                            className={`h-full rounded-full ${metric.cpuUsage > 80 ? "bg-error" : metric.cpuUsage > 50 ? "bg-warning" : "bg-success"}`}
                             style={{
                               width: `${Math.min(metric.cpuUsage, 100)}%`,
                             }}
@@ -107,7 +107,7 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       <div className="flex items-center gap-2">
                         <div className="w-12 h-1.5 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${metric.memoryUsage > 80 ? "bg-red-500" : metric.memoryUsage > 50 ? "bg-yellow-500" : "bg-purple-500"}`}
+                            className={`h-full rounded-full ${metric.memoryUsage > 80 ? "bg-error" : metric.memoryUsage > 50 ? "bg-warning" : "bg-accent"}`}
                             style={{
                               width: `${Math.min(metric.memoryUsage, 100)}%`,
                             }}

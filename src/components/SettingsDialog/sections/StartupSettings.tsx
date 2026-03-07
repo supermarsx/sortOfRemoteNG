@@ -280,7 +280,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
       </div>
 
       {/* Info notice */}
-      <div className="p-3 bg-blue-900/30 border border-blue-800/50 rounded-lg text-sm text-blue-300">
+      <div className="p-3 bg-primary/30 border border-primary/50 rounded-lg text-sm text-primary">
         <p>
           {t(
             "settings.startup.note",

@@ -17,7 +17,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
   return (
     <div className="p-6 space-y-6 overflow-y-auto flex-1">
       <h3 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-        <HardDrive className="w-4 h-4 text-amber-500" />
+        <HardDrive className="w-4 h-4 text-warning" />
         {t("synology.storage.title", "Storage Management")}
       </h3>
 
@@ -44,10 +44,10 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded ${
                         vol.status === "normal"
-                          ? "bg-green-500/15 text-green-400"
+                          ? "bg-success/15 text-success"
                           : vol.status === "crashed"
-                            ? "bg-red-500/15 text-red-400"
-                            : "bg-yellow-500/15 text-yellow-400"
+                            ? "bg-error/15 text-error"
+                            : "bg-warning/15 text-warning"
                       }`}
                     >
                       {vol.status}
@@ -57,9 +57,9 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                     <div
                       className={`h-full rounded-full transition-all ${
                         pct > 90
-                          ? "bg-red-500"
+                          ? "bg-error"
                           : pct > 70
-                            ? "bg-yellow-500"
+                            ? "bg-warning"
                             : "bg-teal-500"
                       }`}
                       style={{ width: `${Math.min(pct, 100)}%` }}
@@ -125,10 +125,10 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                       <span
                         className={
                           (disk.temp ?? 0) > 50
-                            ? "text-red-400"
+                            ? "text-error"
                             : (disk.temp ?? 0) > 40
-                              ? "text-yellow-400"
-                              : "text-green-400"
+                              ? "text-warning"
+                              : "text-success"
                         }
                       >
                         {disk.temp ?? "—"}°C
@@ -138,8 +138,8 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded ${
                           disk.status === "normal"
-                            ? "bg-green-500/15 text-green-400"
-                            : "bg-red-500/15 text-red-400"
+                            ? "bg-success/15 text-success"
+                            : "bg-error/15 text-error"
                         }`}
                       >
                         {disk.status}
@@ -170,7 +170,7 @@ const StorageView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.selectedDiskSmart && (
         <section>
           <h4 className="text-xs font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-            <Activity className="w-3.5 h-3.5 text-blue-500" />
+            <Activity className="w-3.5 h-3.5 text-primary" />
             {t("synology.storage.smartInfo", "S.M.A.R.T. Information")}
           </h4>
           <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">

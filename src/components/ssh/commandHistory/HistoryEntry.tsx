@@ -12,34 +12,35 @@ import {
   Clock,
   Hash,
   MessageSquare,
+  X,
 } from "lucide-react";
 import type { SSHCommandHistoryEntry, SSHCommandCategory } from "../../../types/ssh/sshCommandHistory";
 import type { TFunc } from "./types";
 
 const CATEGORY_COLORS: Record<SSHCommandCategory, string> = {
-  system: "text-blue-500 bg-blue-500/10",
-  network: "text-cyan-500 bg-cyan-500/10",
-  file: "text-amber-500 bg-amber-500/10",
-  process: "text-orange-500 bg-orange-500/10",
-  package: "text-purple-500 bg-purple-500/10",
+  system: "text-primary bg-primary/10",
+  network: "text-info bg-info/10",
+  file: "text-warning bg-warning/10",
+  process: "text-warning bg-warning/10",
+  package: "text-accent bg-accent/10",
   docker: "text-sky-500 bg-sky-500/10",
-  kubernetes: "text-indigo-500 bg-indigo-500/10",
-  git: "text-red-500 bg-red-500/10",
-  database: "text-emerald-500 bg-emerald-500/10",
+  kubernetes: "text-accent bg-accent/10",
+  git: "text-error bg-error/10",
+  database: "text-success bg-success/10",
   service: "text-teal-500 bg-teal-500/10",
   security: "text-rose-500 bg-rose-500/10",
-  user: "text-violet-500 bg-violet-500/10",
+  user: "text-accent bg-accent/10",
   disk: "text-lime-500 bg-lime-500/10",
-  custom: "text-pink-500 bg-pink-500/10",
-  unknown: "text-gray-500 bg-gray-500/10",
+  custom: "text-accent bg-accent/10",
+  unknown: "text-text-secondary bg-text-secondary/10",
 };
 
 function StatusIcon({ status }: { status: string }) {
   if (status === "success")
-    return <CheckCircle2 size={12} className="text-green-500" />;
+    return <CheckCircle2 size={12} className="text-success" />;
   if (status === "error")
-    return <XCircle size={12} className="text-red-500" />;
-  return <Clock size={12} className="text-yellow-500" />;
+    return <XCircle size={12} className="text-error" />;
+  return <Clock size={12} className="text-warning" />;
 }
 
 function formatRelativeTime(isoDate: string): string {
@@ -94,7 +95,7 @@ function HistoryEntry({
     <div
       className={`border-b border-[var(--color-border)]/30 transition-colors ${
         isSelected
-          ? "bg-green-500/10 border-l-2 border-l-green-500"
+          ? "bg-success/10 border-l-2 border-l-success"
           : "hover:bg-[var(--color-surfaceHover)]/50"
       }`}
     >
@@ -116,8 +117,8 @@ function HistoryEntry({
           }}
           className={`mt-0.5 flex-shrink-0 transition-colors ${
             entry.starred
-              ? "text-yellow-500"
-              : "text-[var(--color-textMuted)] hover:text-yellow-400"
+              ? "text-warning"
+              : "text-[var(--color-textMuted)] hover:text-warning"
           }`}
           title={t("sshHistory.toggleStar", "Toggle star")}
         >
@@ -177,7 +178,7 @@ function HistoryEntry({
                 e.stopPropagation();
                 onReExecute();
               }}
-              className="p-1 rounded text-[var(--color-textSecondary)] hover:text-green-500 hover:bg-green-500/10 transition-colors"
+              className="p-1 rounded text-[var(--color-textSecondary)] hover:text-success hover:bg-success/10 transition-colors"
               title={t("sshHistory.reExecute", "Re-execute")}
             >
               <Play size={12} />
@@ -213,7 +214,7 @@ function HistoryEntry({
               e.stopPropagation();
               onDelete();
             }}
-            className="p-1 rounded text-[var(--color-textSecondary)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+            className="p-1 rounded text-[var(--color-textSecondary)] hover:text-error hover:bg-error/10 transition-colors"
             title={t("sshHistory.delete", "Delete")}
           >
             <Trash2 size={12} />
@@ -285,7 +286,7 @@ function HistoryEntry({
                   onClick={() =>
                     onUpdateTags?.(entry.tags.filter((t) => t !== tag))
                   }
-                  className="ml-0.5 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
+                  className="ml-0.5 opacity-0 group-hover:opacity-100 hover:text-error transition-opacity"
                 >
                   <X size={8} />
                 </button>

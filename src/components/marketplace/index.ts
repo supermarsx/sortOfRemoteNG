@@ -1,1 +1,1 @@
-export { MarketplacePanel } from "./MarketplacePanel";
+export { default as MarketplacePanel } from "./MarketplacePanel";

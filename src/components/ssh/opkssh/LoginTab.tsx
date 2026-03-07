@@ -26,7 +26,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
       {/* Provider selection */}
       <div className="p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)]">
         <h3 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2 mb-3">
-          <LogIn size={14} className="text-emerald-500" />
+          <LogIn size={14} className="text-success" />
           {t("opkssh.oidcLogin", "OIDC Login")}
         </h3>
 
@@ -192,7 +192,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
 
           {/* Login button */}
           <button
-            className="flex items-center gap-2 text-xs px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 text-xs px-4 py-2 rounded bg-success hover:bg-success/90 text-white disabled:opacity-50 transition-colors"
             onClick={handleLogin}
             disabled={mgr.isLoggingIn || (selectedAlias === "custom" && !mgr.loginOptions.issuer)}
           >
@@ -216,8 +216,8 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
         <div
           className={`p-4 rounded-lg border text-xs ${
             mgr.lastLoginResult.success
-              ? "border-green-500/30 bg-green-500/10"
-              : "border-red-500/30 bg-red-500/10"
+              ? "border-success/30 bg-success/10"
+              : "border-error/30 bg-error/10"
           }`}
         >
           <h4 className="font-medium text-[var(--color-text)] mb-2">

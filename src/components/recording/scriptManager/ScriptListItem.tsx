@@ -8,7 +8,7 @@ function ScriptListItem({ script, mgr }: { script: ManagedScript; mgr: ScriptMan
       onClick={() => mgr.handleSelectScript(script)}
       className={`p-3 rounded-lg cursor-pointer transition-colors group ${
         mgr.selectedScript?.id === script.id
-          ? 'bg-purple-500/20 border border-purple-500/40'
+          ? 'bg-accent/20 border border-accent/40'
           : 'hover:bg-[var(--color-surfaceHover)] border border-transparent'
       }`}
     >

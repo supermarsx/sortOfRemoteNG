@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { SSHVersion } from "../../../types/settings/settings";
 import { Checkbox, NumberInput, Select } from "../../ui/forms";

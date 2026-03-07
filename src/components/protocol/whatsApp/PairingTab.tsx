@@ -1,10 +1,11 @@
+import { WaMgr, QrCodeData, PairingState } from "./types";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React, { useState } from "react";
 import type { Connection } from "../../../types/connection/connection";
 import { Check, CheckCircle, Phone, QrCode, RefreshCw, Smartphone, X } from "lucide-react";
 
-const PairingTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
+const PairingTab: React.FC<{ wa: WaMgr }> = ({
   wa,
 }) => {
   const [qrData, setQrData] = useState<QrCodeData | null>(null);
@@ -67,7 +68,7 @@ const PairingTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
           <CheckCircle size={14} />
           <span>Check State</span>
         </button>
-        <button onClick={handleCancel} className="sor-btn flex items-center space-x-1 text-red-400">
+        <button onClick={handleCancel} className="sor-btn flex items-center space-x-1 text-error">
           <X size={14} />
           <span>Cancel</span>
         </button>
@@ -119,7 +120,7 @@ const PairingTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
 
       {phoneCode && (
         <div className="text-sm text-[var(--color-textSecondary)]">
-          Pairing code: <span className="font-mono text-green-400">{phoneCode}</span>
+          Pairing code: <span className="font-mono text-success">{phoneCode}</span>
         </div>
       )}
 
@@ -135,7 +136,7 @@ const PairingTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
           {wa.unofficialConnect.loading ? <LoadingSpinner /> : <CheckCircle size={14} />}
           <span>Connect</span>
         </button>
-        <button onClick={handleDisconnect} className="sor-btn flex items-center space-x-1 text-red-400">
+        <button onClick={handleDisconnect} className="sor-btn flex items-center space-x-1 text-error">
           {wa.unofficialDisconnect.loading ? <LoadingSpinner /> : <X size={14} />}
           <span>Disconnect</span>
         </button>

@@ -20,7 +20,7 @@ import {
 
 const labelClass = "text-sm text-[var(--color-textSecondary)]";
 const inputClass =
-  "w-full px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+  "w-full px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary";
 const selectClass = inputClass;
 const colorInputClass =
   "w-10 h-8 p-0 border border-[var(--color-border)] rounded cursor-pointer bg-transparent";
@@ -190,7 +190,7 @@ function GradientStopsEditor({
           {stops.length > 2 && (
             <button
               onClick={() => onChange(stops.filter((_, j) => j !== i))}
-              className="text-red-400 hover:text-red-300 text-xs px-1"
+              className="text-error hover:text-error text-xs px-1"
             >
               ✕
             </button>
@@ -201,7 +201,7 @@ function GradientStopsEditor({
         onClick={() =>
           onChange([...stops, { color: "#3b82f6", position: 50 }])
         }
-        className="text-xs text-blue-400 hover:text-blue-300"
+        className="text-xs text-primary hover:text-primary"
       >
         + {t("settings.sshTerminal.bg.addStop", "Add stop")}
       </button>
@@ -262,7 +262,7 @@ function OverlayEditor({
         </label>
         <button
           onClick={addOverlay}
-          className="text-xs text-blue-400 hover:text-blue-300"
+          className="text-xs text-primary hover:text-primary"
         >
           + {t("settings.sshTerminal.bg.addOverlay", "Add overlay")}
         </button>
@@ -299,7 +299,7 @@ function OverlayEditor({
             </label>
             <button
               onClick={() => removeOverlay(i)}
-              className="text-red-400 hover:text-red-300 text-xs"
+              className="text-error hover:text-error text-xs"
             >
               {t("settings.sshTerminal.bg.remove", "Remove")}
             </button>
@@ -395,7 +395,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
         "settings.sshTerminal.bg.title",
         "Backgrounds, Fading & Overlays",
       )}
-      icon={<Layers className="w-4 h-4 text-indigo-400" />}
+      icon={<Layers className="w-4 h-4 text-accent" />}
       defaultOpen={false}
     >
       <div className="space-y-5">
@@ -640,7 +640,7 @@ const BackgroundSection: React.FC<BackgroundSectionProps> = ({
                 "settings.sshTerminal.bg.fadingTitle",
                 "Edge Fading",
               )}
-              icon={<Sparkles className="w-4 h-4 text-purple-400" />}
+              icon={<Sparkles className="w-4 h-4 text-accent" />}
               defaultOpen={false}
             >
               <div className="space-y-3">

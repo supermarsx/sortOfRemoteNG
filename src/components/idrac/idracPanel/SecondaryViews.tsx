@@ -35,7 +35,7 @@ export const NetworkView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.networkAdapters.map((adapter) => (
         <div key={adapter.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Network className="w-4 h-4 text-blue-400" />
+            <Network className="w-4 h-4 text-primary" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">{adapter.name}</h3>
             <span className="text-[10px] text-[var(--color-text-secondary)]">{adapter.model ?? ""}</span>
           </div>
@@ -55,7 +55,7 @@ export const NetworkView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-1 text-[var(--color-text)]">{p.name}</td>
                     <td className="py-1 text-[var(--color-text-secondary)]">{p.macAddress ?? "—"}</td>
                     <td className="py-1">
-                      <span className={p.linkStatus?.toLowerCase() === "up" ? "text-green-400" : "text-[var(--color-text-secondary)]"}>
+                      <span className={p.linkStatus?.toLowerCase() === "up" ? "text-success" : "text-[var(--color-text-secondary)]"}>
                         {p.linkStatus ?? "—"}
                       </span>
                     </td>
@@ -106,7 +106,7 @@ export const FirmwareView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Package className="w-4 h-4 text-orange-400" />
+          <Package className="w-4 h-4 text-warning" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">{t("idrac.firmware.inventory", "Firmware Inventory")}</h3>
           <span className="text-[10px] text-[var(--color-text-secondary)]">({mgr.firmware.length} components)</span>
         </div>
@@ -126,8 +126,8 @@ export const FirmwareView: React.FC<SubProps> = ({ mgr }) => {
                 <td className="py-1 text-[var(--color-text)]">{fw.name}</td>
                 <td className="py-1 text-[var(--color-text)]">{fw.version}</td>
                 <td className="py-1 text-[var(--color-text-secondary)]">{fw.installDate ?? "—"}</td>
-                <td className="py-1 text-center">{fw.updateable ? <CheckCircle className="w-3 h-3 text-green-400 inline" /> : <XCircle className="w-3 h-3 text-[var(--color-text-secondary)] inline" />}</td>
-                <td className="py-1 text-center"><span className={fw.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>{fw.status.health ?? "N/A"}</span></td>
+                <td className="py-1 text-center">{fw.updateable ? <CheckCircle className="w-3 h-3 text-success inline" /> : <XCircle className="w-3 h-3 text-[var(--color-text-secondary)] inline" />}</td>
+                <td className="py-1 text-center"><span className={fw.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>{fw.status.health ?? "N/A"}</span></td>
               </tr>
             ))}
           </tbody>
@@ -148,13 +148,13 @@ export const LifecycleView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="flex items-center gap-3 mb-2">
         <span className="text-[10px] text-[var(--color-text-secondary)]">LC Status: <span className="text-[var(--color-text)]">{mgr.lcStatus ?? "Unknown"}</span></span>
-        <button onClick={() => mgr.purgeJobQueue()} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-red-400 hover:bg-red-500/10">
+        <button onClick={() => mgr.purgeJobQueue()} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-error hover:bg-error/10">
           <Trash2 className="w-3 h-3 inline mr-1" />{t("idrac.lifecycle.purge", "Purge All Jobs")}
         </button>
       </div>
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <ClipboardList className="w-4 h-4 text-orange-400" />
+          <ClipboardList className="w-4 h-4 text-warning" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">{t("idrac.lifecycle.jobs", "Lifecycle Jobs")}</h3>
         </div>
         {mgr.jobs.length === 0 ? (
@@ -175,7 +175,7 @@ export const LifecycleView: React.FC<SubProps> = ({ mgr }) => {
                 <tr key={j.id} className="border-b border-[var(--color-border)] last:border-0">
                   <td className="py-1 text-[var(--color-text)]">{j.id}</td>
                   <td className="py-1 text-[var(--color-text)]">{j.name ?? "—"}</td>
-                  <td className="py-1"><span className={j.jobState.toLowerCase().includes("completed") ? "text-green-400" : j.jobState.toLowerCase().includes("failed") ? "text-red-400" : "text-amber-400"}>{j.jobState}</span></td>
+                  <td className="py-1"><span className={j.jobState.toLowerCase().includes("completed") ? "text-success" : j.jobState.toLowerCase().includes("failed") ? "text-error" : "text-warning"}>{j.jobState}</span></td>
                   <td className="py-1 text-right text-[var(--color-text)]">{j.percentComplete != null ? `${j.percentComplete}%` : "—"}</td>
                   <td className="py-1 text-[var(--color-text-secondary)] truncate max-w-[200px]">{j.message ?? "—"}</td>
                 </tr>
@@ -200,16 +200,16 @@ export const VirtualMediaView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.virtualMedia.map((vm) => (
         <div key={vm.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-2">
-            <Disc className="w-4 h-4 text-blue-400" />
+            <Disc className="w-4 h-4 text-primary" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">{vm.name}</h3>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${vm.inserted ? "bg-green-500/10 text-green-400" : "bg-[var(--color-bg)] text-[var(--color-text-secondary)]"}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${vm.inserted ? "bg-success/10 text-success" : "bg-[var(--color-bg)] text-[var(--color-text-secondary)]"}`}>
               {vm.inserted ? "Inserted" : "Empty"}
             </span>
           </div>
           {vm.image && <p className="text-[10px] text-[var(--color-text-secondary)] mb-2">Image: {vm.image}</p>}
           <div className="flex gap-2">
             {vm.inserted && (
-              <button onClick={() => mgr.unmountVirtualMedia(vm.id)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-red-400 hover:bg-red-500/10">
+              <button onClick={() => mgr.unmountVirtualMedia(vm.id)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-error hover:bg-error/10">
                 Eject
               </button>
             )}
@@ -232,19 +232,19 @@ export const ConsoleView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Monitor className="w-4 h-4 text-green-400" />
+          <Monitor className="w-4 h-4 text-success" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">{t("idrac.console.info", "Virtual Console")}</h3>
         </div>
         {ci ? (
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2 text-[10px]">
               <div><span className="text-[var(--color-text-secondary)]">Type:</span> <span className="text-[var(--color-text)]">{ci.consoleType}</span></div>
-              <div><span className="text-[var(--color-text-secondary)]">Enabled:</span> <span className={ci.enabled ? "text-green-400" : "text-red-400"}>{ci.enabled ? "Yes" : "No"}</span></div>
+              <div><span className="text-[var(--color-text-secondary)]">Enabled:</span> <span className={ci.enabled ? "text-success" : "text-error"}>{ci.enabled ? "Yes" : "No"}</span></div>
               <div><span className="text-[var(--color-text-secondary)]">Max Sessions:</span> <span className="text-[var(--color-text)]">{ci.maxSessions ?? "—"}</span></div>
               <div><span className="text-[var(--color-text-secondary)]">Encryption:</span> <span className="text-[var(--color-text)]">{ci.sslEncryptionBits ? `${ci.sslEncryptionBits}-bit` : "—"}</span></div>
             </div>
             {ci.url && (
-              <a href={ci.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:underline">
+              <a href={ci.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
                 <Monitor className="w-3 h-3" /> Open Console
               </a>
             )}
@@ -271,15 +271,15 @@ export const EventLogView: React.FC<SubProps> = ({ mgr }) => {
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-3">
       <div className="flex items-center gap-2">
-        <button onClick={() => setLogTab("sel")} className={`text-[10px] px-3 py-1.5 rounded-lg border ${logTab === "sel" ? "border-orange-400 text-orange-400 bg-orange-500/10" : "border-[var(--color-border)] text-[var(--color-text-secondary)]"}`}>
+        <button onClick={() => setLogTab("sel")} className={`text-[10px] px-3 py-1.5 rounded-lg border ${logTab === "sel" ? "border-warning text-warning bg-warning/10" : "border-[var(--color-border)] text-[var(--color-text-secondary)]"}`}>
           SEL ({mgr.selEntries.length})
         </button>
-        <button onClick={() => setLogTab("lc")} className={`text-[10px] px-3 py-1.5 rounded-lg border ${logTab === "lc" ? "border-orange-400 text-orange-400 bg-orange-500/10" : "border-[var(--color-border)] text-[var(--color-text-secondary)]"}`}>
+        <button onClick={() => setLogTab("lc")} className={`text-[10px] px-3 py-1.5 rounded-lg border ${logTab === "lc" ? "border-warning text-warning bg-warning/10" : "border-[var(--color-border)] text-[var(--color-text-secondary)]"}`}>
           LC Log ({mgr.lcLogEntries.length})
         </button>
         <div className="ml-auto flex gap-1">
-          <button onClick={() => mgr.clearSel()} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-red-400 hover:bg-red-500/10">Clear SEL</button>
-          <button onClick={() => mgr.clearLcLog()} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-red-400 hover:bg-red-500/10">Clear LC</button>
+          <button onClick={() => mgr.clearSel()} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-error hover:bg-error/10">Clear SEL</button>
+          <button onClick={() => mgr.clearLcLog()} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-error hover:bg-error/10">Clear LC</button>
         </div>
       </div>
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 max-h-[70vh] overflow-y-auto">
@@ -296,7 +296,7 @@ export const EventLogView: React.FC<SubProps> = ({ mgr }) => {
             {entries.map((e) => (
               <tr key={e.id} className="border-b border-[var(--color-border)] last:border-0">
                 <td className="py-1 text-[var(--color-text)]">{e.id}</td>
-                <td className="py-1"><span className={e.severity.toLowerCase() === "critical" ? "text-red-400" : e.severity.toLowerCase() === "warning" ? "text-amber-400" : "text-[var(--color-text-secondary)]"}>{e.severity}</span></td>
+                <td className="py-1"><span className={e.severity.toLowerCase() === "critical" ? "text-error" : e.severity.toLowerCase() === "warning" ? "text-warning" : "text-[var(--color-text-secondary)]"}>{e.severity}</span></td>
                 <td className="py-1 text-[var(--color-text)] truncate max-w-[400px]">{e.message}</td>
                 <td className="py-1 text-[var(--color-text-secondary)]">{e.created ?? "—"}</td>
               </tr>
@@ -319,7 +319,7 @@ export const UsersView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Users className="w-4 h-4 text-blue-400" />
+          <Users className="w-4 h-4 text-primary" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">{t("idrac.users.local", "Local Users")}</h3>
         </div>
         <table className="w-full text-[10px]">
@@ -339,11 +339,11 @@ export const UsersView: React.FC<SubProps> = ({ mgr }) => {
                 <td className="py-1 text-[var(--color-text)]">{u.id}</td>
                 <td className="py-1 text-[var(--color-text)]">{u.name || <span className="text-[var(--color-text-secondary)] italic">empty</span>}</td>
                 <td className="py-1 text-[var(--color-text-secondary)]">{u.roleId}</td>
-                <td className="py-1 text-center">{u.enabled ? <CheckCircle className="w-3 h-3 text-green-400 inline" /> : <XCircle className="w-3 h-3 text-[var(--color-text-secondary)] inline" />}</td>
-                <td className="py-1 text-center">{u.locked ? <AlertCircle className="w-3 h-3 text-red-400 inline" /> : "—"}</td>
+                <td className="py-1 text-center">{u.enabled ? <CheckCircle className="w-3 h-3 text-success inline" /> : <XCircle className="w-3 h-3 text-[var(--color-text-secondary)] inline" />}</td>
+                <td className="py-1 text-center">{u.locked ? <AlertCircle className="w-3 h-3 text-error inline" /> : "—"}</td>
                 <td className="py-1 text-center">
                   {u.name && (
-                    <button onClick={() => mgr.requestConfirm("Delete User", `Delete user "${u.name}" in slot ${u.id}?`, () => mgr.deleteUser(u.id))} className="text-red-400 hover:text-red-300">
+                    <button onClick={() => mgr.requestConfirm("Delete User", `Delete user "${u.name}" in slot ${u.id}?`, () => mgr.deleteUser(u.id))} className="text-error hover:text-error">
                       <Trash2 className="w-3 h-3 inline" />
                     </button>
                   )}
@@ -381,7 +381,7 @@ export const BiosView: React.FC<SubProps> = ({ mgr }) => {
         </div>
       )}
       <div className="flex items-center gap-2">
-        <input className="flex-1 px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-orange-500/50" placeholder="Filter BIOS attributes..." value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <input className="flex-1 px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50" placeholder="Filter BIOS attributes..." value={filter} onChange={(e) => setFilter(e.target.value)} />
         <span className="text-[10px] text-[var(--color-text-secondary)]">{filtered.length} attrs</span>
       </div>
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 max-h-[65vh] overflow-y-auto">
@@ -421,7 +421,7 @@ export const CertificatesView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <ShieldCheck className="w-4 h-4 text-green-400" />
+          <ShieldCheck className="w-4 h-4 text-success" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">{t("idrac.certs.title", "SSL Certificates")}</h3>
         </div>
         {mgr.certificates.length === 0 ? (
@@ -457,9 +457,9 @@ export const HealthView: React.FC<SubProps> = ({ mgr }) => {
 
   const healthColor = (h?: string) => {
     const v = (h ?? "").toLowerCase();
-    if (v === "ok" || v === "healthy") return "text-green-400";
-    if (v === "warning") return "text-amber-400";
-    if (v === "critical" || v === "error") return "text-red-400";
+    if (v === "ok" || v === "healthy") return "text-success";
+    if (v === "warning") return "text-warning";
+    if (v === "critical" || v === "error") return "text-error";
     return "text-[var(--color-text-secondary)]";
   };
 
@@ -483,13 +483,13 @@ export const HealthView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-4">
-          <HeartPulse className="w-4 h-4 text-red-400" />
+          <HeartPulse className="w-4 h-4 text-error" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">{t("idrac.health.rollup", "Health Rollup")}</h3>
         </div>
         <div className="grid grid-cols-3 gap-3">
           {components.map(([label, health]) => (
             <div key={label} className="flex items-center gap-2 p-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]">
-              <div className={`w-2 h-2 rounded-full ${healthColor(health as string)} ${health ? "bg-current" : "bg-gray-500"}`} />
+              <div className={`w-2 h-2 rounded-full ${healthColor(health as string)} ${health ? "bg-current" : "bg-text-secondary"}`} />
               <span className="text-[10px] text-[var(--color-text-secondary)]">{label}</span>
               <span className={`ml-auto text-[10px] font-medium ${healthColor(health as string)}`}>{(health as string) ?? "N/A"}</span>
             </div>
@@ -562,12 +562,12 @@ export const RacadmView: React.FC<SubProps> = ({ mgr }) => {
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Terminal className="w-4 h-4 text-green-400" />
+          <Terminal className="w-4 h-4 text-success" />
           <h3 className="text-xs font-semibold text-[var(--color-text)]">{t("idrac.racadm.title", "RACADM Console")}</h3>
         </div>
         <div className="flex gap-2 mb-3">
           <input
-            className="flex-1 px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] font-mono focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+            className="flex-1 px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] font-mono focus:outline-none focus:ring-1 focus:ring-warning/50"
             placeholder="racadm getsysinfo"
             value={command}
             onChange={(e) => setCommand(e.target.value)}
@@ -577,14 +577,14 @@ export const RacadmView: React.FC<SubProps> = ({ mgr }) => {
           <button
             onClick={execute}
             disabled={executing || !command.trim()}
-            className="px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
+            className="px-3 py-2 rounded-lg bg-warning hover:bg-warning/90 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
           >
             {executing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
             Execute
           </button>
           <button
             onClick={() => mgr.requestConfirm("Reset iDRAC", "Are you sure you want to reset the iDRAC?", () => mgr.resetIdrac())}
-            className="px-3 py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs transition-colors"
+            className="px-3 py-2 rounded-lg border border-error/30 text-error hover:bg-error/10 text-xs transition-colors"
           >
             Reset iDRAC
           </button>
@@ -593,7 +593,7 @@ export const RacadmView: React.FC<SubProps> = ({ mgr }) => {
           <div className="rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] p-3">
             <div className="flex items-center gap-2 mb-2 text-[10px]">
               <span className="text-[var(--color-text-secondary)]">$ {mgr.racadmOutput.command}</span>
-              <span className={mgr.racadmOutput.success ? "text-green-400" : "text-red-400"}>
+              <span className={mgr.racadmOutput.success ? "text-success" : "text-error"}>
                 (rc={mgr.racadmOutput.returnCode})
               </span>
             </div>

@@ -99,22 +99,22 @@ const ToolCard: React.FC<{
         {/* Annotation badges */}
         <div className="flex items-center gap-1">
           {ann?.read_only && (
-            <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-500/20 text-blue-400">
+            <span className="px-1.5 py-0.5 rounded text-[9px] bg-primary/20 text-primary">
               <Eye size={9} className="inline mr-0.5" />{t("mcpServer.tools.readOnly", "Read")}
             </span>
           )}
           {ann?.destructive && (
-            <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-400">
+            <span className="px-1.5 py-0.5 rounded text-[9px] bg-error/20 text-error">
               <AlertTriangle size={9} className="inline mr-0.5" />{t("mcpServer.tools.destructive", "Destructive")}
             </span>
           )}
           {ann?.requires_confirmation && (
-            <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-400">
+            <span className="px-1.5 py-0.5 rounded text-[9px] bg-warning/20 text-warning">
               <Shield size={9} className="inline mr-0.5" />{t("mcpServer.tools.confirm", "Confirm")}
             </span>
           )}
           {ann?.open_world && (
-            <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/20 text-purple-400">
+            <span className="px-1.5 py-0.5 rounded text-[9px] bg-accent/20 text-accent">
               <Globe size={9} className="inline mr-0.5" />{t("mcpServer.tools.external", "External")}
             </span>
           )}

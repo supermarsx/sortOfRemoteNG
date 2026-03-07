@@ -1,9 +1,10 @@
+import { WaMgr, WaChatMessage } from "./types";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React, { useState } from "react";
 import { History, RefreshCw, Send } from "lucide-react";
 
-const ChatTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
+const ChatTab: React.FC<{ wa: WaMgr }> = ({ wa }) => {
   const [threadId, setThreadId] = useState("");
   const [messages, setMessages] = useState<WaChatMessage[]>([]);
   const [quickTo, setQuickTo] = useState("");
@@ -56,7 +57,7 @@ const ChatTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
           </button>
         </div>
         <ErrorMsg msg={wa.sendAuto.error} />
-        {quickResult && <span className="text-green-400 text-xs">{quickResult}</span>}
+        {quickResult && <span className="text-success text-xs">{quickResult}</span>}
       </div>
 
       <hr className="border-[var(--color-border)]" />
@@ -96,7 +97,7 @@ const ChatTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
             <div
               className={`max-w-[75%] px-3 py-2 rounded-lg text-sm ${
                 m.direction === "outgoing"
-                  ? "bg-green-700 text-white rounded-br-none"
+                  ? "bg-success text-white rounded-br-none"
                   : "bg-[var(--color-border)] text-[var(--color-text)] rounded-bl-none"
               }`}
             >

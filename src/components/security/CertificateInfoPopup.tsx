@@ -121,11 +121,11 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                       }
                     }}
                     placeholder="Add a nickname…"
-                    className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                    className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary text-xs"
                   />
                   <button
                     onClick={() => mgr.saveNickname(mgr.nickDraft.trim())}
-                    className="text-green-400 hover:text-green-300 p-0.5"
+                    className="text-success hover:text-success p-0.5"
                     title="Save"
                   >
                     <Check size={12} />
@@ -232,9 +232,9 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                         <span
                           className={
                             mgr.isExpired(mgr.identity)
-                              ? "text-red-400 font-medium"
+                              ? "text-error font-medium"
                               : mgr.isExpiringSoon(mgr.identity)
-                                ? "text-yellow-400 font-medium"
+                                ? "text-warning font-medium"
                                 : "text-[var(--color-textSecondary)]"
                           }
                         >

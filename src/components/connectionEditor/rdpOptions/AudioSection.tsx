@@ -6,7 +6,7 @@ import { Select } from "../../ui/forms";
 const AudioSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
   <Section
     title="Audio"
-    icon={<Volume2 size={14} className="text-green-400" />}
+    icon={<Volume2 size={14} className="text-success" />}
   >
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">

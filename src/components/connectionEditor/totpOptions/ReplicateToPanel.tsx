@@ -1,6 +1,7 @@
 import React from "react";
 import { Check, ArrowUpFromLine } from "lucide-react";
 import { Checkbox } from "../../ui/forms";
+import type { TOTPOptionsMgr } from "./types";
 
 const ReplicateToPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.showReplicateTo) return null;
@@ -51,7 +52,7 @@ const ReplicateToPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
             type="button"
             onClick={mgr.handleReplicateTo}
             disabled={mgr.selectedReplicateIds.size === 0}
-            className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-[var(--color-text)] rounded flex items-center gap-1"
+            className="px-2 py-1 text-[10px] bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-[var(--color-text)] rounded flex items-center gap-1"
           >
             {mgr.replicateDone ? (
               <>

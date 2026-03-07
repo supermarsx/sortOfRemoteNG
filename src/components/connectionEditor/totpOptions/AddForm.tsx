@@ -1,6 +1,7 @@
 import React from "react";
 import { Plus, Eye, EyeOff } from "lucide-react";
 import { Select } from "../../ui/forms";
+import type { TOTPOptionsMgr } from "./types";
 
 const AddForm: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.showAddForm) {

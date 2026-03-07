@@ -13,13 +13,13 @@ function TabOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
               onClick={() => mgr.setActiveOutputTab(session.id)}
               className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
                 mgr.activeOutputTab === session.id
-                  ? "border-green-500 text-green-700 dark:text-green-400 bg-green-500/10"
+                  ? "border-success text-success dark:text-success bg-success/10"
                   : "border-transparent text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
               }`}
             >
               {session.name}
               {mgr.sessionOutputs[session.id]?.status === "running" && (
-                <span className="ml-2 w-2 h-2 inline-block bg-yellow-500 rounded-full animate-pulse" />
+                <span className="ml-2 w-2 h-2 inline-block bg-warning rounded-full animate-pulse" />
               )}
             </button>
           ))}
@@ -29,11 +29,11 @@ function TabOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           mgr.sessionOutputs[mgr.activeOutputTab] && (
             <div className="font-mono text-sm">
               {mgr.sessionOutputs[mgr.activeOutputTab].error ? (
-                <div className="text-red-600 dark:text-red-400">
+                <div className="text-error dark:text-error">
                   {mgr.sessionOutputs[mgr.activeOutputTab].error}
                 </div>
               ) : (
-                <pre className="text-green-800 dark:text-green-400 whitespace-pre-wrap">
+                <pre className="text-success dark:text-success whitespace-pre-wrap">
                   {mgr.sessionOutputs[mgr.activeOutputTab].output ||
                     t(
                       "bulkSsh.noOutput",

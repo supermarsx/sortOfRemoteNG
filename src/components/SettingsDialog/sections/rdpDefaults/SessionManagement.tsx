@@ -10,7 +10,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
 }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Layers className="w-4 h-4 text-blue-400" />
+      <Layers className="w-4 h-4 text-primary" />
       Session Management
     </h4>
 

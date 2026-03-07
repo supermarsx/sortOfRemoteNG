@@ -81,11 +81,11 @@ const getStatusIcon = (status: string) => {
 const getStatusColor = (status: string) => {
   switch (status) {
     case "connected":
-      return "text-green-400";
+      return "text-success";
     case "connecting":
-      return "text-yellow-400 animate-pulse";
+      return "text-warning animate-pulse";
     case "error":
-      return "text-red-400";
+      return "text-error";
     default:
       return "text-[var(--color-textSecondary)]";
   }
@@ -213,7 +213,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               draggedSessionId === session.id ? "opacity-50" : ""
             } ${
               dragOverSessionId === session.id && draggedSessionId !== session.id
-                ? "border-l-2 border-blue-500"
+                ? "border-l-2 border-primary"
                 : ""
             } transition-all`}
             onClick={() => onSessionSelect(session.id)}
@@ -232,7 +232,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               if (conn && (conn.protocol === 'https') && conn.httpVerifySsl === false) {
                 return (
                   <span title="SSL verification disabled" className="flex-shrink-0 mr-1">
-                    <ShieldOff size={12} className="text-red-400" />
+                    <ShieldOff size={12} className="text-error" />
                   </span>
                 );
               }

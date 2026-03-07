@@ -11,6 +11,43 @@ import type {
 const NODE_RADIUS = 18;
 const MINIMAP_W = 160;
 const MINIMAP_H = 110;
+
+/** Read a CSS variable from the document root, with a fallback */
+function cssVar(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+/** Build canvas-friendly theme color maps from CSS variables */
+function getThemeColors() {
+  return {
+    node: {
+      connection: cssVar("--color-primary", "#3b82f6"),
+      gateway: cssVar("--color-warning", "#f59e0b"),
+      bastion: cssVar("--color-error", "#ef4444"),
+      proxy: cssVar("--color-accent", "#8b5cf6"),
+      vpn: cssVar("--color-success", "#10b981"),
+      group: cssVar("--color-secondary", "#6b7280"),
+      external: cssVar("--color-info", "#ec4899"),
+    } as Record<NodeKind, string>,
+    status: {
+      online: cssVar("--color-success", "#22c55e"),
+      offline: cssVar("--color-error", "#ef4444"),
+      unknown: cssVar("--color-textMuted", "#a3a3a3"),
+    } as Record<string, string>,
+    text: cssVar("--color-text", "#f8fafc"),
+    textMuted: cssVar("--color-textMuted", "#cbd5e1"),
+    primary: cssVar("--color-primary", "#3b82f6"),
+    warning: cssVar("--color-warning", "#facc15"),
+    error: cssVar("--color-error", "#ef4444"),
+    info: cssVar("--color-info", "#38bdf8"),
+    surface: cssVar("--color-surface", "#1f2937"),
+    background: cssVar("--color-background", "#111827"),
+    border: cssVar("--color-textMuted", "#94a3b8"),
+    orange: cssVar("--color-warning", "#f97316"),
+  };
+}
+// Legacy constants for initial/static references
 const NODE_COLORS: Record<NodeKind, string> = {
   connection: "#3b82f6",
   gateway: "#f59e0b",
@@ -224,6 +261,8 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
     ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-camera.x, -camera.y);
 
+    const tc = getThemeColors();
+
     /* edges */
     for (const edge of edges) {
       const src = nodeMap.current.get(edge.source);
@@ -234,7 +273,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       ctx.beginPath();
       ctx.moveTo(src.x, src.y);
       ctx.lineTo(tgt.x, tgt.y);
-      ctx.strokeStyle = onPath ? "#facc15" : "rgba(148,163,184,0.5)";
+      ctx.strokeStyle = onPath ? tc.warning : `${tc.border}80`;
       ctx.lineWidth = onPath ? 3 : 1;
       ctx.stroke();
 
@@ -254,7 +293,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
           tipY - 10 * Math.sin(angle + 0.4),
         );
         ctx.closePath();
-        ctx.fillStyle = onPath ? "#facc15" : "rgba(148,163,184,0.7)";
+        ctx.fillStyle = onPath ? tc.warning : `${tc.border}b3`;
         ctx.fill();
       }
     }
@@ -271,7 +310,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       if (isBlast) {
         ctx.beginPath();
         ctx.arc(node.x, node.y, NODE_RADIUS + 10, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(239,68,68,0.15)";
+        ctx.fillStyle = `${tc.error}26`;
         ctx.fill();
       }
 
@@ -279,7 +318,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       if (isBottleneck) {
         ctx.beginPath();
         ctx.arc(node.x, node.y, NODE_RADIUS + 6, 0, Math.PI * 2);
-        ctx.strokeStyle = "#f97316";
+        ctx.strokeStyle = tc.orange;
         ctx.lineWidth = 3;
         ctx.stroke();
       }
@@ -288,7 +327,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       if (isPath) {
         ctx.beginPath();
         ctx.arc(node.x, node.y, NODE_RADIUS + 5, 0, Math.PI * 2);
-        ctx.strokeStyle = "#facc15";
+        ctx.strokeStyle = tc.warning;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -296,24 +335,24 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       /* status ring */
       ctx.beginPath();
       ctx.arc(node.x, node.y, NODE_RADIUS + 2, 0, Math.PI * 2);
-      ctx.strokeStyle = STATUS_RING[node.status] ?? STATUS_RING.unknown;
+      ctx.strokeStyle = tc.status[node.status] ?? tc.status.unknown;
       ctx.lineWidth = 2;
       ctx.stroke();
 
       /* node circle */
       ctx.beginPath();
       ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = NODE_COLORS[node.kind] ?? NODE_COLORS.connection;
+      ctx.fillStyle = tc.node[node.kind] ?? tc.node.connection;
       ctx.fill();
 
       if (isSelected || isHover) {
-        ctx.strokeStyle = isSelected ? "#ffffff" : "#cbd5e1";
+        ctx.strokeStyle = isSelected ? tc.text : tc.textMuted;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
 
       /* label */
-      ctx.fillStyle = "#f8fafc";
+      ctx.fillStyle = tc.text;
       ctx.font = "11px Inter, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -343,7 +382,8 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
     mini.width = MINIMAP_W;
     mini.height = MINIMAP_H;
     mCtx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
-    mCtx.fillStyle = "rgba(15,23,42,0.7)";
+    const mc = getThemeColors();
+    mCtx.fillStyle = `${mc.background}b3`;
     mCtx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
 
     const xs = nodes.map((n) => n.x);
@@ -363,7 +403,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       mCtx.beginPath();
       mCtx.moveTo((s.x - minX) * scale, (s.y - minY) * scale);
       mCtx.lineTo((tg.x - minX) * scale, (tg.y - minY) * scale);
-      mCtx.strokeStyle = "rgba(148,163,184,0.3)";
+      mCtx.strokeStyle = `${mc.border}4d`;
       mCtx.lineWidth = 0.5;
       mCtx.stroke();
     }
@@ -371,7 +411,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
     for (const n of nodes) {
       mCtx.beginPath();
       mCtx.arc((n.x - minX) * scale, (n.y - minY) * scale, 2, 0, Math.PI * 2);
-      mCtx.fillStyle = NODE_COLORS[n.kind] ?? "#94a3b8";
+      mCtx.fillStyle = mc.node[n.kind] ?? mc.border;
       mCtx.fill();
     }
 
@@ -382,7 +422,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
       const vy = (camera.y - minY) * scale;
       const vw = (canvas.width / camera.zoom) * scale;
       const vh = (canvas.height / camera.zoom) * scale;
-      mCtx.strokeStyle = "#38bdf8";
+      mCtx.strokeStyle = mc.info;
       mCtx.lineWidth = 1;
       mCtx.strokeRect(vx, vy, vw, vh);
     }
@@ -441,7 +481,7 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
           </span>
         )}
         {topo.error && (
-          <span className="sor-topology-error ml-2 text-xs text-red-400">{topo.error}</span>
+          <span className="sor-topology-error ml-2 text-xs text-error">{topo.error}</span>
         )}
       </div>
 
@@ -530,8 +570,8 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
 
             {/* Blast radius info */}
             {topo.blastRadius && (
-              <div className="sor-topology-blast mt-4 p-2 rounded bg-red-500/10 border border-red-500/30 text-xs">
-                <p className="font-medium text-red-400 mb-1">{t("topology.blastRadius", "Blast Radius")}</p>
+              <div className="sor-topology-blast mt-4 p-2 rounded bg-error/10 border border-error/30 text-xs">
+                <p className="font-medium text-error mb-1">{t("topology.blastRadius", "Blast Radius")}</p>
                 <p>
                   {t("topology.blastAffected", "Affected nodes: {{count}}", {
                     count: topo.blastRadius.affectedNodes.length,
@@ -547,8 +587,8 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
 
             {/* Path info */}
             {topo.path && topo.path.path.length > 0 && (
-              <div className="sor-topology-path mt-4 p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-xs">
-                <p className="font-medium text-yellow-400 mb-1">{t("topology.shortestPath", "Shortest Path")}</p>
+              <div className="sor-topology-path mt-4 p-2 rounded bg-warning/10 border border-warning/30 text-xs">
+                <p className="font-medium text-warning mb-1">{t("topology.shortestPath", "Shortest Path")}</p>
                 <p>{t("topology.pathHops", "Hops: {{hops}}", { hops: topo.path.hops })}</p>
                 <p>{t("topology.pathWeight", "Weight: {{w}}", { w: topo.path.totalWeight.toFixed(2) })}</p>
                 <ol className="list-decimal list-inside mt-1 space-y-0.5">

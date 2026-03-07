@@ -32,14 +32,14 @@ function getVendorSourceIcon(source: string | null | undefined) {
     case 'local':
       return (
         <span title="Local database">
-          <Database size={10} className="text-blue-400" />
+          <Database size={10} className="text-primary" />
         </span>
       );
     case 'maclookup':
     case 'macvendors':
       return (
         <span title="Online lookup">
-          <Globe size={10} className="text-green-400" />
+          <Globe size={10} className="text-success" />
         </span>
       );
     default:
@@ -54,8 +54,8 @@ function WOLHeader({ mgr }: { mgr: WOLQuickToolMgr }) {
   return (
     <DialogHeader
       icon={Power}
-      iconColor="text-green-500"
-      iconBg="bg-green-500/20"
+      iconColor="text-success"
+      iconBg="bg-success/20"
       title={t('wake.quickTool', 'Wake-on-LAN')}
       subtitle="Send magic packets to wake network devices"
       onClose={mgr.onClose}
@@ -88,11 +88,11 @@ function QuickWakeSection({ mgr }: { mgr: WOLQuickToolMgr }) {
             value={mgr.macAddress}
             onChange={mgr.handleMacChange}
             placeholder="00:11:22:33:44:55"
-            className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all font-mono text-lg"
+            className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-success focus:border-transparent transition-all font-mono text-lg"
           />
           {mgr.currentVendor && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2 py-1 bg-[var(--color-surfaceHover)] rounded text-xs text-[var(--color-textSecondary)]">
-              <Building2 size={12} className="text-green-500" />
+              <Building2 size={12} className="text-success" />
               <span>{mgr.currentVendor}</span>
             </div>
           )}
@@ -100,7 +100,7 @@ function QuickWakeSection({ mgr }: { mgr: WOLQuickToolMgr }) {
         <button
           onClick={() => mgr.handleWake()}
           disabled={!mgr.macAddress}
-          className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 font-medium btn-animate shadow-lg shadow-green-500/20 disabled:shadow-none"
+          className="px-6 py-3 bg-success hover:bg-success/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 font-medium btn-animate shadow-lg shadow-success/30 disabled:shadow-none"
         >
           <Send size={18} />
           <span>{t('wake.send', 'Wake')}</span>
@@ -128,18 +128,18 @@ function AdvancedOptions({ mgr }: { mgr: WOLQuickToolMgr }) {
             value={mgr.broadcastAddress}
             onChange={(e) => mgr.setBroadcastAddress(e.target.value)}
             placeholder="255.255.255.255"
-            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-green-500 transition-all font-mono"
+            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-success transition-all font-mono"
           />
         </div>
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
             {t('wake.port', 'UDP Port')}
           </label>
-          <NumberInput value={mgr.port} onChange={(v: number) => mgr.setPort(v)} className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-green-500 transition-all" />
+          <NumberInput value={mgr.port} onChange={(v: number) => mgr.setPort(v)} className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-success transition-all" />
         </div>
         <div className="col-span-2">
           <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)] cursor-pointer">
-            <Checkbox checked={mgr.useSecureOn} onChange={(v: boolean) => mgr.setUseSecureOn(v)} className="rounded bg-[var(--color-input)] border-[var(--color-border)] text-green-500 focus:ring-green-500" />
+            <Checkbox checked={mgr.useSecureOn} onChange={(v: boolean) => mgr.setUseSecureOn(v)} className="rounded bg-[var(--color-input)] border-[var(--color-border)] text-success focus:ring-success" />
             <span>{t('wake.secureOn', 'SecureOn Password')}</span>
           </label>
           {mgr.useSecureOn && (
@@ -148,7 +148,7 @@ function AdvancedOptions({ mgr }: { mgr: WOLQuickToolMgr }) {
               value={mgr.password}
               onChange={mgr.handlePasswordChange}
               placeholder="00:00:00:00:00:00"
-              className="mt-2 w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] font-mono focus:outline-none focus:ring-2 focus:ring-green-500 transition-all animate-fade-in"
+              className="mt-2 w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] font-mono focus:outline-none focus:ring-2 focus:ring-success transition-all animate-fade-in"
             />
           )}
         </div>
@@ -163,8 +163,8 @@ function StatusMessage({ mgr }: { mgr: WOLQuickToolMgr }) {
     <div
       className={`flex items-center space-x-3 p-4 rounded-lg animate-fade-in-up ${
         mgr.status.type === 'success'
-          ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30'
-          : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30'
+          ? 'bg-success/10 text-success dark:text-success border border-success/30'
+          : 'bg-error/10 text-error dark:text-error border border-error/30'
       }`}
     >
       {mgr.status.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
@@ -241,7 +241,7 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
               <button
                 onClick={mgr.handleBulkWake}
                 disabled={mgr.isBulkWaking}
-                className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-green-500/20 disabled:shadow-none"
+                className="px-3 py-1.5 text-xs bg-success hover:bg-success/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-success/30 disabled:shadow-none"
               >
                 {mgr.isBulkWaking ? (
                   <Loader2 size={12} className="animate-spin" />
@@ -256,7 +256,7 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
             <button
               onClick={mgr.handleWakeAll}
               disabled={mgr.isBulkWaking}
-              className="px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-amber-500/20 disabled:shadow-none"
+              className="px-3 py-1.5 text-xs bg-warning hover:bg-warning/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-warning/20 disabled:shadow-none"
               title="Wake all discovered devices"
             >
               {mgr.isBulkWaking ? (
@@ -299,7 +299,7 @@ function DeviceRow({
       onClick={() => mgr.handleSelectDevice(device)}
       className={`sor-selection-row group animate-fade-in-up card-hover-effect ${
         mgr.selectedDevices.has(device.mac)
-          ? 'sor-selection-row-selected bg-green-500/10 border-green-500/40 hover:bg-green-500/15'
+          ? 'sor-selection-row-selected bg-success/10 border-success/40 hover:bg-success/15'
           : 'bg-[var(--color-surfaceHover)]/30 hover:bg-[var(--color-surfaceHover)]/50'
       }`}
       style={{ animationDelay: `${idx * 50}ms` }}
@@ -312,7 +312,7 @@ function DeviceRow({
           }}
           className={`p-1 rounded transition-colors ${
             mgr.selectedDevices.has(device.mac)
-              ? 'text-green-500 hover:text-green-400'
+              ? 'text-success hover:text-success'
               : 'text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]'
           }`}
         >
@@ -349,7 +349,7 @@ function DeviceRow({
           e.stopPropagation();
           mgr.handleWake(device.mac);
         }}
-        className="sor-selection-row-hover-action ml-3 p-2 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-lg transition-all btn-animate shadow-lg shadow-green-500/20"
+        className="sor-selection-row-hover-action ml-3 p-2 bg-success hover:bg-success/90 text-[var(--color-text)] rounded-lg transition-all btn-animate shadow-lg shadow-success/30"
         title="Wake this device"
       >
         <Power size={16} />
@@ -397,8 +397,8 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
       >
         {/* Scattered glow effect */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute w-[250px] h-[180px] bg-green-500/8 rounded-full blur-[100px] top-[20%] left-[15%]" />
-          <div className="absolute w-[200px] h-[200px] bg-emerald-500/6 rounded-full blur-[120px] top-[45%] left-[40%]" />
+          <div className="absolute w-[250px] h-[180px] bg-success/8 rounded-full blur-[100px] top-[20%] left-[15%]" />
+          <div className="absolute w-[200px] h-[200px] bg-success/6 rounded-full blur-[120px] top-[45%] left-[40%]" />
           <div className="absolute w-[220px] h-[150px] bg-teal-500/6 rounded-full blur-[90px] top-[65%] right-[20%]" />
         </div>
 

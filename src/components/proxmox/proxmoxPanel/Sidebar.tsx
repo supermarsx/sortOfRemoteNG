@@ -55,7 +55,7 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-secondary)]" />
           <input
-            className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+            className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
             placeholder={t("proxmox.search", "Search...")}
             value={mgr.searchQuery}
             onChange={(e) => mgr.setSearchQuery(e.target.value)}
@@ -91,7 +91,7 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
             onClick={() => mgr.switchTab(key)}
             className={`w-full flex items-center gap-2 px-4 py-2 text-xs transition-colors ${
               mgr.activeTab === key
-                ? "bg-orange-500/15 text-orange-400 font-medium border-r-2 border-orange-500"
+                ? "bg-warning/15 text-warning font-medium border-r-2 border-warning"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text)]"
             }`}
           >
@@ -114,7 +114,7 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
         </button>
         <button
           onClick={mgr.disconnect}
-          className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400 hover:bg-red-500/20 transition-colors"
+          className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-error/10 border border-error/30 text-xs text-error hover:bg-error/20 transition-colors"
           title={t("proxmox.disconnect", "Disconnect")}
         >
           <LogOut className="w-3 h-3" />

@@ -2,6 +2,11 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, Network, RotateCcw } from "lucide-react";
 import { Connection } from "../../types/connection/connection";
 import { useSSHOverrides } from "../../hooks/ssh/useSSHOverrides";
+
+interface SSHConnectionOverridesProps {
+  formData: Partial<Connection>;
+  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+}
 import OverrideToggle from "./sshOverrides/OverrideToggle";
 import AuthMethodSelector from "./sshOverrides/AuthMethodSelector";
 import CipherSelector from "./sshOverrides/CipherSelector";
@@ -33,12 +38,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
         className="w-full px-4 py-3 flex items-center justify-between bg-[var(--color-border)]/50 hover:bg-[var(--color-border)] transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Network className="w-4 h-4 text-green-400" />
+          <Network className="w-4 h-4 text-success" />
           <span className="text-sm font-medium text-[var(--color-textSecondary)]">
             SSH Connection Settings Override
           </span>
           {mgr.hasOverrides && (
-            <span className="px-2 py-0.5 text-xs bg-green-600 text-[var(--color-text)] rounded-full">
+            <span className="px-2 py-0.5 text-xs bg-success text-[var(--color-text)] rounded-full">
               {mgr.overrideCount} custom
             </span>
           )}

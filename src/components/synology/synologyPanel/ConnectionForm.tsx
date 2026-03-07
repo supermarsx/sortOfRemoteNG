@@ -35,7 +35,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
 
         {/* Error banner */}
         {mgr.connectionError && (
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-error/10 border border-error/30 text-error text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{mgr.connectionError}</span>
           </div>

@@ -1,10 +1,11 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { ShieldAlert, Trash2, FileDown } from "lucide-react";
 import { Card, SectionHeader, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<ShieldAlert className="w-4 h-4 text-red-400" />}
+      icon={<ShieldAlert className="w-4 h-4 text-error" />}
       title="Confirmation Dialogs"
     />
     <p className="text-xs text-[var(--color-textMuted)]">

@@ -32,11 +32,11 @@ export interface IdracPanelProps {
 
 const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId }) => {
   const { t } = useTranslation();
-  const mgr = useIdracManager();
+  const mgr = useIdracManager(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Not connected – show connection form
-  if (!mgr.connected) {
+  if (mgr.connectionState !== "connected") {
     return (
       <div className="flex items-center justify-center h-full w-full bg-[var(--color-bg)]">
         <ConnectionForm mgr={mgr} />
@@ -93,10 +93,10 @@ const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId }) => {
 
       {/* Error Bar */}
       {mgr.dataError && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border-b border-red-500/20">
-          <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-          <p className="text-[10px] text-red-400 flex-1 truncate">{mgr.dataError}</p>
-          <button onClick={() => mgr.clearError?.()} className="text-red-400 hover:text-red-300">
+        <div className="flex items-center gap-2 px-4 py-2 bg-error/10 border-b border-error/20">
+          <AlertCircle className="w-3.5 h-3.5 text-error shrink-0" />
+          <p className="text-[10px] text-error flex-1 truncate">{mgr.dataError}</p>
+          <button onClick={() => mgr.refresh?.()} className="text-error hover:text-error">
             <X className="w-3 h-3" />
           </button>
         </div>
@@ -110,21 +110,21 @@ const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId }) => {
       </div>
 
       {/* Confirm Dialog */}
-      {mgr.confirmDialog && (
+      {mgr.showConfirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl p-6 max-w-sm w-full shadow-xl">
-            <h3 className="text-sm font-semibold text-[var(--color-text)] mb-2">{mgr.confirmDialog.title}</h3>
-            <p className="text-xs text-[var(--color-text-secondary)] mb-4">{mgr.confirmDialog.message}</p>
+            <h3 className="text-sm font-semibold text-[var(--color-text)] mb-2">{mgr.confirmTitle}</h3>
+            <p className="text-xs text-[var(--color-text-secondary)] mb-4">{mgr.confirmMessage}</p>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => mgr.dismissConfirm()}
+                onClick={() => mgr.cancelConfirm()}
                 className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
               >
                 {t("common.cancel", "Cancel")}
               </button>
               <button
-                onClick={() => { mgr.confirmDialog?.onConfirm(); mgr.dismissConfirm(); }}
-                className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium transition-colors"
+                onClick={() => { mgr.executeConfirm(); }}
+                className="px-4 py-2 rounded-lg bg-warning hover:bg-warning/90 text-white text-xs font-medium transition-colors"
               >
                 {t("common.confirm", "Confirm")}
               </button>

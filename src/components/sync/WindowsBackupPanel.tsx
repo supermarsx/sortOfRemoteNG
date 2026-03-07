@@ -49,7 +49,7 @@ const TabButton: React.FC<{
     onClick={onClick}
     className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors ${
       active
-        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+        ? "bg-primary/20 text-primary border border-primary/30"
         : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] border border-transparent"
     }`}
   >
@@ -111,7 +111,7 @@ const ConnectForm: React.FC<{
       <button
         disabled={!host || loading}
         onClick={() => onConnect(host, user || undefined, pass || undefined)}
-        className="flex items-center gap-2 px-4 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+        className="flex items-center gap-2 px-4 py-1.5 text-xs rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none transition-colors"
       >
         {loading ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
         {t("windowsBackup.connect", "Connect")}
@@ -131,16 +131,16 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
       {/* Status card */}
       <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-          <Shield size={14} className="text-blue-400" />
+          <Shield size={14} className="text-primary" />
           {t("windowsBackup.backupStatus", "Backup Status")}
         </h3>
         {status ? (
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="flex items-center gap-2">
               {status.isRunning ? (
-                <Loader2 size={12} className="animate-spin text-blue-400" />
+                <Loader2 size={12} className="animate-spin text-primary" />
               ) : (
-                <CheckCircle2 size={12} className="text-green-400" />
+                <CheckCircle2 size={12} className="text-success" />
               )}
               <span>
                 {status.isRunning
@@ -156,7 +156,7 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
                 </div>
                 <div className="w-full h-2 bg-[var(--color-bg)] rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-blue-500 rounded-full transition-all"
+                    className="h-full bg-primary rounded-full transition-all"
                     style={{ width: `${status.progressPercent}%` }}
                   />
                 </div>
@@ -167,7 +167,7 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
                 <span className="text-[var(--color-text-secondary)]">
                   {t("windowsBackup.lastSuccess", "Last successful")}:
                 </span>{" "}
-                <span className="text-green-400">{status.lastSuccessfulBackup}</span>
+                <span className="text-success">{status.lastSuccessfulBackup}</span>
               </div>
             )}
             {status.lastFailedBackup && (
@@ -175,7 +175,7 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
                 <span className="text-[var(--color-text-secondary)]">
                   {t("windowsBackup.lastFailure", "Last failure")}:
                 </span>{" "}
-                <span className="text-red-400">{status.lastFailedBackup}</span>
+                <span className="text-error">{status.lastFailedBackup}</span>
               </div>
             )}
             {status.nextScheduledBackup && (
@@ -197,26 +197,26 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
       {/* Quick stats row */}
       <div className="grid grid-cols-3 gap-3">
         <div className="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-center">
-          <Copy size={16} className="mx-auto mb-1 text-cyan-400" />
+          <Copy size={16} className="mx-auto mb-1 text-info" />
           <div className="text-lg font-bold">{shadowCopies.length}</div>
           <div className="text-xs text-[var(--color-text-secondary)]">
             {t("windowsBackup.shadowCopies", "Shadow Copies")}
           </div>
         </div>
         <div className="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-center">
-          <Clock size={16} className="mx-auto mb-1 text-amber-400" />
+          <Clock size={16} className="mx-auto mb-1 text-warning" />
           <div className="text-lg font-bold">{mgr.versions.length}</div>
           <div className="text-xs text-[var(--color-text-secondary)]">
             {t("windowsBackup.backupVersions", "Backup Versions")}
           </div>
         </div>
         <div className="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-center">
-          <Settings size={16} className="mx-auto mb-1 text-purple-400" />
+          <Settings size={16} className="mx-auto mb-1 text-accent" />
           <div className="text-lg font-bold">
             {policy?.configured ? (
-              <CheckCircle2 size={20} className="mx-auto text-green-400" />
+              <CheckCircle2 size={20} className="mx-auto text-success" />
             ) : (
-              <XCircle size={20} className="mx-auto text-red-400" />
+              <XCircle size={20} className="mx-auto text-error" />
             )}
           </div>
           <div className="text-xs text-[var(--color-text-secondary)]">
@@ -229,7 +229,7 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
       {policy?.configured && (
         <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
           <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
-            <Settings size={14} className="text-purple-400" />
+            <Settings size={14} className="text-accent" />
             {t("windowsBackup.policyConfig", "Backup Policy")}
           </h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
@@ -259,10 +259,10 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
             )}
             <div className="flex gap-3">
               {policy.systemStateBackup && (
-                <span className="text-green-400">✓ {t("windowsBackup.systemState", "System State")}</span>
+                <span className="text-success">✓ {t("windowsBackup.systemState", "System State")}</span>
               )}
               {policy.bareMetalRecovery && (
-                <span className="text-green-400">✓ {t("windowsBackup.bareMetal", "Bare Metal")}</span>
+                <span className="text-success">✓ {t("windowsBackup.bareMetal", "Bare Metal")}</span>
               )}
             </div>
           </div>
@@ -297,7 +297,7 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
         <button
           onClick={() => mgr.createShadowCopy(newVolume)}
           disabled={mgr.loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-500 disabled:opacity-50 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-success text-white hover:bg-success/90 disabled:opacity-50 transition-colors"
         >
           <Plus size={12} />
           {t("windowsBackup.createShadow", "Create")}
@@ -318,15 +318,15 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 text-xs font-medium">
-                  <Database size={12} className="text-cyan-400 flex-shrink-0" />
+                  <Database size={12} className="text-info flex-shrink-0" />
                   <span className="truncate">{sc.volumeName}</span>
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] ${
                       sc.state === "stable"
-                        ? "bg-green-500/20 text-green-400"
+                        ? "bg-success/20 text-success"
                         : sc.state === "creating"
-                          ? "bg-blue-500/20 text-blue-400"
-                          : "bg-gray-500/20 text-gray-400"
+                          ? "bg-primary/20 text-primary"
+                          : "bg-text-secondary/20 text-text-muted"
                     }`}
                   >
                     {sc.state}
@@ -335,8 +335,8 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
                 <div className="mt-1 text-[10px] text-[var(--color-text-secondary)] space-x-3">
                   {sc.installDate && <span>{t("windowsBackup.created", "Created")}: {sc.installDate}</span>}
                   {sc.originatingMachine && <span>{t("windowsBackup.machine", "Machine")}: {sc.originatingMachine}</span>}
-                  {sc.persistent && <span className="text-amber-400">{t("windowsBackup.persistent", "Persistent")}</span>}
-                  {sc.clientAccessible && <span className="text-green-400">{t("windowsBackup.accessible", "Accessible")}</span>}
+                  {sc.persistent && <span className="text-warning">{t("windowsBackup.persistent", "Persistent")}</span>}
+                  {sc.clientAccessible && <span className="text-success">{t("windowsBackup.accessible", "Accessible")}</span>}
                 </div>
                 <div className="mt-0.5 text-[10px] text-[var(--color-text-secondary)] font-mono truncate">
                   {sc.shadowId}
@@ -345,7 +345,7 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
               <button
                 onClick={() => mgr.deleteShadowCopy(sc.id)}
                 disabled={mgr.loading}
-                className="flex-shrink-0 p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+                className="flex-shrink-0 p-1.5 rounded-lg text-error hover:bg-error/10 transition-colors"
                 title={t("windowsBackup.deleteShadow", "Delete shadow copy")}
               >
                 <Trash2 size={12} />
@@ -399,14 +399,14 @@ const VersionsTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-medium">
-              <FolderArchive size={12} className="text-amber-400" />
+              <FolderArchive size={12} className="text-warning" />
               <span>{v.versionId}</span>
               {v.canRecover ? (
-                <span className="px-1.5 py-0.5 rounded text-[10px] bg-green-500/20 text-green-400">
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-success/20 text-success">
                   {t("windowsBackup.recoverable", "Recoverable")}
                 </span>
               ) : (
-                <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400">
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-error/20 text-error">
                   {t("windowsBackup.notRecoverable", "Not recoverable")}
                 </span>
               )}
@@ -440,7 +440,7 @@ const PolicyTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr
     <div className="space-y-4">
       <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
         <div className="flex items-center gap-2 mb-3">
-          <Settings size={14} className="text-purple-400" />
+          <Settings size={14} className="text-accent" />
           <h3 className="text-sm font-medium">
             {policy.configured
               ? t("windowsBackup.policyConfigured", "Backup Policy Configured")
@@ -462,10 +462,10 @@ const PolicyTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr
               </div>
             )}
             <div className="flex gap-3">
-              <span className={policy.systemStateBackup ? "text-green-400" : "text-[var(--color-text-secondary)]"}>
+              <span className={policy.systemStateBackup ? "text-success" : "text-[var(--color-text-secondary)]"}>
                 {policy.systemStateBackup ? "✓" : "✗"} {t("windowsBackup.systemState", "System State")}
               </span>
-              <span className={policy.bareMetalRecovery ? "text-green-400" : "text-[var(--color-text-secondary)]"}>
+              <span className={policy.bareMetalRecovery ? "text-success" : "text-[var(--color-text-secondary)]"}>
                 {policy.bareMetalRecovery ? "✓" : "✗"} {t("windowsBackup.bareMetal", "Bare Metal Recovery")}
               </span>
             </div>
@@ -536,7 +536,7 @@ const VolumesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mg
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-xs font-medium">
-                <HardDrive size={12} className="text-blue-400" />
+                <HardDrive size={12} className="text-primary" />
                 <span>{vol.driveLetter ?? vol.name}</span>
                 {vol.label && (
                   <span className="text-[var(--color-text-secondary)]">({vol.label})</span>
@@ -554,7 +554,7 @@ const VolumesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mg
             <div className="w-full h-1.5 bg-[var(--color-bg)] rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${
-                  usedPercent > 90 ? "bg-red-500" : usedPercent > 70 ? "bg-amber-500" : "bg-blue-500"
+                  usedPercent > 90 ? "bg-error" : usedPercent > 70 ? "bg-warning" : "bg-primary"
                 }`}
                 style={{ width: `${usedPercent}%` }}
               />
@@ -596,16 +596,16 @@ export const WindowsBackupPanel: React.FC<WindowsBackupPanelProps> = ({
     >
       {/* Background glow effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
-        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-blue-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-indigo-500/6 rounded-full blur-3xl" />
+        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-primary/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-accent/6 rounded-full blur-3xl" />
       </div>
 
       <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-5xl mx-4 h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)] relative z-10">
         {/* Header */}
         <DialogHeader
           icon={HardDrive}
-          iconColor="text-blue-600 dark:text-blue-500"
-          iconBg="bg-blue-500/20"
+          iconColor="text-primary dark:text-primary"
+          iconBg="bg-primary/20"
           title={t("windowsBackup.title", "Windows Backup")}
           badge={
             mgr.isConnected
@@ -658,7 +658,7 @@ export const WindowsBackupPanel: React.FC<WindowsBackupPanelProps> = ({
               {/* Disconnect */}
               <button
                 onClick={() => mgr.disconnect()}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-error hover:bg-error/10 transition-colors"
               >
                 <LogOut size={12} />
                 {t("windowsBackup.disconnect", "Disconnect")}
@@ -675,7 +675,7 @@ export const WindowsBackupPanel: React.FC<WindowsBackupPanelProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {/* Error banner */}
           {mgr.error && (
-            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
               <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
               <span>{mgr.error}</span>
             </div>

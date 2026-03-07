@@ -2,6 +2,7 @@ import React from "react";
 import { Shield, ChevronDown, ChevronUp } from "lucide-react";
 import { TotpImportDialog } from "../security/TotpImportDialog";
 import { useTOTPOptions } from "../../hooks/security/useTOTPOptions";
+import type { Connection } from "../../types/connection/connection";
 import Toolbar from "./totpOptions/Toolbar";
 import CopyFromPanel from "./totpOptions/CopyFromPanel";
 import ReplicateToPanel from "./totpOptions/ReplicateToPanel";
@@ -11,6 +12,11 @@ import ConfigEditRow from "./totpOptions/ConfigEditRow";
 import ConfigRow from "./totpOptions/ConfigRow";
 import ConfigList from "./totpOptions/ConfigList";
 import AddForm from "./totpOptions/AddForm";
+
+interface TOTPOptionsProps {
+  formData: Partial<Connection>;
+  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+}
 
 export const TOTPOptions: React.FC<TOTPOptionsProps> = ({
   formData,

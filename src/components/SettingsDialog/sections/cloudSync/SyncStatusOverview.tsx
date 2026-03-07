@@ -5,7 +5,7 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
   return (
     <div className="sor-section-card">
       <div className="flex items-center gap-2 mb-3">
-        <FolderSync className="w-4 h-4 text-blue-400" />
+        <FolderSync className="w-4 h-4 text-primary" />
         <span className="text-sm font-medium text-[var(--color-text)]">
           Syncing to {mgr.enabledProviders.length} target
           {mgr.enabledProviders.length > 1 ? "s" : ""}
@@ -19,12 +19,12 @@ function SyncStatusOverview({ mgr }: { mgr: Mgr }) {
               key={provider}
               className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
                 status?.lastSyncStatus === "success"
-                  ? "bg-green-500/20 text-green-400"
+                  ? "bg-success/20 text-success"
                   : status?.lastSyncStatus === "failed"
-                    ? "bg-red-500/20 text-red-400"
+                    ? "bg-error/20 text-error"
                     : status?.lastSyncStatus === "conflict"
-                      ? "bg-orange-500/20 text-orange-400"
-                      : "bg-blue-500/20 text-blue-400"
+                      ? "bg-warning/20 text-warning"
+                      : "bg-primary/20 text-primary"
               }`}
             >
               {providerIcons[provider]}

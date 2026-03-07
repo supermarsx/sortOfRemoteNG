@@ -34,15 +34,6 @@ import SSHKeyGenSection from "./security/SSHKeyGenSection";
 import TOTPDefaultsSection from "./security/TOTPDefaultsSection";
 import type { SecuritySettingsProps, Mgr } from "./security/types";
 
-interface SecuritySettingsProps {
-  settings: GlobalSettings;
-  updateSettings: (updates: Partial<GlobalSettings>) => void;
-  handleBenchmark: () => void;
-  isBenchmarking: boolean;
-}
-
-type Mgr = ReturnType<typeof useSecuritySettings>;
-
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
   updateSettings,

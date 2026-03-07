@@ -7,7 +7,7 @@ import { Select } from "../../../ui/forms";
 const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Monitor className="w-4 h-4 text-cyan-400" />
+      <Monitor className="w-4 h-4 text-info" />
       Render Backend Default
     </h4>
     <p className="text-xs text-[var(--color-textMuted)] -mt-2">

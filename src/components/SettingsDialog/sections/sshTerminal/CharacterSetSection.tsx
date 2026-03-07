@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { CharacterSets } from "../../../../types/settings/settings";
 import { Type } from "lucide-react";
@@ -7,7 +8,7 @@ import { Select } from "../../../ui/forms";
 const CharacterSetSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.characterSet", "Character Set")}
-    icon={<Type className="w-4 h-4 text-indigo-400" />}
+    icon={<Type className="w-4 h-4 text-accent" />}
     defaultOpen={false}
   >
     <Select

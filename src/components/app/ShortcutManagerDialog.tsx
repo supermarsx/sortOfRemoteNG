@@ -58,8 +58,8 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
     >
       <DialogHeader
         icon={Keyboard}
-        iconColor="text-blue-500"
-        iconBg="bg-blue-500/20"
+        iconColor="text-primary"
+        iconBg="bg-primary/20"
         title={t("shortcuts.title", "Shortcut Manager")}
         onClose={onClose}
         sticky
@@ -132,7 +132,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                     value={mgr.customFolderPath}
                     onChange={(e) => mgr.setCustomFolderPath(e.target.value)}
                     placeholder="C:\\Users\\Me\\Shortcuts"
-                    className="flex-1 px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-3 py-2 bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                   />
                   <button
                     type="button"
@@ -181,7 +181,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                   : mgr.handleCreateShortcut
               }
               disabled={mgr.isLoading}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-md transition-colors disabled:opacity-50"
             >
               {mgr.editingShortcut ? (
                 <>
@@ -197,12 +197,12 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
             </button>
           </div>
           {mgr.errorMessage && (
-            <div className="mt-4 rounded-md border border-red-600/60 bg-red-900/20 px-3 py-2 text-sm text-red-200">
+            <div className="mt-4 rounded-md border border-error/60 bg-error/20 px-3 py-2 text-sm text-error">
               {mgr.errorMessage}
             </div>
           )}
           {mgr.statusMessage && (
-            <div className="mt-4 rounded-md border border-blue-600/60 bg-blue-900/20 px-3 py-2 text-sm text-blue-200">
+            <div className="mt-4 rounded-md border border-primary/60 bg-primary/20 px-3 py-2 text-sm text-primary">
               {mgr.statusMessage}
             </div>
           )}
@@ -219,7 +219,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
             {mgr.shortcuts.some((s) => !s.exists) && (
               <button
                 onClick={mgr.cleanupShortcuts}
-                className="text-xs text-yellow-400 hover:text-yellow-300 flex items-center gap-1"
+                className="text-xs text-warning hover:text-warning flex items-center gap-1"
               >
                 <AlertTriangle size={12} />
                 {t("shortcuts.cleanupMissing", "Clean up missing")}
@@ -242,7 +242,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                   className={`flex items-center justify-between p-3 rounded-lg border ${
                     shortcut.exists
                       ? "bg-[var(--color-surface)]/50 border-[var(--color-border)]"
-                      : "bg-red-900/20 border-red-600/40"
+                      : "bg-error/20 border-error/40"
                   }`}
                 >
                   <div className="flex-1 min-w-0">
@@ -250,14 +250,14 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                       <Link
                         size={14}
                         className={
-                          shortcut.exists ? "text-blue-400" : "text-red-400"
+                          shortcut.exists ? "text-primary" : "text-error"
                         }
                       />
                       <span className="font-medium text-[var(--color-text)] truncate">
                         {shortcut.name}
                       </span>
                       {!shortcut.exists && (
-                        <span className="text-xs text-red-400 px-2 py-0.5 bg-red-900/30 rounded">
+                        <span className="text-xs text-error px-2 py-0.5 bg-error/30 rounded">
                           {t("shortcuts.missing", "Missing")}
                         </span>
                       )}
@@ -305,7 +305,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                     </button>
                     <button
                       onClick={() => mgr.handleDeleteShortcut(shortcut)}
-                      className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded transition-colors"
+                      className="p-2 text-[var(--color-textSecondary)] hover:text-error hover:bg-[var(--color-border)] rounded transition-colors"
                       data-tooltip={t("shortcuts.delete", "Delete")}
                     >
                       <Trash2 size={14} />
@@ -327,7 +327,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
             <button
               onClick={mgr.handleScanShortcuts}
               disabled={mgr.isScanning}
-              className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] text-sm rounded-md transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-accent hover:bg-accent/90 text-[var(--color-text)] text-sm rounded-md transition-colors disabled:opacity-50"
             >
               {mgr.isScanning ? (
                 <>
@@ -371,15 +371,15 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
               {mgr.scannedShortcuts.map((scanned, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-3 rounded-lg bg-purple-900/20 border border-purple-600/40"
+                  className="flex items-center justify-between p-3 rounded-lg bg-accent/20 border border-accent/40"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <Link size={14} className="text-purple-400" />
+                      <Link size={14} className="text-accent" />
                       <span className="font-medium text-[var(--color-text)] truncate">
                         {scanned.name}
                       </span>
-                      <span className="text-xs text-purple-400 px-2 py-0.5 bg-purple-900/30 rounded">
+                      <span className="text-xs text-accent px-2 py-0.5 bg-accent/30 rounded">
                         {t("shortcuts.discovered", "Discovered")}
                       </span>
                     </div>
@@ -394,7 +394,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                   </div>
                   <button
                     onClick={() => mgr.handleImportScannedShortcut(scanned)}
-                    className="ml-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] text-sm rounded-md transition-colors flex items-center gap-1"
+                    className="ml-2 px-3 py-1.5 bg-accent hover:bg-accent/90 text-[var(--color-text)] text-sm rounded-md transition-colors flex items-center gap-1"
                   >
                     <Plus size={14} />
                     {t("shortcuts.import", "Import")}

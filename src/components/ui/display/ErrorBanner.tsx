@@ -30,7 +30,7 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
   return (
     <div
       className={cx(
-        'bg-red-900/30 border border-red-800 rounded-lg text-red-400 flex items-center justify-between',
+        'bg-error/30 border border-error rounded-lg text-error flex items-center justify-between',
         compact
           ? 'mx-3 mt-2 px-2.5 py-1.5 text-xs flex-shrink-0'
           : 'mx-5 mt-3 px-3 py-2 text-sm',
@@ -41,7 +41,7 @@ export const ErrorBanner: React.FC<ErrorBannerProps> = ({
         <AlertCircle size={compact ? 12 : 14} />
         <span className={compact ? 'truncate' : undefined}>{error}</span>
       </div>
-      <button onClick={onClear} className={cx('hover:text-red-300', compact && 'flex-shrink-0')}>
+      <button onClick={onClear} className={cx('hover:text-error', compact && 'flex-shrink-0')}>
         <XCircle size={compact ? 12 : 14} />
       </button>
     </div>

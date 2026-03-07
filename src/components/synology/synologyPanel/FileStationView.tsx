@@ -102,7 +102,7 @@ const FileStationView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-2 pr-3">
                       <div className="flex items-center gap-2">
                         {isDir ? (
-                          <Folder className="w-4 h-4 text-amber-400" />
+                          <Folder className="w-4 h-4 text-warning" />
                         ) : (
                           <File className="w-4 h-4 text-[var(--color-text-secondary)]" />
                         )}

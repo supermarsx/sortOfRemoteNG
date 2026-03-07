@@ -19,7 +19,7 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
       <div className="bg-[var(--color-surface)] rounded-xl shadow-2xl w-full max-h-[70vh] flex flex-col border border-[var(--color-border)]">
         <DialogHeader
           icon={FileCode}
-          iconColor="text-green-500"
+          iconColor="text-success"
           variant="compact"
           title="Run Script"
           onClose={mgr.closeScriptSelector}
@@ -49,9 +49,9 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
             <Filter size={12} />
             <span className="text-xs font-medium">Filters:</span>
           </div>
-          <Select value={mgr.scriptCategoryFilter} onChange={(v: string) => mgr.setScriptCategoryFilter(v)} options={[{ value: 'all', label: 'All Categories' }, ...mgr.uniqueCategories.map((cat) => ({ value: cat, label: cat }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer" />
-          <Select value={mgr.scriptLanguageFilter} onChange={(v: string) => mgr.setScriptLanguageFilter(v)} options={[{ value: 'all', label: 'All Languages' }, ...mgr.uniqueLanguages.map((lang) => ({ value: lang, label: lang }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer" />
-          <Select value={mgr.scriptOsTagFilter} onChange={(v: string) => mgr.setScriptOsTagFilter(v)} options={[{ value: 'all', label: 'All Platforms' }, ...mgr.uniqueOsTags.map((tag) => ({ value: tag, label: `${OS_TAG_ICONS[tag as OSTag]} ${OS_TAG_LABELS[tag as OSTag]}` }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer" />
+          <Select value={mgr.scriptCategoryFilter} onChange={(v: string) => mgr.setScriptCategoryFilter(v)} options={[{ value: 'all', label: 'All Categories' }, ...mgr.uniqueCategories.map((cat) => ({ value: cat, label: cat }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-success/50 cursor-pointer" />
+          <Select value={mgr.scriptLanguageFilter} onChange={(v: string) => mgr.setScriptLanguageFilter(v)} options={[{ value: 'all', label: 'All Languages' }, ...mgr.uniqueLanguages.map((lang) => ({ value: lang, label: lang }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-success/50 cursor-pointer" />
+          <Select value={mgr.scriptOsTagFilter} onChange={(v: string) => mgr.setScriptOsTagFilter(v)} options={[{ value: 'all', label: 'All Platforms' }, ...mgr.uniqueOsTags.map((tag) => ({ value: tag, label: `${OS_TAG_ICONS[tag as OSTag]} ${OS_TAG_LABELS[tag as OSTag]}` }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-success/50 cursor-pointer" />
           {(mgr.scriptCategoryFilter !== "all" ||
             mgr.scriptLanguageFilter !== "all" ||
             mgr.scriptOsTagFilter !== "all") && (
@@ -122,7 +122,7 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
                         </div>
                         <Play
                           size={14}
-                          className="text-green-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0"
+                          className="text-success opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0"
                         />
                       </div>
                     </button>

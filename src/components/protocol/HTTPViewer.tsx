@@ -32,10 +32,10 @@ type Mgr = ReturnType<typeof useHTTPViewer>;
 function ErrorScreen({ m }: { m: Mgr }) {
   return (
     <div className="flex flex-col items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)] p-8">
-      <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+      <AlertCircle className="w-16 h-16 text-error mb-4" />
       <h2 className="text-xl font-semibold mb-2">Connection Failed</h2>
       <p className="text-[var(--color-textSecondary)] mb-4 text-center max-w-md">{m.error}</p>
-      <button onClick={m.initProxy} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-2">
+      <button onClick={m.initProxy} className="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-2">
         <RefreshCw className="w-4 h-4" />
         Retry Connection
       </button>
@@ -46,7 +46,7 @@ function ErrorScreen({ m }: { m: Mgr }) {
 function ConnectingScreen({ m }: { m: Mgr }) {
   return (
     <div className="flex flex-col items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)]">
-      <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+      <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
       <h2 className="text-lg font-medium">Connecting...</h2>
       <p className="text-[var(--color-textSecondary)] text-sm mt-2">{m.buildTargetUrl()}</p>
     </div>
@@ -75,10 +75,10 @@ function NavButtons({ m }: { m: Mgr }) {
 function UrlBar({ m }: { m: Mgr }) {
   return (
     <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-[var(--color-border)]/50 border border-[var(--color-border)] rounded-lg">
-      {m.isSecure ? <Lock className="w-4 h-4 text-green-500 flex-shrink-0" /> : <Unlock className="w-4 h-4 text-yellow-500 flex-shrink-0" />}
+      {m.isSecure ? <Lock className="w-4 h-4 text-success flex-shrink-0" /> : <Unlock className="w-4 h-4 text-warning flex-shrink-0" />}
       <span className="text-[var(--color-textSecondary)] text-sm truncate flex-1">{m.currentUrl}</span>
       {m.resolveCredentials() && (
-        <span className="flex items-center gap-1 text-xs text-blue-400 flex-shrink-0">
+        <span className="flex items-center gap-1 text-xs text-primary flex-shrink-0">
           <Shield className="w-3 h-3" />
           Authenticated
         </span>
@@ -94,7 +94,7 @@ function ActionButtons({ m }: { m: Mgr }) {
         <ExternalLink className="w-4 h-4" />
       </button>
       <div className="relative" ref={m.totpBtnRef}>
-        <button type="button" onClick={() => m.setShowTotpPanel(!m.showTotpPanel)} className={`p-1.5 rounded relative ${m.showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} title="2FA Codes">
+        <button type="button" onClick={() => m.setShowTotpPanel(!m.showTotpPanel)} className={`p-1.5 rounded relative ${m.showTotpPanel ? 'text-primary bg-primary/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} title="2FA Codes">
           <Shield className="w-4 h-4" />
           {m.totpConfigs.length > 0 && (
             <span className="sor-notification-dot">{m.totpConfigs.length}</span>
@@ -104,7 +104,7 @@ function ActionButtons({ m }: { m: Mgr }) {
           <RDPTotpPanel configs={m.totpConfigs} onUpdate={m.handleUpdateTotpConfigs} onClose={() => m.setShowTotpPanel(false)} defaultIssuer={m.settings.totpIssuer} defaultDigits={m.settings.totpDigits} defaultPeriod={m.settings.totpPeriod} defaultAlgorithm={m.settings.totpAlgorithm} anchorRef={m.totpBtnRef} />
         )}
       </div>
-      <button onClick={() => m.setShowSettings(!m.showSettings)} className={`p-1.5 rounded ${m.showSettings ? 'text-blue-400 bg-blue-600/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} title="Settings">
+      <button onClick={() => m.setShowSettings(!m.showSettings)} className={`p-1.5 rounded ${m.showSettings ? 'text-primary bg-primary/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} title="Settings">
         <Settings className="w-4 h-4" />
       </button>
       <button onClick={m.toggleFullscreen} className="sor-icon-btn-sm" title={m.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}>
@@ -169,7 +169,7 @@ function HTTPStatusBar({ m }: { m: Mgr }) {
       right={
         <div className="flex items-center gap-4">
           {m.proxySessionId && <span className="text-[var(--color-textMuted)]">Proxied via localhost</span>}
-          <span className={m.status === 'connected' ? 'text-green-400' : 'text-yellow-400'}>
+          <span className={m.status === 'connected' ? 'text-success' : 'text-warning'}>
             {m.status === 'connected' ? 'Connected' : 'Loading...'}
           </span>
         </div>

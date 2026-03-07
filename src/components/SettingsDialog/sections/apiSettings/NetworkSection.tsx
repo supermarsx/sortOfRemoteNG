@@ -7,7 +7,7 @@ import type { Mgr } from "./types";
 export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <Globe className="w-4 h-4 text-blue-400" />
+      <Globe className="w-4 h-4 text-primary" />
       {mgr.t("settings.api.network", "Network")}
     </h4>
 
@@ -46,7 +46,7 @@ export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = 
             <Checkbox checked={settings.restApi?.allowRemoteConnections || false} onChange={(v: boolean) => mgr.updateRestApi({ allowRemoteConnections: v })} />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-2">
-                <Globe className="w-4 h-4 text-yellow-500" />
+                <Globe className="w-4 h-4 text-warning" />
                 {mgr.t("settings.api.allowRemote", "Allow Remote Connections")}
               </span>
               <p className="text-xs text-[var(--color-textMuted)]">
@@ -55,7 +55,7 @@ export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = 
             </div>
           </label>
           {settings.restApi?.allowRemoteConnections && (
-            <div className="flex items-start gap-2 mt-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-400 text-xs">
+            <div className="flex items-start gap-2 mt-2 p-2 bg-warning/10 border border-warning/30 rounded text-warning text-xs">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <span>{mgr.t("settings.api.remoteWarning", "Warning: This exposes the API to your network. Ensure authentication is enabled.")}</span>
             </div>

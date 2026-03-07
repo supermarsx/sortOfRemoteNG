@@ -115,7 +115,7 @@ const ProxyTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             onClick={() => mgr.updateConfig({ type: type.value })}
             className={`p-2 rounded-lg border text-left transition-all ${
               mgr.config.type === type.value
-                ? "border-blue-500 bg-blue-500/20 text-blue-400"
+                ? "border-primary bg-primary/20 text-primary"
                 : "border-[var(--color-border)] bg-[var(--color-surface)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
             }`}
           >
@@ -270,7 +270,7 @@ const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       {mgr.tags.map((tag) => (
         <span
           key={tag}
-          className="px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center gap-1"
+          className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs flex items-center gap-1"
         >
           {tag}
           <button
@@ -294,7 +294,7 @@ const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <button
         onClick={mgr.handleAddTag}
         disabled={!mgr.tagInput.trim()}
-        className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] text-sm"
+        className="px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] text-sm"
       >
         Add
       </button>
@@ -309,7 +309,7 @@ const DefaultProfileToggle: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <Checkbox checked={mgr.isDefault} onChange={(v: boolean) => mgr.setIsDefault(v)} className="sor-form-checkbox w-4 h-4" />
       <div>
         <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-1">
-          <Shield className="w-4 h-4 text-yellow-400" />
+          <Shield className="w-4 h-4 text-warning" />
           Set as Default for {selectedProxyType?.label || mgr.config.type}
         </div>
         <div className="text-xs text-[var(--color-textSecondary)]">
@@ -357,8 +357,8 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
           className="px-5 py-4 border-b border-[var(--color-border)]"
           title={
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-500/20 rounded-lg">
-                <Wifi size={18} className="text-purple-400" />
+              <div className="p-2 bg-accent/20 rounded-lg">
+                <Wifi size={18} className="text-accent" />
               </div>
               <h2 className="text-lg font-semibold text-[var(--color-text)]">
                 {mgr.editingProfile ? "Edit Proxy Profile" : "New Proxy Profile"}
@@ -385,7 +385,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
           <button
             onClick={mgr.handleSave}
             disabled={!mgr.canSave}
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] text-sm flex items-center gap-2 transition-colors"
+            className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] text-sm flex items-center gap-2 transition-colors"
           >
             <Save size={14} />
             {mgr.editingProfile ? "Update Profile" : "Create Profile"}

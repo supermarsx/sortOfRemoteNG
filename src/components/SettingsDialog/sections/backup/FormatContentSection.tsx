@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import React from "react";
 import { Settings, FileArchive } from "lucide-react";
 import { BackupFormats, BackupFormat } from "../../../../types/settings/settings";
@@ -7,7 +8,7 @@ import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <FileArchive className="w-4 h-4 text-orange-400" />
+      <FileArchive className="w-4 h-4 text-warning" />
       Format & Content
     </h4>
 
@@ -33,7 +34,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                 onClick={() => mgr.updateBackup({ maxBackupsToKeep: count })}
                 className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                   mgr.backup.maxBackupsToKeep === count
-                    ? "bg-blue-600 text-[var(--color-text)]"
+                    ? "bg-primary text-[var(--color-text)]"
                     : "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceActive)]"
                 }`}
               >

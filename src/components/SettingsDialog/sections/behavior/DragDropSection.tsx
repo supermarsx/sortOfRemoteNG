@@ -1,10 +1,11 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { GripVertical, Eye, FileUp } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
     <SectionHeader
-      icon={<GripVertical className="w-4 h-4 text-indigo-400" />}
+      icon={<GripVertical className="w-4 h-4 text-accent" />}
       title="Drag & Drop"
     />
     <Card>

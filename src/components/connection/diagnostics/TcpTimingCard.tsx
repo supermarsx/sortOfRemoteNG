@@ -25,21 +25,21 @@ const TcpTimingCard = ({
             <span
               className={`text-xs font-medium ${
                 results.tcpTiming.slow_connection
-                  ? "text-yellow-500"
-                  : "text-green-500"
+                  ? "text-warning"
+                  : "text-success"
               }`}
             >
               {results.tcpTiming.connect_time_ms}ms
             </span>
           </div>
           {results.tcpTiming.slow_connection && (
-            <div className="text-[10px] text-yellow-500">
+            <div className="text-[10px] text-warning">
               ⚠ {t("diagnostics.slowConnection", "Slow connection detected")}
             </div>
           )}
           {!results.tcpTiming.success && results.tcpTiming.error && (
             <div
-              className="text-[10px] text-red-500 truncate"
+              className="text-[10px] text-error truncate"
               title={results.tcpTiming.error}
             >
               {results.tcpTiming.error}

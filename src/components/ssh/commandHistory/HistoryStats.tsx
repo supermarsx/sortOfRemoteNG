@@ -12,21 +12,21 @@ import type { SSHCommandHistoryStats } from "../../../types/ssh/sshCommandHistor
 import type { TFunc } from "./types";
 
 const CATEGORY_ICONS: Record<string, string> = {
-  system: "bg-blue-500/10 text-blue-500",
-  network: "bg-cyan-500/10 text-cyan-500",
-  file: "bg-amber-500/10 text-amber-500",
-  process: "bg-orange-500/10 text-orange-500",
-  package: "bg-purple-500/10 text-purple-500",
+  system: "bg-primary/10 text-primary",
+  network: "bg-info/10 text-info",
+  file: "bg-warning/10 text-warning",
+  process: "bg-warning/10 text-warning",
+  package: "bg-accent/10 text-accent",
   docker: "bg-sky-500/10 text-sky-500",
-  kubernetes: "bg-indigo-500/10 text-indigo-500",
-  git: "bg-red-500/10 text-red-500",
-  database: "bg-emerald-500/10 text-emerald-500",
+  kubernetes: "bg-accent/10 text-accent",
+  git: "bg-error/10 text-error",
+  database: "bg-success/10 text-success",
   service: "bg-teal-500/10 text-teal-500",
   security: "bg-rose-500/10 text-rose-500",
-  user: "bg-violet-500/10 text-violet-500",
+  user: "bg-accent/10 text-accent",
   disk: "bg-lime-500/10 text-lime-500",
-  custom: "bg-pink-500/10 text-pink-500",
-  unknown: "bg-gray-500/10 text-gray-500",
+  custom: "bg-accent/10 text-accent",
+  unknown: "bg-text-secondary/10 text-text-secondary",
 };
 
 function StatCard({
@@ -74,37 +74,37 @@ function HistoryStats({
           icon={Hash}
           label={t("sshHistory.totalCommands", "Total Commands")}
           value={stats.totalCommands}
-          color="bg-blue-500/10 text-blue-500"
+          color="bg-primary/10 text-primary"
         />
         <StatCard
           icon={Activity}
           label={t("sshHistory.totalExecutions", "Total Executions")}
           value={stats.totalExecutions}
-          color="bg-green-500/10 text-green-500"
+          color="bg-success/10 text-success"
         />
         <StatCard
           icon={Star}
           label={t("sshHistory.starred", "Starred")}
           value={stats.starredCount}
-          color="bg-yellow-500/10 text-yellow-500"
+          color="bg-warning/10 text-warning"
         />
         <StatCard
           icon={CheckCircle2}
           label={t("sshHistory.successRate", "Success Rate")}
           value={`${(stats.successRate * 100).toFixed(0)}%`}
-          color="bg-emerald-500/10 text-emerald-500"
+          color="bg-success/10 text-success"
         />
         <StatCard
           icon={Server}
           label={t("sshHistory.sessionsUsed", "Sessions Used")}
           value={stats.sessionsUsed}
-          color="bg-purple-500/10 text-purple-500"
+          color="bg-accent/10 text-accent"
         />
         <StatCard
           icon={TrendingUp}
           label={t("sshHistory.avgExecs", "Avg Executions")}
           value={stats.avgExecutionsPerCommand.toFixed(1)}
-          color="bg-cyan-500/10 text-cyan-500"
+          color="bg-info/10 text-info"
         />
       </div>
 
@@ -127,7 +127,7 @@ function HistoryStats({
               title={`${day.date}: ${day.count} commands`}
             >
               <div
-                className="w-full bg-green-500/60 rounded-t-sm transition-all duration-300 min-h-[2px]"
+                className="w-full bg-success/60 rounded-t-sm transition-all duration-300 min-h-[2px]"
                 style={{
                   height: `${Math.max((day.count / maxActivity) * 100, 3)}%`,
                 }}

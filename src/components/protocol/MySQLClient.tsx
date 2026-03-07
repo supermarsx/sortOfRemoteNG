@@ -12,7 +12,7 @@ const MySQLHeader: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-3">
-        <Database size={20} className="text-blue-400" />
+        <Database size={20} className="text-primary" />
         <span className="text-[var(--color-text)] font-medium">MySQL Client - {mgr.session.hostname}</span>
       </div>
       <div className="flex items-center space-x-3">
@@ -43,7 +43,7 @@ const SidebarTabs: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           onClick={() => mgr.setActiveTab(tab.id)}
           className={`flex-1 flex items-center justify-center space-x-1 py-3 text-sm transition-colors ${
             mgr.activeTab === tab.id
-              ? 'bg-blue-600 text-[var(--color-text)]'
+              ? 'bg-primary text-[var(--color-text)]'
               : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'
           }`}
         >
@@ -120,7 +120,7 @@ const QueryEditor: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <button
           onClick={mgr.executeQuery}
           disabled={mgr.isExecuting || !mgr.query.trim()}
-          className="px-4 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded text-sm transition-colors flex items-center space-x-2"
+          className="px-4 py-1 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded text-sm transition-colors flex items-center space-x-2"
         >
           {mgr.isExecuting ? (
             <RefreshCw size={14} className="animate-spin" />
@@ -134,7 +134,7 @@ const QueryEditor: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <Textarea
       value={mgr.query}
       onChange={(e) => mgr.setQuery(e.target.value)}
-      className="w-full h-32 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+      className="w-full h-32 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
       placeholder="Enter your SQL query here..."
     />
   </div>
@@ -143,9 +143,9 @@ const QueryEditor: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 const QueryResults: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="flex-1 overflow-hidden">
     {mgr.error ? (
-      <div className="p-4 bg-red-900/20 border-l-4 border-red-500">
-        <h4 className="text-red-400 font-medium mb-2">Query Error</h4>
-        <p className="text-red-300 text-sm font-mono">{mgr.error}</p>
+      <div className="p-4 bg-error/20 border-l-4 border-error">
+        <h4 className="text-error font-medium mb-2">Query Error</h4>
+        <p className="text-error text-sm font-mono">{mgr.error}</p>
       </div>
     ) : mgr.results ? (
       <div className="h-full flex flex-col">
@@ -214,7 +214,7 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
     <div className="flex flex-col h-full bg-[var(--color-background)]">
       <MySQLHeader mgr={mgr} />
       {mgr.error && (
-        <div className="bg-red-900/20 text-red-300 p-2 text-sm">{mgr.error}</div>
+        <div className="bg-error/20 text-error p-2 text-sm">{mgr.error}</div>
       )}
       <div className="flex flex-1 overflow-hidden">
         <div className="w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col">

@@ -1,6 +1,7 @@
 import React from "react";
 import { Star } from "lucide-react";
 import { HttpBookmarkItem } from "../../../types/connection/connection";
+import type { WebBrowserMgr } from "./types";
 
 const BookmarkChip: React.FC<{
   mgr: WebBrowserMgr;
@@ -56,7 +57,7 @@ const BookmarkChip: React.FC<{
         mgr.dragOverIdx === idx ? "ring-1 ring-[var(--color-primary)]" : ""
       } ${
         isActive
-          ? "text-yellow-400 font-semibold bg-[var(--color-surfaceHover)]"
+          ? "text-warning font-semibold bg-[var(--color-surfaceHover)]"
           : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
       }`}
       title={bm.path}

@@ -77,7 +77,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
           <input
             value={macro.name}
             onChange={(e) => updateField("name", e.target.value)}
-            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] focus:border-blue-500 outline-none"
+            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] focus:border-primary outline-none"
           />
         </div>
         <div>
@@ -90,7 +90,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
               updateField("category", e.target.value || undefined)
             }
             placeholder="General"
-            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-blue-500 outline-none"
+            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
           />
         </div>
       </div>
@@ -106,7 +106,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
             updateField("description", e.target.value || undefined)
           }
           placeholder="Optional description..."
-          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-blue-500 outline-none"
+          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
         />
       </div>
 
@@ -127,7 +127,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
             )
           }
           placeholder="e.g. deploy, linux, restart"
-          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-blue-500 outline-none"
+          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
         />
       </div>
 
@@ -139,7 +139,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
           </label>
           <button
             onClick={addStep}
-            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary"
           >
             <Plus size={12} /> Add Step
           </button>
@@ -172,7 +172,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
                   value={step.command}
                   onChange={(e) => updateStep(i, { command: e.target.value })}
                   placeholder="Command..."
-                  className="w-full px-2 py-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] focus:border-blue-500 outline-none"
+                  className="w-full px-2 py-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] focus:border-primary outline-none"
                 />
                 <div className="flex items-center gap-3 text-xs text-[var(--color-textSecondary)]">
                   <label className="flex items-center gap-1.5">
@@ -190,7 +190,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
               </div>
               <button
                 onClick={() => removeStep(i)}
-                className="p-1 text-[var(--color-textMuted)] hover:text-red-400"
+                className="p-1 text-[var(--color-textMuted)] hover:text-error"
               >
                 <Trash2 size={12} />
               </button>
@@ -203,7 +203,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
       <div className="flex items-center gap-2 pt-2 border-t border-[var(--color-border)]">
         <button
           onClick={() => onSave(macro)}
-          className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] text-sm rounded-lg"
+          className="flex items-center gap-1.5 px-4 py-1.5 bg-primary hover:bg-primary/90 text-[var(--color-text)] text-sm rounded-lg"
         >
           <Save size={14} /> Save
         </button>
@@ -216,7 +216,7 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
         <div className="flex-1" />
         <button
           onClick={() => onDelete(macro.id)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-red-400 hover:bg-red-500/10 text-sm rounded-lg"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-error hover:bg-error/10 text-sm rounded-lg"
         >
           <Trash2 size={14} /> Delete
         </button>

@@ -7,7 +7,7 @@ import { Checkbox, Select } from "../../../ui/forms";
 const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Monitor className="w-4 h-4 text-purple-400" />
+      <Monitor className="w-4 h-4 text-accent" />
       Bitmap Codec Negotiation Defaults
     </h4>
     <p className="text-xs text-[var(--color-textMuted)] -mt-2">

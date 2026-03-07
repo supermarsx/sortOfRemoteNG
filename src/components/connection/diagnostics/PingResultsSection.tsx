@@ -51,8 +51,8 @@ const PingResultsSection = ({ mgr }: { mgr: DiagnosticsMgr }) => {
             key={i}
             className={`flex-1 p-2 rounded text-center text-xs font-medium ${
               ping.success
-                ? "bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30"
-                : "bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30"
+                ? "bg-success/15 text-success dark:text-success border border-success/30"
+                : "bg-error/15 text-error dark:text-error border border-error/30"
             }`}
           >
             {ping.success && ping.time_ms

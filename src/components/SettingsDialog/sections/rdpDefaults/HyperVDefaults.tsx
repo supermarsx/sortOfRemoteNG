@@ -7,7 +7,7 @@ import { Checkbox } from "../../../ui/forms";
 const HyperVDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
-      <Server className="w-4 h-4 text-violet-400" />
+      <Server className="w-4 h-4 text-accent" />
       Hyper-V Defaults
     </h4>
 

@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Palette } from "lucide-react";
@@ -6,7 +7,7 @@ import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimiti
 const ColorsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.colors", "Color Settings")}
-    icon={<Palette className="w-4 h-4 text-orange-400" />}
+    icon={<Palette className="w-4 h-4 text-warning" />}
     defaultOpen={false}
   >
     <Toggle

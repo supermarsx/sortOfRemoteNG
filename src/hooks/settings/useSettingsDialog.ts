@@ -285,14 +285,10 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
     [settings, scheduleSave],
   );
 
+  const defaults = { showSaveButton: false, confirmBeforeReset: true, autoSave: true };
   const dialogConfig = settings
-    ? {
-        showSaveButton: false,
-        confirmBeforeReset: true,
-        autoSave: true,
-        ...settings.settingsDialog,
-      }
-    : { showSaveButton: false, confirmBeforeReset: true, autoSave: true };
+    ? { ...defaults, ...settings.settingsDialog }
+    : defaults;
 
   return {
     t,

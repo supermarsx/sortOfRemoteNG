@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import React from "react";
 import { Archive } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
@@ -6,8 +7,8 @@ const EnableBackup: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="sor-section-card">
     <label className="flex items-center justify-between cursor-pointer">
       <div className="flex items-center gap-3">
-        <div className="p-2 bg-green-500/20 rounded-lg">
-          <Archive className="w-5 h-5 text-green-400" />
+        <div className="p-2 bg-success/20 rounded-lg">
+          <Archive className="w-5 h-5 text-success" />
         </div>
         <div>
           <span className="text-[var(--color-text)] font-medium">

@@ -34,7 +34,7 @@
   border-radius: 0.25rem;
   border: 1px solid var(--color-border);
   background: var(--color-border);
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .sor-settings-toggle-icon {
@@ -51,7 +51,7 @@
 
 .sor-settings-toggle-description {
   margin-top: 0.125rem;
-  color: #6b7280;
+  color: var(--color-textSecondary);
   font-size: 0.6875rem;
 }
 
@@ -76,7 +76,7 @@
 
 .sor-settings-range {
   width: 7rem;
-  accent-color: #3b82f6;
+  accent-color: var(--color-primary);
 }
 
 .sor-settings-range-wide {
@@ -85,7 +85,7 @@
 
 .sor-settings-range-full {
   width: 100%;
-  accent-color: #3b82f6;
+  accent-color: var(--color-primary);
 }
 
 .sor-settings-slider-value {
@@ -111,7 +111,7 @@
 
 .sor-settings-input:focus,
 .sor-settings-select:focus {
-  border-color: #3b82f6;
+  border-color: var(--color-primary);
 }
 
 .sor-settings-input-compact {
@@ -159,12 +159,12 @@
 .sor-form-textarea-sm::placeholder,
 .sor-form-input-xs::placeholder,
 .sor-form-textarea-xs::placeholder {
-  color: #9ca3af;
+  color: var(--color-textMuted);
 }
 
 .sor-form-input::placeholder,
 .sor-form-textarea::placeholder {
-  color: #9ca3af;
+  color: var(--color-textMuted);
 }
 
 .sor-form-input:focus,
@@ -172,7 +172,7 @@
 .sor-form-textarea:focus {
   outline: none;
   border-color: transparent;
-  box-shadow: 0 0 0 2px rgb(59 130 246 / 45%);
+  box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 45%);
 }
 
 .sor-form-input-sm:focus,
@@ -183,7 +183,7 @@
 .sor-form-textarea-xs:focus {
   outline: none;
   border-color: transparent;
-  box-shadow: 0 0 0 2px rgb(59 130 246 / 45%);
+  box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 45%);
 }
 
 .sor-form-label {
@@ -223,7 +223,7 @@
   border-radius: 0.25rem;
   border: 1px solid var(--color-border);
   background: var(--color-border);
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .sor-settings-tile {

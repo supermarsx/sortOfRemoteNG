@@ -4,7 +4,7 @@ function SSHKeyGenSection({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
       <h4 className="sor-section-heading">
-        <FileKey className="w-4 h-4 text-emerald-400" />
+        <FileKey className="w-4 h-4 text-success" />
         Generate SSH Key File
       </h4>
 
@@ -25,7 +25,7 @@ function SSHKeyGenSection({ mgr }: { mgr: Mgr }) {
               onClick={() => mgr.setKeyType("ed25519")}
               className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                 mgr.keyType === "ed25519"
-                  ? "bg-emerald-600/30 border border-emerald-500 text-emerald-300"
+                  ? "bg-success/30 border border-success text-success"
                   : "bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -35,7 +35,7 @@ function SSHKeyGenSection({ mgr }: { mgr: Mgr }) {
               onClick={() => mgr.setKeyType("rsa")}
               className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                 mgr.keyType === "rsa"
-                  ? "bg-emerald-600/30 border border-emerald-500 text-emerald-300"
+                  ? "bg-success/30 border border-success text-success"
                   : "bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -47,7 +47,7 @@ function SSHKeyGenSection({ mgr }: { mgr: Mgr }) {
         <button
           onClick={mgr.generateSSHKey}
           disabled={mgr.isGeneratingKey}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-success hover:bg-success/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
         >
           {mgr.isGeneratingKey ? (
             <>
@@ -63,14 +63,14 @@ function SSHKeyGenSection({ mgr }: { mgr: Mgr }) {
         </button>
 
         {mgr.keyGenSuccess && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-emerald-900/30 border border-emerald-700/50 rounded-md text-emerald-400 text-sm">
+          <div className="flex items-center gap-2 px-3 py-2 bg-success/30 border border-success/50 rounded-md text-success text-sm">
             <CheckCircle className="w-4 h-4" />
             {mgr.keyGenSuccess}
           </div>
         )}
 
         {mgr.keyGenError && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded-md text-red-400 text-sm">
+          <div className="flex items-center gap-2 px-3 py-2 bg-error/30 border border-error/50 rounded-md text-error text-sm">
             <Lock className="w-4 h-4" />
             {mgr.keyGenError}
           </div>

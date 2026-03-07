@@ -1,7 +1,13 @@
 import React from "react";
 import SectionHeading from '../../ui/SectionHeading';
 import { useTranslation } from "react-i18next";
+import type { GlobalSettings } from "../../../types/settings/settings";
 import { MousePointerClick } from "lucide-react";
+
+interface BehaviorSettingsProps {
+  settings: GlobalSettings;
+  updateSettings: (updates: Partial<GlobalSettings>) => void;
+}
 import TOOL_ENTRIES from "./behavior/TOOL_ENTRIES";
 import ClickActions from "./behavior/ClickActions";
 import TabBehavior from "./behavior/TabBehavior";

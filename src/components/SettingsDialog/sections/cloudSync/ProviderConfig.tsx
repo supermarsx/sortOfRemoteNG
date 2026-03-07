@@ -17,9 +17,9 @@ function ProviderConfig({
       return (
         <div className="space-y-4">
           {cs.googleDrive.accountEmail ? (
-            <div className="flex items-center justify-between p-3 bg-green-500/10 rounded-lg border border-green-500/30">
+            <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg border border-success/30">
               <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-green-400" />
+                <Check className="w-4 h-4 text-success" />
                 <span className="text-sm text-[var(--color-text)]">
                   Connected as {cs.googleDrive.accountEmail}
                 </span>
@@ -35,7 +35,7 @@ function ProviderConfig({
                     },
                   })
                 }
-                className="text-xs text-red-400 hover:text-red-300"
+                className="text-xs text-error hover:text-error"
               >
                 Disconnect
               </button>
@@ -43,7 +43,7 @@ function ProviderConfig({
           ) : (
             <button
               onClick={() => mgr.openTokenDialog("googleDrive")}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <Globe className="w-4 h-4" />
               Connect Google Account
@@ -76,9 +76,9 @@ function ProviderConfig({
       return (
         <div className="space-y-4">
           {cs.oneDrive.accountEmail ? (
-            <div className="flex items-center justify-between p-3 bg-blue-500/10 rounded-lg border border-blue-500/30">
+            <div className="flex items-center justify-between p-3 bg-primary/10 rounded-lg border border-primary/30">
               <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-blue-400" />
+                <Check className="w-4 h-4 text-primary" />
                 <span className="text-sm text-[var(--color-text)]">
                   Connected as {cs.oneDrive.accountEmail}
                 </span>
@@ -94,7 +94,7 @@ function ProviderConfig({
                     },
                   })
                 }
-                className="text-xs text-red-400 hover:text-red-300"
+                className="text-xs text-error hover:text-error"
               >
                 Disconnect
               </button>
@@ -102,7 +102,7 @@ function ProviderConfig({
           ) : (
             <button
               onClick={() => mgr.openTokenDialog("oneDrive")}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <Globe className="w-4 h-4" />
               Connect Microsoft Account

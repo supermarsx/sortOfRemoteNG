@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Keyboard } from "lucide-react";
@@ -6,7 +7,7 @@ import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimiti
 const KeyboardSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.keyboard", "Keyboard")}
-    icon={<Keyboard className="w-4 h-4 text-cyan-400" />}
+    icon={<Keyboard className="w-4 h-4 text-info" />}
     defaultOpen={false}
   >
     <Toggle

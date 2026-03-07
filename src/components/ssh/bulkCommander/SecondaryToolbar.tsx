@@ -10,7 +10,7 @@ function SecondaryToolbar({ mgr, t }: { mgr: Mgr; t: TFunc }) {
             onClick={() => mgr.setViewMode("tabs")}
             className={`p-1.5 rounded transition-colors ${
               mgr.viewMode === "tabs"
-                ? "bg-green-600 text-[var(--color-text)]"
+                ? "bg-success text-[var(--color-text)]"
                 : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]"
             }`}
             title={t("bulkSsh.tabView", "Tab View")}
@@ -21,7 +21,7 @@ function SecondaryToolbar({ mgr, t }: { mgr: Mgr; t: TFunc }) {
             onClick={() => mgr.setViewMode("mosaic")}
             className={`p-1.5 rounded transition-colors ${
               mgr.viewMode === "mosaic"
-                ? "bg-green-600 text-[var(--color-text)]"
+                ? "bg-success text-[var(--color-text)]"
                 : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]"
             }`}
             title={t("bulkSsh.mosaicView", "Mosaic View")}
@@ -34,7 +34,7 @@ function SecondaryToolbar({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           onClick={mgr.toggleScriptLibrary}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md transition-colors ${
             mgr.showScriptLibrary
-              ? "bg-green-500/20 text-green-700 dark:text-green-400"
+              ? "bg-success/20 text-success dark:text-success"
               : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
           }`}
         >
@@ -45,7 +45,7 @@ function SecondaryToolbar({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           onClick={mgr.toggleHistory}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md transition-colors ${
             mgr.showHistory
-              ? "bg-green-500/20 text-green-700 dark:text-green-400"
+              ? "bg-success/20 text-success dark:text-success"
               : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
           }`}
         >

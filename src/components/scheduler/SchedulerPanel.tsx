@@ -41,14 +41,14 @@ export interface SchedulerPanelProps {
 type TabId = "tasks" | "upcoming" | "history";
 
 const TASK_KIND_COLORS: Record<TaskKind, string> = {
-  script: "bg-purple-500/20 text-purple-300",
-  backup: "bg-blue-500/20 text-blue-300",
-  health_check: "bg-green-500/20 text-green-300",
-  connect: "bg-cyan-500/20 text-cyan-300",
-  disconnect: "bg-orange-500/20 text-orange-300",
-  wake_on_lan: "bg-yellow-500/20 text-yellow-300",
-  notification: "bg-pink-500/20 text-pink-300",
-  custom: "bg-gray-500/20 text-gray-300",
+  script: "bg-accent/20 text-accent",
+  backup: "bg-primary/20 text-primary",
+  health_check: "bg-success/20 text-success",
+  connect: "bg-info/20 text-info",
+  disconnect: "bg-warning/20 text-warning",
+  wake_on_lan: "bg-warning/20 text-warning",
+  notification: "bg-accent/20 text-accent",
+  custom: "bg-text-secondary/20 text-text-secondary",
   connection_test: "bg-teal-500/20 text-teal-300",
 };
 
@@ -117,7 +117,7 @@ const TabButton: React.FC<{
     onClick={onClick}
     className={`sor-tab-btn flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors ${
       active
-        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+        ? "bg-primary/20 text-primary border border-primary/30"
         : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] border border-transparent"
     }`}
   >
@@ -304,7 +304,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                 {task.kind}
               </span>
               {!task.enabled && (
-                <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-gray-500/20 text-gray-400 font-medium">
+                <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-text-secondary/20 text-text-muted font-medium">
                   {t("scheduler.paused", "paused")}
                 </span>
               )}
@@ -322,7 +322,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                 {t("scheduler.runs", "Runs")}: {task.runCount}
               </span>
               {task.runCount > 0 && (
-                <span className={`flex items-center gap-0.5 ${lastSuccess ? "text-green-400" : "text-red-400"}`}>
+                <span className={`flex items-center gap-0.5 ${lastSuccess ? "text-success" : "text-error"}`}>
                   {lastSuccess ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
                   {lastSuccess
                     ? t("scheduler.lastOk", "Last OK")
@@ -337,14 +337,14 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
               className="sor-sched-toggle p-1 rounded hover:bg-[var(--color-bg-hover)] transition-colors"
               title={task.enabled ? t("scheduler.disable", "Disable") : t("scheduler.enable", "Enable")}
             >
-              {task.enabled ? <Pause size={14} className="text-yellow-400" /> : <Play size={14} className="text-green-400" />}
+              {task.enabled ? <Pause size={14} className="text-warning" /> : <Play size={14} className="text-success" />}
             </button>
             <button
               onClick={() => sched.executeNow(task.id)}
               className="sor-sched-run p-1 rounded hover:bg-[var(--color-bg-hover)] transition-colors"
               title={t("scheduler.runNow", "Run now")}
             >
-              <Zap size={14} className="text-blue-400" />
+              <Zap size={14} className="text-primary" />
             </button>
             <button
               onClick={() => openEdit(task)}
@@ -358,7 +358,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
               className="sor-sched-delete p-1 rounded hover:bg-[var(--color-bg-hover)] transition-colors"
               title={t("common.delete", "Delete")}
             >
-              <Trash2 size={14} className="text-red-400" />
+              <Trash2 size={14} className="text-error" />
             </button>
             <button
               onClick={() => toggleExpand(task.id)}
@@ -407,7 +407,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
             </div>
             <div className="flex items-center gap-3 text-[11px] text-[var(--color-text-secondary)]">
               <span>{fmtDate(u.nextRunAt)}</span>
-              <span className="font-mono text-blue-400">{timeUntil(u.nextRunAt)}</span>
+              <span className="font-mono text-primary">{timeUntil(u.nextRunAt)}</span>
             </div>
           </div>
         ))}
@@ -448,17 +448,17 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                 </td>
                 <td className="py-1.5 pr-3">
                   {h.status === "completed" && (
-                    <span className="flex items-center gap-1 text-green-400">
+                    <span className="flex items-center gap-1 text-success">
                       <CheckCircle2 size={12} /> {t("scheduler.success", "success")}
                     </span>
                   )}
                   {h.status === "failed" && (
-                    <span className="flex items-center gap-1 text-red-400">
+                    <span className="flex items-center gap-1 text-error">
                       <XCircle size={12} /> {t("scheduler.failure", "failure")}
                     </span>
                   )}
                   {h.status === "cancelled" && (
-                    <span className="flex items-center gap-1 text-yellow-400">
+                    <span className="flex items-center gap-1 text-warning">
                       <AlertCircle size={12} /> {t("scheduler.cancelled", "cancelled")}
                     </span>
                   )}
@@ -532,12 +532,12 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                 placeholder="* * * * *"
                 className={`mt-1 w-full px-3 py-1.5 text-xs rounded-lg border bg-[var(--color-bg)] text-[var(--color-text)] ${
                   cronError
-                    ? "border-red-500/60"
+                    ? "border-error/60"
                     : "border-[var(--color-border)]"
                 }`}
               />
               {cronError && (
-                <p className="mt-1 text-[10px] text-red-400">{cronError}</p>
+                <p className="mt-1 text-[10px] text-error">{cronError}</p>
               )}
               {cronPreview.length > 0 && (
                 <div className="mt-1.5 space-y-0.5">
@@ -545,7 +545,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                     {t("scheduler.nextOccurrences", "Next occurrences:")}
                   </p>
                   {cronPreview.map((d, i) => (
-                    <p key={i} className="text-[10px] font-mono text-blue-400 pl-2">
+                    <p key={i} className="text-[10px] font-mono text-primary pl-2">
                       {fmtDate(d)}
                     </p>
                   ))}
@@ -565,7 +565,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                     onClick={() => setForm((f) => ({ ...f, cronExpression: p.cron }))}
                     className="text-left px-2 py-1 rounded hover:bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]"
                   >
-                    <span className="font-mono text-blue-400">{p.cron}</span>{" "}
+                    <span className="font-mono text-primary">{p.cron}</span>{" "}
                     <span className="text-[10px]">{p.label}</span>
                   </button>
                 ))}
@@ -638,7 +638,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
             <button
               onClick={handleSave}
               disabled={!form.name || !form.cronExpression || !!cronError}
-              className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {editingId ? t("common.save", "Save") : t("scheduler.create", "Create")}
             </button>
@@ -655,7 +655,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
         {/* Header */}
         <div className="sor-sched-header flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-3">
-            <Settings size={18} className="text-blue-400" />
+            <Settings size={18} className="text-primary" />
             <h2 className="text-sm font-semibold text-[var(--color-text)]">
               {t("scheduler.title", "Scheduled Automation")}
             </h2>
@@ -663,10 +663,10 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
               <span>
                 {t("scheduler.total", "Total")}: {totalTasks}
               </span>
-              <span className="text-green-400">
+              <span className="text-success">
                 {t("scheduler.active", "Active")}: {activeTasks}
               </span>
-              <span className="text-yellow-400">
+              <span className="text-warning">
                 {t("scheduler.pausedCount", "Paused")}: {pausedTasks}
               </span>
             </div>
@@ -674,7 +674,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
           <div className="flex items-center gap-1">
             <button
               onClick={openAdd}
-              className="sor-sched-add flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+              className="sor-sched-add flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
             >
               <Plus size={13} /> {t("scheduler.add", "Add")}
             </button>
@@ -737,7 +737,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
 
         {/* Error banner */}
         {sched.error && (
-          <div className="sor-sched-error flex items-center gap-2 mx-5 mt-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+          <div className="sor-sched-error flex items-center gap-2 mx-5 mt-3 px-3 py-2 rounded-lg bg-error/10 border border-error/20 text-error text-xs">
             <AlertCircle size={14} />
             {sched.error}
           </div>
@@ -762,7 +762,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                       </p>
                       <button
                         onClick={openAdd}
-                        className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-500"
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-primary text-white hover:bg-primary/90"
                       >
                         <Plus size={13} /> {t("scheduler.createFirst", "Create your first task")}
                       </button>

@@ -32,16 +32,16 @@ const eventIcons: Record<McpEventType, React.ElementType> = {
 };
 
 const eventColors: Record<McpEventType, string> = {
-  ServerStarted: "text-green-400",
-  ServerStopped: "text-red-400",
-  SessionStarted: "text-purple-400",
-  SessionEnded: "text-purple-300",
-  ToolCalled: "text-blue-400",
+  ServerStarted: "text-success",
+  ServerStopped: "text-error",
+  SessionStarted: "text-accent",
+  SessionEnded: "text-accent",
+  ToolCalled: "text-primary",
   ResourceRead: "text-teal-400",
-  PromptUsed: "text-amber-400",
-  AuthFailed: "text-red-500",
-  ConfigChanged: "text-cyan-400",
-  Error: "text-red-400",
+  PromptUsed: "text-warning",
+  AuthFailed: "text-error",
+  ConfigChanged: "text-info",
+  Error: "text-error",
 };
 
 export const EventsTab: React.FC<McpTabProps> = ({ mgr }) => {
@@ -95,7 +95,7 @@ export const EventsTab: React.FC<McpTabProps> = ({ mgr }) => {
           <div className="space-y-1">
             {mgr.toolCallLogs.slice(-10).reverse().map((log) => (
               <div key={log.id} className="flex items-center gap-2 text-[10px]">
-                <span className={log.success ? "text-green-400" : "text-red-400"}>
+                <span className={log.success ? "text-success" : "text-error"}>
                   {log.success ? "✓" : "✗"}
                 </span>
                 <span className="font-mono text-[var(--color-text-primary)]">{log.tool_name}</span>
@@ -114,7 +114,7 @@ export const EventsTab: React.FC<McpTabProps> = ({ mgr }) => {
       <div className="space-y-1 max-h-[55vh] overflow-y-auto scrollbar-thin">
         {filteredEvents.map((event) => {
           const Icon = eventIcons[event.event_type] || Activity;
-          const color = eventColors[event.event_type] || "text-gray-400";
+          const color = eventColors[event.event_type] || "text-text-muted";
 
           return (
             <div

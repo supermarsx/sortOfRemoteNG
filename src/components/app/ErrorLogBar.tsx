@@ -20,16 +20,16 @@ interface ErrorLogBarProps {
 }
 
 const LEVEL_ICONS: Record<string, JSX.Element> = {
-  error: <AlertCircle className="text-red-400" size={14} />,
-  warn: <AlertTriangle className="text-yellow-400" size={14} />,
-  info: <Info className="text-blue-400" size={14} />,
+  error: <AlertCircle className="text-error" size={14} />,
+  warn: <AlertTriangle className="text-warning" size={14} />,
+  info: <Info className="text-primary" size={14} />,
   debug: <Bug className="text-[var(--color-textSecondary)]" size={14} />,
 };
 
 const LEVEL_COLORS: Record<string, string> = {
-  error: "text-red-400 bg-red-900/20 border-red-800",
-  warn: "text-yellow-400 bg-yellow-900/20 border-yellow-800",
-  info: "text-blue-400 bg-blue-900/20 border-blue-800",
+  error: "text-error bg-error/20 border-error",
+  warn: "text-warning bg-warning/20 border-warning",
+  info: "text-primary bg-primary/20 border-primary",
   debug: "text-[var(--color-textSecondary)] bg-[var(--color-surface)]/50 border-[var(--color-border)]",
 };
 
@@ -54,12 +54,12 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
             {mgr.t("errorLog.title", "Error Log")}
           </span>
           {mgr.errorCount > 0 && (
-            <span className="px-2 py-0.5 text-xs rounded-full bg-red-900/50 text-red-400 border border-red-800">
+            <span className="px-2 py-0.5 text-xs rounded-full bg-error/50 text-error border border-error">
               {mgr.errorCount} {mgr.errorCount === 1 ? "error" : "errors"}
             </span>
           )}
           {mgr.warnCount > 0 && (
-            <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-800">
+            <span className="px-2 py-0.5 text-xs rounded-full bg-warning/50 text-warning border border-warning">
               {mgr.warnCount} {mgr.warnCount === 1 ? "warning" : "warnings"}
             </span>
           )}
@@ -128,9 +128,9 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
                       <p
                         className={`text-sm truncate ${
                           entry.level === "error"
-                            ? "text-red-300"
+                            ? "text-error"
                             : entry.level === "warn"
-                            ? "text-yellow-300"
+                            ? "text-warning"
                             : "text-[var(--color-textSecondary)]"
                         }`}
                       >

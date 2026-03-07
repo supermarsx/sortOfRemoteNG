@@ -25,8 +25,8 @@
 }
 
 .sor-option-chip-active {
-  border-color: color-mix(in srgb, #3b82f6 45%, var(--color-border));
-  background: color-mix(in srgb, #3b82f6 14%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
   color: var(--color-text);
 }
 
@@ -121,8 +121,8 @@
 }
 
 .sor-selection-row-selected {
-  border-color: color-mix(in srgb, #16a34a 45%, var(--color-border));
-  background: color-mix(in srgb, #16a34a 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
 }
 
 .sor-selection-row-hover-action {

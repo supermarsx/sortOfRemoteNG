@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import React from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, Pencil, Trash2, Copy, FolderOpen } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";

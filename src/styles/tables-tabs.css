@@ -68,7 +68,7 @@
 
 .sor-toolbar-popover-title {
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--color-text);
 }
 
 .sor-toolbar-popover-actions {
@@ -90,7 +90,7 @@
 }
 
 .sor-toolbar-popover-action-btn:hover {
-  color: #e5e7eb;
+  color: var(--color-text);
   background: var(--color-border);
 }
 

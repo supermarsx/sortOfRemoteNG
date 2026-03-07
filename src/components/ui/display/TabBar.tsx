@@ -9,8 +9,8 @@ export interface Tab {
   label: string;
   icon?: LucideIcon;
   count?: number;
-  /** Custom active color class, e.g. "border-green-500 text-green-400".
-   *  Defaults to "border-blue-500 text-blue-400" */
+  /** Custom active color class, e.g. "border-success text-success".
+   *  Defaults to "border-primary text-primary" */
   activeColor?: string;
 }
 
@@ -22,7 +22,7 @@ export interface TabBarProps {
   className?: string;
 }
 
-const DEFAULT_ACTIVE = 'border-blue-500 text-blue-400';
+const DEFAULT_ACTIVE = 'border-primary text-primary';
 const INACTIVE = 'border-transparent text-[var(--color-textSecondary)] hover:text-[var(--color-text)]';
 
 /**

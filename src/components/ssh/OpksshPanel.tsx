@@ -52,8 +52,8 @@ export const OpksshPanel: React.FC<OpksshPanelProps> = ({
     >
       {/* Background glow effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
-        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-emerald-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-green-500/6 rounded-full blur-3xl" />
+        <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-success/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-[20%] right-[15%] w-80 h-80 bg-success/6 rounded-full blur-3xl" />
         <div className="absolute top-[50%] right-[25%] w-64 h-64 bg-teal-500/5 rounded-full blur-3xl" />
       </div>
 
@@ -61,8 +61,8 @@ export const OpksshPanel: React.FC<OpksshPanelProps> = ({
         {/* Header */}
         <DialogHeader
           icon={Shield}
-          iconColor="text-emerald-600 dark:text-emerald-500"
-          iconBg="bg-emerald-500/20"
+          iconColor="text-success dark:text-success"
+          iconBg="bg-success/20"
           title={t("opkssh.title", "opkssh — OpenPubkey SSH")}
           badge={
             mgr.binaryStatus?.installed
@@ -80,7 +80,7 @@ export const OpksshPanel: React.FC<OpksshPanelProps> = ({
         <div className="flex-1 overflow-y-auto p-4">
           {/* Error banner */}
           {mgr.error && (
-            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
               <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
               <span>{mgr.error}</span>
             </div>

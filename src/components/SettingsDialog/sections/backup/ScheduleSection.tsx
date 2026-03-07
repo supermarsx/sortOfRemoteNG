@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import React from "react";
 import { Clock } from "lucide-react";
 import { BackupFrequencies, DaysOfWeek, BackupFrequency, DayOfWeek } from "../../../../types/settings/settings";
@@ -7,7 +8,7 @@ import { Select } from "../../../ui/forms";
 const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <Clock className="w-4 h-4 text-blue-400" />
+      <Clock className="w-4 h-4 text-primary" />
       Schedule
     </h4>
 

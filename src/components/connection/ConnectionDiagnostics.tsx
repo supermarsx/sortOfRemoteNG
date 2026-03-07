@@ -3,8 +3,13 @@ import { X, RefreshCw, Loader2, Stethoscope, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Connection } from "../../types/connection/connection";
 import { Modal } from "../ui/overlays/Modal";
+
+interface ConnectionDiagnosticsProps {
+  connection: Connection;
+  onClose: () => void;
+}
 import { useConnectionDiagnostics } from "../../hooks/connection/useConnectionDiagnostics";
-import Props from "./diagnostics/Props";
+import type { ConnectionDiagnosticsProps as Props } from "./diagnostics/Props";
 import StatusIcon from "./diagnostics/StatusIcon";
 import NetworkChecksSection from "./diagnostics/NetworkChecksSection";
 import DnsIpSection from "./diagnostics/DnsIpSection";
@@ -41,8 +46,8 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         {/* Header */}
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Stethoscope size={18} className="text-blue-400" />
+            <div className="p-2 bg-primary/20 rounded-lg">
+              <Stethoscope size={18} className="text-primary" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text)]">
@@ -58,7 +63,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
           </div>
           <div className="flex items-center gap-2">
             {mgr.isRunning && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 text-blue-400 rounded-lg text-xs">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs">
                 <Loader2 size={12} className="animate-spin" />
                 {mgr.currentStep}
               </div>

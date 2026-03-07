@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 /* eslint-disable react-refresh/only-export-components */
 import Toggle from "./Toggle";
 import React from "react";
@@ -17,7 +18,7 @@ const BELL_STYLE_LABELS: Record<string, string> = {
 const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.bellSettings", "Bell Settings")}
-    icon={<Bell className="w-4 h-4 text-yellow-400" />}
+    icon={<Bell className="w-4 h-4 text-warning" />}
   >
     <Select
       value={cfg.bellStyle}
@@ -34,7 +35,7 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     <div className="border-t border-[var(--color-border)] pt-4 mt-4">
       <h5 className="text-sm font-medium text-[var(--color-text)] mb-3 flex items-center gap-2">
         {cfg.bellOveruseProtection.enabled ? (
-          <VolumeX className="w-4 h-4 text-orange-400" />
+          <VolumeX className="w-4 h-4 text-warning" />
         ) : (
           <Volume2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
         )}
@@ -136,4 +137,5 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   </SettingsCollapsibleSection>
 );
 
+export { BellSection };
 export default BELL_STYLE_LABELS;

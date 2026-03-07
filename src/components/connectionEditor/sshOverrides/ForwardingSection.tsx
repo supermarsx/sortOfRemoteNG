@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { Checkbox, NumberInput, TextInput, Select } from "../../ui/forms";
 import { ProxyCommandTemplates } from "../../../types/ssh/sshSettings";
@@ -59,7 +60,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
                 <span className="text-sm text-[var(--color-textSecondary)] w-28">DISPLAY override</span>
                 <TextInput
                   value={v("x11DisplayOverride") ?? ""}
-                  onChange={(val: string) => u("x11DisplayOverride", val || undefined)}
+                  onChange={(v) => u("x11DisplayOverride", v || undefined)}
                   variant="form-sm"
                   placeholder="auto (e.g. :0 or localhost:10.0)"
                 />
@@ -119,7 +120,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
             <span className="text-sm text-[var(--color-textSecondary)] w-28">Custom command</span>
             <TextInput
               value={v("proxyCommand") ?? ""}
-              onChange={(val: string) => u("proxyCommand", val || undefined)}
+              onChange={(v) => u("proxyCommand", v || undefined)}
               variant="form-sm"
               placeholder="e.g. ssh -W %h:%p jumpbox"
             />
@@ -131,7 +132,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
                 <span className="text-sm text-[var(--color-textSecondary)] w-28">Proxy host</span>
                 <TextInput
                   value={v("proxyCommandHost") ?? ""}
-                  onChange={(val: string) => u("proxyCommandHost", val || undefined)}
+                  onChange={(v) => u("proxyCommandHost", v || undefined)}
                   variant="form-sm"
                   placeholder="127.0.0.1"
                 />
@@ -152,7 +153,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
                 <span className="text-sm text-[var(--color-textSecondary)] w-28">Proxy user</span>
                 <TextInput
                   value={v("proxyCommandUsername") ?? ""}
-                  onChange={(val: string) => u("proxyCommandUsername", val || undefined)}
+                  onChange={(v) => u("proxyCommandUsername", v || undefined)}
                   variant="form-sm"
                   placeholder="optional"
                 />

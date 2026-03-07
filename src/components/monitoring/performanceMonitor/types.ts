@@ -1,4 +1,5 @@
 
+import type { usePerformanceMonitor } from "../../../hooks/monitoring/usePerformanceMonitor";
 
 export type Mgr = ReturnType<typeof usePerformanceMonitor>;
 

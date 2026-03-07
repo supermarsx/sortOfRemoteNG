@@ -1,4 +1,4 @@
-import { MsgType } from "./types";
+import { MsgType, WaMgr } from "./types";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React from "react";
@@ -8,7 +8,7 @@ import { useComposeTab } from "./useComposeTab";
 
 // ── Compose Tab ──────────────────────────────────────────────────────
 
-const ComposeTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
+const ComposeTab: React.FC<{ wa: WaMgr }> = ({
   wa,
 }) => {
   const c = useComposeTab(wa);
@@ -39,7 +39,7 @@ const ComposeTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
               onClick={() => c.setMsgType(t)}
               className={`px-3 py-1.5 rounded text-xs flex items-center space-x-1 transition-colors ${
                 c.msgType === t
-                  ? "bg-green-600 text-white"
+                  ? "bg-success text-white"
                   : "bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               }`}
             >
@@ -165,7 +165,7 @@ const ComposeTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
 
       <ErrorMsg msg={c.errorMsg} />
       {c.result && (
-        <div className="text-green-400 text-sm flex items-center space-x-2">
+        <div className="text-success text-sm flex items-center space-x-2">
           <CheckCircle size={14} />
           <span>{c.result}</span>
         </div>

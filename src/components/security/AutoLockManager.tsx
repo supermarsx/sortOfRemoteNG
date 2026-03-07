@@ -30,7 +30,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
         dataTestId="auto-lock-modal"
       >
         <div className="bg-[var(--color-surface)] rounded-lg p-8 w-full text-center">
-          <Lock size={64} className="mx-auto mb-6 text-blue-400" />
+          <Lock size={64} className="mx-auto mb-6 text-primary" />
           <h2 className="text-2xl font-semibold text-[var(--color-text)] mb-4">
             Session Locked
           </h2>
@@ -46,7 +46,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
                   value={mgr.password}
                   onChange={(e) => mgr.setPassword(e.target.value)}
                   onKeyPress={(e) => e.key === "Enter" && mgr.handleUnlock()}
-                  className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary"
                   placeholder="Enter password to unlock"
                   autoFocus
                 />
@@ -59,7 +59,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
               </div>
               <button
                 onClick={mgr.handleUnlock}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+                className="w-full py-3 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-md transition-colors"
               >
                 Unlock
               </button>
@@ -67,7 +67,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
           ) : (
             <button
               onClick={mgr.handleUnlock}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+              className="px-6 py-3 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-md transition-colors"
             >
               Click to Unlock
             </button>
@@ -82,7 +82,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
   return (
     <div className="fixed bottom-4 right-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 text-sm">
       <div className="flex items-center space-x-2">
-        <Clock size={16} className="text-blue-400" />
+        <Clock size={16} className="text-primary" />
         <span className="text-[var(--color-textSecondary)]">
           Auto-lock in: {mgr.formatTime(mgr.timeRemaining)}
         </span>

@@ -39,8 +39,8 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
         {/* Nodes */}
         <StatCard
           icon={Server}
-          iconColor="text-orange-500"
-          iconBg="bg-orange-500/15"
+          iconColor="text-warning"
+          iconBg="bg-warning/15"
           label={t("proxmox.dashboard.nodes", "Nodes")}
           value={String(mgr.nodes.length)}
           sub={`${mgr.nodes.filter((n) => n.status === "online").length} online`}
@@ -48,8 +48,8 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
         {/* VMs */}
         <StatCard
           icon={Monitor}
-          iconColor="text-blue-500"
-          iconBg="bg-blue-500/15"
+          iconColor="text-primary"
+          iconBg="bg-primary/15"
           label={t("proxmox.dashboard.vms", "QEMU VMs")}
           value={`${runningVms}/${totalVms}`}
           sub={t("proxmox.dashboard.running", "running")}
@@ -57,8 +57,8 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
         {/* Containers */}
         <StatCard
           icon={Container}
-          iconColor="text-green-500"
-          iconBg="bg-green-500/15"
+          iconColor="text-success"
+          iconBg="bg-success/15"
           label={t("proxmox.dashboard.containers", "LXC Containers")}
           value={`${runningCts}/${totalCts}`}
           sub={t("proxmox.dashboard.running", "running")}
@@ -66,8 +66,8 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
         {/* Storage */}
         <StatCard
           icon={HardDrive}
-          iconColor="text-purple-500"
-          iconBg="bg-purple-500/15"
+          iconColor="text-accent"
+          iconBg="bg-accent/15"
           label={t("proxmox.dashboard.storage", "Storage")}
           value={`${storagePct}%`}
           sub={`${formatBytes(usedStorage)} / ${formatBytes(totalStorage)}`}
@@ -77,7 +77,7 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
       {/* Node list */}
       <section>
         <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3 flex items-center gap-2">
-          <Server className="w-4 h-4 text-orange-500" />
+          <Server className="w-4 h-4 text-warning" />
           {t("proxmox.dashboard.nodeList", "Cluster Nodes")}
         </h3>
         <div className="space-y-2">
@@ -87,11 +87,11 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
               onClick={() => mgr.selectNode(node.node)}
               className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
                 mgr.selectedNode === node.node
-                  ? "border-orange-500/40 bg-orange-500/10"
+                  ? "border-warning/40 bg-warning/10"
                   : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-hover)]"
               }`}
             >
-              <div className={`w-2 h-2 rounded-full ${node.status === "online" ? "bg-green-500" : "bg-red-500"}`} />
+              <div className={`w-2 h-2 rounded-full ${node.status === "online" ? "bg-success" : "bg-error"}`} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-[var(--color-text)] truncate">{node.node}</div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
@@ -122,7 +122,7 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.clusterResources.length > 0 && (
         <section>
           <h3 className="text-sm font-semibold text-[var(--color-text)] mb-3 flex items-center gap-2">
-            <Activity className="w-4 h-4 text-cyan-500" />
+            <Activity className="w-4 h-4 text-info" />
             {t("proxmox.dashboard.resources", "Cluster Resources")}
           </h3>
           <div className="overflow-x-auto">
@@ -145,12 +145,12 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-1.5 pr-3">
                       <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         r.resourceType === "qemu"
-                          ? "bg-blue-500/15 text-blue-400"
+                          ? "bg-primary/15 text-primary"
                           : r.resourceType === "lxc"
-                          ? "bg-green-500/15 text-green-400"
+                          ? "bg-success/15 text-success"
                           : r.resourceType === "storage"
-                          ? "bg-purple-500/15 text-purple-400"
-                          : "bg-gray-500/15 text-gray-400"
+                          ? "bg-accent/15 text-accent"
+                          : "bg-text-secondary/15 text-text-muted"
                       }`}>
                         {r.resourceType}
                       </span>
@@ -160,7 +160,7 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
                     <td className="py-1.5 pr-3">{r.node ?? "—"}</td>
                     <td className="py-1.5 pr-3">
                       <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${
-                        r.status === "running" ? "bg-green-500" : "bg-gray-500"
+                        r.status === "running" ? "bg-success" : "bg-text-secondary"
                       }`} />
                       {r.status ?? "—"}
                     </td>

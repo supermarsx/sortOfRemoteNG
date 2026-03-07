@@ -12,13 +12,13 @@ const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         {/* Time Range Filter */}
         <div className="flex items-center gap-2">
           <Clock size={14} className="text-[var(--color-textSecondary)]" />
-          <Select value={mgr.timeRangeFilter} onChange={(v: string) => mgr.setTimeRangeFilter(v)} options={[{ value: "all", label: "All Time" }, { value: "1h", label: "Last Hour" }, { value: "6h", label: "Last 6 Hours" }, { value: "24h", label: "Last 24 Hours" }, { value: "7d", label: "Last 7 Days" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <Select value={mgr.timeRangeFilter} onChange={(v: string) => mgr.setTimeRangeFilter(v)} options={[{ value: "all", label: "All Time" }, { value: "1h", label: "Last Hour" }, { value: "6h", label: "Last 6 Hours" }, { value: "24h", label: "Last 24 Hours" }, { value: "7d", label: "Last 7 Days" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary" />
         </div>
 
         {/* Metric Type Filter */}
         <div className="flex items-center gap-2">
           <Filter size={14} className="text-[var(--color-textSecondary)]" />
-          <Select value={mgr.metricFilter} onChange={(v: string) => mgr.setMetricFilter(v)} options={[{ value: "all", label: "All Metrics" }, { value: "latency", label: "Latency" }, { value: "throughput", label: "Throughput" }, { value: "cpu", label: "CPU Usage" }, { value: "memory", label: "Memory Usage" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <Select value={mgr.metricFilter} onChange={(v: string) => mgr.setMetricFilter(v)} options={[{ value: "all", label: "All Metrics" }, { value: "latency", label: "Latency" }, { value: "throughput", label: "Throughput" }, { value: "cpu", label: "CPU Usage" }, { value: "memory", label: "Memory Usage" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary" />
         </div>
 
         {/* Update Interval */}
@@ -34,7 +34,7 @@ const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         {/* Action Buttons */}
         <button
           onClick={mgr.exportMetrics}
-          className="sor-option-chip text-xs font-medium bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] border-blue-500"
+          className="sor-option-chip text-xs font-medium bg-primary hover:bg-secondary text-[var(--color-text)] border-primary"
           title={t("common.export", "Export")}
         >
           <Download size={14} />
@@ -42,7 +42,7 @@ const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </button>
         <button
           onClick={() => mgr.setShowClearConfirm(true)}
-          className="sor-option-chip text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 border-red-500/40"
+          className="sor-option-chip text-xs font-medium bg-error/20 hover:bg-error/30 text-error border-error/40"
           title={t("common.clear", "Clear")}
         >
           <Trash2 size={14} />

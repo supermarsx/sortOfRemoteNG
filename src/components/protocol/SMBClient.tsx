@@ -12,7 +12,7 @@ const SMBHeader: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center space-x-3">
-        <HardDrive size={20} className="text-blue-400" />
+        <HardDrive size={20} className="text-primary" />
         <span className="text-[var(--color-text)] font-medium">SMB Client - {mgr.session.hostname}</span>
       </div>
       <div className="flex items-center space-x-2">
@@ -63,7 +63,7 @@ const FileTableHeader: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Checkbox checked={mgr.selectedFiles.size === mgr.files.length && mgr.files.length > 0} onChange={(v: boolean) => {
             if (v) mgr.selectAll();
             else mgr.deselectAll();
-          }} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+          }} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
       </th>
       <th className="sor-th">Name</th>
       <th className="sor-th">Size</th>
@@ -76,18 +76,18 @@ const FileTableHeader: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 const FileRow: React.FC<{ file: SMBFile; mgr: Mgr }> = ({ file, mgr }) => (
   <tr
     className={`hover:bg-[var(--color-border)] cursor-pointer ${
-      mgr.selectedFiles.has(file.name) ? 'bg-blue-900/20' : ''
+      mgr.selectedFiles.has(file.name) ? 'bg-primary/20' : ''
     }`}
     onClick={() => mgr.handleFileSelect(file.name)}
     onDoubleClick={() => mgr.handleDoubleClick(file)}
   >
     <td className="px-4 py-3">
-      <Checkbox checked={mgr.selectedFiles.has(file.name)} onChange={() => mgr.handleFileSelect(file.name)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+      <Checkbox checked={mgr.selectedFiles.has(file.name)} onChange={() => mgr.handleFileSelect(file.name)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-primary" />
     </td>
     <td className="px-4 py-3 text-sm text-[var(--color-text)]">
       <div className="flex items-center space-x-2">
         {file.type === 'directory' ? (
-          <Folder size={16} className="text-blue-400" />
+          <Folder size={16} className="text-primary" />
         ) : (
           <File size={16} className="text-[var(--color-textSecondary)]" />
         )}
@@ -114,11 +114,11 @@ const ActionBar: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
           {mgr.selectedFiles.size} item{mgr.selectedFiles.size !== 1 ? 's' : ''} selected
         </span>
         <div className="flex items-center space-x-2">
-          <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
+          <button className="px-3 py-1 bg-success hover:bg-success/90 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
             <Download size={14} />
             <span>Download</span>
           </button>
-          <button className="px-3 py-1 bg-red-600 hover:bg-red-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
+          <button className="px-3 py-1 bg-error hover:bg-error/90 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
             <Trash2 size={14} />
             <span>Delete</span>
           </button>

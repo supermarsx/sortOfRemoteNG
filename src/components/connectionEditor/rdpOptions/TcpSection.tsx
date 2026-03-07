@@ -6,7 +6,7 @@ import { Checkbox, Select, Slider } from "../../ui/forms";
 const TcpSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
   <Section
     title="TCP / Socket"
-    icon={<Cable size={14} className="text-emerald-400" />}
+    icon={<Cable size={14} className="text-success" />}
   >
     <p className="text-xs text-[var(--color-textMuted)] mb-3">
       Low-level socket options for the underlying TCP connection.

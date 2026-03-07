@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { Connection } from "../../../types/connection/connection";
 import { Checkbox, NumberInput } from "../../ui/forms";

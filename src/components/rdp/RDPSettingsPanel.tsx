@@ -33,13 +33,13 @@ export function RDPSettingsPanel({
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] text-xs mb-1">Audio</div>
           <div className="text-[var(--color-text)] text-xs font-mono flex items-center gap-1">
-            {audioEnabled ? <Volume2 size={12} className="text-green-400" /> : <VolumeX size={12} className="text-[var(--color-textMuted)]" />}
+            {audioEnabled ? <Volume2 size={12} className="text-success" /> : <VolumeX size={12} className="text-[var(--color-textMuted)]" />}
             {rdpSettings.audio?.playbackMode ?? 'local'}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] text-xs mb-1">Clipboard</div>
-          <div className={`text-xs font-mono ${clipboardEnabled ? 'text-green-400' : 'text-[var(--color-textMuted)]'}`}>
+          <div className={`text-xs font-mono ${clipboardEnabled ? 'text-success' : 'text-[var(--color-textMuted)]'}`}>
             {clipboardEnabled ? 'Enabled' : 'Disabled'}
           </div>
         </div>
@@ -49,7 +49,7 @@ export function RDPSettingsPanel({
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] text-xs mb-1">Frame Batching</div>
-          <div className={`text-xs font-mono ${rdpSettings.performance?.frameBatching ? 'text-green-400' : 'text-yellow-400'}`}>
+          <div className={`text-xs font-mono ${rdpSettings.performance?.frameBatching ? 'text-success' : 'text-warning'}`}>
             {rdpSettings.performance?.frameBatching ? `On (${rdpSettings.performance?.frameBatchIntervalMs ?? 33}ms)` : 'Off'}
           </div>
         </div>
@@ -85,7 +85,7 @@ export function RDPSettingsPanel({
         {certFingerprint && (
           <div className="bg-[var(--color-background)] rounded p-2 col-span-2">
             <div className="text-[var(--color-textMuted)] text-xs mb-1">Server Certificate</div>
-            <div className="text-cyan-400 text-xs font-mono truncate" title={certFingerprint}>
+            <div className="text-info text-xs font-mono truncate" title={certFingerprint}>
               SHA256:{certFingerprint.slice(0, 23)}…
             </div>
           </div>

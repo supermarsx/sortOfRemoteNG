@@ -4,7 +4,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
       <h4 className="sor-section-heading">
-        <Database className="w-4 h-4 text-blue-400" />
+        <Database className="w-4 h-4 text-primary" />
         Generate Collection Encryption Key File
       </h4>
 
@@ -13,7 +13,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
           Generate a secure encryption key file that can be used to encrypt your
           connection collections. This key file can be used instead of a password
           when creating or opening encrypted collections.
-          <span className="text-yellow-400 block mt-2">
+          <span className="text-warning block mt-2">
             ⚠️ Keep this file secure! Anyone with access to it can decrypt your
             collections.
           </span>
@@ -29,7 +29,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
               onClick={() => mgr.setCollectionKeyLength(32)}
               className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                 mgr.collectionKeyLength === 32
-                  ? "bg-blue-600/30 border border-blue-500 text-blue-300"
+                  ? "bg-primary/30 border border-primary text-primary"
                   : "bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -39,7 +39,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
               onClick={() => mgr.setCollectionKeyLength(64)}
               className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                 mgr.collectionKeyLength === 64
-                  ? "bg-blue-600/30 border border-blue-500 text-blue-300"
+                  ? "bg-primary/30 border border-primary text-primary"
                   : "bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -51,7 +51,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
         <button
           onClick={mgr.generateCollectionKey}
           disabled={mgr.isGeneratingCollectionKey}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-md transition-colors"
         >
           {mgr.isGeneratingCollectionKey ? (
             <>
@@ -67,14 +67,14 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
         </button>
 
         {mgr.collectionKeySuccess && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-blue-900/30 border border-blue-700/50 rounded-md text-blue-400 text-sm">
+          <div className="flex items-center gap-2 px-3 py-2 bg-primary/30 border border-primary/50 rounded-md text-primary text-sm">
             <CheckCircle className="w-4 h-4" />
             {mgr.collectionKeySuccess}
           </div>
         )}
 
         {mgr.collectionKeyError && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded-md text-red-400 text-sm">
+          <div className="flex items-center gap-2 px-3 py-2 bg-error/30 border border-error/50 rounded-md text-error text-sm">
             <Lock className="w-4 h-4" />
             {mgr.collectionKeyError}
           </div>

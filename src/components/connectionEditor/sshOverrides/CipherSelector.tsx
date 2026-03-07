@@ -28,7 +28,7 @@ const CipherSelector: React.FC<{
             onClick={() => toggleOption(option)}
             className={`px-2 py-0.5 text-xs rounded transition-colors ${
               value.includes(option)
-                ? "bg-blue-600 text-[var(--color-text)]"
+                ? "bg-primary text-[var(--color-text)]"
                 : "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-secondary)]"
             }`}
           >

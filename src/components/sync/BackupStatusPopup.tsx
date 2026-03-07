@@ -28,10 +28,10 @@ type Mgr = ReturnType<typeof useBackupStatus>;
 const StatusIconButton: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const icon = mgr.getStatusIcon();
   const iconMap = {
-    loading: <Loader2 className="w-4 h-4 animate-spin text-blue-400" />,
+    loading: <Loader2 className="w-4 h-4 animate-spin text-primary" />,
     empty: <Archive className="w-4 h-4 text-[var(--color-textMuted)]" />,
-    failed: <AlertCircle className="w-4 h-4 text-red-400" />,
-    success: <CheckCircle className="w-4 h-4 text-green-400" />,
+    failed: <AlertCircle className="w-4 h-4 text-error" />,
+    success: <CheckCircle className="w-4 h-4 text-success" />,
     default: <HardDrive className="w-4 h-4 text-[var(--color-textSecondary)]" />,
   };
   return (
@@ -83,10 +83,10 @@ const StatusSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </span>
         <div className="flex items-center gap-2">
           {mgr.backupStatus.lastBackupStatus === "success" && (
-            <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+            <CheckCircle className="w-3.5 h-3.5 text-success" />
           )}
           {mgr.backupStatus.lastBackupStatus === "failed" && (
-            <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+            <AlertCircle className="w-3.5 h-3.5 text-error" />
           )}
           <span className="text-[var(--color-textSecondary)]">
             {formatRelativeTime(mgr.backupStatus.lastBackupTime)}
@@ -111,7 +111,7 @@ const StatusSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </span>
       </div>
       {mgr.backupStatus.lastError && (
-        <div className="p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">
+        <div className="p-2 bg-error/20 border border-error rounded text-xs text-error">
           {mgr.backupStatus.lastError}
         </div>
       )}
@@ -123,16 +123,16 @@ const TestResultBanner: React.FC<{
   testResult: { success: boolean; message: string };
 }> = ({ testResult }) => (
   <div
-    className={`p-3 rounded-lg mb-4 ${testResult.success ? "bg-green-900/20 border border-green-800" : "bg-red-900/20 border border-red-800"}`}
+    className={`p-3 rounded-lg mb-4 ${testResult.success ? "bg-success/20 border border-success" : "bg-error/20 border border-error"}`}
   >
     <div className="flex items-center gap-2">
       {testResult.success ? (
-        <FileCheck className="w-4 h-4 text-green-400" />
+        <FileCheck className="w-4 h-4 text-success" />
       ) : (
-        <AlertCircle className="w-4 h-4 text-red-400" />
+        <AlertCircle className="w-4 h-4 text-error" />
       )}
       <span
-        className={`text-sm ${testResult.success ? "text-green-300" : "text-red-300"}`}
+        className={`text-sm ${testResult.success ? "text-success" : "text-error"}`}
       >
         {testResult.message}
       </span>
@@ -145,7 +145,7 @@ const ActionButtons: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <button
       onClick={mgr.handleBackupNow}
       disabled={mgr.isBackingUp || mgr.backupStatus?.isRunning}
-      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-success hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
     >
       {mgr.isBackingUp || mgr.backupStatus?.isRunning ? (
         <Loader2 className="w-4 h-4 animate-spin" />
@@ -157,7 +157,7 @@ const ActionButtons: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <button
       onClick={mgr.handleTestBackup}
       disabled={mgr.isTesting}
-      className="flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+      className="flex items-center justify-center gap-2 px-3 py-2 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
       title={mgr.t("backup.testBackup", "Test Backup")}
     >
       {mgr.isTesting ? (
@@ -196,21 +196,21 @@ const BackupList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   <span>•</span>
                   <span>{formatBytes(backup.sizeBytes)}</span>
                   {backup.encrypted && (
-                    <span className="text-yellow-500">🔒</span>
+                    <span className="text-warning">🔒</span>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-1 ml-2">
                 <button
                   onClick={() => mgr.handleRestoreBackup(backup.id)}
-                  className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-green-400"
+                  className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success"
                   title={mgr.t("backup.restore", "Restore")}
                 >
                   <Download className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => mgr.handleDeleteBackup(backup.id)}
-                  className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-red-400"
+                  className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-error"
                   title={mgr.t("backup.delete", "Delete")}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -249,7 +249,7 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
         <div>
           <ToolbarPopoverHeader
             title={mgr.t("backup.title", "Local Backup")}
-            icon={<HardDrive className="w-5 h-5 text-green-400" />}
+            icon={<HardDrive className="w-5 h-5 text-success" />}
             onClose={() => mgr.setIsOpen(false)}
             actions={
               <PopoverHeaderActions mgr={mgr} onOpenSettings={onOpenSettings} />

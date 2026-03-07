@@ -40,7 +40,7 @@ export const RDPRecordingRow: React.FC<RDPRecordingRowProps> = ({
         onClick={onToggle}
         className="sor-recording-row"
       >
-        <Monitor size={16} className="text-blue-400 flex-shrink-0" />
+        <Monitor size={16} className="text-primary flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-[var(--color-text)] truncate">
             {recording.name}
@@ -94,7 +94,7 @@ export const RDPRecordingRow: React.FC<RDPRecordingRowProps> = ({
               />
               <button
                 onClick={rename.commitRename}
-                className="p-1 text-green-400 hover:text-green-300"
+                className="p-1 text-success hover:text-success"
               >
                 <Save size={14} />
               </button>
@@ -106,7 +106,7 @@ export const RDPRecordingRow: React.FC<RDPRecordingRowProps> = ({
                   e.stopPropagation();
                   onPlay();
                 }}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded"
               >
                 <Play size={12} /> Play
               </button>

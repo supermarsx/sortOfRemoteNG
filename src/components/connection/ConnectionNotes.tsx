@@ -263,13 +263,13 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
       {/* Header */}
       <header className="sor-notes-header flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <Edit size={16} className="text-amber-400" />
+          <Edit size={16} className="text-warning" />
           <h2 className="text-sm font-semibold truncate">
             {t("notes.title", "Notes")} — {connectionName}
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          {saving && <span className="sor-notes-saving text-xs text-amber-400 animate-pulse"><Save size={12} /> {t("notes.saving", "Saving…")}</span>}
+          {saving && <span className="sor-notes-saving text-xs text-warning animate-pulse"><Save size={12} /> {t("notes.saving", "Saving…")}</span>}
           {onClose && (
             <button onClick={onClose} className="sor-option-chip p-1 rounded hover:bg-[var(--color-border)]" aria-label={t("common.close", "Close")}>
               <X size={16} />
@@ -284,7 +284,7 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`px-3 py-1 text-xs rounded-t font-medium transition-colors ${tab === id ? "bg-[var(--color-border)] text-amber-400" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"}`}
+            className={`px-3 py-1 text-xs rounded-t font-medium transition-colors ${tab === id ? "bg-[var(--color-border)] text-warning" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"}`}
           >
             {id === "notes" ? t("notes.tabNotes", "Notes") : t("notes.tabRunbooks", "Runbooks")}
           </button>
@@ -308,7 +308,7 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
                   className="bg-transparent outline-none w-28 text-[var(--color-text)]"
                 />
                 {searchQuery && highlightedContent !== null && (
-                  <span className="text-amber-400 text-[10px]">{t("notes.found", "Found")}</span>
+                  <span className="text-warning text-[10px]">{t("notes.found", "Found")}</span>
                 )}
               </div>
 
@@ -318,7 +318,7 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
                   <button
                     key={mode}
                     onClick={() => setViewMode(mode)}
-                    className={`p-1 rounded text-xs ${viewMode === mode ? "bg-amber-500/20 text-amber-400" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"}`}
+                     className={`p-1 rounded text-xs ${viewMode === mode ? "bg-warning/20 text-warning" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"}`}
                     title={mode}
                   >
                     {icon}
@@ -367,9 +367,9 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
             <div className="sor-notes-tags flex items-center gap-2 px-4 py-1.5 border-t border-[var(--color-border)] text-xs">
               <Tag size={12} className="text-[var(--color-textSecondary)]" />
               {data.tags.map((tag) => (
-                <span key={tag} className="sor-notes-tag inline-flex items-center gap-1 bg-amber-500/15 text-amber-400 rounded px-1.5 py-0.5">
+                <span key={tag} className="sor-notes-tag inline-flex items-center gap-1 bg-warning/15 text-warning rounded px-1.5 py-0.5">
                   {tag}
-                  <button onClick={() => removeTag(tag)} className="hover:text-red-400"><X size={10} /></button>
+                  <button onClick={() => removeTag(tag)} className="hover:text-error"><X size={10} /></button>
                 </span>
               ))}
               <input
@@ -392,10 +392,10 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Runbook toolbar */}
             <div className="sor-runbook-toolbar flex items-center gap-2 px-4 py-2 border-b border-[var(--color-border)]">
-              <button onClick={addStep} className="sor-option-chip flex items-center gap-1 text-xs px-2 py-1 rounded bg-amber-500/15 text-amber-400 hover:bg-amber-500/25">
+              <button onClick={addStep} className="sor-option-chip flex items-center gap-1 text-xs px-2 py-1 rounded bg-warning/15 text-warning hover:bg-warning/25">
                 <Plus size={12} /> {t("notes.addStep", "Add Step")}
               </button>
-              <button onClick={toggleRunMode} className={`sor-option-chip flex items-center gap-1 text-xs px-2 py-1 rounded ${runMode ? "bg-green-500/20 text-green-400" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"}`}>
+              <button onClick={toggleRunMode} className={`sor-option-chip flex items-center gap-1 text-xs px-2 py-1 rounded ${runMode ? "bg-success/20 text-success" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"}`}>
                 <Play size={12} /> {runMode ? t("notes.stopRun", "Stop Run") : t("notes.runRunbook", "Run Runbook")}
               </button>
               <button onClick={exportRunbook} className="sor-option-chip flex items-center gap-1 text-xs px-2 py-1 rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
@@ -406,7 +406,7 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
               <div className="ml-auto flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
                 <span>{completedCount}/{data.runbookSteps.length}</span>
                 <div className="sor-runbook-progress w-24 h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-                  <div className="h-full bg-amber-400 transition-all" style={{ width: `${progressPct}%` }} />
+                  <div className="h-full bg-warning transition-all" style={{ width: `${progressPct}%` }} />
                 </div>
                 <span>{progressPct}%</span>
               </div>
@@ -422,9 +422,9 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
                   key={step.id}
                   className={`sor-runbook-step rounded-lg border p-3 transition-colors ${
                     runMode && idx === currentStepIdx
-                      ? "border-amber-500 bg-amber-500/10"
-                      : step.completed
-                        ? "border-green-500/30 bg-green-500/5"
+                     ? "border-warning bg-warning/10"
+                     : step.completed
+                       ? "border-success/30 bg-success/[0.05]"
                         : "border-[var(--color-border)] bg-[var(--color-bg)]"
                   }`}
                 >
@@ -440,12 +440,12 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
                       className="mt-0.5 shrink-0"
                     >
                       {step.completed
-                        ? <CheckSquare size={16} className="text-green-400" />
+                        ? <CheckSquare size={16} className="text-success" />
                         : <Square size={16} className="text-[var(--color-textSecondary)]" />}
                     </button>
 
                     {/* Step number */}
-                    <span className="sor-runbook-step-num text-xs font-bold text-amber-400 mt-0.5 shrink-0 w-5 text-center">{idx + 1}</span>
+                    <span className="sor-runbook-step-num text-xs font-bold text-warning mt-0.5 shrink-0 w-5 text-center">{idx + 1}</span>
 
                     {/* Content */}
                     <div className="flex-1 min-w-0 space-y-1">
@@ -483,7 +483,7 @@ export const ConnectionNotes: React.FC<ConnectionNotesProps> = ({
                       <button onClick={() => moveStep(idx, 1)} disabled={idx === data.runbookSteps.length - 1} className="p-0.5 rounded hover:bg-[var(--color-border)] disabled:opacity-30">
                         <ChevronDown size={12} />
                       </button>
-                      <button onClick={() => removeStep(step.id)} className="p-0.5 rounded hover:bg-red-500/20 text-[var(--color-textSecondary)] hover:text-red-400">
+                       <button onClick={() => removeStep(step.id)} className="p-0.5 rounded hover:bg-error/20 text-[var(--color-textSecondary)] hover:text-error">
                         <Trash2 size={12} />
                       </button>
                     </div>

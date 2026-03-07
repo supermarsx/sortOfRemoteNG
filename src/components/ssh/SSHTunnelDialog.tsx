@@ -83,8 +83,8 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
           className="border-b border-[var(--color-border)] px-5 py-4 bg-[var(--color-surface)]"
           title={
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-blue-500/20 rounded-lg">
-                <Route size={18} className="text-blue-500" />
+              <div className="p-2 bg-primary/20 rounded-lg">
+                <Route size={18} className="text-primary" />
               </div>
               <h2 className="text-lg font-semibold text-[var(--color-text)]">
                 {isEditing ? "Edit SSH Tunnel" : "Create SSH Tunnel"}
@@ -97,26 +97,26 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              Tunnel Name <span className="text-red-400">*</span>
+              Tunnel Name <span className="text-error">*</span>
             </label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="My SSH Tunnel"
-              className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
               autoFocus
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              SSH Connection <span className="text-red-400">*</span>
+              SSH Connection <span className="text-error">*</span>
             </label>
             <Select value={form.sshConnectionId} onChange={(v: string) =>
-                setForm({ ...form, sshConnectionId: v })} options={[{ value: '', label: 'Select SSH connection...' }, ...sshConnections.map((conn) => ({ value: conn.id, label: `${conn.name} (${conn.hostname}:${conn.port})` }))]} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500" />
+                setForm({ ...form, sshConnectionId: v })} options={[{ value: '', label: 'Select SSH connection...' }, ...sshConnections.map((conn) => ({ value: conn.id, label: `${conn.name} (${conn.hostname}:${conn.port})` }))]} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" />
             {sshConnections.length === 0 && (
-              <p className="text-xs text-yellow-500 mt-1">
+              <p className="text-xs text-warning mt-1">
                 No SSH connections available. Create an SSH connection first.
               </p>
             )}
@@ -129,7 +129,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
             <Select value={form.type} onChange={(v: string) => setForm({
                   ...form,
                   type: v as "local" | "remote" | "dynamic",
-                })} options={[{ value: "local", label: "Local (forward local port to remote)" }, { value: "remote", label: "Remote (forward remote port to local)" }, { value: "dynamic", label: "Dynamic (SOCKS proxy)" }]} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500" />
+                })} options={[{ value: "local", label: "Local (forward local port to remote)" }, { value: "remote", label: "Remote (forward remote port to local)" }, { value: "dynamic", label: "Dynamic (SOCKS proxy)" }]} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" />
             <p className="text-xs text-[var(--color-textSecondary)] mt-1">
               {form.type === "local" &&
                 "Forwards connections from your local machine to a remote host via SSH."}
@@ -145,7 +145,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
               <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
                 Local Port
               </label>
-              <NumberInput value={form.localPort} onChange={(v: number) => setForm({ ...form, localPort: v })} placeholder="0 = auto" className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500" min={0} max={65535} />
+              <NumberInput value={form.localPort} onChange={(v: number) => setForm({ ...form, localPort: v })} placeholder="0 = auto" className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" min={0} max={65535} />
               <p className="text-xs text-[var(--color-textSecondary)] mt-1">
                 0 = automatically assign
               </p>
@@ -154,12 +154,12 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
             {form.type !== "dynamic" && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                  Remote Port <span className="text-red-400">*</span>
+                  Remote Port <span className="text-error">*</span>
                 </label>
                 <NumberInput value={form.remotePort} onChange={(v: number) => setForm({
                       ...form,
                       remotePort: v,
-                    })} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500" min={1} max={65535} />
+                    })} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" min={1} max={65535} />
               </div>
             )}
           </div>
@@ -176,7 +176,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
                   setForm({ ...form, remoteHost: e.target.value })
                 }
                 placeholder="localhost"
-                className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+                className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
               />
               <p className="text-xs text-[var(--color-textSecondary)] mt-1">
                 The destination host from the SSH server's perspective. Usually
@@ -186,7 +186,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
           )}
 
           <div className="flex items-center gap-2 py-2">
-            <Checkbox checked={form.autoConnect} onChange={(v: boolean) => setForm({ ...form, autoConnect: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-bgSecondary)] text-blue-500 focus:ring-blue-500/50" />
+            <Checkbox checked={form.autoConnect} onChange={(v: boolean) => setForm({ ...form, autoConnect: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-bgSecondary)] text-primary focus:ring-primary/50" />
             <label
               htmlFor="autoConnect"
               className="text-sm text-[var(--color-text)]"
@@ -207,7 +207,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
             <button
               type="submit"
               disabled={!form.name || !form.sshConnectionId}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-primary hover:bg-primary/90 text-[var(--color-text)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isEditing ? "Save Changes" : "Create Tunnel"}
             </button>

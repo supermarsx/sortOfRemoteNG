@@ -39,13 +39,13 @@ const ThermalView: React.FC<SubProps> = ({ mgr }) => {
             </div>
             <div>
               <p className="text-[10px] text-[var(--color-text-secondary)]">Fans</p>
-              <p className="text-sm font-semibold text-green-400">
+              <p className="text-sm font-semibold text-success">
                 {ts.fansOk}/{ts.fanCount} OK
               </p>
             </div>
             <div>
               <p className="text-[10px] text-[var(--color-text-secondary)]">Sensors</p>
-              <p className="text-sm font-semibold text-green-400">
+              <p className="text-sm font-semibold text-success">
                 {ts.sensorsOk}/{ts.sensorCount} OK
               </p>
             </div>
@@ -57,7 +57,7 @@ const ThermalView: React.FC<SubProps> = ({ mgr }) => {
       {td && td.temperatures.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Thermometer className="w-4 h-4 text-red-400" />
+            <Thermometer className="w-4 h-4 text-error" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.thermal.temperatures", "Temperature Sensors")}
             </h3>
@@ -88,7 +88,7 @@ const ThermalView: React.FC<SubProps> = ({ mgr }) => {
                     {s.upperThresholdFatal != null ? `${s.upperThresholdFatal} °C` : "—"}
                   </td>
                   <td className="py-1 text-center">
-                    <span className={s.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={s.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {s.status.health ?? "N/A"}
                     </span>
                   </td>
@@ -103,7 +103,7 @@ const ThermalView: React.FC<SubProps> = ({ mgr }) => {
       {td && td.fans.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Wind className="w-4 h-4 text-blue-400" />
+            <Wind className="w-4 h-4 text-primary" />
             <h3 className="text-xs font-semibold text-[var(--color-text)]">
               {t("idrac.thermal.fans", "Fans")}
             </h3>
@@ -128,7 +128,7 @@ const ThermalView: React.FC<SubProps> = ({ mgr }) => {
                     {f.readingPercent != null ? `${f.readingPercent}%` : "—"}
                   </td>
                   <td className="py-1 text-center">
-                    <span className={f.status.health?.toLowerCase() === "ok" ? "text-green-400" : "text-amber-400"}>
+                    <span className={f.status.health?.toLowerCase() === "ok" ? "text-success" : "text-warning"}>
                       {f.status.health ?? "N/A"}
                     </span>
                   </td>

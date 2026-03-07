@@ -42,10 +42,10 @@ export const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ className }) => {
       {/* Header */}
       <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <MessageCircle size={20} className="text-green-400" />
+          <MessageCircle size={20} className="text-success" />
           <span className="text-[var(--color-text)] font-medium">WhatsApp</span>
           {waHook.configured && (
-            <span className="text-xs px-2 py-0.5 bg-green-900 text-green-300 rounded">
+            <span className="text-xs px-2 py-0.5 bg-success text-success rounded">
               Connected
             </span>
           )}
@@ -74,7 +74,7 @@ export const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ className }) => {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center space-x-1.5 px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
                 activeTab === tab.id
-                  ? "bg-green-800/30 text-green-400 border-b-2 border-green-400"
+                  ? "bg-success/30 text-success border-b-2 border-success"
                   : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"
               }`}
             >

@@ -1,4 +1,5 @@
 import locationPresetIcons from "./locationPresetIcons";
+import type { Mgr } from './types';
 import React from "react";
 import { FolderOpen, Info, Cloud } from "lucide-react";
 import { BackupLocationPresets } from "../../../../types/settings/settings";
@@ -21,7 +22,7 @@ const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           onClick={() => mgr.handleLocationPresetChange(preset)}
           className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-sm ${
             mgr.backup.locationPreset === preset
-              ? "bg-blue-600/20 border-blue-500 text-blue-400"
+              ? "bg-primary/20 border-primary text-primary"
               : "bg-[var(--color-surfaceHover)]/30 border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-textMuted)]"
           }`}
         >

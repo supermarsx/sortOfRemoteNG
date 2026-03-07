@@ -162,7 +162,7 @@ function ImportModal({
         placeholder='[{"secret":"...","account":"...","issuer":"...","digits":6,"period":30,"algorithm":"sha1"}]'
         className="w-full h-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[10px] text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] resize-none"
       />
-      {error && <div className="text-[10px] text-red-400">{error}</div>}
+      {error && <div className="text-[10px] text-error">{error}</div>}
       <div className="flex justify-end space-x-2">
         <button
           onClick={onClose}
@@ -172,7 +172,7 @@ function ImportModal({
         </button>
         <button
           onClick={handleImport}
-          className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded"
+          className="px-2 py-1 text-[10px] bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded"
         >
           Import
         </button>
@@ -189,12 +189,12 @@ const PanelHeader: React.FC<{
 }> = ({ mgr, onClose }) => (
   <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/80">
     <div className="flex items-center space-x-2">
-      <Shield size={14} className="text-blue-400" />
+      <Shield size={14} className="text-primary" />
       <span className="text-xs font-semibold text-[var(--color-text)]">
         2FA Codes
       </span>
       {mgr.copiedSecret === 'export' && (
-        <span className="text-[10px] text-green-400">Copied!</span>
+        <span className="text-[10px] text-success">Copied!</span>
       )}
     </div>
     <div className="flex items-center space-x-1">
@@ -260,7 +260,7 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       <button onClick={() => mgr.setShowAdd(false)} className="px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors">
         Cancel
       </button>
-      <button onClick={mgr.handleAdd} className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded transition-colors">
+      <button onClick={mgr.handleAdd} className="px-2 py-1 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors">
         Add
       </button>
     </div>
@@ -294,7 +294,7 @@ const TotpEditRow: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       <button onClick={mgr.cancelEdit} className="sor-totp-action">
         Cancel
       </button>
-      <button onClick={mgr.saveEdit} className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded">
+      <button onClick={mgr.saveEdit} className="px-2 py-1 text-[10px] bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded">
         Save
       </button>
     </div>
@@ -329,14 +329,14 @@ const TotpEntryRow: React.FC<{
             </span>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="font-mono text-lg text-green-400 tracking-wider">
+            <span className="font-mono text-lg text-success tracking-wider">
               {mgr.codes[cfg.secret] || '------'}
             </span>
             <div className="flex items-center space-x-1">
               <div className="w-12 h-1 bg-[var(--color-border)] rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-1000 ${
-                    remaining <= 5 ? 'bg-red-500' : 'bg-blue-500'
+                    remaining <= 5 ? 'bg-error' : 'bg-primary'
                   }`}
                   style={{ width: `${progress * 100}%` }}
                 />
@@ -372,7 +372,7 @@ const TotpEntryRow: React.FC<{
           )}
           <button onClick={() => mgr.copyCode(cfg.secret)} className="sor-icon-btn-sm" title="Copy code">
             {mgr.copiedSecret === cfg.secret ? (
-              <Check size={12} className="text-green-400" />
+              <Check size={12} className="text-success" />
             ) : (
               <Copy size={12} />
             )}
@@ -396,7 +396,7 @@ const TotpEntryRow: React.FC<{
           <button onClick={() => mgr.startEdit(cfg)} className="sor-icon-btn-sm" title="Edit">
             <Pencil size={12} />
           </button>
-          <button onClick={() => mgr.handleDelete(cfg.secret)} className="p-1 hover:bg-[var(--color-border)] rounded text-red-400 hover:text-red-300 transition-colors" title="Remove">
+          <button onClick={() => mgr.handleDelete(cfg.secret)} className="p-1 hover:bg-[var(--color-border)] rounded text-error hover:text-error/80 transition-colors" title="Remove">
             <Trash2 size={12} />
           </button>
         </div>

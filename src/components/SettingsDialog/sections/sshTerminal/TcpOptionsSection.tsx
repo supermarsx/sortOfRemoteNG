@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { IPProtocols } from "../../../../types/settings/settings";

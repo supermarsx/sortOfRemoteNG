@@ -20,9 +20,9 @@ import { Modal } from "../ui/overlays/Modal";import { DialogHeader } from '../ui
 
 const LEVEL_ICONS: Record<string, JSX.Element> = {
   debug: <Bug className="text-[var(--color-textSecondary)]" size={14} />,
-  info: <Info className="text-blue-400" size={14} />,
-  warn: <AlertTriangle className="text-yellow-400" size={14} />,
-  error: <AlertCircle className="text-red-400" size={14} />,
+  info: <Info className="text-primary" size={14} />,
+  warn: <AlertTriangle className="text-warning" size={14} />,
+  error: <AlertCircle className="text-error" size={14} />,
 };
 
 const DEFAULT_ICON = (
@@ -31,9 +31,9 @@ const DEFAULT_ICON = (
 
 const LEVEL_COLORS: Record<string, string> = {
   debug: "text-[var(--color-textSecondary)]",
-  info: "text-blue-400",
-  warn: "text-yellow-400",
-  error: "text-red-400",
+  info: "text-primary",
+  warn: "text-warning",
+  error: "text-error",
 };
 
 const getLevelIcon = (level: string) => LEVEL_ICONS[level] ?? DEFAULT_ICON;
@@ -53,8 +53,8 @@ function ViewerHeader({ m, onClose }: { m: Mgr; onClose: () => void }) {
   return (
     <DialogHeader
       icon={ScrollText}
-      iconColor="text-amber-400"
-      iconBg="bg-amber-500/20"
+      iconColor="text-warning"
+      iconBg="bg-warning/20"
       title={m.t("logs.title")}
       subtitle={`${m.logs.length} total entries`}
       onClose={onClose}
@@ -67,19 +67,19 @@ function SearchBar({ m }: { m: Mgr }) {
     <div className="flex items-center justify-between gap-4">
       <div className="relative flex-1 max-w-md">
         <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)]" />
-        <input type="text" placeholder="Search logs..." value={m.searchTerm} onChange={(e) => m.setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 text-sm transition-all" />
+        <input type="text" placeholder="Search logs..." value={m.searchTerm} onChange={(e) => m.setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-warning/50 focus:border-warning/50 text-sm transition-all" />
       </div>
       <div className="flex items-center gap-2">
         <span className="text-sm text-[var(--color-textSecondary)] px-2 py-1 bg-[var(--color-border)]/50 rounded-lg">{m.filteredLogs.length} of {m.logs.length}</span>
         <button onClick={m.exportLogs} className="sor-option-chip text-sm"><Download size={14} /><span>{m.t("logs.export")}</span></button>
-        <button onClick={m.clearLogs} className="sor-option-chip text-sm hover:bg-red-600 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-red-500"><Trash2 size={14} /><span>{m.t("logs.clear")}</span></button>
+        <button onClick={m.clearLogs} className="sor-option-chip text-sm hover:bg-error/90 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:border-error"><Trash2 size={14} /><span>{m.t("logs.clear")}</span></button>
       </div>
     </div>
   );
 }
 
 function FilterBar({ m }: { m: Mgr }) {
-  const selectCls = "px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all cursor-pointer hover:border-[var(--color-border)]";
+  const selectCls = "px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-warning/50 focus:border-warning/50 transition-all cursor-pointer hover:border-[var(--color-border)]";
   return (
     <div className="flex items-center gap-3 flex-wrap">
       <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)] uppercase tracking-wider"><Filter size={14} /><span>Filters</span></div>
@@ -98,7 +98,7 @@ function FilterBar({ m }: { m: Mgr }) {
         <Select value={m.dateFilter} onChange={(v: string) => m.setDateFilter(v)} options={[{ value: "all", label: "All Time" }, { value: "today", label: "Today" }, { value: "yesterday", label: "Yesterday" }, { value: "week", label: "Last 7 Days" }, { value: "month", label: "Last 30 Days" }]} className="selectCls" />
       </div>
       {m.hasActiveFilters && (
-        <button onClick={m.resetFilters} className="sor-option-chip text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"><X size={12} />Clear filters</button>
+        <button onClick={m.resetFilters} className="sor-option-chip text-xs text-warning hover:text-warning hover:bg-warning/10"><X size={12} />Clear filters</button>
       )}
     </div>
   );

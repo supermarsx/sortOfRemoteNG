@@ -171,7 +171,7 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
                   ) : (
                     <button
                       onClick={() => mgr.handleConnectChain(chain.id)}
-                      className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
+                      className="px-3 py-1 text-xs rounded-md bg-primary hover:bg-primary/90 text-[var(--color-text)]"
                     >
                       Connect
                     </button>
@@ -217,7 +217,7 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
                   ) : (
                     <button
                       onClick={() => mgr.handleConnectProxyChain(chain.id)}
-                      className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
+                      className="px-3 py-1 text-xs rounded-md bg-primary hover:bg-primary/90 text-[var(--color-text)]"
                     >
                       Connect
                     </button>

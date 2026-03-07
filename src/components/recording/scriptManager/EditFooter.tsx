@@ -15,7 +15,7 @@ function EditFooter({ mgr }: { mgr: ScriptManagerMgr }) {
       <button
         onClick={mgr.handleSaveScript}
         disabled={!mgr.editName.trim() || !mgr.editScript.trim()}
-        className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:bg-[var(--color-surfaceHover)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent hover:bg-accent/90 disabled:bg-[var(--color-surfaceHover)] disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
       >
         <Save size={14} />
         {t('common.save', 'Save')}

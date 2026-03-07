@@ -88,7 +88,7 @@ function AuthTokenModal({ mgr }: { mgr: Mgr }) {
             </label>
             <NumberInput value={mgr.authForm.tokenExpiry} onChange={(v: number) => mgr.setAuthForm({
                   ...mgr.authForm,
-                  tokenExpiry: e.target.value,
+                  tokenExpiry: v,
                 })} className="sor-settings-input" min={0} />
           </div>
         </div>
@@ -104,7 +104,7 @@ function AuthTokenModal({ mgr }: { mgr: Mgr }) {
           <button
             type="button"
             onClick={mgr.saveTokenDialog}
-            className="px-3 py-2 text-sm text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-lg"
+            className="px-3 py-2 text-sm text-[var(--color-text)] bg-primary hover:bg-primary/90 rounded-lg"
           >
             Save Tokens
           </button>

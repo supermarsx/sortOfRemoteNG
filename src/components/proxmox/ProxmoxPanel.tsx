@@ -74,14 +74,14 @@ export const ProxmoxPanel: React.FC<ProxmoxPanelProps> = ({
               <div className="flex flex-1 flex-col min-w-0">
                 {/* Error bar */}
                 {mgr.dataError && (
-                  <div className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border-b border-red-500/30 text-red-400 text-xs">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-error/10 border-b border-error/30 text-error text-xs">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">{mgr.dataError}</span>
                     <button
                       onClick={() => {
                         /* error is auto-cleared on next action */
                       }}
-                      className="ml-auto text-red-400/60 hover:text-red-400 text-[10px]"
+                      className="ml-auto text-error/60 hover:text-error text-[10px]"
                     >
                       {t("common.dismiss", "Dismiss")}
                     </button>

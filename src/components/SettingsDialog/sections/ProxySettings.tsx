@@ -31,7 +31,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
       <div className="sor-settings-card">
         <label className="flex items-center space-x-3 cursor-pointer group">
           <Checkbox checked={settings.globalProxy?.enabled || false} onChange={(v: boolean) => updateProxy({ enabled: v })} />
-          <Shield className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-blue-400" />
+          <Shield className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-primary" />
           <div>
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Global Proxy
@@ -48,7 +48,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           {/* Proxy Type Section */}
           <div className="space-y-4">
             <h4 className="sor-section-heading">
-              <Globe className="w-4 h-4 text-blue-400" />
+              <Globe className="w-4 h-4 text-primary" />
               Proxy Type
             </h4>
 
@@ -59,12 +59,12 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
                   onClick={() => updateProxy({ type: type.value as any })}
                   className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                     settings.globalProxy?.type === type.value
-                      ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                      ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50"
                       : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                   }`}
                 >
                   <Shield
-                    className={`w-5 h-5 mb-1 ${settings.globalProxy?.type === type.value ? "text-blue-400" : ""}`}
+                    className={`w-5 h-5 mb-1 ${settings.globalProxy?.type === type.value ? "text-primary" : ""}`}
                   />
                   <span className="text-sm font-medium">{type.label}</span>
                   <span className="text-xs text-[var(--color-textSecondary)] mt-1">
@@ -78,7 +78,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           {/* Connection Details Section */}
           <div className="space-y-4">
             <h4 className="sor-section-heading">
-              <Server className="w-4 h-4 text-green-400" />
+              <Server className="w-4 h-4 text-success" />
               Connection Details
             </h4>
 
@@ -112,7 +112,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
           {/* Authentication Section */}
           <div className="space-y-4">
             <h4 className="sor-section-heading">
-              <Lock className="w-4 h-4 text-yellow-400" />
+              <Lock className="w-4 h-4 text-warning" />
               Authentication (Optional)
             </h4>
 

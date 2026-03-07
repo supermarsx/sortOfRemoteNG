@@ -18,7 +18,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   return (
     <div className="sor-settings-card">
       <h4 className="sor-section-heading">
-        <Monitor className="w-4 h-4 text-blue-400" />
+        <Monitor className="w-4 h-4 text-primary" />
         Display Defaults
       </h4>
 

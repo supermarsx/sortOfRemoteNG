@@ -1,6 +1,7 @@
 import ConfigEditRow from "./ConfigEditRow";
 import ConfigRow from "./ConfigRow";
 import React from "react";
+import type { TOTPOptionsMgr } from "./types";
 
 const ConfigList: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => (
   <>

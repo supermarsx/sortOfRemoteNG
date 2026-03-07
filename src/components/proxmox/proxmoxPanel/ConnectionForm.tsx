@@ -18,8 +18,8 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
       <div className="w-full max-w-md space-y-5">
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-orange-500/20 mb-4">
-            <LogIn className="w-8 h-8 text-orange-500" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-warning/20 mb-4">
+            <LogIn className="w-8 h-8 text-warning" />
           </div>
           <h2 className="text-xl font-semibold text-[var(--color-text)]">
             {t("proxmox.connectTitle", "Connect to Proxmox VE")}
@@ -31,7 +31,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
 
         {/* Error banner */}
         {mgr.connectionError && (
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-error/10 border border-error/30 text-error text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{mgr.connectionError}</span>
           </div>
@@ -44,7 +44,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("proxmox.host", "Host")}
             </label>
             <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
               placeholder="192.168.1.100"
               value={mgr.host}
               onChange={(e) => mgr.setHost(e.target.value)}
@@ -57,7 +57,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             </label>
             <input
               type="number"
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
               value={mgr.port}
               onChange={(e) => mgr.setPort(parseInt(e.target.value, 10) || 8006)}
               disabled={connecting}
@@ -71,7 +71,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             {t("proxmox.username", "Username")}
           </label>
           <input
-            className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+            className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
             placeholder="root@pam"
             value={mgr.username}
             onChange={(e) => mgr.setUsername(e.target.value)}
@@ -85,7 +85,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             onClick={() => mgr.setUseApiToken(false)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               !mgr.useApiToken
-                ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                ? "bg-warning/20 text-warning border border-warning/30"
                 : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
             }`}
             disabled={connecting}
@@ -97,7 +97,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             onClick={() => mgr.setUseApiToken(true)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               mgr.useApiToken
-                ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                ? "bg-warning/20 text-warning border border-warning/30"
                 : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
             }`}
             disabled={connecting}
@@ -115,7 +115,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             </label>
             <input
               type="password"
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
               value={mgr.password}
               onChange={(e) => mgr.setPassword(e.target.value)}
               disabled={connecting}
@@ -128,7 +128,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
                 {t("proxmox.tokenIdLabel", "Token ID")}
               </label>
               <input
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
                 placeholder="user@pam!tokenname"
                 value={mgr.tokenId}
                 onChange={(e) => mgr.setTokenId(e.target.value)}
@@ -141,7 +141,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               </label>
               <input
                 type="password"
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-warning/50"
                 value={mgr.tokenSecret}
                 onChange={(e) => mgr.setTokenSecret(e.target.value)}
                 disabled={connecting}
@@ -156,7 +156,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             type="checkbox"
             checked={mgr.insecure}
             onChange={(e) => mgr.setInsecure(e.target.checked)}
-            className="w-4 h-4 rounded border-[var(--color-border)] text-orange-500 focus:ring-orange-500"
+            className="w-4 h-4 rounded border-[var(--color-border)] text-warning focus:ring-warning"
             disabled={connecting}
           />
           <span className="text-xs text-[var(--color-text-secondary)]">
@@ -168,7 +168,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
         <button
           onClick={mgr.connect}
           disabled={connecting || !mgr.host || !mgr.username}
-          className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:bg-orange-600/50 text-white font-medium text-sm transition-colors flex items-center justify-center gap-2"
+          className="w-full py-2.5 rounded-lg bg-warning hover:bg-warning/90 disabled:bg-warning/50 text-white font-medium text-sm transition-colors flex items-center justify-center gap-2"
         >
           {connecting ? (
             <>

@@ -32,16 +32,16 @@ interface ProxyChainEditorProps {
 const NameField: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div>
     <label className="block text-sm font-medium text-[var(--color-text)] mb-1">
-      Chain Name <span className="text-red-400">*</span>
+      Chain Name <span className="text-error">*</span>
     </label>
     <input
       type="text"
       value={mgr.name}
       onChange={(e) => mgr.setName(e.target.value)}
       placeholder="My Proxy Chain"
-      className={`w-full px-3 py-2 bg-[var(--color-bg)] border rounded-lg text-[var(--color-text)] text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent ${mgr.errors.name ? "border-red-500" : "border-[var(--color-border)]"}`}
+      className={`w-full px-3 py-2 bg-[var(--color-bg)] border rounded-lg text-[var(--color-text)] text-sm focus:ring-2 focus:ring-primary focus:border-transparent ${mgr.errors.name ? "border-error" : "border-[var(--color-border)]"}`}
     />
-    {mgr.errors.name && <p className="text-xs text-red-400 mt-1">{mgr.errors.name}</p>}
+    {mgr.errors.name && <p className="text-xs text-error mt-1">{mgr.errors.name}</p>}
   </div>
 );
 
@@ -53,13 +53,13 @@ const DescriptionField: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       onChange={(e) => mgr.setDescription(e.target.value)}
       placeholder="Optional description for this chain"
       rows={2}
-      className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:ring-2 focus:ring-blue-500 resize-none"
+      className="w-full px-3 py-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:ring-2 focus:ring-primary resize-none"
     />
   </div>
 );
 
 const LayerCard: React.FC<{ mgr: Mgr; layer: SavedChainLayer; index: number; total: number }> = ({ mgr, layer, index, total }) => (
-  <div className={`border rounded-lg bg-[var(--color-bg)] ${mgr.errors[`layer-${index}`] ? "border-red-500" : "border-[var(--color-border)]"}`}>
+  <div className={`border rounded-lg bg-[var(--color-bg)] ${mgr.errors[`layer-${index}`] ? "border-error" : "border-[var(--color-border)]"}`}>
     <div className="p-3">
       <div className="flex items-center gap-2 mb-3">
         <GripVertical size={14} className="text-[var(--color-textSecondary)]" />
@@ -67,7 +67,7 @@ const LayerCard: React.FC<{ mgr: Mgr; layer: SavedChainLayer; index: number; tot
         <div className="flex-1" />
         <button onClick={() => mgr.handleMoveLayer(index, "up")} disabled={index === 0} className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] rounded disabled:opacity-30" title="Move up"><ChevronUp size={14} /></button>
         <button onClick={() => mgr.handleMoveLayer(index, "down")} disabled={index === total - 1} className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] rounded disabled:opacity-30" title="Move down"><ChevronDown size={14} /></button>
-        <button onClick={() => mgr.handleRemoveLayer(index)} className="p-1 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-red-500/10 rounded" title="Remove layer"><Trash2 size={14} /></button>
+        <button onClick={() => mgr.handleRemoveLayer(index)} className="p-1 text-[var(--color-textSecondary)] hover:text-error hover:bg-error/10 rounded" title="Remove layer"><Trash2 size={14} /></button>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -105,7 +105,7 @@ const LayerCard: React.FC<{ mgr: Mgr; layer: SavedChainLayer; index: number; tot
       )}
     </div>
     {mgr.errors[`layer-${index}`] && (
-      <div className="px-3 pb-2 text-xs text-red-400">{mgr.errors[`layer-${index}`]}</div>
+      <div className="px-3 pb-2 text-xs text-error">{mgr.errors[`layer-${index}`]}</div>
     )}
   </div>
 );
@@ -113,11 +113,11 @@ const LayerCard: React.FC<{ mgr: Mgr; layer: SavedChainLayer; index: number; tot
 const LayersSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div>
     <div className="flex items-center justify-between mb-2">
-      <label className="block text-sm font-medium text-[var(--color-text)]">Chain Layers <span className="text-red-400">*</span></label>
-      <button onClick={mgr.handleAddLayer} className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"><Plus size={12} />Add Layer</button>
+      <label className="block text-sm font-medium text-[var(--color-text)]">Chain Layers <span className="text-error">*</span></label>
+      <button onClick={mgr.handleAddLayer} className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-primary hover:bg-primary/90 text-[var(--color-text)]"><Plus size={12} />Add Layer</button>
     </div>
     {mgr.errors.layers && (
-      <div className="flex items-center gap-2 p-2 mb-2 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400"><AlertTriangle size={14} />{mgr.errors.layers}</div>
+      <div className="flex items-center gap-2 p-2 mb-2 bg-error/10 border border-error/30 rounded-lg text-xs text-error"><AlertTriangle size={14} />{mgr.errors.layers}</div>
     )}
     <div className="text-xs text-[var(--color-textSecondary)] mb-3">Chain layers are executed in order. Traffic flows through each layer sequentially.</div>
     <div className="space-y-2">
@@ -137,14 +137,14 @@ const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Tags</label>
     <div className="flex flex-wrap gap-2 mb-2">
       {mgr.tags.map((tag) => (
-        <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs">
+        <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/20 text-primary text-xs">
           {tag}
-          <button onClick={() => mgr.handleRemoveTag(tag)} className="hover:text-red-400"><X size={12} /></button>
+          <button onClick={() => mgr.handleRemoveTag(tag)} className="hover:text-error"><X size={12} /></button>
         </span>
       ))}
     </div>
     <div className="flex gap-2">
-      <TextInput value={mgr.tagInput} onChange={(e) => mgr.setTagInput(e.target.value)} onKeyDown={mgr.handleTagKeyDown} placeholder="Add tag..." variant="form" className="flex-1" />
+      <TextInput value={mgr.tagInput} onChange={(v) => mgr.setTagInput(v)} onKeyDown={mgr.handleTagKeyDown} placeholder="Add tag..." variant="form" className="flex-1" />
       <button onClick={mgr.handleAddTag} disabled={!mgr.tagInput.trim()} className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] disabled:opacity-50">Add</button>
     </div>
   </div>
@@ -194,7 +194,7 @@ export const ProxyChainEditor: React.FC<ProxyChainEditorProps> = ({
         </div>
         <div className="px-5 py-4 border-t border-[var(--color-border)] flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]">Cancel</button>
-          <button onClick={handleSave} className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]">{editingChain ? "Update Chain" : "Create Chain"}</button>
+          <button onClick={handleSave} className="px-4 py-2 text-sm rounded-lg bg-primary hover:bg-primary/90 text-[var(--color-text)]">{editingChain ? "Update Chain" : "Create Chain"}</button>
         </div>
       </div>
     </Modal>

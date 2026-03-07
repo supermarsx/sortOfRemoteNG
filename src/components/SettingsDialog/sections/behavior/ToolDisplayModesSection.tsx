@@ -1,4 +1,5 @@
-import TOOL_ENTRIES from "./TOOL_ENTRIES";
+import type { SectionProps } from "./types";
+import TOOL_ENTRIES, { defaultToolDisplayModes } from "./TOOL_ENTRIES";
 import React from "react";
 import { PanelRight, Globe } from "lucide-react";
 import type { ToolDisplayMode, ToolDisplayModeOverride } from "../../../../types/settings/settings";
@@ -21,7 +22,7 @@ const ToolDisplayModesSection: React.FC<SectionProps> = ({ s, u }) => (
         data-setting-key="toolDisplayModes.globalDefault"
       >
         <div className="flex items-center gap-2">
-          <Globe className="w-4 h-4 text-blue-400 flex-shrink-0" />
+          <Globe className="w-4 h-4 text-primary flex-shrink-0" />
           <span className="text-sm font-medium text-[var(--color-text)]">
             Global Default
           </span>

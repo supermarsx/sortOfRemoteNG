@@ -28,7 +28,7 @@ const LayoutModeButton: React.FC<{
     onClick={() => onClick(mode)}
     className={`p-2 rounded transition-colors ${
       currentMode === mode
-        ? "bg-blue-600 text-[var(--color-text)]"
+        ? "bg-primary text-[var(--color-text)]"
         : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
     }`}
     title={title}
@@ -43,7 +43,7 @@ const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number }> = ({ mgr, 
       onClick={() => mgr.setShowCustomGrid(!mgr.showCustomGrid)}
       className={`p-2 rounded transition-colors ${
         mgr.showCustomGrid
-          ? "bg-blue-600 text-[var(--color-text)]"
+          ? "bg-primary text-[var(--color-text)]"
           : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
       }`}
       title="Custom grid layout"
@@ -78,14 +78,14 @@ const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number }> = ({ mgr, 
         <div className="border border-[var(--color-border)] rounded p-2">
           <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${mgr.customCols}, 1fr)`, gridTemplateRows: `repeat(${mgr.customRows}, 1fr)` }}>
             {Array.from({ length: mgr.customCols * mgr.customRows }).map((_, i) => (
-              <div key={i} className={`h-4 rounded ${i < sessionCount ? "bg-blue-500" : "bg-[var(--color-surfaceHover)]"}`} />
+              <div key={i} className={`h-4 rounded ${i < sessionCount ? "bg-primary" : "bg-[var(--color-surfaceHover)]"}`} />
             ))}
           </div>
           <div className="text-[var(--color-textMuted)] text-xs mt-1 text-center">
             {mgr.customCols * mgr.customRows} tiles ({Math.min(sessionCount, mgr.customCols * mgr.customRows)} sessions)
           </div>
         </div>
-        <button onClick={mgr.handleCustomGridApply} className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded text-sm transition-colors">Apply Layout</button>
+        <button onClick={mgr.handleCustomGridApply} className="w-full px-3 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded text-sm transition-colors">Apply Layout</button>
       </div>
     </PopoverSurface>
   </div>
@@ -163,7 +163,7 @@ const MosaicLayout: React.FC<{
           onResize={(_event, { size }) => { mgr.handleSessionResize(session.id, size.width, size.height); }}
           minConstraints={[200, 150]}
         >
-          <div style={style} className={`border-2 transition-all ${isActive ? "border-blue-500" : "border-[var(--color-border)]"}`} onClick={() => onSessionSelect(session.id)}>
+          <div style={style} className={`border-2 transition-all ${isActive ? "border-primary" : "border-[var(--color-border)]"}`} onClick={() => onSessionSelect(session.id)}>
             <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-2 py-1 flex items-center justify-between">
               <span className="text-[var(--color-text)] text-sm truncate">{session.name}</span>
               <div className="flex items-center space-x-1">
@@ -189,7 +189,7 @@ const MiniMosaicLayout: React.FC<{
       <div
         key={session.id}
         className={`border-2 rounded cursor-pointer transition-all ${
-          session.id === activeSessionId ? "border-blue-500 bg-blue-900/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"
+          session.id === activeSessionId ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"
         }`}
         onClick={() => onSessionSelect(session.id)}
       >

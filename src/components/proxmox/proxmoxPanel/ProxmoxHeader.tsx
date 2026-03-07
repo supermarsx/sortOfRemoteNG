@@ -13,8 +13,8 @@ const ProxmoxHeader: React.FC<SubPropsWithClose> = ({ mgr, onClose }) => {
   return (
     <DialogHeader
       icon={Server}
-      iconColor="text-orange-500"
-      iconBg="bg-orange-500/20"
+      iconColor="text-warning"
+      iconBg="bg-warning/20"
       title={t("proxmox.title", "Proxmox VE Manager")}
       subtitle={subtitle}
       onClose={onClose}

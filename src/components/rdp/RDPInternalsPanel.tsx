@@ -19,7 +19,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
   <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
     <div className="flex items-center justify-between mb-3">
       <h3 className="text-sm font-semibold text-[var(--color-textSecondary)] flex items-center gap-2">
-        <Activity size={14} className="text-green-400" />
+        <Activity size={14} className="text-success" />
         RDP Session Internals
       </h3>
       <button onClick={onClose} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
@@ -38,7 +38,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">FPS</div>
-          <div className={`font-mono font-bold ${stats.fps >= 20 ? 'text-green-400' : stats.fps >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
+          <div className={`font-mono font-bold ${stats.fps >= 20 ? 'text-success' : stats.fps >= 10 ? 'text-warning' : 'text-error'}`}>
             {stats.fps.toFixed(1)}
           </div>
         </div>
@@ -48,11 +48,11 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Received</div>
-          <div className="text-cyan-400 font-mono">{formatBytes(stats.bytes_received)}</div>
+          <div className="text-info font-mono">{formatBytes(stats.bytes_received)}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Sent</div>
-          <div className="text-orange-400 font-mono">{formatBytes(stats.bytes_sent)}</div>
+          <div className="text-warning font-mono">{formatBytes(stats.bytes_sent)}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">PDUs In</div>
@@ -72,7 +72,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Errors (Recovered)</div>
-          <div className={`font-mono ${stats.errors_recovered > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+          <div className={`font-mono ${stats.errors_recovered > 0 ? 'text-warning' : 'text-success'}`}>
             {stats.errors_recovered}
           </div>
         </div>
@@ -96,7 +96,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Frame Batching</div>
-          <div className={`font-mono ${rdpSettings.performance?.frameBatching ? 'text-green-400' : 'text-yellow-400'}`}>
+          <div className={`font-mono ${rdpSettings.performance?.frameBatching ? 'text-success' : 'text-warning'}`}>
             {rdpSettings.performance?.frameBatching ? `On @ ${rdpSettings.performance?.frameBatchIntervalMs ?? 33}ms` : 'Off'}
           </div>
         </div>
@@ -115,8 +115,8 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Render Backend</div>
           <div className={`font-mono font-bold ${
-            activeRenderBackend === 'wgpu' ? 'text-purple-400' :
-            activeRenderBackend === 'softbuffer' ? 'text-blue-400' : 'text-[var(--color-textSecondary)]'
+            activeRenderBackend === 'wgpu' ? 'text-accent' :
+            activeRenderBackend === 'softbuffer' ? 'text-primary' : 'text-[var(--color-textSecondary)]'
           }`}>
             {activeRenderBackend}
           </div>
@@ -124,9 +124,9 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Frontend Renderer</div>
           <div className={`font-mono font-bold ${
-            activeFrontendRenderer.includes('WebGPU') ? 'text-purple-400' :
-            activeFrontendRenderer.includes('WebGL') ? 'text-green-400' :
-            activeFrontendRenderer.includes('Worker') ? 'text-cyan-400' : 'text-blue-400'
+            activeFrontendRenderer.includes('WebGPU') ? 'text-accent' :
+            activeFrontendRenderer.includes('WebGL') ? 'text-success' :
+            activeFrontendRenderer.includes('Worker') ? 'text-info' : 'text-primary'
           }`}>
             {activeFrontendRenderer}
           </div>
@@ -134,7 +134,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         {stats.last_error && (
           <div className="bg-[var(--color-background)] rounded p-2 col-span-2 md:col-span-4 lg:col-span-6">
             <div className="text-[var(--color-textMuted)] mb-1">Last Error</div>
-            <div className="text-red-400 font-mono truncate" title={stats.last_error}>{stats.last_error}</div>
+            <div className="text-error font-mono truncate" title={stats.last_error}>{stats.last_error}</div>
           </div>
         )}
       </div>
@@ -147,11 +147,11 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         <h4 className="text-xs font-semibold text-[var(--color-textSecondary)] mb-2">Connection Timing</h4>
         <div className="flex items-center gap-1 text-xs h-6">
           {[
-            { label: 'DNS', ms: connectTiming.dns_ms, color: 'bg-purple-500' },
-            { label: 'TCP', ms: connectTiming.tcp_ms, color: 'bg-blue-500' },
-            { label: 'Negotiate', ms: connectTiming.negotiate_ms, color: 'bg-cyan-500' },
-            { label: 'TLS', ms: connectTiming.tls_ms, color: 'bg-green-500' },
-            { label: 'Auth', ms: connectTiming.auth_ms, color: 'bg-orange-500' },
+            { label: 'DNS', ms: connectTiming.dns_ms, color: 'bg-accent' },
+            { label: 'TCP', ms: connectTiming.tcp_ms, color: 'bg-primary' },
+            { label: 'Negotiate', ms: connectTiming.negotiate_ms, color: 'bg-info' },
+            { label: 'TLS', ms: connectTiming.tls_ms, color: 'bg-success' },
+            { label: 'Auth', ms: connectTiming.auth_ms, color: 'bg-warning' },
           ].map((phase) => {
             const pct = connectTiming.total_ms > 0 ? Math.max((phase.ms / connectTiming.total_ms) * 100, 4) : 20;
             return (
@@ -168,11 +168,11 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-textMuted)]">
           {[
-            { label: 'DNS', color: 'bg-purple-500' },
-            { label: 'TCP', color: 'bg-blue-500' },
-            { label: 'Negotiate', color: 'bg-cyan-500' },
-            { label: 'TLS', color: 'bg-green-500' },
-            { label: 'Auth', color: 'bg-orange-500' },
+            { label: 'DNS', color: 'bg-accent' },
+            { label: 'TCP', color: 'bg-primary' },
+            { label: 'Negotiate', color: 'bg-info' },
+            { label: 'TLS', color: 'bg-success' },
+            { label: 'Auth', color: 'bg-warning' },
           ].map((l) => (
             <span key={l.label} className="flex items-center gap-1">
               <span className={`inline-block w-2 h-2 rounded-sm ${l.color}`} />

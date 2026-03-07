@@ -12,7 +12,7 @@ function SessionPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           </span>
           <button
             onClick={mgr.selectAllSessions}
-            className="text-xs text-green-700 dark:text-green-400 hover:underline"
+            className="text-xs text-success dark:text-success hover:underline"
           >
             {mgr.selectedSessionIds.size === mgr.sshSessions.length
               ? t("bulkSsh.deselectAll", "Deselect All")
@@ -41,14 +41,14 @@ function SessionPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                 onClick={() => mgr.toggleSessionSelection(session.id)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
                   isSelected
-                    ? "bg-green-500/20 border border-green-500/40"
+                    ? "bg-success/20 border border-success/40"
                     : "hover:bg-[var(--color-surfaceHover)] border border-transparent"
                 }`}
               >
                 {isSelected ? (
                   <CheckSquare
                     size={14}
-                    className="text-green-600 dark:text-green-500 flex-shrink-0"
+                    className="text-success dark:text-success flex-shrink-0"
                   />
                 ) : (
                   <Square
@@ -65,16 +65,16 @@ function SessionPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                   </div>
                 </div>
                 {output?.status === "running" && (
-                  <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+                  <div className="w-2 h-2 bg-warning rounded-full animate-pulse" />
                 )}
                 {output?.status === "success" && (
                   <Check
                     size={12}
-                    className="text-green-600 dark:text-green-500"
+                    className="text-success dark:text-success"
                   />
                 )}
                 {output?.status === "error" && (
-                  <AlertCircle size={12} className="text-red-500" />
+                  <AlertCircle size={12} className="text-error" />
                 )}
               </button>
             );

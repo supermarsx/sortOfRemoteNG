@@ -59,8 +59,8 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
     <div className="space-y-4" data-testid="mcp-config-tab">
       {/* Save bar */}
       {hasChanges && (
-        <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
-          <span className="text-xs text-amber-400">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-warning/10 border border-warning/30">
+          <span className="text-xs text-warning">
             {t("mcpServer.config.unsavedChanges", "You have unsaved changes")}
           </span>
           <button
@@ -141,7 +141,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
                     onClick={handleCopyKey}
                     className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                   >
-                    {copiedKey ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+                    {copiedKey ? <Check size={12} className="text-success" /> : <Copy size={12} />}
                   </button>
                 )}
               </div>

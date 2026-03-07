@@ -16,7 +16,7 @@ interface ToastProps {
   onRemove: (id: string) => void;
 }
 
-const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
+export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
@@ -43,26 +43,26 @@ const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   const getIcon = () => {
     switch (toast.type) {
       case 'success':
-        return <CheckCircle size={20} className="text-green-400" />;
+        return <CheckCircle size={20} className="text-success" />;
       case 'error':
-        return <XCircle size={20} className="text-red-400" />;
+        return <XCircle size={20} className="text-error" />;
       case 'warning':
-        return <AlertCircle size={20} className="text-yellow-400" />;
+        return <AlertCircle size={20} className="text-warning" />;
       case 'info':
-        return <Info size={20} className="text-blue-400" />;
+        return <Info size={20} className="text-primary" />;
     }
   };
 
   const getBorderColor = () => {
     switch (toast.type) {
       case 'success':
-        return 'border-green-500';
+        return 'border-success';
       case 'error':
-        return 'border-red-500';
+        return 'border-error';
       case 'warning':
-        return 'border-yellow-500';
+        return 'border-warning';
       case 'info':
-        return 'border-blue-500';
+        return 'border-primary';
     }
   };
 

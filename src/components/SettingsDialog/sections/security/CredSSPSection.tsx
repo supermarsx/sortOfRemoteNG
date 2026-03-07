@@ -12,7 +12,7 @@ function CredSSPSection({
     <div className="sor-settings-card space-y-4">
       <div>
         <h4 className="sor-section-heading">
-          <ShieldAlert className="w-4 h-4 text-amber-400" />
+          <ShieldAlert className="w-4 h-4 text-warning" />
           CredSSP Remediation Defaults
         </h4>
         <p className="text-xs text-[var(--color-textMuted)] mt-1">

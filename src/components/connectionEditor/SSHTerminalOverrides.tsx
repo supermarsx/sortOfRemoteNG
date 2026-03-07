@@ -82,12 +82,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
         className="w-full px-4 py-3 flex items-center justify-between bg-[var(--color-border)]/50 hover:bg-[var(--color-border)] transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Settings2 className="w-4 h-4 text-blue-400" />
+          <Settings2 className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium text-[var(--color-textSecondary)]">
             Terminal Settings Override
           </span>
           {hasOverrides && (
-            <span className="px-2 py-0.5 text-xs bg-blue-600 text-[var(--color-text)] rounded-full">
+            <span className="px-2 py-0.5 text-xs bg-primary text-[var(--color-text)] rounded-full">
               {Object.keys(overrides).length} custom
             </span>
           )}

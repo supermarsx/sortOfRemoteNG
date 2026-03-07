@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Type } from "lucide-react";
@@ -6,7 +7,7 @@ import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimiti
 const LineHandlingSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.lineHandling", "Line Handling")}
-    icon={<Type className="w-4 h-4 text-blue-400" />}
+    icon={<Type className="w-4 h-4 text-primary" />}
   >
     <Toggle
       checked={cfg.implicitCrInLf}

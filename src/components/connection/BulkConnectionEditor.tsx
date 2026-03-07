@@ -22,14 +22,14 @@ interface BulkConnectionEditorProps {
 type EditableField = 'name' | 'hostname' | 'port' | 'username';
 
 const protocolIcons: Record<string, React.ReactNode> = {
-  rdp: <Monitor size={14} className="text-blue-400" />,
-  ssh: <Terminal size={14} className="text-green-400" />,
-  vnc: <Server size={14} className="text-purple-400" />,
-  http: <Globe size={14} className="text-orange-400" />,
-  https: <Globe size={14} className="text-orange-400" />,
-  mysql: <Database size={14} className="text-cyan-400" />,
-  ftp: <FolderOpen size={14} className="text-yellow-400" />,
-  sftp: <FolderOpen size={14} className="text-yellow-400" />,
+  rdp: <Monitor size={14} className="text-primary" />,
+  ssh: <Terminal size={14} className="text-success" />,
+  vnc: <Server size={14} className="text-accent" />,
+  http: <Globe size={14} className="text-warning" />,
+  https: <Globe size={14} className="text-warning" />,
+  mysql: <Database size={14} className="text-info" />,
+  ftp: <FolderOpen size={14} className="text-warning" />,
+  sftp: <FolderOpen size={14} className="text-warning" />,
 };
 
 // ── Sub-components ─────────────────────────────────────────────────
@@ -38,8 +38,8 @@ function BulkEditorHeader({ mgr }: { mgr: BulkConnectionEditorMgr }) {
   return (
     <DialogHeader
       icon={RefreshCw}
-      iconColor="text-blue-500"
-      iconBg="bg-blue-500/20"
+      iconColor="text-primary"
+      iconBg="bg-primary/20"
       title="Bulk Connection Editor"
       subtitle={`${mgr.connections.length} connections • Double-click any cell to edit`}
       onClose={mgr.onClose}
@@ -58,24 +58,24 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
           placeholder="Search by name, hostname, protocol, or tag..."
           value={mgr.searchTerm}
           onChange={(e) => mgr.setSearchTerm(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+          className="w-full pl-9 pr-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
         />
       </div>
 
       <div className="flex items-center space-x-2">
         <label className="flex items-center space-x-2 text-xs text-[var(--color-textSecondary)] cursor-pointer hover:text-[var(--color-text)] transition-colors">
-          <Checkbox checked={mgr.showFavoritesFirst} onChange={(v: boolean) => mgr.setShowFavoritesFirst(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-yellow-500 w-3.5 h-3.5" />
-          <Star size={12} className="text-yellow-400" />
+          <Checkbox checked={mgr.showFavoritesFirst} onChange={(v: boolean) => mgr.setShowFavoritesFirst(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-warning w-3.5 h-3.5" />
+          <Star size={12} className="text-warning" />
           <span>Favorites first</span>
         </label>
       </div>
 
       {mgr.selectedIds.size > 0 && (
         <div className="flex items-center space-x-2 pl-4 border-l border-[var(--color-border)]">
-          <span className="text-sm text-blue-400 font-medium">{mgr.selectedIds.size} selected</span>
+          <span className="text-sm text-primary font-medium">{mgr.selectedIds.size} selected</span>
           <button
             onClick={() => mgr.toggleSelectedFavorites(true)}
-            className="px-2.5 py-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
+            className="px-2.5 py-1.5 bg-warning/10 hover:bg-warning/20 text-warning rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
             title="Add to favorites"
           >
             <Star size={12} />
@@ -89,7 +89,7 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
           </button>
           <button
             onClick={() => mgr.setShowDeleteConfirm(true)}
-            className="px-2.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
+            className="px-2.5 py-1.5 bg-error/10 hover:bg-error/20 text-error rounded-lg text-xs flex items-center space-x-1.5 transition-colors"
           >
             <Trash2 size={12} />
             <span>Delete</span>
@@ -127,7 +127,7 @@ function EditableCell({
         value={mgr.editValue}
         onChange={(e) => mgr.setEditValue(e.target.value)}
         onBlur={mgr.saveEdit}
-        className="w-full px-2 py-1 bg-[var(--color-input)] border border-blue-500 rounded text-[var(--color-text)] text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-full px-2 py-1 bg-[var(--color-input)] border border-primary rounded text-[var(--color-text)] text-sm focus:outline-none focus:ring-1 focus:ring-primary"
         autoFocus
       />
     );
@@ -160,7 +160,7 @@ function ConnectionRow({
   return (
     <tr
       className={`hover:bg-[var(--color-surfaceHover)]/30 transition-colors group ${
-        mgr.selectedIds.has(connection.id) ? 'bg-blue-500/10' : ''
+        mgr.selectedIds.has(connection.id) ? 'bg-primary/10' : ''
       }`}
     >
       <td className="px-3 py-2.5">
@@ -169,7 +169,7 @@ function ConnectionRow({
           className="p-1 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
         >
           {mgr.selectedIds.has(connection.id) ? (
-            <CheckSquare size={16} className="text-blue-500" />
+            <CheckSquare size={16} className="text-primary" />
           ) : (
             <Square size={16} className="text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
           )}
@@ -180,8 +180,8 @@ function ConnectionRow({
           onClick={() => mgr.toggleFavorite(connection)}
           className={`p-1 rounded transition-all ${
             connection.favorite
-              ? 'text-yellow-400 hover:text-yellow-300'
-              : 'text-[var(--color-textMuted)] hover:text-yellow-400'
+              ? 'text-warning hover:text-warning/80'
+              : 'text-[var(--color-textMuted)] hover:text-warning'
           }`}
         >
           <Star size={14} fill={connection.favorite ? 'currentColor' : 'none'} />
@@ -210,7 +210,7 @@ function ConnectionRow({
           {mgr.hasEditConnection && (
             <button
               onClick={() => mgr.handleEditInFullEditor(connection)}
-              className="p-1.5 hover:bg-blue-500/20 rounded-lg text-[var(--color-textMuted)] hover:text-blue-500 transition-colors"
+              className="p-1.5 hover:bg-primary/20 rounded-lg text-[var(--color-textMuted)] hover:text-primary transition-colors"
               title="Edit in full editor"
             >
               <Edit3 size={14} />
@@ -225,7 +225,7 @@ function ConnectionRow({
           </button>
           <button
             onClick={() => mgr.deleteConnection(connection.id)}
-            className="p-1.5 hover:bg-red-500/20 rounded-lg text-[var(--color-textMuted)] hover:text-red-500 transition-colors"
+            className="p-1.5 hover:bg-error/20 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
             title="Delete"
           >
             <Trash2 size={14} />
@@ -247,8 +247,8 @@ function ConnectionTable({ mgr }: { mgr: BulkConnectionEditorMgr }) {
                 onClick={mgr.toggleSelectAll}
                 className="p-1 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
               >
-                {mgr.selectionState === 'all' && <CheckSquare size={16} className="text-blue-500" />}
-                {mgr.selectionState === 'partial' && <Minus size={16} className="text-blue-500" />}
+                {mgr.selectionState === 'all' && <CheckSquare size={16} className="text-primary" />}
+                {mgr.selectionState === 'partial' && <Minus size={16} className="text-primary" />}
                 {mgr.selectionState === 'none' && <Square size={16} />}
               </button>
             </th>
@@ -315,7 +315,7 @@ function BulkEditorFooter({ mgr }: { mgr: BulkConnectionEditorMgr }) {
           <span className="text-[var(--color-text)] font-medium">{mgr.connections.length}</span> connections
         </span>
         {mgr.filteredConnections.filter((c) => c.favorite).length > 0 && (
-          <span className="flex items-center space-x-1 text-yellow-500/80">
+          <span className="flex items-center space-x-1 text-warning/80">
             <Star size={10} fill="currentColor" />
             <span>{mgr.filteredConnections.filter((c) => c.favorite).length} favorites</span>
           </span>
@@ -342,14 +342,14 @@ function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-20">
       <div className="bg-[var(--color-surface)] rounded-xl shadow-2xl p-6 max-w-md border border-[var(--color-border)]">
         <div className="flex items-center space-x-3 mb-4">
-          <div className="p-2 bg-red-500/20 rounded-lg">
-            <Trash2 size={20} className="text-red-500" />
+          <div className="p-2 bg-error/20 rounded-lg">
+            <Trash2 size={20} className="text-error" />
           </div>
           <h3 className="text-lg font-semibold text-[var(--color-text)]">Delete Connections</h3>
         </div>
         <p className="text-[var(--color-textSecondary)] mb-6">
           Are you sure you want to delete{' '}
-          <span className="text-red-500 font-medium">{mgr.selectedIds.size}</span> selected
+          <span className="text-error font-medium">{mgr.selectedIds.size}</span> selected
           connection(s)? This action cannot be undone.
         </p>
         <div className="flex justify-end space-x-3">
@@ -361,7 +361,7 @@ function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
           </button>
           <button
             onClick={mgr.deleteSelected}
-            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2"
+            className="px-4 py-2 bg-error hover:bg-error/80 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2"
           >
             <Trash2 size={14} />
             <span>Delete</span>
@@ -389,16 +389,16 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
       onClose={onClose}
       closeOnEscape={false}
       backdropClassName="bg-black/60 backdrop-blur-sm"
-      panelClassName="relative max-w-6xl rounded-xl border border-[var(--color-border)] shadow-2xl shadow-blue-500/10 h-[85vh] overflow-hidden"
+      panelClassName="relative max-w-6xl rounded-xl border border-[var(--color-border)] shadow-2xl shadow-primary/10 h-[85vh] overflow-hidden"
       contentClassName="relative bg-[var(--color-surface)]"
     >
       <div className="relative flex flex-1 min-h-0 flex-col">
         {/* Scattered glow effect */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute w-[300px] h-[200px] bg-blue-500/8 rounded-full blur-[100px] top-[15%] left-[10%]" />
-          <div className="absolute w-[250px] h-[250px] bg-cyan-500/6 rounded-full blur-[120px] top-[40%] left-[35%]" />
-          <div className="absolute w-[280px] h-[180px] bg-indigo-500/6 rounded-full blur-[100px] top-[60%] right-[15%]" />
-          <div className="absolute w-[200px] h-[200px] bg-blue-400/5 rounded-full blur-[80px] top-[25%] right-[25%]" />
+          <div className="absolute w-[300px] h-[200px] bg-primary/[0.08] rounded-full blur-[100px] top-[15%] left-[10%]" />
+          <div className="absolute w-[250px] h-[250px] bg-info/[0.06] rounded-full blur-[120px] top-[40%] left-[35%]" />
+          <div className="absolute w-[280px] h-[180px] bg-accent/[0.06] rounded-full blur-[100px] top-[60%] right-[15%]" />
+          <div className="absolute w-[200px] h-[200px] bg-primary/[0.05] rounded-full blur-[80px] top-[25%] right-[25%]" />
         </div>
 
         <BulkEditorHeader mgr={mgr} />

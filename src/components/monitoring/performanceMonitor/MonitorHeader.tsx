@@ -12,8 +12,8 @@ const MonitorHeader: React.FC<{
   return (
     <DialogHeader
       icon={BarChart3}
-      iconColor="text-green-500"
-      iconBg="bg-green-500/20"
+      iconColor="text-success"
+      iconBg="bg-success/20"
       title={t("performance.title")}
       subtitle={`${mgr.filteredMetrics.length} entries`}
       onClose={onClose}

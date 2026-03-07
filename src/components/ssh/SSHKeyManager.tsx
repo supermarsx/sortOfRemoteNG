@@ -56,7 +56,7 @@ const ActionButtons: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <button
         onClick={mgr.handleGenerateToFile}
         disabled={mgr.generating}
-        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-[var(--color-text)] rounded-md hover:bg-emerald-500 transition-colors disabled:opacity-50"
+        className="flex items-center gap-2 px-4 py-2 bg-success text-[var(--color-text)] rounded-md hover:bg-success/90 transition-colors disabled:opacity-50"
         title="Generate a key and save directly to a custom location"
       >
         <FileKey className="w-4 h-4" />
@@ -179,7 +179,7 @@ const KeyCard: React.FC<{ keyItem: SSHKey; mgr: Mgr }> = ({
               {new Date(keyItem.createdAt).toLocaleDateString()}
             </span>
             {keyItem.hasPassphrase && (
-              <span className="flex items-center gap-1 text-yellow-600">
+              <span className="flex items-center gap-1 text-warning">
                 <Key className="w-3 h-3" />
                 Protected
               </span>
@@ -203,7 +203,7 @@ const KeyCard: React.FC<{ keyItem: SSHKey; mgr: Mgr }> = ({
           title="Copy public key"
         >
           {mgr.copiedId === keyItem.id ? (
-            <Check className="w-4 h-4 text-green-500" />
+            <Check className="w-4 h-4 text-success" />
           ) : (
             <Copy className="w-4 h-4" />
           )}

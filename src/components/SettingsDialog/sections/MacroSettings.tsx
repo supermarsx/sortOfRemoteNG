@@ -38,7 +38,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           className="flex items-center justify-between"
         >
           <div className="flex items-center gap-3">
-            <Clock size={14} className="text-blue-400" />
+            <Clock size={14} className="text-primary" />
             <div>
               <span className="text-sm text-[var(--color-textSecondary)]">
                 Default delay between steps
@@ -62,7 +62,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           className="flex items-center justify-between cursor-pointer group"
         >
           <div className="flex items-center gap-3">
-            <AlertCircle size={14} className="text-yellow-400" />
+            <AlertCircle size={14} className="text-warning" />
             <div>
               <span className="sor-toggle-label">
                 Confirm before replay
@@ -81,7 +81,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           className="flex items-center justify-between"
         >
           <div className="flex items-center gap-3">
-            <Hash size={14} className="text-green-400" />
+            <Hash size={14} className="text-success" />
             <div>
               <span className="text-sm text-[var(--color-textSecondary)]">
                 Max steps per macro

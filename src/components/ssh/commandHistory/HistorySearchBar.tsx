@@ -31,7 +31,7 @@ function HistorySearchBar({
               "sshHistory.searchPlaceholder",
               "Search commands, tags, notes...",
             )}
-            className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-green-500/50 font-mono"
+            className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-success/50 font-mono"
           />
           {mgr.filter.searchQuery && (
             <button
@@ -49,8 +49,8 @@ function HistorySearchBar({
           }
           className={`p-1.5 rounded transition-colors ${
             mgr.filter.starredOnly
-              ? "text-yellow-500 bg-yellow-500/10"
-              : "text-[var(--color-textSecondary)] hover:text-yellow-500"
+              ? "text-warning bg-warning/10"
+              : "text-[var(--color-textSecondary)] hover:text-warning"
           }`}
           title={t("sshHistory.starredOnly", "Starred only")}
         >
@@ -61,7 +61,7 @@ function HistorySearchBar({
           onClick={() => setShowAdvanced((prev) => !prev)}
           className={`p-1.5 rounded transition-colors ${
             showAdvanced
-              ? "text-green-500 bg-green-500/10"
+              ? "text-success bg-success/10"
               : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           }`}
           title={t("sshHistory.advancedFilters", "Advanced filters")}

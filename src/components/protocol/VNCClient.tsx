@@ -28,7 +28,7 @@ function VNCHeader({ m }: { m: Mgr }) {
   return (
     <div className="sor-toolbar-row">
       <div className="flex items-center space-x-3">
-        <Monitor size={16} className="text-blue-400" />
+        <Monitor size={16} className="text-primary" />
         <span className="text-sm text-[var(--color-textSecondary)]">VNC - {m.session.hostname}</span>
         <div className={`flex items-center space-x-1 ${m.getStatusColor()}`}>
           {statusIcon === 'connected' ? <Wifi size={14} /> : statusIcon === 'connecting' ? <Wifi size={14} className="animate-pulse" /> : <WifiOff size={14} />}
@@ -75,8 +75,8 @@ function CanvasArea({ m }: { m: Mgr }) {
       )}
       {m.connectionStatus === 'error' && (
         <div className="text-center">
-          <WifiOff size={48} className="text-red-400 mx-auto mb-4" />
-          <p className="text-red-400 mb-2">VNC Connection Failed</p>
+          <WifiOff size={48} className="text-error mx-auto mb-4" />
+          <p className="text-error mb-2">VNC Connection Failed</p>
           <p className="text-[var(--color-textMuted)] text-sm">Unable to connect to {m.session.hostname}</p>
         </div>
       )}

@@ -58,28 +58,28 @@ const EditorHeader: React.FC<{
     className="relative border-b border-[var(--color-border)] px-6 py-5"
     style={{
       background: mgr.isNewConnection
-        ? "linear-gradient(to right, rgba(16, 185, 129, 0.15), var(--color-surface))"
-        : "linear-gradient(to right, rgba(59, 130, 246, 0.15), var(--color-surface))",
+        ? "linear-gradient(to right, rgb(var(--color-success-rgb) / 0.15), var(--color-surface))"
+        : "linear-gradient(to right, rgb(var(--color-primary-rgb) / 0.15), var(--color-surface))",
     }}
   >
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-4">
         <div
           className={`p-3 rounded-xl ${
-            mgr.isNewConnection ? "bg-green-500/20" : "bg-blue-500/20"
+            mgr.isNewConnection ? "bg-success/20" : "bg-primary/20"
           }`}
         >
           {mgr.isNewConnection ? (
-            <Plus size={22} className="text-green-400" />
+            <Plus size={22} className="text-success" />
           ) : (
-            <Settings2 size={22} className="text-blue-400" />
+            <Settings2 size={22} className="text-primary" />
           )}
         </div>
         <div>
           <h2 className="text-xl font-semibold text-[var(--color-text)] flex items-center gap-2">
             {mgr.isNewConnection ? "New Connection" : "Edit Connection"}
             {mgr.isNewConnection && (
-              <Sparkles size={16} className="text-green-400" />
+              <Sparkles size={16} className="text-success" />
             )}
           </h2>
           <p className="text-sm text-[var(--color-textSecondary)] mt-0.5">
@@ -93,13 +93,13 @@ const EditorHeader: React.FC<{
         {mgr.connection && mgr.settings.autoSaveEnabled && (
           <div className="flex items-center gap-1.5 text-xs mr-2">
             {mgr.autoSaveStatus === "pending" && (
-              <span className="text-yellow-400 flex items-center gap-1 bg-yellow-400/10 px-2 py-1 rounded-full">
-                <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-pulse" />
+              <span className="text-warning flex items-center gap-1 bg-warning/10 px-2 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 bg-warning rounded-full animate-pulse" />
                 Saving...
               </span>
             )}
             {mgr.autoSaveStatus === "saved" && (
-              <span className="text-green-400 flex items-center gap-1 bg-green-400/10 px-2 py-1 rounded-full">
+              <span className="text-success flex items-center gap-1 bg-success/10 px-2 py-1 rounded-full">
                 <Check size={12} />
                 Saved
               </span>
@@ -110,8 +110,8 @@ const EditorHeader: React.FC<{
           type="submit"
           className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
             mgr.isNewConnection
-              ? "bg-emerald-600 hover:bg-emerald-500 text-[var(--color-text)] shadow-lg shadow-emerald-500/20"
-              : "bg-blue-600 hover:bg-blue-500 text-[var(--color-text)] shadow-lg shadow-blue-500/20"
+              ? "bg-success hover:bg-success/80 text-[var(--color-text)] shadow-lg shadow-success/20"
+              : "bg-primary hover:bg-primary/80 text-[var(--color-text)] shadow-lg shadow-primary/20"
           }`}
         >
           <Save size={16} />
@@ -139,7 +139,7 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     <label
       className={`sor-option-chip ${
         mgr.formData.isGroup
-          ? "sor-option-chip-active bg-purple-500/20 border-purple-500/50 text-purple-400"
+          ? "sor-option-chip-active bg-accent/20 border-accent/50 text-accent"
           : ""
       }`}
     >
@@ -151,7 +151,7 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       <label
         className={`sor-option-chip ${
           mgr.formData.favorite
-            ? "sor-option-chip-active bg-yellow-500/20 border-yellow-500/50 text-yellow-400"
+            ? "sor-option-chip-active bg-warning/20 border-warning/50 text-warning"
             : ""
         }`}
       >
@@ -174,7 +174,7 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div>
     <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
       {mgr.formData.isGroup ? "Folder Name" : "Connection Name"}{" "}
-      <span className="text-red-400">*</span>
+      <span className="text-error">*</span>
     </label>
     <input
       type="text"
@@ -184,7 +184,7 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       onChange={(e) =>
         mgr.setFormData({ ...mgr.formData, name: e.target.value })
       }
-      className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] text-lg placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+      className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] text-lg placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
       placeholder={mgr.formData.isGroup ? "My Servers" : "Production Server"}
       autoFocus
     />
@@ -207,7 +207,7 @@ const ParentSelector: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             ...mgr.formData,
             parentId: v || undefined,
           })} options={[{ value: '', label: 'Root (No parent)' }, ...mgr.selectableGroups.map(({ group, disabled, reason }) => ({ value: group.id, label: `${group.name}
-            ${disabled ? ` (${reason})` : ""}`, disabled: disabled, title: reason }))]} className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" />
+            ${disabled ? ` (${reason})` : ""}`, disabled: disabled, title: reason }))]} className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
     </div>
   );
 };
@@ -251,7 +251,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
             onClick={() => mgr.handleProtocolChange(value)}
             className={`sor-option-chip text-xs ${
               isActive
-                ? "sor-option-chip-active bg-cyan-500/20 border-cyan-500/60 text-cyan-400"
+                ? "sor-option-chip-active bg-info/20 border-info/60 text-info"
                 : ""
             }`}
           >
@@ -273,7 +273,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
     <div className="sm:col-span-2">
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        Hostname / IP Address <span className="text-red-400">*</span>
+        Hostname / IP Address <span className="text-error">*</span>
       </label>
       <input
         type="text"
@@ -282,7 +282,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
         onChange={(e) =>
           mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
         }
-        className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
+        className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono"
         placeholder="192.168.1.100 or server.example.com"
       />
     </div>
@@ -293,7 +293,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       <NumberInput value={mgr.formData.port || 0} onChange={(v: number) => mgr.setFormData({
             ...mgr.formData,
             port: v,
-          })} className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono" min={1} max={65535} />
+          })} className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono" min={1} max={65535} />
     </div>
   </div>
 );
@@ -336,7 +336,7 @@ const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
             }
             className={`p-2.5 rounded-lg border transition-all ${
               isActive
-                ? "border-blue-500/60 bg-blue-500/20 text-blue-400"
+                ? "border-primary/60 bg-primary/20 text-primary"
                 : "border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]"
             }`}
             title={label}
@@ -406,7 +406,7 @@ const DescriptionSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             mgr.setFormData({ ...mgr.formData, description: e.target.value })
           }
           rows={4}
-          className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
+          className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
           placeholder="Add notes about this connection..."
         />
       </div>
@@ -470,7 +470,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden z-0">
         <div
           className={`w-[500px] h-[400px] rounded-full blur-[100px] animate-pulse ${
-            mgr.isNewConnection ? "bg-emerald-500/15" : "bg-blue-500/15"
+            mgr.isNewConnection ? "bg-success/15" : "bg-primary/15"
           }`}
         />
       </div>

@@ -83,7 +83,7 @@ function TreeItemMenu({
         >
           <Star
             size={12}
-            className={`mr-2 ${connection.favorite ? "text-yellow-300" : "text-[var(--color-textSecondary)]"}`}
+            className={`mr-2 ${connection.favorite ? "text-warning" : "text-[var(--color-textSecondary)]"}`}
             fill={connection.favorite ? "currentColor" : "none"}
           />
           {connection.favorite ? "Remove favorite" : "Add to favorites"}

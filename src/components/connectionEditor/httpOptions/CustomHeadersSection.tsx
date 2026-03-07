@@ -34,7 +34,7 @@ const CustomHeadersSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               type="button"
               onClick={() => mgr.removeHttpHeader(key)}
-              className="px-3 py-2 bg-red-600 hover:bg-red-700 text-[var(--color-text)] rounded-md transition-colors"
+              className="px-3 py-2 bg-error hover:bg-error/90 text-[var(--color-text)] rounded-md transition-colors"
             >
               Remove
             </button>
@@ -43,7 +43,7 @@ const CustomHeadersSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <button
           type="button"
           onClick={() => mgr.setShowAddHeader(true)}
-          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+          className="px-3 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-md transition-colors"
         >
           Add Header
         </button>

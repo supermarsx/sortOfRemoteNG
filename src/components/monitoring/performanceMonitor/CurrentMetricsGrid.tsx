@@ -18,8 +18,8 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="sor-metric-card sor-metric-card-blue">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-blue-500/20 rounded-lg">
-                <Wifi className="text-blue-400" size={14} />
+              <div className="p-1.5 bg-primary/20 rounded-lg">
+                <Wifi className="text-primary" size={14} />
               </div>
               <span className="text-[var(--color-textSecondary)] text-xs font-medium">
                 {t("performance.latency")}
@@ -46,7 +46,7 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               .slice(0, 100)
               .reverse()
               .map((m) => m.latency)}
-            color="#3b82f6"
+            color="var(--color-primary)"
             height={32}
             width={140}
           />
@@ -56,8 +56,8 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="sor-metric-card sor-metric-card-green">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-green-500/20 rounded-lg">
-                <Activity className="text-green-400" size={14} />
+              <div className="p-1.5 bg-success/20 rounded-lg">
+                <Activity className="text-success" size={14} />
               </div>
               <span className="text-[var(--color-textSecondary)] text-xs font-medium">
                 {t("performance.throughput")}
@@ -84,7 +84,7 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               .slice(0, 100)
               .reverse()
               .map((m) => m.throughput)}
-            color="#22c55e"
+            color="var(--color-success)"
             height={32}
             width={140}
           />
@@ -94,8 +94,8 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="sor-metric-card sor-metric-card-yellow">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-yellow-500/20 rounded-lg">
-                <Cpu className="text-yellow-400" size={14} />
+              <div className="p-1.5 bg-warning/20 rounded-lg">
+                <Cpu className="text-warning" size={14} />
               </div>
               <span className="text-[var(--color-textSecondary)] text-xs font-medium">
                 {t("performance.cpuUsage")}
@@ -120,7 +120,7 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </div>
             <div className="flex-1 h-2 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden mb-1.5">
               <div
-                className="h-full bg-yellow-500 rounded-full transition-all duration-300"
+                className="h-full bg-warning rounded-full transition-all duration-300"
                 style={{
                   width: `${Math.min(mgr.currentMetrics.cpuUsage, 100)}%`,
                 }}
@@ -132,7 +132,7 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               .slice(0, 100)
               .reverse()
               .map((m) => m.cpuUsage)}
-            color="#eab308"
+            color="var(--color-warning)"
             height={32}
             width={140}
           />
@@ -142,8 +142,8 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="sor-metric-card sor-metric-card-purple">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-purple-500/20 rounded-lg">
-                <HardDrive className="text-purple-400" size={14} />
+              <div className="p-1.5 bg-accent/20 rounded-lg">
+                <HardDrive className="text-accent" size={14} />
               </div>
               <span className="text-[var(--color-textSecondary)] text-xs font-medium">
                 {t("performance.memoryUsage")}
@@ -168,7 +168,7 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </div>
             <div className="flex-1 h-2 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden mb-1.5">
               <div
-                className="h-full bg-purple-500 rounded-full transition-all duration-300"
+                className="h-full bg-accent rounded-full transition-all duration-300"
                 style={{
                   width: `${Math.min(mgr.currentMetrics.memoryUsage, 100)}%`,
                 }}
@@ -180,7 +180,7 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               .slice(0, 100)
               .reverse()
               .map((m) => m.memoryUsage)}
-            color="#a855f7"
+            color="var(--color-accent)"
             height={32}
             width={140}
           />

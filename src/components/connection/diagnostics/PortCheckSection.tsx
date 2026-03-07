@@ -25,8 +25,8 @@ const PortCheckSection = ({
         <div
           className={`p-4 rounded-lg ${
             results.portCheck.open
-              ? "bg-green-500/10 border border-green-500/30"
-              : "bg-red-500/10 border border-red-500/30"
+              ? "bg-success/10 border border-success/30"
+              : "bg-error/10 border border-error/30"
           }`}
         >
           <div className="flex items-center justify-between">

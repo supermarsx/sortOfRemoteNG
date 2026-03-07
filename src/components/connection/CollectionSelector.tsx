@@ -55,8 +55,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         {/* Header */}
         <DialogHeader
           icon={Database}
-          iconColor="text-blue-400"
-          iconBg="bg-blue-500/20"
+          iconColor="text-primary"
+          iconBg="bg-primary/20"
           title="Collection Center"
           subtitle="Manage your connection collections"
           onClose={onClose}
@@ -110,7 +110,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               onClick={() => mgr.setActiveTab("collections")}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "collections"
-                  ? "bg-blue-600 text-[var(--color-text)]"
+                  ? "bg-primary text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -121,7 +121,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               onClick={() => mgr.setActiveTab("connections")}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "connections"
-                  ? "bg-blue-600 text-[var(--color-text)]"
+                  ? "bg-primary text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
@@ -132,7 +132,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               onClick={() => mgr.setActiveTab("proxies")}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
                 mgr.activeTab === "proxies"
-                  ? "bg-blue-600 text-[var(--color-text)]"
+                  ? "bg-primary text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >

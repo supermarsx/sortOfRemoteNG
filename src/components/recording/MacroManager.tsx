@@ -19,7 +19,7 @@ type Mgr = ReturnType<typeof useMacroManager>;
 // ─── Sub-components ─────────────────────────────────────────────────
 
 const ManagerHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <DialogHeader variant="compact" icon={ListVideo} iconColor="text-blue-400" title="Macro & Recording Manager" onClose={onClose} />
+  <DialogHeader variant="compact" icon={ListVideo} iconColor="text-primary" title="Macro & Recording Manager" onClose={onClose} />
 );
 
 
@@ -32,7 +32,7 @@ const Toolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     {mgr.activeTab === 'macros' && (
       <>
-        <button onClick={mgr.handleNewMacro} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg"><Plus size={14} /> New</button>
+        <button onClick={mgr.handleNewMacro} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded-lg"><Plus size={14} /> New</button>
         <button onClick={mgr.handleImportMacros} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg"><Upload size={14} /> Import</button>
         <button onClick={mgr.handleExportMacros} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg" disabled={mgr.macros.length === 0}><Download size={14} /> Export</button>
       </>
@@ -49,7 +49,7 @@ const MacroList: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div key={cat}>
           <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-[var(--color-textMuted)] bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50">{cat}</div>
           {catMacros.map((macro) => (
-            <div key={macro.id} onClick={() => mgr.setEditingMacro(macro)} className={`px-3 py-2 border-b border-[var(--color-border)]/30 cursor-pointer hover:bg-[var(--color-surface)]/60 ${mgr.editingMacro?.id === macro.id ? 'bg-blue-900/20 border-l-2 border-l-blue-500' : ''}`}>
+            <div key={macro.id} onClick={() => mgr.setEditingMacro(macro)} className={`px-3 py-2 border-b border-[var(--color-border)]/30 cursor-pointer hover:bg-[var(--color-surface)]/60 ${mgr.editingMacro?.id === macro.id ? 'bg-primary/20 border-l-2 border-l-primary' : ''}`}>
               <div className="text-sm font-medium text-[var(--color-text)] truncate">{macro.name}</div>
               <div className="text-[10px] text-[var(--color-textSecondary)]">{macro.steps.length} step{macro.steps.length !== 1 ? 's' : ''}{macro.description && ` · ${macro.description}`}</div>
             </div>
@@ -160,7 +160,7 @@ const RecordingRow: React.FC<RecordingRowProps> = ({
         onClick={onSelect}
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--color-surface)]/60"
       >
-        <Disc size={16} className="text-red-400 flex-shrink-0" />
+        <Disc size={16} className="text-error flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-[var(--color-text)] truncate">
             {recording.name}
@@ -191,13 +191,13 @@ const RecordingRow: React.FC<RecordingRowProps> = ({
               <input
                 value={rename.draft}
                 onChange={(e) => rename.setDraft(e.target.value)}
-                className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
+                className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-primary"
                 autoFocus
                 onKeyDown={rename.handleKeyDown}
               />
               <button
                 onClick={rename.commitRename}
-                className="p-1 text-green-400 hover:text-green-300"
+                className="p-1 text-success hover:text-success"
               >
                 <Save size={14} />
               </button>

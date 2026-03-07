@@ -10,7 +10,7 @@ export interface ConnectingSpinnerProps {
   detail?: string;
   /** Extra status line */
   statusMessage?: string;
-  /** Border color class for the spinner ring (default "border-blue-400") */
+  /** Border color class for the spinner ring (default "border-primary") */
   color?: string;
   /** Additional className on the outer wrapper */
   className?: string;
@@ -24,7 +24,7 @@ export const ConnectingSpinner: React.FC<ConnectingSpinnerProps> = ({
   message = 'Connecting...',
   detail,
   statusMessage,
-  color = 'border-blue-400',
+  color = 'border-primary',
   className,
 }) => (
   <div className={cx('text-center', className)}>

@@ -33,9 +33,9 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
 
   const statusColor = (status: string) => {
     switch (status) {
-      case "running": return "bg-green-500";
-      case "stopped": return "bg-gray-500";
-      default: return "bg-gray-400";
+      case "running": return "bg-success";
+      case "stopped": return "bg-text-secondary";
+      default: return "bg-text-muted";
     }
   };
 
@@ -49,7 +49,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
     <div className="p-6 overflow-y-auto flex-1">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-          <Container className="w-4 h-4 text-green-500" />
+          <Container className="w-4 h-4 text-success" />
           {t("proxmox.lxc.title", "LXC Containers")}
           <span className="text-xs font-normal text-[var(--color-text-secondary)]">
             ({mgr.filteredContainers.length})
@@ -59,7 +59,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
           onClick={() => {
             // TODO: create container dialog
           }}
-          className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors"
+          className="px-3 py-1.5 rounded-lg bg-success hover:bg-success/90 text-white text-xs font-medium transition-colors"
         >
           + {t("proxmox.lxc.create", "Create Container")}
         </button>
@@ -123,7 +123,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                     <ActionBtn
                       icon={Play}
                       label={t("proxmox.lxc.start", "Start")}
-                      color="text-green-500"
+                      color="text-success"
                       onClick={() => mgr.lxcAction(node, ct.vmid, "start")}
                       disabled={mgr.loading}
                     />
@@ -133,7 +133,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                       <ActionBtn
                         icon={Power}
                         label={t("proxmox.lxc.shutdown", "Shutdown")}
-                        color="text-yellow-500"
+                        color="text-warning"
                         onClick={() => mgr.requestConfirm(
                           t("proxmox.lxc.shutdownTitle", "Shutdown Container"),
                           t("proxmox.lxc.shutdownMsg", `Gracefully shutdown container ${ct.vmid}?`),
@@ -144,7 +144,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                       <ActionBtn
                         icon={Square}
                         label={t("proxmox.lxc.stop", "Stop")}
-                        color="text-red-500"
+                        color="text-error"
                         onClick={() => mgr.requestConfirm(
                           t("proxmox.lxc.stopTitle", "Stop Container"),
                           t("proxmox.lxc.stopMsg", `Force stop container ${ct.vmid}?`),
@@ -155,7 +155,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                       <ActionBtn
                         icon={RotateCcw}
                         label={t("proxmox.lxc.reboot", "Reboot")}
-                        color="text-blue-500"
+                        color="text-primary"
                         onClick={() => mgr.lxcAction(node, ct.vmid, "reboot")}
                         disabled={mgr.loading}
                       />
@@ -165,13 +165,13 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                   <ActionBtn
                     icon={Terminal}
                     label={t("proxmox.lxc.console", "Console")}
-                    color="text-cyan-500"
+                    color="text-info"
                     onClick={() => mgr.openVncConsole(node, ct.vmid, "lxc")}
                   />
                   <ActionBtn
                     icon={Camera}
                     label={t("proxmox.lxc.snapshot", "Snapshot")}
-                    color="text-indigo-500"
+                    color="text-accent"
                     onClick={() => {
                       mgr.selectVm(ct.vmid, "lxc");
                       mgr.refreshSnapshots(node, ct.vmid, "lxc");
@@ -190,7 +190,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                   <ActionBtn
                     icon={ArrowRightLeft}
                     label={t("proxmox.lxc.migrate", "Migrate")}
-                    color="text-amber-500"
+                    color="text-warning"
                     onClick={() => {
                       // TODO: migration dialog
                     }}
@@ -199,7 +199,7 @@ const LxcView: React.FC<SubProps> = ({ mgr }) => {
                   <ActionBtn
                     icon={Trash2}
                     label={t("proxmox.lxc.delete", "Delete")}
-                    color="text-red-500"
+                    color="text-error"
                     onClick={() => mgr.requestConfirm(
                       t("proxmox.lxc.deleteTitle", "Delete Container"),
                       t("proxmox.lxc.deleteMsg", `Permanently delete container ${ct.vmid}?`),

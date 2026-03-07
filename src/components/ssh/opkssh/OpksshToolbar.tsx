@@ -63,7 +63,7 @@ export const OpksshToolbar: React.FC<OpksshToolbarProps> = ({ mgr }) => {
             key={key}
             className={`text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
               mgr.activeTab === key
-                ? "bg-emerald-600 text-white"
+                ? "bg-success text-white"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
             }`}
             onClick={() => mgr.setActiveTab(key)}

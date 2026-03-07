@@ -36,8 +36,8 @@ export const OverviewTab: React.FC<McpTabProps> = ({ mgr }) => {
           <div
             className={`w-3 h-3 rounded-full ${
               status?.running
-                ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"
-                : "bg-gray-500"
+                ? "bg-success shadow-[0_0_8px_rgb(var(--color-success-rgb)/0.5)]"
+                : "bg-text-secondary"
             }`}
           />
           <div>
@@ -61,7 +61,7 @@ export const OverviewTab: React.FC<McpTabProps> = ({ mgr }) => {
             <button
               onClick={mgr.stopServer}
               disabled={isStopping}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-error/20 text-error hover:bg-error/30 disabled:opacity-50 transition-colors"
               data-testid="mcp-stop-btn"
             >
               {isStopping ? <Loader2 size={14} className="animate-spin" /> : <Square size={14} />}
@@ -71,7 +71,7 @@ export const OverviewTab: React.FC<McpTabProps> = ({ mgr }) => {
             <button
               onClick={mgr.startServer}
               disabled={isStarting || !config.enabled}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-success/20 text-success hover:bg-success/30 disabled:opacity-50 transition-colors"
               data-testid="mcp-start-btn"
             >
               {isStarting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -83,7 +83,7 @@ export const OverviewTab: React.FC<McpTabProps> = ({ mgr }) => {
 
       {/* Last error */}
       {status?.last_error && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
           <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
           <span>{status.last_error}</span>
         </div>
@@ -182,14 +182,14 @@ export const OverviewTab: React.FC<McpTabProps> = ({ mgr }) => {
           </h3>
           <div className="space-y-2 text-xs text-[var(--color-text-secondary)]">
             <div className="flex items-center gap-2">
-              <CheckCircle size={12} className="text-green-500" />
+              <CheckCircle size={12} className="text-success" />
               <span>{t("mcpServer.transport", "Transport")}: Streamable HTTP</span>
             </div>
             <div className="flex justify-between items-center bg-[var(--color-surface)] rounded px-3 py-2 font-mono">
               <span>http://{status.listen_address}/mcp</span>
             </div>
             {config.require_auth && (
-              <div className="text-amber-400 text-[10px]">
+              <div className="text-warning text-[10px]">
                 {t("mcpServer.authRequired", "Authentication required — include API key as Bearer token")}
               </div>
             )}

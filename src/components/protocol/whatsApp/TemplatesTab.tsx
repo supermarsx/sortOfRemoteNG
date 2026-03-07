@@ -1,9 +1,10 @@
+import { WaMgr, WaTemplateInfo } from "./types";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React, { useEffect, useState } from "react";
 import { LayoutTemplate, RefreshCw, Trash2 } from "lucide-react";
 
-const TemplatesTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
+const TemplatesTab: React.FC<{ wa: WaMgr }> = ({
   wa,
 }) => {
   const [templates, setTemplates] = useState<WaTemplateInfo[]>([]);
@@ -57,11 +58,11 @@ const TemplatesTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
                 <span
                   className={`text-xs px-1.5 py-0.5 rounded ${
                     t.status === "APPROVED"
-                      ? "bg-green-900 text-green-300"
+                      ? "bg-success text-success"
                       : t.status === "PENDING"
-                        ? "bg-yellow-900 text-yellow-300"
+                        ? "bg-warning text-warning"
                         : t.status === "REJECTED"
-                          ? "bg-red-900 text-red-300"
+                          ? "bg-error text-error"
                           : "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
                   }`}
                 >
@@ -74,7 +75,7 @@ const TemplatesTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
             </div>
             <button
               onClick={() => handleDelete(t.name)}
-              className="sor-icon-btn-sm text-red-400 hover:text-red-300"
+              className="sor-icon-btn-sm text-error hover:text-error"
               title="Delete template"
             >
               <Trash2 size={14} />

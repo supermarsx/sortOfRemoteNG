@@ -21,19 +21,19 @@ const HealthBadge: React.FC<{ health?: string }> = ({ health }) => {
   const h = (health ?? "Unknown").toLowerCase();
   if (h === "ok" || h === "healthy")
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] text-green-400">
+      <span className="inline-flex items-center gap-1 text-[10px] text-success">
         <CheckCircle className="w-3 h-3" /> OK
       </span>
     );
   if (h === "warning")
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] text-amber-400">
+      <span className="inline-flex items-center gap-1 text-[10px] text-warning">
         <AlertCircle className="w-3 h-3" /> Warning
       </span>
     );
   if (h === "critical" || h === "error")
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] text-red-400">
+      <span className="inline-flex items-center gap-1 text-[10px] text-error">
         <AlertCircle className="w-3 h-3" /> Critical
       </span>
     );
@@ -158,7 +158,7 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
               className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 space-y-2"
             >
               <div className="flex items-center gap-2">
-                <Icon className="w-4 h-4 text-orange-400 shrink-0" />
+                <Icon className="w-4 h-4 text-warning shrink-0" />
                 <span className="text-xs font-medium text-[var(--color-text)] truncate">
                   {card.title}
                 </span>
@@ -194,9 +194,9 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
                 <span
                   className={`shrink-0 font-medium ${
                     ev.severity.toLowerCase() === "critical"
-                      ? "text-red-400"
+                      ? "text-error"
                       : ev.severity.toLowerCase() === "warning"
-                        ? "text-amber-400"
+                        ? "text-warning"
                         : "text-[var(--color-text-secondary)]"
                   }`}
                 >

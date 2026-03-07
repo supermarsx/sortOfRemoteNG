@@ -72,7 +72,7 @@ const PingGraph = ({
               y1={avgY}
               x2={graphWidth}
               y2={avgY}
-              stroke="#3b82f6"
+              stroke="var(--color-primary)"
               strokeWidth="2"
               strokeDasharray="6,3"
               opacity="0.6"
@@ -85,7 +85,7 @@ const PingGraph = ({
             <path
               d={linePath}
               fill="none"
-              stroke="#22c55e"
+              stroke="var(--color-success)"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -102,10 +102,10 @@ const PingGraph = ({
               r="5"
               fill={
                 !p.ping.success
-                  ? "#ef4444"
+                  ? "var(--color-error)"
                   : p.ping.time_ms && p.ping.time_ms > avgPingTime * 1.5
-                    ? "#eab308"
-                    : "#22c55e"
+                    ? "var(--color-warning)"
+                    : "var(--color-success)"
               }
               stroke="var(--color-surface)"
               strokeWidth="2"

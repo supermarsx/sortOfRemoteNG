@@ -1,4 +1,5 @@
 import React from "react";
+import type { TOTPConfig } from "../../../types/settings/settings";
 
 export interface RDPClientHeaderProps {
   sessionName: string;
@@ -65,6 +66,8 @@ export const SEND_KEY_OPTIONS = [
   { id: "alt-f4", label: "Alt + F4" },
   { id: "print-screen", label: "Print Screen" },
 ] as const;
+
+export type Mgr = RDPClientHeaderProps;
 
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */

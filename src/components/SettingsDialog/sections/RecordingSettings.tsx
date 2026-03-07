@@ -43,7 +43,7 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="space-y-3">
       <label data-setting-key="recording.enabled" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Power size={14} className="text-green-400" />
+          <Power size={14} className="text-success" />
           <div>
             <span className="sor-toggle-label">Enable SSH recording</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Allow SSH terminal sessions to be recorded</p>
@@ -53,7 +53,7 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
       <label data-setting-key="recording.autoRecordSessions" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Circle size={14} className="text-red-400" />
+          <Circle size={14} className="text-error" />
           <div>
             <span className="sor-toggle-label">Auto-record SSH sessions</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Automatically start recording when connecting to SSH</p>
@@ -63,7 +63,7 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
       <label data-setting-key="recording.recordInput" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Keyboard size={14} className="text-orange-400" />
+          <Keyboard size={14} className="text-warning" />
           <div>
             <span className="sor-toggle-label">Record input (keystrokes)</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Include typed input in recordings (may contain sensitive data)</p>
@@ -79,7 +79,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
     <div data-setting-key="recording.maxRecordingDurationMinutes" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Clock size={14} className="text-blue-400" />
+        <Clock size={14} className="text-primary" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max recording duration</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">0 = unlimited</p>
@@ -93,7 +93,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <div data-setting-key="recording.maxStoredRecordings" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <HardDrive size={14} className="text-green-400" />
+        <HardDrive size={14} className="text-success" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max stored recordings</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">Oldest recordings auto-deleted when exceeded</p>
@@ -104,7 +104,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     <div data-setting-key="recording.defaultExportFormat" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Download size={14} className="text-purple-400" />
+        <Download size={14} className="text-accent" />
         <span className="text-sm text-[var(--color-textSecondary)]">Default export format</span>
       </div>
       <Select value={mgr.recording.defaultExportFormat} onChange={(v: string) => mgr.updateSsh({ defaultExportFormat: v as RecordingConfig["defaultExportFormat"] })} options={[{ value: "asciicast", label: "Asciicast (asciinema)" }, { value: "script", label: "Script (text)" }, { value: "json", label: "JSON" }, { value: "gif", label: "GIF (animated)" }]} />
@@ -130,7 +130,7 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="space-y-3">
       <label data-setting-key="rdpRecording.enabled" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Power size={14} className="text-green-400" />
+          <Power size={14} className="text-success" />
           <div>
             <span className="sor-toggle-label">Enable RDP recording</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Allow RDP sessions to be screen-recorded</p>
@@ -140,7 +140,7 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
       <label data-setting-key="rdpRecording.autoRecordRdpSessions" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Circle size={14} className="text-red-400" />
+          <Circle size={14} className="text-error" />
           <div>
             <span className="sor-toggle-label">Auto-record RDP sessions</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Automatically start video recording on RDP connect</p>
@@ -150,7 +150,7 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
       <label data-setting-key="rdpRecording.autoSaveToLibrary" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Save size={14} className="text-green-400" />
+          <Save size={14} className="text-success" />
           <div>
             <span className="sor-toggle-label">Auto-save to library</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Save RDP recordings to the Recording Manager instead of prompting a file dialog</p>
@@ -166,14 +166,14 @@ const RdpFormatQuality: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
     <div data-setting-key="rdpRecording.defaultVideoFormat" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Film size={14} className="text-cyan-400" />
+        <Film size={14} className="text-info" />
         <span className="text-sm text-[var(--color-textSecondary)]">Video format</span>
       </div>
       <Select value={mgr.rdpRec.defaultVideoFormat} onChange={(v: string) => mgr.updateRdp({ defaultVideoFormat: v as "webm" | "mp4" | "gif" })} options={[{ value: "webm", label: "WebM (VP8/VP9)" }, { value: "mp4", label: "MP4 (H.264)" }, { value: "gif", label: "GIF (animated)" }]} />
     </div>
     <div data-setting-key="rdpRecording.recordingFps" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Gauge size={14} className="text-yellow-400" />
+        <Gauge size={14} className="text-warning" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Recording FPS</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">Higher = smoother but larger files</p>
@@ -186,7 +186,7 @@ const RdpFormatQuality: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div data-setting-key="rdpRecording.videoBitrateMbps" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Gauge size={14} className="text-orange-400" />
+        <Gauge size={14} className="text-warning" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Video bitrate</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">Higher = better quality but larger files</p>
@@ -204,7 +204,7 @@ const RdpLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
     <div data-setting-key="rdpRecording.maxRdpRecordingDurationMinutes" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Clock size={14} className="text-blue-400" />
+        <Clock size={14} className="text-primary" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max RDP recording duration</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">0 = unlimited</p>
@@ -217,7 +217,7 @@ const RdpLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div data-setting-key="rdpRecording.maxStoredRdpRecordings" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <HardDrive size={14} className="text-green-400" />
+        <HardDrive size={14} className="text-success" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max stored RDP recordings</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">Oldest recordings auto-deleted when exceeded</p>
@@ -254,7 +254,7 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="space-y-3">
       <label data-setting-key="webRecording.enabled" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Power size={14} className="text-green-400" />
+          <Power size={14} className="text-success" />
           <div>
             <span className="sor-toggle-label">Enable web recording</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Allow web sessions to be recorded (HAR and video)</p>
@@ -264,7 +264,7 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
       <label data-setting-key="webRecording.autoRecordWebSessions" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Circle size={14} className="text-red-400" />
+          <Circle size={14} className="text-error" />
           <div>
             <span className="sor-toggle-label">Auto-record web sessions</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Automatically start HTTP traffic recording on web connect</p>
@@ -274,7 +274,7 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
       <label data-setting-key="webRecording.recordHeaders" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
-          <Eye size={14} className="text-orange-400" />
+          <Eye size={14} className="text-warning" />
           <div>
             <span className="sor-toggle-label">Record HTTP headers</span>
             <p className="text-[10px] text-[var(--color-textMuted)]">Include request and response headers in recordings</p>
@@ -290,7 +290,7 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
     <div data-setting-key="webRecording.maxWebRecordingDurationMinutes" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Clock size={14} className="text-blue-400" />
+        <Clock size={14} className="text-primary" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max web recording duration</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">0 = unlimited</p>
@@ -303,7 +303,7 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div data-setting-key="webRecording.maxStoredWebRecordings" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <HardDrive size={14} className="text-green-400" />
+        <HardDrive size={14} className="text-success" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max stored web recordings</span>
           <p className="text-[10px] text-[var(--color-textMuted)]">Oldest recordings auto-deleted when exceeded</p>
@@ -313,7 +313,7 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div data-setting-key="webRecording.defaultExportFormat" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <FileText size={14} className="text-purple-400" />
+        <FileText size={14} className="text-accent" />
         <span className="text-sm text-[var(--color-textSecondary)]">Default export format</span>
       </div>
       <Select value={mgr.webRec.defaultExportFormat} onChange={(v: string) => mgr.updateWeb({ defaultExportFormat: v as "json" | "har" })} options={[{ value: "har", label: "HAR (HTTP Archive)" }, { value: "json", label: "JSON" }]} />

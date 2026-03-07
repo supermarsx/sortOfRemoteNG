@@ -9,7 +9,7 @@ function MacroReplayPopover({ mgr }: { mgr: WebTerminalMgr }) {
       {mgr.replayingMacro ? (
         <button
           onClick={mgr.handleStopReplay}
-          className="app-bar-button p-2 text-orange-400"
+          className="app-bar-button p-2 text-warning"
           data-tooltip="Stop Replay"
           aria-label="Stop Replay"
         >
@@ -18,7 +18,7 @@ function MacroReplayPopover({ mgr }: { mgr: WebTerminalMgr }) {
       ) : (
         <button
           onClick={() => mgr.setShowMacroList((v) => !v)}
-          className={`app-bar-button p-2 ${mgr.showMacroList ? "text-blue-400" : ""}`}
+          className={`app-bar-button p-2 ${mgr.showMacroList ? "text-primary" : ""}`}
           data-tooltip="Replay Macro"
           aria-label="Replay Macro"
           disabled={mgr.status !== "connected"}

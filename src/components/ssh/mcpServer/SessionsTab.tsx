@@ -47,23 +47,23 @@ export const SessionsTab: React.FC<McpTabProps> = ({ mgr }) => {
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Users size={12} className="text-purple-400" />
+              <Users size={12} className="text-accent" />
               <span className="text-xs font-mono text-[var(--color-text-primary)]">
                 {session.id.slice(0, 12)}…
               </span>
               {session.initialized ? (
-                <span className="flex items-center gap-1 text-[9px] text-green-400">
+                <span className="flex items-center gap-1 text-[9px] text-success">
                   <CheckCircle size={9} />{t("mcpServer.sessions.initialized", "Initialized")}
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-[9px] text-amber-400">
+                <span className="flex items-center gap-1 text-[9px] text-warning">
                   <XCircle size={9} />{t("mcpServer.sessions.pending", "Pending")}
                 </span>
               )}
             </div>
             <button
               onClick={() => mgr.disconnectSession(session.id)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-red-400 hover:bg-red-500/10"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-error hover:bg-error/10"
               title={t("mcpServer.sessions.disconnect", "Disconnect")}
             >
               <X size={10} />

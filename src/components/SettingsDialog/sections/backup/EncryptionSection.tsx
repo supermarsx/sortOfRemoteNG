@@ -1,3 +1,4 @@
+import type { Mgr } from './types';
 import React from "react";
 import { PasswordInput } from '../../../ui/forms';
 import { Lock, Key, Shield } from "lucide-react";
@@ -8,7 +9,7 @@ import { Checkbox, Select } from "../../../ui/forms";
 const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     <h4 className="sor-section-heading">
-      <Lock className="w-4 h-4 text-yellow-400" />
+      <Lock className="w-4 h-4 text-warning" />
       Encryption
     </h4>
 
@@ -24,7 +25,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </label>
 
       {mgr.backup.encryptBackups && (
-        <div className="space-y-4 pl-4 border-l-2 border-yellow-500/30">
+        <div className="space-y-4 pl-4 border-l-2 border-warning/30">
           <div className="space-y-2">
             <label className="block text-sm text-[var(--color-textSecondary)]">
               <Shield className="w-4 h-4 inline mr-2" />

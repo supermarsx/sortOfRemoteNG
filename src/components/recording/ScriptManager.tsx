@@ -32,9 +32,9 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     >
       {/* Background glow effects - only show in dark mode */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
-        <div className="absolute top-[20%] left-[15%] w-80 h-80 bg-purple-500/8 rounded-full blur-3xl" />
-        <div className="absolute bottom-[25%] right-[10%] w-72 h-72 bg-blue-500/6 rounded-full blur-3xl" />
-        <div className="absolute top-[60%] left-[40%] w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-[20%] left-[15%] w-80 h-80 bg-accent/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-[25%] right-[10%] w-72 h-72 bg-primary/6 rounded-full blur-3xl" />
+        <div className="absolute top-[60%] left-[40%] w-64 h-64 bg-accent/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative z-10 flex h-full min-h-0 flex-col overflow-hidden bg-[var(--color-surface)]">

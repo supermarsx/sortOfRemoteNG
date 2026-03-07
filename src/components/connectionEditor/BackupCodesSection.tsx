@@ -111,7 +111,7 @@ const ConfigActions: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) =>
           className="sor-icon-btn-sm"
           title="Copy all codes"
         >
-          {mgr.copiedKey === copyKey ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+          {mgr.copiedKey === copyKey ? <Check size={12} className="text-success" /> : <Copy size={12} />}
         </button>
       )}
       <button
@@ -150,7 +150,7 @@ const CodesGrid: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) => {
           <button
             type="button"
             onClick={() => mgr.removeCode(cfg.secret, i)}
-            className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--color-textMuted)] hover:text-red-400 transition-opacity"
+            className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--color-textMuted)] hover:text-error transition-opacity"
             title="Remove code"
           >
             <X size={10} />

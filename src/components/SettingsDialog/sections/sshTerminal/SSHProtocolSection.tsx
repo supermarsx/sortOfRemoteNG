@@ -1,3 +1,4 @@
+import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { SSHVersions } from "../../../../types/settings/settings";
@@ -8,7 +9,7 @@ import { NumberInput, Select } from "../../../ui/forms";
 const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
     title={t("settings.sshTerminal.sshProtocol", "SSH Protocol Settings")}
-    icon={<Shield className="w-4 h-4 text-red-400" />}
+    icon={<Shield className="w-4 h-4 text-error" />}
     defaultOpen={false}
   >
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -254,11 +254,17 @@ export class ThemeManager {
 
     Object.entries(theme.colors).forEach(([key, value]) => {
       root.style.setProperty(`--color-${key}`, value);
+      root.style.setProperty(`--color-${key}-rgb`, ThemeManager.hexToRgbTriplet(value));
     });
 
     // Derive additional colors from the base theme
     const isLightTheme = ['light', 'semilight'].includes(themeName) || 
       (themeName === 'auto' && this.detectSystemTheme() === 'light');
+
+    // Set info color (cyan-ish) derived from theme context
+    const infoColor = isLightTheme ? '#0891b2' : '#06b6d4';
+    root.style.setProperty('--color-info', infoColor);
+    root.style.setProperty('--color-info-rgb', ThemeManager.hexToRgbTriplet(infoColor));
     
     // surfaceHover - more contrast for hover states on light themes
     const surfaceHover = isLightTheme 
@@ -298,19 +304,21 @@ export class ThemeManager {
 
     if (customAccent) {
       // Custom accent: derive full color scheme from the custom accent color
+      const derivedSecondary = ThemeManager.shadeColor(customAccent, -12);
+      const derivedAccent = ThemeManager.shadeColor(customAccent, -24);
       root.style.setProperty("--color-primary", customAccent);
-      root.style.setProperty(
-        "--color-secondary",
-        ThemeManager.shadeColor(customAccent, -12),
-      );
-      root.style.setProperty(
-        "--color-accent",
-        ThemeManager.shadeColor(customAccent, -24),
-      );
+      root.style.setProperty("--color-primary-rgb", ThemeManager.hexToRgbTriplet(customAccent));
+      root.style.setProperty("--color-secondary", derivedSecondary);
+      root.style.setProperty("--color-secondary-rgb", ThemeManager.hexToRgbTriplet(derivedSecondary));
+      root.style.setProperty("--color-accent", derivedAccent);
+      root.style.setProperty("--color-accent-rgb", ThemeManager.hexToRgbTriplet(derivedAccent));
     } else {
       root.style.setProperty("--color-primary", colors.primary);
+      root.style.setProperty("--color-primary-rgb", ThemeManager.hexToRgbTriplet(colors.primary));
       root.style.setProperty("--color-secondary", colors.secondary);
+      root.style.setProperty("--color-secondary-rgb", ThemeManager.hexToRgbTriplet(colors.secondary));
       root.style.setProperty("--color-accent", colors.accent);
+      root.style.setProperty("--color-accent-rgb", ThemeManager.hexToRgbTriplet(colors.accent));
     }
 
     document.body.className = document.body.className
@@ -398,6 +406,13 @@ export class ThemeManager {
 
   getAvailableColorSchemes(): ColorScheme[] {
     return Object.keys(this.getAllColorSchemes()) as ColorScheme[];
+  }
+
+  static hexToRgbTriplet(hex: string): string {
+    const normalized = hex.replace("#", "");
+    if (normalized.length !== 6) return "0 0 0";
+    const num = parseInt(normalized, 16);
+    return `${(num >> 16) & 0xff} ${(num >> 8) & 0xff} ${num & 0xff}`;
   }
 
   private static shadeColor(hex: string, amount: number): string {
@@ -658,6 +673,7 @@ export class ThemeManager {
 
 .drop-inside {
   background-color: rgba(59, 130, 246, 0.1) !important;
+  background-color: rgb(var(--color-primary-rgb) / 0.1) !important;
   border: 2px dashed var(--color-primary) !important;
 }
 
