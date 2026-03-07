@@ -111,9 +111,10 @@ impl RedfishClient {
             return Err(BmcError::auth("Invalid credentials"));
         }
         if !resp.status().is_success() {
+            let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
             return Err(BmcError::api(
-                resp.status().as_u16(),
+                status,
                 format!("Service root check failed: {body}"),
             ));
         }
