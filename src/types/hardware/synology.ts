@@ -59,6 +59,7 @@ export interface MemoryUtilization {
   cached?: number;
   buffer?: number;
   memory_size?: number;
+  physical_memory?: { total_real?: number; avail_real?: number };
 }
 
 export interface NetworkUtilization {
@@ -124,6 +125,8 @@ export interface VolumeInfo {
   desc?: string;
   pool_path?: string;
   crash_report?: string;
+  size?: { total?: number; used?: number };
+  display_name?: string;
 }
 
 export interface StoragePool {
@@ -153,6 +156,9 @@ export interface SmartInfo {
   health_status?: string;
   temperature?: number;
   attributes?: SmartAttribute[];
+  overall_status?: string;
+  power_on_hours?: number;
+  bad_sectors?: number;
 }
 
 export interface SmartAttribute {
