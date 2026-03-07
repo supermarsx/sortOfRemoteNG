@@ -117,6 +117,7 @@ members = [
   "crates/sorng-haproxy",
   "crates/sorng-apache",
   "crates/sorng-caddy",
+  "crates/sorng-consul",
   "crates/sorng-nginx-proxy-mgr",
   "crates/sorng-postfix",
   "crates/sorng-gpg-agent",
@@ -150,6 +151,19 @@ members = [
   "crates/sorng-mac",
   "crates/sorng-cicd",
   "crates/sorng-oracle-cloud",
+  "crates/sorng-ipmi",
+  "crates/sorng-cups",
+  "crates/sorng-backup-verify",
+  "crates/sorng-ceph",
+  "crates/sorng-rabbitmq",
+  "crates/sorng-kafka",
+  "crates/sorng-pfsense",
+  "crates/sorng-mysql-admin",
+  "crates/sorng-postgres-admin",
+  "crates/sorng-prometheus",
+  "crates/sorng-grafana",
+  "crates/sorng-ups",
+  "crates/sorng-netbox",
 ]
 
 [workspace.dependencies]
@@ -305,6 +319,7 @@ sorng-traefik = { path = "crates/sorng-traefik" }
 sorng-haproxy = { path = "crates/sorng-haproxy" }
 sorng-apache = { path = "crates/sorng-apache" }
 sorng-caddy = { path = "crates/sorng-caddy" }
+sorng-consul = { path = "crates/sorng-consul" }
 sorng-nginx-proxy-mgr = { path = "crates/sorng-nginx-proxy-mgr" }
 sorng-postfix = { path = "crates/sorng-postfix" }
 sorng-gpg-agent = { path = "crates/sorng-gpg-agent" }
@@ -338,6 +353,19 @@ sorng-about = { path = "crates/sorng-about" }
 sorng-mac = { path = "crates/sorng-mac" }
 sorng-cicd = { path = "crates/sorng-cicd" }
 sorng-oracle-cloud = { path = "crates/sorng-oracle-cloud" }
+sorng-ipmi = { path = "crates/sorng-ipmi" }
+sorng-cups = { path = "crates/sorng-cups" }
+sorng-backup-verify = { path = "crates/sorng-backup-verify" }
+sorng-ceph = { path = "crates/sorng-ceph" }
+sorng-rabbitmq = { path = "crates/sorng-rabbitmq" }
+sorng-kafka = { path = "crates/sorng-kafka" }
+sorng-pfsense = { path = "crates/sorng-pfsense" }
+sorng-mysql-admin = { path = "crates/sorng-mysql-admin" }
+sorng-postgres-admin = { path = "crates/sorng-postgres-admin" }
+sorng-prometheus = { path = "crates/sorng-prometheus" }
+sorng-grafana = { path = "crates/sorng-grafana" }
+sorng-ups = { path = "crates/sorng-ups" }
+sorng-netbox = { path = "crates/sorng-netbox" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
@@ -364,6 +392,10 @@ mockall = "0.11"
 serial_test = "2.0"
 chrono = { workspace = true }
 uuid = { workspace = true }
+
+# Reduce memory usage during debug builds — wgpu-core and openh264-sys2 OOM with full debuginfo
+[profile.dev.package."*"]
+debug = 1
 
 [patch.crates-io]
 ironrdp-connector = { path = "patches/ironrdp-connector" }
