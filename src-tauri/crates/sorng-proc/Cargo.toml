@@ -1,0 +1,19 @@
+[package]
+name = "sorng-proc"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Process management for SortOfRemoteNG — process listing, tree view, kill/signal/nice/renice, resource monitoring, open files/sockets, /proc filesystem browsing, environment viewing, namespaces, cgroups, strace/ltrace, and system load/uptime."
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tauri = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
