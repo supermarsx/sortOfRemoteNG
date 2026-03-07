@@ -57,7 +57,7 @@ pub fn list_topics(admin: &KafkaAdminClient) -> KafkaResult<Vec<TopicInfo>> {
 }
 
 /// Get detailed information about a single topic.
-pub fn get_topic(admin: &KafkaAdminClient, name: &str) -> KafkaResult<TopicInfo> {
+pub async fn get_topic(admin: &KafkaAdminClient, name: &str) -> KafkaResult<TopicInfo> {
     let metadata = admin.get_metadata(Some(name))?;
     let topic_meta = metadata
         .topics()
@@ -99,7 +99,7 @@ pub fn get_topic(admin: &KafkaAdminClient, name: &str) -> KafkaResult<TopicInfo>
 
     let configs = admin
         .describe_configs(&ResourceType::Topic, name)
-        .ok()
+        .await
         .unwrap_or_default();
 
     Ok(TopicInfo {
@@ -137,9 +137,8 @@ pub async fn delete_topic(admin: &KafkaAdminClient, name: &str) -> KafkaResult<(
 }
 
 /// Get configuration entries for a topic.
-pub fn get_topic_config(admin: &KafkaAdminClient, name: &str) -> KafkaResult<Vec<TopicConfig>> {
-    // Verify topic exists first
-    let _topic = get_topic(admin, name)?;
+pub async fn get_topic_config(admin: &KafkaAdminClient, name: &str) -> KafkaResult<Vec<TopicConfig>> {
+    let _topic = get_topic(admin, name).await?;
     // describe_configs is async but we call the blocking version here
     // In the service layer the async version will be used.
     // For now we fetch metadata-based config.
@@ -198,8 +197,8 @@ pub async fn increase_partitions(
 }
 
 /// Describe a topic in detail, including ISR, leader, replicas.
-pub fn describe_topic(admin: &KafkaAdminClient, name: &str) -> KafkaResult<TopicInfo> {
-    get_topic(admin, name)
+pub async fn describe_topic(admin: &KafkaAdminClient, name: &str) -> KafkaResult<TopicInfo> {
+    get_topic(admin, name).await
 }
 
 /// List internal topics (e.g., __consumer_offsets, __transaction_state).
@@ -209,11 +208,11 @@ pub fn list_internal_topics(admin: &KafkaAdminClient) -> KafkaResult<Vec<TopicIn
 }
 
 /// Estimate the size of a topic (per partition).
-pub fn get_topic_size(
+pub async fn get_topic_size(
     admin: &KafkaAdminClient,
     name: &str,
 ) -> KafkaResult<Vec<(i32, Option<i64>)>> {
-    let topic = get_topic(admin, name)?;
+    let topic = get_topic(admin, name).await?;
     Ok(topic
         .partition_details
         .iter()

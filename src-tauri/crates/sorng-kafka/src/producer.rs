@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use rdkafka::message::{Header, OwnedHeaders};
-use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
 use rdkafka::ClientConfig;
 
 use crate::error::{KafkaError, KafkaResult};

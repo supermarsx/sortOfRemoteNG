@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use rdkafka::admin::{
     AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication,
-    ResourceSpecifier, AlterConfig, OwnedResourceSpecifier,
+    ResourceSpecifier, AlterConfig,
 };
 use rdkafka::client::DefaultClientContext;
 use rdkafka::consumer::{BaseConsumer, Consumer};
@@ -74,8 +74,7 @@ impl KafkaAdminClient {
             })
             .collect();
 
-        let refs: Vec<&NewTopic<'_>> = new_topics.iter().collect();
-        let results = self.admin.create_topics(&refs, &self.admin_opts()).await?;
+        let results = self.admin.create_topics(&new_topics, &self.admin_opts()).await?;
 
         for result in results {
             if let Err((topic, code)) = result {
@@ -152,18 +151,19 @@ impl KafkaAdminClient {
             match result {
                 Ok(config_resource) => {
                     for entry in config_resource.entries {
+                        let value_str = entry.value.as_ref().map(|v| v.to_string());
                         configs.push(TopicConfig {
                             name: entry.name.to_string(),
-                            value: entry.value.map(|v| v.to_string()),
+                            value: value_str.clone(),
                             source: ConfigSource::DefaultConfig,
-                            is_default: entry.value.is_none(),
+                            is_default: value_str.is_none(),
                             is_sensitive: false,
                             is_read_only: false,
                             synonyms: Vec::new(),
                         });
                     }
                 }
-                Err((_, code)) => {
+                Err(code) => {
                     return Err(KafkaError::admin_error(format!(
                         "Failed to describe config for '{}': {:?}",
                         resource_name, code
@@ -183,17 +183,16 @@ impl KafkaAdminClient {
         configs: &HashMap<String, String>,
     ) -> KafkaResult<()> {
         let specifier = match resource_type {
-            ResourceType::Topic => OwnedResourceSpecifier::Topic(resource_name.to_string()),
-            _ => OwnedResourceSpecifier::Topic(resource_name.to_string()),
+            ResourceType::Topic => ResourceSpecifier::Topic(resource_name),
+            _ => ResourceSpecifier::Topic(resource_name),
         };
 
-        let alter_configs: Vec<AlterConfig<'_>> = configs
-            .iter()
-            .map(|(k, v)| AlterConfig::new(specifier.clone()).set(k, v))
-            .collect();
+        let mut alter = AlterConfig::new(specifier);
+        for (k, v) in configs {
+            alter = alter.set(k, v);
+        }
 
-        let refs: Vec<&AlterConfig<'_>> = alter_configs.iter().collect();
-        let results = self.admin.alter_configs(&refs, &self.admin_opts()).await?;
+        let results = self.admin.alter_configs(&[alter], &self.admin_opts()).await?;
 
         for result in results {
             if let Err((_, code)) = result {
