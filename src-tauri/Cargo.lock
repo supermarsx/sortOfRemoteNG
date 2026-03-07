@@ -201,6 +201,7 @@ dependencies = [
  "sorng-biometrics",
  "sorng-bitwarden",
  "sorng-bmc-common",
+ "sorng-bootloader",
  "sorng-budibase",
  "sorng-caddy",
  "sorng-clamav",
@@ -209,6 +210,7 @@ dependencies = [
  "sorng-command-palette",
  "sorng-core",
  "sorng-credentials",
+ "sorng-cron",
  "sorng-cyrus-sasl",
  "sorng-dashboard",
  "sorng-dashlane",
@@ -239,6 +241,7 @@ dependencies = [
  "sorng-jira",
  "sorng-k8s",
  "sorng-keepass",
+ "sorng-kernel",
  "sorng-lastpass",
  "sorng-lenovo",
  "sorng-letsencrypt",
@@ -265,13 +268,16 @@ dependencies = [
  "sorng-opendkim",
  "sorng-openvpn",
  "sorng-opkssh",
+ "sorng-os-detect",
  "sorng-osticket",
  "sorng-p2p",
+ "sorng-pam",
  "sorng-passbolt",
  "sorng-portable",
  "sorng-postfix",
  "sorng-postgres",
  "sorng-powershell",
+ "sorng-proc",
  "sorng-procmail",
  "sorng-protocols",
  "sorng-proxmox",
@@ -308,6 +314,7 @@ dependencies = [
  "sorng-terminal-themes",
  "sorng-termserv",
  "sorng-terraform",
+ "sorng-time-ntp",
  "sorng-topology",
  "sorng-totp",
  "sorng-traefik",
@@ -9349,6 +9356,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-bootloader"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-budibase"
 version = "0.1.0"
 dependencies = [
@@ -9462,6 +9483,20 @@ dependencies = [
  "sha2 0.10.9",
  "tauri",
  "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-cron"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
  "uuid",
 ]
 
@@ -9990,6 +10025,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-kernel"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-lastpass"
 version = "0.1.0"
 dependencies = [
@@ -10446,6 +10495,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-os-detect"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-osticket"
 version = "0.1.0"
 dependencies = [
@@ -10472,6 +10535,20 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-dns",
  "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-pam"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
  "uuid",
 ]
 
@@ -10565,6 +10642,20 @@ dependencies = [
  "tauri",
  "tokio 1.48.0",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-proc"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
  "uuid",
 ]
 
@@ -11244,6 +11335,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-time-ntp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-topology"
 version = "0.1.0"
 dependencies = [
@@ -11370,6 +11475,7 @@ dependencies = [
  "tokio 1.48.0",
  "url",
  "uuid",
+ "winreg 0.52.0",
 ]
 
 [[package]]
