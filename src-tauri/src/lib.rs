@@ -398,6 +398,27 @@ pub use sorng_portable;
 // Scheduler — cron-like task scheduler with execution engine, history (dedicated crate)
 pub use sorng_scheduler;
 
+// OS Detection — extensive OS/distro capabilities detection, hardware profiling, init system, package manager, service discovery (dedicated crate)
+pub use sorng_os_detect as os_detect;
+
+// Cron — crontab management, at/batch jobs, anacron, system cron.d, expression validation, access control (dedicated crate)
+pub use sorng_cron as cron;
+
+// PAM — pluggable authentication module management, limits, access control, password quality, login defs (dedicated crate)
+pub use sorng_pam as pam;
+
+// Bootloader — GRUB2, systemd-boot, UEFI boot entries, kernel params, initramfs management (dedicated crate)
+pub use sorng_bootloader as bootloader;
+
+// Proc — running process management, signals, open files, /proc filesystem, system load (dedicated crate)
+pub use sorng_proc as proc_mgmt;
+
+// Time/NTP — timedatectl, chrony, ntpd, hardware clock, PTP, timezone management (dedicated crate)
+pub use sorng_time_ntp as time_ntp;
+
+// Kernel — kernel module management, sysctl, features detection, power management, sysfs (dedicated crate)
+pub use sorng_kernel as kernel_mgmt;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -531,6 +552,13 @@ use clamav::service::ClamavServiceState;
 use roundcube::service::RoundcubeServiceState;
 use mailcow::service::MailcowServiceState;
 use amavis::service::AmavisServiceState;
+use os_detect::service::OsDetectServiceState;
+use cron::service::CronServiceState;
+use pam::service::PamServiceState;
+use bootloader::service::BootloaderServiceState;
+use proc_mgmt::service::ProcServiceState;
+use time_ntp::service::TimeNtpServiceState;
+use kernel_mgmt::service::KernelServiceState;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -1180,6 +1208,34 @@ pub fn run() {
       // Initialize Amavis service
       let amavis_state: AmavisServiceState = Arc::new(Mutex::new(amavis::service::AmavisService::new()));
       app.manage(amavis_state);
+
+      // Initialize OS Detection service
+      let os_detect_state: OsDetectServiceState = os_detect::service::OsDetectService::new();
+      app.manage(os_detect_state);
+
+      // Initialize Cron service
+      let cron_state: CronServiceState = cron::service::CronService::new();
+      app.manage(cron_state);
+
+      // Initialize PAM service
+      let pam_state: PamServiceState = pam::service::PamService_::new();
+      app.manage(pam_state);
+
+      // Initialize Bootloader service
+      let bootloader_state: BootloaderServiceState = bootloader::service::BootloaderService::new();
+      app.manage(bootloader_state);
+
+      // Initialize Process Management service
+      let proc_state: ProcServiceState = proc_mgmt::service::ProcService::new();
+      app.manage(proc_state);
+
+      // Initialize Time/NTP service
+      let time_ntp_state: TimeNtpServiceState = time_ntp::service::TimeNtpService::new();
+      app.manage(time_ntp_state);
+
+      // Initialize Kernel Management service
+      let kernel_state: KernelServiceState = kernel_mgmt::service::KernelService::new();
+      app.manage(kernel_state);
 
       // Initialize i18n engine with hot-reload
       let locales_dir = app.path().resource_dir()
@@ -7061,6 +7117,272 @@ pub fn run() {
         amavis::commands::amavis_version,
         amavis::commands::amavis_debug_sa,
         amavis::commands::amavis_show_config,
+        // OS Detection
+        os_detect::commands::os_detect_add_host,
+        os_detect::commands::os_detect_remove_host,
+        os_detect::commands::os_detect_update_host,
+        os_detect::commands::os_detect_get_host,
+        os_detect::commands::os_detect_list_hosts,
+        os_detect::commands::os_detect_os_family,
+        os_detect::commands::os_detect_linux_distro,
+        os_detect::commands::os_detect_os_version,
+        os_detect::commands::os_detect_macos_version,
+        os_detect::commands::os_detect_bsd_version,
+        os_detect::commands::os_detect_init_system,
+        os_detect::commands::os_detect_init_services,
+        os_detect::commands::os_detect_default_target,
+        os_detect::commands::os_detect_package_managers,
+        os_detect::commands::os_detect_installed_packages,
+        os_detect::commands::os_detect_package_sources,
+        os_detect::commands::os_detect_updates_available,
+        os_detect::commands::os_detect_cpu,
+        os_detect::commands::os_detect_memory,
+        os_detect::commands::os_detect_disks,
+        os_detect::commands::os_detect_network_interfaces,
+        os_detect::commands::os_detect_gpus,
+        os_detect::commands::os_detect_virtualization,
+        os_detect::commands::os_detect_hardware_profile,
+        os_detect::commands::os_detect_kernel,
+        os_detect::commands::os_detect_architecture,
+        os_detect::commands::os_detect_loaded_modules,
+        os_detect::commands::os_detect_kernel_features,
+        os_detect::commands::os_detect_selinux,
+        os_detect::commands::os_detect_apparmor,
+        os_detect::commands::os_detect_firewall,
+        os_detect::commands::os_detect_available_services,
+        os_detect::commands::os_detect_service_capabilities,
+        os_detect::commands::os_detect_installed_runtimes,
+        os_detect::commands::os_detect_web_servers,
+        os_detect::commands::os_detect_databases,
+        os_detect::commands::os_detect_container_runtimes,
+        os_detect::commands::os_detect_default_shell,
+        os_detect::commands::os_detect_available_shells,
+        os_detect::commands::os_detect_locale,
+        os_detect::commands::os_detect_timezone,
+        os_detect::commands::os_detect_full_scan,
+        os_detect::commands::os_detect_quick_scan,
+        // Cron
+        cron::commands::cron_add_host,
+        cron::commands::cron_remove_host,
+        cron::commands::cron_update_host,
+        cron::commands::cron_get_host,
+        cron::commands::cron_list_hosts,
+        cron::commands::cron_list_user_crontabs,
+        cron::commands::cron_get_crontab,
+        cron::commands::cron_add_job,
+        cron::commands::cron_remove_job,
+        cron::commands::cron_update_job,
+        cron::commands::cron_enable_job,
+        cron::commands::cron_disable_job,
+        cron::commands::cron_remove_crontab,
+        cron::commands::cron_backup_crontab,
+        cron::commands::cron_restore_crontab,
+        cron::commands::cron_list_system_files,
+        cron::commands::cron_get_system_file,
+        cron::commands::cron_create_system_file,
+        cron::commands::cron_delete_system_file,
+        cron::commands::cron_list_periodic,
+        cron::commands::cron_get_etc_crontab,
+        cron::commands::cron_list_at_jobs,
+        cron::commands::cron_get_at_job,
+        cron::commands::cron_schedule_at_job,
+        cron::commands::cron_schedule_batch_job,
+        cron::commands::cron_remove_at_job,
+        cron::commands::cron_get_at_access,
+        cron::commands::cron_get_anacrontab,
+        cron::commands::cron_add_anacron_entry,
+        cron::commands::cron_remove_anacron_entry,
+        cron::commands::cron_run_anacron,
+        cron::commands::cron_get_anacron_timestamps,
+        cron::commands::cron_validate_expression,
+        cron::commands::cron_next_runs,
+        cron::commands::cron_describe_expression,
+        cron::commands::cron_get_access,
+        cron::commands::cron_set_allow,
+        cron::commands::cron_set_deny,
+        cron::commands::cron_check_user_access,
+        // PAM
+        pam::commands::pam_add_host,
+        pam::commands::pam_remove_host,
+        pam::commands::pam_update_host,
+        pam::commands::pam_get_host,
+        pam::commands::pam_list_hosts,
+        pam::commands::pam_list_services,
+        pam::commands::pam_get_service,
+        pam::commands::pam_create_service,
+        pam::commands::pam_update_service,
+        pam::commands::pam_delete_service,
+        pam::commands::pam_backup_service,
+        pam::commands::pam_restore_service,
+        pam::commands::pam_validate_service,
+        pam::commands::pam_list_modules,
+        pam::commands::pam_get_module_info,
+        pam::commands::pam_find_module_users,
+        pam::commands::pam_get_limits,
+        pam::commands::pam_set_limit,
+        pam::commands::pam_remove_limit,
+        pam::commands::pam_get_access_rules,
+        pam::commands::pam_add_access_rule,
+        pam::commands::pam_remove_access_rule,
+        pam::commands::pam_get_time_rules,
+        pam::commands::pam_add_time_rule,
+        pam::commands::pam_remove_time_rule,
+        pam::commands::pam_get_pwquality,
+        pam::commands::pam_set_pwquality,
+        pam::commands::pam_test_password,
+        pam::commands::pam_get_namespace_rules,
+        pam::commands::pam_add_namespace_rule,
+        pam::commands::pam_remove_namespace_rule,
+        pam::commands::pam_get_login_defs,
+        pam::commands::pam_set_login_def,
+        pam::commands::pam_get_password_policy,
+        // Bootloader
+        bootloader::commands::boot_add_host,
+        bootloader::commands::boot_remove_host,
+        bootloader::commands::boot_update_host,
+        bootloader::commands::boot_get_host,
+        bootloader::commands::boot_list_hosts,
+        bootloader::commands::boot_detect_bootloader,
+        bootloader::commands::boot_detect_boot_mode,
+        bootloader::commands::boot_get_partitions,
+        bootloader::commands::boot_get_grub_config,
+        bootloader::commands::boot_set_grub_param,
+        bootloader::commands::boot_get_grub_environment,
+        bootloader::commands::boot_list_grub_entries,
+        bootloader::commands::boot_set_default_grub_entry,
+        bootloader::commands::boot_update_grub,
+        bootloader::commands::boot_install_grub,
+        bootloader::commands::boot_get_custom_entries,
+        bootloader::commands::boot_set_custom_entries,
+        bootloader::commands::boot_list_grub_scripts,
+        bootloader::commands::boot_enable_grub_script,
+        bootloader::commands::boot_disable_grub_script,
+        bootloader::commands::boot_get_sd_config,
+        bootloader::commands::boot_set_sd_config,
+        bootloader::commands::boot_list_sd_entries,
+        bootloader::commands::boot_create_sd_entry,
+        bootloader::commands::boot_delete_sd_entry,
+        bootloader::commands::boot_set_default_sd,
+        bootloader::commands::boot_sd_status,
+        bootloader::commands::boot_list_uefi_entries,
+        bootloader::commands::boot_get_uefi_order,
+        bootloader::commands::boot_set_uefi_order,
+        bootloader::commands::boot_create_uefi_entry,
+        bootloader::commands::boot_delete_uefi_entry,
+        bootloader::commands::boot_set_next_boot,
+        bootloader::commands::boot_get_uefi_info,
+        bootloader::commands::boot_list_kernels,
+        bootloader::commands::boot_get_running_kernel,
+        bootloader::commands::boot_get_kernel_params,
+        bootloader::commands::boot_set_kernel_params,
+        bootloader::commands::boot_add_kernel_param,
+        bootloader::commands::boot_remove_kernel_param,
+        bootloader::commands::boot_list_initramfs,
+        bootloader::commands::boot_rebuild_initramfs,
+        bootloader::commands::boot_detect_initramfs_tool,
+        // Process Management
+        proc_mgmt::commands::proc_add_host,
+        proc_mgmt::commands::proc_remove_host,
+        proc_mgmt::commands::proc_update_host,
+        proc_mgmt::commands::proc_get_host,
+        proc_mgmt::commands::proc_list_hosts,
+        proc_mgmt::commands::proc_list_processes,
+        proc_mgmt::commands::proc_get_process,
+        proc_mgmt::commands::proc_get_process_tree,
+        proc_mgmt::commands::proc_get_process_children,
+        proc_mgmt::commands::proc_search_processes,
+        proc_mgmt::commands::proc_top_processes,
+        proc_mgmt::commands::proc_count_processes,
+        proc_mgmt::commands::proc_kill_process,
+        proc_mgmt::commands::proc_kill_processes,
+        proc_mgmt::commands::proc_killall,
+        proc_mgmt::commands::proc_renice,
+        proc_mgmt::commands::proc_list_open_files,
+        proc_mgmt::commands::proc_list_sockets,
+        proc_mgmt::commands::proc_list_process_sockets,
+        proc_mgmt::commands::proc_list_listening_ports,
+        proc_mgmt::commands::proc_get_status,
+        proc_mgmt::commands::proc_get_cmdline,
+        proc_mgmt::commands::proc_get_environ,
+        proc_mgmt::commands::proc_get_limits,
+        proc_mgmt::commands::proc_get_maps,
+        proc_mgmt::commands::proc_get_io,
+        proc_mgmt::commands::proc_get_namespaces,
+        proc_mgmt::commands::proc_get_cgroup,
+        proc_mgmt::commands::proc_get_load_average,
+        proc_mgmt::commands::proc_get_uptime,
+        proc_mgmt::commands::proc_get_meminfo,
+        proc_mgmt::commands::proc_get_cpu_stats,
+        // Time/NTP
+        time_ntp::commands::time_add_host,
+        time_ntp::commands::time_remove_host,
+        time_ntp::commands::time_update_host,
+        time_ntp::commands::time_get_host,
+        time_ntp::commands::time_list_hosts,
+        time_ntp::commands::time_get_status,
+        time_ntp::commands::time_set_timezone,
+        time_ntp::commands::time_list_timezones,
+        time_ntp::commands::time_set_time,
+        time_ntp::commands::time_set_ntp,
+        time_ntp::commands::time_get_chrony_config,
+        time_ntp::commands::time_chrony_add_server,
+        time_ntp::commands::time_chrony_remove_server,
+        time_ntp::commands::time_chrony_get_sources,
+        time_ntp::commands::time_chrony_get_tracking,
+        time_ntp::commands::time_chrony_makestep,
+        time_ntp::commands::time_get_ntpd_config,
+        time_ntp::commands::time_ntpd_add_server,
+        time_ntp::commands::time_ntpd_remove_server,
+        time_ntp::commands::time_ntpd_get_peers,
+        time_ntp::commands::time_ntpd_get_status,
+        time_ntp::commands::time_get_hwclock,
+        time_ntp::commands::time_sync_hwclock_from_system,
+        time_ntp::commands::time_sync_system_from_hwclock,
+        time_ntp::commands::time_get_hwclock_drift,
+        time_ntp::commands::time_detect_ntp,
+        time_ntp::commands::time_is_synced,
+        // Kernel Management
+        kernel_mgmt::commands::kernel_add_host,
+        kernel_mgmt::commands::kernel_remove_host,
+        kernel_mgmt::commands::kernel_update_host,
+        kernel_mgmt::commands::kernel_get_host,
+        kernel_mgmt::commands::kernel_list_hosts,
+        kernel_mgmt::commands::kernel_list_modules,
+        kernel_mgmt::commands::kernel_get_module_info,
+        kernel_mgmt::commands::kernel_load_module,
+        kernel_mgmt::commands::kernel_unload_module,
+        kernel_mgmt::commands::kernel_get_module_params,
+        kernel_mgmt::commands::kernel_set_module_param,
+        kernel_mgmt::commands::kernel_list_available_modules,
+        kernel_mgmt::commands::kernel_blacklist_module,
+        kernel_mgmt::commands::kernel_unblacklist_module,
+        kernel_mgmt::commands::kernel_list_blacklisted,
+        kernel_mgmt::commands::kernel_list_autoload,
+        kernel_mgmt::commands::kernel_add_autoload,
+        kernel_mgmt::commands::kernel_remove_autoload,
+        kernel_mgmt::commands::kernel_get_all_sysctl,
+        kernel_mgmt::commands::kernel_get_sysctl,
+        kernel_mgmt::commands::kernel_set_sysctl,
+        kernel_mgmt::commands::kernel_set_sysctl_persistent,
+        kernel_mgmt::commands::kernel_remove_sysctl_persistent,
+        kernel_mgmt::commands::kernel_reload_sysctl,
+        kernel_mgmt::commands::kernel_get_network_sysctl,
+        kernel_mgmt::commands::kernel_get_vm_sysctl,
+        kernel_mgmt::commands::kernel_get_config,
+        kernel_mgmt::commands::kernel_check_feature,
+        kernel_mgmt::commands::kernel_detect_cgroup_version,
+        kernel_mgmt::commands::kernel_detect_namespace_support,
+        kernel_mgmt::commands::kernel_detect_security_modules,
+        kernel_mgmt::commands::kernel_detect_io_schedulers,
+        kernel_mgmt::commands::kernel_get_command_line,
+        kernel_mgmt::commands::kernel_get_power_state,
+        kernel_mgmt::commands::kernel_list_thermal_zones,
+        kernel_mgmt::commands::kernel_get_cpu_governor,
+        kernel_mgmt::commands::kernel_set_cpu_governor,
+        kernel_mgmt::commands::kernel_list_governors,
+        kernel_mgmt::commands::kernel_read_sysfs,
+        kernel_mgmt::commands::kernel_write_sysfs,
+        kernel_mgmt::commands::kernel_list_block_devices,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
