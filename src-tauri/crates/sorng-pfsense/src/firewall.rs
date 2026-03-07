@@ -1,136 +1,76 @@
-//! Firewall rule and alias management for pfSense/OPNsense.
-
 use crate::client::PfsenseClient;
-use crate::error::{PfsenseError, PfsenseResult};
+use crate::error::PfsenseResult;
 use crate::types::*;
 
 pub struct FirewallManager;
 
 impl FirewallManager {
-    pub async fn list_rules(client: &PfsenseClient, interface: Option<&str>) -> PfsenseResult<Vec<FirewallRule>> {
-        let endpoint = match interface {
-            Some(iface) => format!("/firewall/rule?interface={iface}"),
-            None => "/firewall/rule".to_string(),
-        };
-        let resp = client.api_get(&endpoint).await?;
-        let rules = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        rules.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+    pub async fn list_rules(client: &PfsenseClient) -> PfsenseResult<Vec<FirewallRule>> {
+        let resp: ApiListResponse<FirewallRule> = client.api_get("firewall/rule").await?;
+        Ok(resp.data)
     }
 
-    pub async fn get_rule(client: &PfsenseClient, rule_id: &str) -> PfsenseResult<FirewallRule> {
-        let rules = Self::list_rules(client, None).await?;
-        rules.into_iter()
-            .find(|r| r.id == rule_id || r.tracker == rule_id)
-            .ok_or_else(|| PfsenseError::rule_not_found(rule_id))
+    pub async fn get_rule(client: &PfsenseClient, id: &str) -> PfsenseResult<FirewallRule> {
+        let resp: ApiResponse<FirewallRule> = client.api_get(&format!("firewall/rule/{id}")).await?;
+        Ok(resp.data)
     }
 
-    pub async fn create_rule(client: &PfsenseClient, req: &CreateFirewallRuleRequest) -> PfsenseResult<FirewallRule> {
-        let body = serde_json::to_value(req)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post("/firewall/rule", &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn create_rule(client: &PfsenseClient, rule: &FirewallRule) -> PfsenseResult<FirewallRule> {
+        let resp: ApiResponse<FirewallRule> = client.api_post("firewall/rule", rule).await?;
+        Ok(resp.data)
     }
 
-    pub async fn update_rule(client: &PfsenseClient, rule_id: &str, req: &UpdateFirewallRuleRequest) -> PfsenseResult<FirewallRule> {
-        let body = serde_json::to_value(req)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_put(&format!("/firewall/rule/{rule_id}"), &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn update_rule(client: &PfsenseClient, id: &str, rule: &FirewallRule) -> PfsenseResult<FirewallRule> {
+        let resp: ApiResponse<FirewallRule> = client.api_put(&format!("firewall/rule/{id}"), rule).await?;
+        Ok(resp.data)
     }
 
-    pub async fn delete_rule(client: &PfsenseClient, rule_id: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/firewall/rule/{rule_id}")).await
+    pub async fn delete_rule(client: &PfsenseClient, id: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("firewall/rule/{id}")).await
     }
 
-    pub async fn move_rule(client: &PfsenseClient, rule_id: &str, position: u32) -> PfsenseResult<()> {
-        let body = serde_json::json!({
-            "id": rule_id,
-            "position": position,
-        });
-        client.api_post("/firewall/rule/reorder", &body).await?;
-        Ok(())
-    }
-
-    pub async fn toggle_rule(client: &PfsenseClient, rule_id: &str, enabled: bool) -> PfsenseResult<()> {
-        let body = serde_json::json!({ "disabled": !enabled });
-        client.api_put(&format!("/firewall/rule/{rule_id}"), &body).await?;
-        Ok(())
+    pub async fn apply_rules(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {
+        client.api_post("firewall/apply", &serde_json::json!({})).await
     }
 
     pub async fn list_aliases(client: &PfsenseClient) -> PfsenseResult<Vec<FirewallAlias>> {
-        let resp = client.api_get("/firewall/alias").await?;
-        let aliases = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        aliases.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+        let resp: ApiListResponse<FirewallAlias> = client.api_get("firewall/alias").await?;
+        Ok(resp.data)
     }
 
     pub async fn get_alias(client: &PfsenseClient, name: &str) -> PfsenseResult<FirewallAlias> {
-        let aliases = Self::list_aliases(client).await?;
-        aliases.into_iter()
-            .find(|a| a.name == name)
-            .ok_or_else(|| PfsenseError::rule_not_found(name))
+        let resp: ApiResponse<FirewallAlias> = client.api_get(&format!("firewall/alias/{name}")).await?;
+        Ok(resp.data)
     }
 
-    pub async fn create_alias(client: &PfsenseClient, req: &CreateAliasRequest) -> PfsenseResult<FirewallAlias> {
-        let body = serde_json::to_value(req)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post("/firewall/alias", &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn create_alias(client: &PfsenseClient, alias: &FirewallAlias) -> PfsenseResult<FirewallAlias> {
+        let resp: ApiResponse<FirewallAlias> = client.api_post("firewall/alias", alias).await?;
+        Ok(resp.data)
     }
 
-    pub async fn update_alias(client: &PfsenseClient, name: &str, req: &CreateAliasRequest) -> PfsenseResult<FirewallAlias> {
-        let body = serde_json::to_value(req)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_put(&format!("/firewall/alias/{name}"), &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn update_alias(client: &PfsenseClient, name: &str, alias: &FirewallAlias) -> PfsenseResult<FirewallAlias> {
+        let resp: ApiResponse<FirewallAlias> = client.api_put(&format!("firewall/alias/{name}"), alias).await?;
+        Ok(resp.data)
     }
 
     pub async fn delete_alias(client: &PfsenseClient, name: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/firewall/alias/{name}")).await
+        client.api_delete_void(&format!("firewall/alias/{name}")).await
     }
 
-    pub async fn get_states_count(client: &PfsenseClient) -> PfsenseResult<u64> {
-        let output = client.exec_ssh("pfctl -si | grep -i 'current entries'").await?;
-        let count = output.stdout.split_whitespace()
-            .last()
-            .and_then(|s| s.parse::<u64>().ok())
+    pub async fn get_states(client: &PfsenseClient) -> PfsenseResult<Vec<FirewallState>> {
+        let resp: ApiListResponse<FirewallState> = client.api_get("status/filter_state").await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_state_count(client: &PfsenseClient) -> PfsenseResult<u64> {
+        let raw: serde_json::Value = client.api_get_raw("status/filter_state/size").await?;
+        let count = raw.get("data")
+            .and_then(|d| d.as_u64())
             .unwrap_or(0);
         Ok(count)
     }
 
-    pub async fn clear_states(client: &PfsenseClient) -> PfsenseResult<()> {
-        let output = client.exec_ssh("pfctl -Fs").await?;
-        if output.exit_code != 0 {
-            return Err(PfsenseError::api(format!("Failed to clear states: {}", output.stderr)));
-        }
-        Ok(())
-    }
-
-    pub async fn get_rule_stats(client: &PfsenseClient, rule_id: &str) -> PfsenseResult<FirewallRule> {
-        Self::get_rule(client, rule_id).await
-    }
-
-    pub async fn list_schedules(client: &PfsenseClient) -> PfsenseResult<Vec<FirewallSchedule>> {
-        let resp = client.api_get("/firewall/schedule").await?;
-        let scheds = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        scheds.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+    pub async fn flush_states(client: &PfsenseClient) -> PfsenseResult<()> {
+        client.api_delete_void("status/filter_state").await
     }
 }

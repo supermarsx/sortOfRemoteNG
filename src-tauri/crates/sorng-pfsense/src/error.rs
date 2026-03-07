@@ -1,4 +1,4 @@
-//! Crate-local error types for pfSense/OPNsense operations.
+//! Crate-local error types for pfSense operations.
 
 use std::fmt;
 
@@ -9,20 +9,24 @@ pub enum PfsenseErrorKind {
     AlreadyConnected,
     ConnectionFailed,
     AuthenticationFailed,
-    ApiError,
     InterfaceNotFound,
     RuleNotFound,
+    AliasNotFound,
     NatRuleNotFound,
-    CertificateNotFound,
-    VpnTunnelNotFound,
     DhcpError,
     DnsError,
-    RoutingError,
-    PackageNotFound,
+    VpnError,
+    RouteNotFound,
+    GatewayNotFound,
+    ServiceNotFound,
+    CertificateNotFound,
+    UserNotFound,
+    GroupNotFound,
     BackupError,
-    ValidationError,
-    ConfigError,
-    PermissionDenied,
+    DiagnosticError,
+    InvalidRequest,
+    ApiError,
+    HttpError,
     ParseError,
     Timeout,
     InternalError,
@@ -69,6 +73,14 @@ impl PfsenseError {
         Self::new(PfsenseErrorKind::ApiError, msg)
     }
 
+    pub fn http(msg: impl Into<String>) -> Self {
+        Self::new(PfsenseErrorKind::HttpError, msg)
+    }
+
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(PfsenseErrorKind::ParseError, msg)
+    }
+
     pub fn interface_not_found(name: &str) -> Self {
         Self::new(PfsenseErrorKind::InterfaceNotFound, format!("Interface not found: {name}"))
     }
@@ -77,16 +89,12 @@ impl PfsenseError {
         Self::new(PfsenseErrorKind::RuleNotFound, format!("Rule not found: {id}"))
     }
 
+    pub fn alias_not_found(name: &str) -> Self {
+        Self::new(PfsenseErrorKind::AliasNotFound, format!("Alias not found: {name}"))
+    }
+
     pub fn nat_rule_not_found(id: &str) -> Self {
         Self::new(PfsenseErrorKind::NatRuleNotFound, format!("NAT rule not found: {id}"))
-    }
-
-    pub fn cert_not_found(id: &str) -> Self {
-        Self::new(PfsenseErrorKind::CertificateNotFound, format!("Certificate not found: {id}"))
-    }
-
-    pub fn vpn_tunnel_not_found(id: &str) -> Self {
-        Self::new(PfsenseErrorKind::VpnTunnelNotFound, format!("VPN tunnel not found: {id}"))
     }
 
     pub fn dhcp(msg: impl Into<String>) -> Self {
@@ -97,32 +105,44 @@ impl PfsenseError {
         Self::new(PfsenseErrorKind::DnsError, msg)
     }
 
-    pub fn routing(msg: impl Into<String>) -> Self {
-        Self::new(PfsenseErrorKind::RoutingError, msg)
+    pub fn vpn(msg: impl Into<String>) -> Self {
+        Self::new(PfsenseErrorKind::VpnError, msg)
     }
 
-    pub fn package_not_found(name: &str) -> Self {
-        Self::new(PfsenseErrorKind::PackageNotFound, format!("Package not found: {name}"))
+    pub fn route_not_found(id: &str) -> Self {
+        Self::new(PfsenseErrorKind::RouteNotFound, format!("Route not found: {id}"))
+    }
+
+    pub fn gateway_not_found(name: &str) -> Self {
+        Self::new(PfsenseErrorKind::GatewayNotFound, format!("Gateway not found: {name}"))
+    }
+
+    pub fn service_not_found(name: &str) -> Self {
+        Self::new(PfsenseErrorKind::ServiceNotFound, format!("Service not found: {name}"))
+    }
+
+    pub fn cert_not_found(id: &str) -> Self {
+        Self::new(PfsenseErrorKind::CertificateNotFound, format!("Certificate not found: {id}"))
+    }
+
+    pub fn user_not_found(name: &str) -> Self {
+        Self::new(PfsenseErrorKind::UserNotFound, format!("User not found: {name}"))
+    }
+
+    pub fn group_not_found(name: &str) -> Self {
+        Self::new(PfsenseErrorKind::GroupNotFound, format!("Group not found: {name}"))
     }
 
     pub fn backup(msg: impl Into<String>) -> Self {
         Self::new(PfsenseErrorKind::BackupError, msg)
     }
 
-    pub fn validation(msg: impl Into<String>) -> Self {
-        Self::new(PfsenseErrorKind::ValidationError, msg)
+    pub fn diagnostic(msg: impl Into<String>) -> Self {
+        Self::new(PfsenseErrorKind::DiagnosticError, msg)
     }
 
-    pub fn config(msg: impl Into<String>) -> Self {
-        Self::new(PfsenseErrorKind::ConfigError, msg)
-    }
-
-    pub fn permission(msg: impl Into<String>) -> Self {
-        Self::new(PfsenseErrorKind::PermissionDenied, msg)
-    }
-
-    pub fn parse(msg: impl Into<String>) -> Self {
-        Self::new(PfsenseErrorKind::ParseError, msg)
+    pub fn invalid_request(msg: impl Into<String>) -> Self {
+        Self::new(PfsenseErrorKind::InvalidRequest, msg)
     }
 
     pub fn timeout(msg: impl Into<String>) -> Self {

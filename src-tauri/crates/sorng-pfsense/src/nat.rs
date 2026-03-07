@@ -1,102 +1,83 @@
-//! NAT rule management for pfSense/OPNsense.
-
 use crate::client::PfsenseClient;
-use crate::error::{PfsenseError, PfsenseResult};
+use crate::error::PfsenseResult;
 use crate::types::*;
 
 pub struct NatManager;
 
 impl NatManager {
-    pub async fn list_port_forwards(client: &PfsenseClient) -> PfsenseResult<Vec<NatRule>> {
-        let resp = client.api_get("/firewall/nat/port_forward").await?;
-        let rules = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        rules.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+    pub async fn list_port_forwards(client: &PfsenseClient) -> PfsenseResult<Vec<NatPortForward>> {
+        let resp: ApiListResponse<NatPortForward> = client.api_get("firewall/nat/port_forward").await?;
+        Ok(resp.data)
     }
 
-    pub async fn create_port_forward(client: &PfsenseClient, req: &CreateNatRuleRequest) -> PfsenseResult<NatRule> {
-        let body = serde_json::to_value(req)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post("/firewall/nat/port_forward", &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn get_port_forward(client: &PfsenseClient, id: &str) -> PfsenseResult<NatPortForward> {
+        let resp: ApiResponse<NatPortForward> = client.api_get(&format!("firewall/nat/port_forward/{id}")).await?;
+        Ok(resp.data)
     }
 
-    pub async fn update_port_forward(client: &PfsenseClient, rule_id: &str, req: &CreateNatRuleRequest) -> PfsenseResult<NatRule> {
-        let body = serde_json::to_value(req)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_put(&format!("/firewall/nat/port_forward/{rule_id}"), &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn create_port_forward(client: &PfsenseClient, rule: &NatPortForward) -> PfsenseResult<NatPortForward> {
+        let resp: ApiResponse<NatPortForward> = client.api_post("firewall/nat/port_forward", rule).await?;
+        Ok(resp.data)
     }
 
-    pub async fn delete_port_forward(client: &PfsenseClient, rule_id: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/firewall/nat/port_forward/{rule_id}")).await
+    pub async fn update_port_forward(client: &PfsenseClient, id: &str, rule: &NatPortForward) -> PfsenseResult<NatPortForward> {
+        let resp: ApiResponse<NatPortForward> = client.api_put(&format!("firewall/nat/port_forward/{id}"), rule).await?;
+        Ok(resp.data)
     }
 
-    pub async fn list_outbound_rules(client: &PfsenseClient) -> PfsenseResult<Vec<OutboundNatRule>> {
-        let resp = client.api_get("/firewall/nat/outbound").await?;
-        let rules = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        rules.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+    pub async fn delete_port_forward(client: &PfsenseClient, id: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("firewall/nat/port_forward/{id}")).await
     }
 
-    pub async fn get_outbound_mode(client: &PfsenseClient) -> PfsenseResult<OutboundNatMode> {
-        let resp = client.api_get("/firewall/nat/outbound/mode").await?;
-        let mode_str = resp.get("data")
-            .and_then(|d| d.get("mode"))
-            .and_then(|m| m.as_str())
-            .unwrap_or("automatic");
-        let mode = match mode_str {
-            "automatic" => OutboundNatMode::Automatic,
-            "hybrid" => OutboundNatMode::Hybrid,
-            "advanced" | "manual" => OutboundNatMode::Manual,
-            "disabled" => OutboundNatMode::Disabled,
-            _ => OutboundNatMode::Automatic,
-        };
-        Ok(mode)
+    pub async fn list_outbound(client: &PfsenseClient) -> PfsenseResult<Vec<NatOutbound>> {
+        let resp: ApiListResponse<NatOutbound> = client.api_get("firewall/nat/outbound").await?;
+        Ok(resp.data)
     }
 
-    pub async fn set_outbound_mode(client: &PfsenseClient, mode: &OutboundNatMode) -> PfsenseResult<()> {
-        let mode_str = match mode {
-            OutboundNatMode::Automatic => "automatic",
-            OutboundNatMode::Hybrid => "hybrid",
-            OutboundNatMode::Manual => "advanced",
-            OutboundNatMode::Disabled => "disabled",
-        };
-        let body = serde_json::json!({ "mode": mode_str });
-        client.api_put("/firewall/nat/outbound/mode", &body).await?;
-        Ok(())
+    pub async fn get_outbound(client: &PfsenseClient, id: &str) -> PfsenseResult<NatOutbound> {
+        let resp: ApiResponse<NatOutbound> = client.api_get(&format!("firewall/nat/outbound/{id}")).await?;
+        Ok(resp.data)
     }
 
-    pub async fn create_outbound_rule(client: &PfsenseClient, req: &serde_json::Value) -> PfsenseResult<OutboundNatRule> {
-        let resp = client.api_post("/firewall/nat/outbound", req).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn create_outbound(client: &PfsenseClient, rule: &NatOutbound) -> PfsenseResult<NatOutbound> {
+        let resp: ApiResponse<NatOutbound> = client.api_post("firewall/nat/outbound", rule).await?;
+        Ok(resp.data)
     }
 
-    pub async fn list_one_to_one(client: &PfsenseClient) -> PfsenseResult<Vec<serde_json::Value>> {
-        let resp = client.api_get("/firewall/nat/one_to_one").await?;
-        Ok(resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default())
+    pub async fn update_outbound(client: &PfsenseClient, id: &str, rule: &NatOutbound) -> PfsenseResult<NatOutbound> {
+        let resp: ApiResponse<NatOutbound> = client.api_put(&format!("firewall/nat/outbound/{id}"), rule).await?;
+        Ok(resp.data)
     }
 
-    pub async fn create_one_to_one(client: &PfsenseClient, req: &serde_json::Value) -> PfsenseResult<serde_json::Value> {
-        let resp = client.api_post("/firewall/nat/one_to_one", req).await?;
-        Ok(resp.get("data").cloned().unwrap_or(resp))
+    pub async fn delete_outbound(client: &PfsenseClient, id: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("firewall/nat/outbound/{id}")).await
     }
 
-    pub async fn delete_one_to_one(client: &PfsenseClient, rule_id: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/firewall/nat/one_to_one/{rule_id}")).await
+    pub async fn list_1to1(client: &PfsenseClient) -> PfsenseResult<Vec<Nat1to1>> {
+        let resp: ApiListResponse<Nat1to1> = client.api_get("firewall/nat/one_to_one").await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_1to1(client: &PfsenseClient, id: &str) -> PfsenseResult<Nat1to1> {
+        let resp: ApiResponse<Nat1to1> = client.api_get(&format!("firewall/nat/one_to_one/{id}")).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn create_1to1(client: &PfsenseClient, rule: &Nat1to1) -> PfsenseResult<Nat1to1> {
+        let resp: ApiResponse<Nat1to1> = client.api_post("firewall/nat/one_to_one", rule).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn update_1to1(client: &PfsenseClient, id: &str, rule: &Nat1to1) -> PfsenseResult<Nat1to1> {
+        let resp: ApiResponse<Nat1to1> = client.api_put(&format!("firewall/nat/one_to_one/{id}"), rule).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn delete_1to1(client: &PfsenseClient, id: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("firewall/nat/one_to_one/{id}")).await
+    }
+
+    pub async fn apply(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {
+        client.api_post("firewall/nat/apply", &serde_json::json!({})).await
     }
 }

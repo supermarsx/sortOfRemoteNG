@@ -1,162 +1,202 @@
-//! pfSense/OPNsense API client.
+//! pfSense REST API client using reqwest.
 
 use crate::error::{PfsenseError, PfsenseResult};
-use crate::types::{PfsenseConnectionConfig, SshOutput};
+use crate::types::PfsenseConnectionConfig;
+use log::debug;
+use reqwest::Client as HttpClient;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::time::Duration;
 
 pub struct PfsenseClient {
     pub config: PfsenseConnectionConfig,
-    http: reqwest::Client,
+    http: HttpClient,
 }
 
 impl PfsenseClient {
     pub fn new(config: PfsenseConnectionConfig) -> PfsenseResult<Self> {
-        let http = reqwest::Client::builder()
-            .danger_accept_invalid_certs(!config.tls_verify)
-            .timeout(std::time::Duration::from_secs(config.timeout_secs))
+        let http = HttpClient::builder()
+            .danger_accept_invalid_certs(config.accept_invalid_certs)
+            .timeout(Duration::from_secs(config.timeout_secs))
             .build()
-            .map_err(|e| PfsenseError::connection(format!("Failed to build HTTP client: {e}")))?;
+            .map_err(|e| PfsenseError::connection(format!("HTTP client build: {e}")))?;
         Ok(Self { config, http })
     }
 
-    pub fn api_base_url(&self) -> String {
-        let scheme = if self.config.tls_verify { "https" } else { "https" };
-        format!("{scheme}://{}:{}", self.config.host, self.config.port)
+    fn scheme(&self) -> &str {
+        if self.config.use_tls { "https" } else { "http" }
     }
 
-    pub async fn exec_ssh(&self, command: &str) -> PfsenseResult<SshOutput> {
-        log::debug!("SSH exec on {}: {}", self.config.host, command);
-        // Stub – would use an SSH library in production
-        Ok(SshOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
+    fn base_url(&self) -> String {
+        format!("{}://{}:{}", self.scheme(), self.config.host, self.config.port)
+    }
+
+    fn api_url(&self, endpoint: &str) -> String {
+        format!("{}/api/v1/{}", self.base_url(), endpoint.trim_start_matches('/'))
+    }
+
+    // ── Auth ─────────────────────────────────────────────────────
+
+    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if !self.config.api_key.is_empty() {
+            req.header("Authorization", format!("{} {}", self.config.api_key, self.config.api_secret))
+        } else {
+            req
+        }
+    }
+
+    fn map_status_error(&self, status: u16, body: &str) -> PfsenseError {
+        match status {
+            401 => PfsenseError::auth(format!("Authentication failed (HTTP 401): {body}")),
+            403 => PfsenseError::auth(format!("Access denied (HTTP 403): {body}")),
+            404 => PfsenseError::api(format!("Not found (HTTP 404): {body}")),
+            _ => PfsenseError::http(format!("HTTP {status}: {body}")),
+        }
+    }
+
+    // ── Generic request helpers ──────────────────────────────────
+
+    pub async fn api_get<T: DeserializeOwned>(&self, endpoint: &str) -> PfsenseResult<T> {
+        let url = self.api_url(endpoint);
+        debug!("PFSENSE GET {url}");
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
+            .map_err(|e| PfsenseError::http(format!("GET {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| PfsenseError::parse(format!("GET {url} parse: {e}")))
+    }
+
+    pub async fn api_get_raw(&self, endpoint: &str) -> PfsenseResult<serde_json::Value> {
+        self.api_get(endpoint).await
+    }
+
+    pub async fn api_post<B: Serialize, T: DeserializeOwned>(
+        &self,
+        endpoint: &str,
+        body: &B,
+    ) -> PfsenseResult<T> {
+        let url = self.api_url(endpoint);
+        debug!("PFSENSE POST {url}");
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
+            .map_err(|e| PfsenseError::http(format!("POST {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| PfsenseError::parse(format!("POST {url} parse: {e}")))
+    }
+
+    pub async fn api_put<B: Serialize, T: DeserializeOwned>(
+        &self,
+        endpoint: &str,
+        body: &B,
+    ) -> PfsenseResult<T> {
+        let url = self.api_url(endpoint);
+        debug!("PFSENSE PUT {url}");
+        let resp = self
+            .apply_auth(self.http.put(&url).json(body))
+            .send()
+            .await
+            .map_err(|e| PfsenseError::http(format!("PUT {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| PfsenseError::parse(format!("PUT {url} parse: {e}")))
+    }
+
+    pub async fn api_delete<T: DeserializeOwned>(&self, endpoint: &str) -> PfsenseResult<T> {
+        let url = self.api_url(endpoint);
+        debug!("PFSENSE DELETE {url}");
+        let resp = self
+            .apply_auth(self.http.delete(&url))
+            .send()
+            .await
+            .map_err(|e| PfsenseError::http(format!("DELETE {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| PfsenseError::parse(format!("DELETE {url} parse: {e}")))
+    }
+
+    pub async fn api_delete_void(&self, endpoint: &str) -> PfsenseResult<()> {
+        let url = self.api_url(endpoint);
+        debug!("PFSENSE DELETE {url}");
+        let resp = self
+            .apply_auth(self.http.delete(&url))
+            .send()
+            .await
+            .map_err(|e| PfsenseError::http(format!("DELETE {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
+    pub async fn api_get_bytes(&self, endpoint: &str) -> PfsenseResult<Vec<u8>> {
+        let url = self.api_url(endpoint);
+        debug!("PFSENSE GET bytes {url}");
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
+            .map_err(|e| PfsenseError::http(format!("GET {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| PfsenseError::parse(format!("GET {url} bytes: {e}")))
+    }
+
+    /// Verify connectivity by fetching system info.
+    pub async fn ping(&self) -> PfsenseResult<crate::types::PfsenseConnectionSummary> {
+        let raw: serde_json::Value = self.api_get("status/system").await?;
+        let data = raw.get("data").cloned().unwrap_or(raw.clone());
+        Ok(crate::types::PfsenseConnectionSummary {
+            host: self.config.host.clone(),
+            version: data
+                .get("system_version")
+                .or_else(|| data.get("version"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            hostname: data
+                .get("hostname")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            platform: data
+                .get("platform")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pfSense")
+                .to_string(),
         })
-    }
-
-    pub async fn api_get(&self, endpoint: &str) -> PfsenseResult<serde_json::Value> {
-        let url = format!("{}/api/v1{}", self.api_base_url(), endpoint);
-        let resp = self.http.get(&url)
-            .basic_auth(&self.config.username, Some(&self.config.password))
-            .header("X-API-Key", &self.config.api_key)
-            .header("X-API-Secret", &self.config.api_secret)
-            .send()
-            .await
-            .map_err(|e| PfsenseError::api(format!("GET {endpoint} failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            return Err(PfsenseError::api(format!(
-                "GET {endpoint} returned {}",
-                resp.status()
-            )));
-        }
-
-        resp.json::<serde_json::Value>()
-            .await
-            .map_err(|e| PfsenseError::parse(format!("Failed to parse response: {e}")))
-    }
-
-    pub async fn api_post(
-        &self,
-        endpoint: &str,
-        body: &serde_json::Value,
-    ) -> PfsenseResult<serde_json::Value> {
-        let url = format!("{}/api/v1{}", self.api_base_url(), endpoint);
-        let resp = self.http.post(&url)
-            .basic_auth(&self.config.username, Some(&self.config.password))
-            .header("X-API-Key", &self.config.api_key)
-            .header("X-API-Secret", &self.config.api_secret)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| PfsenseError::api(format!("POST {endpoint} failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            return Err(PfsenseError::api(format!(
-                "POST {endpoint} returned {}",
-                resp.status()
-            )));
-        }
-
-        resp.json::<serde_json::Value>()
-            .await
-            .map_err(|e| PfsenseError::parse(format!("Failed to parse response: {e}")))
-    }
-
-    pub async fn api_put(
-        &self,
-        endpoint: &str,
-        body: &serde_json::Value,
-    ) -> PfsenseResult<serde_json::Value> {
-        let url = format!("{}/api/v1{}", self.api_base_url(), endpoint);
-        let resp = self.http.put(&url)
-            .basic_auth(&self.config.username, Some(&self.config.password))
-            .header("X-API-Key", &self.config.api_key)
-            .header("X-API-Secret", &self.config.api_secret)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| PfsenseError::api(format!("PUT {endpoint} failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            return Err(PfsenseError::api(format!(
-                "PUT {endpoint} returned {}",
-                resp.status()
-            )));
-        }
-
-        resp.json::<serde_json::Value>()
-            .await
-            .map_err(|e| PfsenseError::parse(format!("Failed to parse response: {e}")))
-    }
-
-    pub async fn api_delete(&self, endpoint: &str) -> PfsenseResult<()> {
-        let url = format!("{}/api/v1{}", self.api_base_url(), endpoint);
-        let resp = self.http.delete(&url)
-            .basic_auth(&self.config.username, Some(&self.config.password))
-            .header("X-API-Key", &self.config.api_key)
-            .header("X-API-Secret", &self.config.api_secret)
-            .send()
-            .await
-            .map_err(|e| PfsenseError::api(format!("DELETE {endpoint} failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            return Err(PfsenseError::api(format!(
-                "DELETE {endpoint} returned {}",
-                resp.status()
-            )));
-        }
-        Ok(())
-    }
-
-    pub async fn read_remote_file(&self, path: &str) -> PfsenseResult<String> {
-        let output = self.exec_ssh(&format!("cat {}", self.shell_escape(path))).await?;
-        if output.exit_code != 0 {
-            return Err(PfsenseError::api(format!(
-                "Failed to read {path}: {}",
-                output.stderr
-            )));
-        }
-        Ok(output.stdout)
-    }
-
-    pub async fn write_remote_file(&self, path: &str, content: &str) -> PfsenseResult<()> {
-        let escaped = content.replace('\'', "'\\''");
-        let cmd = format!(
-            "printf '%s' '{}' > {}",
-            escaped,
-            self.shell_escape(path)
-        );
-        let output = self.exec_ssh(&cmd).await?;
-        if output.exit_code != 0 {
-            return Err(PfsenseError::api(format!(
-                "Failed to write {path}: {}",
-                output.stderr
-            )));
-        }
-        Ok(())
-    }
-
-    pub fn shell_escape(&self, s: &str) -> String {
-        format!("'{}'", s.replace('\'', "'\\''"))
     }
 }

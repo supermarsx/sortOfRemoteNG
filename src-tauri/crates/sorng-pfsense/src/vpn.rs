@@ -1,121 +1,145 @@
-//! VPN management for pfSense/OPNsense (IPsec, OpenVPN, WireGuard).
-
 use crate::client::PfsenseClient;
-use crate::error::{PfsenseError, PfsenseResult};
+use crate::error::PfsenseResult;
 use crate::types::*;
 
 pub struct VpnManager;
 
 impl VpnManager {
-    // ── IPsec ────────────────────────────────────────────────────
+    // ── OpenVPN servers ──
 
-    pub async fn list_ipsec_tunnels(client: &PfsenseClient) -> PfsenseResult<Vec<IpsecTunnel>> {
-        let resp = client.api_get("/vpn/ipsec/phase1").await?;
-        let tunnels = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        tunnels.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+    pub async fn list_openvpn_servers(client: &PfsenseClient) -> PfsenseResult<Vec<OpenVpnServer>> {
+        let resp: ApiListResponse<OpenVpnServer> = client.api_get("vpn/openvpn/server").await?;
+        Ok(resp.data)
     }
 
-    pub async fn get_ipsec_tunnel(client: &PfsenseClient, ikeid: &str) -> PfsenseResult<IpsecTunnel> {
-        let tunnels = Self::list_ipsec_tunnels(client).await?;
-        tunnels.into_iter()
-            .find(|t| t.ikeid == ikeid)
-            .ok_or_else(|| PfsenseError::vpn_tunnel_not_found(ikeid))
+    pub async fn get_openvpn_server(client: &PfsenseClient, vpnid: u32) -> PfsenseResult<OpenVpnServer> {
+        let resp: ApiResponse<OpenVpnServer> = client.api_get(&format!("vpn/openvpn/server/{vpnid}")).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn create_openvpn_server(client: &PfsenseClient, server: &OpenVpnServer) -> PfsenseResult<OpenVpnServer> {
+        let resp: ApiResponse<OpenVpnServer> = client.api_post("vpn/openvpn/server", server).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn update_openvpn_server(client: &PfsenseClient, vpnid: u32, server: &OpenVpnServer) -> PfsenseResult<OpenVpnServer> {
+        let resp: ApiResponse<OpenVpnServer> = client.api_put(&format!("vpn/openvpn/server/{vpnid}"), server).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn delete_openvpn_server(client: &PfsenseClient, vpnid: u32) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("vpn/openvpn/server/{vpnid}")).await
+    }
+
+    // ── OpenVPN clients ──
+
+    pub async fn list_openvpn_clients(client: &PfsenseClient) -> PfsenseResult<Vec<OpenVpnClient>> {
+        let resp: ApiListResponse<OpenVpnClient> = client.api_get("vpn/openvpn/client").await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_openvpn_client(client: &PfsenseClient, vpnid: u32) -> PfsenseResult<OpenVpnClient> {
+        let resp: ApiResponse<OpenVpnClient> = client.api_get(&format!("vpn/openvpn/client/{vpnid}")).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn create_openvpn_client(client: &PfsenseClient, vpn_client: &OpenVpnClient) -> PfsenseResult<OpenVpnClient> {
+        let resp: ApiResponse<OpenVpnClient> = client.api_post("vpn/openvpn/client", vpn_client).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn update_openvpn_client(client: &PfsenseClient, vpnid: u32, vpn_client: &OpenVpnClient) -> PfsenseResult<OpenVpnClient> {
+        let resp: ApiResponse<OpenVpnClient> = client.api_put(&format!("vpn/openvpn/client/{vpnid}"), vpn_client).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn delete_openvpn_client(client: &PfsenseClient, vpnid: u32) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("vpn/openvpn/client/{vpnid}")).await
+    }
+
+    // ── IPsec tunnels ──
+
+    pub async fn list_ipsec_tunnels(client: &PfsenseClient) -> PfsenseResult<Vec<IpsecTunnel>> {
+        let resp: ApiListResponse<IpsecTunnel> = client.api_get("vpn/ipsec").await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_ipsec_tunnel(client: &PfsenseClient, ikeid: u32) -> PfsenseResult<IpsecTunnel> {
+        let resp: ApiResponse<IpsecTunnel> = client.api_get(&format!("vpn/ipsec/{ikeid}")).await?;
+        Ok(resp.data)
     }
 
     pub async fn create_ipsec_tunnel(client: &PfsenseClient, tunnel: &IpsecTunnel) -> PfsenseResult<IpsecTunnel> {
-        let body = serde_json::to_value(tunnel)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post("/vpn/ipsec/phase1", &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+        let resp: ApiResponse<IpsecTunnel> = client.api_post("vpn/ipsec", tunnel).await?;
+        Ok(resp.data)
     }
 
-    pub async fn delete_ipsec_tunnel(client: &PfsenseClient, ikeid: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/vpn/ipsec/phase1/{ikeid}")).await
+    pub async fn update_ipsec_tunnel(client: &PfsenseClient, ikeid: u32, tunnel: &IpsecTunnel) -> PfsenseResult<IpsecTunnel> {
+        let resp: ApiResponse<IpsecTunnel> = client.api_put(&format!("vpn/ipsec/{ikeid}"), tunnel).await?;
+        Ok(resp.data)
     }
 
-    pub async fn get_ipsec_status(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {
-        let resp = client.api_get("/vpn/ipsec/status").await?;
-        Ok(resp.get("data").cloned().unwrap_or(resp))
+    pub async fn delete_ipsec_tunnel(client: &PfsenseClient, ikeid: u32) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("vpn/ipsec/{ikeid}")).await
     }
 
-    // ── OpenVPN ──────────────────────────────────────────────────
-
-    pub async fn list_openvpn_servers(client: &PfsenseClient) -> PfsenseResult<Vec<OpenVpnServer>> {
-        let resp = client.api_get("/vpn/openvpn/server").await?;
-        let servers = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        servers.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+    pub async fn apply_ipsec(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {
+        client.api_post("vpn/ipsec/apply", &serde_json::json!({})).await
     }
 
-    pub async fn get_openvpn_server(client: &PfsenseClient, vpnid: &str) -> PfsenseResult<OpenVpnServer> {
-        let servers = Self::list_openvpn_servers(client).await?;
-        servers.into_iter()
-            .find(|s| s.vpnid == vpnid)
-            .ok_or_else(|| PfsenseError::vpn_tunnel_not_found(vpnid))
-    }
-
-    pub async fn list_openvpn_clients(client: &PfsenseClient) -> PfsenseResult<Vec<OpenVpnClient>> {
-        let resp = client.api_get("/vpn/openvpn/client").await?;
-        let clients = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        clients.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
-    }
-
-    pub async fn get_openvpn_client_status(client: &PfsenseClient, vpnid: &str) -> PfsenseResult<OpenVpnClient> {
-        let clients = Self::list_openvpn_clients(client).await?;
-        clients.into_iter()
-            .find(|c| c.vpnid == vpnid)
-            .ok_or_else(|| PfsenseError::vpn_tunnel_not_found(vpnid))
-    }
-
-    // ── WireGuard ────────────────────────────────────────────────
+    // ── WireGuard tunnels ──
 
     pub async fn list_wireguard_tunnels(client: &PfsenseClient) -> PfsenseResult<Vec<WireGuardTunnel>> {
-        let resp = client.api_get("/vpn/wireguard/tunnel").await?;
-        let tunnels = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        tunnels.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+        let resp: ApiListResponse<WireGuardTunnel> = client.api_get("vpn/wireguard/tunnel").await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_wireguard_tunnel(client: &PfsenseClient, id: &str) -> PfsenseResult<WireGuardTunnel> {
+        let resp: ApiResponse<WireGuardTunnel> = client.api_get(&format!("vpn/wireguard/tunnel/{id}")).await?;
+        Ok(resp.data)
     }
 
     pub async fn create_wireguard_tunnel(client: &PfsenseClient, tunnel: &WireGuardTunnel) -> PfsenseResult<WireGuardTunnel> {
-        let body = serde_json::to_value(tunnel)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post("/vpn/wireguard/tunnel", &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+        let resp: ApiResponse<WireGuardTunnel> = client.api_post("vpn/wireguard/tunnel", tunnel).await?;
+        Ok(resp.data)
     }
 
-    pub async fn delete_wireguard_tunnel(client: &PfsenseClient, name: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/vpn/wireguard/tunnel/{name}")).await
+    pub async fn update_wireguard_tunnel(client: &PfsenseClient, id: &str, tunnel: &WireGuardTunnel) -> PfsenseResult<WireGuardTunnel> {
+        let resp: ApiResponse<WireGuardTunnel> = client.api_put(&format!("vpn/wireguard/tunnel/{id}"), tunnel).await?;
+        Ok(resp.data)
     }
 
-    pub async fn add_wireguard_peer(client: &PfsenseClient, tunnel_name: &str, peer: &WireGuardPeer) -> PfsenseResult<WireGuardPeer> {
-        let body = serde_json::to_value(peer)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post(&format!("/vpn/wireguard/tunnel/{tunnel_name}/peer"), &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn delete_wireguard_tunnel(client: &PfsenseClient, id: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("vpn/wireguard/tunnel/{id}")).await
     }
 
-    pub async fn remove_wireguard_peer(client: &PfsenseClient, tunnel_name: &str, peer_id: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/vpn/wireguard/tunnel/{tunnel_name}/peer/{peer_id}")).await
+    // ── WireGuard peers ──
+
+    pub async fn list_wireguard_peers(client: &PfsenseClient, tunnel_id: &str) -> PfsenseResult<Vec<WireGuardPeer>> {
+        let resp: ApiListResponse<WireGuardPeer> = client.api_get(&format!("vpn/wireguard/peer/{tunnel_id}")).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_wireguard_peer(client: &PfsenseClient, id: &str) -> PfsenseResult<WireGuardPeer> {
+        let resp: ApiResponse<WireGuardPeer> = client.api_get(&format!("vpn/wireguard/peer/detail/{id}")).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn create_wireguard_peer(client: &PfsenseClient, peer: &WireGuardPeer) -> PfsenseResult<WireGuardPeer> {
+        let resp: ApiResponse<WireGuardPeer> = client.api_post("vpn/wireguard/peer", peer).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn update_wireguard_peer(client: &PfsenseClient, id: &str, peer: &WireGuardPeer) -> PfsenseResult<WireGuardPeer> {
+        let resp: ApiResponse<WireGuardPeer> = client.api_put(&format!("vpn/wireguard/peer/{id}"), peer).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn delete_wireguard_peer(client: &PfsenseClient, id: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("vpn/wireguard/peer/{id}")).await
+    }
+
+    pub async fn apply_wireguard(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {
+        client.api_post("vpn/wireguard/apply", &serde_json::json!({})).await
     }
 }

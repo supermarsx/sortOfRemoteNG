@@ -1,108 +1,93 @@
-//! Static routing and gateway management for pfSense/OPNsense.
-
 use crate::client::PfsenseClient;
-use crate::error::{PfsenseError, PfsenseResult};
+use crate::error::PfsenseResult;
 use crate::types::*;
 
 pub struct RoutingManager;
 
 impl RoutingManager {
     pub async fn list_routes(client: &PfsenseClient) -> PfsenseResult<Vec<StaticRoute>> {
-        let resp = client.api_get("/routing/static_route").await?;
-        let routes = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        routes.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+        let resp: ApiListResponse<StaticRoute> = client.api_get("routing/static_route").await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_route(client: &PfsenseClient, id: &str) -> PfsenseResult<StaticRoute> {
+        let resp: ApiResponse<StaticRoute> = client.api_get(&format!("routing/static_route/{id}")).await?;
+        Ok(resp.data)
     }
 
     pub async fn create_route(client: &PfsenseClient, route: &StaticRoute) -> PfsenseResult<StaticRoute> {
-        let body = serde_json::to_value(route)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post("/routing/static_route", &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+        let resp: ApiResponse<StaticRoute> = client.api_post("routing/static_route", route).await?;
+        Ok(resp.data)
     }
 
-    pub async fn delete_route(client: &PfsenseClient, route_id: &str) -> PfsenseResult<()> {
-        client.api_delete(&format!("/routing/static_route/{route_id}")).await
+    pub async fn update_route(client: &PfsenseClient, id: &str, route: &StaticRoute) -> PfsenseResult<StaticRoute> {
+        let resp: ApiResponse<StaticRoute> = client.api_put(&format!("routing/static_route/{id}"), route).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn delete_route(client: &PfsenseClient, id: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("routing/static_route/{id}")).await
+    }
+
+    pub async fn apply_routes(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {
+        client.api_post("routing/apply", &serde_json::json!({})).await
     }
 
     pub async fn list_gateways(client: &PfsenseClient) -> PfsenseResult<Vec<Gateway>> {
-        let resp = client.api_get("/routing/gateway").await?;
-        let gateways = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        gateways.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+        let resp: ApiListResponse<Gateway> = client.api_get("routing/gateway").await?;
+        Ok(resp.data)
     }
 
-    pub async fn get_gateway_status(client: &PfsenseClient) -> PfsenseResult<Vec<GatewayStatus>> {
-        let resp = client.api_get("/routing/gateway/status").await?;
-        let statuses = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        statuses.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+    pub async fn get_gateway(client: &PfsenseClient, name: &str) -> PfsenseResult<Gateway> {
+        let resp: ApiResponse<Gateway> = client.api_get(&format!("routing/gateway/{name}")).await?;
+        Ok(resp.data)
     }
 
-    pub async fn create_gateway_group(client: &PfsenseClient, group: &GatewayGroup) -> PfsenseResult<GatewayGroup> {
-        let body = serde_json::to_value(group)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let resp = client.api_post("/routing/gateway/group", &body).await?;
-        serde_json::from_value(resp.get("data").cloned().unwrap_or(resp))
-            .map_err(|e| PfsenseError::parse(e.to_string()))
+    pub async fn create_gateway(client: &PfsenseClient, gw: &Gateway) -> PfsenseResult<Gateway> {
+        let resp: ApiResponse<Gateway> = client.api_post("routing/gateway", gw).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn update_gateway(client: &PfsenseClient, name: &str, gw: &Gateway) -> PfsenseResult<Gateway> {
+        let resp: ApiResponse<Gateway> = client.api_put(&format!("routing/gateway/{name}"), gw).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn delete_gateway(client: &PfsenseClient, name: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("routing/gateway/{name}")).await
     }
 
     pub async fn list_gateway_groups(client: &PfsenseClient) -> PfsenseResult<Vec<GatewayGroup>> {
-        let resp = client.api_get("/routing/gateway/group").await?;
-        let groups = resp.get("data")
-            .and_then(|d| d.as_array())
-            .cloned()
-            .unwrap_or_default();
-        groups.into_iter()
-            .map(|v| serde_json::from_value(v).map_err(|e| PfsenseError::parse(e.to_string())))
-            .collect()
+        let resp: ApiListResponse<GatewayGroup> = client.api_get("routing/gateway/group").await?;
+        Ok(resp.data)
     }
 
-    pub async fn get_routing_table(client: &PfsenseClient) -> PfsenseResult<Vec<SystemRoute>> {
-        let output = client.exec_ssh("netstat -rn --libxo json").await?;
-        if output.exit_code != 0 {
-            return Err(PfsenseError::routing(format!(
-                "Failed to get routing table: {}",
-                output.stderr
-            )));
-        }
-        let parsed: serde_json::Value = serde_json::from_str(&output.stdout)
-            .map_err(|e| PfsenseError::parse(e.to_string()))?;
-        let rt = parsed.get("statistics")
-            .and_then(|s| s.get("route-information"))
-            .and_then(|r| r.get("route-table"))
-            .and_then(|t| t.get("rt-family"))
-            .and_then(|f| f.as_array())
-            .cloned()
-            .unwrap_or_default();
+    pub async fn get_gateway_group(client: &PfsenseClient, name: &str) -> PfsenseResult<GatewayGroup> {
+        let resp: ApiResponse<GatewayGroup> = client.api_get(&format!("routing/gateway/group/{name}")).await?;
+        Ok(resp.data)
+    }
 
-        let mut routes = Vec::new();
-        for family in &rt {
-            if let Some(entries) = family.get("rt-entry").and_then(|e| e.as_array()) {
-                for entry in entries {
-                    routes.push(SystemRoute {
-                        destination: entry.get("destination").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        gateway: entry.get("gateway").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        flags: entry.get("flags").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        interface: entry.get("interface-name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        mtu: entry.get("mtu").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    });
-                }
-            }
-        }
-        Ok(routes)
+    pub async fn create_gateway_group(client: &PfsenseClient, group: &GatewayGroup) -> PfsenseResult<GatewayGroup> {
+        let resp: ApiResponse<GatewayGroup> = client.api_post("routing/gateway/group", group).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn update_gateway_group(client: &PfsenseClient, name: &str, group: &GatewayGroup) -> PfsenseResult<GatewayGroup> {
+        let resp: ApiResponse<GatewayGroup> = client.api_put(&format!("routing/gateway/group/{name}"), group).await?;
+        Ok(resp.data)
+    }
+
+    pub async fn delete_gateway_group(client: &PfsenseClient, name: &str) -> PfsenseResult<()> {
+        client.api_delete_void(&format!("routing/gateway/group/{name}")).await
+    }
+
+    pub async fn get_gateway_status(client: &PfsenseClient) -> PfsenseResult<Vec<GatewayStatus>> {
+        let resp: ApiListResponse<GatewayStatus> = client.api_get("status/gateway").await?;
+        Ok(resp.data)
+    }
+
+    pub async fn get_routing_table(client: &PfsenseClient) -> PfsenseResult<Vec<RoutingTableEntry>> {
+        let resp: ApiListResponse<RoutingTableEntry> = client.api_get("diagnostics/routing_table").await?;
+        Ok(resp.data)
     }
 }
