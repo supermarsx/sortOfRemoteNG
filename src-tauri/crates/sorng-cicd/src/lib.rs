@@ -1,7 +1,4 @@
-//! CI/CD integration crate for SortOfRemote NG.
-//!
-//! Provides Drone CI, Jenkins, and GitHub Actions pipeline management,
-//! builds, artifacts, secrets, environments, and Tauri command integration.
+// ── sorng-cicd – CI/CD integration (Drone, Jenkins, GitHub Actions) ──────────
 
 pub mod types;
 pub mod error;
@@ -9,5 +6,7 @@ pub mod client;
 pub mod drone;
 pub mod jenkins;
 pub mod github_actions;
+pub mod pipelines;
+pub mod artifacts;
 pub mod service;
 pub mod commands;
