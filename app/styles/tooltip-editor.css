@@ -24,7 +24,7 @@
   position: relative;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: rgba(31, 41, 55, 0.6);
+  background: rgb(var(--color-surface-rgb) / 0.6);
   overflow: hidden;
 }
 

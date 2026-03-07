@@ -841,7 +841,7 @@ describe("ScriptManager", () => {
       const agnosticButton = screen.getByRole("button", {
         name: /🌐 Agnostic/i,
       });
-      expect(agnosticButton).toHaveClass("bg-purple-500/20");
+      expect(agnosticButton).toHaveClass("bg-accent/20");
     });
 
     it("should toggle OS tags when clicked in editor", () => {
@@ -851,14 +851,14 @@ describe("ScriptManager", () => {
 
       // Find and click the Linux button
       const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
-      expect(linuxButton).not.toHaveClass("bg-purple-500/20");
+      expect(linuxButton).not.toHaveClass("bg-accent/20");
 
       fireEvent.click(linuxButton);
-      expect(linuxButton).toHaveClass("bg-purple-500/20");
+      expect(linuxButton).toHaveClass("bg-accent/20");
 
       // Click again to deselect
       fireEvent.click(linuxButton);
-      expect(linuxButton).not.toHaveClass("bg-purple-500/20");
+      expect(linuxButton).not.toHaveClass("bg-accent/20");
     });
 
     it("should save OS tags with custom script", async () => {
@@ -912,7 +912,7 @@ describe("ScriptManager", () => {
       // Editor should open with Linux tag already selected
       await waitFor(() => {
         const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
-        expect(linuxButton).toHaveClass("bg-purple-500/20");
+        expect(linuxButton).toHaveClass("bg-accent/20");
       });
     });
 
@@ -927,7 +927,7 @@ describe("ScriptManager", () => {
       // Linux tag should be selected
       await waitFor(() => {
         const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
-        expect(linuxButton).toHaveClass("bg-purple-500/20");
+        expect(linuxButton).toHaveClass("bg-accent/20");
       });
     });
 

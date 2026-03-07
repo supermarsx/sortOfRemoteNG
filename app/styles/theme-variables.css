@@ -1,19 +1,30 @@
 /* Default color variables so the UI has sensible colors before the ThemeManager runs */
 :root {
   --color-primary: #3b82f6;
+  --color-primary-rgb: 59 130 246;
   --color-secondary: #6b7280;
+  --color-secondary-rgb: 107 114 128;
   --color-accent: #10b981;
+  --color-accent-rgb: 16 185 129;
   --color-background: #111827;
+  --color-background-rgb: 17 24 39;
   --color-surface: #1f2937;
+  --color-surface-rgb: 31 41 55;
   --color-surfaceHover: #374151;
   --color-input: #111827;
   --color-text: #f9fafb;
   --color-textSecondary: #d1d5db;
   --color-textMuted: #9ca3af;
   --color-border: #374151;
+  --color-border-rgb: 55 65 81;
   --color-success: #10b981;
+  --color-success-rgb: 16 185 129;
   --color-warning: #f59e0b;
+  --color-warning-rgb: 245 158 11;
   --color-error: #ef4444;
+  --color-error-rgb: 239 68 68;
+  --color-info: #06b6d4;
+  --color-info-rgb: 6 182 212;
 }
 
 html,

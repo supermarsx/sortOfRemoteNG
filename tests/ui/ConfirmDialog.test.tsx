@@ -86,7 +86,7 @@ describe('ConfirmDialog', () => {
       />,
     );
     const confirmButton = screen.getByText('OK');
-    expect(confirmButton).toHaveClass('bg-red-600');
+    expect(confirmButton).toHaveClass('bg-error');
   });
 
   it('applies warning variant styling', () => {
@@ -99,7 +99,7 @@ describe('ConfirmDialog', () => {
       />,
     );
     const confirmButton = screen.getByText('OK');
-    expect(confirmButton).toHaveClass('bg-yellow-600');
+    expect(confirmButton).toHaveClass('bg-warning');
   });
 
   it('applies default variant styling', () => {
@@ -112,7 +112,7 @@ describe('ConfirmDialog', () => {
       />,
     );
     const confirmButton = screen.getByText('OK');
-    expect(confirmButton).toHaveClass('bg-blue-600');
+    expect(confirmButton).toHaveClass('bg-primary');
   });
 
   it('does not render when closed', () => {
@@ -192,7 +192,7 @@ describe('ConfirmDialog', () => {
     expect(screen.getByText('No, Keep It')).toBeInTheDocument();
     
     const confirmButton = screen.getByText('Yes, Delete It');
-    expect(confirmButton).toHaveClass('bg-red-600');
+    expect(confirmButton).toHaveClass('bg-error');
     
     fireEvent.click(confirmButton);
     expect(onConfirm).toHaveBeenCalled();

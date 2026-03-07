@@ -6,7 +6,7 @@
       "dom.iterable",
       "ES6"
     ],
-    "types": ["@webgpu/types"],
+    "types": ["@webgpu/types", "vitest/globals"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
