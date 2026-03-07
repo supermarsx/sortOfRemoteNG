@@ -16,7 +16,7 @@ pub async fn ipmi_connect(
     config: IpmiSessionConfig,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    svc.connect(config).await.map_err(|e| e.to_string())
+    svc.connect(config).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -25,7 +25,7 @@ pub async fn ipmi_disconnect(
     session_id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.disconnect(&session_id).await.map_err(|e| e.to_string())
+    svc.disconnect(&session_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -33,7 +33,7 @@ pub async fn ipmi_disconnect_all(
     state: tauri::State<'_, IpmiServiceState>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.disconnect_all().await;
+    svc.disconnect_all();
     Ok(())
 }
 
@@ -61,8 +61,7 @@ pub async fn ipmi_ping(
     port: Option<u16>,
 ) -> Result<bool, String> {
     let svc = state.lock().await;
-    svc.ping(&host, port.unwrap_or(623))
-        .await
+    svc.ping(&host, port.unwrap_or(623), 5)
         .map_err(|e| e.to_string())
 }
 
@@ -202,9 +201,10 @@ pub async fn ipmi_get_sensor_thresholds(
     state: tauri::State<'_, IpmiServiceState>,
     session_id: String,
     sensor_number: u8,
+    sdr: SdrFullSensor,
 ) -> Result<SensorThresholds, String> {
     let mut svc = state.lock().await;
-    svc.get_sensor_thresholds(&session_id, sensor_number)
+    svc.get_sensor_thresholds(&session_id, sensor_number, &sdr)
         .map_err(|e| e.to_string())
 }
 

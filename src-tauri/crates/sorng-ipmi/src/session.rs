@@ -75,14 +75,14 @@ impl IpmiSessionHandle {
     pub fn send_ipmi_request(&mut self, request: &RawIpmiRequest) -> IpmiResult<RawIpmiResponse> {
         self.ensure_active()?;
 
-        let net_fn = request.net_fn;
+        let net_fn = request.netfn;
         let cmd = request.cmd;
         let rq_seq = self.seq_tracker.next_rq_seq(net_fn, cmd);
 
         let ipmi_req = IpmiRequest {
-            rs_addr: request.target_addr,
+            rs_addr: BMC_SA,
             net_fn,
-            rs_lun: request.target_lun,
+            rs_lun: 0,
             rq_addr: SWID,
             rq_seq,
             rq_lun: 0,
@@ -120,7 +120,7 @@ impl IpmiSessionHandle {
             }
         };
 
-        self.send_recv(&datagram, request.net_fn, request.cmd)
+        self.send_recv(&datagram, request.netfn, request.cmd)
     }
 
     /// Send an `IpmiRequest` struct directly and get the inner `IpmiResponse`.
@@ -163,12 +163,12 @@ impl IpmiSessionHandle {
         let raw = self.send_recv(&datagram, request.net_fn, request.cmd)?;
         Ok(IpmiResponse {
             rs_addr: BMC_SA,
-            net_fn: raw.net_fn,
+            net_fn: request.net_fn | 0x01,
             rs_lun: 0,
             rq_addr: SWID,
             rq_seq,
             rq_lun: 0,
-            cmd: raw.cmd,
+            cmd: request.cmd,
             completion_code: raw.completion_code,
             data: raw.data,
         })
@@ -314,6 +314,16 @@ impl SessionManager {
         self.sessions
             .get(session_id)
             .ok_or_else(|| IpmiError::session_not_found(session_id))
+    }
+
+    /// Alias for `get_mut()` — used by service layer.
+    pub fn get_session_mut(&mut self, session_id: &str) -> IpmiResult<&mut IpmiSessionHandle> {
+        self.get_mut(session_id)
+    }
+
+    /// Get session info for a specific session.
+    pub fn get_session_info(&self, session_id: &str) -> IpmiResult<IpmiSessionInfo> {
+        self.get(session_id).map(|h| h.info())
     }
 
     /// Check if a session exists.

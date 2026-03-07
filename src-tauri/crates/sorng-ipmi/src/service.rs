@@ -48,16 +48,16 @@ impl IpmiService {
 
     // ── Connection lifecycle ────────────────────────────────────────
 
-    pub async fn connect(&mut self, config: IpmiSessionConfig) -> IpmiResult<String> {
-        self.manager.connect(config).await
+    pub fn connect(&mut self, config: IpmiSessionConfig) -> IpmiResult<String> {
+        self.manager.connect(config)
     }
 
-    pub async fn disconnect(&mut self, session_id: &str) -> IpmiResult<()> {
-        self.manager.disconnect(session_id).await
+    pub fn disconnect(&mut self, session_id: &str) -> IpmiResult<()> {
+        self.manager.disconnect(session_id)
     }
 
-    pub async fn disconnect_all(&mut self) {
-        self.manager.disconnect_all().await;
+    pub fn disconnect_all(&mut self) {
+        self.manager.disconnect_all();
     }
 
     pub fn list_sessions(&self) -> Vec<IpmiSessionInfo> {
@@ -68,8 +68,8 @@ impl IpmiService {
         self.manager.get_session_info(session_id)
     }
 
-    pub async fn ping(&self, host: &str, port: u16) -> IpmiResult<bool> {
-        session::ping_bmc(host, port).await
+    pub fn ping(&self, host: &str, port: u16, timeout_secs: u64) -> IpmiResult<bool> {
+        session::ping_bmc(host, port, timeout_secs)
     }
 
     // ── Private helper ──────────────────────────────────────────────
@@ -126,7 +126,7 @@ impl IpmiService {
         force: bool,
     ) -> IpmiResult<()> {
         let s = self.session_mut(session_id)?;
-        chassis::chassis_identify(s, duration, force)
+        chassis::chassis_identify(s, duration.unwrap_or(15), force)
     }
 
     pub fn set_boot_device(
@@ -165,9 +165,10 @@ impl IpmiService {
         &mut self,
         session_id: &str,
         sensor_number: u8,
+        sdr: &SdrFullSensor,
     ) -> IpmiResult<SensorThresholds> {
         let s = self.session_mut(session_id)?;
-        sensors::get_sensor_thresholds(s, sensor_number)
+        sensors::get_sensor_thresholds(s, sensor_number, sdr)
     }
 
     // ── SEL ─────────────────────────────────────────────────────────

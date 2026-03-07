@@ -61,13 +61,13 @@ pub enum PrivilegeLevel {
     Callback = 0x01,
     User = 0x02,
     Operator = 0x03,
-    Admin = 0x04,
-    OEM = 0x05,
+    Administrator = 0x04,
+    Oem = 0x05,
 }
 
 impl Default for PrivilegeLevel {
     fn default() -> Self {
-        Self::Admin
+        Self::Administrator
     }
 }
 
@@ -77,8 +77,8 @@ impl PrivilegeLevel {
             0x01 => Self::Callback,
             0x02 => Self::User,
             0x03 => Self::Operator,
-            0x04 => Self::Admin,
-            0x05 => Self::OEM,
+            0x04 => Self::Administrator,
+            0x05 => Self::Oem,
             _ => Self::User,
         }
     }
@@ -268,22 +268,12 @@ pub struct IpmiSessionInfo {
 #[serde(rename_all = "camelCase")]
 pub struct RawIpmiRequest {
     /// Network function code.
-    pub net_fn: u8,
+    pub netfn: u8,
     /// Command code.
     pub cmd: u8,
     /// Optional request data payload.
     #[serde(default)]
     pub data: Vec<u8>,
-    /// Target address (default 0x20 = BMC).
-    #[serde(default = "default_target_addr")]
-    pub target_addr: u8,
-    /// Target LUN (default 0).
-    #[serde(default)]
-    pub target_lun: u8,
-}
-
-fn default_target_addr() -> u8 {
-    0x20
 }
 
 /// An IPMI response.
@@ -294,10 +284,6 @@ pub struct RawIpmiResponse {
     pub completion_code: u8,
     /// Response data payload.
     pub data: Vec<u8>,
-    /// Response network function.
-    pub net_fn: u8,
-    /// Response command code.
-    pub cmd: u8,
 }
 
 /// IPMI completion codes.
@@ -390,6 +376,12 @@ impl CompletionCode {
             Self::SubFunctionDisabled => "Sub-function disabled or unavailable",
             Self::Unspecified => "Unspecified error",
         }
+    }
+}
+
+impl PartialEq<u8> for CompletionCode {
+    fn eq(&self, other: &u8) -> bool {
+        *self as u8 == *other
     }
 }
 
@@ -1143,48 +1135,23 @@ impl Default for SolPayloadFlags {
 
 /// Watchdog timer use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(u8)]
 pub enum WatchdogTimerUse {
-    BiosFrb2 = 0x01,
-    BiosPost = 0x02,
-    OsLoad = 0x03,
-    SmsOs = 0x04,
-    Oem = 0x05,
-}
-
-impl WatchdogTimerUse {
-    pub fn from_byte(b: u8) -> Self {
-        match b & 0x07 {
-            0x01 => Self::BiosFrb2,
-            0x02 => Self::BiosPost,
-            0x03 => Self::OsLoad,
-            0x04 => Self::SmsOs,
-            0x05 => Self::Oem,
-            _ => Self::SmsOs,
-        }
-    }
+    Reserved,
+    BiosFrePost,
+    BiosPost,
+    OsLoad,
+    SmsOs,
+    Oem,
 }
 
 /// Watchdog timeout action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum WatchdogAction {
-    None = 0x00,
+    NoAction = 0x00,
     HardReset = 0x01,
     PowerDown = 0x02,
     PowerCycle = 0x03,
-}
-
-impl WatchdogAction {
-    pub fn from_byte(b: u8) -> Self {
-        match b & 0x07 {
-            0x00 => Self::None,
-            0x01 => Self::HardReset,
-            0x02 => Self::PowerDown,
-            0x03 => Self::PowerCycle,
-            _ => Self::None,
-        }
-    }
 }
 
 /// Pre-timeout interrupt type.
@@ -1197,29 +1164,16 @@ pub enum PreTimeoutInterrupt {
     MessagingInterrupt = 0x03,
 }
 
-impl PreTimeoutInterrupt {
-    pub fn from_byte(b: u8) -> Self {
-        match (b >> 4) & 0x07 {
-            0x00 => Self::None,
-            0x01 => Self::Smi,
-            0x02 => Self::Nmi,
-            0x03 => Self::MessagingInterrupt,
-            _ => Self::None,
-        }
-    }
-}
-
 /// Watchdog timer configuration and current state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchdogTimer {
     pub timer_use: WatchdogTimerUse,
-    pub timer_action: WatchdogAction,
-    pub pre_timeout_interrupt: PreTimeoutInterrupt,
     pub timer_running: bool,
     pub dont_log: bool,
+    pub timeout_action: WatchdogAction,
+    pub pre_timeout_interrupt: PreTimeoutInterrupt,
     pub pre_timeout_interval: u8,
-    pub timer_use_expiration_flags: u8,
     pub initial_countdown: u16,
     pub present_countdown: u16,
 }
@@ -1234,79 +1188,44 @@ pub enum IpSource {
     Unspecified,
     Static,
     Dhcp,
-    BiosAssigned,
-    Other,
-}
-
-impl IpSource {
-    pub fn from_byte(b: u8) -> Self {
-        match b & 0x0F {
-            0x00 => Self::Unspecified,
-            0x01 => Self::Static,
-            0x02 => Self::Dhcp,
-            0x03 => Self::BiosAssigned,
-            _ => Self::Other,
-        }
-    }
+    Bios,
 }
 
 /// LAN configuration parameter IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(u8)]
 pub enum LanParameterId {
-    SetInProgress = 0,
-    AuthTypeSupport = 1,
-    AuthTypeEnables = 2,
-    IpAddress = 3,
-    IpAddressSource = 4,
-    MacAddress = 5,
-    SubnetMask = 6,
-    Ipv4HeaderParams = 7,
-    PrimaryRmcpPort = 8,
-    SecondaryRmcpPort = 9,
-    BmcArpControl = 10,
-    GratuitousArpInterval = 11,
-    DefaultGatewayIp = 12,
-    DefaultGatewayMac = 13,
-    BackupGatewayIp = 14,
-    BackupGatewayMac = 15,
-    CommunityString = 16,
-    AlertDestinationCount = 17,
-    AlertDestinationType = 18,
-    AlertDestinationAddress = 19,
-    VlanId = 20,
-    VlanPriority = 21,
-    CipherSuiteSupport = 22,
-    CipherSuiteEntries = 23,
-    CipherSuitePrivLevels = 24,
+    SetInProgress,
+    AuthTypeSupport,
+    IpAddress,
+    IpAddressSource,
+    MacAddress,
+    SubnetMask,
+    DefaultGateway,
+    DefaultGatewayMac,
+    BackupGateway,
+    CommunityString,
+    VlanId,
+    VlanPriority,
+    CipherSuiteEntrySupport,
+    CipherSuiteEntries,
 }
 
 /// Complete LAN configuration for a channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LanConfig {
-    pub channel: u8,
     pub ip_address: String,
     pub ip_source: IpSource,
-    pub mac_address: String,
     pub subnet_mask: String,
-    pub default_gateway_ip: String,
-    pub default_gateway_mac: String,
-    pub backup_gateway_ip: String,
-    pub backup_gateway_mac: String,
-    pub community_string: String,
+    pub mac_address: String,
+    pub default_gateway: String,
+    pub default_gateway_mac: Option<String>,
+    pub backup_gateway: Option<String>,
     pub vlan_id: Option<u16>,
     pub vlan_enabled: bool,
-    pub cipher_suite_ids: Vec<u8>,
-    pub cipher_suite_priv_levels: Vec<PrivilegeLevel>,
-}
-
-/// Generic LAN parameter (for individual get/set).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LanParameter {
-    pub parameter_id: u8,
-    pub data: Vec<u8>,
+    pub vlan_priority: Option<u8>,
+    pub community_string: Option<String>,
+    pub cipher_suites: Option<Vec<u8>>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1320,7 +1239,7 @@ pub struct IpmiUser {
     pub user_id: u8,
     pub name: String,
     pub enabled: bool,
-    pub callin_callback: bool,
+    pub callin: bool,
     pub link_auth: bool,
     pub ipmi_messaging: bool,
     pub privilege: PrivilegeLevel,
@@ -1330,16 +1249,13 @@ pub struct IpmiUser {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserAccess {
-    pub channel: u8,
-    pub user_id: u8,
-    pub max_privilege: PrivilegeLevel,
-    pub callin_callback: bool,
-    pub link_auth: bool,
-    pub ipmi_messaging: bool,
-    pub enabled: bool,
     pub max_user_ids: u8,
     pub enabled_user_count: u8,
-    pub fixed_name_count: u8,
+    pub fixed_names_count: u8,
+    pub privilege: PrivilegeLevel,
+    pub link_auth_enabled: bool,
+    pub ipmi_messaging_enabled: bool,
+    pub callin_allowed: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1352,13 +1268,7 @@ pub struct UserAccess {
 pub struct PefCapabilities {
     pub version: u8,
     pub action_support: u8,
-    pub num_event_filter_entries: u8,
-    pub oem_action_supported: bool,
-    pub diagnostic_interrupt_supported: bool,
-    pub power_cycle_supported: bool,
-    pub reset_supported: bool,
-    pub power_down_supported: bool,
-    pub alert_supported: bool,
+    pub filter_table_size: u8,
 }
 
 /// PEF filter entry.
@@ -1367,16 +1277,13 @@ pub struct PefCapabilities {
 pub struct PefFilter {
     pub filter_number: u8,
     pub enabled: bool,
-    pub filter_type: u8,
     pub action: PefAction,
+    pub alert_policy_number: u8,
     pub severity: u8,
     pub generator_id: u16,
     pub sensor_type: u8,
     pub sensor_number: u8,
     pub event_trigger: u8,
-    pub event_data_1_mask: u8,
-    pub event_data_2_mask: u8,
-    pub event_data_3_mask: u8,
 }
 
 /// PEF action flags.
@@ -1387,9 +1294,8 @@ pub struct PefAction {
     pub power_off: bool,
     pub reset: bool,
     pub power_cycle: bool,
-    pub oem_action: bool,
+    pub oem: bool,
     pub diagnostic_interrupt: bool,
-    pub group_control: bool,
 }
 
 impl PefAction {
@@ -1399,9 +1305,8 @@ impl PefAction {
             power_off: (b & 0x02) != 0,
             reset: (b & 0x04) != 0,
             power_cycle: (b & 0x08) != 0,
-            oem_action: (b & 0x10) != 0,
+            oem: (b & 0x10) != 0,
             diagnostic_interrupt: (b & 0x20) != 0,
-            group_control: (b & 0x40) != 0,
         }
     }
 
@@ -1411,9 +1316,8 @@ impl PefAction {
         if self.power_off { b |= 0x02; }
         if self.reset { b |= 0x04; }
         if self.power_cycle { b |= 0x08; }
-        if self.oem_action { b |= 0x10; }
+        if self.oem { b |= 0x10; }
         if self.diagnostic_interrupt { b |= 0x20; }
-        if self.group_control { b |= 0x40; }
         b
     }
 }
@@ -1422,8 +1326,10 @@ impl PefAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PefConfig {
-    pub pef_control_enabled: bool,
-    pub pef_action_global_control: u8,
+    pub capabilities: PefCapabilities,
+    pub pef_enabled: bool,
+    pub event_messages_enabled: bool,
+    pub action_control: PefAction,
     pub startup_delay: u8,
     pub alert_startup_delay: u8,
     pub filters: Vec<PefFilter>,
@@ -1437,75 +1343,31 @@ pub struct PefConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChannelProtocol {
     Ipmb,
-    Icmb,
-    Reserved,
-    SmBus,
+    IcmbV10,
+    IcmbV09,
+    Ipmi,
     Kcs,
     Smic,
     Bt10,
     Bt15,
     TMode,
-    OemProtocol1,
-    OemProtocol2,
-    Unknown(u8),
-}
-
-impl ChannelProtocol {
-    pub fn from_byte(b: u8) -> Self {
-        match b & 0x1F {
-            0x01 => Self::Ipmb,
-            0x02 => Self::Icmb,
-            0x04 => Self::SmBus,
-            0x05 => Self::Kcs,
-            0x06 => Self::Smic,
-            0x07 => Self::Bt10,
-            0x08 => Self::Bt15,
-            0x09 => Self::TMode,
-            0x1C => Self::OemProtocol1,
-            0x1D => Self::OemProtocol2,
-            other => Self::Unknown(other),
-        }
-    }
+    Reserved,
 }
 
 /// Channel medium type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChannelMedium {
     Ipmb,
-    Icmb10,
-    Icmb09,
-    Lan802_3,
+    IcmbV10,
+    IcmbV09,
+    Lan8023,
     Serial,
     OtherLan,
-    PciSmBus,
-    SmBus10,
-    SmBus20,
-    UsbV1,
-    UsbV2,
+    PciSmbus,
+    SmBusV11,
+    SmBusV20,
     SystemInterface,
-    OemMedium,
-    Unknown(u8),
-}
-
-impl ChannelMedium {
-    pub fn from_byte(b: u8) -> Self {
-        match b & 0x7F {
-            0x01 => Self::Ipmb,
-            0x02 => Self::Icmb10,
-            0x03 => Self::Icmb09,
-            0x04 => Self::Lan802_3,
-            0x05 => Self::Serial,
-            0x06 => Self::OtherLan,
-            0x07 => Self::PciSmBus,
-            0x08 => Self::SmBus10,
-            0x09 => Self::SmBus20,
-            0x0A => Self::UsbV1,
-            0x0B => Self::UsbV2,
-            0x0C => Self::SystemInterface,
-            0x60..=0x7F => Self::OemMedium,
-            other => Self::Unknown(other),
-        }
-    }
+    Reserved,
 }
 
 /// Channel info.
@@ -1515,10 +1377,8 @@ pub struct ChannelInfo {
     pub channel_number: u8,
     pub medium_type: ChannelMedium,
     pub protocol_type: ChannelProtocol,
-    pub session_support: u8,
-    pub active_session_count: u8,
-    pub vendor_id: [u8; 3],
-    pub aux_info: [u8; 2],
+    pub session_support: String,
+    pub vendor_id: u32,
 }
 
 /// Channel access settings.
@@ -1615,7 +1475,10 @@ pub struct PowerOnHours {
 #[serde(rename_all = "camelCase")]
 pub struct RawCommandHistoryEntry {
     pub timestamp: DateTime<Utc>,
-    pub request: RawIpmiRequest,
-    pub response: RawIpmiResponse,
-    pub duration_ms: u64,
+    pub session_id: String,
+    pub netfn: u8,
+    pub cmd: u8,
+    pub request_data: String,
+    pub completion_code: u8,
+    pub response_data: String,
 }

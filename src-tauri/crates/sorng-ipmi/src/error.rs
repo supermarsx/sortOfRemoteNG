@@ -242,6 +242,14 @@ impl IpmiError {
         Self::DataTooShort { expected, actual }
     }
 
+    /// Create a `DataTooShort`-style error with a descriptive context label.
+    pub fn data_too_short_in(context: &str, expected: usize, actual: usize) -> Self {
+        Self::LanConfigError(format!(
+            "{}: expected at least {} bytes, got {}",
+            context, expected, actual
+        ))
+    }
+
     /// Create a `ChecksumError`.
     pub fn checksum_error(expected: u8, actual: u8) -> Self {
         Self::ChecksumError { expected, actual }

@@ -93,7 +93,7 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::IpAddress => {
             if data.len() < 4 {
-                return Err(IpmiError::data_too_short("IP address", 4, data.len()));
+                return Err(IpmiError::data_too_short_in("IP address", 4, data.len()));
             }
             Ok(LanParameter::IpAddress([data[0], data[1], data[2], data[3]]))
         }
@@ -103,7 +103,7 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::MacAddress => {
             if data.len() < 6 {
-                return Err(IpmiError::data_too_short("MAC address", 6, data.len()));
+                return Err(IpmiError::data_too_short_in("MAC address", 6, data.len()));
             }
             Ok(LanParameter::MacAddress([
                 data[0], data[1], data[2], data[3], data[4], data[5],
@@ -111,7 +111,7 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::SubnetMask => {
             if data.len() < 4 {
-                return Err(IpmiError::data_too_short("Subnet mask", 4, data.len()));
+                return Err(IpmiError::data_too_short_in("Subnet mask", 4, data.len()));
             }
             Ok(LanParameter::SubnetMask([
                 data[0], data[1], data[2], data[3],
@@ -119,7 +119,7 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::DefaultGateway => {
             if data.len() < 4 {
-                return Err(IpmiError::data_too_short("Gateway", 4, data.len()));
+                return Err(IpmiError::data_too_short_in("Gateway", 4, data.len()));
             }
             Ok(LanParameter::DefaultGateway([
                 data[0], data[1], data[2], data[3],
@@ -127,7 +127,7 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::DefaultGatewayMac => {
             if data.len() < 6 {
-                return Err(IpmiError::data_too_short("Gateway MAC", 6, data.len()));
+                return Err(IpmiError::data_too_short_in("Gateway MAC", 6, data.len()));
             }
             Ok(LanParameter::DefaultGatewayMac([
                 data[0], data[1], data[2], data[3], data[4], data[5],
@@ -135,7 +135,7 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::BackupGateway => {
             if data.len() < 4 {
-                return Err(IpmiError::data_too_short("Backup gateway", 4, data.len()));
+                return Err(IpmiError::data_too_short_in("Backup gateway", 4, data.len()));
             }
             Ok(LanParameter::BackupGateway([
                 data[0], data[1], data[2], data[3],
@@ -147,7 +147,7 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::VlanId => {
             if data.len() < 2 {
-                return Err(IpmiError::data_too_short("VLAN ID", 2, data.len()));
+                return Err(IpmiError::data_too_short_in("VLAN ID", 2, data.len()));
             }
             let id = u16::from_le_bytes([data[0], data[1]]);
             let enabled = (id & 0x8000) != 0;

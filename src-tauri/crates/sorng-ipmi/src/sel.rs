@@ -478,7 +478,7 @@ pub fn ipmi_timestamp_to_datetime(timestamp: u32) -> DateTime<Utc> {
         return Utc.timestamp_opt(0, 0).unwrap();
     }
     let secs = timestamp as i64 + IPMI_EPOCH_OFFSET;
-    Utc.timestamp_opt(secs, 0).unwrap_or_else(|| Utc.timestamp_opt(0, 0).unwrap())
+    Utc.timestamp_opt(secs, 0).single().unwrap_or_else(|| Utc.timestamp_opt(0, 0).unwrap())
 }
 
 /// Convert a `DateTime<Utc>` to an IPMI timestamp value.

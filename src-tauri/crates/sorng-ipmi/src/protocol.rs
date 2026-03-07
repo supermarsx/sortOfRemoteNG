@@ -544,6 +544,11 @@ impl IpmiResponse {
         })
     }
 
+    /// Get the completion code.
+    pub fn completion_code(&self) -> u8 {
+        self.completion_code
+    }
+
     /// Check whether this response indicates success.
     pub fn is_success(&self) -> bool {
         self.completion_code == 0x00
@@ -563,8 +568,6 @@ impl IpmiResponse {
         RawIpmiResponse {
             completion_code: self.completion_code,
             data: self.data.clone(),
-            net_fn: self.net_fn,
-            cmd: self.cmd,
         }
     }
 }
@@ -916,6 +919,13 @@ pub mod cmd {
     pub const GET_PEF_CONFIG: u8 = 0x13;
     pub const SET_LAST_PROCESSED_EVENT_ID: u8 = 0x14;
     pub const GET_LAST_PROCESSED_EVENT_ID: u8 = 0x15;
+
+    // Aliases used by subsystem modules
+    pub const GET_CHANNEL_AUTH_CAP: u8 = GET_AUTH_CAPABILITIES;
+    pub const GET_WATCHDOG_TIMER: u8 = GET_WATCHDOG;
+    pub const SET_WATCHDOG_TIMER: u8 = SET_WATCHDOG;
+    pub const RESET_WATCHDOG_TIMER: u8 = RESET_WATCHDOG;
+    pub const ARM_PEF_POSTPONE_TIMER: u8 = ARM_PEF_POSTPONE;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
