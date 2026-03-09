@@ -9,7 +9,9 @@ pub struct CephManager<'a> {
 }
 
 impl<'a> CephManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// Get Ceph cluster status.
     pub async fn get_status(&self, node: &str) -> ProxmoxResult<CephStatus> {
@@ -24,10 +26,16 @@ impl<'a> CephManager<'a> {
     }
 
     /// Create a Ceph monitor.
-    pub async fn create_monitor(&self, node: &str, mon_id: Option<&str>) -> ProxmoxResult<Option<String>> {
+    pub async fn create_monitor(
+        &self,
+        node: &str,
+        mon_id: Option<&str>,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/ceph/mon");
         if let Some(id) = mon_id {
-            self.client.post_form::<Option<String>>(&path, &[("id", id)]).await
+            self.client
+                .post_form::<Option<String>>(&path, &[("id", id)])
+                .await
         } else {
             self.client.post_empty(&path).await
         }
@@ -46,15 +54,27 @@ impl<'a> CephManager<'a> {
     }
 
     /// Create a Ceph OSD.
-    pub async fn create_osd(&self, node: &str, dev: &str, params: &[(&str, &str)]) -> ProxmoxResult<Option<String>> {
+    pub async fn create_osd(
+        &self,
+        node: &str,
+        dev: &str,
+        params: &[(&str, &str)],
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/ceph/osd");
         let mut all_params = vec![("dev", dev)];
         all_params.extend_from_slice(params);
-        self.client.post_form::<Option<String>>(&path, &all_params).await
+        self.client
+            .post_form::<Option<String>>(&path, &all_params)
+            .await
     }
 
     /// Destroy (remove) a Ceph OSD.
-    pub async fn destroy_osd(&self, node: &str, osdid: u64, cleanup: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn destroy_osd(
+        &self,
+        node: &str,
+        osdid: u64,
+        cleanup: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let path = if cleanup {
             format!("/api2/json/nodes/{node}/ceph/osd/{osdid}?cleanup=1")
         } else {
@@ -83,12 +103,19 @@ impl<'a> CephManager<'a> {
     }
 
     /// Create a Ceph pool.
-    pub async fn create_pool(&self, node: &str, params: &CreateCephPoolParams) -> ProxmoxResult<()> {
+    pub async fn create_pool(
+        &self,
+        node: &str,
+        params: &CreateCephPoolParams,
+    ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/ceph/pool");
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = crate::lxc::json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         let _: serde_json::Value = self.client.post_form(&path, &borrowed).await?;
         Ok(())
     }

@@ -26,13 +26,12 @@ pub enum ProxmoxAuthMethod {
         otp: Option<String>,
     },
     /// API Token (PVEAPIToken header)
-    ApiToken {
-        token_id: String,
-        secret: String,
-    },
+    ApiToken { token_id: String, secret: String },
 }
 
-fn default_realm() -> String { "pam".into() }
+fn default_realm() -> String {
+    "pam".into()
+}
 
 /// Top-level configuration for connecting to a Proxmox VE host.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,8 +55,12 @@ pub struct ProxmoxConfig {
     pub fingerprint: Option<String>,
 }
 
-fn default_port() -> u16 { 8006 }
-fn default_timeout() -> u64 { 30 }
+fn default_port() -> u16 {
+    8006
+}
+fn default_timeout() -> u64 {
+    30
+}
 
 impl Default for ProxmoxConfig {
     fn default() -> Self {
@@ -399,7 +402,7 @@ pub struct SyslogEntry {
 //  QEMU VM
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum QemuStatus {
     #[serde(rename = "running")]
     Running,
@@ -408,11 +411,8 @@ pub enum QemuStatus {
     #[serde(rename = "paused")]
     Paused,
     #[serde(other)]
+    #[default]
     Unknown,
-}
-
-impl Default for QemuStatus {
-    fn default() -> Self { Self::Unknown }
 }
 
 /// Concise VM summary from list endpoint.
@@ -784,18 +784,15 @@ pub struct QemuFeatureCheck {
 //  LXC Container
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum LxcStatus {
     #[serde(rename = "running")]
     Running,
     #[serde(rename = "stopped")]
     Stopped,
     #[serde(other)]
+    #[default]
     Unknown,
-}
-
-impl Default for LxcStatus {
-    fn default() -> Self { Self::Unknown }
 }
 
 /// Concise LXC container summary.
@@ -1755,9 +1752,10 @@ pub struct SdnSubnet {
 //  Console (VNC / SPICE)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ConsoleType {
     #[serde(rename = "vnc")]
+    #[default]
     Vnc,
     #[serde(rename = "spice")]
     Spice,
@@ -1765,10 +1763,6 @@ pub enum ConsoleType {
     Term,
     #[serde(other)]
     Unknown,
-}
-
-impl Default for ConsoleType {
-    fn default() -> Self { Self::Vnc }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1816,9 +1810,10 @@ pub struct TermProxyTicket {
 //  Metrics / RRD
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum RrdTimeframe {
     #[serde(rename = "hour")]
+    #[default]
     Hour,
     #[serde(rename = "day")]
     Day,
@@ -1828,10 +1823,6 @@ pub enum RrdTimeframe {
     Month,
     #[serde(rename = "year")]
     Year,
-}
-
-impl Default for RrdTimeframe {
-    fn default() -> Self { Self::Hour }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

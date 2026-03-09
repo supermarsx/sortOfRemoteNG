@@ -9,7 +9,9 @@ pub struct SdnManager<'a> {
 }
 
 impl<'a> SdnManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     // ── Zones ───────────────────────────────────────────────────────
 
@@ -23,7 +25,10 @@ impl<'a> SdnManager<'a> {
     }
 
     pub async fn create_zone(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/sdn/zones", params).await?;
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/sdn/zones", params)
+            .await?;
         Ok(())
     }
 
@@ -49,7 +54,10 @@ impl<'a> SdnManager<'a> {
     }
 
     pub async fn create_vnet(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/sdn/vnets", params).await?;
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/sdn/vnets", params)
+            .await?;
         Ok(())
     }
 

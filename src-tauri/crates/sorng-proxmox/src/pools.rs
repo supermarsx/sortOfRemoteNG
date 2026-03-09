@@ -9,7 +9,9 @@ pub struct PoolManager<'a> {
 }
 
 impl<'a> PoolManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// List all pools.
     pub async fn list_pools(&self) -> ProxmoxResult<Vec<PoolSummary>> {
@@ -25,7 +27,9 @@ impl<'a> PoolManager<'a> {
     /// Create a pool.
     pub async fn create_pool(&self, poolid: &str, comment: Option<&str>) -> ProxmoxResult<()> {
         let mut params = vec![("poolid", poolid)];
-        if let Some(c) = comment { params.push(("comment", c)); }
+        if let Some(c) = comment {
+            params.push(("comment", c));
+        }
         let _: serde_json::Value = self.client.post_form("/api2/json/pools", &params).await?;
         Ok(())
     }
@@ -34,7 +38,9 @@ impl<'a> PoolManager<'a> {
     pub async fn update_pool(&self, poolid: &str, comment: Option<&str>) -> ProxmoxResult<()> {
         let path = format!("/api2/json/pools/{poolid}");
         let mut params: Vec<(&str, &str)> = Vec::new();
-        if let Some(c) = comment { params.push(("comment", c)); }
+        if let Some(c) = comment {
+            params.push(("comment", c));
+        }
         self.client.put_form(&path, &params).await
     }
 
@@ -53,8 +59,12 @@ impl<'a> PoolManager<'a> {
     ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/pools/{poolid}");
         let mut params: Vec<(&str, &str)> = Vec::new();
-        if let Some(v) = vms { params.push(("vms", v)); }
-        if let Some(s) = storage { params.push(("storage", s)); }
+        if let Some(v) = vms {
+            params.push(("vms", v));
+        }
+        if let Some(s) = storage {
+            params.push(("storage", s));
+        }
         self.client.put_form(&path, &params).await
     }
 
@@ -67,8 +77,12 @@ impl<'a> PoolManager<'a> {
     ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/pools/{poolid}");
         let mut params: Vec<(&str, &str)> = vec![("delete", "1")];
-        if let Some(v) = vms { params.push(("vms", v)); }
-        if let Some(s) = storage { params.push(("storage", s)); }
+        if let Some(v) = vms {
+            params.push(("vms", v));
+        }
+        if let Some(s) = storage {
+            params.push(("storage", s));
+        }
         self.client.put_form(&path, &params).await
     }
 }

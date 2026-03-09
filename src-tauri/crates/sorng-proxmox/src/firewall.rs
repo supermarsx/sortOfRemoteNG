@@ -12,7 +12,9 @@ pub struct FirewallManager<'a> {
 }
 
 impl<'a> FirewallManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     // ── Cluster-level firewall ────────────────────────────────────
 
@@ -21,7 +23,9 @@ impl<'a> FirewallManager<'a> {
     }
 
     pub async fn update_cluster_options(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        self.client.put_form("/api2/json/cluster/firewall/options", params).await
+        self.client
+            .put_form("/api2/json/cluster/firewall/options", params)
+            .await
     }
 
     pub async fn list_cluster_rules(&self) -> ProxmoxResult<Vec<FirewallRule>> {
@@ -29,7 +33,10 @@ impl<'a> FirewallManager<'a> {
     }
 
     pub async fn create_cluster_rule(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/firewall/rules", params).await?;
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/firewall/rules", params)
+            .await?;
         Ok(())
     }
 
@@ -42,10 +49,20 @@ impl<'a> FirewallManager<'a> {
         self.client.get("/api2/json/cluster/firewall/aliases").await
     }
 
-    pub async fn create_cluster_alias(&self, name: &str, cidr: &str, comment: Option<&str>) -> ProxmoxResult<()> {
+    pub async fn create_cluster_alias(
+        &self,
+        name: &str,
+        cidr: &str,
+        comment: Option<&str>,
+    ) -> ProxmoxResult<()> {
         let mut params = vec![("name", name), ("cidr", cidr)];
-        if let Some(c) = comment { params.push(("comment", c)); }
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/firewall/aliases", &params).await?;
+        if let Some(c) = comment {
+            params.push(("comment", c));
+        }
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/firewall/aliases", &params)
+            .await?;
         Ok(())
     }
 
@@ -58,10 +75,19 @@ impl<'a> FirewallManager<'a> {
         self.client.get("/api2/json/cluster/firewall/ipset").await
     }
 
-    pub async fn create_cluster_ipset(&self, name: &str, comment: Option<&str>) -> ProxmoxResult<()> {
+    pub async fn create_cluster_ipset(
+        &self,
+        name: &str,
+        comment: Option<&str>,
+    ) -> ProxmoxResult<()> {
         let mut params = vec![("name", name)];
-        if let Some(c) = comment { params.push(("comment", c)); }
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/firewall/ipset", &params).await?;
+        if let Some(c) = comment {
+            params.push(("comment", c));
+        }
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/firewall/ipset", &params)
+            .await?;
         Ok(())
     }
 
@@ -75,15 +101,26 @@ impl<'a> FirewallManager<'a> {
         self.client.get(&path).await
     }
 
-    pub async fn add_ipset_entry(&self, ipset: &str, cidr: &str, comment: Option<&str>) -> ProxmoxResult<()> {
+    pub async fn add_ipset_entry(
+        &self,
+        ipset: &str,
+        cidr: &str,
+        comment: Option<&str>,
+    ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/cluster/firewall/ipset/{ipset}");
         let mut params = vec![("cidr", cidr)];
-        if let Some(c) = comment { params.push(("comment", c)); }
+        if let Some(c) = comment {
+            params.push(("comment", c));
+        }
         let _: serde_json::Value = self.client.post_form(&path, &params).await?;
         Ok(())
     }
 
-    pub async fn remove_ipset_entry(&self, ipset: &str, cidr: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn remove_ipset_entry(
+        &self,
+        ipset: &str,
+        cidr: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/cluster/firewall/ipset/{ipset}/{cidr}");
         self.client.delete(&path).await
     }
@@ -92,10 +129,19 @@ impl<'a> FirewallManager<'a> {
         self.client.get("/api2/json/cluster/firewall/groups").await
     }
 
-    pub async fn create_security_group(&self, group: &str, comment: Option<&str>) -> ProxmoxResult<()> {
+    pub async fn create_security_group(
+        &self,
+        group: &str,
+        comment: Option<&str>,
+    ) -> ProxmoxResult<()> {
         let mut params = vec![("group", group)];
-        if let Some(c) = comment { params.push(("comment", c)); }
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/firewall/groups", &params).await?;
+        if let Some(c) = comment {
+            params.push(("comment", c));
+        }
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/firewall/groups", &params)
+            .await?;
         Ok(())
     }
 

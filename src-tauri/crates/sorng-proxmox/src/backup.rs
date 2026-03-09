@@ -9,7 +9,9 @@ pub struct BackupManager<'a> {
 }
 
 impl<'a> BackupManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// List backup jobs.
     pub async fn list_backup_jobs(&self) -> ProxmoxResult<Vec<BackupJobConfig>> {
@@ -24,7 +26,10 @@ impl<'a> BackupManager<'a> {
 
     /// Create a backup job.
     pub async fn create_backup_job(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/backup", params).await?;
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/backup", params)
+            .await?;
         Ok(())
     }
 
@@ -46,7 +51,10 @@ impl<'a> BackupManager<'a> {
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = crate::lxc::json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
@@ -61,19 +69,19 @@ impl<'a> BackupManager<'a> {
         unique: bool,
     ) -> ProxmoxResult<String> {
         let path = format!("/api2/json/nodes/{node}/qemu");
-        let mut params: Vec<(&str, &str)> = vec![
-            ("archive", archive),
-            ("vmid", &vmid.to_string()),
-        ];
+        let mut params: Vec<(&str, &str)> = vec![("archive", archive), ("vmid", &vmid.to_string())];
         // We need owned strings for some params
         let vmid_str = vmid.to_string();
-        params = vec![
-            ("archive", archive),
-            ("vmid", &vmid_str),
-        ];
-        if let Some(s) = storage { params.push(("storage", s)); }
-        if force { params.push(("force", "1")); }
-        if unique { params.push(("unique", "1")); }
+        params = vec![("archive", archive), ("vmid", &vmid_str)];
+        if let Some(s) = storage {
+            params.push(("storage", s));
+        }
+        if force {
+            params.push(("force", "1"));
+        }
+        if unique {
+            params.push(("unique", "1"));
+        }
         self.client.post_form::<String>(&path, &params).await
     }
 
@@ -85,7 +93,9 @@ impl<'a> BackupManager<'a> {
         vmid: Option<u64>,
     ) -> ProxmoxResult<Vec<StorageContent>> {
         let mut params: Vec<(&str, String)> = vec![("content", "backup".to_string())];
-        if let Some(id) = vmid { params.push(("vmid", id.to_string())); }
+        if let Some(id) = vmid {
+            params.push(("vmid", id.to_string()));
+        }
         let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let path = format!("/api2/json/nodes/{node}/storage/{storage}/content");
         self.client.get_with_params(&path, &borrowed).await

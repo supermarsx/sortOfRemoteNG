@@ -9,13 +9,22 @@ pub struct ConsoleManager<'a> {
 }
 
 impl<'a> ConsoleManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// Create a VNC proxy ticket for a QEMU VM.
-    pub async fn qemu_vnc_proxy(&self, node: &str, vmid: u64, websocket: bool) -> ProxmoxResult<VncTicket> {
+    pub async fn qemu_vnc_proxy(
+        &self,
+        node: &str,
+        vmid: u64,
+        websocket: bool,
+    ) -> ProxmoxResult<VncTicket> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/vncproxy");
         let ws = if websocket { "1" } else { "0" };
-        self.client.post_form::<VncTicket>(&path, &[("websocket", ws)]).await
+        self.client
+            .post_form::<VncTicket>(&path, &[("websocket", ws)])
+            .await
     }
 
     /// Create a SPICE proxy ticket for a QEMU VM.
@@ -31,10 +40,17 @@ impl<'a> ConsoleManager<'a> {
     }
 
     /// Create a VNC proxy ticket for an LXC container.
-    pub async fn lxc_vnc_proxy(&self, node: &str, vmid: u64, websocket: bool) -> ProxmoxResult<VncTicket> {
+    pub async fn lxc_vnc_proxy(
+        &self,
+        node: &str,
+        vmid: u64,
+        websocket: bool,
+    ) -> ProxmoxResult<VncTicket> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/vncproxy");
         let ws = if websocket { "1" } else { "0" };
-        self.client.post_form::<VncTicket>(&path, &[("websocket", ws)]).await
+        self.client
+            .post_form::<VncTicket>(&path, &[("websocket", ws)])
+            .await
     }
 
     /// Create a SPICE proxy ticket for an LXC container.
@@ -59,7 +75,9 @@ impl<'a> ConsoleManager<'a> {
     pub async fn node_vnc_proxy(&self, node: &str, websocket: bool) -> ProxmoxResult<VncTicket> {
         let path = format!("/api2/json/nodes/{node}/vncproxy");
         let ws = if websocket { "1" } else { "0" };
-        self.client.post_form::<VncTicket>(&path, &[("websocket", ws)]).await
+        self.client
+            .post_form::<VncTicket>(&path, &[("websocket", ws)])
+            .await
     }
 
     /// Build a noVNC websocket URL for a QEMU VM.

@@ -9,10 +9,16 @@ pub struct NetworkManager<'a> {
 }
 
 impl<'a> NetworkManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// List network interfaces on a node.
-    pub async fn list_interfaces(&self, node: &str, iface_type: Option<&str>) -> ProxmoxResult<Vec<NetworkInterface>> {
+    pub async fn list_interfaces(
+        &self,
+        node: &str,
+        iface_type: Option<&str>,
+    ) -> ProxmoxResult<Vec<NetworkInterface>> {
         let path = format!("/api2/json/nodes/{node}/network");
         if let Some(t) = iface_type {
             self.client.get_with_params(&path, &[("type", t)]).await
@@ -28,18 +34,30 @@ impl<'a> NetworkManager<'a> {
     }
 
     /// Create a network interface.
-    pub async fn create_interface(&self, node: &str, params: &CreateNetworkParams) -> ProxmoxResult<()> {
+    pub async fn create_interface(
+        &self,
+        node: &str,
+        params: &CreateNetworkParams,
+    ) -> ProxmoxResult<()> {
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = crate::lxc::json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         let path = format!("/api2/json/nodes/{node}/network");
         let _: serde_json::Value = self.client.post_form(&path, &borrowed).await?;
         Ok(())
     }
 
     /// Update a network interface.
-    pub async fn update_interface(&self, node: &str, iface: &str, params: &[(&str, &str)]) -> ProxmoxResult<()> {
+    pub async fn update_interface(
+        &self,
+        node: &str,
+        iface: &str,
+        params: &[(&str, &str)],
+    ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/network/{iface}");
         self.client.put_form(&path, params).await
     }

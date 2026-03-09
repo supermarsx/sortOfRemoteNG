@@ -9,16 +9,22 @@ pub struct HaManager<'a> {
 }
 
 impl<'a> HaManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// Get HA status.
     pub async fn get_status(&self) -> ProxmoxResult<Vec<serde_json::Value>> {
-        self.client.get("/api2/json/cluster/ha/status/current").await
+        self.client
+            .get("/api2/json/cluster/ha/status/current")
+            .await
     }
 
     /// Get HA manager status.
     pub async fn get_manager_status(&self) -> ProxmoxResult<serde_json::Value> {
-        self.client.get("/api2/json/cluster/ha/status/manager_status").await
+        self.client
+            .get("/api2/json/cluster/ha/status/manager_status")
+            .await
     }
 
     /// List HA resources.
@@ -34,7 +40,10 @@ impl<'a> HaManager<'a> {
 
     /// Create an HA resource.
     pub async fn create_resource(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/ha/resources", params).await?;
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/ha/resources", params)
+            .await?;
         Ok(())
     }
 
@@ -77,7 +86,10 @@ impl<'a> HaManager<'a> {
 
     /// Create an HA group.
     pub async fn create_group(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        let _: serde_json::Value = self.client.post_form("/api2/json/cluster/ha/groups", params).await?;
+        let _: serde_json::Value = self
+            .client
+            .post_form("/api2/json/cluster/ha/groups", params)
+            .await?;
         Ok(())
     }
 

@@ -68,7 +68,10 @@ pub struct ProxmoxError {
 
 impl ProxmoxError {
     pub fn new(kind: ProxmoxErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn connection(msg: impl Into<String>) -> Self {

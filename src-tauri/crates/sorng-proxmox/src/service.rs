@@ -37,6 +37,12 @@ pub struct ProxmoxService {
     config: Option<ProxmoxConfig>,
 }
 
+impl Default for ProxmoxService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProxmoxService {
     /// Create a new (disconnected) service.
     pub fn new() -> Self {
@@ -47,14 +53,19 @@ impl ProxmoxService {
     }
 
     pub fn is_connected(&self) -> bool {
-        self.client.as_ref().map(|c| c.is_connected()).unwrap_or(false)
+        self.client
+            .as_ref()
+            .map(|c| c.is_connected())
+            .unwrap_or(false)
     }
 
     fn require_client(&self) -> ProxmoxResult<&PveClient> {
         self.client
             .as_ref()
             .filter(|c| c.is_connected())
-            .ok_or_else(|| ProxmoxError::connection("Not connected to Proxmox VE. Call proxmox_connect first."))
+            .ok_or_else(|| {
+                ProxmoxError::connection("Not connected to Proxmox VE. Call proxmox_connect first.")
+            })
     }
 
     // ── Connection ──────────────────────────────────────────────────
@@ -88,16 +99,12 @@ impl ProxmoxService {
     pub fn get_config(&self) -> Option<ProxmoxConfigSafe> {
         self.config.as_ref().map(|c| {
             let (auth_method, username, token_id) = match &c.auth {
-                ProxmoxAuthMethod::Password { username, .. } => (
-                    "password".to_string(),
-                    Some(username.clone()),
-                    None,
-                ),
-                ProxmoxAuthMethod::ApiToken { token_id, .. } => (
-                    "apitoken".to_string(),
-                    None,
-                    Some(token_id.clone()),
-                ),
+                ProxmoxAuthMethod::Password { username, .. } => {
+                    ("password".to_string(), Some(username.clone()), None)
+                }
+                ProxmoxAuthMethod::ApiToken { token_id, .. } => {
+                    ("apitoken".to_string(), None, Some(token_id.clone()))
+                }
             };
             ProxmoxConfigSafe {
                 host: c.host.clone(),
@@ -132,17 +139,29 @@ impl ProxmoxService {
         NodeManager::new(c).list_services(node).await
     }
 
-    pub async fn start_node_service(&self, node: &str, service: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn start_node_service(
+        &self,
+        node: &str,
+        service: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         NodeManager::new(c).start_service(node, service).await
     }
 
-    pub async fn stop_node_service(&self, node: &str, service: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn stop_node_service(
+        &self,
+        node: &str,
+        service: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         NodeManager::new(c).stop_service(node, service).await
     }
 
-    pub async fn restart_node_service(&self, node: &str, service: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn restart_node_service(
+        &self,
+        node: &str,
+        service: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         NodeManager::new(c).restart_service(node, service).await
     }
@@ -153,11 +172,18 @@ impl ProxmoxService {
     }
 
     pub async fn get_node_syslog(
-        &self, node: &str, start: Option<u64>, limit: Option<u64>,
-        since: Option<&str>, until: Option<&str>, service: Option<&str>,
+        &self,
+        node: &str,
+        start: Option<u64>,
+        limit: Option<u64>,
+        since: Option<&str>,
+        until: Option<&str>,
+        service: Option<&str>,
     ) -> ProxmoxResult<Vec<SyslogEntry>> {
         let c = self.require_client()?;
-        NodeManager::new(c).get_syslog(node, start, limit, since, until, service).await
+        NodeManager::new(c)
+            .get_syslog(node, start, limit, since, until, service)
+            .await
     }
 
     pub async fn list_apt_updates(&self, node: &str) -> ProxmoxResult<Vec<AptUpdate>> {
@@ -192,14 +218,26 @@ impl ProxmoxService {
         QemuManager::new(c).get_config(node, vmid).await
     }
 
-    pub async fn create_qemu_vm(&self, node: &str, params: &QemuCreateParams) -> ProxmoxResult<Option<String>> {
+    pub async fn create_qemu_vm(
+        &self,
+        node: &str,
+        params: &QemuCreateParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         QemuManager::new(c).create_vm(node, params).await.map(Some)
     }
 
-    pub async fn delete_qemu_vm(&self, node: &str, vmid: u64, purge: bool, destroy_unreferenced: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_qemu_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        purge: bool,
+        destroy_unreferenced: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        QemuManager::new(c).delete_vm(node, vmid, purge, destroy_unreferenced).await
+        QemuManager::new(c)
+            .delete_vm(node, vmid, purge, destroy_unreferenced)
+            .await
     }
 
     pub async fn start_qemu_vm(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
@@ -212,17 +250,35 @@ impl ProxmoxService {
         QemuManager::new(c).stop_vm(node, vmid).await
     }
 
-    pub async fn shutdown_qemu_vm(&self, node: &str, vmid: u64, force: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn shutdown_qemu_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        force: bool,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        QemuManager::new(c).shutdown_vm(node, vmid, force, timeout).await
+        QemuManager::new(c)
+            .shutdown_vm(node, vmid, force, timeout)
+            .await
     }
 
-    pub async fn reboot_qemu_vm(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn reboot_qemu_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         QemuManager::new(c).reboot_vm(node, vmid, timeout).await
     }
 
-    pub async fn suspend_qemu_vm(&self, node: &str, vmid: u64, to_disk: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn suspend_qemu_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        to_disk: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         QemuManager::new(c).suspend_vm(node, vmid, to_disk).await
     }
@@ -237,24 +293,52 @@ impl ProxmoxService {
         QemuManager::new(c).reset_vm(node, vmid).await
     }
 
-    pub async fn update_qemu_config(&self, node: &str, vmid: u64, params: &[(&str, &str)]) -> ProxmoxResult<()> {
+    pub async fn update_qemu_config(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &[(&str, &str)],
+    ) -> ProxmoxResult<()> {
         let c = self.require_client()?;
         QemuManager::new(c).update_config(node, vmid, params).await
     }
 
-    pub async fn resize_qemu_disk(&self, node: &str, vmid: u64, params: &DiskResizeParams) -> ProxmoxResult<()> {
+    pub async fn resize_qemu_disk(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &DiskResizeParams,
+    ) -> ProxmoxResult<()> {
         let c = self.require_client()?;
-        QemuManager::new(c).resize_disk_params(node, vmid, params).await
+        QemuManager::new(c)
+            .resize_disk_params(node, vmid, params)
+            .await
     }
 
-    pub async fn clone_qemu_vm(&self, node: &str, vmid: u64, params: &QemuCloneParams) -> ProxmoxResult<Option<String>> {
+    pub async fn clone_qemu_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &QemuCloneParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        QemuManager::new(c).clone_vm(node, vmid, params).await.map(Some)
+        QemuManager::new(c)
+            .clone_vm(node, vmid, params)
+            .await
+            .map(Some)
     }
 
-    pub async fn migrate_qemu_vm(&self, node: &str, vmid: u64, params: &QemuMigrateParams) -> ProxmoxResult<Option<String>> {
+    pub async fn migrate_qemu_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &QemuMigrateParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        QemuManager::new(c).migrate_vm(node, vmid, params).await.map(Some)
+        QemuManager::new(c)
+            .migrate_vm(node, vmid, params)
+            .await
+            .map(Some)
     }
 
     pub async fn convert_qemu_to_template(&self, node: &str, vmid: u64) -> ProxmoxResult<()> {
@@ -262,14 +346,21 @@ impl ProxmoxService {
         QemuManager::new(c).convert_to_template(node, vmid).await
     }
 
-    pub async fn qemu_agent_exec(&self, node: &str, vmid: u64, command: &str) -> ProxmoxResult<serde_json::Value> {
+    pub async fn qemu_agent_exec(
+        &self,
+        node: &str,
+        vmid: u64,
+        command: &str,
+    ) -> ProxmoxResult<serde_json::Value> {
         let c = self.require_client()?;
         QemuManager::new(c).agent_exec(node, vmid, command).await
     }
 
     pub async fn qemu_agent_network(&self, node: &str, vmid: u64) -> ProxmoxResult<QemuAgentInfo> {
         let c = self.require_client()?;
-        QemuManager::new(c).agent_network_interfaces(node, vmid).await
+        QemuManager::new(c)
+            .agent_network_interfaces(node, vmid)
+            .await
     }
 
     pub async fn qemu_agent_osinfo(&self, node: &str, vmid: u64) -> ProxmoxResult<QemuAgentInfo> {
@@ -299,17 +390,36 @@ impl ProxmoxService {
         LxcManager::new(c).get_config(node, vmid).await
     }
 
-    pub async fn create_lxc_container(&self, node: &str, params: &LxcCreateParams) -> ProxmoxResult<Option<String>> {
+    pub async fn create_lxc_container(
+        &self,
+        node: &str,
+        params: &LxcCreateParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).create_container(node, params).await.map(Some)
+        LxcManager::new(c)
+            .create_container(node, params)
+            .await
+            .map(Some)
     }
 
-    pub async fn delete_lxc_container(&self, node: &str, vmid: u64, purge: bool, force: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_lxc_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        purge: bool,
+        force: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).delete_container(node, vmid, purge, force).await
+        LxcManager::new(c)
+            .delete_container(node, vmid, purge, force)
+            .await
     }
 
-    pub async fn start_lxc_container(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
+    pub async fn start_lxc_container(
+        &self,
+        node: &str,
+        vmid: u64,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         LxcManager::new(c).start_container(node, vmid).await
     }
@@ -319,24 +429,55 @@ impl ProxmoxService {
         LxcManager::new(c).stop_container(node, vmid).await
     }
 
-    pub async fn shutdown_lxc_container(&self, node: &str, vmid: u64, force: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn shutdown_lxc_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        force: bool,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).shutdown_container(node, vmid, force, timeout).await
+        LxcManager::new(c)
+            .shutdown_container(node, vmid, force, timeout)
+            .await
     }
 
-    pub async fn reboot_lxc_container(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn reboot_lxc_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).reboot_container(node, vmid, timeout).await
+        LxcManager::new(c)
+            .reboot_container(node, vmid, timeout)
+            .await
     }
 
-    pub async fn clone_lxc_container(&self, node: &str, vmid: u64, params: &LxcCloneParams) -> ProxmoxResult<Option<String>> {
+    pub async fn clone_lxc_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &LxcCloneParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).clone_container(node, vmid, params).await.map(Some)
+        LxcManager::new(c)
+            .clone_container(node, vmid, params)
+            .await
+            .map(Some)
     }
 
-    pub async fn migrate_lxc_container(&self, node: &str, vmid: u64, params: &LxcMigrateParams) -> ProxmoxResult<Option<String>> {
+    pub async fn migrate_lxc_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &LxcMigrateParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).migrate_container(node, vmid, params).await.map(Some)
+        LxcManager::new(c)
+            .migrate_container(node, vmid, params)
+            .await
+            .map(Some)
     }
 
     // ── Storage ─────────────────────────────────────────────────────
@@ -347,42 +488,77 @@ impl ProxmoxService {
     }
 
     pub async fn list_storage_content(
-        &self, node: &str, storage: &str, content_type: Option<&str>, vmid: Option<u64>,
+        &self,
+        node: &str,
+        storage: &str,
+        content_type: Option<&str>,
+        vmid: Option<u64>,
     ) -> ProxmoxResult<Vec<StorageContent>> {
         let c = self.require_client()?;
-        StorageManager::new(c).list_content(node, storage, content_type, vmid).await
+        StorageManager::new(c)
+            .list_content(node, storage, content_type, vmid)
+            .await
     }
 
-    pub async fn delete_storage_volume(&self, node: &str, storage: &str, volume: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_storage_volume(
+        &self,
+        node: &str,
+        storage: &str,
+        volume: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        StorageManager::new(c).delete_volume(node, storage, volume).await
+        StorageManager::new(c)
+            .delete_volume(node, storage, volume)
+            .await
     }
 
     pub async fn download_to_storage(
-        &self, node: &str, storage: &str, url: &str, content: &str, filename: &str,
+        &self,
+        node: &str,
+        storage: &str,
+        url: &str,
+        content: &str,
+        filename: &str,
     ) -> ProxmoxResult<String> {
         let c = self.require_client()?;
-        StorageManager::new(c).download_url(node, storage, url, content, filename).await
+        StorageManager::new(c)
+            .download_url(node, storage, url, content, filename)
+            .await
     }
 
     // ── Network ─────────────────────────────────────────────────────
 
-    pub async fn list_network_interfaces(&self, node: &str) -> ProxmoxResult<Vec<NetworkInterface>> {
+    pub async fn list_network_interfaces(
+        &self,
+        node: &str,
+    ) -> ProxmoxResult<Vec<NetworkInterface>> {
         let c = self.require_client()?;
         NetworkManager::new(c).list_interfaces(node, None).await
     }
 
-    pub async fn get_network_interface(&self, node: &str, iface: &str) -> ProxmoxResult<NetworkInterface> {
+    pub async fn get_network_interface(
+        &self,
+        node: &str,
+        iface: &str,
+    ) -> ProxmoxResult<NetworkInterface> {
         let c = self.require_client()?;
         NetworkManager::new(c).get_interface(node, iface).await
     }
 
-    pub async fn create_network_interface(&self, node: &str, params: &CreateNetworkParams) -> ProxmoxResult<()> {
+    pub async fn create_network_interface(
+        &self,
+        node: &str,
+        params: &CreateNetworkParams,
+    ) -> ProxmoxResult<()> {
         let c = self.require_client()?;
         NetworkManager::new(c).create_interface(node, params).await
     }
 
-    pub async fn delete_network_interface(&self, node: &str, iface: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_network_interface(
+        &self,
+        node: &str,
+        iface: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
         NetworkManager::new(c).delete_interface(node, iface).await
     }
@@ -404,7 +580,10 @@ impl ProxmoxService {
         ClusterManager::new(c).get_status().await
     }
 
-    pub async fn list_cluster_resources(&self, resource_type: Option<&str>) -> ProxmoxResult<Vec<ClusterResource>> {
+    pub async fn list_cluster_resources(
+        &self,
+        resource_type: Option<&str>,
+    ) -> ProxmoxResult<Vec<ClusterResource>> {
         let c = self.require_client()?;
         ClusterManager::new(c).list_resources(resource_type).await
     }
@@ -432,11 +611,18 @@ impl ProxmoxService {
     // ── Tasks ───────────────────────────────────────────────────────
 
     pub async fn list_tasks(
-        &self, node: &str, start: Option<u64>, limit: Option<u64>,
-        vmid: Option<u64>, type_filter: Option<&str>, status_filter: Option<&str>,
+        &self,
+        node: &str,
+        start: Option<u64>,
+        limit: Option<u64>,
+        vmid: Option<u64>,
+        type_filter: Option<&str>,
+        status_filter: Option<&str>,
     ) -> ProxmoxResult<Vec<TaskSummary>> {
         let c = self.require_client()?;
-        TaskManager::new(c).list_tasks(node, start, limit, vmid, type_filter, status_filter).await
+        TaskManager::new(c)
+            .list_tasks(node, start, limit, vmid, type_filter, status_filter)
+            .await
     }
 
     pub async fn get_task_status(&self, node: &str, upid: &str) -> ProxmoxResult<TaskStatus> {
@@ -444,9 +630,17 @@ impl ProxmoxService {
         TaskManager::new(c).get_task_status(node, upid).await
     }
 
-    pub async fn get_task_log(&self, node: &str, upid: &str, start: Option<u64>, limit: Option<u64>) -> ProxmoxResult<Vec<TaskLogLine>> {
+    pub async fn get_task_log(
+        &self,
+        node: &str,
+        upid: &str,
+        start: Option<u64>,
+        limit: Option<u64>,
+    ) -> ProxmoxResult<Vec<TaskLogLine>> {
         let c = self.require_client()?;
-        TaskManager::new(c).get_task_log(node, upid, start, limit).await
+        TaskManager::new(c)
+            .get_task_log(node, upid, start, limit)
+            .await
     }
 
     pub async fn stop_task(&self, node: &str, upid: &str) -> ProxmoxResult<()> {
@@ -467,15 +661,30 @@ impl ProxmoxService {
     }
 
     pub async fn restore_backup(
-        &self, node: &str, vmid: u64, archive: &str, storage: Option<&str>, force: bool, unique: bool,
+        &self,
+        node: &str,
+        vmid: u64,
+        archive: &str,
+        storage: Option<&str>,
+        force: bool,
+        unique: bool,
     ) -> ProxmoxResult<String> {
         let c = self.require_client()?;
-        BackupManager::new(c).restore(node, vmid, archive, storage, force, unique).await
+        BackupManager::new(c)
+            .restore(node, vmid, archive, storage, force, unique)
+            .await
     }
 
-    pub async fn list_backups(&self, node: &str, storage: &str, vmid: Option<u64>) -> ProxmoxResult<Vec<StorageContent>> {
+    pub async fn list_backups(
+        &self,
+        node: &str,
+        storage: &str,
+        vmid: Option<u64>,
+    ) -> ProxmoxResult<Vec<StorageContent>> {
         let c = self.require_client()?;
-        BackupManager::new(c).list_backups(node, storage, vmid).await
+        BackupManager::new(c)
+            .list_backups(node, storage, vmid)
+            .await
     }
 
     // ── Firewall ────────────────────────────────────────────────────
@@ -506,10 +715,15 @@ impl ProxmoxService {
     }
 
     pub async fn list_guest_firewall_rules(
-        &self, node: &str, guest_type: &str, vmid: u64,
+        &self,
+        node: &str,
+        guest_type: &str,
+        vmid: u64,
     ) -> ProxmoxResult<Vec<FirewallRule>> {
         let c = self.require_client()?;
-        FirewallManager::new(c).list_guest_rules(node, guest_type, vmid).await
+        FirewallManager::new(c)
+            .list_guest_rules(node, guest_type, vmid)
+            .await
     }
 
     // ── Pools ───────────────────────────────────────────────────────
@@ -584,7 +798,9 @@ impl ProxmoxService {
 
     pub async fn qemu_vnc_proxy(&self, node: &str, vmid: u64) -> ProxmoxResult<VncTicket> {
         let c = self.require_client()?;
-        ConsoleManager::new(c).qemu_vnc_proxy(node, vmid, true).await
+        ConsoleManager::new(c)
+            .qemu_vnc_proxy(node, vmid, true)
+            .await
     }
 
     pub async fn qemu_spice_proxy(&self, node: &str, vmid: u64) -> ProxmoxResult<SpiceTicket> {
@@ -619,73 +835,158 @@ impl ProxmoxService {
 
     // ── Snapshots ───────────────────────────────────────────────────
 
-    pub async fn list_qemu_snapshots(&self, node: &str, vmid: u64) -> ProxmoxResult<Vec<SnapshotSummary>> {
+    pub async fn list_qemu_snapshots(
+        &self,
+        node: &str,
+        vmid: u64,
+    ) -> ProxmoxResult<Vec<SnapshotSummary>> {
         let c = self.require_client()?;
-        SnapshotManager::new(c).list_qemu_snapshots(node, vmid).await
+        SnapshotManager::new(c)
+            .list_qemu_snapshots(node, vmid)
+            .await
     }
 
-    pub async fn create_qemu_snapshot(&self, node: &str, vmid: u64, params: &CreateSnapshotParams) -> ProxmoxResult<Option<String>> {
+    pub async fn create_qemu_snapshot(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &CreateSnapshotParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        SnapshotManager::new(c).create_qemu_snapshot(node, vmid, params).await
+        SnapshotManager::new(c)
+            .create_qemu_snapshot(node, vmid, params)
+            .await
     }
 
-    pub async fn rollback_qemu_snapshot(&self, node: &str, vmid: u64, snapname: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn rollback_qemu_snapshot(
+        &self,
+        node: &str,
+        vmid: u64,
+        snapname: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        SnapshotManager::new(c).rollback_qemu_snapshot(node, vmid, snapname).await
+        SnapshotManager::new(c)
+            .rollback_qemu_snapshot(node, vmid, snapname)
+            .await
     }
 
-    pub async fn delete_qemu_snapshot(&self, node: &str, vmid: u64, snapname: &str, force: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_qemu_snapshot(
+        &self,
+        node: &str,
+        vmid: u64,
+        snapname: &str,
+        force: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        SnapshotManager::new(c).delete_qemu_snapshot(node, vmid, snapname, force).await
+        SnapshotManager::new(c)
+            .delete_qemu_snapshot(node, vmid, snapname, force)
+            .await
     }
 
-    pub async fn list_lxc_snapshots(&self, node: &str, vmid: u64) -> ProxmoxResult<Vec<SnapshotSummary>> {
+    pub async fn list_lxc_snapshots(
+        &self,
+        node: &str,
+        vmid: u64,
+    ) -> ProxmoxResult<Vec<SnapshotSummary>> {
         let c = self.require_client()?;
         SnapshotManager::new(c).list_lxc_snapshots(node, vmid).await
     }
 
-    pub async fn create_lxc_snapshot(&self, node: &str, vmid: u64, params: &CreateSnapshotParams) -> ProxmoxResult<Option<String>> {
+    pub async fn create_lxc_snapshot(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &CreateSnapshotParams,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        SnapshotManager::new(c).create_lxc_snapshot(node, vmid, params).await
+        SnapshotManager::new(c)
+            .create_lxc_snapshot(node, vmid, params)
+            .await
     }
 
-    pub async fn rollback_lxc_snapshot(&self, node: &str, vmid: u64, snapname: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn rollback_lxc_snapshot(
+        &self,
+        node: &str,
+        vmid: u64,
+        snapname: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        SnapshotManager::new(c).rollback_lxc_snapshot(node, vmid, snapname).await
+        SnapshotManager::new(c)
+            .rollback_lxc_snapshot(node, vmid, snapname)
+            .await
     }
 
-    pub async fn delete_lxc_snapshot(&self, node: &str, vmid: u64, snapname: &str, force: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_lxc_snapshot(
+        &self,
+        node: &str,
+        vmid: u64,
+        snapname: &str,
+        force: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        SnapshotManager::new(c).delete_lxc_snapshot(node, vmid, snapname, force).await
+        SnapshotManager::new(c)
+            .delete_lxc_snapshot(node, vmid, snapname, force)
+            .await
     }
 
     // ── Metrics / RRD ───────────────────────────────────────────────
 
-    pub async fn node_rrd(&self, node: &str, timeframe: &str, cf: Option<&str>) -> ProxmoxResult<Vec<RrdDataPoint>> {
+    pub async fn node_rrd(
+        &self,
+        node: &str,
+        timeframe: &str,
+        cf: Option<&str>,
+    ) -> ProxmoxResult<Vec<RrdDataPoint>> {
         let c = self.require_client()?;
         MetricsManager::new(c).node_rrd(node, timeframe, cf).await
     }
 
-    pub async fn qemu_rrd(&self, node: &str, vmid: u64, timeframe: &str, cf: Option<&str>) -> ProxmoxResult<Vec<RrdDataPoint>> {
+    pub async fn qemu_rrd(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeframe: &str,
+        cf: Option<&str>,
+    ) -> ProxmoxResult<Vec<RrdDataPoint>> {
         let c = self.require_client()?;
-        MetricsManager::new(c).qemu_rrd(node, vmid, timeframe, cf).await
+        MetricsManager::new(c)
+            .qemu_rrd(node, vmid, timeframe, cf)
+            .await
     }
 
-    pub async fn lxc_rrd(&self, node: &str, vmid: u64, timeframe: &str, cf: Option<&str>) -> ProxmoxResult<Vec<RrdDataPoint>> {
+    pub async fn lxc_rrd(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeframe: &str,
+        cf: Option<&str>,
+    ) -> ProxmoxResult<Vec<RrdDataPoint>> {
         let c = self.require_client()?;
-        MetricsManager::new(c).lxc_rrd(node, vmid, timeframe, cf).await
+        MetricsManager::new(c)
+            .lxc_rrd(node, vmid, timeframe, cf)
+            .await
     }
 
     // ── Templates ───────────────────────────────────────────────────
 
-    pub async fn list_appliance_templates(&self, node: &str) -> ProxmoxResult<Vec<ApplianceTemplate>> {
+    pub async fn list_appliance_templates(
+        &self,
+        node: &str,
+    ) -> ProxmoxResult<Vec<ApplianceTemplate>> {
         let c = self.require_client()?;
         TemplateManager::new(c).list_appliance_templates(node).await
     }
 
-    pub async fn download_appliance(&self, node: &str, storage: &str, template: &str) -> ProxmoxResult<String> {
+    pub async fn download_appliance(
+        &self,
+        node: &str,
+        storage: &str,
+        template: &str,
+    ) -> ProxmoxResult<String> {
         let c = self.require_client()?;
-        TemplateManager::new(c).download_appliance(node, storage, template).await
+        TemplateManager::new(c)
+            .download_appliance(node, storage, template)
+            .await
     }
 
     pub async fn list_isos(&self, node: &str, storage: &str) -> ProxmoxResult<Vec<StorageContent>> {
@@ -693,8 +994,14 @@ impl ProxmoxService {
         TemplateManager::new(c).list_isos(node, storage).await
     }
 
-    pub async fn list_container_templates(&self, node: &str, storage: &str) -> ProxmoxResult<Vec<StorageContent>> {
+    pub async fn list_container_templates(
+        &self,
+        node: &str,
+        storage: &str,
+    ) -> ProxmoxResult<Vec<StorageContent>> {
         let c = self.require_client()?;
-        TemplateManager::new(c).list_container_templates(node, storage).await
+        TemplateManager::new(c)
+            .list_container_templates(node, storage)
+            .await
     }
 }

@@ -9,10 +9,15 @@ pub struct TemplateManager<'a> {
 }
 
 impl<'a> TemplateManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// List available appliance templates (TurnKey Linux, etc.).
-    pub async fn list_appliance_templates(&self, node: &str) -> ProxmoxResult<Vec<ApplianceTemplate>> {
+    pub async fn list_appliance_templates(
+        &self,
+        node: &str,
+    ) -> ProxmoxResult<Vec<ApplianceTemplate>> {
         let path = format!("/api2/json/nodes/{node}/aplinfo");
         self.client.get(&path).await
     }
@@ -25,21 +30,28 @@ impl<'a> TemplateManager<'a> {
         template: &str,
     ) -> ProxmoxResult<String> {
         let path = format!("/api2/json/nodes/{node}/aplinfo");
-        self.client.post_form::<String>(&path, &[
-            ("storage", storage),
-            ("template", template),
-        ]).await
+        self.client
+            .post_form::<String>(&path, &[("storage", storage), ("template", template)])
+            .await
     }
 
     /// List available ISO images on a storage.
     pub async fn list_isos(&self, node: &str, storage: &str) -> ProxmoxResult<Vec<StorageContent>> {
         let path = format!("/api2/json/nodes/{node}/storage/{storage}/content");
-        self.client.get_with_params(&path, &[("content", "iso")]).await
+        self.client
+            .get_with_params(&path, &[("content", "iso")])
+            .await
     }
 
     /// List container templates on a storage.
-    pub async fn list_container_templates(&self, node: &str, storage: &str) -> ProxmoxResult<Vec<StorageContent>> {
+    pub async fn list_container_templates(
+        &self,
+        node: &str,
+        storage: &str,
+    ) -> ProxmoxResult<Vec<StorageContent>> {
         let path = format!("/api2/json/nodes/{node}/storage/{storage}/content");
-        self.client.get_with_params(&path, &[("content", "vztmpl")]).await
+        self.client
+            .get_with_params(&path, &[("content", "vztmpl")])
+            .await
     }
 }

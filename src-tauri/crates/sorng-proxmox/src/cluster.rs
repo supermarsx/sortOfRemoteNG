@@ -9,7 +9,9 @@ pub struct ClusterManager<'a> {
 }
 
 impl<'a> ClusterManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// Get cluster status (nodes, quorum).
     pub async fn get_status(&self) -> ProxmoxResult<Vec<ClusterStatus>> {
@@ -17,9 +19,14 @@ impl<'a> ClusterManager<'a> {
     }
 
     /// List all cluster resources with optional type filter.
-    pub async fn list_resources(&self, resource_type: Option<&str>) -> ProxmoxResult<Vec<ClusterResource>> {
+    pub async fn list_resources(
+        &self,
+        resource_type: Option<&str>,
+    ) -> ProxmoxResult<Vec<ClusterResource>> {
         if let Some(t) = resource_type {
-            self.client.get_with_params("/api2/json/cluster/resources", &[("type", t)]).await
+            self.client
+                .get_with_params("/api2/json/cluster/resources", &[("type", t)])
+                .await
         } else {
             self.client.get("/api2/json/cluster/resources").await
         }
@@ -32,7 +39,9 @@ impl<'a> ClusterManager<'a> {
 
     /// Update cluster options.
     pub async fn update_options(&self, params: &[(&str, &str)]) -> ProxmoxResult<()> {
-        self.client.put_form("/api2/json/cluster/options", params).await
+        self.client
+            .put_form("/api2/json/cluster/options", params)
+            .await
     }
 
     /// Get cluster join information.
@@ -47,11 +56,16 @@ impl<'a> ClusterManager<'a> {
         password: &str,
         fingerprint: &str,
     ) -> ProxmoxResult<Option<String>> {
-        self.client.post_form::<Option<String>>("/api2/json/cluster/config/join", &[
-            ("hostname", hostname),
-            ("password", password),
-            ("fingerprint", fingerprint),
-        ]).await
+        self.client
+            .post_form::<Option<String>>(
+                "/api2/json/cluster/config/join",
+                &[
+                    ("hostname", hostname),
+                    ("password", password),
+                    ("fingerprint", fingerprint),
+                ],
+            )
+            .await
     }
 
     /// Get next free VMID.

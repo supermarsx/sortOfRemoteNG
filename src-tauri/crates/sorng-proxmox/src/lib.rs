@@ -29,25 +29,25 @@
 //! - **service** — Aggregate facade + Tauri state alias
 //! - **commands** — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod nodes;
-pub mod qemu;
-pub mod lxc;
-pub mod storage;
-pub mod network;
-pub mod cluster;
-pub mod tasks;
 pub mod backup;
-pub mod firewall;
-pub mod pools;
-pub mod ha;
 pub mod ceph;
-pub mod sdn;
-pub mod console;
-pub mod metrics;
-pub mod snapshot;
-pub mod template;
-pub mod service;
+pub mod client;
+pub mod cluster;
 pub mod commands;
+pub mod console;
+pub mod error;
+pub mod firewall;
+pub mod ha;
+pub mod lxc;
+pub mod metrics;
+pub mod network;
+pub mod nodes;
+pub mod pools;
+pub mod qemu;
+pub mod sdn;
+pub mod service;
+pub mod snapshot;
+pub mod storage;
+pub mod tasks;
+pub mod template;
+pub mod types;

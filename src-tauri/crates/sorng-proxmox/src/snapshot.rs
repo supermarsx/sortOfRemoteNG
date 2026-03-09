@@ -9,11 +9,17 @@ pub struct SnapshotManager<'a> {
 }
 
 impl<'a> SnapshotManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     // ── QEMU Snapshots ──────────────────────────────────────────────
 
-    pub async fn list_qemu_snapshots(&self, node: &str, vmid: u64) -> ProxmoxResult<Vec<SnapshotSummary>> {
+    pub async fn list_qemu_snapshots(
+        &self,
+        node: &str,
+        vmid: u64,
+    ) -> ProxmoxResult<Vec<SnapshotSummary>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/snapshot");
         self.client.get(&path).await
     }
@@ -26,7 +32,9 @@ impl<'a> SnapshotManager<'a> {
     ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/snapshot");
         let mut form: Vec<(&str, &str)> = vec![("snapname", &params.snapname)];
-        if let Some(ref d) = params.description { form.push(("description", d)); }
+        if let Some(ref d) = params.description {
+            form.push(("description", d));
+        }
         let vmstate_str;
         if let Some(v) = params.vmstate {
             vmstate_str = v.to_string();
@@ -78,12 +86,18 @@ impl<'a> SnapshotManager<'a> {
         description: &str,
     ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/snapshot/{snapname}/config");
-        self.client.put_form(&path, &[("description", description)]).await
+        self.client
+            .put_form(&path, &[("description", description)])
+            .await
     }
 
     // ── LXC Snapshots ───────────────────────────────────────────────
 
-    pub async fn list_lxc_snapshots(&self, node: &str, vmid: u64) -> ProxmoxResult<Vec<SnapshotSummary>> {
+    pub async fn list_lxc_snapshots(
+        &self,
+        node: &str,
+        vmid: u64,
+    ) -> ProxmoxResult<Vec<SnapshotSummary>> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/snapshot");
         self.client.get(&path).await
     }
@@ -96,7 +110,9 @@ impl<'a> SnapshotManager<'a> {
     ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/snapshot");
         let mut form: Vec<(&str, &str)> = vec![("snapname", &params.snapname)];
-        if let Some(ref d) = params.description { form.push(("description", d)); }
+        if let Some(ref d) = params.description {
+            form.push(("description", d));
+        }
         self.client.post_form::<Option<String>>(&path, &form).await
     }
 
@@ -143,6 +159,8 @@ impl<'a> SnapshotManager<'a> {
         description: &str,
     ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/snapshot/{snapname}/config");
-        self.client.put_form(&path, &[("description", description)]).await
+        self.client
+            .put_form(&path, &[("description", description)])
+            .await
     }
 }

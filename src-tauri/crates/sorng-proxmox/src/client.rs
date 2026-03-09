@@ -42,8 +42,12 @@ impl PveClient {
         })
     }
 
-    pub fn base_url(&self) -> &str { &self.base_url }
-    pub fn config(&self) -> &ProxmoxConfig { &self.config }
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+    pub fn config(&self) -> &ProxmoxConfig {
+        &self.config
+    }
 
     pub fn is_connected(&self) -> bool {
         self.ticket.is_some() || self.api_token.is_some()
@@ -58,7 +62,12 @@ impl PveClient {
     /// Authenticate with the Proxmox VE server.
     pub async fn login(&mut self) -> ProxmoxResult<String> {
         match &self.config.auth {
-            ProxmoxAuthMethod::Password { username, password, realm, otp } => {
+            ProxmoxAuthMethod::Password {
+                username,
+                password,
+                realm,
+                otp,
+            } => {
                 let url = format!("{}/api2/json/access/ticket", self.base_url);
                 let mut params = vec![
                     ("username", format!("{username}@{realm}")),
@@ -68,7 +77,8 @@ impl PveClient {
                     params.push(("otp", otp_code.clone()));
                 }
 
-                let resp = self.client
+                let resp = self
+                    .client
                     .post(&url)
                     .form(&params)
                     .send()
@@ -82,7 +92,10 @@ impl PveClient {
                 let status = resp.status();
                 if !status.is_success() {
                     let body = resp.text().await.unwrap_or_default();
-                    return Err(ProxmoxError::api(status.as_u16(), format!("Login failed: {body}")));
+                    return Err(ProxmoxError::api(
+                        status.as_u16(),
+                        format!("Login failed: {body}"),
+                    ));
                 }
 
                 #[derive(serde::Deserialize)]
@@ -92,7 +105,9 @@ impl PveClient {
                     csrf_token: String,
                     username: String,
                 }
-                let ticket_resp: PveResponse<TicketData> = resp.json().await
+                let ticket_resp: PveResponse<TicketData> = resp
+                    .json()
+                    .await
                     .map_err(|e| ProxmoxError::parse(format!("Failed to parse ticket: {e}")))?;
 
                 let info = ticket_resp.data;
@@ -136,7 +151,10 @@ impl PveClient {
 
     // ── HTTP helpers ────────────────────────────────────────────────
 
-    fn auth_headers(&self, builder: reqwest::RequestBuilder) -> ProxmoxResult<reqwest::RequestBuilder> {
+    fn auth_headers(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> ProxmoxResult<reqwest::RequestBuilder> {
         if let Some(ref token) = self.api_token {
             Ok(builder.header("Authorization", token.as_str()))
         } else if let Some(ref ticket) = self.ticket {
@@ -161,7 +179,10 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.get(&url);
         let builder = self.auth_headers(builder)?;
-        builder.send().await.map_err(|e| ProxmoxError::connection(format!("GET {path} failed: {e}")))
+        builder
+            .send()
+            .await
+            .map_err(|e| ProxmoxError::connection(format!("GET {path} failed: {e}")))
     }
 
     /// GET with query parameters.
@@ -173,7 +194,9 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.get(&url).query(params);
         let builder = self.auth_headers(builder)?;
-        let resp = builder.send().await
+        let resp = builder
+            .send()
+            .await
             .map_err(|e| ProxmoxError::connection(format!("GET {path} failed: {e}")))?;
         let resp = Self::check_status(resp).await?;
         let envelope: PveResponse<T> = Self::parse_response(resp).await?;
@@ -189,7 +212,9 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.post(&url).form(params);
         let builder = self.auth_headers(builder)?;
-        let resp = builder.send().await
+        let resp = builder
+            .send()
+            .await
             .map_err(|e| ProxmoxError::connection(format!("POST {path} failed: {e}")))?;
         let resp = Self::check_status(resp).await?;
         let envelope: PveResponse<T> = Self::parse_response(resp).await?;
@@ -205,7 +230,9 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.post(&url).json(body);
         let builder = self.auth_headers(builder)?;
-        let resp = builder.send().await
+        let resp = builder
+            .send()
+            .await
             .map_err(|e| ProxmoxError::connection(format!("POST {path} failed: {e}")))?;
         let resp = Self::check_status(resp).await?;
         let envelope: PveResponse<T> = Self::parse_response(resp).await?;
@@ -217,7 +244,9 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.post(&url);
         let builder = self.auth_headers(builder)?;
-        let resp = builder.send().await
+        let resp = builder
+            .send()
+            .await
             .map_err(|e| ProxmoxError::connection(format!("POST {path} failed: {e}")))?;
         let resp = Self::check_status(resp).await?;
         let text = resp.text().await.unwrap_or_default();
@@ -238,7 +267,9 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.put(&url).form(params);
         let builder = self.auth_headers(builder)?;
-        let resp = builder.send().await
+        let resp = builder
+            .send()
+            .await
             .map_err(|e| ProxmoxError::connection(format!("PUT {path} failed: {e}")))?;
         Self::check_status(resp).await?;
         Ok(())
@@ -249,7 +280,9 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.put(&url).json(body);
         let builder = self.auth_headers(builder)?;
-        let resp = builder.send().await
+        let resp = builder
+            .send()
+            .await
             .map_err(|e| ProxmoxError::connection(format!("PUT {path} failed: {e}")))?;
         Self::check_status(resp).await?;
         Ok(())
@@ -260,7 +293,9 @@ impl PveClient {
         let url = format!("{}{}", self.base_url, path);
         let builder = self.client.delete(&url);
         let builder = self.auth_headers(builder)?;
-        let resp = builder.send().await
+        let resp = builder
+            .send()
+            .await
             .map_err(|e| ProxmoxError::connection(format!("DELETE {path} failed: {e}")))?;
         let resp = Self::check_status(resp).await?;
         let text = resp.text().await.unwrap_or_default();
@@ -284,15 +319,23 @@ impl PveClient {
         let body = resp.text().await.unwrap_or_default();
 
         match status {
-            StatusCode::UNAUTHORIZED => Err(ProxmoxError::auth(format!("Session expired or invalid: {body}"))),
-            StatusCode::FORBIDDEN => Err(ProxmoxError::access_denied(format!("Access denied: {body}"))),
-            StatusCode::NOT_FOUND => Err(ProxmoxError::not_found(format!("Resource not found: {body}"))),
+            StatusCode::UNAUTHORIZED => Err(ProxmoxError::auth(format!(
+                "Session expired or invalid: {body}"
+            ))),
+            StatusCode::FORBIDDEN => Err(ProxmoxError::access_denied(format!(
+                "Access denied: {body}"
+            ))),
+            StatusCode::NOT_FOUND => Err(ProxmoxError::not_found(format!(
+                "Resource not found: {body}"
+            ))),
             _ => Err(ProxmoxError::api(code, format!("API error {code}: {body}"))),
         }
     }
 
     async fn parse_response<T: DeserializeOwned>(resp: Response) -> ProxmoxResult<T> {
-        let text = resp.text().await
+        let text = resp
+            .text()
+            .await
             .map_err(|e| ProxmoxError::parse(format!("Failed to read response body: {e}")))?;
 
         if text.is_empty() {
@@ -302,7 +345,10 @@ impl PveClient {
         }
 
         serde_json::from_str(&text).map_err(|e| {
-            ProxmoxError::parse(format!("JSON parse error: {e} — body: {}", &text[..text.len().min(500)]))
+            ProxmoxError::parse(format!(
+                "JSON parse error: {e} — body: {}",
+                &text[..text.len().min(500)]
+            ))
         })
     }
 }

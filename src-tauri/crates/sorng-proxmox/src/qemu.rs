@@ -13,7 +13,9 @@ pub struct QemuManager<'a> {
 }
 
 impl<'a> QemuManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     // ── List / Get ──────────────────────────────────────────────────
 
@@ -36,7 +38,11 @@ impl<'a> QemuManager<'a> {
     }
 
     /// Get pending config changes (not yet applied).
-    pub async fn get_pending_config(&self, node: &str, vmid: u64) -> ProxmoxResult<Vec<serde_json::Value>> {
+    pub async fn get_pending_config(
+        &self,
+        node: &str,
+        vmid: u64,
+    ) -> ProxmoxResult<Vec<serde_json::Value>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/pending");
         self.client.get(&path).await
     }
@@ -50,7 +56,10 @@ impl<'a> QemuManager<'a> {
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = Self::json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
@@ -62,13 +71,29 @@ impl<'a> QemuManager<'a> {
     pub async fn stop_vm(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
         self.stop(node, vmid).await
     }
-    pub async fn shutdown_vm(&self, node: &str, vmid: u64, force_stop: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn shutdown_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        force_stop: bool,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         self.shutdown(node, vmid, force_stop, timeout).await
     }
-    pub async fn reboot_vm(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn reboot_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         self.reboot(node, vmid, timeout).await
     }
-    pub async fn suspend_vm(&self, node: &str, vmid: u64, to_disk: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn suspend_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        to_disk: bool,
+    ) -> ProxmoxResult<Option<String>> {
         self.suspend(node, vmid, to_disk).await
     }
     pub async fn resume_vm(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
@@ -79,11 +104,21 @@ impl<'a> QemuManager<'a> {
     }
 
     /// Delete a QEMU VM.
-    pub async fn delete_vm(&self, node: &str, vmid: u64, purge: bool, destroy_unreferenced: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_vm(
+        &self,
+        node: &str,
+        vmid: u64,
+        purge: bool,
+        destroy_unreferenced: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let mut path = format!("/api2/json/nodes/{node}/qemu/{vmid}");
         let mut query_parts = Vec::new();
-        if purge { query_parts.push("purge=1"); }
-        if destroy_unreferenced { query_parts.push("destroy-unreferenced-disks=1"); }
+        if purge {
+            query_parts.push("purge=1");
+        }
+        if destroy_unreferenced {
+            query_parts.push("destroy-unreferenced-disks=1");
+        }
         if !query_parts.is_empty() {
             path.push('?');
             path.push_str(&query_parts.join("&"));
@@ -106,35 +141,61 @@ impl<'a> QemuManager<'a> {
     }
 
     /// Shutdown VM (ACPI, graceful).
-    pub async fn shutdown(&self, node: &str, vmid: u64, force_stop: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn shutdown(
+        &self,
+        node: &str,
+        vmid: u64,
+        force_stop: bool,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/status/shutdown");
         let mut params: Vec<(&str, String)> = Vec::new();
-        if force_stop { params.push(("forceStop", "1".to_string())); }
-        if let Some(t) = timeout { params.push(("timeout", t.to_string())); }
+        if force_stop {
+            params.push(("forceStop", "1".to_string()));
+        }
+        if let Some(t) = timeout {
+            params.push(("timeout", t.to_string()));
+        }
         let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         if borrowed.is_empty() {
             self.client.post_empty(&path).await
         } else {
-            self.client.post_form::<Option<String>>(&path, &borrowed).await
+            self.client
+                .post_form::<Option<String>>(&path, &borrowed)
+                .await
         }
     }
 
     /// Reboot VM (ACPI).
-    pub async fn reboot(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn reboot(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/status/reboot");
         if let Some(t) = timeout {
             let t_str = t.to_string();
-            self.client.post_form::<Option<String>>(&path, &[("timeout", t_str.as_str())]).await
+            self.client
+                .post_form::<Option<String>>(&path, &[("timeout", t_str.as_str())])
+                .await
         } else {
             self.client.post_empty(&path).await
         }
     }
 
     /// Suspend / pause VM.
-    pub async fn suspend(&self, node: &str, vmid: u64, to_disk: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn suspend(
+        &self,
+        node: &str,
+        vmid: u64,
+        to_disk: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/status/suspend");
         if to_disk {
-            self.client.post_form::<Option<String>>(&path, &[("todisk", "1")]).await
+            self.client
+                .post_form::<Option<String>>(&path, &[("todisk", "1")])
+                .await
         } else {
             self.client.post_empty(&path).await
         }
@@ -174,7 +235,9 @@ impl<'a> QemuManager<'a> {
         size: &str,
     ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/resize");
-        self.client.put_form(&path, &[("disk", disk), ("size", size)]).await
+        self.client
+            .put_form(&path, &[("disk", disk), ("size", size)])
+            .await
     }
 
     /// Move a disk to a different storage.
@@ -188,11 +251,12 @@ impl<'a> QemuManager<'a> {
     ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/move_disk");
         let del = if delete_original { "1" } else { "0" };
-        self.client.post_form::<Option<String>>(&path, &[
-            ("disk", disk),
-            ("storage", storage),
-            ("delete", del),
-        ]).await
+        self.client
+            .post_form::<Option<String>>(
+                &path,
+                &[("disk", disk), ("storage", storage), ("delete", del)],
+            )
+            .await
     }
 
     // ── Clone / Migrate ─────────────────────────────────────────────
@@ -208,7 +272,10 @@ impl<'a> QemuManager<'a> {
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = Self::json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
@@ -223,7 +290,10 @@ impl<'a> QemuManager<'a> {
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = Self::json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
@@ -234,7 +304,8 @@ impl<'a> QemuManager<'a> {
         vmid: u64,
         params: &DiskResizeParams,
     ) -> ProxmoxResult<()> {
-        self.resize_disk(node, vmid, &params.disk, &params.size).await
+        self.resize_disk(node, vmid, &params.disk, &params.size)
+            .await
     }
 
     /// Convert VM to template.
@@ -268,21 +339,13 @@ impl<'a> QemuManager<'a> {
     }
 
     /// Get guest agent OS information.
-    pub async fn agent_os_info(
-        &self,
-        node: &str,
-        vmid: u64,
-    ) -> ProxmoxResult<QemuAgentInfo> {
+    pub async fn agent_os_info(&self, node: &str, vmid: u64) -> ProxmoxResult<QemuAgentInfo> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/agent/get-osinfo");
         self.client.get(&path).await
     }
 
     /// Get guest agent filesystem info.
-    pub async fn agent_fsinfo(
-        &self,
-        node: &str,
-        vmid: u64,
-    ) -> ProxmoxResult<serde_json::Value> {
+    pub async fn agent_fsinfo(&self, node: &str, vmid: u64) -> ProxmoxResult<serde_json::Value> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/agent/get-fsinfo");
         self.client.get(&path).await
     }
@@ -297,7 +360,9 @@ impl<'a> QemuManager<'a> {
         feature: &str,
     ) -> ProxmoxResult<QemuFeatureCheck> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/feature");
-        self.client.get_with_params(&path, &[("feature", feature)]).await
+        self.client
+            .get_with_params(&path, &[("feature", feature)])
+            .await
     }
 
     /// Get next free VMID.
@@ -314,9 +379,15 @@ impl<'a> QemuManager<'a> {
             for (key, val) in map {
                 match val {
                     serde_json::Value::Null => {}
-                    serde_json::Value::String(s) => { params.push((key.clone(), s.clone())); }
-                    serde_json::Value::Number(n) => { params.push((key.clone(), n.to_string())); }
-                    serde_json::Value::Bool(b) => { params.push((key.clone(), if *b { "1".into() } else { "0".into() })); }
+                    serde_json::Value::String(s) => {
+                        params.push((key.clone(), s.clone()));
+                    }
+                    serde_json::Value::Number(n) => {
+                        params.push((key.clone(), n.to_string()));
+                    }
+                    serde_json::Value::Bool(b) => {
+                        params.push((key.clone(), if *b { "1".into() } else { "0".into() }));
+                    }
                     _ => {
                         if let Ok(s) = serde_json::to_string(val) {
                             params.push((key.clone(), s));

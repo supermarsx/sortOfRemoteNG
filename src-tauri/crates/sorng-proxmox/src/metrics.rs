@@ -9,7 +9,9 @@ pub struct MetricsManager<'a> {
 }
 
 impl<'a> MetricsManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// Get RRD data for a node.
     pub async fn node_rrd(
@@ -20,7 +22,9 @@ impl<'a> MetricsManager<'a> {
     ) -> ProxmoxResult<Vec<RrdDataPoint>> {
         let path = format!("/api2/json/nodes/{node}/rrddata");
         let mut params: Vec<(&str, &str)> = vec![("timeframe", timeframe)];
-        if let Some(cf_val) = cf { params.push(("cf", cf_val)); }
+        if let Some(cf_val) = cf {
+            params.push(("cf", cf_val));
+        }
         self.client.get_with_params(&path, &params).await
     }
 
@@ -34,7 +38,9 @@ impl<'a> MetricsManager<'a> {
     ) -> ProxmoxResult<Vec<RrdDataPoint>> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/rrddata");
         let mut params: Vec<(&str, &str)> = vec![("timeframe", timeframe)];
-        if let Some(cf_val) = cf { params.push(("cf", cf_val)); }
+        if let Some(cf_val) = cf {
+            params.push(("cf", cf_val));
+        }
         self.client.get_with_params(&path, &params).await
     }
 
@@ -48,7 +54,9 @@ impl<'a> MetricsManager<'a> {
     ) -> ProxmoxResult<Vec<RrdDataPoint>> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/rrddata");
         let mut params: Vec<(&str, &str)> = vec![("timeframe", timeframe)];
-        if let Some(cf_val) = cf { params.push(("cf", cf_val)); }
+        if let Some(cf_val) = cf {
+            params.push(("cf", cf_val));
+        }
         self.client.get_with_params(&path, &params).await
     }
 
@@ -62,7 +70,9 @@ impl<'a> MetricsManager<'a> {
     ) -> ProxmoxResult<Vec<RrdDataPoint>> {
         let path = format!("/api2/json/nodes/{node}/storage/{storage}/rrddata");
         let mut params: Vec<(&str, &str)> = vec![("timeframe", timeframe)];
-        if let Some(cf_val) = cf { params.push(("cf", cf_val)); }
+        if let Some(cf_val) = cf {
+            params.push(("cf", cf_val));
+        }
         self.client.get_with_params(&path, &params).await
     }
 }

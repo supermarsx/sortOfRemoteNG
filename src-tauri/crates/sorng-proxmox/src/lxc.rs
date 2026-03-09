@@ -10,7 +10,9 @@ pub struct LxcManager<'a> {
 }
 
 impl<'a> LxcManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// List all LXC containers on a node.
     pub async fn list_containers(&self, node: &str) -> ProxmoxResult<Vec<LxcSummary>> {
@@ -31,12 +33,19 @@ impl<'a> LxcManager<'a> {
     }
 
     /// Create a new LXC container. Returns UPID.
-    pub async fn create_container(&self, node: &str, params: &LxcCreateParams) -> ProxmoxResult<String> {
+    pub async fn create_container(
+        &self,
+        node: &str,
+        params: &LxcCreateParams,
+    ) -> ProxmoxResult<String> {
         let path = format!("/api2/json/nodes/{node}/lxc");
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
@@ -51,21 +60,42 @@ impl<'a> LxcManager<'a> {
     }
 
     /// Shutdown a container (alias).
-    pub async fn shutdown_container(&self, node: &str, vmid: u64, force_stop: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn shutdown_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        force_stop: bool,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         self.shutdown(node, vmid, force_stop, timeout).await
     }
 
     /// Reboot a container (alias).
-    pub async fn reboot_container(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn reboot_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         self.reboot(node, vmid, timeout).await
     }
 
     /// Delete an LXC container.
-    pub async fn delete_container(&self, node: &str, vmid: u64, purge: bool, force: bool) -> ProxmoxResult<Option<String>> {
+    pub async fn delete_container(
+        &self,
+        node: &str,
+        vmid: u64,
+        purge: bool,
+        force: bool,
+    ) -> ProxmoxResult<Option<String>> {
         let mut path = format!("/api2/json/nodes/{node}/lxc/{vmid}");
         let mut parts = Vec::new();
-        if purge { parts.push("purge=1"); }
-        if force { parts.push("force=1"); }
+        if purge {
+            parts.push("purge=1");
+        }
+        if force {
+            parts.push("force=1");
+        }
         if !parts.is_empty() {
             path.push('?');
             path.push_str(&parts.join("&"));
@@ -85,24 +115,43 @@ impl<'a> LxcManager<'a> {
         self.client.post_empty(&path).await
     }
 
-    pub async fn shutdown(&self, node: &str, vmid: u64, force_stop: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn shutdown(
+        &self,
+        node: &str,
+        vmid: u64,
+        force_stop: bool,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/status/shutdown");
         let mut params: Vec<(&str, String)> = Vec::new();
-        if force_stop { params.push(("forceStop", "1".to_string())); }
-        if let Some(t) = timeout { params.push(("timeout", t.to_string())); }
+        if force_stop {
+            params.push(("forceStop", "1".to_string()));
+        }
+        if let Some(t) = timeout {
+            params.push(("timeout", t.to_string()));
+        }
         let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         if borrowed.is_empty() {
             self.client.post_empty(&path).await
         } else {
-            self.client.post_form::<Option<String>>(&path, &borrowed).await
+            self.client
+                .post_form::<Option<String>>(&path, &borrowed)
+                .await
         }
     }
 
-    pub async fn reboot(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+    pub async fn reboot(
+        &self,
+        node: &str,
+        vmid: u64,
+        timeout: Option<u64>,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/status/reboot");
         if let Some(t) = timeout {
             let t_str = t.to_string();
-            self.client.post_form::<Option<String>>(&path, &[("timeout", t_str.as_str())]).await
+            self.client
+                .post_form::<Option<String>>(&path, &[("timeout", t_str.as_str())])
+                .await
         } else {
             self.client.post_empty(&path).await
         }
@@ -138,7 +187,9 @@ impl<'a> LxcManager<'a> {
         size: &str,
     ) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/resize");
-        self.client.put_form(&path, &[("disk", disk), ("size", size)]).await
+        self.client
+            .put_form(&path, &[("disk", disk), ("size", size)])
+            .await
     }
 
     pub async fn move_volume(
@@ -151,11 +202,12 @@ impl<'a> LxcManager<'a> {
     ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/lxc/{vmid}/move_volume");
         let del = if delete_original { "1" } else { "0" };
-        self.client.post_form::<Option<String>>(&path, &[
-            ("volume", volume),
-            ("storage", storage),
-            ("delete", del),
-        ]).await
+        self.client
+            .post_form::<Option<String>>(
+                &path,
+                &[("volume", volume), ("storage", storage), ("delete", del)],
+            )
+            .await
     }
 
     // ── Clone / Migrate ─────────────────────────────────────────────
@@ -170,7 +222,10 @@ impl<'a> LxcManager<'a> {
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
@@ -184,7 +239,10 @@ impl<'a> LxcManager<'a> {
         let json = serde_json::to_value(params)
             .map_err(|e| crate::error::ProxmoxError::parse(format!("Serialization error: {e}")))?;
         let form_params = json_to_form_params(&json);
-        let borrowed: Vec<(&str, &str)> = form_params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = form_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
@@ -203,9 +261,15 @@ pub fn json_to_form_params(value: &serde_json::Value) -> Vec<(String, String)> {
         for (key, val) in map {
             match val {
                 serde_json::Value::Null => {}
-                serde_json::Value::String(s) => { params.push((key.clone(), s.clone())); }
-                serde_json::Value::Number(n) => { params.push((key.clone(), n.to_string())); }
-                serde_json::Value::Bool(b) => { params.push((key.clone(), if *b { "1".into() } else { "0".into() })); }
+                serde_json::Value::String(s) => {
+                    params.push((key.clone(), s.clone()));
+                }
+                serde_json::Value::Number(n) => {
+                    params.push((key.clone(), n.to_string()));
+                }
+                serde_json::Value::Bool(b) => {
+                    params.push((key.clone(), if *b { "1".into() } else { "0".into() }));
+                }
                 _ => {
                     if let Ok(s) = serde_json::to_string(val) {
                         params.push((key.clone(), s));

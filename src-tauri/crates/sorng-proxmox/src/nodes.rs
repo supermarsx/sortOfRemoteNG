@@ -12,7 +12,9 @@ pub struct NodeManager<'a> {
 }
 
 impl<'a> NodeManager<'a> {
-    pub fn new(client: &'a PveClient) -> Self { Self { client } }
+    pub fn new(client: &'a PveClient) -> Self {
+        Self { client }
+    }
 
     /// List all nodes in the cluster.
     pub async fn list_nodes(&self) -> ProxmoxResult<Vec<NodeSummary>> {
@@ -44,7 +46,11 @@ impl<'a> NodeManager<'a> {
     }
 
     /// Restart a service on a node.
-    pub async fn restart_service(&self, node: &str, service: &str) -> ProxmoxResult<Option<String>> {
+    pub async fn restart_service(
+        &self,
+        node: &str,
+        service: &str,
+    ) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/services/{service}/restart");
         self.client.post_empty(&path).await
     }
@@ -64,7 +70,9 @@ impl<'a> NodeManager<'a> {
     /// Update DNS configuration.
     pub async fn update_dns(&self, node: &str, search: &str, dns1: &str) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/dns");
-        self.client.put_form(&path, &[("search", search), ("dns1", dns1)]).await
+        self.client
+            .put_form(&path, &[("search", search), ("dns1", dns1)])
+            .await
     }
 
     /// Get time/timezone info.
@@ -90,11 +98,21 @@ impl<'a> NodeManager<'a> {
         service: Option<&str>,
     ) -> ProxmoxResult<Vec<SyslogEntry>> {
         let mut params: Vec<(&str, String)> = Vec::new();
-        if let Some(s) = start { params.push(("start", s.to_string())); }
-        if let Some(l) = limit { params.push(("limit", l.to_string())); }
-        if let Some(s) = since { params.push(("since", s.to_string())); }
-        if let Some(u) = until { params.push(("until", u.to_string())); }
-        if let Some(svc) = service { params.push(("service", svc.to_string())); }
+        if let Some(s) = start {
+            params.push(("start", s.to_string()));
+        }
+        if let Some(l) = limit {
+            params.push(("limit", l.to_string()));
+        }
+        if let Some(s) = since {
+            params.push(("since", s.to_string()));
+        }
+        if let Some(u) = until {
+            params.push(("until", u.to_string()));
+        }
+        if let Some(svc) = service {
+            params.push(("service", svc.to_string()));
+        }
 
         let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let path = format!("/api2/json/nodes/{node}/syslog");
@@ -122,6 +140,8 @@ impl<'a> NodeManager<'a> {
     /// Shutdown a node.
     pub async fn shutdown_node(&self, node: &str) -> ProxmoxResult<Option<String>> {
         let path = format!("/api2/json/nodes/{node}/status");
-        self.client.post_form(&path, &[("command", "shutdown")]).await
+        self.client
+            .post_form(&path, &[("command", "shutdown")])
+            .await
     }
 }
