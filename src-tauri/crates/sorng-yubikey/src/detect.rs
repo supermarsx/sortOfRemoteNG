@@ -194,12 +194,14 @@ pub fn parse_ykman_info(output: &str) -> YubiKeyDevice {
                     }
                 }
                 "pin complexity" => {
-                    device.pin_complexity =
-                        value == "1" || value.to_lowercase() == "true" || value.to_lowercase() == "enabled";
+                    device.pin_complexity = value == "1"
+                        || value.to_lowercase() == "true"
+                        || value.to_lowercase() == "enabled";
                 }
                 "fips approved" | "fips" => {
-                    device.is_fips =
-                        value == "1" || value.to_lowercase() == "true" || value.to_lowercase() == "yes";
+                    device.is_fips = value == "1"
+                        || value.to_lowercase() == "true"
+                        || value.to_lowercase() == "yes";
                 }
                 "configuration locked" | "config locked" => {
                     device.config_locked = value.to_lowercase() == "true"

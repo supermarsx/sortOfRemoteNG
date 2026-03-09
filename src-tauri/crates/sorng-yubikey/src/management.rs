@@ -28,10 +28,7 @@ pub async fn factory_reset_all(
     let oath = crate::oath::reset_oath(ykman, serial).await;
     results.insert("OATH".to_string(), oath);
 
-    info!(
-        "Factory reset all applets for serial {:?}",
-        serial
-    );
+    info!("Factory reset all applets for serial {:?}", serial);
 
     Ok(results)
 }
@@ -130,10 +127,7 @@ pub async fn get_diagnostics(
 }
 
 /// Export a comprehensive JSON device report.
-pub async fn export_device_report(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<String, String> {
+pub async fn export_device_report(ykman: &str, serial: Option<u32>) -> Result<String, String> {
     let diag = get_diagnostics(ykman, serial).await?;
 
     // Also include PIV certificates

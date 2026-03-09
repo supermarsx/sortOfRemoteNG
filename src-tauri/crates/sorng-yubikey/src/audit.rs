@@ -220,27 +220,9 @@ mod tests {
     #[test]
     fn test_filter_by_action() {
         let mut logger = YubiKeyAuditLogger::default_logger();
-        logger.log_event(
-            YubiKeyAuditAction::PivSign,
-            None,
-            "sign1",
-            true,
-            None,
-        );
-        logger.log_event(
-            YubiKeyAuditAction::OathCalculate,
-            None,
-            "calc1",
-            true,
-            None,
-        );
-        logger.log_event(
-            YubiKeyAuditAction::PivSign,
-            None,
-            "sign2",
-            true,
-            None,
-        );
+        logger.log_event(YubiKeyAuditAction::PivSign, None, "sign1", true, None);
+        logger.log_event(YubiKeyAuditAction::OathCalculate, None, "calc1", true, None);
+        logger.log_event(YubiKeyAuditAction::PivSign, None, "sign2", true, None);
 
         let sign_entries = logger.filter_by_action(&YubiKeyAuditAction::PivSign);
         assert_eq!(sign_entries.len(), 2);
@@ -300,13 +282,7 @@ mod tests {
     #[test]
     fn test_clear() {
         let mut logger = YubiKeyAuditLogger::default_logger();
-        logger.log_event(
-            YubiKeyAuditAction::FactoryReset,
-            None,
-            "reset",
-            true,
-            None,
-        );
+        logger.log_event(YubiKeyAuditAction::FactoryReset, None, "reset", true, None);
         assert_eq!(logger.entry_count(), 1);
 
         logger.clear();

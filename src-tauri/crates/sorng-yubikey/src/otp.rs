@@ -183,26 +183,14 @@ pub async fn configure_hotp(
 }
 
 /// Delete (clear) an OTP slot.
-pub async fn delete_slot(
-    ykman: &str,
-    serial: Option<u32>,
-    slot: &OtpSlot,
-) -> Result<bool, String> {
-    run_ykman(
-        ykman,
-        serial,
-        &["otp", "delete", slot.ykman_arg(), "-f"],
-    )
-    .await?;
+pub async fn delete_slot(ykman: &str, serial: Option<u32>, slot: &OtpSlot) -> Result<bool, String> {
+    run_ykman(ykman, serial, &["otp", "delete", slot.ykman_arg(), "-f"]).await?;
     info!("Deleted OTP slot {}", slot);
     Ok(true)
 }
 
 /// Swap the two OTP slots.
-pub async fn swap_slots(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<bool, String> {
+pub async fn swap_slots(ykman: &str, serial: Option<u32>) -> Result<bool, String> {
     run_ykman(ykman, serial, &["otp", "swap", "-f"]).await?;
     info!("Swapped OTP slots");
     Ok(true)

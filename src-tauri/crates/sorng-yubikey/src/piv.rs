@@ -73,9 +73,11 @@ pub async fn list_certificates(
                 .unwrap_or("")
                 .trim_end_matches(':');
             if let Some(slot_id) = PivSlot::from_hex(hex) {
-                let mut info = PivSlotInfo::default();
-                info.slot = slot_id;
-                info.has_certificate = true;
+                let info = PivSlotInfo {
+                    slot: slot_id,
+                    has_certificate: true,
+                    ..Default::default()
+                };
                 current = Some(info);
             }
         } else if let Some(ref mut info) = current {
@@ -163,8 +165,10 @@ pub async fn get_slot_info(
     )
     .await;
 
-    let mut info = PivSlotInfo::default();
-    info.slot = slot.clone();
+    let mut info = PivSlotInfo {
+        slot: slot.clone(),
+        ..Default::default()
+    };
 
     match output {
         Ok(pem) => {
@@ -231,13 +235,15 @@ pub async fn generate_key(
         slot.hex_id()
     );
 
-    let mut info = PivSlotInfo::default();
-    info.slot = slot.clone();
-    info.algorithm = algorithm.clone();
-    info.has_key = true;
-    info.pin_policy = pin_policy.clone();
-    info.touch_policy = touch_policy.clone();
-    info.origin = KeyOrigin::Generated;
+    let info = PivSlotInfo {
+        slot: slot.clone(),
+        algorithm: algorithm.clone(),
+        has_key: true,
+        pin_policy: pin_policy.clone(),
+        touch_policy: touch_policy.clone(),
+        origin: KeyOrigin::Generated,
+        ..Default::default()
+    };
 
     debug!("generate_key output: {}", output);
 
@@ -434,11 +440,7 @@ pub async fn delete_certificate(
 }
 
 /// Delete the key in a PIV slot (requires reset or overwrite).
-pub async fn delete_key(
-    ykman: &str,
-    serial: Option<u32>,
-    slot: &PivSlot,
-) -> Result<bool, String> {
+pub async fn delete_key(ykman: &str, serial: Option<u32>, slot: &PivSlot) -> Result<bool, String> {
     // ykman doesn't have a direct "delete key" — we delete cert and note
     // the slot is unusable until re-generated. Some firmware supports
     // `piv keys delete`.
@@ -481,17 +483,16 @@ pub async fn attest(
     let attestation_pem = extract_pem(&output);
 
     // Also get the device attestation certificate (f9)
-    let device_cert_output = run_ykman(
-        ykman,
-        serial,
-        &["piv", "certificates", "export", "f9", "-"],
-    )
-    .await
-    .unwrap_or_default();
+    let device_cert_output =
+        run_ykman(ykman, serial, &["piv", "certificates", "export", "f9", "-"])
+            .await
+            .unwrap_or_default();
     let device_pem = extract_pem(&device_cert_output);
 
     // Get device info for serial / firmware
-    let info_output = run_ykman(ykman, serial, &["info"]).await.unwrap_or_default();
+    let info_output = run_ykman(ykman, serial, &["info"])
+        .await
+        .unwrap_or_default();
     let dev = crate::detect::parse_ykman_info(&info_output);
 
     Ok(AttestationResult {
@@ -537,15 +538,7 @@ pub async fn change_puk(
     run_ykman(
         ykman,
         serial,
-        &[
-            "piv",
-            "access",
-            "change-puk",
-            "-p",
-            old_puk,
-            "-n",
-            new_puk,
-        ],
+        &["piv", "access", "change-puk", "-p", old_puk, "-n", new_puk],
     )
     .await?;
     info!("PIV PUK changed");
@@ -592,15 +585,7 @@ pub async fn unblock_pin(
     run_ykman(
         ykman,
         serial,
-        &[
-            "piv",
-            "access",
-            "unblock-pin",
-            "-p",
-            puk,
-            "-n",
-            new_pin,
-        ],
+        &["piv", "access", "unblock-pin", "-p", puk, "-n", new_pin],
     )
     .await?;
     info!("PIV PIN unblocked");
@@ -608,10 +593,7 @@ pub async fn unblock_pin(
 }
 
 /// Get PIN/PUK status (attempts remaining, defaults).
-pub async fn get_pin_status(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<PivPinStatus, String> {
+pub async fn get_pin_status(ykman: &str, serial: Option<u32>) -> Result<PivPinStatus, String> {
     let output = run_ykman(ykman, serial, &["piv", "info"]).await?;
 
     let mut status = PivPinStatus::default();
@@ -619,12 +601,18 @@ pub async fn get_pin_status(
     for line in output.lines() {
         let trimmed = line.trim().to_lowercase();
         if trimmed.contains("pin tries remaining") || trimmed.contains("pin attempts") {
-            if let Some(num) = trimmed.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
+            if let Some(num) = trimmed
+                .split_whitespace()
+                .find_map(|w| w.parse::<u32>().ok())
+            {
                 status.pin_attempts_remaining = num;
             }
         }
         if trimmed.contains("puk tries remaining") || trimmed.contains("puk attempts") {
-            if let Some(num) = trimmed.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
+            if let Some(num) = trimmed
+                .split_whitespace()
+                .find_map(|w| w.parse::<u32>().ok())
+            {
                 status.puk_attempts_remaining = num;
             }
         }

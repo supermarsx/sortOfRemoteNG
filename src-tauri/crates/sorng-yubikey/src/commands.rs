@@ -11,7 +11,8 @@ use tauri::State;
 
 /// Decode a base64-encoded string to bytes.
 fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
-    B64.decode(s).map_err(|e| format!("base64 decode error: {}", e))
+    B64.decode(s)
+        .map_err(|e| format!("base64 decode error: {}", e))
 }
 
 /// Encode bytes to base64.
@@ -89,8 +90,7 @@ pub async fn yk_piv_get_slot(
     serial: Option<u32>,
     slot: String,
 ) -> CmdResult<PivSlotInfo> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let svc = state.lock().await;
     svc.piv_get_slot_info(serial, &piv_slot).await
 }
@@ -105,8 +105,7 @@ pub async fn yk_piv_generate_key(
     pin_policy: String,
     touch_policy: String,
 ) -> CmdResult<PivSlotInfo> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let algorithm = PivAlgorithm::from_str_label(&algo);
     let pp = PinPolicy::from_str_label(&pin_policy);
     let tp = TouchPolicy::from_str_label(&touch_policy);
@@ -125,8 +124,7 @@ pub async fn yk_piv_self_sign_cert(
     subject: String,
     valid_days: u32,
 ) -> CmdResult<PivCertificate> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
     svc.piv_self_sign_cert(serial, &piv_slot, &subject, valid_days)
         .await
@@ -140,8 +138,7 @@ pub async fn yk_piv_generate_csr(
     slot: String,
     params: CsrParams,
 ) -> CmdResult<String> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let svc = state.lock().await;
     svc.piv_generate_csr(serial, &piv_slot, &params).await
 }
@@ -154,8 +151,7 @@ pub async fn yk_piv_import_cert(
     slot: String,
     pem: String,
 ) -> CmdResult<bool> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
     svc.piv_import_cert(serial, &piv_slot, &pem).await
 }
@@ -170,8 +166,7 @@ pub async fn yk_piv_import_key(
     pin_policy: String,
     touch_policy: String,
 ) -> CmdResult<bool> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let pp = PinPolicy::from_str_label(&pin_policy);
     let tp = TouchPolicy::from_str_label(&touch_policy);
     let mut svc = state.lock().await;
@@ -186,8 +181,7 @@ pub async fn yk_piv_export_cert(
     serial: Option<u32>,
     slot: String,
 ) -> CmdResult<String> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let svc = state.lock().await;
     svc.piv_export_cert(serial, &piv_slot).await
 }
@@ -199,8 +193,7 @@ pub async fn yk_piv_delete_cert(
     serial: Option<u32>,
     slot: String,
 ) -> CmdResult<bool> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
     svc.piv_delete_cert(serial, &piv_slot).await
 }
@@ -212,8 +205,7 @@ pub async fn yk_piv_delete_key(
     serial: Option<u32>,
     slot: String,
 ) -> CmdResult<bool> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let mut svc = state.lock().await;
     svc.piv_delete_key(serial, &piv_slot).await
 }
@@ -225,8 +217,7 @@ pub async fn yk_piv_attest(
     serial: Option<u32>,
     slot: String,
 ) -> CmdResult<AttestationResult> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let svc = state.lock().await;
     svc.piv_attest(serial, &piv_slot).await
 }
@@ -312,8 +303,7 @@ pub async fn yk_piv_sign(
     data: String,
     algo: String,
 ) -> CmdResult<String> {
-    let piv_slot = PivSlot::from_hex(&slot)
-        .ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
+    let piv_slot = PivSlot::from_hex(&slot).ok_or_else(|| format!("Invalid PIV slot: {}", slot))?;
     let bytes = b64_decode(&data)?;
     let mut svc = state.lock().await;
     let sig = svc.piv_sign(serial, &piv_slot, &bytes, &algo).await?;
@@ -439,6 +429,7 @@ pub async fn yk_oath_list(
 }
 
 /// Add an OATH account.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn yk_oath_add(
     state: State<'_, YubiKeyServiceState>,
@@ -455,8 +446,10 @@ pub async fn yk_oath_add(
     let ot = OathType::from_str_label(&oath_type);
     let oa = OathAlgorithm::from_str_label(&algo);
     let mut svc = state.lock().await;
-    svc.oath_add(serial, &issuer, &name, &secret, &ot, &oa, digits, period, touch)
-        .await
+    svc.oath_add(
+        serial, &issuer, &name, &secret, &ot, &oa, digits, period, touch,
+    )
+    .await
 }
 
 /// Delete an OATH account.
@@ -678,9 +671,7 @@ pub async fn yk_config_unlock(
 
 /// Get the application-level YubiKey config.
 #[tauri::command]
-pub async fn yk_get_config(
-    state: State<'_, YubiKeyServiceState>,
-) -> CmdResult<YubiKeyConfig> {
+pub async fn yk_get_config(state: State<'_, YubiKeyServiceState>) -> CmdResult<YubiKeyConfig> {
     let svc = state.lock().await;
     Ok(svc.get_config())
 }
@@ -712,18 +703,14 @@ pub async fn yk_audit_log(
 
 /// Export audit log as JSON.
 #[tauri::command]
-pub async fn yk_audit_export(
-    state: State<'_, YubiKeyServiceState>,
-) -> CmdResult<String> {
+pub async fn yk_audit_export(state: State<'_, YubiKeyServiceState>) -> CmdResult<String> {
     let svc = state.lock().await;
     svc.audit_export()
 }
 
 /// Clear the audit log.
 #[tauri::command]
-pub async fn yk_audit_clear(
-    state: State<'_, YubiKeyServiceState>,
-) -> CmdResult<()> {
+pub async fn yk_audit_clear(state: State<'_, YubiKeyServiceState>) -> CmdResult<()> {
     let mut svc = state.lock().await;
     svc.audit_clear();
     Ok(())

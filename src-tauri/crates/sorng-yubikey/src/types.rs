@@ -45,8 +45,7 @@ impl FormFactor {
             Self::UsbANano
         } else if is_usb_c {
             Self::UsbCKeychain
-        } else if lower.contains("usb-a") || lower.contains("keychain") || lower.contains("usb a")
-        {
+        } else if lower.contains("usb-a") || lower.contains("keychain") || lower.contains("usb a") {
             Self::UsbAKeychain
         } else {
             Self::Unknown
@@ -335,8 +334,7 @@ impl PivAlgorithm {
             Self::Rsa3072
         } else if lower.contains("rsa4096") || lower.contains("rsa 4096") {
             Self::Rsa4096
-        } else if lower.contains("p384") || lower.contains("secp384") || lower.contains("eccp384")
-        {
+        } else if lower.contains("p384") || lower.contains("secp384") || lower.contains("eccp384") {
             Self::EcP384
         } else if lower.contains("p256")
             || lower.contains("secp256")
@@ -1110,10 +1108,22 @@ mod tests {
 
     #[test]
     fn test_piv_algorithm_parsing() {
-        assert_eq!(PivAlgorithm::from_str_label("RSA2048"), PivAlgorithm::Rsa2048);
-        assert_eq!(PivAlgorithm::from_str_label("ECCP256"), PivAlgorithm::EcP256);
-        assert_eq!(PivAlgorithm::from_str_label("ECCP384"), PivAlgorithm::EcP384);
-        assert_eq!(PivAlgorithm::from_str_label("Ed25519"), PivAlgorithm::Ed25519);
+        assert_eq!(
+            PivAlgorithm::from_str_label("RSA2048"),
+            PivAlgorithm::Rsa2048
+        );
+        assert_eq!(
+            PivAlgorithm::from_str_label("ECCP256"),
+            PivAlgorithm::EcP256
+        );
+        assert_eq!(
+            PivAlgorithm::from_str_label("ECCP384"),
+            PivAlgorithm::EcP384
+        );
+        assert_eq!(
+            PivAlgorithm::from_str_label("Ed25519"),
+            PivAlgorithm::Ed25519
+        );
     }
 
     #[test]
@@ -1172,8 +1182,14 @@ mod tests {
     #[test]
     fn test_oath_algorithm_parsing() {
         assert_eq!(OathAlgorithm::from_str_label("SHA1"), OathAlgorithm::Sha1);
-        assert_eq!(OathAlgorithm::from_str_label("SHA256"), OathAlgorithm::Sha256);
-        assert_eq!(OathAlgorithm::from_str_label("sha512"), OathAlgorithm::Sha512);
+        assert_eq!(
+            OathAlgorithm::from_str_label("SHA256"),
+            OathAlgorithm::Sha256
+        );
+        assert_eq!(
+            OathAlgorithm::from_str_label("sha512"),
+            OathAlgorithm::Sha512
+        );
     }
 
     #[test]

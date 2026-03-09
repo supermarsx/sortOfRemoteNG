@@ -42,7 +42,7 @@ pub async fn set_mode(
         .collect::<Vec<_>>()
         .join("+");
 
-    let _args = vec!["config", "usb", "--enable-all", "--force"];
+    let _args = ["config", "usb", "--enable-all", "--force"];
 
     // Use a dedicated call for USB
     if !usb_str.is_empty() {

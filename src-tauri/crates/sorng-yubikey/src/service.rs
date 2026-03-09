@@ -22,6 +22,12 @@ pub struct YubiKeyService {
     pub detected_devices: Vec<YubiKeyDevice>,
 }
 
+impl Default for YubiKeyService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl YubiKeyService {
     /// Create a new YubiKey service.
     pub fn new() -> Self {
@@ -79,7 +85,10 @@ impl YubiKeyService {
             self.audit.log_event(
                 YubiKeyAuditAction::DeviceDetected,
                 Some(dev.serial),
-                &format!("Detected: {} (fw {})", dev.device_name, dev.firmware_version),
+                &format!(
+                    "Detected: {} (fw {})",
+                    dev.device_name, dev.firmware_version
+                ),
                 true,
                 None,
             );
@@ -89,19 +98,13 @@ impl YubiKeyService {
     }
 
     /// Get info for a specific device.
-    pub async fn get_device_info(
-        &self,
-        serial: Option<u32>,
-    ) -> Result<YubiKeyDevice, String> {
+    pub async fn get_device_info(&self, serial: Option<u32>) -> Result<YubiKeyDevice, String> {
         let ykman = self.require_ykman()?;
         crate::detect::get_device_info(ykman, serial).await
     }
 
     /// Wait for a device to be inserted.
-    pub async fn wait_for_device(
-        &self,
-        timeout_ms: u64,
-    ) -> Result<Option<YubiKeyDevice>, String> {
+    pub async fn wait_for_device(&self, timeout_ms: u64) -> Result<Option<YubiKeyDevice>, String> {
         let ykman = self.require_ykman()?;
         Ok(crate::detect::wait_for_device(ykman, timeout_ms).await)
     }
@@ -288,8 +291,7 @@ impl YubiKeyService {
         protect: bool,
     ) -> Result<bool, String> {
         let ykman = self.require_ykman()?.to_string();
-        crate::piv::change_management_key(&ykman, serial, old_key, new_key, key_type, protect)
-            .await
+        crate::piv::change_management_key(&ykman, serial, old_key, new_key, key_type, protect).await
     }
 
     pub async fn piv_unblock_pin(
@@ -302,18 +304,12 @@ impl YubiKeyService {
         crate::piv::unblock_pin(&ykman, serial, puk, new_pin).await
     }
 
-    pub async fn piv_get_pin_status(
-        &self,
-        serial: Option<u32>,
-    ) -> Result<PivPinStatus, String> {
+    pub async fn piv_get_pin_status(&self, serial: Option<u32>) -> Result<PivPinStatus, String> {
         let ykman = self.require_ykman()?;
         crate::piv::get_pin_status(ykman, serial).await
     }
 
-    pub async fn piv_reset(
-        &mut self,
-        serial: Option<u32>,
-    ) -> Result<bool, String> {
+    pub async fn piv_reset(&mut self, serial: Option<u32>) -> Result<bool, String> {
         let ykman = self.require_ykman()?.to_string();
         let result = crate::piv::reset_piv(&ykman, serial).await;
         self.audit.log_event(
@@ -340,17 +336,14 @@ impl YubiKeyService {
             serial,
             &format!("Sign with slot {} ({})", slot, algorithm),
             result.is_ok(),
-            result.as_ref().err().map(|e| e.clone()),
+            result.as_ref().err().cloned(),
         );
         result
     }
 
     // ── FIDO2 Delegates ─────────────────────────────────────────────
 
-    pub async fn fido2_info(
-        &self,
-        serial: Option<u32>,
-    ) -> Result<Fido2DeviceInfo, String> {
+    pub async fn fido2_info(&self, serial: Option<u32>) -> Result<Fido2DeviceInfo, String> {
         let ykman = self.require_ykman()?;
         crate::fido2::get_fido2_info(ykman, serial).await
     }
@@ -417,18 +410,12 @@ impl YubiKeyService {
         result
     }
 
-    pub async fn fido2_pin_status(
-        &self,
-        serial: Option<u32>,
-    ) -> Result<Fido2PinStatus, String> {
+    pub async fn fido2_pin_status(&self, serial: Option<u32>) -> Result<Fido2PinStatus, String> {
         let ykman = self.require_ykman()?;
         crate::fido2::get_pin_status(ykman, serial).await
     }
 
-    pub async fn fido2_reset(
-        &mut self,
-        serial: Option<u32>,
-    ) -> Result<bool, String> {
+    pub async fn fido2_reset(&mut self, serial: Option<u32>) -> Result<bool, String> {
         let ykman = self.require_ykman()?.to_string();
         let result = crate::fido2::reset_fido(&ykman, serial).await;
         self.audit.log_event(
@@ -462,10 +449,7 @@ impl YubiKeyService {
 
     // ── OATH Delegates ──────────────────────────────────────────────
 
-    pub async fn oath_list(
-        &self,
-        serial: Option<u32>,
-    ) -> Result<Vec<OathAccount>, String> {
+    pub async fn oath_list(&self, serial: Option<u32>) -> Result<Vec<OathAccount>, String> {
         let ykman = self.require_ykman()?;
         crate::oath::list_accounts(ykman, serial).await
     }
@@ -568,10 +552,7 @@ impl YubiKeyService {
         result
     }
 
-    pub async fn oath_reset(
-        &mut self,
-        serial: Option<u32>,
-    ) -> Result<bool, String> {
+    pub async fn oath_reset(&mut self, serial: Option<u32>) -> Result<bool, String> {
         let ykman = self.require_ykman()?.to_string();
         let result = crate::oath::reset_oath(&ykman, serial).await;
         self.audit.log_event(
@@ -603,10 +584,9 @@ impl YubiKeyService {
         key: Option<&str>,
     ) -> Result<bool, String> {
         let ykman = self.require_ykman()?.to_string();
-        let result = crate::otp::configure_yubico_otp(
-            &ykman, serial, slot, public_id, private_id, key,
-        )
-        .await;
+        let result =
+            crate::otp::configure_yubico_otp(&ykman, serial, slot, public_id, private_id, key)
+                .await;
         self.audit.log_event(
             YubiKeyAuditAction::OtpConfigure,
             serial,
@@ -693,10 +673,7 @@ impl YubiKeyService {
         result
     }
 
-    pub async fn otp_swap(
-        &mut self,
-        serial: Option<u32>,
-    ) -> Result<bool, String> {
+    pub async fn otp_swap(&mut self, serial: Option<u32>) -> Result<bool, String> {
         let ykman = self.require_ykman()?.to_string();
         let result = crate::otp::swap_slots(&ykman, serial).await;
         self.audit.log_event(
@@ -721,11 +698,7 @@ impl YubiKeyService {
         crate::config::set_mode(ykman, serial, usb, nfc).await
     }
 
-    pub async fn config_lock(
-        &self,
-        serial: Option<u32>,
-        lock_code: &str,
-    ) -> Result<bool, String> {
+    pub async fn config_lock(&self, serial: Option<u32>, lock_code: &str) -> Result<bool, String> {
         let ykman = self.require_ykman()?;
         crate::config::lock_config(ykman, serial, lock_code).await
     }
@@ -780,10 +753,7 @@ impl YubiKeyService {
         crate::management::get_diagnostics(ykman, serial).await
     }
 
-    pub async fn export_report(
-        &self,
-        serial: Option<u32>,
-    ) -> Result<String, String> {
+    pub async fn export_report(&self, serial: Option<u32>) -> Result<String, String> {
         let ykman = self.require_ykman()?;
         crate::management::export_device_report(ykman, serial).await
     }

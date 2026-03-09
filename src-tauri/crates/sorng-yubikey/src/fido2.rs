@@ -10,10 +10,7 @@ use log::info;
 // ── Device Info ─────────────────────────────────────────────────────
 
 /// Get FIDO2 device info (CTAP2 GetInfo).
-pub async fn get_fido2_info(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<Fido2DeviceInfo, String> {
+pub async fn get_fido2_info(ykman: &str, serial: Option<u32>) -> Result<Fido2DeviceInfo, String> {
     let output = run_ykman(ykman, serial, &["fido", "info"]).await?;
     Ok(parse_fido2_info(&output))
 }
@@ -132,18 +129,14 @@ fn parse_credentials(output: &str) -> Vec<Fido2Credential> {
                     "rp id" | "relying party" => cred.rp_id = v.to_string(),
                     "rp name" => cred.rp_name = v.to_string(),
                     "user name" | "username" | "user" => cred.user_name = v.to_string(),
-                    "user display name" | "display name" => {
-                        cred.user_display_name = v.to_string()
-                    }
+                    "user display name" | "display name" => cred.user_display_name = v.to_string(),
                     "user id" => cred.user_id_base64 = v.to_string(),
                     "created" | "creation time" => cred.creation_time = Some(v.to_string()),
                     "large blob key" | "largeblobkey" => {
-                        cred.large_blob_key =
-                            v == "true" || v == "True" || v == "1" || v == "yes";
+                        cred.large_blob_key = v == "true" || v == "True" || v == "1" || v == "yes";
                     }
                     "hmac-secret" | "hmac_secret" => {
-                        cred.hmac_secret =
-                            v == "true" || v == "True" || v == "1" || v == "yes";
+                        cred.hmac_secret = v == "true" || v == "True" || v == "1" || v == "yes";
                     }
                     "cred protect" | "credprotect" => {
                         cred.cred_protect = match v {
@@ -194,11 +187,7 @@ pub async fn delete_credential(
 // ── PIN Management ──────────────────────────────────────────────────
 
 /// Set the initial FIDO2 PIN (when no PIN has been set).
-pub async fn set_pin(
-    ykman: &str,
-    serial: Option<u32>,
-    new_pin: &str,
-) -> Result<bool, String> {
+pub async fn set_pin(ykman: &str, serial: Option<u32>, new_pin: &str) -> Result<bool, String> {
     run_ykman(
         ykman,
         serial,
@@ -219,15 +208,7 @@ pub async fn change_pin(
     run_ykman(
         ykman,
         serial,
-        &[
-            "fido",
-            "access",
-            "change-pin",
-            "-P",
-            old_pin,
-            "-n",
-            new_pin,
-        ],
+        &["fido", "access", "change-pin", "-P", old_pin, "-n", new_pin],
     )
     .await?;
     info!("FIDO2 PIN changed");
@@ -235,10 +216,7 @@ pub async fn change_pin(
 }
 
 /// Get FIDO2 PIN/UV status.
-pub async fn get_pin_status(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<Fido2PinStatus, String> {
+pub async fn get_pin_status(ykman: &str, serial: Option<u32>) -> Result<Fido2PinStatus, String> {
     let output = run_ykman(ykman, serial, &["fido", "info"]).await?;
 
     let mut status = Fido2PinStatus::default();
@@ -252,12 +230,18 @@ pub async fn get_pin_status(
             || trimmed.contains("pin tries remaining")
             || trimmed.contains("pin attempts")
         {
-            if let Some(n) = trimmed.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
+            if let Some(n) = trimmed
+                .split_whitespace()
+                .find_map(|w| w.parse::<u32>().ok())
+            {
                 status.pin_retries = n;
             }
         }
         if trimmed.contains("uv retries") || trimmed.contains("uv attempts") {
-            if let Some(n) = trimmed.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
+            if let Some(n) = trimmed
+                .split_whitespace()
+                .find_map(|w| w.parse::<u32>().ok())
+            {
                 status.uv_retries = Some(n);
             }
         }
@@ -265,7 +249,10 @@ pub async fn get_pin_status(
             status.force_change = trimmed.contains("true") || trimmed.contains("yes");
         }
         if trimmed.contains("min pin length") {
-            if let Some(n) = trimmed.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
+            if let Some(n) = trimmed
+                .split_whitespace()
+                .find_map(|w| w.parse::<u32>().ok())
+            {
                 status.min_length = n;
             }
         }
@@ -275,21 +262,14 @@ pub async fn get_pin_status(
 }
 
 /// Reset the FIDO2 applet (must be done within 5 seconds of device insertion).
-pub async fn reset_fido(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<bool, String> {
+pub async fn reset_fido(ykman: &str, serial: Option<u32>) -> Result<bool, String> {
     run_ykman(ykman, serial, &["fido", "reset", "-f"]).await?;
     info!("FIDO2 applet reset");
     Ok(true)
 }
 
 /// Verify a FIDO2 PIN is correct (by attempting a benign operation).
-pub async fn verify_pin(
-    ykman: &str,
-    serial: Option<u32>,
-    pin: &str,
-) -> Result<bool, String> {
+pub async fn verify_pin(ykman: &str, serial: Option<u32>, pin: &str) -> Result<bool, String> {
     let result = run_ykman(
         ykman,
         serial,
@@ -336,7 +316,15 @@ pub async fn toggle_always_uv(
     run_ykman(
         ykman,
         serial,
-        &["fido", "config", "toggle-always-uv", flag, "--pin", pin, "-f"],
+        &[
+            "fido",
+            "config",
+            "toggle-always-uv",
+            flag,
+            "--pin",
+            pin,
+            "-f",
+        ],
     )
     .await?;
     info!("FIDO2 always-UV toggled to {}", enable);
@@ -344,22 +332,11 @@ pub async fn toggle_always_uv(
 }
 
 /// Force a PIN change on next use.
-pub async fn force_pin_change(
-    ykman: &str,
-    serial: Option<u32>,
-    pin: &str,
-) -> Result<bool, String> {
+pub async fn force_pin_change(ykman: &str, serial: Option<u32>, pin: &str) -> Result<bool, String> {
     run_ykman(
         ykman,
         serial,
-        &[
-            "fido",
-            "config",
-            "force-pin-change",
-            "--pin",
-            pin,
-            "-f",
-        ],
+        &["fido", "config", "force-pin-change", "--pin", pin, "-f"],
     )
     .await?;
     info!("FIDO2 force PIN change set");
@@ -436,10 +413,7 @@ Force PIN change: false
         let info = parse_fido2_info(output);
         assert!(!info.versions.is_empty());
         assert!(info.extensions.contains(&"hmac-secret".to_string()));
-        assert_eq!(
-            info.aaguid,
-            "cb69481e-8ff7-4039-93ec-0a2729a154a8"
-        );
+        assert_eq!(info.aaguid, "cb69481e-8ff7-4039-93ec-0a2729a154a8");
         assert_eq!(info.max_msg_size, 1200);
         assert_eq!(info.remaining_discoverable_credentials, 22);
         assert_eq!(info.min_pin_length, 4);

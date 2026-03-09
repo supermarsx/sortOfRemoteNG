@@ -10,11 +10,13 @@ use log::info;
 // ── Account Listing ─────────────────────────────────────────────────
 
 /// List all OATH accounts on the device.
-pub async fn list_accounts(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<Vec<OathAccount>, String> {
-    let output = run_ykman(ykman, serial, &["oath", "accounts", "list", "-H", "-o", "-p"]).await?;
+pub async fn list_accounts(ykman: &str, serial: Option<u32>) -> Result<Vec<OathAccount>, String> {
+    let output = run_ykman(
+        ykman,
+        serial,
+        &["oath", "accounts", "list", "-H", "-o", "-p"],
+    )
+    .await?;
     Ok(parse_account_list(&output))
 }
 
@@ -31,7 +33,7 @@ fn parse_account_list(output: &str) -> Vec<OathAccount> {
         // Output format varies by ykman version.  Common:
         //   Issuer:Name  TOTP  SHA256  6  30s  [touch]
         //   or "Issuer:Name" (minimal)
-        let parts: Vec<&str> = trimmed.splitn(2, |c: char| c == '\t' || c == ' ').collect();
+        let parts: Vec<&str> = trimmed.splitn(2, ['\t', ' ']).collect();
         let id_part = parts[0].trim();
 
         // Split issuer:name
@@ -186,19 +188,14 @@ pub async fn calculate(
     serial: Option<u32>,
     credential_id: &str,
 ) -> Result<OathCode, String> {
-    let output = run_ykman(
-        ykman,
-        serial,
-        &["oath", "accounts", "code", credential_id],
-    )
-    .await?;
+    let output = run_ykman(ykman, serial, &["oath", "accounts", "code", credential_id]).await?;
 
     // Output format: "Issuer:Name  123456"
     let code = output
         .lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.rsplitn(2, char::is_whitespace).collect();
-            if parts.len() >= 1 {
+            if !parts.is_empty() {
                 Some(parts[0].trim().to_string())
             } else {
                 None
@@ -284,36 +281,20 @@ pub async fn set_password(
     serial: Option<u32>,
     password: &str,
 ) -> Result<bool, String> {
-    run_ykman(
-        ykman,
-        serial,
-        &["oath", "access", "change", "-n", password],
-    )
-    .await?;
+    run_ykman(ykman, serial, &["oath", "access", "change", "-n", password]).await?;
     info!("OATH password set");
     Ok(true)
 }
 
 /// Remove the OATH applet password.
-pub async fn remove_password(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<bool, String> {
-    run_ykman(
-        ykman,
-        serial,
-        &["oath", "access", "change", "-c", "-f"],
-    )
-    .await?;
+pub async fn remove_password(ykman: &str, serial: Option<u32>) -> Result<bool, String> {
+    run_ykman(ykman, serial, &["oath", "access", "change", "-c", "-f"]).await?;
     info!("OATH password removed");
     Ok(true)
 }
 
 /// Reset the OATH applet (deletes all accounts and password).
-pub async fn reset_oath(
-    ykman: &str,
-    serial: Option<u32>,
-) -> Result<bool, String> {
+pub async fn reset_oath(ykman: &str, serial: Option<u32>) -> Result<bool, String> {
     run_ykman(ykman, serial, &["oath", "reset", "-f"]).await?;
     info!("OATH applet reset");
     Ok(true)

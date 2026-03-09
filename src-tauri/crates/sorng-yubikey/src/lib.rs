@@ -48,14 +48,14 @@
 //! └───────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod types;
+pub mod audit;
+pub mod commands;
+pub mod config;
 pub mod detect;
-pub mod piv;
 pub mod fido2;
+pub mod management;
 pub mod oath;
 pub mod otp;
-pub mod config;
-pub mod management;
-pub mod audit;
+pub mod piv;
 pub mod service;
-pub mod commands;
+pub mod types;
