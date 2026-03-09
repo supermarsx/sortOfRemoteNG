@@ -109,8 +109,10 @@ fn prompt_sync(reason: &str) -> BiometricResult<bool> {
     let output = Command::new("security")
         .args([
             "find-generic-password",
-            "-s", service_name,
-            "-a", account_name,
+            "-s",
+            service_name,
+            "-a",
+            account_name,
             "-w",
         ])
         .output()
@@ -138,11 +140,7 @@ fn prompt_sync(reason: &str) -> BiometricResult<bool> {
 fn ensure_canary_item(service: &str, account: &str) {
     // Check existence first
     let exists = Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s", service,
-            "-a", account,
-        ])
+        .args(["find-generic-password", "-s", service, "-a", account])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
@@ -152,11 +150,15 @@ fn ensure_canary_item(service: &str, account: &str) {
         let _ = Command::new("security")
             .args([
                 "add-generic-password",
-                "-s", service,
-                "-a", account,
-                "-w", &canary_value,
-                "-T", "",   // empty trusted-app list → requires user auth
-                "-U",       // update if exists
+                "-s",
+                service,
+                "-a",
+                account,
+                "-w",
+                &canary_value,
+                "-T",
+                "",   // empty trusted-app list → requires user auth
+                "-U", // update if exists
             ])
             .output();
     }

@@ -24,5 +24,8 @@ pub async fn check() -> BiometricResult<BiometricStatus> {
 
 /// Quick boolean: is biometric auth usable right now?
 pub async fn is_available() -> bool {
-    check().await.map(|s| s.hardware_available && s.enrolled).unwrap_or(false)
+    check()
+        .await
+        .map(|s| s.hardware_available && s.enrolled)
+        .unwrap_or(false)
 }

@@ -162,7 +162,9 @@ fn prompt_polkit(_reason: &str) -> BiometricResult<bool> {
             // polkit: user dismissed the dialog
             Err(BiometricError::user_cancelled())
         } else if code == 127 {
-            Err(BiometricError::platform("pkexec: not found or not configured"))
+            Err(BiometricError::platform(
+                "pkexec: not found or not configured",
+            ))
         } else {
             Err(BiometricError::auth_failed())
         }

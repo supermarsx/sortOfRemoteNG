@@ -69,10 +69,8 @@ async fn check_availability_impl() -> BiometricResult<BiometricStatus> {
 }
 
 async fn prompt_impl(reason: &str) -> BiometricResult<bool> {
-    use windows::Security::Credentials::UI::{
-        UserConsentVerificationResult, UserConsentVerifier,
-    };
     use windows::core::HSTRING;
+    use windows::Security::Credentials::UI::{UserConsentVerificationResult, UserConsentVerifier};
 
     let message = HSTRING::from(reason);
     let result = UserConsentVerifier::RequestVerificationAsync(&message)
@@ -86,9 +84,9 @@ async fn prompt_impl(reason: &str) -> BiometricResult<bool> {
         UserConsentVerificationResult::DeviceNotPresent => {
             Err(BiometricError::platform("Biometric device not present"))
         }
-        UserConsentVerificationResult::NotConfiguredForUser => {
-            Err(BiometricError::platform("Windows Hello not configured for user"))
-        }
+        UserConsentVerificationResult::NotConfiguredForUser => Err(BiometricError::platform(
+            "Windows Hello not configured for user",
+        )),
         UserConsentVerificationResult::DisabledByPolicy => {
             Err(BiometricError::platform("Biometrics disabled by policy"))
         }
@@ -124,11 +122,11 @@ fn detect_kinds() -> Vec<BiometricKind> {
 
 /// Check the WBF registry for a biometric sensor type.
 fn check_wbf_sensor(sensor_type: &str) -> bool {
-    use windows::Win32::System::Registry::{
-        RegOpenKeyExW, RegCloseKey, HKEY_LOCAL_MACHINE, KEY_READ,
-    };
     use windows::core::HSTRING;
     use windows::core::PCWSTR;
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_READ,
+    };
 
     let path = format!(
         "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WinBio\\Sensor Types\\{sensor_type}"

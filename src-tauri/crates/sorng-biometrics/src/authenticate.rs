@@ -83,11 +83,10 @@ fn get_machine_id() -> String {
 
 #[cfg(target_os = "windows")]
 fn get_windows_machine_id() -> String {
-    use windows::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ,
-        REG_VALUE_TYPE,
-    };
     use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ, REG_VALUE_TYPE,
+    };
 
     unsafe {
         let key_path = HSTRING::from("SOFTWARE\\Microsoft\\Cryptography");
