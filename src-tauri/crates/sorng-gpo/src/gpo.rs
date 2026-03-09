@@ -19,10 +19,10 @@
 //! ## Example
 //!
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 #[cfg(windows)]
 use std::ffi::c_void;
@@ -36,25 +36,10 @@ use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS};
 #[cfg(windows)]
 use windows::Win32::System::Registry::{
-    RegCloseKey,
-    RegCreateKeyExW,
-    RegDeleteValueW,
-    RegGetValueW,
-    RegOpenKeyExW,
-    RegSetValueExW,
-    HKEY,
-    HKEY_CURRENT_USER,
-    KEY_SET_VALUE,
-    REG_CREATE_KEY_DISPOSITION,
-    REG_BINARY,
-    REG_DWORD,
-    REG_OPTION_NON_VOLATILE,
-    REG_QWORD,
-    REG_SZ,
-    RRF_RT_REG_BINARY,
-    RRF_RT_REG_DWORD,
-    RRF_RT_REG_QWORD,
-    RRF_RT_REG_SZ,
+    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_BINARY, REG_CREATE_KEY_DISPOSITION, REG_DWORD,
+    REG_OPTION_NON_VOLATILE, REG_QWORD, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD,
+    RRF_RT_REG_QWORD, RRF_RT_REG_SZ,
 };
 
 /// Policy value types
@@ -215,7 +200,8 @@ impl GpoService {
 
     /// Lists policies by category
     pub async fn list_policies_by_category(&self, category: &str) -> Vec<GroupPolicy> {
-        self.policies.values()
+        self.policies
+            .values()
             .filter(|policy| policy.category == category)
             .cloned()
             .collect()
@@ -242,11 +228,12 @@ impl GpoService {
     fn read_policy_from_registry(&self, policy: &GroupPolicy) -> Result<GroupPolicy, String> {
         #[cfg(windows)]
         {
-            let registry_value = self.read_registry_value(&policy.registry_key, &policy.value_name, &policy.value)?;
+            let registry_value =
+                self.read_registry_value(&policy.registry_key, &policy.value_name, &policy.value)?;
             let mut updated = policy.clone();
             updated.value = registry_value;
             updated.enabled = true;
-            return Ok(updated);
+            Ok(updated)
         }
         #[cfg(not(windows))]
         {
@@ -260,7 +247,7 @@ impl GpoService {
         #[cfg(windows)]
         {
             self.write_registry_value(&policy.registry_key, &policy.value_name, &policy.value)?;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(windows))]
         {
@@ -274,7 +261,7 @@ impl GpoService {
         #[cfg(windows)]
         {
             self.delete_registry_value(&policy.registry_key, &policy.value_name)?;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(windows))]
         {
@@ -552,12 +539,17 @@ impl GpoService {
 
         let wide_value = Self::to_wide(value_name);
         let delete_status = unsafe { RegDeleteValueW(key, PCWSTR(wide_value.as_ptr())) };
-        unsafe { let _ = RegCloseKey(key); };
+        unsafe {
+            let _ = RegCloseKey(key);
+        };
 
         if delete_status == ERROR_SUCCESS || delete_status == ERROR_FILE_NOT_FOUND {
             Ok(())
         } else {
-            Err(format!("Failed to delete registry value: {}", delete_status.0))
+            Err(format!(
+                "Failed to delete registry value: {}",
+                delete_status.0
+            ))
         }
     }
 }
@@ -690,7 +682,9 @@ mod tests {
         let mut svc = state.lock().await;
         // On non-Windows, set_policy will fail at registry write, but the in-memory value
         // should be updated before the registry call
-        let _result = svc.set_policy("MaxConnections".to_string(), PolicyValue::Dword(20)).await;
+        let _result = svc
+            .set_policy("MaxConnections".to_string(), PolicyValue::Dword(20))
+            .await;
         // Even if registry write fails, verify the policy was found
         let policy = svc.get_policy("MaxConnections").unwrap().unwrap();
         // The value may or may not be updated depending on platform
@@ -701,7 +695,9 @@ mod tests {
     async fn gpo_service_set_nonexistent_policy() {
         let state = GpoService::new();
         let mut svc = state.lock().await;
-        let result = svc.set_policy("NoSuchPolicy".to_string(), PolicyValue::Dword(1)).await;
+        let result = svc
+            .set_policy("NoSuchPolicy".to_string(), PolicyValue::Dword(1))
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
@@ -737,7 +733,9 @@ mod tests {
     async fn gpo_service_set_policy_enabled_nonexistent() {
         let state = GpoService::new();
         let mut svc = state.lock().await;
-        let result = svc.set_policy_enabled("NoSuchPolicy".to_string(), true).await;
+        let result = svc
+            .set_policy_enabled("NoSuchPolicy".to_string(), true)
+            .await;
         assert!(result.is_err());
     }
 
@@ -792,8 +790,12 @@ mod tests {
         let svc = state.lock().await;
         // Verify all policies have proper registry paths
         for p in svc.list_policies() {
-            assert!(p.registry_key.contains("SortOfRemoteNG"), 
-                "Policy {} has unexpected registry_key: {}", p.name, p.registry_key);
+            assert!(
+                p.registry_key.contains("SortOfRemoteNG"),
+                "Policy {} has unexpected registry_key: {}",
+                p.name,
+                p.registry_key
+            );
         }
     }
 }
