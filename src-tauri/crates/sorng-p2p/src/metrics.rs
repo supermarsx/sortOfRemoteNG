@@ -5,7 +5,6 @@
 
 use crate::types::P2pMetrics;
 use chrono::Utc;
-use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -94,8 +93,7 @@ impl MetricsCollector {
         let now = Utc::now();
         if let Some(last) = self.last_throughput_check {
             let elapsed_secs = (now - last).num_seconds().max(1) as u64;
-            self.current_throughput_send =
-                (self.bytes_sent - self.last_bytes_sent) / elapsed_secs;
+            self.current_throughput_send = (self.bytes_sent - self.last_bytes_sent) / elapsed_secs;
             self.current_throughput_recv =
                 (self.bytes_received - self.last_bytes_received) / elapsed_secs;
         }
@@ -157,8 +155,7 @@ impl MetricsCollector {
 
     fn recompute_loss(&mut self) {
         if self.packets_sent > 0 {
-            self.current_loss_pct =
-                (self.packets_lost as f32 / self.packets_sent as f32) * 100.0;
+            self.current_loss_pct = (self.packets_lost as f32 / self.packets_sent as f32) * 100.0;
         }
     }
 

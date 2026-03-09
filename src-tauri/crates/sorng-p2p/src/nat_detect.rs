@@ -7,7 +7,7 @@
 use crate::stun;
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::time::{Duration, Instant};
 
 /// Detect the NAT type using STUN servers.
@@ -63,7 +63,10 @@ pub fn detect_nat_type(stun_servers: &[StunServer]) -> Result<NatDetectionResult
     }
 
     let start = Instant::now();
-    info!("Starting NAT detection with {} STUN servers", stun_servers.len());
+    info!(
+        "Starting NAT detection with {} STUN servers",
+        stun_servers.len()
+    );
 
     // We need at least one, ideally two STUN servers for full detection
     let primary = &stun_servers[0];
@@ -75,7 +78,10 @@ pub fn detect_nat_type(stun_servers: &[StunServer]) -> Result<NatDetectionResult
     // Send Binding Request to primary server
     // Result tells us our public (mapped) address
     let test1 = stun::stun_binding(primary, "0.0.0.0:0", timeout)?;
-    info!("Test I: local={}, mapped={}", test1.local_addr, test1.mapped_addr);
+    info!(
+        "Test I: local={}, mapped={}",
+        test1.local_addr, test1.mapped_addr
+    );
 
     // Check if we're behind a NAT at all
     let is_direct = test1.local_addr == test1.mapped_addr;
@@ -139,9 +145,15 @@ pub fn detect_nat_type(stun_servers: &[StunServer]) -> Result<NatDetectionResult
     let (nat_type, filtering) = if !mapping_consistent {
         // Different mapping for different destinations → Symmetric NAT
         if is_cgnat {
-            (NatType::CarrierGradeNat, FilteringBehavior::AddressAndPortDependent)
+            (
+                NatType::CarrierGradeNat,
+                FilteringBehavior::AddressAndPortDependent,
+            )
         } else {
-            (NatType::Symmetric, FilteringBehavior::AddressAndPortDependent)
+            (
+                NatType::Symmetric,
+                FilteringBehavior::AddressAndPortDependent,
+            )
         }
     } else {
         // Mapping is consistent → some form of cone NAT
@@ -154,9 +166,15 @@ pub fn detect_nat_type(stun_servers: &[StunServer]) -> Result<NatDetectionResult
 
         // Default to port-restricted cone (most common)
         if is_cgnat {
-            (NatType::CarrierGradeNat, FilteringBehavior::AddressAndPortDependent)
+            (
+                NatType::CarrierGradeNat,
+                FilteringBehavior::AddressAndPortDependent,
+            )
         } else {
-            (NatType::PortRestrictedCone, FilteringBehavior::AddressAndPortDependent)
+            (
+                NatType::PortRestrictedCone,
+                FilteringBehavior::AddressAndPortDependent,
+            )
         }
     };
 
@@ -202,8 +220,12 @@ pub fn detect_nat_type_extended(stun_servers: &[StunServer]) -> Result<NatDetect
     }
 
     // Analyze mapping consistency
-    let all_same = bindings.windows(2).all(|w| w[0].mapped_addr == w[1].mapped_addr);
-    let all_diff = bindings.windows(2).all(|w| w[0].mapped_addr != w[1].mapped_addr);
+    let all_same = bindings
+        .windows(2)
+        .all(|w| w[0].mapped_addr == w[1].mapped_addr);
+    let all_diff = bindings
+        .windows(2)
+        .all(|w| w[0].mapped_addr != w[1].mapped_addr);
 
     // Analyze port pattern
     let pattern = crate::hole_punch::analyze_port_pattern(&bindings);
@@ -214,17 +236,25 @@ pub fn detect_nat_type_extended(stun_servers: &[StunServer]) -> Result<NatDetect
         (NatType::FullCone, FilteringBehavior::EndpointIndependent)
     } else if all_diff {
         match pattern {
-            crate::hole_punch::PortAllocationPattern::Sequential(_) => {
-                (NatType::Symmetric, FilteringBehavior::AddressAndPortDependent)
-            }
-            crate::hole_punch::PortAllocationPattern::Random => {
-                (NatType::SymmetricRandom, FilteringBehavior::AddressAndPortDependent)
-            }
-            _ => (NatType::Symmetric, FilteringBehavior::AddressAndPortDependent),
+            crate::hole_punch::PortAllocationPattern::Sequential(_) => (
+                NatType::Symmetric,
+                FilteringBehavior::AddressAndPortDependent,
+            ),
+            crate::hole_punch::PortAllocationPattern::Random => (
+                NatType::SymmetricRandom,
+                FilteringBehavior::AddressAndPortDependent,
+            ),
+            _ => (
+                NatType::Symmetric,
+                FilteringBehavior::AddressAndPortDependent,
+            ),
         }
     } else {
         // Mixed results
-        (NatType::PortRestrictedCone, FilteringBehavior::AddressDependent)
+        (
+            NatType::PortRestrictedCone,
+            FilteringBehavior::AddressDependent,
+        )
     };
 
     let is_cgnat = bindings.iter().any(|b| is_cgnat_address(&b.mapped_addr));
@@ -243,7 +273,11 @@ pub fn detect_nat_type_extended(stun_servers: &[StunServer]) -> Result<NatDetect
         is_cgnat,
         mapping_consistent: all_same,
         filtering,
-        stun_servers_used: stun_servers.iter().take(3).map(|s| s.host.clone()).collect(),
+        stun_servers_used: stun_servers
+            .iter()
+            .take(3)
+            .map(|s| s.host.clone())
+            .collect(),
         detected_at: Utc::now(),
         detection_time_ms: start.elapsed().as_millis() as u64,
     })
@@ -289,7 +323,10 @@ pub fn is_private_address(addr: &str) -> bool {
 /// Determine if two peers are behind the same NAT (hairpin scenario).
 pub fn same_nat(local_public: &str, remote_public: &str) -> bool {
     let local_ip = local_public.rsplitn(2, ':').last().unwrap_or(local_public);
-    let remote_ip = remote_public.rsplitn(2, ':').last().unwrap_or(remote_public);
+    let remote_ip = remote_public
+        .rsplitn(2, ':')
+        .last()
+        .unwrap_or(remote_public);
     local_ip == remote_ip
 }
 
@@ -307,8 +344,7 @@ pub fn traversal_difficulty(local: NatType, remote: NatType) -> u8 {
         (NatType::AddressRestrictedCone, NatType::PortRestrictedCone)
         | (NatType::PortRestrictedCone, NatType::AddressRestrictedCone) => 4,
         (NatType::PortRestrictedCone, NatType::PortRestrictedCone) => 5,
-        (NatType::Symmetric, NatType::FullCone)
-        | (NatType::FullCone, NatType::Symmetric) => 6,
+        (NatType::Symmetric, NatType::FullCone) | (NatType::FullCone, NatType::Symmetric) => 6,
         (NatType::Symmetric, NatType::AddressRestrictedCone)
         | (NatType::AddressRestrictedCone, NatType::Symmetric) => 7,
         (NatType::Symmetric, NatType::PortRestrictedCone)

@@ -4,7 +4,7 @@
 //! identity (keypair) and can verify other peers via public key fingerprints.
 
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -118,10 +118,7 @@ pub fn derive_keys(
 }
 
 /// Verify that a peer's public key matches a known fingerprint.
-pub fn verify_peer_fingerprint(
-    public_key: &[u8],
-    expected_fingerprint: &str,
-) -> bool {
+pub fn verify_peer_fingerprint(public_key: &[u8], expected_fingerprint: &str) -> bool {
     let actual = compute_fingerprint(public_key);
     actual == expected_fingerprint
 }
@@ -197,8 +194,8 @@ pub fn sign_message(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>, Strin
 
 /// Verify a signature from a peer.
 pub fn verify_signature(
-    public_key: &[u8],
-    message: &[u8],
+    _public_key: &[u8],
+    _message: &[u8],
     signature: &[u8],
 ) -> Result<bool, String> {
     // In a real implementation:
@@ -245,10 +242,7 @@ pub fn create_challenge(challenger_id: &str) -> AuthChallenge {
     }
 
     AuthChallenge {
-        nonce: base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &nonce_bytes,
-        ),
+        nonce: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &nonce_bytes),
         challenger_id: challenger_id.to_string(),
         timestamp: Utc::now().timestamp(),
     }
@@ -267,10 +261,7 @@ pub fn respond_to_challenge(
     Ok(AuthResponse {
         nonce: challenge.nonce.clone(),
         responder_id: our_id.to_string(),
-        signature: base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &signature,
-        ),
+        signature: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &signature),
         public_key: base64::Engine::encode(
             &base64::engine::general_purpose::STANDARD,
             &our_keypair.public_key,

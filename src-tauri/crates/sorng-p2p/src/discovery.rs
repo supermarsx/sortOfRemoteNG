@@ -6,10 +6,9 @@
 
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Duration;
 
 /// mDNS service type for SortOfRemoteNG peer discovery.
 pub const MDNS_SERVICE_TYPE: &str = "_sorng._tcp.local.";
@@ -195,10 +194,7 @@ impl DiscoveryService {
 
     /// Build a LAN broadcast packet.
     pub fn build_broadcast_packet(&self) -> Result<Vec<u8>, String> {
-        let announcement = self
-            .our_announcement
-            .as_ref()
-            .ok_or("No announcement")?;
+        let announcement = self.our_announcement.as_ref().ok_or("No announcement")?;
 
         serde_json::to_vec(announcement).map_err(|e| e.to_string())
     }
@@ -291,8 +287,7 @@ impl DiscoveryService {
 
     /// Remove stale peers (not seen within the stale timeout).
     pub fn cleanup_stale(&mut self) -> usize {
-        let cutoff =
-            Utc::now() - chrono::Duration::seconds(self.config.stale_timeout_secs as i64);
+        let cutoff = Utc::now() - chrono::Duration::seconds(self.config.stale_timeout_secs as i64);
         let stale: Vec<String> = self
             .peers
             .iter()

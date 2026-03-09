@@ -84,35 +84,22 @@ pub enum SignalingProtocol {
         message: SignalingMessage,
     },
     /// Query online peers
-    PeerQuery {
-        filter: Option<String>,
-    },
+    PeerQuery { filter: Option<String> },
     /// Peer list response
-    PeerList {
-        peers: Vec<OnlinePeer>,
-    },
+    PeerList { peers: Vec<OnlinePeer> },
     /// Peer came online
     PeerOnline {
         peer_id: String,
         display_name: String,
     },
     /// Peer went offline
-    PeerOffline {
-        peer_id: String,
-    },
+    PeerOffline { peer_id: String },
     /// Heartbeat
-    Ping {
-        timestamp: i64,
-    },
+    Ping { timestamp: i64 },
     /// Heartbeat response
-    Pong {
-        timestamp: i64,
-    },
+    Pong { timestamp: i64 },
     /// Error from server
-    Error {
-        code: u32,
-        message: String,
-    },
+    Error { code: u32, message: String },
 }
 
 /// ICE server info provided by the signaling server.
@@ -232,11 +219,7 @@ impl SignalingClient {
     }
 
     /// Send a connection offer to a remote peer via the signaling server.
-    pub fn send_offer(
-        &mut self,
-        to_peer: &str,
-        offer: &ConnectionOffer,
-    ) -> Result<(), String> {
+    pub fn send_offer(&mut self, to_peer: &str, offer: &ConnectionOffer) -> Result<(), String> {
         if !self.is_connected() {
             return Err("Not connected to signaling server".to_string());
         }
@@ -254,11 +237,7 @@ impl SignalingClient {
     }
 
     /// Send a connection answer to a remote peer.
-    pub fn send_answer(
-        &mut self,
-        to_peer: &str,
-        answer: &ConnectionAnswer,
-    ) -> Result<(), String> {
+    pub fn send_answer(&mut self, to_peer: &str, answer: &ConnectionAnswer) -> Result<(), String> {
         if !self.is_connected() {
             return Err("Not connected to signaling server".to_string());
         }
@@ -317,11 +296,7 @@ impl SignalingClient {
     }
 
     /// Send a hangup/close signal.
-    pub fn send_hangup(
-        &mut self,
-        to_peer: &str,
-        session_id: &str,
-    ) -> Result<(), String> {
+    pub fn send_hangup(&mut self, to_peer: &str, session_id: &str) -> Result<(), String> {
         let message = SignalingMessage {
             msg_type: SignalingMessageType::Hangup,
             from_peer: self.peer_id.clone().unwrap_or_default(),
@@ -343,7 +318,10 @@ impl SignalingClient {
 
         self.sequence += 1;
         self.outbound_queue.push_back(relay);
-        debug!("Queued relay message to {} (seq={})", to_peer, self.sequence);
+        debug!(
+            "Queued relay message to {} (seq={})",
+            to_peer, self.sequence
+        );
         Ok(())
     }
 
@@ -449,7 +427,10 @@ impl SignalingClient {
             );
         } else {
             self.state = SignalingState::Failed;
-            error!("Signaling connection failed after {} attempts", self.reconnect_attempts);
+            error!(
+                "Signaling connection failed after {} attempts",
+                self.reconnect_attempts
+            );
         }
     }
 

@@ -4,9 +4,8 @@
 //! available. Routes encrypted data through the signaling server or a dedicated
 //! relay node. This is the transport of last resort.
 
-use crate::types::*;
 use chrono::{DateTime, Utc};
-use log::{debug, info, warn};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -75,9 +74,9 @@ impl Default for RelayConfig {
     fn default() -> Self {
         Self {
             max_sessions: 100,
-            max_session_duration_secs: 3600, // 1 hour
+            max_session_duration_secs: 3600,             // 1 hour
             max_bandwidth_per_session: 10 * 1024 * 1024, // 10 MB/s
-            total_bandwidth_budget: 100 * 1024 * 1024, // 100 MB/s
+            total_bandwidth_budget: 100 * 1024 * 1024,   // 100 MB/s
             require_e2e_encryption: true,
             relay_url: None,
         }
@@ -150,7 +149,8 @@ impl RelayClient {
             max_bandwidth: self.config.max_bandwidth_per_session,
         };
 
-        self.sessions.insert(session_id.to_string(), session.clone());
+        self.sessions
+            .insert(session_id.to_string(), session.clone());
 
         info!("Relay allocated for session {}", session_id);
         Ok(session)
@@ -164,7 +164,10 @@ impl RelayClient {
             .ok_or("Relay session not found")?;
 
         if session.state != RelaySessionState::Allocated {
-            return Err(format!("Cannot activate session in state {:?}", session.state));
+            return Err(format!(
+                "Cannot activate session in state {:?}",
+                session.state
+            ));
         }
 
         session.state = RelaySessionState::Active;
@@ -173,11 +176,7 @@ impl RelayClient {
     }
 
     /// Send data through a relay session.
-    pub fn relay_data(
-        &mut self,
-        session_id: &str,
-        data: &[u8],
-    ) -> Result<(), String> {
+    pub fn relay_data(&mut self, session_id: &str, data: &[u8]) -> Result<(), String> {
         let session = self
             .sessions
             .get_mut(session_id)

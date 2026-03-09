@@ -6,7 +6,7 @@
 
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::time::Duration;
 
 /// Hole-punch strategy.
@@ -92,7 +92,11 @@ pub fn attempt_hole_punch(
     local_candidates: &[IceCandidate],
     remote_candidates: &[IceCandidate],
 ) -> Result<IceCandidatePair, String> {
-    attempt_hole_punch_with_config(local_candidates, remote_candidates, &HolePunchConfig::default())
+    attempt_hole_punch_with_config(
+        local_candidates,
+        remote_candidates,
+        &HolePunchConfig::default(),
+    )
 }
 
 /// Attempt hole-punching with custom configuration.
@@ -101,7 +105,10 @@ pub fn attempt_hole_punch_with_config(
     remote_candidates: &[IceCandidate],
     config: &HolePunchConfig,
 ) -> Result<IceCandidatePair, String> {
-    info!("Attempting hole-punch with {} strategies", config.strategies.len());
+    info!(
+        "Attempting hole-punch with {} strategies",
+        config.strategies.len()
+    );
 
     // Find the best local and remote candidates for hole-punching
     // Prefer server-reflexive, then host candidates
@@ -163,10 +170,7 @@ pub fn attempt_hole_punch_with_config(
             HolePunchStrategy::PortPrediction => {
                 match attempt_port_prediction(local, remote, config) {
                     Ok(result) if result.success => {
-                        info!(
-                            "Port prediction succeeded in {}ms",
-                            result.elapsed_ms
-                        );
+                        info!("Port prediction succeeded in {}ms", result.elapsed_ms);
                         return Ok(IceCandidatePair {
                             local: local.clone(),
                             remote: remote.clone(),
@@ -191,7 +195,10 @@ pub fn attempt_hole_punch_with_config(
                 }
             }
             HolePunchStrategy::BirthdayAttack => {
-                info!("Birthday attack strategy (port spray) — sending to {} ports", config.birthday_port_count);
+                info!(
+                    "Birthday attack strategy (port spray) — sending to {} ports",
+                    config.birthday_port_count
+                );
                 // Send to many random ports hoping the remote NAT has one open
                 // This is a last resort for restrictive NATs
             }
@@ -235,7 +242,7 @@ pub fn attempt_hole_punch_with_config(
 fn attempt_simultaneous_open(
     local: &IceCandidate,
     remote: &IceCandidate,
-    config: &HolePunchConfig,
+    _config: &HolePunchConfig,
 ) -> Result<HolePunchResult, String> {
     let start = std::time::Instant::now();
 
@@ -306,11 +313,7 @@ fn attempt_port_prediction(
 
     info!(
         "Port prediction: range={}, local={}:{}, remote={}:{}",
-        config.port_prediction_range,
-        local.address,
-        local.port,
-        remote.address,
-        remote.port
+        config.port_prediction_range, local.address, local.port, remote.address, remote.port
     );
 
     Ok(HolePunchResult {
@@ -328,7 +331,7 @@ fn attempt_port_prediction(
 fn attempt_tcp_simultaneous_open(
     local: &IceCandidate,
     remote: &IceCandidate,
-    config: &HolePunchConfig,
+    _config: &HolePunchConfig,
 ) -> Result<HolePunchResult, String> {
     let start = std::time::Instant::now();
 
@@ -411,7 +414,9 @@ pub fn recommend_strategy(local_nat: NatType, remote_nat: NatType) -> Vec<HolePu
         }
 
         // Symmetric + symmetric — very hard, birthday attack or relay
-        (NatType::Symmetric, NatType::Symmetric) | (NatType::SymmetricRandom, _) | (_, NatType::SymmetricRandom) => {
+        (NatType::Symmetric, NatType::Symmetric)
+        | (NatType::SymmetricRandom, _)
+        | (_, NatType::SymmetricRandom) => {
             vec![
                 HolePunchStrategy::BirthdayAttack,
                 // Likely need relay as fallback
@@ -446,7 +451,7 @@ pub fn analyze_port_pattern(bindings: &[crate::types::StunBinding]) -> PortAlloc
         .iter()
         .filter_map(|b| {
             b.mapped_addr
-                .rsplitn(2, ':')
+                .rsplit(':')
                 .next()
                 .and_then(|p| p.parse::<u16>().ok())
         })
@@ -462,7 +467,10 @@ pub fn analyze_port_pattern(bindings: &[crate::types::StunBinding]) -> PortAlloc
     }
 
     // Check for sequential increment
-    let diffs: Vec<i32> = ports.windows(2).map(|w| w[1] as i32 - w[0] as i32).collect();
+    let diffs: Vec<i32> = ports
+        .windows(2)
+        .map(|w| w[1] as i32 - w[0] as i32)
+        .collect();
     let avg_diff = diffs.iter().sum::<i32>() as f64 / diffs.len() as f64;
     let variance: f64 = diffs
         .iter()

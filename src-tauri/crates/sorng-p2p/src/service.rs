@@ -5,7 +5,7 @@
 
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -155,7 +155,10 @@ impl P2pService {
         if !self.running {
             return Ok(());
         }
-        info!("Stopping P2P service — closing {} sessions", self.sessions.len());
+        info!(
+            "Stopping P2P service — closing {} sessions",
+            self.sessions.len()
+        );
         // Close all active sessions
         let session_ids: Vec<String> = self
             .sessions
@@ -357,7 +360,10 @@ impl P2pService {
             session.state = P2pSessionState::Failed;
             session.ended_at = Some(Utc::now());
             let reason = answer.reject_reason.as_deref().unwrap_or("unknown");
-            warn!("P2P offer rejected for session {}: {}", answer.session_id, reason);
+            warn!(
+                "P2P offer rejected for session {}: {}",
+                answer.session_id, reason
+            );
             return Err(format!("Offer rejected: {}", reason));
         }
 
@@ -408,7 +414,10 @@ impl P2pService {
         let remote_nat = session.remote_nat_type.unwrap_or(NatType::Unknown);
 
         if local_nat.hole_punch_viable() && remote_nat.hole_punch_viable() {
-            info!("Attempting direct hole-punch (local={:?}, remote={:?})", local_nat, remote_nat);
+            info!(
+                "Attempting direct hole-punch (local={:?}, remote={:?})",
+                local_nat, remote_nat
+            );
             session.state = P2pSessionState::Checking;
 
             // Try ICE connectivity checks to find a working pair
@@ -458,7 +467,10 @@ impl P2pService {
                     info!("P2P session {} hole-punched successfully", session_id);
                 }
                 Err(e) => {
-                    warn!("Hole-punch failed for session {}: {} — falling back to relay", session_id, e);
+                    warn!(
+                        "Hole-punch failed for session {}: {} — falling back to relay",
+                        session_id, e
+                    );
                     session.state = P2pSessionState::Relayed;
                     session.transport = P2pTransport::AppRelay;
                     session.ice_state = IceState::Completed;
@@ -521,7 +533,10 @@ impl P2pService {
 
     /// Get active session count.
     pub fn active_session_count(&self) -> usize {
-        self.sessions.values().filter(|s| s.state.is_active()).count()
+        self.sessions
+            .values()
+            .filter(|s| s.state.is_active())
+            .count()
     }
 
     // ── Peer Discovery ─────────────────────────────────────────
@@ -602,10 +617,7 @@ impl P2pService {
         let active = self.active_sessions();
         P2pAggregateStats {
             active_sessions: active.len(),
-            direct_connections: active
-                .iter()
-                .filter(|s| s.transport.is_direct())
-                .count(),
+            direct_connections: active.iter().filter(|s| s.transport.is_direct()).count(),
             relayed_connections: active
                 .iter()
                 .filter(|s| !s.transport.is_direct() && s.transport != P2pTransport::Unknown)

@@ -7,7 +7,6 @@
 use crate::types::*;
 use chrono::Utc;
 use log::{debug, info, warn};
-use std::collections::HashMap;
 
 /// ICE agent role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +46,7 @@ pub struct IceAgent {
     /// Connectivity check timeout in seconds
     check_timeout_secs: u32,
     /// Tie-breaker for role conflicts (random 64-bit)
+    #[allow(dead_code)]
     tiebreaker: u64,
 }
 
@@ -162,11 +162,8 @@ impl IceAgent {
                     continue;
                 }
 
-                let priority = compute_pair_priority(
-                    local.priority as u64,
-                    remote.priority as u64,
-                    self.role,
-                );
+                let priority =
+                    compute_pair_priority(local.priority as u64, remote.priority as u64, self.role);
 
                 let pair = IceCandidatePair {
                     local: local.clone(),
@@ -210,7 +207,10 @@ impl IceAgent {
             return Err("No candidate pairs to check".to_string());
         }
 
-        info!("Running ICE connectivity checks on {} pairs", self.check_list.len());
+        info!(
+            "Running ICE connectivity checks on {} pairs",
+            self.check_list.len()
+        );
 
         // Process pairs in priority order
         for i in 0..self.check_list.len() {
@@ -261,8 +261,7 @@ impl IceAgent {
                 );
 
                 // In aggressive nomination, nominate the first successful pair
-                if self.nomination == IceNomination::Aggressive
-                    && self.role == IceRole::Controlling
+                if self.nomination == IceNomination::Aggressive && self.role == IceRole::Controlling
                 {
                     return self.nominate(i);
                 }
@@ -278,7 +277,10 @@ impl IceAgent {
             let best = self.valid_pairs[0].clone();
             self.nominated_pair = Some(best.clone());
             self.state = IceState::Completed;
-            info!("ICE completed (regular nomination) — selected pair with priority {}", best.priority);
+            info!(
+                "ICE completed (regular nomination) — selected pair with priority {}",
+                best.priority
+            );
             return Ok(best);
         }
 
@@ -360,7 +362,10 @@ pub fn gather_candidates(config: &P2pConfig) -> Result<Vec<IceCandidate>, String
         match gather_srflx_candidate(server, config) {
             Ok(candidate) => candidates.push(candidate),
             Err(e) => {
-                warn!("Failed to gather srflx candidate from {}: {}", server.host, e);
+                warn!(
+                    "Failed to gather srflx candidate from {}: {}",
+                    server.host, e
+                );
             }
         }
     }
@@ -370,7 +375,10 @@ pub fn gather_candidates(config: &P2pConfig) -> Result<Vec<IceCandidate>, String
         match gather_relay_candidate(server, config) {
             Ok(candidate) => candidates.push(candidate),
             Err(e) => {
-                warn!("Failed to gather relay candidate from {}: {}", server.host, e);
+                warn!(
+                    "Failed to gather relay candidate from {}: {}",
+                    server.host, e
+                );
             }
         }
     }
@@ -406,13 +414,10 @@ fn gather_host_candidates(config: &P2pConfig) -> Result<Vec<IceCandidate>, Strin
 /// Gather a server-reflexive candidate from a STUN server.
 fn gather_srflx_candidate(
     server: &StunServer,
-    config: &P2pConfig,
+    _config: &P2pConfig,
 ) -> Result<IceCandidate, String> {
-    let binding = crate::stun::stun_binding(
-        server,
-        "0.0.0.0:0",
-        std::time::Duration::from_secs(5),
-    )?;
+    let binding =
+        crate::stun::stun_binding(server, "0.0.0.0:0", std::time::Duration::from_secs(5))?;
 
     let parts: Vec<&str> = binding.mapped_addr.rsplitn(2, ':').collect();
     let (addr, port) = if parts.len() == 2 {
@@ -514,7 +519,10 @@ fn compute_foundation(
     use sha2::{Digest, Sha256};
     let input = format!("{:?}:{}:{}", candidate_type, base_addr, transport);
     let hash = Sha256::digest(input.as_bytes());
-    hash[..4].iter().map(|b| format!("{:02x}", b)).collect::<String>()
+    hash[..4]
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
 }
 
 /// Generate a random ICE credential (ufrag or password).

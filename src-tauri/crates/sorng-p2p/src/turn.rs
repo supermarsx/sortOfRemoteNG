@@ -6,9 +6,8 @@
 
 use crate::types::{TurnAllocation, TurnServer};
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{debug, info};
 use std::collections::HashMap;
-use std::time::Duration;
 
 /// TURN message types (subset relevant to client).
 #[repr(u16)]
@@ -64,6 +63,7 @@ pub struct TurnClient {
     next_channel: u16,
 }
 
+#[allow(dead_code)]
 struct TurnAllocationState {
     allocation: TurnAllocation,
     server: TurnServer,
@@ -146,8 +146,7 @@ impl TurnClient {
 
         // In a full implementation, sends a Refresh Request with LIFETIME attribute
         state.allocation.lifetime_secs = lifetime_secs;
-        state.allocation.expires_at =
-            Utc::now() + chrono::Duration::seconds(lifetime_secs as i64);
+        state.allocation.expires_at = Utc::now() + chrono::Duration::seconds(lifetime_secs as i64);
 
         Ok(())
     }
@@ -179,7 +178,11 @@ impl TurnClient {
         );
 
         // In a full implementation, sends CreatePermission Request with XOR-PEER-ADDRESS
-        if !state.allocation.permissions.contains(&peer_addr.to_string()) {
+        if !state
+            .allocation
+            .permissions
+            .contains(&peer_addr.to_string())
+        {
             state.allocation.permissions.push(peer_addr.to_string());
         }
 
@@ -188,11 +191,7 @@ impl TurnClient {
 
     /// Bind a channel number to a peer address for efficient data relay.
     /// Channel bindings use 4-byte headers instead of 36-byte Send/Data indications.
-    pub fn bind_channel(
-        &mut self,
-        allocation_id: &str,
-        peer_addr: &str,
-    ) -> Result<u16, String> {
+    pub fn bind_channel(&mut self, allocation_id: &str, peer_addr: &str) -> Result<u16, String> {
         let _state = self
             .allocations
             .get(allocation_id)
@@ -211,8 +210,7 @@ impl TurnClient {
         );
 
         // In a full implementation, sends ChannelBind Request
-        self.channel_bindings
-            .insert(channel, peer_addr.to_string());
+        self.channel_bindings.insert(channel, peer_addr.to_string());
 
         Ok(channel)
     }
@@ -245,11 +243,7 @@ impl TurnClient {
     }
 
     /// Send data via a bound channel (4-byte header, more efficient).
-    pub fn send_channel_data(
-        &self,
-        channel: u16,
-        data: &[u8],
-    ) -> Result<(), String> {
+    pub fn send_channel_data(&self, channel: u16, data: &[u8]) -> Result<(), String> {
         let peer = self
             .channel_bindings
             .get(&channel)
@@ -296,10 +290,7 @@ impl TurnClient {
     }
 
     /// Build TURN Allocate Request message bytes.
-    pub fn build_allocate_request(
-        transaction_id: &[u8; 12],
-        transport: TurnTransport,
-    ) -> Vec<u8> {
+    pub fn build_allocate_request(transaction_id: &[u8; 12], transport: TurnTransport) -> Vec<u8> {
         let mut msg = Vec::with_capacity(32);
         // Message type: Allocate Request
         msg.extend_from_slice(&0x0003u16.to_be_bytes());
@@ -334,7 +325,7 @@ impl TurnClient {
         username: &str,
         realm: &str,
         nonce: &str,
-        password: &str,
+        _password: &str,
     ) -> Vec<u8> {
         // Start with basic allocate request structure
         let mut msg = Self::build_allocate_request(transaction_id, transport);

@@ -4,7 +4,7 @@
 //! RFC 5389. Discovers public-facing addresses by querying STUN servers.
 
 use crate::types::{StunBinding, StunServer};
-use log::{debug, info, warn};
+use log::{debug, info};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
@@ -158,7 +158,8 @@ pub fn parse_stun_response(data: &[u8], local_txn: &[u8; 12]) -> Result<StunResp
     let mut offset = 0;
     while offset + 4 <= attrs_data.len() {
         let attr_type = u16::from_be_bytes([attrs_data[offset], attrs_data[offset + 1]]);
-        let attr_len = u16::from_be_bytes([attrs_data[offset + 2], attrs_data[offset + 3]]) as usize;
+        let attr_len =
+            u16::from_be_bytes([attrs_data[offset + 2], attrs_data[offset + 3]]) as usize;
         let attr_start = offset + 4;
         let attr_end = attr_start + attr_len;
 
@@ -277,10 +278,10 @@ fn parse_address(data: &[u8], xor: bool, txn: &[u8; 12]) -> Option<SocketAddr> {
 pub fn stun_binding(
     server: &StunServer,
     local_addr: &str,
-    timeout: Duration,
+    _timeout: Duration,
 ) -> Result<StunBinding, String> {
     let txn = generate_transaction_id();
-    let request = build_binding_request(&txn);
+    let _request = build_binding_request(&txn);
 
     let server_addr = format!("{}:{}", server.host, server.port);
     let start = Instant::now();

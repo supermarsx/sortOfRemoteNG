@@ -5,7 +5,7 @@
 //! protocols (SSH, RDP, VNC, etc.) over the peer-to-peer link.
 
 use chrono::{DateTime, Utc};
-use log::{debug, info, warn};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -252,12 +252,14 @@ pub struct DataChannel {
     /// Send window size (flow control)
     send_window: usize,
     /// Receive window size
+    #[allow(dead_code)]
     recv_window: usize,
     /// Total bytes sent
     bytes_sent: u64,
     /// Total bytes received
     bytes_received: u64,
     /// Created timestamp
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
 }
 
@@ -297,13 +299,18 @@ impl DataChannel {
         let ctx = EncryptionContext::new(self.config.cipher_suite, shared_secret);
         self.encryption = Some(ctx);
         self.state = DataChannelState::Open;
-        info!("Data channel {} opened (cipher={:?})", self.id, self.config.cipher_suite);
+        info!(
+            "Data channel {} opened (cipher={:?})",
+            self.id, self.config.cipher_suite
+        );
     }
 
     /// Open the channel without encryption (testing/LAN only).
     pub fn open_unencrypted(&mut self) -> Result<(), String> {
         if self.config.encrypted && self.config.cipher_suite != CipherSuite::None {
-            return Err("Cannot open unencrypted channel when encryption is configured".to_string());
+            return Err(
+                "Cannot open unencrypted channel when encryption is configured".to_string(),
+            );
         }
         self.state = DataChannelState::Open;
         info!("Data channel {} opened (unencrypted)", self.id);
@@ -343,7 +350,12 @@ impl DataChannel {
         }
 
         self.bytes_sent += total_sent as u64;
-        debug!("Channel {}: queued {} bytes ({} segments)", self.id, total_sent, data.chunks(self.config.max_segment_size).count());
+        debug!(
+            "Channel {}: queued {} bytes ({} segments)",
+            self.id,
+            total_sent,
+            data.chunks(self.config.max_segment_size).count()
+        );
         Ok(total_sent)
     }
 

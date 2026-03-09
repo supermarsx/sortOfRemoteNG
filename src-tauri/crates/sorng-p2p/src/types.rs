@@ -5,8 +5,6 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 // ── NAT Classification ──────────────────────────────────────────────
@@ -629,7 +627,7 @@ impl P2pMetrics {
         // Penalize packet loss heavily
         score -= (packet_loss_pct * 10.0).min(50.0);
 
-        score.max(0.0).min(100.0) as u8
+        score.clamp(0.0, 100.0) as u8
     }
 }
 

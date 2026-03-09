@@ -44,19 +44,19 @@
 //! let local_port = session.local_port;
 //! ```
 
-pub mod types;
-pub mod service;
-pub mod stun;
-pub mod turn;
-pub mod ice;
-pub mod hole_punch;
-pub mod nat_detect;
-pub mod signaling;
 pub mod data_channel;
 pub mod discovery;
-pub mod relay;
-pub mod peer_identity;
+pub mod hole_punch;
+pub mod ice;
 pub mod metrics;
+pub mod nat_detect;
+pub mod peer_identity;
+pub mod relay;
+pub mod service;
+pub mod signaling;
+pub mod stun;
+pub mod turn;
+pub mod types;
 
-pub use types::*;
 pub use service::{P2pService, P2pServiceState};
+pub use types::*;
