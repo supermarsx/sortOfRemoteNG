@@ -25,6 +25,12 @@ pub struct HyperVService {
     config: HyperVConfig,
 }
 
+impl Default for HyperVService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HyperVService {
     /// Create a new service with default config (local host).
     pub fn new() -> Self {
@@ -111,11 +117,7 @@ impl HyperVService {
         VmManager::remove_vm(&self.ps, name, delete_files).await
     }
 
-    pub async fn update_vm(
-        &self,
-        name: &str,
-        config: &VmUpdateConfig,
-    ) -> HyperVResult<VmInfo> {
+    pub async fn update_vm(&self, name: &str, config: &VmUpdateConfig) -> HyperVResult<VmInfo> {
         VmManager::update_vm(&self.ps, name, config).await
     }
 
@@ -131,11 +133,7 @@ impl HyperVService {
         VmManager::import_vm(&self.ps, config).await
     }
 
-    pub async fn live_migrate(
-        &self,
-        name: &str,
-        config: &LiveMigrationConfig,
-    ) -> HyperVResult<()> {
+    pub async fn live_migrate(&self, name: &str, config: &LiveMigrationConfig) -> HyperVResult<()> {
         VmManager::live_migrate(&self.ps, name, config).await
     }
 
@@ -155,11 +153,7 @@ impl HyperVService {
         VmManager::set_integration_service(&self.ps, name, service_name, enabled).await
     }
 
-    pub async fn add_dvd_drive(
-        &self,
-        name: &str,
-        iso_path: Option<&str>,
-    ) -> HyperVResult<()> {
+    pub async fn add_dvd_drive(&self, name: &str, iso_path: Option<&str>) -> HyperVResult<()> {
         VmManager::add_dvd_drive(&self.ps, name, iso_path).await
     }
 
@@ -170,8 +164,14 @@ impl HyperVService {
         controller_location: u32,
         iso_path: Option<&str>,
     ) -> HyperVResult<()> {
-        VmManager::set_dvd_drive(&self.ps, name, controller_number, controller_location, iso_path)
-            .await
+        VmManager::set_dvd_drive(
+            &self.ps,
+            name,
+            controller_number,
+            controller_location,
+            iso_path,
+        )
+        .await
     }
 
     pub async fn remove_dvd_drive(
@@ -223,10 +223,7 @@ impl HyperVService {
     //  Snapshots / Checkpoints
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    pub async fn list_checkpoints(
-        &self,
-        vm_name: &str,
-    ) -> HyperVResult<Vec<CheckpointInfo>> {
+    pub async fn list_checkpoints(&self, vm_name: &str) -> HyperVResult<Vec<CheckpointInfo>> {
         SnapshotManager::list_checkpoints(&self.ps, vm_name).await
     }
 
@@ -332,10 +329,7 @@ impl HyperVService {
         NetworkManager::list_physical_adapters(&self.ps).await
     }
 
-    pub async fn list_vm_adapters(
-        &self,
-        vm_name: &str,
-    ) -> HyperVResult<Vec<VmNetworkAdapterInfo>> {
+    pub async fn list_vm_adapters(&self, vm_name: &str) -> HyperVResult<Vec<VmNetworkAdapterInfo>> {
         NetworkManager::list_vm_adapters(&self.ps, vm_name).await
     }
 
@@ -347,11 +341,7 @@ impl HyperVService {
         NetworkManager::add_vm_adapter(&self.ps, vm_name, config).await
     }
 
-    pub async fn remove_vm_adapter(
-        &self,
-        vm_name: &str,
-        adapter_name: &str,
-    ) -> HyperVResult<()> {
+    pub async fn remove_vm_adapter(&self, vm_name: &str, adapter_name: &str) -> HyperVResult<()> {
         NetworkManager::remove_vm_adapter(&self.ps, vm_name, adapter_name).await
     }
 
@@ -364,11 +354,7 @@ impl HyperVService {
         NetworkManager::connect_adapter(&self.ps, vm_name, adapter_name, switch_name).await
     }
 
-    pub async fn disconnect_adapter(
-        &self,
-        vm_name: &str,
-        adapter_name: &str,
-    ) -> HyperVResult<()> {
+    pub async fn disconnect_adapter(&self, vm_name: &str, adapter_name: &str) -> HyperVResult<()> {
         NetworkManager::disconnect_adapter(&self.ps, vm_name, adapter_name).await
     }
 
@@ -398,11 +384,7 @@ impl HyperVService {
         .await
     }
 
-    pub async fn remove_adapter_vlan(
-        &self,
-        vm_name: &str,
-        adapter_name: &str,
-    ) -> HyperVResult<()> {
+    pub async fn remove_adapter_vlan(&self, vm_name: &str, adapter_name: &str) -> HyperVResult<()> {
         NetworkManager::remove_adapter_vlan(&self.ps, vm_name, adapter_name).await
     }
 
@@ -454,10 +436,7 @@ impl HyperVService {
         StorageManager::delete_vhd(&self.ps, path).await
     }
 
-    pub async fn list_vm_hard_drives(
-        &self,
-        vm_name: &str,
-    ) -> HyperVResult<Vec<VmHardDriveInfo>> {
+    pub async fn list_vm_hard_drives(&self, vm_name: &str) -> HyperVResult<Vec<VmHardDriveInfo>> {
         StorageManager::list_vm_hard_drives(&self.ps, vm_name).await
     }
 
@@ -485,10 +464,7 @@ impl HyperVService {
         MetricsManager::reset_metering(&self.ps, vm_name).await
     }
 
-    pub async fn get_metering_report(
-        &self,
-        vm_name: &str,
-    ) -> HyperVResult<serde_json::Value> {
+    pub async fn get_metering_report(&self, vm_name: &str) -> HyperVResult<serde_json::Value> {
         MetricsManager::get_metering_report(&self.ps, vm_name).await
     }
 
@@ -518,8 +494,13 @@ impl HyperVService {
         max_migrations: Option<u32>,
         max_storage_migrations: Option<u32>,
     ) -> HyperVResult<()> {
-        MetricsManager::set_live_migration(&self.ps, enabled, max_migrations, max_storage_migrations)
-            .await
+        MetricsManager::set_live_migration(
+            &self.ps,
+            enabled,
+            max_migrations,
+            max_storage_migrations,
+        )
+        .await
     }
 
     pub async fn set_numa_spanning(&self, enabled: bool) -> HyperVResult<()> {
@@ -530,10 +511,7 @@ impl HyperVService {
     //  Replication
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    pub async fn get_replication(
-        &self,
-        vm_name: &str,
-    ) -> HyperVResult<VmReplicationInfo> {
+    pub async fn get_replication(&self, vm_name: &str) -> HyperVResult<VmReplicationInfo> {
         ReplicationManager::get_replication(&self.ps, vm_name).await
     }
 

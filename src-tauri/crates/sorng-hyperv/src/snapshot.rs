@@ -85,9 +85,7 @@ impl SnapshotManager {
         }
 
         cmd.push_str(" -Passthru");
-        cmd.push_str(&format!(
-            " | Select-Object @{{N='Id';E={{$_.Id.ToString()}}}},Name,VMName,@{{N='VmId';E={{$_.VMId.ToString()}}}},@{{N='ParentCheckpointId';E={{if($_.ParentSnapshotId){{$_.ParentSnapshotId.ToString()}}else{{$null}}}}}},@{{N='ParentCheckpointName';E={{$_.ParentSnapshotName}}}},@{{N='CheckpointType';E={{$_.SnapshotType.ToString()}}}},@{{N='CreationTime';E={{$_.CreationTime.ToUniversalTime().ToString('o')}}}},@{{N='Path';E={{$_.Path}}}},@{{N='SnapshotFileSize';E={{0}}}} | ConvertTo-Json -Depth 3 -Compress"
-        ));
+        cmd.push_str(" | Select-Object @{N='Id';E={$_.Id.ToString()}},Name,VMName,@{N='VmId';E={$_.VMId.ToString()}},@{N='ParentCheckpointId';E={if($_.ParentSnapshotId){$_.ParentSnapshotId.ToString()}else{$null}}},@{N='ParentCheckpointName';E={$_.ParentSnapshotName}},@{N='CheckpointType';E={$_.SnapshotType.ToString()}},@{N='CreationTime';E={$_.CreationTime.ToUniversalTime().ToString('o')}},@{N='Path';E={$_.Path}},@{N='SnapshotFileSize';E={0}} | ConvertTo-Json -Depth 3 -Compress");
 
         let cp_name = config.name.as_deref().unwrap_or("(auto)");
         info!("Creating checkpoint '{}' for VM '{}'", cp_name, vm_name);
@@ -171,10 +169,7 @@ impl SnapshotManager {
     }
 
     /// Remove ALL checkpoints for a VM.
-    pub async fn remove_all_checkpoints(
-        ps: &PsExecutor,
-        vm_name: &str,
-    ) -> HyperVResult<u32> {
+    pub async fn remove_all_checkpoints(ps: &PsExecutor, vm_name: &str) -> HyperVResult<u32> {
         info!("Removing all checkpoints from VM '{}'", vm_name);
         let script = format!(
             "$snaps = @(Get-VMSnapshot -VMName '{}'); $count = $snaps.Count; $snaps | Remove-VMSnapshot -Confirm:$false; [PSCustomObject]@{{ Count = $count }} | ConvertTo-Json -Compress",

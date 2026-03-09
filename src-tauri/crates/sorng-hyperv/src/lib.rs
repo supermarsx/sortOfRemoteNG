@@ -15,14 +15,14 @@
 //! - **Replication** – Hyper-V Replica configuration, enable / disable / suspend /
 //!   resume replication, planned & unplanned failover, reverse replication
 
-pub mod types;
+pub mod commands;
 pub mod error;
-pub mod powershell;
-pub mod vm;
-pub mod snapshot;
-pub mod network;
-pub mod storage;
 pub mod metrics;
+pub mod network;
+pub mod powershell;
 pub mod replication;
 pub mod service;
-pub mod commands;
+pub mod snapshot;
+pub mod storage;
+pub mod types;
+pub mod vm;

@@ -201,7 +201,11 @@ impl PsExecutor {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        trace!("PS stdout ({} bytes): {}", stdout.len(), &stdout[..stdout.len().min(300)]);
+        trace!(
+            "PS stdout ({} bytes): {}",
+            stdout.len(),
+            &stdout[..stdout.len().min(300)]
+        );
         if !stderr.is_empty() {
             warn!("PS stderr: {}", &stderr[..stderr.len().min(500)]);
         }

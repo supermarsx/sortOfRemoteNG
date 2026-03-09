@@ -53,10 +53,7 @@ impl NetworkManager {
             SwitchType::Private => "Private",
         };
 
-        let mut cmd = format!(
-            "New-VMSwitch -Name '{}' -SwitchType {}",
-            name, switch_type
-        );
+        let mut cmd = format!("New-VMSwitch -Name '{}' -SwitchType {}", name, switch_type);
 
         // External switches need a net adapter
         if config.switch_type == SwitchType::External {
@@ -66,7 +63,11 @@ impl NetworkManager {
                     "New-VMSwitch -Name '{}' -NetAdapterName '{}' -AllowManagementOS ${}",
                     name,
                     PsScripts::escape(adapter),
-                    if config.allow_management_os { "true" } else { "false" },
+                    if config.allow_management_os {
+                        "true"
+                    } else {
+                        "false"
+                    },
                 );
                 if config.enable_embedded_teaming {
                     cmd.push_str(" -EnableEmbeddedTeaming $true");
@@ -101,11 +102,7 @@ impl NetworkManager {
     }
 
     /// Rename a virtual switch.
-    pub async fn rename_switch(
-        ps: &PsExecutor,
-        name: &str,
-        new_name: &str,
-    ) -> HyperVResult<()> {
+    pub async fn rename_switch(ps: &PsExecutor, name: &str, new_name: &str) -> HyperVResult<()> {
         info!("Renaming virtual switch '{}' -> '{}'", name, new_name);
         ps.run_void(&format!(
             "Rename-VMSwitch -Name '{}' -NewName '{}'",
@@ -116,9 +113,7 @@ impl NetworkManager {
     }
 
     /// List physical network adapters (for creating External switches).
-    pub async fn list_physical_adapters(
-        ps: &PsExecutor,
-    ) -> HyperVResult<Vec<PhysicalAdapterInfo>> {
+    pub async fn list_physical_adapters(ps: &PsExecutor) -> HyperVResult<Vec<PhysicalAdapterInfo>> {
         let script = r#"@(Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -or $_.Status -eq 'Disconnected' } | Select-Object Name,InterfaceDescription,
             @{N='MacAddress';E={$_.MacAddress}},
             @{N='Status';E={$_.Status}},
@@ -178,10 +173,7 @@ impl NetworkManager {
             cmd.push_str(&format!(" -SwitchName '{}'", PsScripts::escape(sw)));
         }
         if let Some(ref mac) = config.static_mac_address {
-            cmd.push_str(&format!(
-                " -StaticMacAddress '{}'",
-                PsScripts::escape(mac)
-            ));
+            cmd.push_str(&format!(" -StaticMacAddress '{}'", PsScripts::escape(mac)));
         }
         if config.dhcp_guard {
             cmd.push_str(" -DhcpGuard On");

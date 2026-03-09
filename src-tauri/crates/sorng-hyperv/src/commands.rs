@@ -12,9 +12,7 @@ use tauri::State;
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[tauri::command]
-pub async fn hyperv_check_module(
-    state: State<'_, HyperVServiceState>,
-) -> Result<bool, String> {
+pub async fn hyperv_check_module(state: State<'_, HyperVServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     svc.check_module().await.map_err(|e| e.to_string())
 }
@@ -42,9 +40,7 @@ pub async fn hyperv_set_config(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[tauri::command]
-pub async fn hyperv_list_vms(
-    state: State<'_, HyperVServiceState>,
-) -> Result<Vec<VmInfo>, String> {
+pub async fn hyperv_list_vms(state: State<'_, HyperVServiceState>) -> Result<Vec<VmInfo>, String> {
     let svc = state.lock().await;
     svc.list_vms().await.map_err(|e| e.to_string())
 }
@@ -163,7 +159,9 @@ pub async fn hyperv_update_vm(
     config: VmUpdateConfig,
 ) -> Result<VmInfo, String> {
     let svc = state.lock().await;
-    svc.update_vm(&name, &config).await.map_err(|e| e.to_string())
+    svc.update_vm(&name, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -173,7 +171,9 @@ pub async fn hyperv_rename_vm(
     new_name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.rename_vm(&name, &new_name).await.map_err(|e| e.to_string())
+    svc.rename_vm(&name, &new_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -183,7 +183,9 @@ pub async fn hyperv_export_vm(
     config: VmExportConfig,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.export_vm(&name, &config).await.map_err(|e| e.to_string())
+    svc.export_vm(&name, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -202,7 +204,9 @@ pub async fn hyperv_live_migrate(
     config: LiveMigrationConfig,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.live_migrate(&name, &config).await.map_err(|e| e.to_string())
+    svc.live_migrate(&name, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -250,9 +254,14 @@ pub async fn hyperv_set_dvd_drive(
     iso_path: Option<String>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_dvd_drive(&name, controller_number, controller_location, iso_path.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    svc.set_dvd_drive(
+        &name,
+        controller_number,
+        controller_location,
+        iso_path.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -278,9 +287,15 @@ pub async fn hyperv_add_hard_drive(
     controller_location: u32,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.add_hard_drive(&name, &vhd_path, &controller_type, controller_number, controller_location)
-        .await
-        .map_err(|e| e.to_string())
+    svc.add_hard_drive(
+        &name,
+        &vhd_path,
+        &controller_type,
+        controller_number,
+        controller_location,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -292,9 +307,14 @@ pub async fn hyperv_remove_hard_drive(
     controller_location: u32,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.remove_hard_drive(&name, &controller_type, controller_number, controller_location)
-        .await
-        .map_err(|e| e.to_string())
+    svc.remove_hard_drive(
+        &name,
+        &controller_type,
+        controller_number,
+        controller_location,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

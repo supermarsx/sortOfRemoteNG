@@ -205,16 +205,10 @@ $ver = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -E
     ) -> HyperVResult<()> {
         let mut parts: Vec<String> = vec![];
         if let Some(p) = vm_path {
-            parts.push(format!(
-                "-VirtualMachinePath '{}'",
-                PsScripts::escape(p)
-            ));
+            parts.push(format!("-VirtualMachinePath '{}'", PsScripts::escape(p)));
         }
         if let Some(p) = vhd_path {
-            parts.push(format!(
-                "-VirtualHardDiskPath '{}'",
-                PsScripts::escape(p)
-            ));
+            parts.push(format!("-VirtualHardDiskPath '{}'", PsScripts::escape(p)));
         }
         if parts.is_empty() {
             return Ok(());

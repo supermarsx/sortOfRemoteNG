@@ -47,9 +47,7 @@ $excluded = @($r.ExcludedDisks | ForEach-Object {{ $_.Path }})
     }
 
     /// List all VMs with replication enabled.
-    pub async fn list_replicated_vms(
-        ps: &PsExecutor,
-    ) -> HyperVResult<Vec<VmReplicationInfo>> {
+    pub async fn list_replicated_vms(ps: &PsExecutor) -> HyperVResult<Vec<VmReplicationInfo>> {
         let script = r#"
 @(Get-VMReplication | ForEach-Object {
     $r = $_
@@ -136,7 +134,10 @@ $excluded = @($r.ExcludedDisks | ForEach-Object {{ $_.Path }})
             cmd.push_str(&format!(" -IncludedVhdPath @({})", disks.join(",")));
         }
 
-        info!("Enabling replication for VM '{}' -> '{}'", vm_name, config.replica_server);
+        info!(
+            "Enabling replication for VM '{}' -> '{}'",
+            vm_name, config.replica_server
+        );
         ps.run_void(&cmd).await
     }
 
@@ -153,10 +154,7 @@ $excluded = @($r.ExcludedDisks | ForEach-Object {{ $_.Path }})
     // ── Start Initial Replication ────────────────────────────────────
 
     /// Start the initial replication over the network.
-    pub async fn start_initial_replication(
-        ps: &PsExecutor,
-        vm_name: &str,
-    ) -> HyperVResult<()> {
+    pub async fn start_initial_replication(ps: &PsExecutor, vm_name: &str) -> HyperVResult<()> {
         info!("Starting initial replication for VM '{}'", vm_name);
         ps.run_void(&format!(
             "Start-VMInitialReplication -VMName '{}'",
@@ -348,9 +346,7 @@ $excluded = @($r.ExcludedDisks | ForEach-Object {{ $_.Path }})
     }
 
     /// Get Replica server configuration.
-    pub async fn get_replica_server_config(
-        ps: &PsExecutor,
-    ) -> HyperVResult<serde_json::Value> {
+    pub async fn get_replica_server_config(ps: &PsExecutor) -> HyperVResult<serde_json::Value> {
         let script = r#"
 $rs = Get-VMReplicationServer -ErrorAction SilentlyContinue
 if ($rs) {

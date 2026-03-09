@@ -166,9 +166,10 @@ $dvds = @(Get-VMDvdDrive -VM $vm | Select-Object ControllerNumber,ControllerLoca
         };
         let mem_bytes = config.memory_startup_mb * 1024 * 1024;
 
-        let mut parts: Vec<String> = vec![
-            format!("$vm = New-VM -Name '{}' -Generation {} -MemoryStartupBytes {}", name, gen, mem_bytes),
-        ];
+        let mut parts: Vec<String> = vec![format!(
+            "$vm = New-VM -Name '{}' -Generation {} -MemoryStartupBytes {}",
+            name, gen, mem_bytes
+        )];
 
         if let Some(ref p) = config.path {
             parts[0].push_str(&format!(" -Path '{}'", PsScripts::escape(p)));
@@ -179,11 +180,18 @@ $dvds = @(Get-VMDvdDrive -VM $vm | Select-Object ControllerNumber,ControllerLoca
         } else if let Some(gb) = config.new_vhd_size_gb {
             let bytes = gb * 1024 * 1024 * 1024;
             let vhd_path = if let Some(ref p) = config.path {
-                format!("{}\\{}\\Virtual Hard Disks\\{}.vhdx", p, config.name, config.name)
+                format!(
+                    "{}\\{}\\Virtual Hard Disks\\{}.vhdx",
+                    p, config.name, config.name
+                )
             } else {
                 format!("{}.vhdx", config.name)
             };
-            parts[0].push_str(&format!(" -NewVHDPath '{}' -NewVHDSizeBytes {}", PsScripts::escape(&vhd_path), bytes));
+            parts[0].push_str(&format!(
+                " -NewVHDPath '{}' -NewVHDSizeBytes {}",
+                PsScripts::escape(&vhd_path),
+                bytes
+            ));
         } else {
             parts[0].push_str(" -NoVHD");
         }
@@ -238,10 +246,7 @@ $dvds = @(Get-VMDvdDrive -VM $vm | Select-Object ControllerNumber,ControllerLoca
 
         // Notes
         if let Some(ref n) = config.notes {
-            parts.push(format!(
-                "Set-VM -VM $vm -Notes '{}'",
-                PsScripts::escape(n)
-            ));
+            parts.push(format!("Set-VM -VM $vm -Notes '{}'", PsScripts::escape(n)));
         }
 
         // Gen2 firmware settings
@@ -250,12 +255,18 @@ $dvds = @(Get-VMDvdDrive -VM $vm | Select-Object ControllerNumber,ControllerLoca
                 parts.push("Set-VMFirmware -VM $vm -EnableSecureBoot Off".to_string());
             }
             if config.enable_tpm {
-                parts.push("Set-VMKeyProtector -VM $vm -NewLocalKeyProtector; Enable-VMTPM -VM $vm".to_string());
+                parts.push(
+                    "Set-VMKeyProtector -VM $vm -NewLocalKeyProtector; Enable-VMTPM -VM $vm"
+                        .to_string(),
+                );
             }
         }
 
         // Return the created VM
-        parts.push("Get-VM -Name $vm.Name | Select-Object * | ConvertTo-Json -Depth 4 -Compress".to_string());
+        parts.push(
+            "Get-VM -Name $vm.Name | Select-Object * | ConvertTo-Json -Depth 4 -Compress"
+                .to_string(),
+        );
 
         let script = parts.join("; ");
         info!("Creating VM '{}'", config.name);
@@ -464,10 +475,7 @@ $dvds = @(Get-VMDvdDrive -VM $vm | Select-Object ControllerNumber,ControllerLoca
     /// Import a VM.
     pub async fn import_vm(ps: &PsExecutor, config: &VmImportConfig) -> HyperVResult<VmInfo> {
         info!("Importing VM from '{}'", config.path);
-        let mut cmd = format!(
-            "Import-VM -Path '{}'",
-            PsScripts::escape(&config.path),
-        );
+        let mut cmd = format!("Import-VM -Path '{}'", PsScripts::escape(&config.path),);
         if config.copy {
             cmd.push_str(" -Copy");
         }
@@ -475,10 +483,16 @@ $dvds = @(Get-VMDvdDrive -VM $vm | Select-Object ControllerNumber,ControllerLoca
             cmd.push_str(" -GenerateNewId");
         }
         if let Some(ref vhd) = config.vhd_destination_path {
-            cmd.push_str(&format!(" -VhdDestinationPath '{}'", PsScripts::escape(vhd)));
+            cmd.push_str(&format!(
+                " -VhdDestinationPath '{}'",
+                PsScripts::escape(vhd)
+            ));
         }
         if let Some(ref vmp) = config.virtual_machine_path {
-            cmd.push_str(&format!(" -VirtualMachinePath '{}'", PsScripts::escape(vmp)));
+            cmd.push_str(&format!(
+                " -VirtualMachinePath '{}'",
+                PsScripts::escape(vmp)
+            ));
         }
         cmd.push_str(" | Select-Object * | ConvertTo-Json -Depth 4 -Compress");
         ps.run_json_as(&cmd).await

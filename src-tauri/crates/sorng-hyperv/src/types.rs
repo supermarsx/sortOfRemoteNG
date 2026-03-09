@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 /// Runtime state of a Hyper-V virtual machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[derive(Default)]
 pub enum VmState {
+    #[default]
     Off,
     Running,
     Paused,
@@ -25,12 +27,6 @@ pub enum VmState {
     Reset,
     /// A state we didn't map yet.
     Other,
-}
-
-impl Default for VmState {
-    fn default() -> Self {
-        Self::Off
-    }
 }
 
 impl VmState {
@@ -73,16 +69,11 @@ impl VmState {
 // ─── VM Generation ───────────────────────────────────────────────────
 
 /// Hyper-V VM generation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VmGeneration {
     Gen1 = 1,
+    #[default]
     Gen2 = 2,
-}
-
-impl Default for VmGeneration {
-    fn default() -> Self {
-        Self::Gen2
-    }
 }
 
 // ─── Boot Device ─────────────────────────────────────────────────────
@@ -90,7 +81,9 @@ impl Default for VmGeneration {
 /// Boot device type for Hyper-V VM.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum BootDevice {
+    #[default]
     VHD,
     CD,
     IDE,
@@ -99,42 +92,28 @@ pub enum BootDevice {
     Floppy,
 }
 
-impl Default for BootDevice {
-    fn default() -> Self {
-        Self::VHD
-    }
-}
-
 // ─── Automatic Start / Stop Actions ─────────────────────────────────
 
 /// Action when host starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum AutoStartAction {
+    #[default]
     Nothing,
     StartIfRunning,
     Start,
 }
 
-impl Default for AutoStartAction {
-    fn default() -> Self {
-        Self::Nothing
-    }
-}
-
 /// Action when host stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum AutoStopAction {
     TurnOff,
+    #[default]
     Save,
     Shutdown,
-}
-
-impl Default for AutoStopAction {
-    fn default() -> Self {
-        Self::Save
-    }
 }
 
 // ─── Checkpoint Type ─────────────────────────────────────────────────
@@ -142,17 +121,13 @@ impl Default for AutoStopAction {
 /// Hyper-V checkpoint (snapshot) type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum CheckpointType {
     Disabled,
+    #[default]
     Production,
     ProductionOnly,
     Standard,
-}
-
-impl Default for CheckpointType {
-    fn default() -> Self {
-        Self::Production
-    }
 }
 
 // ─── Memory Configuration ────────────────────────────────────────────
@@ -544,31 +519,23 @@ pub struct VmDvdDriveInfo {
 /// VHD disk format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum VhdFormat {
     VHD,
+    #[default]
     VHDX,
     VHDSet,
-}
-
-impl Default for VhdFormat {
-    fn default() -> Self {
-        Self::VHDX
-    }
 }
 
 /// VHD disk type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum VhdType {
     Fixed,
+    #[default]
     Dynamic,
     Differencing,
-}
-
-impl Default for VhdType {
-    fn default() -> Self {
-        Self::Dynamic
-    }
 }
 
 /// Configuration for creating a new VHD.
@@ -672,16 +639,12 @@ pub struct VhdConvertConfig {
 /// Virtual switch type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[derive(Default)]
 pub enum SwitchType {
+    #[default]
     Internal,
     External,
     Private,
-}
-
-impl Default for SwitchType {
-    fn default() -> Self {
-        Self::Internal
-    }
 }
 
 /// Virtual switch information.
@@ -789,7 +752,9 @@ pub struct CreateCheckpointConfig {
 /// Replication mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ReplicationMode {
+    #[default]
     None,
     Primary,
     Replica,
@@ -797,16 +762,12 @@ pub enum ReplicationMode {
     ExtendedReplica,
 }
 
-impl Default for ReplicationMode {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// Replication state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ReplicationState {
+    #[default]
     Disabled,
     ReadyForInitialReplication,
     InitialReplicationInProgress,
@@ -822,39 +783,25 @@ pub enum ReplicationState {
     WaitingForUpdateCompletion,
 }
 
-impl Default for ReplicationState {
-    fn default() -> Self {
-        Self::Disabled
-    }
-}
-
 /// Authentication type for replication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ReplicationAuthType {
+    #[default]
     Kerberos,
     Certificate,
-}
-
-impl Default for ReplicationAuthType {
-    fn default() -> Self {
-        Self::Kerberos
-    }
 }
 
 /// Replication frequency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ReplicationFrequency {
-    Seconds30  = 30,
-    Minutes5   = 300,
-    Minutes15  = 900,
-}
-
-impl Default for ReplicationFrequency {
-    fn default() -> Self {
-        Self::Minutes5
-    }
+    Seconds30 = 30,
+    #[default]
+    Minutes5 = 300,
+    Minutes15 = 900,
 }
 
 /// Full replication information for a VM.

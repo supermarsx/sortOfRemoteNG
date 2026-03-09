@@ -127,10 +127,7 @@ impl StorageManager {
     // ── Convert ─────────────────────────────────────────────────────
 
     /// Convert a VHD from one format/type to another.
-    pub async fn convert_vhd(
-        ps: &PsExecutor,
-        config: &VhdConvertConfig,
-    ) -> HyperVResult<VhdInfo> {
+    pub async fn convert_vhd(ps: &PsExecutor, config: &VhdConvertConfig) -> HyperVResult<VhdInfo> {
         let format_str = match config.format {
             VhdFormat::VHD => "VHD",
             VhdFormat::VHDX => "VHDX",
@@ -186,11 +183,8 @@ impl StorageManager {
     /// Merge a differencing disk into its parent.
     pub async fn merge_vhd(ps: &PsExecutor, path: &str) -> HyperVResult<()> {
         info!("Merging VHD '{}'", path);
-        ps.run_void(&format!(
-            "Merge-VHD -Path '{}'",
-            PsScripts::escape(path)
-        ))
-        .await
+        ps.run_void(&format!("Merge-VHD -Path '{}'", PsScripts::escape(path)))
+            .await
     }
 
     /// Merge a differencing disk to a specific destination.
@@ -211,11 +205,7 @@ impl StorageManager {
     // ── Mount / Dismount ────────────────────────────────────────────
 
     /// Mount a VHD to the host OS.
-    pub async fn mount_vhd(
-        ps: &PsExecutor,
-        path: &str,
-        read_only: bool,
-    ) -> HyperVResult<String> {
+    pub async fn mount_vhd(ps: &PsExecutor, path: &str, read_only: bool) -> HyperVResult<String> {
         info!("Mounting VHD '{}' (read_only={})", path, read_only);
         let ro = if read_only { " -ReadOnly" } else { "" };
         let script = format!(
@@ -236,11 +226,8 @@ impl StorageManager {
     /// Dismount a VHD from the host OS.
     pub async fn dismount_vhd(ps: &PsExecutor, path: &str) -> HyperVResult<()> {
         info!("Dismounting VHD '{}'", path);
-        ps.run_void(&format!(
-            "Dismount-VHD -Path '{}'",
-            PsScripts::escape(path)
-        ))
-        .await
+        ps.run_void(&format!("Dismount-VHD -Path '{}'", PsScripts::escape(path)))
+            .await
     }
 
     // ── Set / Get VHD on VM ─────────────────────────────────────────
