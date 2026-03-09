@@ -25,7 +25,9 @@ pub fn matches_query(listing: &MarketplaceListing, query: &str) -> bool {
     let hay = build_haystack(listing);
     let hay_lower = hay.to_lowercase();
 
-    query_tokens.iter().all(|qt| hay_lower.contains(qt.as_str()))
+    query_tokens
+        .iter()
+        .all(|qt| hay_lower.contains(qt.as_str()))
 }
 
 /// Compute a weighted relevance score for `listing` against `query`.

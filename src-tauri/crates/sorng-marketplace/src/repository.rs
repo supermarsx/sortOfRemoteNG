@@ -26,8 +26,8 @@ pub async fn fetch_index(config: &RepositoryConfig) -> Result<RepositoryIndex, M
     }
 
     let body = resp.text().await?;
-    let index: RepositoryIndex =
-        serde_json::from_str(&body).map_err(|e| MarketplaceError::IndexParseError(e.to_string()))?;
+    let index: RepositoryIndex = serde_json::from_str(&body)
+        .map_err(|e| MarketplaceError::IndexParseError(e.to_string()))?;
 
     info!(
         "Fetched index with {} listing(s), version {}",
@@ -99,11 +99,7 @@ pub async fn fetch_github_releases(
                 name: format!("{owner}-{repo}"),
                 display_name: name.clone(),
                 description: body.chars().take(200).collect(),
-                long_description: if body.len() > 200 {
-                    Some(body)
-                } else {
-                    None
-                },
+                long_description: if body.len() > 200 { Some(body) } else { None },
                 author: MarketplaceAuthor {
                     name: owner.to_string(),
                     email: None,
@@ -220,7 +216,9 @@ fn build_raw_url(config: &RepositoryConfig, path: &str) -> String {
         RepoType::BitBucket => {
             format!(
                 "{}/raw/{}/{}",
-                config.url.replace("bitbucket.org", "api.bitbucket.org/2.0/repositories"),
+                config
+                    .url
+                    .replace("bitbucket.org", "api.bitbucket.org/2.0/repositories"),
                 branch,
                 path
             )

@@ -84,7 +84,10 @@ pub async fn install_from_listing(
 pub async fn uninstall_extension(installed: &InstalledExtension) -> Result<(), MarketplaceError> {
     let path = Path::new(&installed.path);
     if path.exists() {
-        info!("Uninstalling extension {} at {}", installed.listing_id, installed.path);
+        info!(
+            "Uninstalling extension {} at {}",
+            installed.listing_id, installed.path
+        );
         fs::remove_dir_all(path)
             .await
             .map_err(|e| MarketplaceError::UninstallError(e.to_string()))?;

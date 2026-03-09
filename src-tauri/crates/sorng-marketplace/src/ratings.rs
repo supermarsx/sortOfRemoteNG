@@ -41,11 +41,7 @@ impl RatingManager {
     pub fn get_reviews_for_listing(&self, listing_id: &str) -> Vec<&MarketplaceReview> {
         self.by_listing
             .get(listing_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.reviews.get(id))
-                    .collect()
-            })
+            .map(|ids| ids.iter().filter_map(|id| self.reviews.get(id)).collect())
             .unwrap_or_default()
     }
 

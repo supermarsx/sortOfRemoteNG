@@ -97,7 +97,8 @@ impl MarketplaceService {
                 continue;
             }
             let dep_listing = self.registry.get_listing(dep_id)?.clone();
-            let res = installer::install_from_listing(&dep_listing, &self.config.cache_directory).await?;
+            let res =
+                installer::install_from_listing(&dep_listing, &self.config.cache_directory).await?;
             if res.success {
                 self.registry.mark_installed(InstalledExtension {
                     listing_id: dep_id.clone(),
@@ -160,11 +161,7 @@ impl MarketplaceService {
     }
 
     pub fn get_installed(&self) -> Vec<InstalledExtension> {
-        self.registry
-            .get_installed()
-            .into_iter()
-            .cloned()
-            .collect()
+        self.registry.get_installed().into_iter().cloned().collect()
     }
 
     pub fn check_updates(&self) -> Vec<(MarketplaceListing, InstalledExtension)> {

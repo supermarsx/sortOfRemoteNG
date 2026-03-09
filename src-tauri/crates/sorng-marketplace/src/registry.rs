@@ -71,7 +71,8 @@ impl MarketplaceRegistry {
         // 2. Sort.
         match query.sort_by {
             SearchSort::Relevance => {
-                candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                candidates
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             }
             SearchSort::Downloads => {
                 candidates.sort_by(|a, b| b.0.downloads.cmp(&a.0.downloads));
