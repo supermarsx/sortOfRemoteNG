@@ -17,9 +17,7 @@ impl<'a> HealthManager<'a> {
     /// Get overall server health rollup.
     pub async fn get_health_rollup(&self) -> IdracResult<ServerHealthRollup> {
         if let Ok(rf) = self.client.require_redfish() {
-            let sys: serde_json::Value = rf
-                .get("/redfish/v1/Systems/System.Embedded.1")
-                .await?;
+            let sys: serde_json::Value = rf.get("/redfish/v1/Systems/System.Embedded.1").await?;
 
             let chassis: serde_json::Value = rf
                 .get("/redfish/v1/Chassis/System.Embedded.1")
@@ -38,34 +36,85 @@ impl<'a> HealthManager<'a> {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 system_health: ComponentHealth {
-                    health: sys.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    health_rollup: sys.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    state: sys.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    health: sys
+                        .pointer("/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: sys
+                        .pointer("/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: sys
+                        .pointer("/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 },
                 chassis_health: ComponentHealth {
-                    health: chassis.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    health_rollup: chassis.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    state: chassis.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    health: chassis
+                        .pointer("/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: chassis
+                        .pointer("/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: chassis
+                        .pointer("/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 },
                 idrac_health: ComponentHealth {
-                    health: mgr.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    health_rollup: mgr.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    state: mgr.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    health: mgr
+                        .pointer("/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: mgr
+                        .pointer("/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: mgr
+                        .pointer("/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 },
                 processor_health: ComponentHealth {
-                    health: sys.pointer("/ProcessorSummary/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    health_rollup: sys.pointer("/ProcessorSummary/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    state: sys.pointer("/ProcessorSummary/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    health: sys
+                        .pointer("/ProcessorSummary/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: sys
+                        .pointer("/ProcessorSummary/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: sys
+                        .pointer("/ProcessorSummary/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 },
                 memory_health: ComponentHealth {
-                    health: sys.pointer("/MemorySummary/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    health_rollup: sys.pointer("/MemorySummary/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    state: sys.pointer("/MemorySummary/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    health: sys
+                        .pointer("/MemorySummary/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: sys
+                        .pointer("/MemorySummary/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: sys
+                        .pointer("/MemorySummary/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 },
                 storage_health: None,
                 network_health: None,
-                power_state: sys.get("PowerState").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                indicator_led: sys.get("IndicatorLED").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                power_state: sys
+                    .get("PowerState")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                indicator_led: sys
+                    .get("IndicatorLED")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
 
@@ -76,7 +125,14 @@ impl<'a> HealthManager<'a> {
                 system_health: ComponentHealth {
                     health: Some(if status.fault { "Critical" } else { "OK" }.to_string()),
                     health_rollup: None,
-                    state: Some(if status.power_on { "Enabled" } else { "StandbyOffline" }.to_string()),
+                    state: Some(
+                        if status.power_on {
+                            "Enabled"
+                        } else {
+                            "StandbyOffline"
+                        }
+                        .to_string(),
+                    ),
                 },
                 chassis_health: ComponentHealth::default(),
                 idrac_health: ComponentHealth::default(),
@@ -99,55 +155,136 @@ impl<'a> HealthManager<'a> {
         let mut components = Vec::new();
 
         // System
-        if let Ok(sys) = rf.get::<serde_json::Value>("/redfish/v1/Systems/System.Embedded.1").await {
-            components.push(("System".to_string(), ComponentHealth {
-                health: sys.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                health_rollup: sys.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                state: sys.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            }));
+        if let Ok(sys) = rf
+            .get::<serde_json::Value>("/redfish/v1/Systems/System.Embedded.1")
+            .await
+        {
+            components.push((
+                "System".to_string(),
+                ComponentHealth {
+                    health: sys
+                        .pointer("/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: sys
+                        .pointer("/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: sys
+                        .pointer("/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                },
+            ));
 
-            components.push(("Processors".to_string(), ComponentHealth {
-                health: sys.pointer("/ProcessorSummary/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                health_rollup: sys.pointer("/ProcessorSummary/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                state: sys.pointer("/ProcessorSummary/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            }));
+            components.push((
+                "Processors".to_string(),
+                ComponentHealth {
+                    health: sys
+                        .pointer("/ProcessorSummary/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: sys
+                        .pointer("/ProcessorSummary/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: sys
+                        .pointer("/ProcessorSummary/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                },
+            ));
 
-            components.push(("Memory".to_string(), ComponentHealth {
-                health: sys.pointer("/MemorySummary/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                health_rollup: sys.pointer("/MemorySummary/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                state: sys.pointer("/MemorySummary/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            }));
+            components.push((
+                "Memory".to_string(),
+                ComponentHealth {
+                    health: sys
+                        .pointer("/MemorySummary/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: sys
+                        .pointer("/MemorySummary/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: sys
+                        .pointer("/MemorySummary/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                },
+            ));
         }
 
         // Chassis
-        if let Ok(chassis) = rf.get::<serde_json::Value>("/redfish/v1/Chassis/System.Embedded.1").await {
-            components.push(("Chassis".to_string(), ComponentHealth {
-                health: chassis.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                health_rollup: chassis.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                state: chassis.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            }));
+        if let Ok(chassis) = rf
+            .get::<serde_json::Value>("/redfish/v1/Chassis/System.Embedded.1")
+            .await
+        {
+            components.push((
+                "Chassis".to_string(),
+                ComponentHealth {
+                    health: chassis
+                        .pointer("/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: chassis
+                        .pointer("/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: chassis
+                        .pointer("/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                },
+            ));
         }
 
         // Power
-        if let Ok(power) = rf.get::<serde_json::Value>("/redfish/v1/Chassis/System.Embedded.1/Power").await {
+        if let Ok(power) = rf
+            .get::<serde_json::Value>("/redfish/v1/Chassis/System.Embedded.1/Power")
+            .await
+        {
             if let Some(psus) = power.get("PowerSupplies").and_then(|v| v.as_array()) {
                 for (i, psu) in psus.iter().enumerate() {
-                    components.push((format!("PSU {}", i), ComponentHealth {
-                        health: psu.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        health_rollup: None,
-                        state: psu.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    }));
+                    components.push((
+                        format!("PSU {}", i),
+                        ComponentHealth {
+                            health: psu
+                                .pointer("/Status/Health")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            health_rollup: None,
+                            state: psu
+                                .pointer("/Status/State")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                        },
+                    ));
                 }
             }
         }
 
         // iDRAC
-        if let Ok(mgr) = rf.get::<serde_json::Value>("/redfish/v1/Managers/iDRAC.Embedded.1").await {
-            components.push(("iDRAC".to_string(), ComponentHealth {
-                health: mgr.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                health_rollup: mgr.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                state: mgr.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            }));
+        if let Ok(mgr) = rf
+            .get::<serde_json::Value>("/redfish/v1/Managers/iDRAC.Embedded.1")
+            .await
+        {
+            components.push((
+                "iDRAC".to_string(),
+                ComponentHealth {
+                    health: mgr
+                        .pointer("/Status/Health")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    health_rollup: mgr
+                        .pointer("/Status/HealthRollup")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    state: mgr
+                        .pointer("/Status/State")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                },
+            ));
         }
 
         Ok(components)

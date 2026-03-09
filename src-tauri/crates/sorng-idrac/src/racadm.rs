@@ -75,13 +75,9 @@ impl<'a> RacadmManager<'a> {
             "getversion" | "get" if parts.len() > 1 => {
                 self.racadm_get(parts.get(1).unwrap_or(&"")).await
             }
-            "set" if parts.len() > 2 => {
-                self.racadm_set(parts[1], parts[2]).await
-            }
+            "set" if parts.len() > 2 => self.racadm_set(parts[1], parts[2]).await,
             "racreset" => self.racadm_racreset().await,
-            "serveraction" if parts.len() > 1 => {
-                self.racadm_serveraction(parts[1]).await
-            }
+            "serveraction" if parts.len() > 1 => self.racadm_serveraction(parts[1]).await,
             "getsysinfo" | "getracinfo" => self.racadm_getsysinfo().await,
             "jobqueue" if parts.get(1) == Some(&"view") => self.racadm_jobqueue_view().await,
             "clrsel" => self.racadm_clrsel().await,
@@ -123,7 +119,8 @@ impl<'a> RacadmManager<'a> {
             }
         });
 
-        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body).await?;
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await?;
 
         Ok(RacadmResult {
             command: format!("set {} {}", attribute, value),
@@ -183,13 +180,9 @@ impl<'a> RacadmManager<'a> {
     async fn racadm_getsysinfo(&self) -> IdracResult<RacadmResult> {
         let rf = self.client.require_redfish()?;
 
-        let sys: serde_json::Value = rf
-            .get("/redfish/v1/Systems/System.Embedded.1")
-            .await?;
+        let sys: serde_json::Value = rf.get("/redfish/v1/Systems/System.Embedded.1").await?;
 
-        let mgr: serde_json::Value = rf
-            .get("/redfish/v1/Managers/iDRAC.Embedded.1")
-            .await?;
+        let mgr: serde_json::Value = rf.get("/redfish/v1/Managers/iDRAC.Embedded.1").await?;
 
         let output = format!(
             "System Model = {}\nService Tag = {}\nBIOS Version = {}\nPower State = {}\niDRAC Version = {}\nFirmware Version = {}",
@@ -296,6 +289,7 @@ impl<'a> RacadmManager<'a> {
             }
         });
 
-        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body).await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await
     }
 }

@@ -18,9 +18,8 @@ impl<'a> BiosManager<'a> {
     /// Get all BIOS attributes (current values).
     pub async fn get_bios_attributes(&self) -> IdracResult<Vec<BiosAttribute>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let bios: serde_json::Value = rf
-                .get("/redfish/v1/Systems/System.Embedded.1/Bios")
-                .await?;
+            let bios: serde_json::Value =
+                rf.get("/redfish/v1/Systems/System.Embedded.1/Bios").await?;
 
             let attrs = bios
                 .get("Attributes")
@@ -58,14 +57,25 @@ impl<'a> BiosManager<'a> {
             let mut attrs = Vec::new();
 
             for v in enums.iter().chain(strings.iter()).chain(integers.iter()) {
-                let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
+                let get = |k: &str| {
+                    v.properties
+                        .get(k)
+                        .and_then(|val| val.as_str())
+                        .map(|s| s.to_string())
+                };
                 attrs.push(BiosAttribute {
                     name: get("AttributeName").unwrap_or_default(),
                     current_value: get("CurrentValue"),
                     pending_value: get("PendingValue"),
                     attribute_type: get("AttributeType"),
-                    read_only: v.properties.get("IsReadOnly").and_then(|val| val.as_str()).map(|s| s == "true"),
-                    possible_values: v.properties.get("PossibleValues")
+                    read_only: v
+                        .properties
+                        .get("IsReadOnly")
+                        .and_then(|val| val.as_str())
+                        .map(|s| s == "true"),
+                    possible_values: v
+                        .properties
+                        .get("PossibleValues")
                         .and_then(|val| val.as_str())
                         .map(|s| s.split(',').map(|p| p.trim().to_string()).collect()),
                     display_name: get("AttributeDisplayName"),
@@ -80,15 +90,16 @@ impl<'a> BiosManager<'a> {
             return Ok(attrs);
         }
 
-        Err(IdracError::unsupported("BIOS attribute listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "BIOS attribute listing requires Redfish or WSMAN",
+        ))
     }
 
     /// Get a specific BIOS attribute value.
     pub async fn get_bios_attribute(&self, name: &str) -> IdracResult<Option<String>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let bios: serde_json::Value = rf
-                .get("/redfish/v1/Systems/System.Embedded.1/Bios")
-                .await?;
+            let bios: serde_json::Value =
+                rf.get("/redfish/v1/Systems/System.Embedded.1/Bios").await?;
 
             return Ok(bios
                 .get("Attributes")
@@ -100,7 +111,10 @@ impl<'a> BiosManager<'a> {
         }
 
         let attrs = self.get_bios_attributes().await?;
-        Ok(attrs.iter().find(|a| a.name == name).and_then(|a| a.current_value.clone()))
+        Ok(attrs
+            .iter()
+            .find(|a| a.name == name)
+            .and_then(|a| a.current_value.clone()))
     }
 
     /// Set BIOS attributes (creates a pending job — requires reboot to apply).
@@ -119,11 +133,8 @@ impl<'a> BiosManager<'a> {
             "Attributes": attrs
         });
 
-        rf.patch_json(
-            "/redfish/v1/Systems/System.Embedded.1/Bios/Settings",
-            &body,
-        )
-        .await?;
+        rf.patch_json("/redfish/v1/Systems/System.Embedded.1/Bios/Settings", &body)
+            .await?;
 
         // Create a scheduled job to apply on next reboot
         let job_body = serde_json::json!({
@@ -131,10 +142,7 @@ impl<'a> BiosManager<'a> {
         });
 
         let job_uri = rf
-            .post_action(
-                "/redfish/v1/Managers/iDRAC.Embedded.1/Jobs",
-                &job_body,
-            )
+            .post_action("/redfish/v1/Managers/iDRAC.Embedded.1/Jobs", &job_body)
             .await?;
 
         Ok(job_uri.unwrap_or_else(|| "Pending - reboot required".to_string()))
@@ -180,16 +188,18 @@ impl<'a> BiosManager<'a> {
     pub async fn get_boot_order(&self) -> IdracResult<BootConfig> {
         let rf = self.client.require_redfish()?;
 
-        let sys: serde_json::Value = rf
-            .get("/redfish/v1/Systems/System.Embedded.1")
-            .await?;
+        let sys: serde_json::Value = rf.get("/redfish/v1/Systems/System.Embedded.1").await?;
 
         let boot = sys.get("Boot").unwrap_or(&serde_json::Value::Null);
 
         let boot_order = boot
             .get("BootOrder")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let boot_source_override_target = boot
@@ -214,12 +224,29 @@ impl<'a> BiosManager<'a> {
             if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
                 for m in members {
                     boot_sources.push(BootSource {
-                        id: m.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        name: m.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        id: m
+                            .get("Id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        name: m
+                            .get("Name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         enabled: m.get("BootOptionEnabled").and_then(|v| v.as_bool()),
-                        display_name: m.get("DisplayName").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        uefi_device_path: m.get("UefiDevicePath").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        boot_option_reference: m.get("BootOptionReference").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        display_name: m
+                            .get("DisplayName")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        uefi_device_path: m
+                            .get("UefiDevicePath")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        boot_option_reference: m
+                            .get("BootOptionReference")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         index: None,
                     });
                 }
@@ -247,7 +274,8 @@ impl<'a> BiosManager<'a> {
             }
         });
 
-        rf.patch_json("/redfish/v1/Systems/System.Embedded.1", &body).await
+        rf.patch_json("/redfish/v1/Systems/System.Embedded.1", &body)
+            .await
     }
 
     /// Set one-time boot device.
@@ -264,7 +292,8 @@ impl<'a> BiosManager<'a> {
         }
 
         let body = serde_json::json!({ "Boot": boot_obj });
-        rf.patch_json("/redfish/v1/Systems/System.Embedded.1", &body).await
+        rf.patch_json("/redfish/v1/Systems/System.Embedded.1", &body)
+            .await
     }
 
     /// Set boot mode (UEFI or Legacy/BIOS).
@@ -278,6 +307,7 @@ impl<'a> BiosManager<'a> {
     pub async fn clear_pending_bios_changes(&self) -> IdracResult<()> {
         let rf = self.client.require_redfish()?;
 
-        rf.delete("/redfish/v1/Systems/System.Embedded.1/Bios/Settings").await
+        rf.delete("/redfish/v1/Systems/System.Embedded.1/Bios/Settings")
+            .await
     }
 }

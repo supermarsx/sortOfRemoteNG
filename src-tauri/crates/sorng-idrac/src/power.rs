@@ -38,7 +38,10 @@ impl<'a> PowerManager<'a> {
             ws.invoke(
                 "CIM_ComputerSystem",
                 "RequestStateChange",
-                &[("CreationClassName", "DCIM_ComputerSystem"), ("Name", "srv:system")],
+                &[
+                    ("CreationClassName", "DCIM_ComputerSystem"),
+                    ("Name", "srv:system"),
+                ],
                 &[("RequestedState", &state.to_string())],
             )
             .await?;
@@ -64,15 +67,15 @@ impl<'a> PowerManager<'a> {
             return Ok(());
         }
 
-        Err(IdracError::unsupported("No protocol available for power action"))
+        Err(IdracError::unsupported(
+            "No protocol available for power action",
+        ))
     }
 
     /// Get current power state.
     pub async fn get_power_state(&self) -> IdracResult<String> {
         if let Ok(rf) = self.client.require_redfish() {
-            let sys: serde_json::Value = rf
-                .get("/redfish/v1/Systems/System.Embedded.1")
-                .await?;
+            let sys: serde_json::Value = rf.get("/redfish/v1/Systems/System.Embedded.1").await?;
             return Ok(sys
                 .get("PowerState")
                 .and_then(|v| v.as_str())
@@ -85,7 +88,9 @@ impl<'a> PowerManager<'a> {
             return Ok(if status.power_on { "On" } else { "Off" }.to_string());
         }
 
-        Err(IdracError::unsupported("No protocol available for power state"))
+        Err(IdracError::unsupported(
+            "No protocol available for power state",
+        ))
     }
 
     /// Get power consumption metrics.
@@ -96,7 +101,10 @@ impl<'a> PowerManager<'a> {
                 .get("/redfish/v1/Chassis/System.Embedded.1/Power")
                 .await?;
 
-            let pc = power.get("PowerControl").and_then(|v| v.as_array()).and_then(|a| a.first());
+            let pc = power
+                .get("PowerControl")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first());
 
             return Ok(PowerMetrics {
                 current_watts: pc
@@ -143,24 +151,69 @@ impl<'a> PowerManager<'a> {
             return Ok(psus
                 .iter()
                 .map(|p| PowerSupply {
-                    id: p.get("MemberId").or_else(|| p.get("Name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: p.get("Name").and_then(|v| v.as_str()).unwrap_or("PSU").to_string(),
-                    model: p.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    serial_number: p.get("SerialNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    firmware_version: p.get("FirmwareVersion").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    id: p
+                        .get("MemberId")
+                        .or_else(|| p.get("Name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: p
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("PSU")
+                        .to_string(),
+                    model: p
+                        .get("Model")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    serial_number: p
+                        .get("SerialNumber")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    firmware_version: p
+                        .get("FirmwareVersion")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     status: ComponentHealth {
-                        health: p.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        health_rollup: p.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        state: p.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        health: p
+                            .pointer("/Status/Health")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        health_rollup: p
+                            .pointer("/Status/HealthRollup")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        state: p
+                            .pointer("/Status/State")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     },
                     capacity_watts: p.get("PowerCapacityWatts").and_then(|v| v.as_f64()),
                     input_voltage: p.get("LineInputVoltage").and_then(|v| v.as_f64()),
-                    output_watts: p.get("PowerOutputWatts").or_else(|| p.get("LastPowerOutputWatts")).and_then(|v| v.as_f64()),
-                    line_input_voltage_type: p.get("LineInputVoltageType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    power_supply_type: p.get("PowerSupplyType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    manufacturer: p.get("Manufacturer").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    part_number: p.get("PartNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    spare_part_number: p.get("SparePartNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    output_watts: p
+                        .get("PowerOutputWatts")
+                        .or_else(|| p.get("LastPowerOutputWatts"))
+                        .and_then(|v| v.as_f64()),
+                    line_input_voltage_type: p
+                        .get("LineInputVoltageType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    power_supply_type: p
+                        .get("PowerSupplyType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    manufacturer: p
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    part_number: p
+                        .get("PartNumber")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    spare_part_number: p
+                        .get("SparePartNumber")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     efficiency_rating: p.get("EfficiencyPercent").and_then(|v| v.as_f64()),
                 })
                 .collect());
@@ -171,7 +224,12 @@ impl<'a> PowerManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
                     PowerSupply {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("DeviceDescription").unwrap_or_else(|| "PSU".to_string()),
@@ -183,9 +241,18 @@ impl<'a> PowerManager<'a> {
                             health_rollup: None,
                             state: None,
                         },
-                        capacity_watts: v.properties.get("TotalOutputPower").and_then(|val| val.as_f64()),
-                        input_voltage: v.properties.get("InputVoltage").and_then(|val| val.as_f64()),
-                        output_watts: v.properties.get("CurrentOutputPower").and_then(|val| val.as_f64()),
+                        capacity_watts: v
+                            .properties
+                            .get("TotalOutputPower")
+                            .and_then(|val| val.as_f64()),
+                        input_voltage: v
+                            .properties
+                            .get("InputVoltage")
+                            .and_then(|val| val.as_f64()),
+                        output_watts: v
+                            .properties
+                            .get("CurrentOutputPower")
+                            .and_then(|val| val.as_f64()),
                         line_input_voltage_type: get("InputVoltageType"),
                         power_supply_type: get("Type"),
                         manufacturer: get("Manufacturer"),
@@ -197,7 +264,9 @@ impl<'a> PowerManager<'a> {
                 .collect());
         }
 
-        Err(IdracError::unsupported("No protocol available for PSU listing"))
+        Err(IdracError::unsupported(
+            "No protocol available for PSU listing",
+        ))
     }
 
     /// Set power cap (watts). Set to 0 to disable.
@@ -221,6 +290,7 @@ impl<'a> PowerManager<'a> {
                 }]
             })
         };
-        rf.patch_json("/redfish/v1/Chassis/System.Embedded.1/Power", &body).await
+        rf.patch_json("/redfish/v1/Chassis/System.Embedded.1/Power", &body)
+            .await
     }
 }

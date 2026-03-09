@@ -22,27 +22,72 @@ impl<'a> FirmwareManager<'a> {
                 .get("/redfish/v1/UpdateService/FirmwareInventory?$expand=*($levels=1)")
                 .await?;
 
-            let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let members = col
+                .get("Members")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
             return Ok(members
                 .iter()
                 .map(|f| FirmwareInventory {
-                    id: f.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: f.get("Name").and_then(|v| v.as_str()).unwrap_or("Firmware").to_string(),
-                    version: f.get("Version").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    updateable: f.get("Updateable").and_then(|v| v.as_bool()).unwrap_or(false),
+                    id: f
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: f
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Firmware")
+                        .to_string(),
+                    version: f
+                        .get("Version")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    updateable: f
+                        .get("Updateable")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
                     status: ComponentHealth {
-                        health: f.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        health: f
+                            .pointer("/Status/Health")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         health_rollup: None,
-                        state: f.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        state: f
+                            .pointer("/Status/State")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     },
-                    component_id: f.pointer("/Oem/Dell/DellSoftwareInventory/ComponentID").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    device_id: f.pointer("/Oem/Dell/DellSoftwareInventory/DeviceID").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    vendor_id: f.pointer("/Oem/Dell/DellSoftwareInventory/VendorID").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    sub_device_id: f.pointer("/Oem/Dell/DellSoftwareInventory/SubDeviceID").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    sub_vendor_id: f.pointer("/Oem/Dell/DellSoftwareInventory/SubVendorID").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    install_date: f.pointer("/Oem/Dell/DellSoftwareInventory/InstallationDate").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    release_date: f.get("ReleaseDate").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    component_id: f
+                        .pointer("/Oem/Dell/DellSoftwareInventory/ComponentID")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    device_id: f
+                        .pointer("/Oem/Dell/DellSoftwareInventory/DeviceID")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    vendor_id: f
+                        .pointer("/Oem/Dell/DellSoftwareInventory/VendorID")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    sub_device_id: f
+                        .pointer("/Oem/Dell/DellSoftwareInventory/SubDeviceID")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    sub_vendor_id: f
+                        .pointer("/Oem/Dell/DellSoftwareInventory/SubVendorID")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    install_date: f
+                        .pointer("/Oem/Dell/DellSoftwareInventory/InstallationDate")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    release_date: f
+                        .get("ReleaseDate")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     size_bytes: f.get("SizeBytes").and_then(|v| v.as_u64()),
                 })
                 .collect());
@@ -53,12 +98,22 @@ impl<'a> FirmwareManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
                     FirmwareInventory {
                         id: get("InstanceID").unwrap_or_default(),
                         name: get("ElementName").unwrap_or_else(|| "Firmware".to_string()),
                         version: get("VersionString"),
-                        updateable: v.properties.get("IsEntity").and_then(|val| val.as_str()).map(|s| s == "true").unwrap_or(false),
+                        updateable: v
+                            .properties
+                            .get("IsEntity")
+                            .and_then(|val| val.as_str())
+                            .map(|s| s == "true")
+                            .unwrap_or(false),
                         status: ComponentHealth {
                             health: get("Status"),
                             health_rollup: None,
@@ -77,7 +132,9 @@ impl<'a> FirmwareManager<'a> {
                 .collect());
         }
 
-        Err(IdracError::unsupported("Firmware listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Firmware listing requires Redfish or WSMAN",
+        ))
     }
 
     /// Start a firmware update using SimpleUpdate (URL-based).
@@ -138,7 +195,11 @@ impl<'a> FirmwareManager<'a> {
         let inventory = self.list_firmware().await?;
         Ok(inventory
             .iter()
-            .find(|f| f.name.to_lowercase().contains(&component_name.to_lowercase()))
+            .find(|f| {
+                f.name
+                    .to_lowercase()
+                    .contains(&component_name.to_lowercase())
+            })
             .and_then(|f| f.version.clone()))
     }
 }

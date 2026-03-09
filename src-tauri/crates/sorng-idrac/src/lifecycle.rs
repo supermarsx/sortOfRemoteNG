@@ -30,21 +30,58 @@ impl<'a> LifecycleManager<'a> {
                     .map_err(|_| IdracError::not_found("Jobs endpoint not available"))?,
             };
 
-            let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let members = col
+                .get("Members")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
             return Ok(members
                 .iter()
                 .map(|j| LifecycleJob {
-                    id: j.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: j.get("Name").and_then(|v| v.as_str()).unwrap_or("Job").to_string(),
-                    job_type: j.get("JobType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    job_state: j.get("JobState").or_else(|| j.get("TaskState")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    message: j.get("Message").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    message_id: j.get("MessageId").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    percent_complete: j.get("PercentComplete").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    start_time: j.get("StartTime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    end_time: j.get("EndTime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    target_uri: j.get("TargetSettingsURI").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    id: j
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: j
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Job")
+                        .to_string(),
+                    job_type: j
+                        .get("JobType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    job_state: j
+                        .get("JobState")
+                        .or_else(|| j.get("TaskState"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    message: j
+                        .get("Message")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    message_id: j
+                        .get("MessageId")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    percent_complete: j
+                        .get("PercentComplete")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    start_time: j
+                        .get("StartTime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    end_time: j
+                        .get("EndTime")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    target_uri: j
+                        .get("TargetSettingsURI")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 })
                 .collect());
         }
@@ -54,8 +91,18 @@ impl<'a> LifecycleManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
-                    let get_u32 = |k: &str| v.properties.get(k).and_then(|val| val.as_u64()).map(|n| n as u32);
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
+                    let get_u32 = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_u64())
+                            .map(|n| n as u32)
+                    };
                     LifecycleJob {
                         id: get("InstanceID").unwrap_or_default(),
                         name: get("Name").unwrap_or_else(|| "Job".to_string()),
@@ -72,14 +119,19 @@ impl<'a> LifecycleManager<'a> {
                 .collect());
         }
 
-        Err(IdracError::unsupported("Job listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Job listing requires Redfish or WSMAN",
+        ))
     }
 
     /// Get a specific job by ID.
     pub async fn get_job(&self, job_id: &str) -> IdracResult<LifecycleJob> {
         if let Ok(rf) = self.client.require_redfish() {
             let j: serde_json::Value = match rf
-                .get(&format!("/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/Jobs/{}", job_id))
+                .get(&format!(
+                    "/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/Jobs/{}",
+                    job_id
+                ))
                 .await
             {
                 Ok(v) => v,
@@ -90,16 +142,49 @@ impl<'a> LifecycleManager<'a> {
             };
 
             return Ok(LifecycleJob {
-                id: j.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                name: j.get("Name").and_then(|v| v.as_str()).unwrap_or("Job").to_string(),
-                job_type: j.get("JobType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                job_state: j.get("JobState").or_else(|| j.get("TaskState")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-                message: j.get("Message").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                message_id: j.get("MessageId").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                percent_complete: j.get("PercentComplete").and_then(|v| v.as_u64()).map(|n| n as u32),
-                start_time: j.get("StartTime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                end_time: j.get("EndTime").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                target_uri: j.get("TargetSettingsURI").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                id: j
+                    .get("Id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                name: j
+                    .get("Name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Job")
+                    .to_string(),
+                job_type: j
+                    .get("JobType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                job_state: j
+                    .get("JobState")
+                    .or_else(|| j.get("TaskState"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                message: j
+                    .get("Message")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                message_id: j
+                    .get("MessageId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                percent_complete: j
+                    .get("PercentComplete")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+                start_time: j
+                    .get("StartTime")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                end_time: j
+                    .get("EndTime")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                target_uri: j
+                    .get("TargetSettingsURI")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
 
@@ -186,9 +271,7 @@ impl<'a> LifecycleManager<'a> {
     /// Get Lifecycle Controller status.
     pub async fn get_lc_status(&self) -> IdracResult<String> {
         if let Ok(rf) = self.client.require_redfish() {
-            let mgr: serde_json::Value = rf
-                .get("/redfish/v1/Managers/iDRAC.Embedded.1")
-                .await?;
+            let mgr: serde_json::Value = rf.get("/redfish/v1/Managers/iDRAC.Embedded.1").await?;
 
             let status = mgr
                 .pointer("/Oem/Dell/DellAttributes/LifecycleController.Embedded.1/LCAttributes.1#LCReady")
@@ -222,7 +305,9 @@ impl<'a> LifecycleManager<'a> {
             return Ok(status.to_string());
         }
 
-        Err(IdracError::unsupported("LC status requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "LC status requires Redfish or WSMAN",
+        ))
     }
 
     /// Wait for a job to complete (polls periodically).

@@ -1,7 +1,7 @@
 //! User management — local iDRAC accounts, LDAP, Active Directory.
 
 use crate::client::IdracClient;
-use crate::error::{IdracError, IdracResult};
+use crate::error::IdracResult;
 use crate::types::*;
 
 /// iDRAC user and authentication management.
@@ -22,21 +22,50 @@ impl<'a> UserManager<'a> {
             .get("/redfish/v1/Managers/iDRAC.Embedded.1/Accounts?$expand=*($levels=1)")
             .await?;
 
-        let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let members = col
+            .get("Members")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
 
         Ok(members
             .iter()
             .map(|u| IdracUser {
-                id: u.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                user_name: u.get("UserName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                role_id: u.get("RoleId").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                id: u
+                    .get("Id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                user_name: u
+                    .get("UserName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                role_id: u
+                    .get("RoleId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 enabled: u.get("Enabled").and_then(|v| v.as_bool()).unwrap_or(false),
                 locked: u.get("Locked").and_then(|v| v.as_bool()).unwrap_or(false),
-                description: u.get("Description").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                privilege: u.pointer("/Oem/Dell/DellAccount/Privilege").and_then(|v| v.as_u64()).map(|n| n as u32),
-                ipmi_lan_privilege: u.pointer("/Oem/Dell/DellAccount/IpmiLanPrivilege").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                ipmi_serial_privilege: u.pointer("/Oem/Dell/DellAccount/IpmiSerialPrivilege").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                snmp_v3_enabled: u.pointer("/Oem/Dell/DellAccount/SNMPv3Enable").and_then(|v| v.as_bool()),
+                description: u
+                    .get("Description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                privilege: u
+                    .pointer("/Oem/Dell/DellAccount/Privilege")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+                ipmi_lan_privilege: u
+                    .pointer("/Oem/Dell/DellAccount/IpmiLanPrivilege")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                ipmi_serial_privilege: u
+                    .pointer("/Oem/Dell/DellAccount/IpmiSerialPrivilege")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                snmp_v3_enabled: u
+                    .pointer("/Oem/Dell/DellAccount/SNMPv3Enable")
+                    .and_then(|v| v.as_bool()),
                 ipmi_privilege: None,
                 snmp_v3_auth: None,
                 snmp_v3_privacy: None,
@@ -80,10 +109,7 @@ impl<'a> UserManager<'a> {
         });
 
         rf.patch_json(
-            &format!(
-                "/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/{}",
-                slot_id
-            ),
+            &format!("/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/{}", slot_id),
             &body,
         )
         .await
@@ -98,10 +124,7 @@ impl<'a> UserManager<'a> {
         });
 
         rf.patch_json(
-            &format!(
-                "/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/{}",
-                slot_id
-            ),
+            &format!("/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/{}", slot_id),
             &body,
         )
         .await
@@ -116,10 +139,7 @@ impl<'a> UserManager<'a> {
         });
 
         rf.patch_json(
-            &format!(
-                "/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/{}",
-                slot_id
-            ),
+            &format!("/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/{}", slot_id),
             &body,
         )
         .await
@@ -134,14 +154,17 @@ impl<'a> UserManager<'a> {
             .await?;
 
         let get_attr = |key: &str| -> Option<String> {
-            attrs.get("Attributes")
+            attrs
+                .get("Attributes")
                 .and_then(|a| a.get(key))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
         };
 
         Ok(LdapConfig {
-            enabled: get_attr("LDAP.1#Enable").map(|s| s == "Enabled").unwrap_or(false),
+            enabled: get_attr("LDAP.1#Enable")
+                .map(|s| s == "Enabled")
+                .unwrap_or(false),
             server: get_attr("LDAP.1#Server"),
             port: get_attr("LDAP.1#Port").and_then(|s| s.parse().ok()),
             base_dn: get_attr("LDAP.1#BaseDN"),
@@ -150,7 +173,9 @@ impl<'a> UserManager<'a> {
             user_attribute: get_attr("LDAP.1#UserAttribute"),
             group_attribute: get_attr("LDAP.1#GroupAttribute"),
             use_ssl: get_attr("LDAP.1#SSLPort").is_some(),
-            certificate_validation_enabled: get_attr("LDAP.1#CertValidationEnable").map(|s| s == "Enabled").unwrap_or(false),
+            certificate_validation_enabled: get_attr("LDAP.1#CertValidationEnable")
+                .map(|s| s == "Enabled")
+                .unwrap_or(false),
             certificate_validation: get_attr("LDAP.1#CertValidationEnable").map(|s| s == "Enabled"),
             server_address: get_attr("LDAP.1#Server"),
         })
@@ -163,7 +188,11 @@ impl<'a> UserManager<'a> {
         let mut attrs = serde_json::Map::new();
         attrs.insert(
             "LDAP.1#Enable".to_string(),
-            serde_json::json!(if config.enabled { "Enabled" } else { "Disabled" }),
+            serde_json::json!(if config.enabled {
+                "Enabled"
+            } else {
+                "Disabled"
+            }),
         );
         if let Some(ref server) = config.server {
             attrs.insert("LDAP.1#Server".to_string(), serde_json::json!(server));
@@ -179,7 +208,8 @@ impl<'a> UserManager<'a> {
         }
 
         let body = serde_json::json!({ "Attributes": attrs });
-        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body).await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await
     }
 
     /// Get Active Directory configuration.
@@ -191,14 +221,17 @@ impl<'a> UserManager<'a> {
             .await?;
 
         let get_attr = |key: &str| -> Option<String> {
-            attrs.get("Attributes")
+            attrs
+                .get("Attributes")
                 .and_then(|a| a.get(key))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
         };
 
         Ok(ActiveDirectoryConfig {
-            enabled: get_attr("ActiveDirectory.1#Enable").map(|s| s == "Enabled").unwrap_or(false),
+            enabled: get_attr("ActiveDirectory.1#Enable")
+                .map(|s| s == "Enabled")
+                .unwrap_or(false),
             domain_name: get_attr("ActiveDirectory.1#DomainName"),
             domain_controller1: get_attr("ActiveDirectory.1#DomainController1"),
             domain_controller2: get_attr("ActiveDirectory.1#DomainController2"),
@@ -207,8 +240,11 @@ impl<'a> UserManager<'a> {
             global_catalog2: get_attr("ActiveDirectory.1#GlobalCatalog2"),
             global_catalog3: get_attr("ActiveDirectory.1#GlobalCatalog3"),
             schema_type: get_attr("ActiveDirectory.1#Schema"),
-            certificate_validation_enabled: get_attr("ActiveDirectory.1#CertValidationEnable").map(|s| s == "Enabled").unwrap_or(false),
-            certificate_validation: get_attr("ActiveDirectory.1#CertValidationEnable").map(|s| s == "Enabled"),
+            certificate_validation_enabled: get_attr("ActiveDirectory.1#CertValidationEnable")
+                .map(|s| s == "Enabled")
+                .unwrap_or(false),
+            certificate_validation: get_attr("ActiveDirectory.1#CertValidationEnable")
+                .map(|s| s == "Enabled"),
             domain_controller_addresses: Vec::new(),
             global_catalog_addresses: Vec::new(),
         })
@@ -221,23 +257,40 @@ impl<'a> UserManager<'a> {
         let mut attrs = serde_json::Map::new();
         attrs.insert(
             "ActiveDirectory.1#Enable".to_string(),
-            serde_json::json!(if config.enabled { "Enabled" } else { "Disabled" }),
+            serde_json::json!(if config.enabled {
+                "Enabled"
+            } else {
+                "Disabled"
+            }),
         );
         if let Some(ref domain) = config.domain_name {
-            attrs.insert("ActiveDirectory.1#DomainName".to_string(), serde_json::json!(domain));
+            attrs.insert(
+                "ActiveDirectory.1#DomainName".to_string(),
+                serde_json::json!(domain),
+            );
         }
         if let Some(ref dc1) = config.domain_controller1 {
-            attrs.insert("ActiveDirectory.1#DomainController1".to_string(), serde_json::json!(dc1));
+            attrs.insert(
+                "ActiveDirectory.1#DomainController1".to_string(),
+                serde_json::json!(dc1),
+            );
         }
         if let Some(ref dc2) = config.domain_controller2 {
-            attrs.insert("ActiveDirectory.1#DomainController2".to_string(), serde_json::json!(dc2));
+            attrs.insert(
+                "ActiveDirectory.1#DomainController2".to_string(),
+                serde_json::json!(dc2),
+            );
         }
         if let Some(ref dc3) = config.domain_controller3 {
-            attrs.insert("ActiveDirectory.1#DomainController3".to_string(), serde_json::json!(dc3));
+            attrs.insert(
+                "ActiveDirectory.1#DomainController3".to_string(),
+                serde_json::json!(dc3),
+            );
         }
 
         let body = serde_json::json!({ "Attributes": attrs });
-        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body).await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await
     }
 
     /// Test LDAP connection.

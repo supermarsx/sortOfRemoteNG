@@ -66,7 +66,13 @@ mod cmd {
 
 impl IpmiClient {
     /// Create a new IPMI client.
-    pub fn new(host: &str, port: Option<u16>, username: &str, password: &str, timeout_secs: u64) -> Self {
+    pub fn new(
+        host: &str,
+        port: Option<u16>,
+        username: &str,
+        password: &str,
+        timeout_secs: u64,
+    ) -> Self {
         Self {
             host: host.to_string(),
             port: port.unwrap_or(IPMI_PORT),
@@ -79,7 +85,10 @@ impl IpmiClient {
     /// Check if the BMC is reachable via IPMI.
     pub async fn check_connection(&self) -> IdracResult<bool> {
         // Send a Get Auth Capabilities to check reachability
-        match self.send_ipmi_command(netfn::APP, cmd::GET_AUTH_CAPABILITIES, &[0x0E, 0x04]).await {
+        match self
+            .send_ipmi_command(netfn::APP, cmd::GET_AUTH_CAPABILITIES, &[0x0E, 0x04])
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -255,7 +264,9 @@ impl IpmiClient {
     pub async fn get_sensors(&self) -> IdracResult<Vec<IpmiSensor>> {
         // This is a simplified implementation — full SDR parsing is complex.
         // We return an empty list and note that WSMAN/Redfish is preferred.
-        log::info!("IPMI sensor reading via SDR is limited; use Redfish/WSMAN for full sensor data");
+        log::info!(
+            "IPMI sensor reading via SDR is limited; use Redfish/WSMAN for full sensor data"
+        );
         Ok(Vec::new())
     }
 
@@ -282,12 +293,7 @@ impl IpmiClient {
 
     /// Send an IPMI command via RMCP/IPMI-over-LAN (IPMI 1.5 session-less for basic ops).
     /// This is a simplified implementation for basic commands using IPMI 1.5 session-less mode.
-    async fn send_ipmi_command(
-        &self,
-        _netfn: u8,
-        _cmd: u8,
-        _data: &[u8],
-    ) -> IdracResult<Vec<u8>> {
+    async fn send_ipmi_command(&self, _netfn: u8, _cmd: u8, _data: &[u8]) -> IdracResult<Vec<u8>> {
         let host = self.host.clone();
         let port = self.port;
         let timeout = self.timeout;
@@ -301,24 +307,25 @@ impl IpmiClient {
         tokio::task::spawn_blocking(move || {
             let socket = UdpSocket::bind("0.0.0.0:0")
                 .map_err(|e| IdracError::ipmi(format!("Failed to bind UDP socket: {e}")))?;
-            socket.set_read_timeout(Some(timeout))
+            socket
+                .set_read_timeout(Some(timeout))
                 .map_err(|e| IdracError::ipmi(format!("Failed to set timeout: {e}")))?;
 
             let addr = format!("{host}:{port}");
-            socket.connect(&addr)
+            socket
+                .connect(&addr)
                 .map_err(|e| IdracError::ipmi(format!("Failed to connect to {addr}: {e}")))?;
 
             // Build RMCP + ASF Ping / IPMI session-less request
             // RMCP header (4 bytes) + IPMI Session header + message
-            let mut packet = Vec::new();
-            // RMCP header
-            packet.push(0x06); // version
-            packet.push(0x00); // reserved
-            packet.push(0xFF); // sequence number
-            packet.push(0x07); // IPMI message class
-
-            // IPMI Session header (session-less)
-            packet.push(0x00); // auth type = none
+            let mut packet = vec![
+                0x06, // version
+                0x00, // reserved
+                0xFF, // sequence number
+                0x07, // IPMI message class
+                // IPMI Session header (session-less)
+                0x00, // auth type = none
+            ];
             packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // session seq
             packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // session id
 
@@ -338,7 +345,9 @@ impl IpmiClient {
             packet.push(netfn_lun);
 
             // Checksum 1 (rs_addr + netfn_lun)
-            let cksum1 = (0u16.wrapping_sub(rs_addr as u16).wrapping_sub(netfn_lun as u16)) as u8;
+            let cksum1 = (0u16
+                .wrapping_sub(rs_addr as u16)
+                .wrapping_sub(netfn_lun as u16)) as u8;
             packet.push(cksum1);
 
             packet.push(rq_addr);
@@ -358,11 +367,13 @@ impl IpmiClient {
             cksum2 = 0u8.wrapping_sub(cksum2);
             packet.push(cksum2);
 
-            socket.send(&packet)
+            socket
+                .send(&packet)
                 .map_err(|e| IdracError::ipmi(format!("Failed to send IPMI packet: {e}")))?;
 
             let mut buf = [0u8; 1024];
-            let len = socket.recv(&mut buf)
+            let len = socket
+                .recv(&mut buf)
                 .map_err(|e| IdracError::ipmi(format!("No response from BMC (timeout?): {e}")))?;
 
             if len < 20 {

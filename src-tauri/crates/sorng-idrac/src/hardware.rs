@@ -22,28 +22,80 @@ impl<'a> HardwareManager<'a> {
                 .get("/redfish/v1/Systems/System.Embedded.1/Processors?$expand=*($levels=1)")
                 .await?;
 
-            let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let members = col
+                .get("Members")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
             return Ok(members
                 .iter()
                 .map(|p| Processor {
-                    id: p.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: p.get("Name").and_then(|v| v.as_str()).unwrap_or("CPU").to_string(),
-                    manufacturer: p.get("Manufacturer").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    model: p.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    max_speed_mhz: p.get("MaxSpeedMHz").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    total_cores: p.get("TotalCores").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    total_threads: p.get("TotalThreads").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    socket: p.get("Socket").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    instruction_set: p.get("InstructionSet").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    processor_type: p.get("ProcessorType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    processor_architecture: p.get("ProcessorArchitecture").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    id: p
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: p
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("CPU")
+                        .to_string(),
+                    manufacturer: p
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    model: p
+                        .get("Model")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    max_speed_mhz: p
+                        .get("MaxSpeedMHz")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    total_cores: p
+                        .get("TotalCores")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    total_threads: p
+                        .get("TotalThreads")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    socket: p
+                        .get("Socket")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    instruction_set: p
+                        .get("InstructionSet")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    processor_type: p
+                        .get("ProcessorType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    processor_architecture: p
+                        .get("ProcessorArchitecture")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     status: ComponentHealth {
-                        health: p.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        health_rollup: p.pointer("/Status/HealthRollup").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        state: p.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        health: p
+                            .pointer("/Status/Health")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        health_rollup: p
+                            .pointer("/Status/HealthRollup")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        state: p
+                            .pointer("/Status/State")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     },
-                    microcode: p.get("ProcessorId").and_then(|pi| pi.get("MicrocodeInfo")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    microcode: p
+                        .get("ProcessorId")
+                        .and_then(|pi| pi.get("MicrocodeInfo"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     current_speed_mhz: p.get("OperatingSpeedMHz").and_then(|v| v.as_u64()),
                 })
                 .collect());
@@ -54,8 +106,18 @@ impl<'a> HardwareManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
-                    let get_u32 = |k: &str| v.properties.get(k).and_then(|val| val.as_u64()).map(|n| n as u32);
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
+                    let get_u32 = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_u64())
+                            .map(|n| n as u32)
+                    };
                     Processor {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("DeviceDescription").unwrap_or_else(|| "CPU".to_string()),
@@ -74,13 +136,18 @@ impl<'a> HardwareManager<'a> {
                             state: None,
                         },
                         microcode: get("Microcode"),
-                        current_speed_mhz: v.properties.get("CurrentClockSpeed").and_then(|val| val.as_u64()),
+                        current_speed_mhz: v
+                            .properties
+                            .get("CurrentClockSpeed")
+                            .and_then(|val| val.as_u64()),
                     }
                 })
                 .collect());
         }
 
-        Err(IdracError::unsupported("Processor listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Processor listing requires Redfish or WSMAN",
+        ))
     }
 
     /// List memory DIMMs.
@@ -90,7 +157,11 @@ impl<'a> HardwareManager<'a> {
                 .get("/redfish/v1/Systems/System.Embedded.1/Memory?$expand=*($levels=1)")
                 .await?;
 
-            let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let members = col
+                .get("Members")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
             return Ok(members
                 .iter()
@@ -101,24 +172,80 @@ impl<'a> HardwareManager<'a> {
                         .unwrap_or(true)
                 })
                 .map(|m| MemoryDimm {
-                    id: m.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: m.get("Name").and_then(|v| v.as_str()).unwrap_or("DIMM").to_string(),
-                    manufacturer: m.get("Manufacturer").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    memory_type: m.get("MemoryDeviceType").or_else(|| m.get("MemoryType")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    capacity_mb: m.get("CapacityMiB").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    speed_mhz: m.get("OperatingSpeedMhz").or_else(|| m.get("AllowedSpeedsMHz").and_then(|v| v.as_array()).and_then(|a| a.first())).and_then(|v| v.as_u64()).map(|n| n as u32),
-                    serial_number: m.get("SerialNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    part_number: m.get("PartNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    device_locator: m.get("DeviceLocator").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    bank_locator: m.get("BankLocator").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    rank_count: m.get("RankCount").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    data_width_bits: m.get("DataWidthBits").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    bus_width_bits: m.get("BusWidthBits").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    error_correction: m.get("ErrorCorrection").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    id: m
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: m
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("DIMM")
+                        .to_string(),
+                    manufacturer: m
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    memory_type: m
+                        .get("MemoryDeviceType")
+                        .or_else(|| m.get("MemoryType"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    capacity_mb: m
+                        .get("CapacityMiB")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    speed_mhz: m
+                        .get("OperatingSpeedMhz")
+                        .or_else(|| {
+                            m.get("AllowedSpeedsMHz")
+                                .and_then(|v| v.as_array())
+                                .and_then(|a| a.first())
+                        })
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    serial_number: m
+                        .get("SerialNumber")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    part_number: m
+                        .get("PartNumber")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    device_locator: m
+                        .get("DeviceLocator")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    bank_locator: m
+                        .get("BankLocator")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    rank_count: m
+                        .get("RankCount")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    data_width_bits: m
+                        .get("DataWidthBits")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    bus_width_bits: m
+                        .get("BusWidthBits")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    error_correction: m
+                        .get("ErrorCorrection")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     status: ComponentHealth {
-                        health: m.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        health: m
+                            .pointer("/Status/Health")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         health_rollup: None,
-                        state: m.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        state: m
+                            .pointer("/Status/State")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     },
                 })
                 .collect());
@@ -129,8 +256,18 @@ impl<'a> HardwareManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
-                    let get_u32 = |k: &str| v.properties.get(k).and_then(|val| val.as_u64()).map(|n| n as u32);
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
+                    let get_u32 = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_u64())
+                            .map(|n| n as u32)
+                    };
                     MemoryDimm {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("DeviceDescription").unwrap_or_else(|| "DIMM".to_string()),
@@ -156,7 +293,9 @@ impl<'a> HardwareManager<'a> {
                 .collect());
         }
 
-        Err(IdracError::unsupported("Memory listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Memory listing requires Redfish or WSMAN",
+        ))
     }
 
     /// List PCIe devices.
@@ -168,32 +307,75 @@ impl<'a> HardwareManager<'a> {
                 Ok(v) => v,
                 Err(_) => {
                     // Fallback: try Chassis PCIeDevices
-                    rf.get("/redfish/v1/Chassis/System.Embedded.1/PCIeDevices?$expand=*($levels=1)").await?
+                    rf.get("/redfish/v1/Chassis/System.Embedded.1/PCIeDevices?$expand=*($levels=1)")
+                        .await?
                 }
             };
 
-            let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let members = col
+                .get("Members")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
             return Ok(members
                 .iter()
                 .map(|d| PcieDevice {
-                    id: d.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: d.get("Name").and_then(|v| v.as_str()).unwrap_or("PCIe Device").to_string(),
-                    manufacturer: d.get("Manufacturer").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    model: d.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    device_type: d.get("DeviceType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    serial_number: d.get("SerialNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    firmware_version: d.get("FirmwareVersion").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    pcie_generation: d.pointer("/PCIeInterface/PCIeType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    lane_width: d.pointer("/PCIeInterface/LanesInUse").and_then(|v| v.as_u64()).map(|n| n as u32),
-                    slot: d.get("Slot").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    id: d
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: d
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("PCIe Device")
+                        .to_string(),
+                    manufacturer: d
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    model: d
+                        .get("Model")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    device_type: d
+                        .get("DeviceType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    serial_number: d
+                        .get("SerialNumber")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    firmware_version: d
+                        .get("FirmwareVersion")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    pcie_generation: d
+                        .pointer("/PCIeInterface/PCIeType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    lane_width: d
+                        .pointer("/PCIeInterface/LanesInUse")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32),
+                    slot: d
+                        .get("Slot")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     bus_number: None,
                     device_number: None,
                     function_number: None,
                     status: ComponentHealth {
-                        health: d.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        health: d
+                            .pointer("/Status/Health")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         health_rollup: None,
-                        state: d.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        state: d
+                            .pointer("/Status/State")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     },
                 })
                 .collect());
@@ -204,8 +386,18 @@ impl<'a> HardwareManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
-                    let get_u32 = |k: &str| v.properties.get(k).and_then(|val| val.as_u64()).map(|n| n as u32);
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
+                    let get_u32 = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_u64())
+                            .map(|n| n as u32)
+                    };
                     PcieDevice {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("DeviceDescription").unwrap_or_else(|| "PCIe".to_string()),
@@ -230,15 +422,15 @@ impl<'a> HardwareManager<'a> {
                 .collect());
         }
 
-        Err(IdracError::unsupported("PCIe listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "PCIe listing requires Redfish or WSMAN",
+        ))
     }
 
     /// Get total memory capacity in MB.
     pub async fn get_total_memory_mb(&self) -> IdracResult<u64> {
         if let Ok(rf) = self.client.require_redfish() {
-            let sys: serde_json::Value = rf
-                .get("/redfish/v1/Systems/System.Embedded.1")
-                .await?;
+            let sys: serde_json::Value = rf.get("/redfish/v1/Systems/System.Embedded.1").await?;
             return Ok(sys
                 .get("MemorySummary")
                 .and_then(|m| m.get("TotalSystemMemoryGiB"))
@@ -248,15 +440,16 @@ impl<'a> HardwareManager<'a> {
         }
 
         let dimms = self.list_memory().await?;
-        Ok(dimms.iter().filter_map(|d| d.capacity_mb.map(|c| c as u64)).sum())
+        Ok(dimms
+            .iter()
+            .filter_map(|d| d.capacity_mb.map(|c| c as u64))
+            .sum())
     }
 
     /// Get processor count.
     pub async fn get_processor_count(&self) -> IdracResult<u32> {
         if let Ok(rf) = self.client.require_redfish() {
-            let sys: serde_json::Value = rf
-                .get("/redfish/v1/Systems/System.Embedded.1")
-                .await?;
+            let sys: serde_json::Value = rf.get("/redfish/v1/Systems/System.Embedded.1").await?;
             return Ok(sys
                 .get("ProcessorSummary")
                 .and_then(|p| p.get("Count"))

@@ -348,17 +348,12 @@ impl WsmanClient {
     }
 
     /// Parse Enumerate response body to extract instances.
-    fn parse_enumerate_response(
-        xml: &str,
-        class_name: &str,
-    ) -> IdracResult<Vec<WsmanInstance>> {
+    fn parse_enumerate_response(xml: &str, class_name: &str) -> IdracResult<Vec<WsmanInstance>> {
         Ok(Self::parse_body_instances(xml, class_name))
     }
 
     /// Parse invoke response to extract return values.
-    fn parse_invoke_response(
-        xml: &str,
-    ) -> IdracResult<HashMap<String, String>> {
+    fn parse_invoke_response(xml: &str) -> IdracResult<HashMap<String, String>> {
         let mut result = HashMap::new();
 
         // Look for ReturnValue
@@ -367,8 +362,8 @@ impl WsmanClient {
         }
 
         // Look for JobID
-        if let Some(job_id) = Self::extract_tag_value(xml, "JobID")
-            .or_else(|| Self::extract_tag_value(xml, "Job"))
+        if let Some(job_id) =
+            Self::extract_tag_value(xml, "JobID").or_else(|| Self::extract_tag_value(xml, "Job"))
         {
             result.insert("JobID".to_string(), job_id);
         }
@@ -409,7 +404,9 @@ impl WsmanClient {
                 let end_pos = end_patterns
                     .iter()
                     .filter_map(|ep| {
-                        xml[abs_start..].find(ep.as_str()).map(|p| abs_start + p + ep.len())
+                        xml[abs_start..]
+                            .find(ep.as_str())
+                            .map(|p| abs_start + p + ep.len())
                     })
                     .min();
 
@@ -457,10 +454,7 @@ impl WsmanClient {
                     }
 
                     // Remove namespace prefix and attributes
-                    let tag_name = tag_content
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or(tag_content);
+                    let tag_name = tag_content.split_whitespace().next().unwrap_or(tag_content);
                     let tag_name = if let Some(colon) = tag_name.rfind(':') {
                         &tag_name[colon + 1..]
                     } else {
@@ -470,10 +464,7 @@ impl WsmanClient {
 
                     // Self-closing tag = null value
                     if tag_content.ends_with('/') {
-                        props.insert(
-                            tag_name.to_string(),
-                            serde_json::Value::Null,
-                        );
+                        props.insert(tag_name.to_string(), serde_json::Value::Null);
                         pos = tag_end + 1;
                         continue;
                     }
@@ -489,7 +480,9 @@ impl WsmanClient {
                     let close_pos = close_patterns
                         .iter()
                         .filter_map(|cp| {
-                            block[value_start..].find(cp.as_str()).map(|p| value_start + p)
+                            block[value_start..]
+                                .find(cp.as_str())
+                                .map(|p| value_start + p)
                         })
                         .min();
 
@@ -504,10 +497,8 @@ impl WsmanClient {
                                 );
                             } else if let Ok(f) = value.parse::<f64>() {
                                 if let Some(n) = serde_json::Number::from_f64(f) {
-                                    props.insert(
-                                        tag_name.to_string(),
-                                        serde_json::Value::Number(n),
-                                    );
+                                    props
+                                        .insert(tag_name.to_string(), serde_json::Value::Number(n));
                                 } else {
                                     props.insert(
                                         tag_name.to_string(),

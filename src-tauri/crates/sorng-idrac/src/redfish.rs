@@ -69,9 +69,10 @@ impl RedfishClient {
     pub async fn login(&mut self) -> IdracResult<String> {
         // Try to get Redfish service root first (validates connectivity)
         let root_url = format!("{}/redfish/v1", self.base_url);
-        let (username, password) = self.basic_auth.clone().ok_or_else(|| {
-            IdracError::auth("No credentials configured")
-        })?;
+        let (username, password) = self
+            .basic_auth
+            .clone()
+            .ok_or_else(|| IdracError::auth("No credentials configured"))?;
 
         // Attempt session-based auth (POST /redfish/v1/Sessions)
         if matches!(self.config.auth, IdracAuthMethod::Session { .. }) {
@@ -113,11 +114,7 @@ impl RedfishClient {
     }
 
     /// Create a Redfish session.
-    async fn create_session(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> IdracResult<IdracSession> {
+    async fn create_session(&self, username: &str, password: &str) -> IdracResult<IdracSession> {
         let url = format!("{}/redfish/v1/SessionService/Sessions", self.base_url);
         let body = serde_json::json!({
             "UserName": username,
@@ -298,11 +295,7 @@ impl RedfishClient {
     }
 
     /// PATCH with JSON body (for config updates).
-    pub async fn patch_json<B: serde::Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> IdracResult<()> {
+    pub async fn patch_json<B: serde::Serialize>(&self, path: &str, body: &B) -> IdracResult<()> {
         let url = self.full_url(path);
         let builder = self.client.patch(&url).json(body);
         let builder = self.auth_request(builder)?;
@@ -315,11 +308,7 @@ impl RedfishClient {
     }
 
     /// PUT with JSON body.
-    pub async fn put_json<B: serde::Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> IdracResult<()> {
+    pub async fn put_json<B: serde::Serialize>(&self, path: &str, body: &B) -> IdracResult<()> {
         let url = self.full_url(path);
         let builder = self.client.put(&url).json(body);
         let builder = self.auth_request(builder)?;
@@ -356,10 +345,7 @@ impl RedfishClient {
             format!("{}?$expand=*($levels=1)", path)
         };
 
-        if let Ok(coll) = self
-            .get::<RedfishCollection<T>>(&expanded_path)
-            .await
-        {
+        if let Ok(coll) = self.get::<RedfishCollection<T>>(&expanded_path).await {
             return Ok(coll.members);
         }
 
@@ -426,12 +412,12 @@ impl RedfishClient {
             StatusCode::UNAUTHORIZED => Err(IdracError::auth(format!(
                 "Session expired or invalid: {body}"
             ))),
-            StatusCode::FORBIDDEN => Err(IdracError::access_denied(format!(
-                "Access denied: {body}"
-            ))),
-            StatusCode::NOT_FOUND => Err(IdracError::not_found(format!(
-                "Resource not found: {body}"
-            ))),
+            StatusCode::FORBIDDEN => {
+                Err(IdracError::access_denied(format!("Access denied: {body}")))
+            }
+            StatusCode::NOT_FOUND => {
+                Err(IdracError::not_found(format!("Resource not found: {body}")))
+            }
             StatusCode::METHOD_NOT_ALLOWED => Err(IdracError::unsupported(format!(
                 "Method not allowed (possibly unsupported on this iDRAC): {body}"
             ))),
@@ -446,9 +432,8 @@ impl RedfishClient {
             .map_err(|e| IdracError::parse(format!("Failed to read response body: {e}")))?;
 
         if text.is_empty() {
-            return serde_json::from_str("null").map_err(|e| {
-                IdracError::parse(format!("Cannot deserialise empty response: {e}"))
-            });
+            return serde_json::from_str("null")
+                .map_err(|e| IdracError::parse(format!("Cannot deserialise empty response: {e}")));
         }
 
         serde_json::from_str(&text).map_err(|e| {

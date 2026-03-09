@@ -70,7 +70,7 @@ impl IdracClient {
 
     async fn connect_redfish(&mut self) -> IdracResult<String> {
         let mut client = RedfishClient::new(&self.config)?;
-        let user = client.login().await?;
+        let _user = client.login().await?;
         let version = client.detect_version().await.unwrap_or(None);
         let msg = format!(
             "Connected to {} via Redfish{}",
@@ -159,7 +159,9 @@ impl IdracClient {
             .as_ref()
             .filter(|c| c.is_connected())
             .ok_or_else(|| {
-                IdracError::unsupported("This operation requires Redfish (iDRAC 7+). Not connected via Redfish.")
+                IdracError::unsupported(
+                    "This operation requires Redfish (iDRAC 7+). Not connected via Redfish.",
+                )
             })
     }
 
@@ -187,8 +189,9 @@ impl IdracClient {
     /// Get safe config info (no secrets).
     pub fn get_config_safe(&self) -> IdracConfigSafe {
         let username = match &self.config.auth {
-            IdracAuthMethod::Basic { username, .. }
-            | IdracAuthMethod::Session { username, .. } => username.clone(),
+            IdracAuthMethod::Basic { username, .. } | IdracAuthMethod::Session { username, .. } => {
+                username.clone()
+            }
         };
         let idrac_version = self
             .redfish

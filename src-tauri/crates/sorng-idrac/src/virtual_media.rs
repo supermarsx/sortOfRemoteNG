@@ -1,7 +1,7 @@
 //! Virtual media — mount/unmount ISO, floppy, USB images.
 
 use crate::client::IdracClient;
-use crate::error::{IdracError, IdracResult};
+use crate::error::IdracResult;
 use crate::types::*;
 
 /// Virtual media management (ISO/floppy/USB mount).
@@ -22,24 +22,64 @@ impl<'a> VirtualMediaManager<'a> {
             .get("/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia?$expand=*($levels=1)")
             .await?;
 
-        let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let members = col
+            .get("Members")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
 
         Ok(members
             .iter()
             .map(|m| VirtualMediaStatus {
-                id: m.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                name: m.get("Name").and_then(|v| v.as_str()).unwrap_or("VMedia").to_string(),
-                media_types: m.get("MediaTypes").and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                id: m
+                    .get("Id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                name: m
+                    .get("Name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("VMedia")
+                    .to_string(),
+                media_types: m
+                    .get("MediaTypes")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
                     .unwrap_or_default(),
-                image: m.get("Image").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                image_name: m.get("ImageName").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                image: m
+                    .get("Image")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                image_name: m
+                    .get("ImageName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 inserted: m.get("Inserted").and_then(|v| v.as_bool()).unwrap_or(false),
-                connected: m.get("ConnectedVia").and_then(|v| v.as_str()).map(|s| s != "NotConnected").unwrap_or(false),
-                write_protected: m.get("WriteProtected").and_then(|v| v.as_bool()).unwrap_or(true),
-                transfer_method: m.get("TransferMethod").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                transfer_protocol_type: m.get("TransferProtocolType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                connected_via: m.get("ConnectedVia").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                connected: m
+                    .get("ConnectedVia")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s != "NotConnected")
+                    .unwrap_or(false),
+                write_protected: m
+                    .get("WriteProtected")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+                transfer_method: m
+                    .get("TransferMethod")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                transfer_protocol_type: m
+                    .get("TransferProtocolType")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                connected_via: m
+                    .get("ConnectedVia")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             })
             .collect())
     }
@@ -79,7 +119,10 @@ impl<'a> VirtualMediaManager<'a> {
                     "Inserted": true,
                 });
                 rf.patch_json(
-                    &format!("/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/{}", media_id),
+                    &format!(
+                        "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/{}",
+                        media_id
+                    ),
                     &patch_body,
                 )
                 .await
@@ -105,7 +148,10 @@ impl<'a> VirtualMediaManager<'a> {
                     "Inserted": false,
                 });
                 rf.patch_json(
-                    &format!("/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/{}", media_id),
+                    &format!(
+                        "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/{}",
+                        media_id
+                    ),
                     &body,
                 )
                 .await
@@ -124,11 +170,15 @@ impl<'a> VirtualMediaManager<'a> {
             }
         });
 
-        rf.patch_json("/redfish/v1/Systems/System.Embedded.1", &body).await
+        rf.patch_json("/redfish/v1/Systems/System.Embedded.1", &body)
+            .await
     }
 
     /// Get the status of a specific virtual media slot.
-    pub async fn get_virtual_media_status(&self, media_id: &str) -> IdracResult<VirtualMediaStatus> {
+    pub async fn get_virtual_media_status(
+        &self,
+        media_id: &str,
+    ) -> IdracResult<VirtualMediaStatus> {
         let rf = self.client.require_redfish()?;
 
         let m: serde_json::Value = rf
@@ -139,19 +189,55 @@ impl<'a> VirtualMediaManager<'a> {
             .await?;
 
         Ok(VirtualMediaStatus {
-            id: m.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            name: m.get("Name").and_then(|v| v.as_str()).unwrap_or("VMedia").to_string(),
-            media_types: m.get("MediaTypes").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            id: m
+                .get("Id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            name: m
+                .get("Name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("VMedia")
+                .to_string(),
+            media_types: m
+                .get("MediaTypes")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default(),
-            image: m.get("Image").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            image_name: m.get("ImageName").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            image: m
+                .get("Image")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            image_name: m
+                .get("ImageName")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             inserted: m.get("Inserted").and_then(|v| v.as_bool()).unwrap_or(false),
-            connected: m.get("ConnectedVia").and_then(|v| v.as_str()).map(|s| s != "NotConnected").unwrap_or(false),
-            write_protected: m.get("WriteProtected").and_then(|v| v.as_bool()).unwrap_or(true),
-            transfer_method: m.get("TransferMethod").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            transfer_protocol_type: m.get("TransferProtocolType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            connected_via: m.get("ConnectedVia").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            connected: m
+                .get("ConnectedVia")
+                .and_then(|v| v.as_str())
+                .map(|s| s != "NotConnected")
+                .unwrap_or(false),
+            write_protected: m
+                .get("WriteProtected")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            transfer_method: m
+                .get("TransferMethod")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            transfer_protocol_type: m
+                .get("TransferProtocolType")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            connected_via: m
+                .get("ConnectedVia")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
         })
     }
 }

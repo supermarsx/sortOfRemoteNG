@@ -18,9 +18,7 @@ impl<'a> VirtualConsoleManager<'a> {
     pub async fn get_console_info(&self) -> IdracResult<ConsoleInfo> {
         let rf = self.client.require_redfish()?;
 
-        let mgr: serde_json::Value = rf
-            .get("/redfish/v1/Managers/iDRAC.Embedded.1")
-            .await?;
+        let mgr: serde_json::Value = rf.get("/redfish/v1/Managers/iDRAC.Embedded.1").await?;
 
         let config = self.client.get_config_safe();
         let base_url = format!("https://{}:{}", config.host, config.port);
@@ -57,7 +55,13 @@ impl<'a> VirtualConsoleManager<'a> {
             enabled,
             max_concurrent_sessions: max_sessions,
             html5_url: Some(format!("{}/console", base_url)),
-            java_url: Some(format!("{}/viewer.jnlp({}@0@{}@{})", base_url, config.host, config.port, chrono::Utc::now().timestamp())),
+            java_url: Some(format!(
+                "{}/viewer.jnlp({}@0@{}@{})",
+                base_url,
+                config.host,
+                config.port,
+                chrono::Utc::now().timestamp()
+            )),
             vnc_port: Some(5901),
             connect_types_supported: connect_types,
             encryption_enabled: true,
@@ -75,7 +79,8 @@ impl<'a> VirtualConsoleManager<'a> {
             }
         });
 
-        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1", &body).await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1", &body)
+            .await
     }
 
     /// Set the virtual console plugin type (HTML5, eHTML5, ActiveX, Java).
@@ -88,11 +93,8 @@ impl<'a> VirtualConsoleManager<'a> {
             }
         });
 
-        rf.patch_json(
-            "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes",
-            &body,
-        )
-        .await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await
     }
 
     /// Get virtual console preview/thumbnail (screenshot).
@@ -115,7 +117,7 @@ impl<'a> VirtualConsoleManager<'a> {
         // Return empty if screenshot not available via Redfish
         let _ = response;
         Err(IdracError::unsupported(
-            "Screenshot capture requires direct HTTPS access, not available via Redfish API"
+            "Screenshot capture requires direct HTTPS access, not available via Redfish API",
         ))
     }
 
@@ -129,11 +131,8 @@ impl<'a> VirtualConsoleManager<'a> {
             }
         });
 
-        rf.patch_json(
-            "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes",
-            &body,
-        )
-        .await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await
     }
 
     /// Enable or disable VNC access.
@@ -146,11 +145,8 @@ impl<'a> VirtualConsoleManager<'a> {
             }
         });
 
-        rf.patch_json(
-            "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes",
-            &body,
-        )
-        .await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await
     }
 
     /// Set VNC port.
@@ -163,10 +159,7 @@ impl<'a> VirtualConsoleManager<'a> {
             }
         });
 
-        rf.patch_json(
-            "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes",
-            &body,
-        )
-        .await
+        rf.patch_json("/redfish/v1/Managers/iDRAC.Embedded.1/Attributes", &body)
+            .await
     }
 }

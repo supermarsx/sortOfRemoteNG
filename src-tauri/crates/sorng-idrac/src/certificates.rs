@@ -30,8 +30,16 @@ impl<'a> CertificateManager<'a> {
                 .unwrap_or_default(),
         };
 
-        let members = col.get("Members").and_then(|v| v.as_array()).cloned()
-            .or_else(|| col.get("Links").and_then(|l| l.get("Certificates")).and_then(|v| v.as_array()).cloned())
+        let members = col
+            .get("Members")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .or_else(|| {
+                col.get("Links")
+                    .and_then(|l| l.get("Certificates"))
+                    .and_then(|v| v.as_array())
+                    .cloned()
+            })
             .unwrap_or_default();
 
         let mut certs = Vec::new();
@@ -51,24 +59,74 @@ impl<'a> CertificateManager<'a> {
 
     fn parse_cert(&self, c: &serde_json::Value) -> IdracCertificate {
         IdracCertificate {
-            id: c.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            subject: c.get("Subject").and_then(|v| v.as_object())
-                .map(|o| o.iter().map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or(""))).collect::<Vec<_>>().join(", "))
-                .or_else(|| c.get("Subject").and_then(|v| v.as_str()).map(|s| s.to_string())),
-            issuer: c.get("Issuer").and_then(|v| v.as_object())
-                .map(|o| o.iter().map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or(""))).collect::<Vec<_>>().join(", "))
-                .or_else(|| c.get("Issuer").and_then(|v| v.as_str()).map(|s| s.to_string())),
-            valid_from: c.get("ValidNotBefore").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            valid_to: c.get("ValidNotAfter").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            serial_number: c.get("SerialNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            id: c
+                .get("Id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            subject: c
+                .get("Subject")
+                .and_then(|v| v.as_object())
+                .map(|o| {
+                    o.iter()
+                        .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or("")))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .or_else(|| {
+                    c.get("Subject")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                }),
+            issuer: c
+                .get("Issuer")
+                .and_then(|v| v.as_object())
+                .map(|o| {
+                    o.iter()
+                        .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or("")))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .or_else(|| {
+                    c.get("Issuer")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                }),
+            valid_from: c
+                .get("ValidNotBefore")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            valid_to: c
+                .get("ValidNotAfter")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            serial_number: c
+                .get("SerialNumber")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             thumbprint: None,
-            fingerprint: c.get("Fingerprint").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            key_usage: c.get("KeyUsage").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            fingerprint: c
+                .get("Fingerprint")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            key_usage: c
+                .get("KeyUsage")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default(),
             signature_algorithm: None,
-            certificate_type: c.get("CertificateType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            certificate_string: c.get("CertificateString").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            certificate_type: c
+                .get("CertificateType")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            certificate_string: c
+                .get("CertificateString")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
         }
     }
 
@@ -102,7 +160,9 @@ impl<'a> CertificateManager<'a> {
             .get("CSRString")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
-            .ok_or_else(|| IdracError::certificate("CSR generation failed — no CSR string in response"))
+            .ok_or_else(|| {
+                IdracError::certificate("CSR generation failed — no CSR string in response")
+            })
     }
 
     /// Import a signed certificate (PEM format).

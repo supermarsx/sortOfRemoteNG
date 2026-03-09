@@ -22,28 +22,81 @@ impl<'a> StorageManager<'a> {
                 .get("/redfish/v1/Systems/System.Embedded.1/Storage?$expand=*($levels=1)")
                 .await?;
 
-            let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let members = col
+                .get("Members")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
             return Ok(members
                 .iter()
                 .map(|c| {
-                    let sc = c.get("StorageControllers").and_then(|v| v.as_array()).and_then(|a| a.first());
+                    let sc = c
+                        .get("StorageControllers")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first());
                     StorageController {
-                        id: c.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        name: c.get("Name").and_then(|v| v.as_str()).unwrap_or("Storage").to_string(),
-                        manufacturer: sc.and_then(|s| s.get("Manufacturer")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        model: sc.and_then(|s| s.get("Model")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        firmware_version: sc.and_then(|s| s.get("FirmwareVersion")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        serial_number: sc.and_then(|s| s.get("SerialNumber")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        id: c
+                            .get("Id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        name: c
+                            .get("Name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Storage")
+                            .to_string(),
+                        manufacturer: sc
+                            .and_then(|s| s.get("Manufacturer"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        model: sc
+                            .and_then(|s| s.get("Model"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        firmware_version: sc
+                            .and_then(|s| s.get("FirmwareVersion"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        serial_number: sc
+                            .and_then(|s| s.get("SerialNumber"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         speed_gbps: sc.and_then(|s| s.get("SpeedGbps")).and_then(|v| v.as_f64()),
-                        supported_device_protocols: sc.and_then(|s| s.get("SupportedDeviceProtocols")).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default(),
-                        supported_raid_types: sc.and_then(|s| s.get("SupportedRAIDTypes")).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default(),
+                        supported_device_protocols: sc
+                            .and_then(|s| s.get("SupportedDeviceProtocols"))
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                        supported_raid_types: sc
+                            .and_then(|s| s.get("SupportedRAIDTypes"))
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                         status: ComponentHealth {
-                            health: sc.and_then(|s| s.pointer("/Status/Health")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            health: sc
+                                .and_then(|s| s.pointer("/Status/Health"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             health_rollup: None,
-                            state: sc.and_then(|s| s.pointer("/Status/State")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            state: sc
+                                .and_then(|s| s.pointer("/Status/State"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                         },
-                        cache_size_mb: sc.and_then(|s| s.get("CacheSummary")).and_then(|c| c.get("TotalCacheSizeMiB")).and_then(|v| v.as_u64()).map(|n| n as u32),
+                        cache_size_mb: sc
+                            .and_then(|s| s.get("CacheSummary"))
+                            .and_then(|c| c.get("TotalCacheSizeMiB"))
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as u32),
                         driver_version: None,
                     }
                 })
@@ -55,8 +108,18 @@ impl<'a> StorageManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
-                    let get_u32 = |k: &str| v.properties.get(k).and_then(|val| val.as_u64()).map(|n| n as u32);
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
+                    let get_u32 = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_u64())
+                            .map(|n| n as u32)
+                    };
                     StorageController {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("ProductName").unwrap_or_else(|| "Controller".to_string()),
@@ -79,11 +142,16 @@ impl<'a> StorageManager<'a> {
                 .collect());
         }
 
-        Err(IdracError::unsupported("Storage controller listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Storage controller listing requires Redfish or WSMAN",
+        ))
     }
 
     /// List virtual disks (RAID arrays).
-    pub async fn list_virtual_disks(&self, controller_id: Option<&str>) -> IdracResult<Vec<VirtualDisk>> {
+    pub async fn list_virtual_disks(
+        &self,
+        controller_id: Option<&str>,
+    ) -> IdracResult<Vec<VirtualDisk>> {
         if let Ok(rf) = self.client.require_redfish() {
             let mut all_vds = Vec::new();
 
@@ -101,25 +169,69 @@ impl<'a> StorageManager<'a> {
                     cid
                 );
                 if let Ok(col) = rf.get::<serde_json::Value>(&url).await {
-                    let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let members = col
+                        .get("Members")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
                     for vd in &members {
                         all_vds.push(VirtualDisk {
-                            id: vd.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            name: vd.get("Name").and_then(|v| v.as_str()).unwrap_or("Volume").to_string(),
-                            raid_level: vd.get("RAIDType").or_else(|| vd.get("VolumeType")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            id: vd
+                                .get("Id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            name: vd
+                                .get("Name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Volume")
+                                .to_string(),
+                            raid_level: vd
+                                .get("RAIDType")
+                                .or_else(|| vd.get("VolumeType"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             capacity_bytes: vd.get("CapacityBytes").and_then(|v| v.as_u64()),
                             status: ComponentHealth {
-                                health: vd.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                health: vd
+                                    .pointer("/Status/Health")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string()),
                                 health_rollup: None,
-                                state: vd.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                state: vd
+                                    .pointer("/Status/State")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string()),
                             },
-                            stripe_size_bytes: vd.get("OptimumIOSizeBytes").and_then(|v| v.as_u64()),
-                            read_policy: vd.pointer("/Oem/Dell/DellVolume/ReadCachePolicy").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            write_policy: vd.pointer("/Oem/Dell/DellVolume/WriteCachePolicy").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            disk_cache_policy: vd.pointer("/Oem/Dell/DellVolume/DiskCachePolicy").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            stripe_size_bytes: vd
+                                .get("OptimumIOSizeBytes")
+                                .and_then(|v| v.as_u64()),
+                            read_policy: vd
+                                .pointer("/Oem/Dell/DellVolume/ReadCachePolicy")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            write_policy: vd
+                                .pointer("/Oem/Dell/DellVolume/WriteCachePolicy")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            disk_cache_policy: vd
+                                .pointer("/Oem/Dell/DellVolume/DiskCachePolicy")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             controller_id: cid.clone(),
-                            physical_disk_ids: vd.get("Links").and_then(|l| l.get("Drives")).and_then(|v| v.as_array())
-                                .map(|a| a.iter().filter_map(|d| d.get("@odata.id").and_then(|v| v.as_str()).map(|s| s.rsplit('/').next().unwrap_or(s).to_string())).collect())
+                            physical_disk_ids: vd
+                                .get("Links")
+                                .and_then(|l| l.get("Drives"))
+                                .and_then(|v| v.as_array())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|d| {
+                                            d.get("@odata.id").and_then(|v| v.as_str()).map(|s| {
+                                                s.rsplit('/').next().unwrap_or(s).to_string()
+                                            })
+                                        })
+                                        .collect()
+                                })
                                 .unwrap_or_default(),
                             encrypted: vd.get("Encrypted").and_then(|v| v.as_bool()),
                         });
@@ -135,39 +247,67 @@ impl<'a> StorageManager<'a> {
             return Ok(views
                 .iter()
                 .filter(|v| {
-                    controller_id.map(|cid| {
-                        v.properties.get("FQDD").and_then(|val| val.as_str()).map(|s| s.contains(cid)).unwrap_or(false)
-                    }).unwrap_or(true)
+                    controller_id
+                        .map(|cid| {
+                            v.properties
+                                .get("FQDD")
+                                .and_then(|val| val.as_str())
+                                .map(|s| s.contains(cid))
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(true)
                 })
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
                     VirtualDisk {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("Name").unwrap_or_else(|| "VD".to_string()),
                         raid_level: get("RAIDTypes").or_else(|| get("RaidLevel")),
-                        capacity_bytes: v.properties.get("SizeInBytes").and_then(|val| val.as_u64()),
+                        capacity_bytes: v
+                            .properties
+                            .get("SizeInBytes")
+                            .and_then(|val| val.as_u64()),
                         status: ComponentHealth {
                             health: get("PrimaryStatus"),
                             health_rollup: get("RollupStatus"),
                             state: get("State"),
                         },
-                        stripe_size_bytes: v.properties.get("StripeSize").and_then(|val| val.as_u64()),
+                        stripe_size_bytes: v
+                            .properties
+                            .get("StripeSize")
+                            .and_then(|val| val.as_u64()),
                         read_policy: get("ReadCachePolicy"),
                         write_policy: get("WriteCachePolicy"),
                         disk_cache_policy: get("DiskCachePolicy"),
                         controller_id: get("ParentControllerFQDD").unwrap_or_default(),
-                        physical_disk_ids: get("PhysicalDiskIDs").map(|s| s.split(',').map(|p| p.trim().to_string()).collect()).unwrap_or_default(),
-                        encrypted: v.properties.get("LockStatus").and_then(|val| val.as_str()).map(|s| s == "Locked"),
+                        physical_disk_ids: get("PhysicalDiskIDs")
+                            .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+                            .unwrap_or_default(),
+                        encrypted: v
+                            .properties
+                            .get("LockStatus")
+                            .and_then(|val| val.as_str())
+                            .map(|s| s == "Locked"),
                     }
                 })
                 .collect());
         }
 
-        Err(IdracError::unsupported("Virtual disk listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Virtual disk listing requires Redfish or WSMAN",
+        ))
     }
 
     /// List physical disks.
-    pub async fn list_physical_disks(&self, controller_id: Option<&str>) -> IdracResult<Vec<PhysicalDisk>> {
+    pub async fn list_physical_disks(
+        &self,
+        controller_id: Option<&str>,
+    ) -> IdracResult<Vec<PhysicalDisk>> {
         if let Ok(rf) = self.client.require_redfish() {
             let mut all_disks = Vec::new();
 
@@ -186,12 +326,20 @@ impl<'a> StorageManager<'a> {
                 // If Drives collection doesn't exist, try listing from the Storage resource
                 let drives_result = rf.get::<serde_json::Value>(&url).await;
                 let members = if let Ok(col) = drives_result {
-                    col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default()
+                    col.get("Members")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default()
                 } else {
                     // Fallback: get drives from the Storage resource
-                    let storage_url = format!("/redfish/v1/Systems/System.Embedded.1/Storage/{}", cid);
+                    let storage_url =
+                        format!("/redfish/v1/Systems/System.Embedded.1/Storage/{}", cid);
                     if let Ok(storage) = rf.get::<serde_json::Value>(&storage_url).await {
-                        let drive_links = storage.get("Drives").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                        let drive_links = storage
+                            .get("Drives")
+                            .and_then(|v| v.as_array())
+                            .cloned()
+                            .unwrap_or_default();
                         let mut fetched = Vec::new();
                         for link in &drive_links {
                             if let Some(uri) = link.get("@odata.id").and_then(|v| v.as_str()) {
@@ -208,30 +356,79 @@ impl<'a> StorageManager<'a> {
 
                 for d in &members {
                     all_disks.push(PhysicalDisk {
-                        id: d.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        name: d.get("Name").and_then(|v| v.as_str()).unwrap_or("Disk").to_string(),
-                        manufacturer: d.get("Manufacturer").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        model: d.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        serial_number: d.get("SerialNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        firmware_version: d.get("Revision").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        id: d
+                            .get("Id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        name: d
+                            .get("Name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Disk")
+                            .to_string(),
+                        manufacturer: d
+                            .get("Manufacturer")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        model: d
+                            .get("Model")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        serial_number: d
+                            .get("SerialNumber")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        firmware_version: d
+                            .get("Revision")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         capacity_bytes: d.get("CapacityBytes").and_then(|v| v.as_u64()),
-                        media_type: d.get("MediaType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        protocol: d.get("Protocol").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        rotation_speed_rpm: d.get("RotationSpeedRPM").and_then(|v| v.as_u64()).map(|n| n as u32),
+                        media_type: d
+                            .get("MediaType")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        protocol: d
+                            .get("Protocol")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        rotation_speed_rpm: d
+                            .get("RotationSpeedRPM")
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as u32),
                         capable_speed_gbps: d.get("CapableSpeedGbs").and_then(|v| v.as_f64()),
                         negotiated_speed_gbps: d.get("NegotiatedSpeedGbs").and_then(|v| v.as_f64()),
-                        predicted_media_life_left_percent: d.get("PredictedMediaLifeLeftPercent").and_then(|v| v.as_f64()),
-                        block_size_bytes: d.get("BlockSizeBytes").and_then(|v| v.as_u64()).map(|n| n as u32),
+                        predicted_media_life_left_percent: d
+                            .get("PredictedMediaLifeLeftPercent")
+                            .and_then(|v| v.as_f64()),
+                        block_size_bytes: d
+                            .get("BlockSizeBytes")
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as u32),
                         failure_predicted: d.get("FailurePredicted").and_then(|v| v.as_bool()),
-                        hotspare_type: d.get("HotspareType").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        encryption_ability: d.get("EncryptionAbility").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        hotspare_type: d
+                            .get("HotspareType")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        encryption_ability: d
+                            .get("EncryptionAbility")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         status: ComponentHealth {
-                            health: d.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            health: d
+                                .pointer("/Status/Health")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             health_rollup: None,
-                            state: d.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            state: d
+                                .pointer("/Status/State")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                         },
                         controller_id: cid.clone(),
-                        slot: d.pointer("/PhysicalLocation/PartLocation/LocationOrdinalValue").and_then(|v| v.as_u64()).map(|n| n as u32),
+                        slot: d
+                            .pointer("/PhysicalLocation/PartLocation/LocationOrdinalValue")
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as u32),
                     });
                 }
             }
@@ -244,13 +441,29 @@ impl<'a> StorageManager<'a> {
             return Ok(views
                 .iter()
                 .filter(|v| {
-                    controller_id.map(|cid| {
-                        v.properties.get("FQDD").and_then(|val| val.as_str()).map(|s| s.contains(cid)).unwrap_or(false)
-                    }).unwrap_or(true)
+                    controller_id
+                        .map(|cid| {
+                            v.properties
+                                .get("FQDD")
+                                .and_then(|val| val.as_str())
+                                .map(|s| s.contains(cid))
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(true)
                 })
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
-                    let get_u32 = |k: &str| v.properties.get(k).and_then(|val| val.as_u64()).map(|n| n as u32);
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
+                    let get_u32 = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_u64())
+                            .map(|n| n as u32)
+                    };
                     PhysicalDisk {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("DeviceDescription").unwrap_or_else(|| "Disk".to_string()),
@@ -258,7 +471,10 @@ impl<'a> StorageManager<'a> {
                         model: get("Model"),
                         serial_number: get("SerialNumber"),
                         firmware_version: get("Revision"),
-                        capacity_bytes: v.properties.get("SizeInBytes").and_then(|val| val.as_u64()),
+                        capacity_bytes: v
+                            .properties
+                            .get("SizeInBytes")
+                            .and_then(|val| val.as_u64()),
                         media_type: get("MediaType"),
                         protocol: get("BusProtocol"),
                         rotation_speed_rpm: get_u32("RotationRate"),
@@ -266,7 +482,11 @@ impl<'a> StorageManager<'a> {
                         negotiated_speed_gbps: None,
                         predicted_media_life_left_percent: None,
                         block_size_bytes: get_u32("BlockSizeInBytes"),
-                        failure_predicted: v.properties.get("PredictiveFailureState").and_then(|val| val.as_str()).map(|s| s != "0"),
+                        failure_predicted: v
+                            .properties
+                            .get("PredictiveFailureState")
+                            .and_then(|val| val.as_str())
+                            .map(|s| s != "0"),
                         hotspare_type: get("HotSpareStatus"),
                         encryption_ability: get("SecurityStatus"),
                         status: ComponentHealth {
@@ -281,7 +501,9 @@ impl<'a> StorageManager<'a> {
                 .collect());
         }
 
-        Err(IdracError::unsupported("Physical disk listing requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Physical disk listing requires Redfish or WSMAN",
+        ))
     }
 
     /// List storage enclosures.
@@ -291,8 +513,18 @@ impl<'a> StorageManager<'a> {
             return Ok(views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
-                    let get_u32 = |k: &str| v.properties.get(k).and_then(|val| val.as_u64()).map(|n| n as u32);
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
+                    let get_u32 = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_u64())
+                            .map(|n| n as u32)
+                    };
                     StorageEnclosure {
                         id: get("FQDD").unwrap_or_default(),
                         name: get("DeviceDescription").unwrap_or_else(|| "Enclosure".to_string()),
@@ -317,7 +549,10 @@ impl<'a> StorageManager<'a> {
     }
 
     /// Create a virtual disk (RAID array).
-    pub async fn create_virtual_disk(&self, params: CreateVirtualDiskParams) -> IdracResult<String> {
+    pub async fn create_virtual_disk(
+        &self,
+        params: CreateVirtualDiskParams,
+    ) -> IdracResult<String> {
         let rf = self.client.require_redfish()?;
 
         let drives: Vec<serde_json::Value> = params.physical_disk_ids.iter().map(|id| {
@@ -350,7 +585,11 @@ impl<'a> StorageManager<'a> {
     }
 
     /// Delete a virtual disk.
-    pub async fn delete_virtual_disk(&self, controller_id: &str, volume_id: &str) -> IdracResult<()> {
+    pub async fn delete_virtual_disk(
+        &self,
+        controller_id: &str,
+        volume_id: &str,
+    ) -> IdracResult<()> {
         let rf = self.client.require_redfish()?;
         let url = format!(
             "/redfish/v1/Systems/System.Embedded.1/Storage/{}/Volumes/{}",

@@ -38,40 +38,97 @@ impl<'a> ThermalManager<'a> {
                 temperatures: temps
                     .iter()
                     .map(|t| TemperatureSensor {
-                        name: t.get("Name").and_then(|v| v.as_str()).unwrap_or("Sensor").to_string(),
+                        name: t
+                            .get("Name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Sensor")
+                            .to_string(),
                         reading_celsius: t.get("ReadingCelsius").and_then(|v| v.as_f64()),
-                        upper_threshold_non_critical: t.get("UpperThresholdNonCritical").and_then(|v| v.as_f64()),
-                        upper_threshold_critical: t.get("UpperThresholdCritical").and_then(|v| v.as_f64()),
-                        upper_threshold_fatal: t.get("UpperThresholdFatal").and_then(|v| v.as_f64()),
-                        lower_threshold_non_critical: t.get("LowerThresholdNonCritical").and_then(|v| v.as_f64()),
-                        lower_threshold_critical: t.get("LowerThresholdCritical").and_then(|v| v.as_f64()),
+                        upper_threshold_non_critical: t
+                            .get("UpperThresholdNonCritical")
+                            .and_then(|v| v.as_f64()),
+                        upper_threshold_critical: t
+                            .get("UpperThresholdCritical")
+                            .and_then(|v| v.as_f64()),
+                        upper_threshold_fatal: t
+                            .get("UpperThresholdFatal")
+                            .and_then(|v| v.as_f64()),
+                        lower_threshold_non_critical: t
+                            .get("LowerThresholdNonCritical")
+                            .and_then(|v| v.as_f64()),
+                        lower_threshold_critical: t
+                            .get("LowerThresholdCritical")
+                            .and_then(|v| v.as_f64()),
                         status: ComponentHealth {
-                            health: t.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            health: t
+                                .pointer("/Status/Health")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             health_rollup: None,
-                            state: t.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            state: t
+                                .pointer("/Status/State")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                         },
-                        physical_context: t.get("PhysicalContext").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        sensor_number: t.get("SensorNumber").and_then(|v| v.as_u64()).map(|n| n as u32),
-                        member_id: t.get("MemberId").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        physical_context: t
+                            .get("PhysicalContext")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        sensor_number: t
+                            .get("SensorNumber")
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as u32),
+                        member_id: t
+                            .get("MemberId")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                     })
                     .collect(),
                 fans: fans
                     .iter()
                     .map(|f| Fan {
-                        name: f.get("Name").or_else(|| f.get("FanName")).and_then(|v| v.as_str()).unwrap_or("Fan").to_string(),
-                        reading_rpm: f.get("Reading").and_then(|v| v.as_f64()).or_else(|| f.get("CurrentReading").and_then(|v| v.as_f64())),
+                        name: f
+                            .get("Name")
+                            .or_else(|| f.get("FanName"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Fan")
+                            .to_string(),
+                        reading_rpm: f
+                            .get("Reading")
+                            .and_then(|v| v.as_f64())
+                            .or_else(|| f.get("CurrentReading").and_then(|v| v.as_f64())),
                         reading_percent: None,
-                        lower_threshold_non_critical: f.get("LowerThresholdNonCritical").and_then(|v| v.as_f64()),
-                        lower_threshold_critical: f.get("LowerThresholdCritical").and_then(|v| v.as_f64()),
-                        upper_threshold_non_critical: f.get("UpperThresholdNonCritical").and_then(|v| v.as_f64()),
-                        upper_threshold_critical: f.get("UpperThresholdCritical").and_then(|v| v.as_f64()),
+                        lower_threshold_non_critical: f
+                            .get("LowerThresholdNonCritical")
+                            .and_then(|v| v.as_f64()),
+                        lower_threshold_critical: f
+                            .get("LowerThresholdCritical")
+                            .and_then(|v| v.as_f64()),
+                        upper_threshold_non_critical: f
+                            .get("UpperThresholdNonCritical")
+                            .and_then(|v| v.as_f64()),
+                        upper_threshold_critical: f
+                            .get("UpperThresholdCritical")
+                            .and_then(|v| v.as_f64()),
                         status: ComponentHealth {
-                            health: f.pointer("/Status/Health").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            health: f
+                                .pointer("/Status/Health")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             health_rollup: None,
-                            state: f.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            state: f
+                                .pointer("/Status/State")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                         },
-                        physical_context: f.get("PhysicalContext").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        member_id: f.get("MemberId").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        physical_context: f
+                            .get("PhysicalContext")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        member_id: f
+                            .get("MemberId")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         hot_pluggable: f.get("HotPluggable").and_then(|v| v.as_bool()),
                     })
                     .collect(),
@@ -85,15 +142,35 @@ impl<'a> ThermalManager<'a> {
             let fans: Vec<Fan> = fan_views
                 .iter()
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
                     Fan {
                         name: get("DeviceDescription").unwrap_or_else(|| "Fan".to_string()),
-                        reading_rpm: v.properties.get("CurrentReading").and_then(|val| val.as_f64()),
+                        reading_rpm: v
+                            .properties
+                            .get("CurrentReading")
+                            .and_then(|val| val.as_f64()),
                         reading_percent: None,
-                        lower_threshold_non_critical: v.properties.get("LowerThresholdNonCritical").and_then(|val| val.as_f64()),
-                        lower_threshold_critical: v.properties.get("LowerThresholdCritical").and_then(|val| val.as_f64()),
-                        upper_threshold_non_critical: v.properties.get("UpperThresholdNonCritical").and_then(|val| val.as_f64()),
-                        upper_threshold_critical: v.properties.get("UpperThresholdCritical").and_then(|val| val.as_f64()),
+                        lower_threshold_non_critical: v
+                            .properties
+                            .get("LowerThresholdNonCritical")
+                            .and_then(|val| val.as_f64()),
+                        lower_threshold_critical: v
+                            .properties
+                            .get("LowerThresholdCritical")
+                            .and_then(|val| val.as_f64()),
+                        upper_threshold_non_critical: v
+                            .properties
+                            .get("UpperThresholdNonCritical")
+                            .and_then(|val| val.as_f64()),
+                        upper_threshold_critical: v
+                            .properties
+                            .get("UpperThresholdCritical")
+                            .and_then(|val| val.as_f64()),
                         status: ComponentHealth {
                             health: get("PrimaryStatus"),
                             health_rollup: None,
@@ -109,18 +186,33 @@ impl<'a> ThermalManager<'a> {
             let temps: Vec<TemperatureSensor> = sensor_views
                 .iter()
                 .filter(|v| {
-                    v.properties.get("SensorType")
+                    v.properties
+                        .get("SensorType")
                         .and_then(|val| val.as_str())
                         .map(|s| s.contains("Temperature") || s == "1")
                         .unwrap_or(false)
                 })
                 .map(|v| {
-                    let get = |k: &str| v.properties.get(k).and_then(|val| val.as_str()).map(|s| s.to_string());
+                    let get = |k: &str| {
+                        v.properties
+                            .get(k)
+                            .and_then(|val| val.as_str())
+                            .map(|s| s.to_string())
+                    };
                     TemperatureSensor {
                         name: get("DeviceDescription").unwrap_or_else(|| "Sensor".to_string()),
-                        reading_celsius: v.properties.get("CurrentReading").and_then(|val| val.as_f64()),
-                        upper_threshold_non_critical: v.properties.get("UpperThresholdNonCritical").and_then(|val| val.as_f64()),
-                        upper_threshold_critical: v.properties.get("UpperCriticalThreshold").and_then(|val| val.as_f64()),
+                        reading_celsius: v
+                            .properties
+                            .get("CurrentReading")
+                            .and_then(|val| val.as_f64()),
+                        upper_threshold_non_critical: v
+                            .properties
+                            .get("UpperThresholdNonCritical")
+                            .and_then(|val| val.as_f64()),
+                        upper_threshold_critical: v
+                            .properties
+                            .get("UpperCriticalThreshold")
+                            .and_then(|val| val.as_f64()),
                         upper_threshold_fatal: None,
                         lower_threshold_non_critical: None,
                         lower_threshold_critical: None,
@@ -136,10 +228,15 @@ impl<'a> ThermalManager<'a> {
                 })
                 .collect();
 
-            return Ok(ThermalData { temperatures: temps, fans });
+            return Ok(ThermalData {
+                temperatures: temps,
+                fans,
+            });
         }
 
-        Err(IdracError::unsupported("Thermal data requires Redfish or WSMAN"))
+        Err(IdracError::unsupported(
+            "Thermal data requires Redfish or WSMAN",
+        ))
     }
 
     /// Get thermal summary (hottest temp, average, fan status).
@@ -171,7 +268,10 @@ impl<'a> ThermalManager<'a> {
             })
             .and_then(|t| t.reading_celsius);
 
-        let max_temp = active_temps.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let max_temp = active_temps
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
         let avg_temp = if active_temps.is_empty() {
             None
         } else {
@@ -180,13 +280,21 @@ impl<'a> ThermalManager<'a> {
 
         let fan_count = data.fans.len() as u32;
         let fans_ok = data.fans.iter().all(|f| {
-            f.status.health.as_deref().map(|h| h == "OK").unwrap_or(true)
+            f.status
+                .health
+                .as_deref()
+                .map(|h| h == "OK")
+                .unwrap_or(true)
         });
 
         Ok(ThermalSummary {
             inlet_temp_celsius: inlet_temp,
             exhaust_temp_celsius: exhaust_temp,
-            max_temp_celsius: if max_temp > f64::NEG_INFINITY { Some(max_temp) } else { None },
+            max_temp_celsius: if max_temp > f64::NEG_INFINITY {
+                Some(max_temp)
+            } else {
+                None
+            },
             avg_temp_celsius: avg_temp,
             fan_count,
             fans_healthy: fans_ok,

@@ -20,35 +20,73 @@ impl<'a> SystemManager<'a> {
     /// Get system information.
     pub async fn get_system_info(&self) -> IdracResult<SystemInfo> {
         if let Ok(rf) = self.client.require_redfish() {
-            let sys: serde_json::Value = rf
-                .get("/redfish/v1/Systems/System.Embedded.1")
-                .await?;
+            let sys: serde_json::Value = rf.get("/redfish/v1/Systems/System.Embedded.1").await?;
 
             return Ok(SystemInfo {
-                id: sys.get("Id").and_then(|v| v.as_str()).unwrap_or("System.Embedded.1").to_string(),
-                manufacturer: sys.get("Manufacturer").and_then(|v| v.as_str()).unwrap_or("Dell Inc.").to_string(),
-                model: sys.get("Model").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
-                serial_number: sys.get("SerialNumber").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                service_tag: sys.pointer("/Oem/Dell/DellSystem/SystemID")
+                id: sys
+                    .get("Id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("System.Embedded.1")
+                    .to_string(),
+                manufacturer: sys
+                    .get("Manufacturer")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Dell Inc.")
+                    .to_string(),
+                model: sys
+                    .get("Model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
+                serial_number: sys
+                    .get("SerialNumber")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                service_tag: sys
+                    .pointer("/Oem/Dell/DellSystem/SystemID")
                     .or_else(|| sys.get("SKU"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                sku: sys.get("SKU").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                bios_version: sys.get("BiosVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                hostname: sys.get("HostName").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                power_state: sys.get("PowerState").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
-                indicator_led: sys.get("IndicatorLED").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                asset_tag: sys.get("AssetTag").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                memory_gib: sys.get("MemorySummary")
+                sku: sys
+                    .get("SKU")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                bios_version: sys
+                    .get("BiosVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                hostname: sys
+                    .get("HostName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                power_state: sys
+                    .get("PowerState")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
+                indicator_led: sys
+                    .get("IndicatorLED")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                asset_tag: sys
+                    .get("AssetTag")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                memory_gib: sys
+                    .get("MemorySummary")
                     .and_then(|m| m.get("TotalSystemMemoryGiB"))
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0),
-                processor_count: sys.get("ProcessorSummary")
+                processor_count: sys
+                    .get("ProcessorSummary")
                     .and_then(|p| p.get("Count"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as u32,
-                processor_model: sys.get("ProcessorSummary")
+                processor_model: sys
+                    .get("ProcessorSummary")
                     .and_then(|p| p.get("Model"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown")
@@ -80,11 +118,15 @@ impl<'a> SystemManager<'a> {
                     power_state: get_str("PowerState"),
                     indicator_led: None,
                     asset_tag: Some(get_str("AssetTag")),
-                    memory_gib: v.properties.get("SysMemTotalSize")
+                    memory_gib: v
+                        .properties
+                        .get("SysMemTotalSize")
                         .and_then(|val| val.as_f64())
                         .map(|mb| mb / 1024.0)
                         .unwrap_or(0.0),
-                    processor_count: v.properties.get("PopulatedCPUSockets")
+                    processor_count: v
+                        .properties
+                        .get("PopulatedCPUSockets")
                         .and_then(|val| val.as_u64())
                         .unwrap_or(0) as u32,
                     processor_model: get_str("CPUModel"),
@@ -92,28 +134,42 @@ impl<'a> SystemManager<'a> {
             }
         }
 
-        Err(IdracError::unsupported("No protocol available for system info"))
+        Err(IdracError::unsupported(
+            "No protocol available for system info",
+        ))
     }
 
     /// Get iDRAC controller info.
     pub async fn get_idrac_info(&self) -> IdracResult<IdracInfo> {
         if let Ok(rf) = self.client.require_redfish() {
-            let mgr: serde_json::Value = rf
-                .get("/redfish/v1/Managers/iDRAC.Embedded.1")
-                .await?;
+            let mgr: serde_json::Value = rf.get("/redfish/v1/Managers/iDRAC.Embedded.1").await?;
 
             return Ok(IdracInfo {
-                firmware_version: mgr.get("FirmwareVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                idrac_type: mgr.get("Model").and_then(|v| v.as_str()).unwrap_or("iDRAC").to_string(),
+                firmware_version: mgr
+                    .get("FirmwareVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                idrac_type: mgr
+                    .get("Model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("iDRAC")
+                    .to_string(),
                 ip_address: self.client.config.host.clone(),
-                mac_address: mgr.pointer("/EthernetInterfaces/@odata.id")
+                mac_address: mgr
+                    .pointer("/EthernetInterfaces/@odata.id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                model: mgr.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                generation: mgr.pointer("/Oem/Dell/DellAttributes/iDRACGeneration")
+                model: mgr
+                    .get("Model")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                license_type: mgr.pointer("/Oem/Dell/DellAttributes/LicenseType")
+                generation: mgr
+                    .pointer("/Oem/Dell/DellAttributes/iDRACGeneration")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                license_type: mgr
+                    .pointer("/Oem/Dell/DellAttributes/LicenseType")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
             });
@@ -123,7 +179,11 @@ impl<'a> SystemManager<'a> {
             let views = ws.enumerate(dcim_classes::IDRAC_CARD_VIEW).await?;
             if let Some(v) = views.first() {
                 let get_str = |key: &str| -> String {
-                    v.properties.get(key).and_then(|val| val.as_str()).unwrap_or("").to_string()
+                    v.properties
+                        .get(key)
+                        .and_then(|val| val.as_str())
+                        .unwrap_or("")
+                        .to_string()
                 };
                 return Ok(IdracInfo {
                     firmware_version: get_str("FirmwareVersion"),
@@ -137,7 +197,9 @@ impl<'a> SystemManager<'a> {
             }
         }
 
-        Err(IdracError::unsupported("No protocol available for iDRAC info"))
+        Err(IdracError::unsupported(
+            "No protocol available for iDRAC info",
+        ))
     }
 
     /// Set the asset tag.
