@@ -11,8 +11,6 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-mongodb = { version = "3", default-features = false, features = ["compat-3-0-0", "rustls-tls"] }
-tokio-stream = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

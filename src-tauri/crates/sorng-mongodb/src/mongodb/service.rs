@@ -1,17 +1,13 @@
-//! MongoDB service providing simple session and management operations.
+//! Lightweight MongoDB service built around `mongosh`.
 
 use crate::mongodb::types::*;
 use chrono::Utc;
 use log::{info, warn};
-use mongodb::{
-    bson::{doc, Bson, Document as BsonDocument},
-    options::ClientOptions,
-    Client,
-};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::process::Command;
 use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 pub type MongoServiceState = Arc<Mutex<MongoService>>;
@@ -21,7 +17,7 @@ pub fn new_state() -> MongoServiceState {
 }
 
 struct MongoSession {
-    client: Client,
+    connection_string: String,
     info: SessionInfo,
     ssh_child: Option<std::process::Child>,
 }
@@ -65,33 +61,26 @@ impl MongoService {
             config_clone.to_connection_string()
         };
 
-        let mut client_options = ClientOptions::parse(&connection_string)
-            .await
-            .map_err(|e| {
-                MongoError::connection_failed(format!("Failed to parse connection options: {e}"))
-            })?;
+        let connection_info = run_json(
+            &connection_string,
+            r#"
+const admin = db.getSiblingDB('admin');
+const ping = admin.runCommand({ ping: 1 });
+const buildInfo = admin.runCommand({ buildInfo: 1 });
+if (ping.ok !== 1) {
+  throw new Error(ping.errmsg || 'MongoDB ping failed');
+}
+print(JSON.stringify({
+  ok: true,
+  version: buildInfo.version ?? null
+}));
+"#,
+        )
+        .await?;
 
-        if let Some(timeout_secs) = config.connect_timeout_secs {
-            client_options.connect_timeout = Some(std::time::Duration::from_secs(timeout_secs));
-        }
-        if let Some(timeout_secs) = config.server_selection_timeout_secs {
-            client_options.server_selection_timeout =
-                Some(std::time::Duration::from_secs(timeout_secs));
-        }
-
-        let client = Client::with_options(client_options)
-            .map_err(|e| MongoError::connection_failed(format!("Failed to create client: {e}")))?;
-
-        let admin_db = client.database("admin");
-        admin_db
-            .run_command(doc! { "ping": 1 })
-            .await
-            .map_err(|e| MongoError::connection_failed(format!("Ping failed: {e}")))?;
-
-        let build_info = admin_db.run_command(doc! { "buildInfo": 1 }).await.ok();
-        let server_version = build_info
-            .as_ref()
-            .and_then(|doc| doc.get_str("version").ok())
+        let server_version = connection_info
+            .get("version")
+            .and_then(Value::as_str)
             .map(ToOwned::to_owned);
 
         let info = SessionInfo {
@@ -110,7 +99,7 @@ impl MongoService {
         self.sessions.insert(
             session_id.clone(),
             MongoSession {
-                client,
+                connection_string,
                 info,
                 ssh_child,
             },
@@ -157,31 +146,51 @@ impl MongoService {
     }
 
     pub async fn ping(&self, session_id: &str) -> Result<bool, MongoError> {
-        let client = self.get_client(session_id)?;
-        let admin_db = client.database("admin");
-        Ok(admin_db.run_command(doc! { "ping": 1 }).await.is_ok())
+        run_json(
+            self.connection_string(session_id)?,
+            r#"
+const admin = db.getSiblingDB('admin');
+const result = admin.runCommand({ ping: 1 });
+print(JSON.stringify({ ok: result.ok === 1 }));
+"#,
+        )
+        .await
+        .map(|value| value.get("ok").and_then(Value::as_bool).unwrap_or(false))
     }
 
     pub async fn list_databases(&self, session_id: &str) -> Result<Vec<DatabaseInfo>, MongoError> {
-        let client = self.get_client(session_id)?;
-        let names = client.list_database_names().await.map_err(|e| {
-            MongoError::new(
-                MongoErrorKind::DatabaseError,
-                format!("list_database_names: {e}"),
-            )
-        })?;
+        let value = run_json(
+            self.connection_string(session_id)?,
+            r#"
+const admin = db.getSiblingDB('admin');
+const result = admin.runCommand({ listDatabases: 1, nameOnly: true });
+if (result.ok !== 1) {
+  throw new Error(result.errmsg || 'listDatabases failed');
+}
+print(JSON.stringify(result.databases.map(entry => ({ name: entry.name }))));
+"#,
+        )
+        .await?;
 
-        Ok(names
-            .into_iter()
-            .map(|name| DatabaseInfo { name })
-            .collect())
+        serde_json::from_value(value).map_err(serialization_error)
     }
 
     pub async fn drop_database(&self, session_id: &str, db_name: &str) -> Result<(), MongoError> {
-        let client = self.get_client(session_id)?;
-        client.database(db_name).drop().await.map_err(|e| {
-            MongoError::new(MongoErrorKind::DatabaseError, format!("drop_database: {e}"))
-        })
+        let script = format!(
+            r#"
+const database = db.getSiblingDB({});
+const result = database.dropDatabase();
+if (result.ok !== 1) {{
+  throw new Error(result.errmsg || 'dropDatabase failed');
+}}
+print(JSON.stringify({{ ok: true }}));
+"#,
+            js_string(db_name)?
+        );
+
+        run_json(self.connection_string(session_id)?, &script)
+            .await
+            .map(|_| ())
     }
 
     pub async fn list_collections(
@@ -189,30 +198,20 @@ impl MongoService {
         session_id: &str,
         db_name: Option<&str>,
     ) -> Result<Vec<CollectionInfo>, MongoError> {
-        let db = self.resolve_db(session_id, db_name)?;
-        let mut cursor = db.list_collections().await.map_err(|e| {
-            MongoError::new(
-                MongoErrorKind::DatabaseError,
-                format!("list_collections: {e}"),
-            )
-        })?;
+        let selected_db = self.resolve_db_name(session_id, db_name)?;
+        let script = format!(
+            r#"
+const database = db.getSiblingDB({});
+print(JSON.stringify(database.getCollectionInfos().map(info => ({{
+  name: info.name,
+  collection_type: info.type || 'collection'
+}}))));
+"#,
+            js_string(&selected_db)?
+        );
 
-        let mut collections = Vec::new();
-        while let Some(result) = cursor.next().await {
-            let spec = result.map_err(|e| {
-                MongoError::new(
-                    MongoErrorKind::DatabaseError,
-                    format!("list_collections cursor: {e}"),
-                )
-            })?;
-
-            collections.push(CollectionInfo {
-                name: spec.name,
-                collection_type: format!("{:?}", spec.collection_type),
-            });
-        }
-
-        Ok(collections)
+        let value = run_json(self.connection_string(session_id)?, &script).await?;
+        serde_json::from_value(value).map_err(serialization_error)
     }
 
     pub async fn create_collection(
@@ -221,13 +220,23 @@ impl MongoService {
         db_name: Option<&str>,
         collection_name: &str,
     ) -> Result<(), MongoError> {
-        let db = self.resolve_db(session_id, db_name)?;
-        db.create_collection(collection_name).await.map_err(|e| {
-            MongoError::new(
-                MongoErrorKind::DatabaseError,
-                format!("create_collection: {e}"),
-            )
-        })
+        let selected_db = self.resolve_db_name(session_id, db_name)?;
+        let script = format!(
+            r#"
+const database = db.getSiblingDB({});
+const result = database.createCollection({});
+if (result.ok !== 1) {{
+  throw new Error(result.errmsg || 'createCollection failed');
+}}
+print(JSON.stringify({{ ok: true }}));
+"#,
+            js_string(&selected_db)?,
+            js_string(collection_name)?
+        );
+
+        run_json(self.connection_string(session_id)?, &script)
+            .await
+            .map(|_| ())
     }
 
     pub async fn drop_collection(
@@ -236,16 +245,23 @@ impl MongoService {
         db_name: Option<&str>,
         collection_name: &str,
     ) -> Result<(), MongoError> {
-        let db = self.resolve_db(session_id, db_name)?;
-        db.collection::<BsonDocument>(collection_name)
-            .drop()
+        let selected_db = self.resolve_db_name(session_id, db_name)?;
+        let script = format!(
+            r#"
+const database = db.getSiblingDB({});
+const result = database.getCollection({}).drop();
+if (result !== true) {{
+  throw new Error('drop collection failed');
+}}
+print(JSON.stringify({{ ok: true }}));
+"#,
+            js_string(&selected_db)?,
+            js_string(collection_name)?
+        );
+
+        run_json(self.connection_string(session_id)?, &script)
             .await
-            .map_err(|e| {
-                MongoError::new(
-                    MongoErrorKind::DatabaseError,
-                    format!("drop_collection: {e}"),
-                )
-            })
+            .map(|_| ())
     }
 
     pub async fn collection_stats(
@@ -254,54 +270,56 @@ impl MongoService {
         db_name: Option<&str>,
         collection_name: &str,
     ) -> Result<CollectionStats, MongoError> {
-        let db = self.resolve_db(session_id, db_name)?;
-        let result = db
-            .run_command(doc! { "collStats": collection_name })
-            .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::DatabaseError, format!("collStats: {e}"))
-            })?;
+        let selected_db = self.resolve_db_name(session_id, db_name)?;
+        let script = format!(
+            r#"
+const database = db.getSiblingDB({});
+const stats = database.runCommand({{ collStats: {} }});
+if (stats.ok !== 1) {{
+  throw new Error(stats.errmsg || 'collStats failed');
+}}
+print(JSON.stringify({{
+  namespace: stats.ns || '',
+  count: Number(stats.count || 0),
+  size: Number(stats.size || 0),
+  storage_size: Number(stats.storageSize || 0),
+  num_indexes: Number(stats.nindexes || 0),
+  total_index_size: Number(stats.totalIndexSize || 0),
+  capped: Boolean(stats.capped)
+}}));
+"#,
+            js_string(&selected_db)?,
+            js_string(collection_name)?
+        );
 
-        Ok(CollectionStats {
-            namespace: result.get_str("ns").unwrap_or_default().to_string(),
-            count: result.get_i64("count").unwrap_or(0),
-            size: result.get_i64("size").unwrap_or(0),
-            storage_size: result.get_i64("storageSize").unwrap_or(0),
-            num_indexes: result.get_i32("nindexes").unwrap_or(0),
-            total_index_size: result.get_i64("totalIndexSize").unwrap_or(0),
-            capped: result.get_bool("capped").unwrap_or(false),
-        })
+        let value = run_json(self.connection_string(session_id)?, &script).await?;
+        serde_json::from_value(value).map_err(serialization_error)
     }
 
     pub async fn server_status(&self, session_id: &str) -> Result<ServerStatus, MongoError> {
-        let client = self.get_client(session_id)?;
-        let admin_db = client.database("admin");
-        let result = admin_db
-            .run_command(doc! { "serverStatus": 1 })
-            .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::CommandError, format!("serverStatus: {e}"))
-            })?;
+        let value = run_json(
+            self.connection_string(session_id)?,
+            r#"
+const admin = db.getSiblingDB('admin');
+const result = admin.runCommand({ serverStatus: 1 });
+if (result.ok !== 1) {
+  throw new Error(result.errmsg || 'serverStatus failed');
+}
+print(JSON.stringify({
+  host: result.host || 'unknown',
+  version: result.version || 'unknown',
+  uptime_secs: Number(result.uptime || 0),
+  connections: {
+    current: Number(result.connections?.current || 0),
+    available: Number(result.connections?.available || 0),
+    total_created: Number(result.connections?.totalCreated || 0)
+  }
+}));
+"#,
+        )
+        .await?;
 
-        let connections = result
-            .get_document("connections")
-            .map(|connections| ConnectionStats {
-                current: connections.get_i32("current").unwrap_or(0),
-                available: connections.get_i32("available").unwrap_or(0),
-                total_created: connections.get_i64("totalCreated").unwrap_or(0),
-            })
-            .unwrap_or(ConnectionStats {
-                current: 0,
-                available: 0,
-                total_created: 0,
-            });
-
-        Ok(ServerStatus {
-            host: result.get_str("host").unwrap_or("unknown").to_string(),
-            version: result.get_str("version").unwrap_or("unknown").to_string(),
-            uptime_secs: result.get_f64("uptime").unwrap_or(0.0),
-            connections,
-        })
+        serde_json::from_value(value).map_err(serialization_error)
     }
 
     pub async fn list_users(
@@ -309,144 +327,178 @@ impl MongoService {
         session_id: &str,
         db_name: Option<&str>,
     ) -> Result<Vec<MongoUserInfo>, MongoError> {
-        let db = self.resolve_db(session_id, db_name.or(Some("admin")))?;
-        let result = db.run_command(doc! { "usersInfo": 1 }).await.map_err(|e| {
-            MongoError::new(MongoErrorKind::CommandError, format!("usersInfo: {e}"))
-        })?;
+        let selected_db = self.resolve_db_name(session_id, db_name.or(Some("admin")))?;
+        let script = format!(
+            r#"
+const database = db.getSiblingDB({});
+const result = database.runCommand({{ usersInfo: 1 }});
+if (result.ok !== 1) {{
+  throw new Error(result.errmsg || 'usersInfo failed');
+}}
+print(JSON.stringify((result.users || []).map(user => ({{
+  user: user.user || '',
+  database: user.db || '',
+  roles: (user.roles || []).map(role => ({{
+    role: role.role || '',
+    db: role.db || ''
+  }}))
+}}))));
+"#,
+            js_string(&selected_db)?
+        );
 
-        let mut users = Vec::new();
-        if let Ok(user_entries) = result.get_array("users") {
-            for entry in user_entries {
-                if let Bson::Document(user_doc) = entry {
-                    let mut roles = Vec::new();
-                    if let Ok(role_entries) = user_doc.get_array("roles") {
-                        for role in role_entries {
-                            if let Bson::Document(role_doc) = role {
-                                roles.push(MongoRole {
-                                    role: role_doc.get_str("role").unwrap_or_default().to_string(),
-                                    db: role_doc.get_str("db").unwrap_or_default().to_string(),
-                                });
-                            }
-                        }
-                    }
-
-                    users.push(MongoUserInfo {
-                        user: user_doc.get_str("user").unwrap_or_default().to_string(),
-                        database: user_doc.get_str("db").unwrap_or_default().to_string(),
-                        roles,
-                    });
-                }
-            }
-        }
-
-        Ok(users)
+        let value = run_json(self.connection_string(session_id)?, &script).await?;
+        serde_json::from_value(value).map_err(serialization_error)
     }
 
     pub async fn replica_set_status(
         &self,
         session_id: &str,
     ) -> Result<Vec<ReplicaSetMember>, MongoError> {
-        let client = self.get_client(session_id)?;
-        let admin_db = client.database("admin");
-        let result = admin_db
-            .run_command(doc! { "replSetGetStatus": 1 })
-            .await
-            .map_err(|e| {
-                MongoError::new(
-                    MongoErrorKind::CommandError,
-                    format!("replSetGetStatus: {e}"),
-                )
-            })?;
+        let value = run_json(
+            self.connection_string(session_id)?,
+            r#"
+const admin = db.getSiblingDB('admin');
+const result = admin.runCommand({ replSetGetStatus: 1 });
+if (result.ok !== 1) {
+  throw new Error(result.errmsg || 'replSetGetStatus failed');
+}
+print(JSON.stringify((result.members || []).map(member => ({
+  name: member.name || '',
+  state_str: member.stateStr || '',
+  state: Number(member.state || 0),
+  health: Number(member.health || 0),
+  self: member.self ?? null,
+  uptime: member.uptime == null ? null : Number(member.uptime)
+}))));
+"#,
+        )
+        .await?;
 
-        let mut members = Vec::new();
-        if let Ok(member_entries) = result.get_array("members") {
-            for entry in member_entries {
-                if let Bson::Document(member_doc) = entry {
-                    members.push(ReplicaSetMember {
-                        name: member_doc.get_str("name").unwrap_or_default().to_string(),
-                        state_str: member_doc
-                            .get_str("stateStr")
-                            .unwrap_or_default()
-                            .to_string(),
-                        state: member_doc.get_i32("state").unwrap_or(0),
-                        health: member_doc.get_f64("health").unwrap_or(0.0),
-                        is_self: member_doc.get_bool("self").ok(),
-                        uptime: member_doc.get_i64("uptime").ok(),
-                    });
-                }
-            }
-        }
-
-        Ok(members)
+        serde_json::from_value(value).map_err(serialization_error)
     }
 
     pub async fn current_op(&self, session_id: &str) -> Result<Vec<serde_json::Value>, MongoError> {
-        let client = self.get_client(session_id)?;
-        let admin_db = client.database("admin");
-        let result = admin_db
-            .run_command(doc! { "currentOp": 1 })
-            .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::CommandError, format!("currentOp: {e}"))
-            })?;
+        let value = run_json(
+            self.connection_string(session_id)?,
+            r#"
+const admin = db.getSiblingDB('admin');
+const result = admin.runCommand({ currentOp: 1 });
+if (result.ok !== 1) {
+  throw new Error(result.errmsg || 'currentOp failed');
+}
+print(EJSON.stringify(result.inprog || []));
+"#,
+        )
+        .await?;
 
-        let mut ops = Vec::new();
-        if let Ok(in_progress) = result.get_array("inprog") {
-            for entry in in_progress {
-                if let Bson::Document(doc) = entry {
-                    let json = bson_doc_to_json(doc).map_err(|e| {
-                        MongoError::new(
-                            MongoErrorKind::SerializationError,
-                            format!("currentOp serialization: {e}"),
-                        )
-                    })?;
-                    ops.push(json);
-                }
-            }
-        }
-
-        Ok(ops)
+        serde_json::from_value(value).map_err(serialization_error)
     }
 
     pub async fn kill_op(&self, session_id: &str, op_id: i64) -> Result<(), MongoError> {
-        let client = self.get_client(session_id)?;
-        let admin_db = client.database("admin");
-        admin_db
-            .run_command(doc! { "killOp": 1, "op": op_id })
+        let script = format!(
+            r#"
+const admin = db.getSiblingDB('admin');
+const result = admin.runCommand({{ killOp: 1, op: Number({}) }});
+if (result.ok !== 1) {{
+  throw new Error(result.errmsg || 'killOp failed');
+}}
+print(JSON.stringify({{ ok: true }}));
+"#,
+            op_id
+        );
+
+        run_json(self.connection_string(session_id)?, &script)
             .await
-            .map_err(|e| MongoError::new(MongoErrorKind::CommandError, format!("killOp: {e}")))?;
-        Ok(())
+            .map(|_| ())
     }
 
-    fn get_client(&self, session_id: &str) -> Result<&Client, MongoError> {
+    fn connection_string(&self, session_id: &str) -> Result<&str, MongoError> {
         self.sessions
             .get(session_id)
-            .map(|session| &session.client)
+            .map(|session| session.connection_string.as_str())
             .ok_or_else(|| MongoError::session_not_found(session_id))
     }
 
-    fn resolve_db(
+    fn resolve_db_name(
         &self,
         session_id: &str,
         db_name: Option<&str>,
-    ) -> Result<mongodb::Database, MongoError> {
+    ) -> Result<String, MongoError> {
         let session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| MongoError::session_not_found(session_id))?;
-        let db_name = db_name
+        db_name
             .or(session.info.database.as_deref())
-            .ok_or_else(|| {
-                MongoError::new(MongoErrorKind::InvalidConfig, "No database specified")
-            })?;
-
-        Ok(session.client.database(db_name))
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| MongoError::new(MongoErrorKind::InvalidConfig, "No database specified"))
     }
 }
 
-fn bson_doc_to_json(doc: &BsonDocument) -> Result<serde_json::Value, String> {
-    let bson = Bson::Document(doc.clone());
-    Ok(bson.into())
+async fn run_json(connection_string: &str, script: &str) -> Result<Value, MongoError> {
+    let output = Command::new("mongosh")
+        .arg("--quiet")
+        .arg("--norc")
+        .arg(connection_string)
+        .arg("--eval")
+        .arg(script)
+        .output()
+        .await
+        .map_err(command_spawn_error)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("mongosh exited with status {}", output.status)
+        };
+        return Err(MongoError::new(MongoErrorKind::CommandError, message));
+    }
+
+    let stdout = String::from_utf8(output.stdout).map_err(|error| {
+        MongoError::new(
+            MongoErrorKind::SerializationError,
+            format!("mongosh returned non-UTF8 output: {error}"),
+        )
+    })?;
+
+    let json_line = stdout
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .ok_or_else(|| {
+            MongoError::new(
+                MongoErrorKind::SerializationError,
+                "mongosh returned no structured output",
+            )
+        })?;
+
+    serde_json::from_str(json_line).map_err(serialization_error)
+}
+
+fn command_spawn_error(error: std::io::Error) -> MongoError {
+    let message = if error.kind() == std::io::ErrorKind::NotFound {
+        "mongosh was not found on PATH".to_string()
+    } else {
+        format!("failed to launch mongosh: {error}")
+    };
+    MongoError::new(MongoErrorKind::ConnectionFailed, message)
+}
+
+fn serialization_error(error: impl std::fmt::Display) -> MongoError {
+    MongoError::new(
+        MongoErrorKind::SerializationError,
+        format!("failed to parse mongosh output: {error}"),
+    )
+}
+
+fn js_string(value: &str) -> Result<String, MongoError> {
+    serde_json::to_string(value).map_err(serialization_error)
 }
 
 #[cfg(test)]
@@ -466,14 +518,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_bson_doc_to_json() {
-        let doc = doc! { "key": "value", "num": 10 };
-        let json = bson_doc_to_json(&doc).unwrap();
-        assert_eq!(json["key"], "value");
-        assert_eq!(json["num"], 10);
-    }
-
     #[tokio::test]
     async fn test_disconnect_nonexistent() {
         let mut svc = MongoService::new();
@@ -486,5 +530,23 @@ mod tests {
         let svc = MongoService::new();
         let result = svc.ping("no-such").await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_js_string_quotes_value() {
+        assert_eq!(js_string("db\"name").unwrap(), "\"db\\\"name\"");
+    }
+
+    #[test]
+    fn test_command_spawn_error_not_found() {
+        let error = command_spawn_error(std::io::Error::from(std::io::ErrorKind::NotFound));
+        assert_eq!(error.kind, MongoErrorKind::ConnectionFailed);
+        assert!(error.message.contains("mongosh"));
+    }
+
+    #[test]
+    fn test_serialization_error_kind() {
+        let error = serialization_error("boom");
+        assert_eq!(error.kind, MongoErrorKind::SerializationError);
     }
 }
