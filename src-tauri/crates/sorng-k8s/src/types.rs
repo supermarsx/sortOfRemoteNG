@@ -483,15 +483,44 @@ pub struct Volume {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum VolumeSource {
-    EmptyDir { medium: Option<String>, size_limit: Option<String> },
-    HostPath { path: String, host_path_type: Option<String> },
-    ConfigMap { name: String, items: Vec<KeyToPath>, optional: Option<bool> },
-    Secret { secret_name: String, items: Vec<KeyToPath>, optional: Option<bool> },
-    PersistentVolumeClaim { claim_name: String, read_only: Option<bool> },
-    Projected { sources: Vec<ProjectedVolumeSource> },
-    Nfs { server: String, path: String, read_only: Option<bool> },
-    Csi { driver: String, read_only: Option<bool>, volume_attributes: HashMap<String, String> },
-    Downward { items: Vec<DownwardApiVolumeFile> },
+    EmptyDir {
+        medium: Option<String>,
+        size_limit: Option<String>,
+    },
+    HostPath {
+        path: String,
+        host_path_type: Option<String>,
+    },
+    ConfigMap {
+        name: String,
+        items: Vec<KeyToPath>,
+        optional: Option<bool>,
+    },
+    Secret {
+        secret_name: String,
+        items: Vec<KeyToPath>,
+        optional: Option<bool>,
+    },
+    PersistentVolumeClaim {
+        claim_name: String,
+        read_only: Option<bool>,
+    },
+    Projected {
+        sources: Vec<ProjectedVolumeSource>,
+    },
+    Nfs {
+        server: String,
+        path: String,
+        read_only: Option<bool>,
+    },
+    Csi {
+        driver: String,
+        read_only: Option<bool>,
+        volume_attributes: HashMap<String, String>,
+    },
+    Downward {
+        items: Vec<DownwardApiVolumeFile>,
+    },
     Unknown(serde_json::Value),
 }
 
@@ -1879,7 +1908,7 @@ pub struct EventSeries {
     pub last_observed_time: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EventFilter {
     pub namespace: Option<String>,
     pub involved_object_name: Option<String>,

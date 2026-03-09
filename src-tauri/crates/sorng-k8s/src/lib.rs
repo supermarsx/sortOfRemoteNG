@@ -26,22 +26,22 @@
 //! - **service** — Aggregate façade + Tauri state alias
 //! - **commands** — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
-pub mod kubeconfig;
 pub mod client;
-pub mod pods;
-pub mod deployments;
-pub mod services;
+pub mod commands;
 pub mod configmaps;
-pub mod secrets;
-pub mod namespaces;
+pub mod deployments;
+pub mod error;
+pub mod events;
+pub mod helm;
 pub mod ingress;
 pub mod jobs;
-pub mod nodes;
-pub mod rbac;
-pub mod helm;
-pub mod events;
+pub mod kubeconfig;
 pub mod metrics;
+pub mod namespaces;
+pub mod nodes;
+pub mod pods;
+pub mod rbac;
+pub mod secrets;
 pub mod service;
-pub mod commands;
+pub mod services;
+pub mod types;

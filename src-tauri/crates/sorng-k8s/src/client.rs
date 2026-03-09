@@ -38,11 +38,20 @@ impl K8sClient {
             let auth = Self::resolve_auth_method(&config.auth_method)?;
             (url.clone(), auth, config.tls_config.clone())
         } else {
-            return Err(K8sError::connection("No API server URL or kubeconfig provided"));
+            return Err(K8sError::connection(
+                "No API server URL or kubeconfig provided",
+            ));
         };
 
-        let http = Self::build_http_client(&tls_config, config.request_timeout_secs, config.proxy_url.as_deref())?;
-        let namespace = config.namespace.clone().unwrap_or_else(|| "default".to_string());
+        let http = Self::build_http_client(
+            &tls_config,
+            config.request_timeout_secs,
+            config.proxy_url.as_deref(),
+        )?;
+        let namespace = config
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
 
         info!("K8s client created for {}", base_url);
 
@@ -170,10 +179,9 @@ impl K8sClient {
 
             // Load CA certificate
             if let Some(ref ca_data) = tls.ca_cert_data {
-                if let Ok(decoded) = base64::Engine::decode(
-                    &base64::engine::general_purpose::STANDARD,
-                    ca_data,
-                ) {
+                if let Ok(decoded) =
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, ca_data)
+                {
                     if let Ok(cert) = reqwest::Certificate::from_pem(&decoded) {
                         builder = builder.add_root_certificate(cert);
                     } else if let Ok(cert) = reqwest::Certificate::from_der(&decoded) {
@@ -189,19 +197,24 @@ impl K8sClient {
             }
 
             // Load client certificate + key for mTLS
-            if let (Some(ref cert_data), Some(ref key_data)) = (&tls.client_cert_data, &tls.client_key_data) {
+            if let (Some(ref cert_data), Some(ref key_data)) =
+                (&tls.client_cert_data, &tls.client_key_data)
+            {
                 if let (Ok(cert_bytes), Ok(key_bytes)) = (
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, cert_data),
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, key_data),
                 ) {
-                    if let Ok(identity) = reqwest::Identity::from_pkcs8_pem(&cert_bytes, &key_bytes) {
+                    if let Ok(identity) = reqwest::Identity::from_pkcs8_pem(&cert_bytes, &key_bytes)
+                    {
                         builder = builder.identity(identity);
                     }
                 }
             }
         }
 
-        builder.build().map_err(|e| K8sError::connection(format!("Failed to build HTTP client: {}", e)))
+        builder
+            .build()
+            .map_err(|e| K8sError::connection(format!("Failed to build HTTP client: {}", e)))
     }
 
     /// Build authorization headers for the current auth state.
@@ -213,16 +226,22 @@ impl K8sClient {
 
         if let Some(ref token) = auth.token {
             let val = format!("Bearer {}", token);
-            headers.insert(AUTHORIZATION, HeaderValue::from_str(&val)
-                .map_err(|e| K8sError::auth(format!("Invalid token header: {}", e)))?);
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&val)
+                    .map_err(|e| K8sError::auth(format!("Invalid token header: {}", e)))?,
+            );
         } else if let (Some(ref user), Some(ref pass)) = (&auth.username, &auth.password) {
             let encoded = base64::Engine::encode(
                 &base64::engine::general_purpose::STANDARD,
                 format!("{}:{}", user, pass),
             );
             let val = format!("Basic {}", encoded);
-            headers.insert(AUTHORIZATION, HeaderValue::from_str(&val)
-                .map_err(|e| K8sError::auth(format!("Invalid basic auth header: {}", e)))?);
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&val)
+                    .map_err(|e| K8sError::auth(format!("Invalid basic auth header: {}", e)))?,
+            );
         }
 
         Ok(headers)
@@ -230,7 +249,10 @@ impl K8sClient {
 
     /// Build the full URL for a namespaced API path.
     pub fn namespaced_url(&self, namespace: &str, resource: &str) -> String {
-        format!("{}/api/v1/namespaces/{}/{}", self.base_url, namespace, resource)
+        format!(
+            "{}/api/v1/namespaces/{}/{}",
+            self.base_url, namespace, resource
+        )
     }
 
     /// Build the full URL for a cluster-scoped API path.
@@ -240,37 +262,58 @@ impl K8sClient {
 
     /// Build a URL for apps/v1 namespaced resources.
     pub fn apps_v1_url(&self, namespace: &str, resource: &str) -> String {
-        format!("{}/apis/apps/v1/namespaces/{}/{}", self.base_url, namespace, resource)
+        format!(
+            "{}/apis/apps/v1/namespaces/{}/{}",
+            self.base_url, namespace, resource
+        )
     }
 
     /// Build a URL for batch/v1 namespaced resources.
     pub fn batch_v1_url(&self, namespace: &str, resource: &str) -> String {
-        format!("{}/apis/batch/v1/namespaces/{}/{}", self.base_url, namespace, resource)
+        format!(
+            "{}/apis/batch/v1/namespaces/{}/{}",
+            self.base_url, namespace, resource
+        )
     }
 
     /// Build a URL for networking.k8s.io/v1 namespaced resources.
     pub fn networking_v1_url(&self, namespace: &str, resource: &str) -> String {
-        format!("{}/apis/networking.k8s.io/v1/namespaces/{}/{}", self.base_url, namespace, resource)
+        format!(
+            "{}/apis/networking.k8s.io/v1/namespaces/{}/{}",
+            self.base_url, namespace, resource
+        )
     }
 
     /// Build a URL for rbac.authorization.k8s.io/v1.
     pub fn rbac_v1_url(&self, resource: &str) -> String {
-        format!("{}/apis/rbac.authorization.k8s.io/v1/{}", self.base_url, resource)
+        format!(
+            "{}/apis/rbac.authorization.k8s.io/v1/{}",
+            self.base_url, resource
+        )
     }
 
     /// Build a URL for rbac.authorization.k8s.io/v1 namespaced.
     pub fn rbac_v1_namespaced_url(&self, namespace: &str, resource: &str) -> String {
-        format!("{}/apis/rbac.authorization.k8s.io/v1/namespaces/{}/{}", self.base_url, namespace, resource)
+        format!(
+            "{}/apis/rbac.authorization.k8s.io/v1/namespaces/{}/{}",
+            self.base_url, namespace, resource
+        )
     }
 
     /// Build a URL for autoscaling/v2.
     pub fn autoscaling_v2_url(&self, namespace: &str, resource: &str) -> String {
-        format!("{}/apis/autoscaling/v2/namespaces/{}/{}", self.base_url, namespace, resource)
+        format!(
+            "{}/apis/autoscaling/v2/namespaces/{}/{}",
+            self.base_url, namespace, resource
+        )
     }
 
     /// Build a URL for apiextensions.k8s.io/v1.
     pub fn apiextensions_v1_url(&self, resource: &str) -> String {
-        format!("{}/apis/apiextensions.k8s.io/v1/{}", self.base_url, resource)
+        format!(
+            "{}/apis/apiextensions.k8s.io/v1/{}",
+            self.base_url, resource
+        )
     }
 
     /// Build a URL for metrics.k8s.io/v1beta1.
@@ -305,29 +348,62 @@ impl K8sClient {
     }
 
     /// POST request with JSON body.
-    pub async fn post<T: serde::de::DeserializeOwned>(&self, url: &str, body: &serde_json::Value) -> K8sResult<T> {
+    pub async fn post<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> K8sResult<T> {
         let mut headers = self.auth_headers().await?;
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         debug!("POST {}", url);
-        let resp = self.http.post(url).headers(headers).json(body).send().await?;
+        let resp = self
+            .http
+            .post(url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await?;
         Self::handle_response(resp).await
     }
 
     /// PUT request with JSON body.
-    pub async fn put<T: serde::de::DeserializeOwned>(&self, url: &str, body: &serde_json::Value) -> K8sResult<T> {
+    pub async fn put<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> K8sResult<T> {
         let mut headers = self.auth_headers().await?;
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         debug!("PUT {}", url);
-        let resp = self.http.put(url).headers(headers).json(body).send().await?;
+        let resp = self
+            .http
+            .put(url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await?;
         Self::handle_response(resp).await
     }
 
     /// PATCH request (strategic merge).
-    pub async fn patch<T: serde::de::DeserializeOwned>(&self, url: &str, body: &serde_json::Value) -> K8sResult<T> {
+    pub async fn patch<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> K8sResult<T> {
         let mut headers = self.auth_headers().await?;
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/strategic-merge-patch+json"));
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/strategic-merge-patch+json"),
+        );
         debug!("PATCH {}", url);
-        let resp = self.http.patch(url).headers(headers).json(body).send().await?;
+        let resp = self
+            .http
+            .patch(url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await?;
         Self::handle_response(resp).await
     }
 
@@ -340,13 +416,22 @@ impl K8sClient {
         force: bool,
     ) -> K8sResult<T> {
         let mut headers = self.auth_headers().await?;
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/apply-patch+yaml"));
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/apply-patch+yaml"),
+        );
         let mut full_url = format!("{}?fieldManager={}", url, field_manager);
         if force {
             full_url.push_str("&force=true");
         }
         debug!("APPLY {}", full_url);
-        let resp = self.http.patch(&full_url).headers(headers).json(body).send().await?;
+        let resp = self
+            .http
+            .patch(&full_url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await?;
         Self::handle_response(resp).await
     }
 
@@ -359,16 +444,28 @@ impl K8sClient {
     }
 
     /// DELETE with body (delete options).
-    pub async fn delete_with_body(&self, url: &str, body: &serde_json::Value) -> K8sResult<serde_json::Value> {
+    pub async fn delete_with_body(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> K8sResult<serde_json::Value> {
         let mut headers = self.auth_headers().await?;
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         debug!("DELETE (with body) {}", url);
-        let resp = self.http.delete(url).headers(headers).json(body).send().await?;
+        let resp = self
+            .http
+            .delete(url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await?;
         Self::handle_response(resp).await
     }
 
     /// Handle HTTP response: check status, parse JSON.
-    async fn handle_response<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> K8sResult<T> {
+    async fn handle_response<T: serde::de::DeserializeOwned>(
+        resp: reqwest::Response,
+    ) -> K8sResult<T> {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -382,7 +479,8 @@ impl K8sClient {
             };
         }
         let body = resp.text().await.map_err(K8sError::from)?;
-        serde_json::from_str(&body).map_err(|e| K8sError::parse(format!("{}: {}", e, &body[..body.len().min(200)])))
+        serde_json::from_str(&body)
+            .map_err(|e| K8sError::parse(format!("{}: {}", e, &body[..body.len().min(200)])))
     }
 
     /// Build query string from ListOptions.
@@ -438,25 +536,47 @@ impl K8sClient {
     pub async fn api_resources(&self) -> K8sResult<Vec<ApiResource>> {
         let url = format!("{}/api/v1", self.base_url);
         let resp: serde_json::Value = self.get(&url).await?;
-        let resources = resp.get("resources")
+        let resources = resp
+            .get("resources")
             .and_then(|v| v.as_array())
             .map(|arr| {
-                arr.iter().filter_map(|r| {
-                    Some(ApiResource {
-                        name: r.get("name")?.as_str()?.to_string(),
-                        singular_name: r.get("singularName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        namespaced: r.get("namespaced").and_then(|v| v.as_bool()).unwrap_or(false),
-                        kind: r.get("kind")?.as_str()?.to_string(),
-                        group: String::new(),
-                        version: "v1".to_string(),
-                        verbs: r.get("verbs").and_then(|v| v.as_array()).map(|a| {
-                            a.iter().filter_map(|s| s.as_str().map(String::from)).collect()
-                        }).unwrap_or_default(),
-                        short_names: r.get("shortNames").and_then(|v| v.as_array()).map(|a| {
-                            a.iter().filter_map(|s| s.as_str().map(String::from)).collect()
-                        }).unwrap_or_default(),
+                arr.iter()
+                    .filter_map(|r| {
+                        Some(ApiResource {
+                            name: r.get("name")?.as_str()?.to_string(),
+                            singular_name: r
+                                .get("singularName")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            namespaced: r
+                                .get("namespaced")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false),
+                            kind: r.get("kind")?.as_str()?.to_string(),
+                            group: String::new(),
+                            version: "v1".to_string(),
+                            verbs: r
+                                .get("verbs")
+                                .and_then(|v| v.as_array())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|s| s.as_str().map(String::from))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                            short_names: r
+                                .get("shortNames")
+                                .and_then(|v| v.as_array())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|s| s.as_str().map(String::from))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                        })
                     })
-                }).collect()
+                    .collect()
             })
             .unwrap_or_default();
         Ok(resources)

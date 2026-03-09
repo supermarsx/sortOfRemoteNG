@@ -14,7 +14,8 @@ impl KubeconfigManager {
     /// Locate the default kubeconfig path (~/.kube/config or $KUBECONFIG).
     pub fn default_path() -> K8sResult<PathBuf> {
         if let Ok(env_path) = std::env::var("KUBECONFIG") {
-            let first = env_path.split(if cfg!(windows) { ';' } else { ':' })
+            let first = env_path
+                .split(if cfg!(windows) { ';' } else { ':' })
                 .next()
                 .unwrap_or(&env_path);
             let p = PathBuf::from(first);
@@ -28,13 +29,16 @@ impl KubeconfigManager {
                 return Ok(p);
             }
         }
-        Err(K8sError::kubeconfig("No kubeconfig found at default location or $KUBECONFIG"))
+        Err(K8sError::kubeconfig(
+            "No kubeconfig found at default location or $KUBECONFIG",
+        ))
     }
 
     /// Load and parse a kubeconfig from a file path.
     pub fn load(path: &str) -> K8sResult<Kubeconfig> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| K8sError::kubeconfig(format!("Failed to read kubeconfig '{}': {}", path, e)))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            K8sError::kubeconfig(format!("Failed to read kubeconfig '{}': {}", path, e))
+        })?;
         Self::parse(&content)
     }
 
@@ -42,15 +46,18 @@ impl KubeconfigManager {
     pub fn parse(yaml: &str) -> K8sResult<Kubeconfig> {
         let raw: serde_json::Value = serde_yaml::from_str(yaml)?;
 
-        let api_version = raw.get("apiVersion")
+        let api_version = raw
+            .get("apiVersion")
             .and_then(|v| v.as_str())
             .unwrap_or("v1")
             .to_string();
-        let kind = raw.get("kind")
+        let kind = raw
+            .get("kind")
             .and_then(|v| v.as_str())
             .unwrap_or("Config")
             .to_string();
-        let current_context = raw.get("current-context")
+        let current_context = raw
+            .get("current-context")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -83,16 +90,43 @@ impl KubeconfigManager {
         };
         let mut result = Vec::new();
         for item in arr {
-            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let cluster_val = item.get("cluster").cloned().unwrap_or(serde_json::Value::Object(Default::default()));
+            let name = item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cluster_val = item
+                .get("cluster")
+                .cloned()
+                .unwrap_or(serde_json::Value::Object(Default::default()));
             let cluster = ClusterEndpoint {
-                server: cluster_val.get("server").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                certificate_authority: cluster_val.get("certificate-authority").and_then(|v| v.as_str()).map(String::from),
-                certificate_authority_data: cluster_val.get("certificate-authority-data").and_then(|v| v.as_str()).map(String::from),
-                insecure_skip_tls_verify: cluster_val.get("insecure-skip-tls-verify").and_then(|v| v.as_bool()),
-                proxy_url: cluster_val.get("proxy-url").and_then(|v| v.as_str()).map(String::from),
-                tls_server_name: cluster_val.get("tls-server-name").and_then(|v| v.as_str()).map(String::from),
-                disable_compression: cluster_val.get("disable-compression").and_then(|v| v.as_bool()),
+                server: cluster_val
+                    .get("server")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                certificate_authority: cluster_val
+                    .get("certificate-authority")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                certificate_authority_data: cluster_val
+                    .get("certificate-authority-data")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                insecure_skip_tls_verify: cluster_val
+                    .get("insecure-skip-tls-verify")
+                    .and_then(|v| v.as_bool()),
+                proxy_url: cluster_val
+                    .get("proxy-url")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                tls_server_name: cluster_val
+                    .get("tls-server-name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                disable_compression: cluster_val
+                    .get("disable-compression")
+                    .and_then(|v| v.as_bool()),
             };
             result.push(KubeconfigCluster { name, cluster });
         }
@@ -106,12 +140,30 @@ impl KubeconfigManager {
         };
         let mut result = Vec::new();
         for item in arr {
-            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let ctx = item.get("context").cloned().unwrap_or(serde_json::Value::Object(Default::default()));
+            let name = item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let ctx = item
+                .get("context")
+                .cloned()
+                .unwrap_or(serde_json::Value::Object(Default::default()));
             let context = ContextSpec {
-                cluster: ctx.get("cluster").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                user: ctx.get("user").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                namespace: ctx.get("namespace").and_then(|v| v.as_str()).map(String::from),
+                cluster: ctx
+                    .get("cluster")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                user: ctx
+                    .get("user")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                namespace: ctx
+                    .get("namespace")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             };
             result.push(KubeconfigContext { name, context });
         }
@@ -125,43 +177,94 @@ impl KubeconfigManager {
         };
         let mut result = Vec::new();
         for item in arr {
-            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let user_val = item.get("user").cloned().unwrap_or(serde_json::Value::Object(Default::default()));
+            let name = item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let user_val = item
+                .get("user")
+                .cloned()
+                .unwrap_or(serde_json::Value::Object(Default::default()));
 
             let exec_config = user_val.get("exec").map(|e| ExecCredentialConfig {
-                api_version: e.get("apiVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                command: e.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                api_version: e
+                    .get("apiVersion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                command: e
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 args: e.get("args").and_then(|v| v.as_array()).map(|arr| {
-                    arr.iter().filter_map(|a| a.as_str().map(String::from)).collect()
+                    arr.iter()
+                        .filter_map(|a| a.as_str().map(String::from))
+                        .collect()
                 }),
                 env: e.get("env").and_then(|v| v.as_array()).map(|arr| {
-                    arr.iter().filter_map(|ev| {
-                        Some(ExecEnvVar {
-                            name: ev.get("name")?.as_str()?.to_string(),
-                            value: ev.get("value")?.as_str()?.to_string(),
+                    arr.iter()
+                        .filter_map(|ev| {
+                            Some(ExecEnvVar {
+                                name: ev.get("name")?.as_str()?.to_string(),
+                                value: ev.get("value")?.as_str()?.to_string(),
+                            })
                         })
-                    }).collect()
+                        .collect()
                 }),
-                install_hint: e.get("installHint").and_then(|v| v.as_str()).map(String::from),
+                install_hint: e
+                    .get("installHint")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 provide_cluster_info: e.get("provideClusterInfo").and_then(|v| v.as_bool()),
-                interactive_mode: e.get("interactiveMode").and_then(|v| v.as_str()).map(String::from),
+                interactive_mode: e
+                    .get("interactiveMode")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             });
 
             let auth_provider = user_val.get("auth-provider").map(|ap| AuthProviderConfig {
-                name: ap.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                config: ap.get("config")
+                name: ap
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                config: ap
+                    .get("config")
                     .and_then(|v| serde_json::from_value::<HashMap<String, String>>(v.clone()).ok())
                     .unwrap_or_default(),
             });
 
             let user = UserCredentials {
-                client_certificate: user_val.get("client-certificate").and_then(|v| v.as_str()).map(String::from),
-                client_certificate_data: user_val.get("client-certificate-data").and_then(|v| v.as_str()).map(String::from),
-                client_key: user_val.get("client-key").and_then(|v| v.as_str()).map(String::from),
-                client_key_data: user_val.get("client-key-data").and_then(|v| v.as_str()).map(String::from),
-                token: user_val.get("token").and_then(|v| v.as_str()).map(String::from),
-                username: user_val.get("username").and_then(|v| v.as_str()).map(String::from),
-                password: user_val.get("password").and_then(|v| v.as_str()).map(String::from),
+                client_certificate: user_val
+                    .get("client-certificate")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                client_certificate_data: user_val
+                    .get("client-certificate-data")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                client_key: user_val
+                    .get("client-key")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                client_key_data: user_val
+                    .get("client-key-data")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                token: user_val
+                    .get("token")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                username: user_val
+                    .get("username")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                password: user_val
+                    .get("password")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 exec: exec_config,
                 auth_provider,
             };
@@ -181,27 +284,42 @@ impl KubeconfigManager {
     }
 
     /// Resolve cluster endpoint + user credentials for a named context.
-    pub fn resolve_context(kc: &Kubeconfig, context_name: &str) -> K8sResult<(ClusterEndpoint, UserCredentials)> {
-        let ctx = kc.contexts.iter()
+    pub fn resolve_context(
+        kc: &Kubeconfig,
+        context_name: &str,
+    ) -> K8sResult<(ClusterEndpoint, UserCredentials)> {
+        let ctx = kc
+            .contexts
+            .iter()
             .find(|c| c.name == context_name)
             .ok_or_else(|| K8sError::kubeconfig(format!("Context '{}' not found", context_name)))?;
 
-        let cluster = kc.clusters.iter()
+        let cluster = kc
+            .clusters
+            .iter()
             .find(|c| c.name == ctx.context.cluster)
-            .ok_or_else(|| K8sError::kubeconfig(format!(
-                "Cluster '{}' referenced by context '{}' not found",
-                ctx.context.cluster, context_name
-            )))?;
+            .ok_or_else(|| {
+                K8sError::kubeconfig(format!(
+                    "Cluster '{}' referenced by context '{}' not found",
+                    ctx.context.cluster, context_name
+                ))
+            })?;
 
-        let user = kc.users.iter()
+        let user = kc
+            .users
+            .iter()
             .find(|u| u.name == ctx.context.user)
-            .ok_or_else(|| K8sError::kubeconfig(format!(
-                "User '{}' referenced by context '{}' not found",
-                ctx.context.user, context_name
-            )))?;
+            .ok_or_else(|| {
+                K8sError::kubeconfig(format!(
+                    "User '{}' referenced by context '{}' not found",
+                    ctx.context.user, context_name
+                ))
+            })?;
 
-        debug!("Resolved context '{}': cluster='{}', user='{}'",
-            context_name, cluster.name, user.name);
+        debug!(
+            "Resolved context '{}': cluster='{}', user='{}'",
+            context_name, cluster.name, user.name
+        );
 
         Ok((cluster.cluster.clone(), user.user.clone()))
     }
@@ -231,8 +349,12 @@ impl KubeconfigManager {
             }
         }
 
-        info!("Merged kubeconfigs: {} clusters, {} contexts, {} users",
-            merged.clusters.len(), merged.contexts.len(), merged.users.len());
+        info!(
+            "Merged kubeconfigs: {} clusters, {} contexts, {} users",
+            merged.clusters.len(),
+            merged.contexts.len(),
+            merged.users.len()
+        );
 
         Ok(merged)
     }

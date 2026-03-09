@@ -12,11 +12,20 @@ pub struct NamespaceManager;
 impl NamespaceManager {
     /// List all namespaces.
     pub async fn list(client: &K8sClient, opts: &ListOptions) -> K8sResult<Vec<NamespaceInfo>> {
-        let url = format!("{}/api/v1/namespaces{}", client.base_url, K8sClient::list_query(opts));
+        let url = format!(
+            "{}/api/v1/namespaces{}",
+            client.base_url,
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in namespace list"))?;
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 
     /// Get a single namespace.
@@ -26,7 +35,10 @@ impl NamespaceManager {
     }
 
     /// Create a namespace.
-    pub async fn create(client: &K8sClient, config: &CreateNamespaceConfig) -> K8sResult<NamespaceInfo> {
+    pub async fn create(
+        client: &K8sClient,
+        config: &CreateNamespaceConfig,
+    ) -> K8sResult<NamespaceInfo> {
         let url = format!("{}/api/v1/namespaces", client.base_url);
         let body = serde_json::json!({
             "apiVersion": "v1",
@@ -60,17 +72,34 @@ impl NamespaceManager {
     }
 
     /// List resource quotas in a namespace.
-    pub async fn list_resource_quotas(client: &K8sClient, namespace: &str) -> K8sResult<Vec<ResourceQuotaInfo>> {
+    pub async fn list_resource_quotas(
+        client: &K8sClient,
+        namespace: &str,
+    ) -> K8sResult<Vec<ResourceQuotaInfo>> {
         let url = client.namespaced_url(namespace, "resourcequotas");
         let resp: serde_json::Value = client.get(&url).await?;
         let empty = vec![];
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty);
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 
     /// Get a resource quota.
-    pub async fn get_resource_quota(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<ResourceQuotaInfo> {
-        let url = format!("{}/{}", client.namespaced_url(namespace, "resourcequotas"), name);
+    pub async fn get_resource_quota(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<ResourceQuotaInfo> {
+        let url = format!(
+            "{}/{}",
+            client.namespaced_url(namespace, "resourcequotas"),
+            name
+        );
         client.get(&url).await
     }
 
@@ -93,17 +122,34 @@ impl NamespaceManager {
     }
 
     /// Delete a resource quota.
-    pub async fn delete_resource_quota(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<serde_json::Value> {
-        let url = format!("{}/{}", client.namespaced_url(namespace, "resourcequotas"), name);
+    pub async fn delete_resource_quota(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<serde_json::Value> {
+        let url = format!(
+            "{}/{}",
+            client.namespaced_url(namespace, "resourcequotas"),
+            name
+        );
         client.delete(&url).await
     }
 
     /// List limit ranges in a namespace.
-    pub async fn list_limit_ranges(client: &K8sClient, namespace: &str) -> K8sResult<Vec<LimitRangeInfo>> {
+    pub async fn list_limit_ranges(
+        client: &K8sClient,
+        namespace: &str,
+    ) -> K8sResult<Vec<LimitRangeInfo>> {
         let url = client.namespaced_url(namespace, "limitranges");
         let resp: serde_json::Value = client.get(&url).await?;
         let empty = vec![];
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty);
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 }

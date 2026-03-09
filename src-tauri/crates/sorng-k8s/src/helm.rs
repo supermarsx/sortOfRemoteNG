@@ -13,7 +13,11 @@ pub struct HelmManager;
 impl HelmManager {
     /// Check if the helm binary is available.
     pub fn is_available() -> bool {
-        Command::new("helm").arg("version").arg("--short").output().is_ok()
+        Command::new("helm")
+            .arg("version")
+            .arg("--short")
+            .output()
+            .is_ok()
     }
 
     /// Get helm version.
@@ -23,13 +27,19 @@ impl HelmManager {
             .output()
             .map_err(|e| K8sError::helm(format!("Failed to run helm: {}", e)))?;
         if !output.status.success() {
-            return Err(K8sError::helm(String::from_utf8_lossy(&output.stderr).to_string()));
+            return Err(K8sError::helm(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
     /// List releases in a namespace (or all namespaces).
-    pub fn list_releases(namespace: Option<&str>, all_namespaces: bool, kubeconfig: Option<&str>) -> K8sResult<Vec<HelmRelease>> {
+    pub fn list_releases(
+        namespace: Option<&str>,
+        all_namespaces: bool,
+        kubeconfig: Option<&str>,
+    ) -> K8sResult<Vec<HelmRelease>> {
         let mut cmd = Command::new("helm");
         cmd.args(["list", "--output", "json"]);
         if all_namespaces {
@@ -43,11 +53,15 @@ impl HelmManager {
         let output = Self::run_cmd(&mut cmd)?;
         let releases: Vec<serde_json::Value> = serde_json::from_str(&output)
             .map_err(|e| K8sError::parse(format!("Failed to parse helm list output: {}", e)))?;
-        Ok(releases.iter().filter_map(|r| Self::parse_release(r)).collect())
+        Ok(releases.iter().filter_map(Self::parse_release).collect())
     }
 
     /// Get a specific release.
-    pub fn get_release(name: &str, namespace: &str, kubeconfig: Option<&str>) -> K8sResult<HelmRelease> {
+    pub fn get_release(
+        name: &str,
+        namespace: &str,
+        kubeconfig: Option<&str>,
+    ) -> K8sResult<HelmRelease> {
         let mut cmd = Command::new("helm");
         cmd.args(["status", name, "--namespace", namespace, "--output", "json"]);
         if let Some(kc) = kubeconfig {
@@ -60,24 +74,44 @@ impl HelmManager {
     }
 
     /// Get release history.
-    pub fn history(name: &str, namespace: &str, kubeconfig: Option<&str>) -> K8sResult<Vec<HelmHistory>> {
+    pub fn history(
+        name: &str,
+        namespace: &str,
+        kubeconfig: Option<&str>,
+    ) -> K8sResult<Vec<HelmHistory>> {
         let mut cmd = Command::new("helm");
-        cmd.args(["history", name, "--namespace", namespace, "--output", "json"]);
+        cmd.args([
+            "history",
+            name,
+            "--namespace",
+            namespace,
+            "--output",
+            "json",
+        ]);
         if let Some(kc) = kubeconfig {
             cmd.args(["--kubeconfig", kc]);
         }
         let output = Self::run_cmd(&mut cmd)?;
         let entries: Vec<serde_json::Value> = serde_json::from_str(&output)?;
-        Ok(entries.iter().filter_map(|e| {
-            Some(HelmHistory {
-                revision: e.get("revision")?.as_i64()? as i32,
-                updated: e.get("updated")?.as_str()?.to_string(),
-                status: Self::parse_status(e.get("status")?.as_str()?),
-                chart: e.get("chart")?.as_str()?.to_string(),
-                app_version: e.get("app_version").and_then(|v| v.as_str()).map(String::from),
-                description: e.get("description").and_then(|v| v.as_str()).map(String::from),
+        Ok(entries
+            .iter()
+            .filter_map(|e| {
+                Some(HelmHistory {
+                    revision: e.get("revision")?.as_i64()? as i32,
+                    updated: e.get("updated")?.as_str()?.to_string(),
+                    status: Self::parse_status(e.get("status")?.as_str()?),
+                    chart: e.get("chart")?.as_str()?.to_string(),
+                    app_version: e
+                        .get("app_version")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    description: e
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     /// Install a Helm chart.
@@ -135,13 +169,17 @@ impl HelmManager {
         // Write inline values to a temp file if non-null
         if config.values != serde_json::Value::Null && config.values != serde_json::json!({}) {
             let values_str = serde_json::to_string(&config.values).unwrap_or_default();
-            let tmp = std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
+            let tmp =
+                std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
             std::fs::write(&tmp, &values_str)
                 .map_err(|e| K8sError::helm(format!("Failed to write temp values: {}", e)))?;
             cmd.args(["--values", tmp.to_str().unwrap_or("")]);
         }
 
-        info!("Helm install: {} (chart: {})", config.release_name, config.chart);
+        info!(
+            "Helm install: {} (chart: {})",
+            config.release_name, config.chart
+        );
         Self::run_cmd(&mut cmd)
     }
 
@@ -208,20 +246,28 @@ impl HelmManager {
 
         if config.values != serde_json::Value::Null && config.values != serde_json::json!({}) {
             let values_str = serde_json::to_string(&config.values).unwrap_or_default();
-            let tmp = std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
+            let tmp =
+                std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
             std::fs::write(&tmp, &values_str)
                 .map_err(|e| K8sError::helm(format!("Failed to write temp values: {}", e)))?;
             cmd.args(["--values", tmp.to_str().unwrap_or("")]);
         }
 
-        info!("Helm upgrade: {} (chart: {})", config.release_name, config.chart);
+        info!(
+            "Helm upgrade: {} (chart: {})",
+            config.release_name, config.chart
+        );
         Self::run_cmd(&mut cmd)
     }
 
     /// Rollback a Helm release.
     pub fn rollback(config: &HelmRollbackConfig, kubeconfig: Option<&str>) -> K8sResult<String> {
         let mut cmd = Command::new("helm");
-        cmd.args(["rollback", &config.release_name, &config.revision.to_string()]);
+        cmd.args([
+            "rollback",
+            &config.release_name,
+            &config.revision.to_string(),
+        ]);
         cmd.args(["--namespace", &config.namespace]);
         if config.wait {
             cmd.arg("--wait");
@@ -247,7 +293,10 @@ impl HelmManager {
         if let Some(kc) = kubeconfig {
             cmd.args(["--kubeconfig", kc]);
         }
-        info!("Helm rollback: {} to revision {}", config.release_name, config.revision);
+        info!(
+            "Helm rollback: {} to revision {}",
+            config.release_name, config.revision
+        );
         Self::run_cmd(&mut cmd)
     }
 
@@ -282,9 +331,22 @@ impl HelmManager {
     }
 
     /// Get release values.
-    pub fn get_values(name: &str, namespace: &str, all: bool, kubeconfig: Option<&str>) -> K8sResult<serde_json::Value> {
+    pub fn get_values(
+        name: &str,
+        namespace: &str,
+        all: bool,
+        kubeconfig: Option<&str>,
+    ) -> K8sResult<serde_json::Value> {
         let mut cmd = Command::new("helm");
-        cmd.args(["get", "values", name, "--namespace", namespace, "--output", "json"]);
+        cmd.args([
+            "get",
+            "values",
+            name,
+            "--namespace",
+            namespace,
+            "--output",
+            "json",
+        ]);
         if all {
             cmd.arg("--all");
         }
@@ -292,11 +354,16 @@ impl HelmManager {
             cmd.args(["--kubeconfig", kc]);
         }
         let output = Self::run_cmd(&mut cmd)?;
-        serde_json::from_str(&output).map_err(|e| K8sError::parse(format!("Failed to parse helm values: {}", e)))
+        serde_json::from_str(&output)
+            .map_err(|e| K8sError::parse(format!("Failed to parse helm values: {}", e)))
     }
 
     /// Get release manifest.
-    pub fn get_manifest(name: &str, namespace: &str, kubeconfig: Option<&str>) -> K8sResult<String> {
+    pub fn get_manifest(
+        name: &str,
+        namespace: &str,
+        kubeconfig: Option<&str>,
+    ) -> K8sResult<String> {
         let mut cmd = Command::new("helm");
         cmd.args(["get", "manifest", name, "--namespace", namespace]);
         if let Some(kc) = kubeconfig {
@@ -341,7 +408,8 @@ impl HelmManager {
 
         if config.values != serde_json::Value::Null && config.values != serde_json::json!({}) {
             let values_str = serde_json::to_string(&config.values).unwrap_or_default();
-            let tmp = std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
+            let tmp =
+                std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
             std::fs::write(&tmp, &values_str)
                 .map_err(|e| K8sError::helm(format!("Failed to write temp values: {}", e)))?;
             cmd.args(["--values", tmp.to_str().unwrap_or("")]);
@@ -358,20 +426,23 @@ impl HelmManager {
         cmd.args(["repo", "list", "--output", "json"]);
         let output = Self::run_cmd(&mut cmd)?;
         let repos: Vec<serde_json::Value> = serde_json::from_str(&output)?;
-        Ok(repos.iter().filter_map(|r| {
-            Some(HelmRepository {
-                name: r.get("name")?.as_str()?.to_string(),
-                url: r.get("url")?.as_str()?.to_string(),
-                username: None,
-                password: None,
-                ca_file: None,
-                cert_file: None,
-                key_file: None,
-                insecure_skip_tls_verify: None,
-                pass_credentials_all: None,
-                oci: false,
+        Ok(repos
+            .iter()
+            .filter_map(|r| {
+                Some(HelmRepository {
+                    name: r.get("name")?.as_str()?.to_string(),
+                    url: r.get("url")?.as_str()?.to_string(),
+                    username: None,
+                    password: None,
+                    ca_file: None,
+                    cert_file: None,
+                    key_file: None,
+                    insecure_skip_tls_verify: None,
+                    pass_credentials_all: None,
+                    oci: false,
+                })
             })
-        }).collect())
+            .collect())
     }
 
     /// Add a Helm repository.
@@ -422,29 +493,42 @@ impl HelmManager {
         }
         let output = Self::run_cmd(&mut cmd)?;
         let charts: Vec<serde_json::Value> = serde_json::from_str(&output)?;
-        Ok(charts.iter().filter_map(|c| {
-            Some(HelmChart {
-                name: c.get("name")?.as_str()?.to_string(),
-                version: c.get("version")?.as_str()?.to_string(),
-                app_version: c.get("app_version").and_then(|v| v.as_str()).map(String::from),
-                description: c.get("description").and_then(|v| v.as_str()).map(String::from),
-                home: None,
-                icon: None,
-                keywords: vec![],
-                maintainers: vec![],
-                sources: vec![],
-                urls: vec![],
-                created: None,
-                deprecated: c.get("deprecated").and_then(|v| v.as_bool()).unwrap_or(false),
+        Ok(charts
+            .iter()
+            .filter_map(|c| {
+                Some(HelmChart {
+                    name: c.get("name")?.as_str()?.to_string(),
+                    version: c.get("version")?.as_str()?.to_string(),
+                    app_version: c
+                        .get("app_version")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    description: c
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    home: None,
+                    icon: None,
+                    keywords: vec![],
+                    maintainers: vec![],
+                    sources: vec![],
+                    urls: vec![],
+                    created: None,
+                    deprecated: c
+                        .get("deprecated")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     // ── Internal ────────────────────────────────────────────────────────
 
     fn run_cmd(cmd: &mut Command) -> K8sResult<String> {
         debug!("Running: {:?}", cmd);
-        let output = cmd.output()
+        let output = cmd
+            .output()
             .map_err(|e| K8sError::helm(format!("Failed to execute helm: {}", e)))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -458,15 +542,43 @@ impl HelmManager {
             name: val.get("name")?.as_str()?.to_string(),
             namespace: val.get("namespace")?.as_str()?.to_string(),
             revision: val.get("revision").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-            updated: val.get("updated").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            updated: val
+                .get("updated")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             status: Self::parse_status(val.get("status")?.as_str()?),
-            chart: val.get("chart").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            chart_version: val.get("chart").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            app_version: val.get("app_version").and_then(|v| v.as_str()).map(String::from),
-            description: val.get("description").and_then(|v| v.as_str()).map(String::from),
-            notes: val.get("info").and_then(|i| i.get("notes")).and_then(|v| v.as_str()).map(String::from),
-            values: val.get("config").cloned().unwrap_or(serde_json::Value::Null),
-            manifest: val.get("manifest").and_then(|v| v.as_str()).map(String::from),
+            chart: val
+                .get("chart")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            chart_version: val
+                .get("chart")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            app_version: val
+                .get("app_version")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            description: val
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            notes: val
+                .get("info")
+                .and_then(|i| i.get("notes"))
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            values: val
+                .get("config")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            manifest: val
+                .get("manifest")
+                .and_then(|v| v.as_str())
+                .map(String::from),
         })
     }
 

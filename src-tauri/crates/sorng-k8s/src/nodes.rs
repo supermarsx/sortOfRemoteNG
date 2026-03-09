@@ -13,11 +13,20 @@ pub struct NodeManager;
 impl NodeManager {
     /// List all nodes.
     pub async fn list(client: &K8sClient, opts: &ListOptions) -> K8sResult<Vec<NodeInfo>> {
-        let url = format!("{}/api/v1/nodes{}", client.base_url, K8sClient::list_query(opts));
+        let url = format!(
+            "{}/api/v1/nodes{}",
+            client.base_url,
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in node list"))?;
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 
     /// Get a single node.
@@ -51,14 +60,28 @@ impl NodeManager {
 
         let url = format!("{}/api/v1/nodes/{}", client.base_url, name);
         let patch = serde_json::json!({ "spec": { "taints": taints } });
-        info!("Adding taint '{}:{}={}' to node '{}'", taint.key, taint.effect, taint.value.as_deref().unwrap_or(""), name);
+        info!(
+            "Adding taint '{}:{}={}' to node '{}'",
+            taint.key,
+            taint.effect,
+            taint.value.as_deref().unwrap_or(""),
+            name
+        );
         client.patch(&url, &patch).await
     }
 
     /// Remove a taint from a node.
-    pub async fn remove_taint(client: &K8sClient, name: &str, key: &str, effect: Option<&str>) -> K8sResult<NodeInfo> {
+    pub async fn remove_taint(
+        client: &K8sClient,
+        name: &str,
+        key: &str,
+        effect: Option<&str>,
+    ) -> K8sResult<NodeInfo> {
         let node = Self::get(client, name).await?;
-        let taints: Vec<Taint> = node.spec.taints.into_iter()
+        let taints: Vec<Taint> = node
+            .spec
+            .taints
+            .into_iter()
             .filter(|t| {
                 if let Some(eff) = effect {
                     !(t.key == key && t.effect == eff)
@@ -75,14 +98,22 @@ impl NodeManager {
     }
 
     /// Update node labels.
-    pub async fn update_labels(client: &K8sClient, name: &str, labels: &HashMap<String, String>) -> K8sResult<NodeInfo> {
+    pub async fn update_labels(
+        client: &K8sClient,
+        name: &str,
+        labels: &HashMap<String, String>,
+    ) -> K8sResult<NodeInfo> {
         let url = format!("{}/api/v1/nodes/{}", client.base_url, name);
         let patch = serde_json::json!({ "metadata": { "labels": labels } });
         client.patch(&url, &patch).await
     }
 
     /// Remove a node label.
-    pub async fn remove_label(client: &K8sClient, name: &str, label_key: &str) -> K8sResult<NodeInfo> {
+    pub async fn remove_label(
+        client: &K8sClient,
+        name: &str,
+        label_key: &str,
+    ) -> K8sResult<NodeInfo> {
         let url = format!("{}/api/v1/nodes/{}", client.base_url, name);
         // JSON merge patch: set to null to remove
         let patch = serde_json::json!({
@@ -96,7 +127,11 @@ impl NodeManager {
     }
 
     /// Update node annotations.
-    pub async fn update_annotations(client: &K8sClient, name: &str, annotations: &HashMap<String, String>) -> K8sResult<NodeInfo> {
+    pub async fn update_annotations(
+        client: &K8sClient,
+        name: &str,
+        annotations: &HashMap<String, String>,
+    ) -> K8sResult<NodeInfo> {
         let url = format!("{}/api/v1/nodes/{}", client.base_url, name);
         let patch = serde_json::json!({ "metadata": { "annotations": annotations } });
         client.patch(&url, &patch).await
@@ -130,7 +165,10 @@ impl NodeManager {
 
             // Skip DaemonSet pods if requested
             if ignore_daemonsets {
-                let is_daemonset = pod.metadata.owner_references.iter()
+                let is_daemonset = pod
+                    .metadata
+                    .owner_references
+                    .iter()
                     .any(|or| or.kind == "DaemonSet");
                 if is_daemonset {
                     continue;
@@ -138,7 +176,11 @@ impl NodeManager {
             }
 
             // Skip mirror pods (static pods)
-            if pod.metadata.annotations.contains_key("kubernetes.io/config.mirror") {
+            if pod
+                .metadata
+                .annotations
+                .contains_key("kubernetes.io/config.mirror")
+            {
                 continue;
             }
 
@@ -153,26 +195,57 @@ impl NodeManager {
             }
         }
 
-        info!("Drain completed for node '{}': {} pods evicted", name, evicted.len());
+        info!(
+            "Drain completed for node '{}': {} pods evicted",
+            name,
+            evicted.len()
+        );
         Ok(evicted)
     }
 
     /// Get PersistentVolumes (cluster-scoped).
-    pub async fn list_persistent_volumes(client: &K8sClient, opts: &ListOptions) -> K8sResult<Vec<PersistentVolumeInfo>> {
-        let url = format!("{}/api/v1/persistentvolumes{}", client.base_url, K8sClient::list_query(opts));
+    pub async fn list_persistent_volumes(
+        client: &K8sClient,
+        opts: &ListOptions,
+    ) -> K8sResult<Vec<PersistentVolumeInfo>> {
+        let url = format!(
+            "{}/api/v1/persistentvolumes{}",
+            client.base_url,
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
         let empty = vec![];
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty);
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 
     /// List PersistentVolumeClaims in a namespace.
-    pub async fn list_pvcs(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<PersistentVolumeClaimInfo>> {
-        let url = format!("{}{}", client.namespaced_url(namespace, "persistentvolumeclaims"), K8sClient::list_query(opts));
+    pub async fn list_pvcs(
+        client: &K8sClient,
+        namespace: &str,
+        opts: &ListOptions,
+    ) -> K8sResult<Vec<PersistentVolumeClaimInfo>> {
+        let url = format!(
+            "{}{}",
+            client.namespaced_url(namespace, "persistentvolumeclaims"),
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
         let empty = vec![];
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty);
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 
     /// List StorageClasses (cluster-scoped).
@@ -180,7 +253,13 @@ impl NodeManager {
         let url = client.storage_v1_url("storageclasses");
         let resp: serde_json::Value = client.get(&url).await?;
         let empty = vec![];
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&empty);
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 }

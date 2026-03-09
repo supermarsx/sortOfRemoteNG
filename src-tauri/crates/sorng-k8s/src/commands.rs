@@ -27,14 +27,13 @@ pub async fn k8s_connect_kubeconfig(
     context: Option<String>,
 ) -> Result<ClusterInfo, String> {
     let mut svc = state.lock().await;
-    svc.connect_kubeconfig(id, kubeconfig_path, context).await.map_err(|e| e.to_string())
+    svc.connect_kubeconfig(id, kubeconfig_path, context)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn k8s_disconnect(
-    state: State<'_, K8sServiceState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn k8s_disconnect(state: State<'_, K8sServiceState>, id: String) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect(&id).map_err(|e| e.to_string())
 }
@@ -81,7 +80,8 @@ pub async fn k8s_kubeconfig_list_contexts(
     yaml: String,
 ) -> Result<Vec<String>, String> {
     let svc = state.lock().await;
-    svc.kubeconfig_list_contexts(&yaml).map_err(|e| e.to_string())
+    svc.kubeconfig_list_contexts(&yaml)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -122,7 +122,9 @@ pub async fn k8s_list_namespaces(
     opts: Option<ListOptions>,
 ) -> Result<Vec<NamespaceInfo>, String> {
     let svc = state.lock().await;
-    svc.list_namespaces(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_namespaces(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -132,7 +134,9 @@ pub async fn k8s_get_namespace(
     name: String,
 ) -> Result<NamespaceInfo, String> {
     let svc = state.lock().await;
-    svc.get_namespace(&id, &name).await.map_err(|e| e.to_string())
+    svc.get_namespace(&id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -142,7 +146,9 @@ pub async fn k8s_create_namespace(
     config: CreateNamespaceConfig,
 ) -> Result<NamespaceInfo, String> {
     let svc = state.lock().await;
-    svc.create_namespace(&id, &config).await.map_err(|e| e.to_string())
+    svc.create_namespace(&id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -152,7 +158,9 @@ pub async fn k8s_delete_namespace(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_namespace(&id, &name).await.map_err(|e| e.to_string())
+    svc.delete_namespace(&id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -163,7 +171,9 @@ pub async fn k8s_update_namespace_labels(
     labels: HashMap<String, String>,
 ) -> Result<NamespaceInfo, String> {
     let svc = state.lock().await;
-    svc.update_namespace_labels(&id, &name, &labels).await.map_err(|e| e.to_string())
+    svc.update_namespace_labels(&id, &name, &labels)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -173,7 +183,9 @@ pub async fn k8s_list_resource_quotas(
     namespace: String,
 ) -> Result<Vec<ResourceQuotaInfo>, String> {
     let svc = state.lock().await;
-    svc.list_resource_quotas(&id, &namespace).await.map_err(|e| e.to_string())
+    svc.list_resource_quotas(&id, &namespace)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -184,7 +196,9 @@ pub async fn k8s_get_resource_quota(
     name: String,
 ) -> Result<ResourceQuotaInfo, String> {
     let svc = state.lock().await;
-    svc.get_resource_quota(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_resource_quota(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -196,7 +210,9 @@ pub async fn k8s_create_resource_quota(
     hard: HashMap<String, String>,
 ) -> Result<ResourceQuotaInfo, String> {
     let svc = state.lock().await;
-    svc.create_resource_quota(&id, &namespace, &name, &hard).await.map_err(|e| e.to_string())
+    svc.create_resource_quota(&id, &namespace, &name, &hard)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -207,7 +223,9 @@ pub async fn k8s_delete_resource_quota(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_resource_quota(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_resource_quota(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -217,7 +235,9 @@ pub async fn k8s_list_limit_ranges(
     namespace: String,
 ) -> Result<Vec<LimitRangeInfo>, String> {
     let svc = state.lock().await;
-    svc.list_limit_ranges(&id, &namespace).await.map_err(|e| e.to_string())
+    svc.list_limit_ranges(&id, &namespace)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Pods ──────────────────────────────────────────────────────────────────────
@@ -230,7 +250,9 @@ pub async fn k8s_list_pods(
     opts: Option<ListOptions>,
 ) -> Result<Vec<PodInfo>, String> {
     let svc = state.lock().await;
-    svc.list_pods(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_pods(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -240,7 +262,9 @@ pub async fn k8s_list_all_pods(
     opts: Option<ListOptions>,
 ) -> Result<Vec<PodInfo>, String> {
     let svc = state.lock().await;
-    svc.list_all_pods(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_all_pods(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -251,7 +275,9 @@ pub async fn k8s_get_pod(
     name: String,
 ) -> Result<PodInfo, String> {
     let svc = state.lock().await;
-    svc.get_pod(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_pod(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -262,7 +288,9 @@ pub async fn k8s_create_pod(
     spec: serde_json::Value,
 ) -> Result<PodInfo, String> {
     let svc = state.lock().await;
-    svc.create_pod(&id, &namespace, &spec).await.map_err(|e| e.to_string())
+    svc.create_pod(&id, &namespace, &spec)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -274,7 +302,9 @@ pub async fn k8s_delete_pod(
     opts: Option<DeleteOptions>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_pod(&id, &namespace, &name, opts.as_ref()).await.map_err(|e| e.to_string())
+    svc.delete_pod(&id, &namespace, &name, opts.as_ref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -286,7 +316,9 @@ pub async fn k8s_pod_logs(
     log_opts: Option<PodLogOptions>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.pod_logs(&id, &namespace, &name, &log_opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.pod_logs(&id, &namespace, &name, &log_opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -297,7 +329,9 @@ pub async fn k8s_evict_pod(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.evict_pod(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.evict_pod(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -309,7 +343,9 @@ pub async fn k8s_update_pod_labels(
     labels: HashMap<String, String>,
 ) -> Result<PodInfo, String> {
     let svc = state.lock().await;
-    svc.update_pod_labels(&id, &namespace, &name, &labels).await.map_err(|e| e.to_string())
+    svc.update_pod_labels(&id, &namespace, &name, &labels)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -321,7 +357,9 @@ pub async fn k8s_update_pod_annotations(
     annotations: HashMap<String, String>,
 ) -> Result<PodInfo, String> {
     let svc = state.lock().await;
-    svc.update_pod_annotations(&id, &namespace, &name, &annotations).await.map_err(|e| e.to_string())
+    svc.update_pod_annotations(&id, &namespace, &name, &annotations)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Deployments ───────────────────────────────────────────────────────────────
@@ -334,7 +372,9 @@ pub async fn k8s_list_deployments(
     opts: Option<ListOptions>,
 ) -> Result<Vec<DeploymentInfo>, String> {
     let svc = state.lock().await;
-    svc.list_deployments(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_deployments(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -345,7 +385,9 @@ pub async fn k8s_get_deployment(
     name: String,
 ) -> Result<DeploymentInfo, String> {
     let svc = state.lock().await;
-    svc.get_deployment(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_deployment(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -356,7 +398,9 @@ pub async fn k8s_create_deployment(
     config: CreateDeploymentConfig,
 ) -> Result<DeploymentInfo, String> {
     let svc = state.lock().await;
-    svc.create_deployment(&id, &namespace, &config).await.map_err(|e| e.to_string())
+    svc.create_deployment(&id, &namespace, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -367,7 +411,9 @@ pub async fn k8s_delete_deployment(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_deployment(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_deployment(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -379,7 +425,9 @@ pub async fn k8s_scale_deployment(
     replicas: i32,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.scale_deployment(&id, &namespace, &name, replicas).await.map_err(|e| e.to_string())
+    svc.scale_deployment(&id, &namespace, &name, replicas)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -390,7 +438,9 @@ pub async fn k8s_restart_deployment(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.restart_deployment(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.restart_deployment(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -401,7 +451,9 @@ pub async fn k8s_pause_deployment(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.pause_deployment(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.pause_deployment(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -412,7 +464,9 @@ pub async fn k8s_resume_deployment(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.resume_deployment(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.resume_deployment(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -425,7 +479,9 @@ pub async fn k8s_set_deployment_image(
     image: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_deployment_image(&id, &namespace, &name, &container, &image).await.map_err(|e| e.to_string())
+    svc.set_deployment_image(&id, &namespace, &name, &container, &image)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -436,7 +492,9 @@ pub async fn k8s_deployment_rollout_status(
     name: String,
 ) -> Result<RolloutInfo, String> {
     let svc = state.lock().await;
-    svc.deployment_rollout_status(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.deployment_rollout_status(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -448,7 +506,9 @@ pub async fn k8s_rollback_deployment(
     revision: Option<i64>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.rollback_deployment(&id, &namespace, &name, revision).await.map_err(|e| e.to_string())
+    svc.rollback_deployment(&id, &namespace, &name, revision)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -458,7 +518,9 @@ pub async fn k8s_list_all_deployments(
     opts: Option<ListOptions>,
 ) -> Result<Vec<DeploymentInfo>, String> {
     let svc = state.lock().await;
-    svc.list_all_deployments(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_all_deployments(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -470,7 +532,9 @@ pub async fn k8s_update_deployment(
     manifest: serde_json::Value,
 ) -> Result<DeploymentInfo, String> {
     let svc = state.lock().await;
-    svc.update_deployment(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+    svc.update_deployment(&id, &namespace, &name, &manifest)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -482,7 +546,9 @@ pub async fn k8s_patch_deployment(
     patch: serde_json::Value,
 ) -> Result<DeploymentInfo, String> {
     let svc = state.lock().await;
-    svc.patch_deployment(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
+    svc.patch_deployment(&id, &namespace, &name, &patch)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── StatefulSets, DaemonSets, ReplicaSets ─────────────────────────────────────
@@ -495,7 +561,9 @@ pub async fn k8s_list_statefulsets(
     opts: Option<ListOptions>,
 ) -> Result<Vec<StatefulSetInfo>, String> {
     let svc = state.lock().await;
-    svc.list_statefulsets(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_statefulsets(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -506,7 +574,9 @@ pub async fn k8s_list_daemonsets(
     opts: Option<ListOptions>,
 ) -> Result<Vec<DaemonSetInfo>, String> {
     let svc = state.lock().await;
-    svc.list_daemonsets(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_daemonsets(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -517,7 +587,9 @@ pub async fn k8s_list_replicasets(
     opts: Option<ListOptions>,
 ) -> Result<Vec<ReplicaSetInfo>, String> {
     let svc = state.lock().await;
-    svc.list_replicasets(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_replicasets(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Services ──────────────────────────────────────────────────────────────────
@@ -530,7 +602,9 @@ pub async fn k8s_list_services(
     opts: Option<ListOptions>,
 ) -> Result<Vec<ServiceInfo>, String> {
     let svc = state.lock().await;
-    svc.list_services(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_services(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -541,7 +615,9 @@ pub async fn k8s_get_service(
     name: String,
 ) -> Result<ServiceInfo, String> {
     let svc = state.lock().await;
-    svc.get_service(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_service(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -552,7 +628,9 @@ pub async fn k8s_create_service(
     config: CreateServiceConfig,
 ) -> Result<ServiceInfo, String> {
     let svc = state.lock().await;
-    svc.create_service(&id, &namespace, &config).await.map_err(|e| e.to_string())
+    svc.create_service(&id, &namespace, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -563,7 +641,9 @@ pub async fn k8s_delete_service(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_service(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_service(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -574,7 +654,9 @@ pub async fn k8s_get_endpoints(
     name: String,
 ) -> Result<EndpointInfo, String> {
     let svc = state.lock().await;
-    svc.get_endpoints(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_endpoints(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -584,7 +666,9 @@ pub async fn k8s_list_all_services(
     opts: Option<ListOptions>,
 ) -> Result<Vec<ServiceInfo>, String> {
     let svc = state.lock().await;
-    svc.list_all_services(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_all_services(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -596,7 +680,9 @@ pub async fn k8s_update_service(
     manifest: serde_json::Value,
 ) -> Result<ServiceInfo, String> {
     let svc = state.lock().await;
-    svc.update_service(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+    svc.update_service(&id, &namespace, &name, &manifest)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -608,7 +694,9 @@ pub async fn k8s_patch_service(
     patch: serde_json::Value,
 ) -> Result<ServiceInfo, String> {
     let svc = state.lock().await;
-    svc.patch_service(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
+    svc.patch_service(&id, &namespace, &name, &patch)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── ConfigMaps ────────────────────────────────────────────────────────────────
@@ -621,7 +709,9 @@ pub async fn k8s_list_configmaps(
     opts: Option<ListOptions>,
 ) -> Result<Vec<ConfigMapInfo>, String> {
     let svc = state.lock().await;
-    svc.list_configmaps(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_configmaps(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -632,7 +722,9 @@ pub async fn k8s_get_configmap(
     name: String,
 ) -> Result<ConfigMapInfo, String> {
     let svc = state.lock().await;
-    svc.get_configmap(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_configmap(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -643,7 +735,9 @@ pub async fn k8s_create_configmap(
     config: CreateConfigMapConfig,
 ) -> Result<ConfigMapInfo, String> {
     let svc = state.lock().await;
-    svc.create_configmap(&id, &namespace, &config).await.map_err(|e| e.to_string())
+    svc.create_configmap(&id, &namespace, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -654,7 +748,9 @@ pub async fn k8s_delete_configmap(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_configmap(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_configmap(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -666,7 +762,9 @@ pub async fn k8s_update_configmap(
     manifest: serde_json::Value,
 ) -> Result<ConfigMapInfo, String> {
     let svc = state.lock().await;
-    svc.update_configmap(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+    svc.update_configmap(&id, &namespace, &name, &manifest)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -678,7 +776,9 @@ pub async fn k8s_patch_configmap(
     patch: serde_json::Value,
 ) -> Result<ConfigMapInfo, String> {
     let svc = state.lock().await;
-    svc.patch_configmap(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
+    svc.patch_configmap(&id, &namespace, &name, &patch)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────────────
@@ -691,7 +791,9 @@ pub async fn k8s_list_secrets(
     opts: Option<ListOptions>,
 ) -> Result<Vec<SecretInfo>, String> {
     let svc = state.lock().await;
-    svc.list_secrets(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_secrets(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -702,7 +804,9 @@ pub async fn k8s_get_secret(
     name: String,
 ) -> Result<SecretInfo, String> {
     let svc = state.lock().await;
-    svc.get_secret(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_secret(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -713,7 +817,9 @@ pub async fn k8s_create_secret(
     config: CreateSecretConfig,
 ) -> Result<SecretInfo, String> {
     let svc = state.lock().await;
-    svc.create_secret(&id, &namespace, &config).await.map_err(|e| e.to_string())
+    svc.create_secret(&id, &namespace, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -724,7 +830,9 @@ pub async fn k8s_delete_secret(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_secret(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_secret(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -736,7 +844,9 @@ pub async fn k8s_update_secret(
     manifest: serde_json::Value,
 ) -> Result<SecretInfo, String> {
     let svc = state.lock().await;
-    svc.update_secret(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+    svc.update_secret(&id, &namespace, &name, &manifest)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -748,7 +858,9 @@ pub async fn k8s_patch_secret(
     patch: serde_json::Value,
 ) -> Result<SecretInfo, String> {
     let svc = state.lock().await;
-    svc.patch_secret(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
+    svc.patch_secret(&id, &namespace, &name, &patch)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Ingress ───────────────────────────────────────────────────────────────────
@@ -761,7 +873,9 @@ pub async fn k8s_list_ingresses(
     opts: Option<ListOptions>,
 ) -> Result<Vec<IngressInfo>, String> {
     let svc = state.lock().await;
-    svc.list_ingresses(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_ingresses(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -772,7 +886,9 @@ pub async fn k8s_get_ingress(
     name: String,
 ) -> Result<IngressInfo, String> {
     let svc = state.lock().await;
-    svc.get_ingress(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_ingress(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -783,7 +899,9 @@ pub async fn k8s_create_ingress(
     config: CreateIngressConfig,
 ) -> Result<IngressInfo, String> {
     let svc = state.lock().await;
-    svc.create_ingress(&id, &namespace, &config).await.map_err(|e| e.to_string())
+    svc.create_ingress(&id, &namespace, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -794,7 +912,9 @@ pub async fn k8s_delete_ingress(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_ingress(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_ingress(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -806,7 +926,9 @@ pub async fn k8s_update_ingress(
     manifest: serde_json::Value,
 ) -> Result<IngressInfo, String> {
     let svc = state.lock().await;
-    svc.update_ingress(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+    svc.update_ingress(&id, &namespace, &name, &manifest)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -816,7 +938,9 @@ pub async fn k8s_list_ingress_classes(
     opts: Option<ListOptions>,
 ) -> Result<Vec<IngressClassInfo>, String> {
     let svc = state.lock().await;
-    svc.list_ingress_classes(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_ingress_classes(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Network Policies ──────────────────────────────────────────────────────────
@@ -829,7 +953,9 @@ pub async fn k8s_list_network_policies(
     opts: Option<ListOptions>,
 ) -> Result<Vec<NetworkPolicyInfo>, String> {
     let svc = state.lock().await;
-    svc.list_network_policies(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_network_policies(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -840,7 +966,9 @@ pub async fn k8s_create_network_policy(
     policy: serde_json::Value,
 ) -> Result<NetworkPolicyInfo, String> {
     let svc = state.lock().await;
-    svc.create_network_policy(&id, &namespace, &policy).await.map_err(|e| e.to_string())
+    svc.create_network_policy(&id, &namespace, &policy)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -851,7 +979,9 @@ pub async fn k8s_delete_network_policy(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_network_policy(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_network_policy(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -862,7 +992,9 @@ pub async fn k8s_get_network_policy(
     name: String,
 ) -> Result<NetworkPolicyInfo, String> {
     let svc = state.lock().await;
-    svc.get_network_policy(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_network_policy(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
@@ -875,7 +1007,9 @@ pub async fn k8s_list_jobs(
     opts: Option<ListOptions>,
 ) -> Result<Vec<JobInfo>, String> {
     let svc = state.lock().await;
-    svc.list_jobs(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_jobs(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -886,7 +1020,9 @@ pub async fn k8s_get_job(
     name: String,
 ) -> Result<JobInfo, String> {
     let svc = state.lock().await;
-    svc.get_job(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_job(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -897,7 +1033,9 @@ pub async fn k8s_create_job(
     config: CreateJobConfig,
 ) -> Result<JobInfo, String> {
     let svc = state.lock().await;
-    svc.create_job(&id, &namespace, &config).await.map_err(|e| e.to_string())
+    svc.create_job(&id, &namespace, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -908,7 +1046,9 @@ pub async fn k8s_delete_job(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_job(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_job(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -919,7 +1059,9 @@ pub async fn k8s_suspend_job(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.suspend_job(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.suspend_job(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -930,7 +1072,9 @@ pub async fn k8s_resume_job(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.resume_job(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.resume_job(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── CronJobs ──────────────────────────────────────────────────────────────────
@@ -943,7 +1087,9 @@ pub async fn k8s_list_cronjobs(
     opts: Option<ListOptions>,
 ) -> Result<Vec<CronJobInfo>, String> {
     let svc = state.lock().await;
-    svc.list_cronjobs(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_cronjobs(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -954,7 +1100,9 @@ pub async fn k8s_get_cronjob(
     name: String,
 ) -> Result<CronJobInfo, String> {
     let svc = state.lock().await;
-    svc.get_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_cronjob(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -965,7 +1113,9 @@ pub async fn k8s_create_cronjob(
     config: CreateCronJobConfig,
 ) -> Result<CronJobInfo, String> {
     let svc = state.lock().await;
-    svc.create_cronjob(&id, &namespace, &config).await.map_err(|e| e.to_string())
+    svc.create_cronjob(&id, &namespace, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -976,7 +1126,9 @@ pub async fn k8s_delete_cronjob(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.delete_cronjob(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -987,7 +1139,9 @@ pub async fn k8s_trigger_cronjob(
     name: String,
 ) -> Result<JobInfo, String> {
     let svc = state.lock().await;
-    svc.trigger_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.trigger_cronjob(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -998,7 +1152,9 @@ pub async fn k8s_suspend_cronjob(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.suspend_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.suspend_cronjob(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1009,7 +1165,9 @@ pub async fn k8s_resume_cronjob(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.resume_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.resume_cronjob(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Nodes ─────────────────────────────────────────────────────────────────────
@@ -1021,7 +1179,9 @@ pub async fn k8s_list_nodes(
     opts: Option<ListOptions>,
 ) -> Result<Vec<NodeInfo>, String> {
     let svc = state.lock().await;
-    svc.list_nodes(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_nodes(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1051,7 +1211,9 @@ pub async fn k8s_uncordon_node(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.uncordon_node(&id, &name).await.map_err(|e| e.to_string())
+    svc.uncordon_node(&id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1072,7 +1234,9 @@ pub async fn k8s_add_node_taint(
     taint: Taint,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.add_node_taint(&id, &name, &taint).await.map_err(|e| e.to_string())
+    svc.add_node_taint(&id, &name, &taint)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1083,7 +1247,9 @@ pub async fn k8s_remove_node_taint(
     taint_key: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.remove_node_taint(&id, &name, &taint_key).await.map_err(|e| e.to_string())
+    svc.remove_node_taint(&id, &name, &taint_key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1094,7 +1260,9 @@ pub async fn k8s_update_node_labels(
     labels: HashMap<String, String>,
 ) -> Result<NodeInfo, String> {
     let svc = state.lock().await;
-    svc.update_node_labels(&id, &name, &labels).await.map_err(|e| e.to_string())
+    svc.update_node_labels(&id, &name, &labels)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -1106,7 +1274,9 @@ pub async fn k8s_list_persistent_volumes(
     opts: Option<ListOptions>,
 ) -> Result<Vec<PersistentVolumeInfo>, String> {
     let svc = state.lock().await;
-    svc.list_persistent_volumes(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_persistent_volumes(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1117,7 +1287,9 @@ pub async fn k8s_list_pvcs(
     opts: Option<ListOptions>,
 ) -> Result<Vec<PersistentVolumeClaimInfo>, String> {
     let svc = state.lock().await;
-    svc.list_pvcs(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_pvcs(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1127,7 +1299,9 @@ pub async fn k8s_list_storage_classes(
     opts: Option<ListOptions>,
 ) -> Result<Vec<StorageClassInfo>, String> {
     let svc = state.lock().await;
-    svc.list_storage_classes(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_storage_classes(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── RBAC ──────────────────────────────────────────────────────────────────────
@@ -1140,7 +1314,9 @@ pub async fn k8s_list_roles(
     opts: Option<ListOptions>,
 ) -> Result<Vec<RoleInfo>, String> {
     let svc = state.lock().await;
-    svc.list_roles(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_roles(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1150,7 +1326,9 @@ pub async fn k8s_list_cluster_roles(
     opts: Option<ListOptions>,
 ) -> Result<Vec<ClusterRoleInfo>, String> {
     let svc = state.lock().await;
-    svc.list_cluster_roles(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_cluster_roles(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1161,7 +1339,9 @@ pub async fn k8s_list_role_bindings(
     opts: Option<ListOptions>,
 ) -> Result<Vec<RoleBindingInfo>, String> {
     let svc = state.lock().await;
-    svc.list_role_bindings(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_role_bindings(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1171,7 +1351,9 @@ pub async fn k8s_list_cluster_role_bindings(
     opts: Option<ListOptions>,
 ) -> Result<Vec<ClusterRoleBindingInfo>, String> {
     let svc = state.lock().await;
-    svc.list_cluster_role_bindings(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_cluster_role_bindings(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1182,7 +1364,9 @@ pub async fn k8s_list_service_accounts(
     opts: Option<ListOptions>,
 ) -> Result<Vec<ServiceAccountInfo>, String> {
     let svc = state.lock().await;
-    svc.list_service_accounts(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_service_accounts(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1195,23 +1379,21 @@ pub async fn k8s_create_service_account_token(
     expiration_seconds: Option<i64>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.create_service_account_token(&id, &namespace, &sa_name, audiences, expiration_seconds).await.map_err(|e| e.to_string())
+    svc.create_service_account_token(&id, &namespace, &sa_name, audiences, expiration_seconds)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Helm ──────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn k8s_helm_is_available(
-    state: State<'_, K8sServiceState>,
-) -> Result<bool, String> {
+pub async fn k8s_helm_is_available(state: State<'_, K8sServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.helm_is_available())
 }
 
 #[tauri::command]
-pub async fn k8s_helm_version(
-    state: State<'_, K8sServiceState>,
-) -> Result<String, String> {
+pub async fn k8s_helm_version(state: State<'_, K8sServiceState>) -> Result<String, String> {
     let svc = state.lock().await;
     svc.helm_version().map_err(|e| e.to_string())
 }
@@ -1223,7 +1405,8 @@ pub async fn k8s_helm_list_releases(
     all_namespaces: Option<bool>,
 ) -> Result<Vec<HelmRelease>, String> {
     let svc = state.lock().await;
-    svc.helm_list_releases(namespace.as_deref(), all_namespaces.unwrap_or(false)).map_err(|e| e.to_string())
+    svc.helm_list_releases(namespace.as_deref(), all_namespaces.unwrap_or(false))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1233,7 +1416,8 @@ pub async fn k8s_helm_get_release(
     namespace: String,
 ) -> Result<HelmRelease, String> {
     let svc = state.lock().await;
-    svc.helm_get_release(&name, &namespace).map_err(|e| e.to_string())
+    svc.helm_get_release(&name, &namespace)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1279,7 +1463,8 @@ pub async fn k8s_helm_get_values(
     namespace: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.helm_get_values(&name, &namespace).map_err(|e| e.to_string())
+    svc.helm_get_values(&name, &namespace)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1289,7 +1474,8 @@ pub async fn k8s_helm_history(
     namespace: String,
 ) -> Result<Vec<HelmHistory>, String> {
     let svc = state.lock().await;
-    svc.helm_history(&name, &namespace).map_err(|e| e.to_string())
+    svc.helm_history(&name, &namespace)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1299,7 +1485,8 @@ pub async fn k8s_helm_release_history(
     namespace: String,
 ) -> Result<Vec<HelmHistory>, String> {
     let svc = state.lock().await;
-    svc.helm_release_history(&name, &namespace).map_err(|e| e.to_string())
+    svc.helm_release_history(&name, &namespace)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1309,7 +1496,8 @@ pub async fn k8s_helm_get_manifest(
     namespace: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.helm_get_manifest(&name, &namespace).map_err(|e| e.to_string())
+    svc.helm_get_manifest(&name, &namespace)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1340,9 +1528,7 @@ pub async fn k8s_helm_remove_repo(
 }
 
 #[tauri::command]
-pub async fn k8s_helm_update_repos(
-    state: State<'_, K8sServiceState>,
-) -> Result<(), String> {
+pub async fn k8s_helm_update_repos(state: State<'_, K8sServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.helm_update_repos().map_err(|e| e.to_string())
 }
@@ -1375,7 +1561,9 @@ pub async fn k8s_list_events(
     opts: Option<ListOptions>,
 ) -> Result<Vec<K8sEvent>, String> {
     let svc = state.lock().await;
-    svc.list_events(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_events(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1385,7 +1573,9 @@ pub async fn k8s_list_all_events(
     opts: Option<ListOptions>,
 ) -> Result<Vec<K8sEvent>, String> {
     let svc = state.lock().await;
-    svc.list_all_events(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_all_events(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1395,7 +1585,9 @@ pub async fn k8s_filter_events(
     filter: EventFilter,
 ) -> Result<Vec<K8sEvent>, String> {
     let svc = state.lock().await;
-    svc.filter_events(&id, &filter).await.map_err(|e| e.to_string())
+    svc.filter_events(&id, &filter)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1405,7 +1597,9 @@ pub async fn k8s_list_warning_events(
     namespace: Option<String>,
 ) -> Result<Vec<K8sEvent>, String> {
     let svc = state.lock().await;
-    svc.list_warning_events(&id, namespace.as_deref()).await.map_err(|e| e.to_string())
+    svc.list_warning_events(&id, namespace.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1417,7 +1611,9 @@ pub async fn k8s_list_events_for_resource(
     name: String,
 ) -> Result<Vec<K8sEvent>, String> {
     let svc = state.lock().await;
-    svc.list_events_for_resource(&id, &namespace, &kind, &name).await.map_err(|e| e.to_string())
+    svc.list_events_for_resource(&id, &namespace, &kind, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1427,7 +1623,9 @@ pub async fn k8s_list_warnings(
     namespace: Option<String>,
 ) -> Result<Vec<K8sEvent>, String> {
     let svc = state.lock().await;
-    svc.list_warning_events(&id, namespace.as_deref()).await.map_err(|e| e.to_string())
+    svc.list_warning_events(&id, namespace.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── CRDs / HPAs ───────────────────────────────────────────────────────────────
@@ -1439,7 +1637,9 @@ pub async fn k8s_list_crds(
     opts: Option<ListOptions>,
 ) -> Result<Vec<CrdInfo>, String> {
     let svc = state.lock().await;
-    svc.list_crds(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_crds(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1460,7 +1660,9 @@ pub async fn k8s_list_hpas(
     opts: Option<ListOptions>,
 ) -> Result<Vec<HpaInfo>, String> {
     let svc = state.lock().await;
-    svc.list_hpas(&id, &namespace, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_hpas(&id, &namespace, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1471,7 +1673,9 @@ pub async fn k8s_get_hpa(
     name: String,
 ) -> Result<HpaInfo, String> {
     let svc = state.lock().await;
-    svc.get_hpa(&id, &namespace, &name).await.map_err(|e| e.to_string())
+    svc.get_hpa(&id, &namespace, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Metrics ───────────────────────────────────────────────────────────────────
@@ -1501,7 +1705,9 @@ pub async fn k8s_pod_metrics(
     namespace: String,
 ) -> Result<Vec<PodMetrics>, String> {
     let svc = state.lock().await;
-    svc.pod_metrics(&id, &namespace).await.map_err(|e| e.to_string())
+    svc.pod_metrics(&id, &namespace)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

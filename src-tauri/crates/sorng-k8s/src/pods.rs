@@ -12,10 +12,16 @@ pub struct PodManager;
 
 impl PodManager {
     /// List pods in a namespace.
-    pub async fn list(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<PodInfo>> {
-        let url = format!("{}{}",
+    pub async fn list(
+        client: &K8sClient,
+        namespace: &str,
+        opts: &ListOptions,
+    ) -> K8sResult<Vec<PodInfo>> {
+        let url = format!(
+            "{}{}",
             client.namespaced_url(namespace, "pods"),
-            K8sClient::list_query(opts));
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
         Self::parse_pod_list(&resp)
     }
@@ -27,14 +33,23 @@ impl PodManager {
     }
 
     /// Create a pod from a spec.
-    pub async fn create(client: &K8sClient, namespace: &str, manifest: &serde_json::Value) -> K8sResult<PodInfo> {
+    pub async fn create(
+        client: &K8sClient,
+        namespace: &str,
+        manifest: &serde_json::Value,
+    ) -> K8sResult<PodInfo> {
         let url = client.namespaced_url(namespace, "pods");
         info!("Creating pod in namespace '{}'", namespace);
         client.post(&url, manifest).await
     }
 
     /// Delete a pod.
-    pub async fn delete(client: &K8sClient, namespace: &str, name: &str, opts: Option<&DeleteOptions>) -> K8sResult<serde_json::Value> {
+    pub async fn delete(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+        opts: Option<&DeleteOptions>,
+    ) -> K8sResult<serde_json::Value> {
         let url = format!("{}/{}", client.namespaced_url(namespace, "pods"), name);
         info!("Deleting pod '{}/{}' ", namespace, name);
         if let Some(delete_opts) = opts {
@@ -46,7 +61,12 @@ impl PodManager {
     }
 
     /// Get pod logs.
-    pub async fn logs(client: &K8sClient, namespace: &str, name: &str, opts: &PodLogOptions) -> K8sResult<String> {
+    pub async fn logs(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+        opts: &PodLogOptions,
+    ) -> K8sResult<String> {
         let mut params = Vec::new();
         if let Some(ref container) = opts.container {
             params.push(format!("container={}", container));
@@ -70,15 +90,32 @@ impl PodManager {
             params.push(format!("limitBytes={}", limit));
         }
 
-        let query = if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) };
-        let url = format!("{}/{}/log{}", client.namespaced_url(namespace, "pods"), name, query);
+        let query = if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        };
+        let url = format!(
+            "{}/{}/log{}",
+            client.namespaced_url(namespace, "pods"),
+            name,
+            query
+        );
         debug!("Fetching logs for pod '{}/{}'", namespace, name);
         client.get_text(&url).await
     }
 
     /// Evict a pod (for drain operations).
-    pub async fn evict(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<serde_json::Value> {
-        let url = format!("{}/{}/eviction", client.namespaced_url(namespace, "pods"), name);
+    pub async fn evict(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<serde_json::Value> {
+        let url = format!(
+            "{}/{}/eviction",
+            client.namespaced_url(namespace, "pods"),
+            name
+        );
         let body = serde_json::json!({
             "apiVersion": "policy/v1",
             "kind": "Eviction",
@@ -130,9 +167,14 @@ impl PodManager {
         name: &str,
         container: &EphemeralContainerSpec,
     ) -> K8sResult<PodInfo> {
-        let url = format!("{}/{}/ephemeralcontainers", client.namespaced_url(namespace, "pods"), name);
-        let body = serde_json::to_value(container)
-            .map_err(|e| K8sError::validation(format!("Invalid ephemeral container spec: {}", e)))?;
+        let url = format!(
+            "{}/{}/ephemeralcontainers",
+            client.namespaced_url(namespace, "pods"),
+            name
+        );
+        let body = serde_json::to_value(container).map_err(|e| {
+            K8sError::validation(format!("Invalid ephemeral container spec: {}", e))
+        })?;
 
         let patch = serde_json::json!({
             "spec": {
@@ -144,17 +186,26 @@ impl PodManager {
     }
 
     /// List pods across all namespaces.
-    pub async fn list_all_namespaces(client: &K8sClient, opts: &ListOptions) -> K8sResult<Vec<PodInfo>> {
-        let url = format!("{}/api/v1/pods{}", client.base_url, K8sClient::list_query(opts));
+    pub async fn list_all_namespaces(
+        client: &K8sClient,
+        opts: &ListOptions,
+    ) -> K8sResult<Vec<PodInfo>> {
+        let url = format!(
+            "{}/api/v1/pods{}",
+            client.base_url,
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
         Self::parse_pod_list(&resp)
     }
 
     fn parse_pod_list(resp: &serde_json::Value) -> K8sResult<Vec<PodInfo>> {
-        let items = resp.get("items")
+        let items = resp
+            .get("items")
             .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in pod list response"))?;
-        let pods: Vec<PodInfo> = items.iter()
+        let pods: Vec<PodInfo> = items
+            .iter()
             .filter_map(|item| serde_json::from_value(item.clone()).ok())
             .collect();
         Ok(pods)

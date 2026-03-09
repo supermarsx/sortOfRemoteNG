@@ -17,19 +17,26 @@ impl MetricsManager {
         let url = format!("{}/apis/metrics.k8s.io/v1beta1/nodes", client.base_url);
         let resp: serde_json::Value = client.get(&url).await.map_err(|e| {
             if let crate::error::K8sErrorKind::NotFound = e.kind {
-                K8sError::metrics_unavailable("Metrics server not available: metrics.k8s.io API not found")
+                K8sError::metrics_unavailable(
+                    "Metrics server not available: metrics.k8s.io API not found",
+                )
             } else {
                 e
             }
         })?;
-        let items = resp.get("items").and_then(|v| v.as_array())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in node metrics response"))?;
-        Ok(items.iter().filter_map(|i| parse_node_metrics(i)).collect())
+        Ok(items.iter().filter_map(parse_node_metrics).collect())
     }
 
     /// Get metrics for a specific node.
     pub async fn get_node_metrics(client: &K8sClient, name: &str) -> K8sResult<NodeMetrics> {
-        let url = format!("{}/apis/metrics.k8s.io/v1beta1/nodes/{}", client.base_url, name);
+        let url = format!(
+            "{}/apis/metrics.k8s.io/v1beta1/nodes/{}",
+            client.base_url, name
+        );
         let resp: serde_json::Value = client.get(&url).await.map_err(|e| {
             if let crate::error::K8sErrorKind::NotFound = e.kind {
                 K8sError::metrics_unavailable("Metrics server not available or node not found")
@@ -43,8 +50,14 @@ impl MetricsManager {
     // ── Pod Metrics ──────────────────────────────────────────────
 
     /// List metrics for pods in a namespace.
-    pub async fn list_pod_metrics(client: &K8sClient, namespace: &str) -> K8sResult<Vec<PodMetrics>> {
-        let url = format!("{}/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods", client.base_url, namespace);
+    pub async fn list_pod_metrics(
+        client: &K8sClient,
+        namespace: &str,
+    ) -> K8sResult<Vec<PodMetrics>> {
+        let url = format!(
+            "{}/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods",
+            client.base_url, namespace
+        );
         let resp: serde_json::Value = client.get(&url).await.map_err(|e| {
             if let crate::error::K8sErrorKind::NotFound = e.kind {
                 K8sError::metrics_unavailable("Metrics server not available")
@@ -52,9 +65,11 @@ impl MetricsManager {
                 e
             }
         })?;
-        let items = resp.get("items").and_then(|v| v.as_array())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in pod metrics response"))?;
-        Ok(items.iter().filter_map(|i| parse_pod_metrics(i)).collect())
+        Ok(items.iter().filter_map(parse_pod_metrics).collect())
     }
 
     /// List metrics for pods across all namespaces.
@@ -67,14 +82,23 @@ impl MetricsManager {
                 e
             }
         })?;
-        let items = resp.get("items").and_then(|v| v.as_array())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in pod metrics response"))?;
-        Ok(items.iter().filter_map(|i| parse_pod_metrics(i)).collect())
+        Ok(items.iter().filter_map(parse_pod_metrics).collect())
     }
 
     /// Get metrics for a specific pod.
-    pub async fn get_pod_metrics(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<PodMetrics> {
-        let url = format!("{}/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods/{}", client.base_url, namespace, name);
+    pub async fn get_pod_metrics(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<PodMetrics> {
+        let url = format!(
+            "{}/apis/metrics.k8s.io/v1beta1/namespaces/{}/pods/{}",
+            client.base_url, namespace, name
+        );
         let resp: serde_json::Value = client.get(&url).await.map_err(|e| {
             if let crate::error::K8sErrorKind::NotFound = e.kind {
                 K8sError::metrics_unavailable("Metrics server not available or pod not found")
@@ -92,16 +116,23 @@ impl MetricsManager {
         let node_metrics = Self::list_node_metrics(client).await?;
         let pod_metrics = Self::list_all_pod_metrics(client).await?;
 
-        let total_cpu_millicores: i64 = node_metrics.iter().map(|n| parse_cpu_to_millicores(&n.usage.cpu)).sum();
-        let total_memory_bytes: i64 = node_metrics.iter().map(|n| parse_memory_to_bytes(&n.usage.memory)).sum();
+        let total_cpu_millicores: i64 = node_metrics
+            .iter()
+            .map(|n| parse_cpu_to_millicores(&n.usage.cpu))
+            .sum();
+        let total_memory_bytes: i64 = node_metrics
+            .iter()
+            .map(|n| parse_memory_to_bytes(&n.usage.memory))
+            .sum();
 
         let mut total_cpu_capacity: i64 = 0;
         let mut total_memory_capacity: i64 = 0;
 
         // Try to fetch node list for capacity info
-        if let Ok(nodes_resp) = client.get::<serde_json::Value>(
-            &format!("{}/api/v1/nodes", client.base_url)
-        ).await {
+        if let Ok(nodes_resp) = client
+            .get::<serde_json::Value>(&format!("{}/api/v1/nodes", client.base_url))
+            .await
+        {
             if let Some(items) = nodes_resp.get("items").and_then(|v| v.as_array()) {
                 for item in items {
                     if let Some(status) = item.get("status") {
@@ -138,9 +169,10 @@ impl MetricsManager {
 
     /// Check if the metrics API is available.
     pub async fn is_available(client: &K8sClient) -> bool {
-        client.get::<serde_json::Value>(
-            &format!("{}/apis/metrics.k8s.io/v1beta1", client.base_url)
-        ).await.is_ok()
+        client
+            .get::<serde_json::Value>(&format!("{}/apis/metrics.k8s.io/v1beta1", client.base_url))
+            .await
+            .is_ok()
     }
 }
 
@@ -151,11 +183,13 @@ fn parse_node_metrics(val: &serde_json::Value) -> Option<NodeMetrics> {
     let usage = val.get("usage")?;
     let cpu_str = usage.get("cpu")?.as_str()?;
     let mem_str = usage.get("memory")?.as_str()?;
-    let timestamp = val.get("timestamp")
+    let timestamp = val
+        .get("timestamp")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
-    let window = val.get("window")
+    let window = val
+        .get("window")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
@@ -180,31 +214,36 @@ fn parse_node_metrics(val: &serde_json::Value) -> Option<NodeMetrics> {
 fn parse_pod_metrics(val: &serde_json::Value) -> Option<PodMetrics> {
     let name = val.pointer("/metadata/name")?.as_str()?.to_string();
     let namespace = val.pointer("/metadata/namespace")?.as_str()?.to_string();
-    let timestamp = val.get("timestamp")
+    let timestamp = val
+        .get("timestamp")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
-    let window = val.get("window")
+    let window = val
+        .get("window")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
 
-    let containers = val.get("containers")
+    let containers = val
+        .get("containers")
         .and_then(|v| v.as_array())
         .map(|arr| {
-            arr.iter().filter_map(|c| {
-                let cname = c.get("name")?.as_str()?.to_string();
-                let usage = c.get("usage")?;
-                let cpu = usage.get("cpu").and_then(|v| v.as_str()).unwrap_or("0");
-                let mem = usage.get("memory").and_then(|v| v.as_str()).unwrap_or("0");
-                Some(ContainerMetrics {
-                    name: cname,
-                    usage: ContainerResourceUsage {
-                        cpu: cpu.to_string(),
-                        memory: mem.to_string(),
-                    },
+            arr.iter()
+                .filter_map(|c| {
+                    let cname = c.get("name")?.as_str()?.to_string();
+                    let usage = c.get("usage")?;
+                    let cpu = usage.get("cpu").and_then(|v| v.as_str()).unwrap_or("0");
+                    let mem = usage.get("memory").and_then(|v| v.as_str()).unwrap_or("0");
+                    Some(ContainerMetrics {
+                        name: cname,
+                        usage: ContainerResourceUsage {
+                            cpu: cpu.to_string(),
+                            memory: mem.to_string(),
+                        },
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default();
 
@@ -268,7 +307,7 @@ fn parse_memory_to_bytes(mem: &str) -> i64 {
         let val: f64 = mem.trim_end_matches("Ei").parse().unwrap_or(0.0);
         (val * 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0) as i64
     } else if mem.ends_with('K') || mem.ends_with('k') {
-        let val: f64 = mem[..mem.len()-1].parse().unwrap_or(0.0);
+        let val: f64 = mem[..mem.len() - 1].parse().unwrap_or(0.0);
         (val * 1000.0) as i64
     } else if mem.ends_with('M') {
         let val: f64 = mem.trim_end_matches('M').parse().unwrap_or(0.0);

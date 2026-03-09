@@ -70,11 +70,23 @@ pub struct K8sError {
 
 impl K8sError {
     pub fn new(kind: K8sErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: None }
+        Self {
+            kind,
+            message: message.into(),
+            details: None,
+        }
     }
 
-    pub fn with_details(kind: K8sErrorKind, message: impl Into<String>, details: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: Some(details.into()) }
+    pub fn with_details(
+        kind: K8sErrorKind,
+        message: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            details: Some(details.into()),
+        }
     }
 
     pub fn connection(msg: impl Into<String>) -> Self {

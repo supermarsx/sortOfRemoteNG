@@ -13,12 +13,25 @@ impl JobManager {
     // ── Jobs ────────────────────────────────────────────────────────────
 
     /// List Jobs in a namespace.
-    pub async fn list_jobs(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<JobInfo>> {
-        let url = format!("{}{}", client.batch_v1_url(namespace, "jobs"), K8sClient::list_query(opts));
+    pub async fn list_jobs(
+        client: &K8sClient,
+        namespace: &str,
+        opts: &ListOptions,
+    ) -> K8sResult<Vec<JobInfo>> {
+        let url = format!(
+            "{}{}",
+            client.batch_v1_url(namespace, "jobs"),
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in job list"))?;
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 
     /// Get a single Job.
@@ -28,7 +41,11 @@ impl JobManager {
     }
 
     /// Create a Job.
-    pub async fn create_job(client: &K8sClient, namespace: &str, config: &CreateJobConfig) -> K8sResult<JobInfo> {
+    pub async fn create_job(
+        client: &K8sClient,
+        namespace: &str,
+        config: &CreateJobConfig,
+    ) -> K8sResult<JobInfo> {
         let url = client.batch_v1_url(namespace, "jobs");
 
         let mut container = serde_json::json!({
@@ -78,7 +95,12 @@ impl JobManager {
     }
 
     /// Delete a Job.
-    pub async fn delete_job(client: &K8sClient, namespace: &str, name: &str, propagation: Option<&str>) -> K8sResult<serde_json::Value> {
+    pub async fn delete_job(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+        propagation: Option<&str>,
+    ) -> K8sResult<serde_json::Value> {
         let url = format!("{}/{}", client.batch_v1_url(namespace, "jobs"), name);
         if let Some(policy) = propagation {
             let body = serde_json::json!({
@@ -86,7 +108,10 @@ impl JobManager {
                 "kind": "DeleteOptions",
                 "propagationPolicy": policy,
             });
-            info!("Deleting Job '{}/{}' (propagation: {})", namespace, name, policy);
+            info!(
+                "Deleting Job '{}/{}' (propagation: {})",
+                namespace, name, policy
+            );
             client.delete_with_body(&url, &body).await
         } else {
             info!("Deleting Job '{}/{}'", namespace, name);
@@ -95,7 +120,11 @@ impl JobManager {
     }
 
     /// Suspend a Job.
-    pub async fn suspend_job(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<JobInfo> {
+    pub async fn suspend_job(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<JobInfo> {
         let url = format!("{}/{}", client.batch_v1_url(namespace, "jobs"), name);
         let patch = serde_json::json!({ "spec": { "suspend": true } });
         info!("Suspending Job '{}/{}'", namespace, name);
@@ -113,22 +142,43 @@ impl JobManager {
     // ── CronJobs ────────────────────────────────────────────────────────
 
     /// List CronJobs in a namespace.
-    pub async fn list_cronjobs(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<CronJobInfo>> {
-        let url = format!("{}{}", client.batch_v1_url(namespace, "cronjobs"), K8sClient::list_query(opts));
+    pub async fn list_cronjobs(
+        client: &K8sClient,
+        namespace: &str,
+        opts: &ListOptions,
+    ) -> K8sResult<Vec<CronJobInfo>> {
+        let url = format!(
+            "{}{}",
+            client.batch_v1_url(namespace, "cronjobs"),
+            K8sClient::list_query(opts)
+        );
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array())
+        let items = resp
+            .get("items")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| K8sError::parse("Missing 'items' in cronjob list"))?;
-        Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
+        Ok(items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect())
     }
 
     /// Get a single CronJob.
-    pub async fn get_cronjob(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<CronJobInfo> {
+    pub async fn get_cronjob(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<CronJobInfo> {
         let url = format!("{}/{}", client.batch_v1_url(namespace, "cronjobs"), name);
         client.get(&url).await
     }
 
     /// Create a CronJob.
-    pub async fn create_cronjob(client: &K8sClient, namespace: &str, config: &CreateCronJobConfig) -> K8sResult<CronJobInfo> {
+    pub async fn create_cronjob(
+        client: &K8sClient,
+        namespace: &str,
+        config: &CreateCronJobConfig,
+    ) -> K8sResult<CronJobInfo> {
         let url = client.batch_v1_url(namespace, "cronjobs");
 
         let mut container = serde_json::json!({
@@ -181,35 +231,58 @@ impl JobManager {
                 }
             }
         });
-        info!("Creating CronJob '{}/{}' with schedule '{}'", namespace, config.name, config.schedule);
+        info!(
+            "Creating CronJob '{}/{}' with schedule '{}'",
+            namespace, config.name, config.schedule
+        );
         client.post(&url, &body).await
     }
 
     /// Delete a CronJob.
-    pub async fn delete_cronjob(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<serde_json::Value> {
+    pub async fn delete_cronjob(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<serde_json::Value> {
         let url = format!("{}/{}", client.batch_v1_url(namespace, "cronjobs"), name);
         info!("Deleting CronJob '{}/{}'", namespace, name);
         client.delete(&url).await
     }
 
     /// Suspend a CronJob.
-    pub async fn suspend_cronjob(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<CronJobInfo> {
+    pub async fn suspend_cronjob(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<CronJobInfo> {
         let url = format!("{}/{}", client.batch_v1_url(namespace, "cronjobs"), name);
         let patch = serde_json::json!({ "spec": { "suspend": true } });
         client.patch(&url, &patch).await
     }
 
     /// Resume a CronJob.
-    pub async fn resume_cronjob(client: &K8sClient, namespace: &str, name: &str) -> K8sResult<CronJobInfo> {
+    pub async fn resume_cronjob(
+        client: &K8sClient,
+        namespace: &str,
+        name: &str,
+    ) -> K8sResult<CronJobInfo> {
         let url = format!("{}/{}", client.batch_v1_url(namespace, "cronjobs"), name);
         let patch = serde_json::json!({ "spec": { "suspend": false } });
         client.patch(&url, &patch).await
     }
 
     /// Trigger an immediate run of a CronJob (create a Job from the template).
-    pub async fn trigger_cronjob(client: &K8sClient, namespace: &str, cronjob_name: &str) -> K8sResult<JobInfo> {
+    pub async fn trigger_cronjob(
+        client: &K8sClient,
+        namespace: &str,
+        cronjob_name: &str,
+    ) -> K8sResult<JobInfo> {
         let cronjob = Self::get_cronjob(client, namespace, cronjob_name).await?;
-        let job_name = format!("{}-manual-{}", cronjob_name, chrono::Utc::now().format("%Y%m%d%H%M%S"));
+        let job_name = format!(
+            "{}-manual-{}",
+            cronjob_name,
+            chrono::Utc::now().format("%Y%m%d%H%M%S")
+        );
         let url = client.batch_v1_url(namespace, "jobs");
 
         let body = serde_json::json!({
@@ -240,7 +313,10 @@ impl JobManager {
                 }
             }
         });
-        info!("Manually triggering CronJob '{}/{}'→ Job '{}'", namespace, cronjob_name, job_name);
+        info!(
+            "Manually triggering CronJob '{}/{}'→ Job '{}'",
+            namespace, cronjob_name, job_name
+        );
         client.post(&url, &body).await
     }
 }

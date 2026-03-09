@@ -5,20 +5,20 @@ edition = "2021"
 description = "Kubernetes cluster management (contexts, namespaces, pods, deployments, services, configmaps, secrets, ingress, jobs, RBAC, Helm, logs, exec, port-forward, events, metrics)"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_yaml = "0.9"
-tokio = { version = "1", features = ["full"] }
-tauri = { version = "2.9.5", features = ["devtools"] }
-uuid = { version = "1.0", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
-log = "0.4"
-reqwest = { version = "0.11", features = ["json", "cookies", "native-tls"] }
-base64 = "0.21"
-url = "2.5"
-async-trait = "0.1"
-futures = "0.3"
-native-tls = "0.2"
-tokio-native-tls = "0.3"
-regex = "1.10"
-dirs = "5.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true, features = ["cookies", "native-tls"] }
+base64 = { workspace = true }
+url = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+native-tls = { workspace = true }
+tokio-native-tls = { workspace = true }
+regex = { workspace = true }
+dirs = { workspace = true }
