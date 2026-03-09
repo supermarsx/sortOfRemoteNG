@@ -68,46 +68,88 @@ impl From<BitwardenError> for String {
 
 impl BitwardenError {
     pub fn cli_not_found(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::CliNotFound, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::CliNotFound,
+            message: msg.into(),
+        }
     }
     pub fn auth_failed(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::AuthFailed, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::AuthFailed,
+            message: msg.into(),
+        }
     }
     pub fn vault_locked(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::VaultLocked, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::VaultLocked,
+            message: msg.into(),
+        }
     }
     pub fn not_found(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::NotFound, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::NotFound,
+            message: msg.into(),
+        }
     }
     pub fn network(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::NetworkError, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::NetworkError,
+            message: msg.into(),
+        }
     }
     pub fn api(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::ApiError, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::ApiError,
+            message: msg.into(),
+        }
     }
     pub fn parse(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::ParseError, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::ParseError,
+            message: msg.into(),
+        }
     }
     pub fn crypto(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::CryptoError, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::CryptoError,
+            message: msg.into(),
+        }
     }
     pub fn sync_failed(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::SyncFailed, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::SyncFailed,
+            message: msg.into(),
+        }
     }
     pub fn invalid_config(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::InvalidConfig, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::InvalidConfig,
+            message: msg.into(),
+        }
     }
     pub fn two_factor_required(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::TwoFactorRequired, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::TwoFactorRequired,
+            message: msg.into(),
+        }
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::Timeout, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::Timeout,
+            message: msg.into(),
+        }
     }
     pub fn io(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::IoError, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::IoError,
+            message: msg.into(),
+        }
     }
     pub fn organization(msg: impl Into<String>) -> Self {
-        Self { kind: BitwardenErrorKind::OrganizationError, message: msg.into() }
+        Self {
+            kind: BitwardenErrorKind::OrganizationError,
+            message: msg.into(),
+        }
     }
 }
 
@@ -253,11 +295,17 @@ pub struct LoginUri {
 
 impl LoginUri {
     pub fn new(uri: &str) -> Self {
-        Self { uri: Some(uri.to_string()), match_type: None }
+        Self {
+            uri: Some(uri.to_string()),
+            match_type: None,
+        }
     }
 
     pub fn with_match(uri: &str, match_type: UriMatchType) -> Self {
-        Self { uri: Some(uri.to_string()), match_type: Some(match_type as u8) }
+        Self {
+            uri: Some(uri.to_string()),
+            match_type: Some(match_type as u8),
+        }
     }
 }
 
@@ -276,15 +324,10 @@ pub struct LoginData {
 /// Secure note data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct SecureNoteData {
     #[serde(rename = "type")]
     pub note_type: u8,
-}
-
-impl Default for SecureNoteData {
-    fn default() -> Self {
-        Self { note_type: 0 }
-    }
 }
 
 /// Card (credit/debit) item data.
@@ -558,7 +601,11 @@ pub struct Folder {
 
 impl Folder {
     pub fn new(name: &str) -> Self {
-        Self { object: Some("folder".into()), id: None, name: name.to_string() }
+        Self {
+            object: Some("folder".into()),
+            id: None,
+            name: name.to_string(),
+        }
     }
 }
 
@@ -694,13 +741,27 @@ pub struct BitwardenConfig {
     pub auto_lock_timeout_secs: u64,
 }
 
-fn default_server_url() -> String { "https://vault.bitwarden.com".into() }
-fn default_identity_url() -> String { "https://identity.bitwarden.com".into() }
-fn default_api_url() -> String { "https://api.bitwarden.com".into() }
-fn default_serve_port() -> u16 { 8087 }
-fn default_serve_hostname() -> String { "localhost".into() }
-fn default_timeout() -> u64 { 30 }
-fn default_auto_lock_timeout() -> u64 { 900 }
+fn default_server_url() -> String {
+    "https://vault.bitwarden.com".into()
+}
+fn default_identity_url() -> String {
+    "https://identity.bitwarden.com".into()
+}
+fn default_api_url() -> String {
+    "https://api.bitwarden.com".into()
+}
+fn default_serve_port() -> u16 {
+    8087
+}
+fn default_serve_hostname() -> String {
+    "localhost".into()
+}
+fn default_timeout() -> u64 {
+    30
+}
+fn default_auto_lock_timeout() -> u64 {
+    900
+}
 
 impl Default for BitwardenConfig {
     fn default() -> Self {
@@ -781,6 +842,7 @@ impl fmt::Display for VaultStatus {
 }
 
 impl VaultStatus {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "unlocked" => Self::Unlocked,
@@ -926,7 +988,10 @@ impl Default for PasswordGenerateOptions {
 impl PasswordGenerateOptions {
     /// Simple strong password (20 chars, all char classes).
     pub fn strong() -> Self {
-        Self { length: 24, ..Default::default() }
+        Self {
+            length: 24,
+            ..Default::default()
+        }
     }
 
     /// Passphrase with defaults.
@@ -1157,8 +1222,10 @@ impl VaultCache {
         let normalized = normalize_uri(uri);
         let ids = self.uri_index.get(&normalized);
         match ids {
-            Some(ids) => self.items.iter()
-                .filter(|item| item.id.as_ref().map_or(false, |id| ids.contains(id)))
+            Some(ids) => self
+                .items
+                .iter()
+                .filter(|item| item.id.as_ref().is_some_and(|id| ids.contains(id)))
                 .collect(),
             None => Vec::new(),
         }
@@ -1167,29 +1234,35 @@ impl VaultCache {
     /// Find items by name (case-insensitive substring).
     pub fn find_by_name(&self, query: &str) -> Vec<&VaultItem> {
         let q = query.to_lowercase();
-        self.items.iter()
+        self.items
+            .iter()
             .filter(|item| item.name.to_lowercase().contains(&q))
             .collect()
     }
 
     /// Get an item by its ID.
     pub fn get_by_id(&self, id: &str) -> Option<&VaultItem> {
-        self.items.iter().find(|item| item.id.as_deref() == Some(id))
+        self.items
+            .iter()
+            .find(|item| item.id.as_deref() == Some(id))
     }
 
     /// Get items by folder ID.
     pub fn get_by_folder(&self, folder_id: &str) -> Vec<&VaultItem> {
-        self.items.iter()
+        self.items
+            .iter()
             .filter(|item| item.folder_id.as_deref() == Some(folder_id))
             .collect()
     }
 
     /// Get items by collection ID.
     pub fn get_by_collection(&self, collection_id: &str) -> Vec<&VaultItem> {
-        self.items.iter()
+        self.items
+            .iter()
             .filter(|item| {
-                item.collection_ids.as_ref()
-                    .map_or(false, |ids| ids.contains(&collection_id.to_string()))
+                item.collection_ids
+                    .as_ref()
+                    .is_some_and(|ids| ids.contains(&collection_id.to_string()))
             })
             .collect()
     }
@@ -1242,7 +1315,10 @@ impl VaultCache {
 /// Normalize a URI for matching (strip protocol, trailing slash, www.).
 fn normalize_uri(uri: &str) -> String {
     let s = uri.to_lowercase();
-    let s = s.strip_prefix("https://").or_else(|| s.strip_prefix("http://")).unwrap_or(&s);
+    let s = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .unwrap_or(&s);
     let s = s.strip_prefix("www.").unwrap_or(s);
     s.trim_end_matches('/').to_string()
 }
@@ -1408,9 +1484,15 @@ mod tests {
     fn vault_status_from_str() {
         assert_eq!(VaultStatus::from_str("unlocked"), VaultStatus::Unlocked);
         assert_eq!(VaultStatus::from_str("locked"), VaultStatus::Locked);
-        assert_eq!(VaultStatus::from_str("unauthenticated"), VaultStatus::Unauthenticated);
+        assert_eq!(
+            VaultStatus::from_str("unauthenticated"),
+            VaultStatus::Unauthenticated
+        );
         assert_eq!(VaultStatus::from_str("UNLOCKED"), VaultStatus::Unlocked);
-        assert_eq!(VaultStatus::from_str("something_else"), VaultStatus::Unauthenticated);
+        assert_eq!(
+            VaultStatus::from_str("something_else"),
+            VaultStatus::Unauthenticated
+        );
     }
 
     // ── SessionState ────────────────────────────────────────────────
@@ -1626,7 +1708,10 @@ mod tests {
 
     #[test]
     fn two_factor_method_values() {
-        assert_eq!(TwoFactorMethod::from_u8(0), Some(TwoFactorMethod::Authenticator));
+        assert_eq!(
+            TwoFactorMethod::from_u8(0),
+            Some(TwoFactorMethod::Authenticator)
+        );
         assert_eq!(TwoFactorMethod::from_u8(1), Some(TwoFactorMethod::Email));
         assert_eq!(TwoFactorMethod::from_u8(3), Some(TwoFactorMethod::YubiKey));
         assert_eq!(TwoFactorMethod::from_u8(2), None); // No Duo/FIDO2 in CLI

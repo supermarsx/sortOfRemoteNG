@@ -45,8 +45,8 @@ impl BitwardenService {
     /// Create a new service with the given config.
     pub fn with_config(config: BitwardenConfig) -> Self {
         let cli = BitwardenCli::from_config(&config);
-        let sync_engine = SyncEngine::new(SyncSource::Cli)
-            .with_auto_sync(config.auto_sync_interval_secs);
+        let sync_engine =
+            SyncEngine::new(SyncSource::Cli).with_auto_sync(config.auto_sync_interval_secs);
 
         Self {
             config,
@@ -149,17 +149,15 @@ impl BitwardenService {
     }
 
     /// Login with email and password.
-    pub async fn login(
-        &mut self,
-        email: &str,
-        password: &str,
-    ) -> Result<(), BitwardenError> {
+    pub async fn login(&mut self, email: &str, password: &str) -> Result<(), BitwardenError> {
         let session_key = self.cli.login_password(email, password).await?;
         self.cli.set_session_key(Some(session_key.clone()));
         self.session.session_key = Some(session_key);
         self.session.status = VaultStatus::Unlocked;
         self.session.user_email = Some(email.to_string());
-        self.session.auth_method = Some(AuthMethod::EmailPassword { email: email.to_string() });
+        self.session.auth_method = Some(AuthMethod::EmailPassword {
+            email: email.to_string(),
+        });
         self.session.touch();
         info!("Logged in as {}", email);
         Ok(())
@@ -173,12 +171,17 @@ impl BitwardenService {
         code: &str,
         method: TwoFactorMethod,
     ) -> Result<(), BitwardenError> {
-        let session_key = self.cli.login_password_2fa(email, password, code, method).await?;
+        let session_key = self
+            .cli
+            .login_password_2fa(email, password, code, method)
+            .await?;
         self.cli.set_session_key(Some(session_key.clone()));
         self.session.session_key = Some(session_key);
         self.session.status = VaultStatus::Unlocked;
         self.session.user_email = Some(email.to_string());
-        self.session.auth_method = Some(AuthMethod::EmailPassword { email: email.to_string() });
+        self.session.auth_method = Some(AuthMethod::EmailPassword {
+            email: email.to_string(),
+        });
         self.session.touch();
         Ok(())
     }
@@ -192,7 +195,9 @@ impl BitwardenService {
         self.cli.set_api_key(client_id, client_secret);
         self.cli.login_api_key().await?;
         self.session.status = VaultStatus::Locked;
-        self.session.auth_method = Some(AuthMethod::ApiKey { client_id: client_id.to_string() });
+        self.session.auth_method = Some(AuthMethod::ApiKey {
+            client_id: client_id.to_string(),
+        });
         self.session.touch();
         info!("Logged in with API key");
         Ok(())
@@ -242,7 +247,9 @@ impl BitwardenService {
     /// Sync the vault.
     pub async fn sync(&mut self) -> Result<SyncResult, BitwardenError> {
         self.session.touch();
-        self.sync_engine.sync(Some(&self.cli), self.vault_api.as_ref()).await
+        self.sync_engine
+            .sync(Some(&self.cli), self.vault_api.as_ref())
+            .await
     }
 
     /// Force sync.
@@ -303,7 +310,11 @@ impl BitwardenService {
     }
 
     /// Edit an item.
-    pub async fn edit_item(&mut self, id: &str, item: &VaultItem) -> Result<VaultItem, BitwardenError> {
+    pub async fn edit_item(
+        &mut self,
+        id: &str,
+        item: &VaultItem,
+    ) -> Result<VaultItem, BitwardenError> {
         let edited = self.cli.edit_item(id, item).await?;
         self.sync_engine.update_cached_item(edited.clone()).await;
         Ok(edited)
@@ -412,7 +423,9 @@ impl BitwardenService {
         password: Option<&str>,
         hidden: bool,
     ) -> Result<Send, BitwardenError> {
-        self.cli.create_text_send(name, text, max_access, password, hidden).await
+        self.cli
+            .create_text_send(name, text, max_access, password, hidden)
+            .await
     }
 
     /// Delete a send.
@@ -447,7 +460,9 @@ impl BitwardenService {
         item_id: &str,
         output_path: &str,
     ) -> Result<(), BitwardenError> {
-        self.cli.get_attachment(attachment_id, item_id, output_path).await
+        self.cli
+            .get_attachment(attachment_id, item_id, output_path)
+            .await
     }
 
     // ── Generate ────────────────────────────────────────────────────
@@ -542,7 +557,9 @@ impl BitwardenService {
         let timeout = std::time::Duration::from_secs(10);
         loop {
             if start.elapsed() > timeout {
-                return Err(BitwardenError::timeout("bw serve failed to start within 10 seconds"));
+                return Err(BitwardenError::timeout(
+                    "bw serve failed to start within 10 seconds",
+                ));
             }
             if BitwardenCli::check_serve_running(hostname, port).await {
                 break;

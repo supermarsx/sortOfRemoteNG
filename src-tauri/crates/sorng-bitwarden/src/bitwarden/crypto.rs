@@ -19,11 +19,7 @@ pub const DEFAULT_KDF_ITERATIONS: u32 = 600_000;
 /// Derive a master key from email + master password using PBKDF2-SHA256.
 ///
 /// This matches Bitwarden's key derivation: PBKDF2(password, salt=email, iterations, 32 bytes).
-pub fn derive_master_key(
-    password: &str,
-    salt: &str,
-    iterations: u32,
-) -> [u8; 32] {
+pub fn derive_master_key(password: &str, salt: &str, iterations: u32) -> [u8; 32] {
     let mut key = [0u8; 32];
     pbkdf2_hmac::<Sha256>(password.as_bytes(), salt.as_bytes(), iterations, &mut key);
     key
@@ -50,21 +46,14 @@ pub fn stretch_key(master_key: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
 /// Derive the master password hash used for authentication.
 ///
 /// hash = PBKDF2(masterKey, password, 1, 32)
-pub fn derive_master_password_hash(
-    master_key: &[u8; 32],
-    password: &str,
-) -> [u8; 32] {
+pub fn derive_master_password_hash(master_key: &[u8; 32], password: &str) -> [u8; 32] {
     let mut hash = [0u8; 32];
     pbkdf2_hmac::<Sha256>(master_key, password.as_bytes(), 1, &mut hash);
     hash
 }
 
 /// Encrypt data using AES-256-CBC with PKCS7 padding.
-pub fn aes_cbc_encrypt(
-    key: &[u8; 32],
-    iv: &[u8; 16],
-    plaintext: &[u8],
-) -> Vec<u8> {
+pub fn aes_cbc_encrypt(key: &[u8; 32], iv: &[u8; 16], plaintext: &[u8]) -> Vec<u8> {
     let encryptor = Aes256CbcEnc::new(key.into(), iv.into());
     encryptor.encrypt_padded_vec_mut::<Pkcs7>(plaintext)
 }
@@ -84,8 +73,7 @@ pub fn aes_cbc_decrypt(
 /// Compute HMAC-SHA256 for data integrity.
 pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     use hmac::Mac;
-    let mut mac = Hmac::<Sha256>::new_from_slice(key)
-        .expect("HMAC key length is always valid");
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC key length is always valid");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }
@@ -119,7 +107,8 @@ pub fn parse_cipher_string(cipher_string: &str) -> Result<CipherComponents, Bitw
         return Err(BitwardenError::crypto("Invalid cipher string format"));
     }
 
-    let enc_type: u8 = parts[0].parse()
+    let enc_type: u8 = parts[0]
+        .parse()
         .map_err(|_| BitwardenError::crypto("Invalid encryption type"))?;
 
     let data_parts: Vec<&str> = parts[1].split('|').collect();
@@ -132,14 +121,22 @@ pub fn parse_cipher_string(cipher_string: &str) -> Result<CipherComponents, Bitw
                     "AES-256-CBC cipher string must have iv|ct|mac",
                 ));
             }
-            let iv = BASE64.decode(data_parts[0])
+            let iv = BASE64
+                .decode(data_parts[0])
                 .map_err(|e| BitwardenError::crypto(format!("Invalid IV base64: {}", e)))?;
-            let ct = BASE64.decode(data_parts[1])
+            let ct = BASE64
+                .decode(data_parts[1])
                 .map_err(|e| BitwardenError::crypto(format!("Invalid ciphertext base64: {}", e)))?;
-            let mac = BASE64.decode(data_parts[2])
+            let mac = BASE64
+                .decode(data_parts[2])
                 .map_err(|e| BitwardenError::crypto(format!("Invalid MAC base64: {}", e)))?;
 
-            Ok(CipherComponents { enc_type, iv, ciphertext: ct, mac: Some(mac) })
+            Ok(CipherComponents {
+                enc_type,
+                iv,
+                ciphertext: ct,
+                mac: Some(mac),
+            })
         }
         0 => {
             // AES-256-CBC (no HMAC)
@@ -148,14 +145,24 @@ pub fn parse_cipher_string(cipher_string: &str) -> Result<CipherComponents, Bitw
                     "AES-256-CBC cipher string must have iv|ct",
                 ));
             }
-            let iv = BASE64.decode(data_parts[0])
+            let iv = BASE64
+                .decode(data_parts[0])
                 .map_err(|e| BitwardenError::crypto(format!("Invalid IV base64: {}", e)))?;
-            let ct = BASE64.decode(data_parts[1])
+            let ct = BASE64
+                .decode(data_parts[1])
                 .map_err(|e| BitwardenError::crypto(format!("Invalid ciphertext base64: {}", e)))?;
 
-            Ok(CipherComponents { enc_type, iv, ciphertext: ct, mac: None })
+            Ok(CipherComponents {
+                enc_type,
+                iv,
+                ciphertext: ct,
+                mac: None,
+            })
         }
-        _ => Err(BitwardenError::crypto(format!("Unsupported encryption type: {}", enc_type))),
+        _ => Err(BitwardenError::crypto(format!(
+            "Unsupported encryption type: {}",
+            enc_type
+        ))),
     }
 }
 
@@ -199,7 +206,9 @@ pub fn decrypt_cipher_string(
         }
     }
 
-    let iv: [u8; 16] = components.iv.try_into()
+    let iv: [u8; 16] = components
+        .iv
+        .try_into()
         .map_err(|_| BitwardenError::crypto("IV must be 16 bytes"))?;
 
     aes_cbc_decrypt(enc_key, &iv, &components.ciphertext)
@@ -276,7 +285,8 @@ pub fn base64_encode(data: &[u8]) -> String {
 
 /// Base64 decode.
 pub fn base64_decode(data: &str) -> Result<Vec<u8>, BitwardenError> {
-    BASE64.decode(data)
+    BASE64
+        .decode(data)
         .map_err(|e| BitwardenError::crypto(format!("Base64 decode error: {}", e)))
 }
 

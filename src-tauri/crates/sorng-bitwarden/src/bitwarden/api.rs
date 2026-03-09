@@ -53,14 +53,21 @@ impl VaultApiClient {
     /// Get the vault status.
     pub async fn status(&self) -> Result<StatusInfo, BitwardenError> {
         let url = format!("{}/status", self.base_url);
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("Status request failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Status parse error: {}", e)))?;
 
         // The response has { success, data: { template: { ... } } }
-        let data = body.get("data")
+        let data = body
+            .get("data")
             .and_then(|d| d.get("template"))
             .unwrap_or(&body);
 
@@ -75,28 +82,35 @@ impl VaultApiClient {
         let url = format!("{}/unlock", self.base_url);
         let body = serde_json::json!({ "password": password });
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(&body)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Unlock request failed: {}", e)))?;
 
-        let result: Value = resp.json().await
+        let result: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Unlock parse error: {}", e)))?;
 
         if result.get("success").and_then(|v| v.as_bool()) == Some(true) {
-            let title = result.get("data")
+            let title = result
+                .get("data")
                 .and_then(|d| d.get("title"))
                 .and_then(|t| t.as_str())
                 .unwrap_or("");
             // The session key is returned in data.raw
-            let raw = result.get("data")
+            let raw = result
+                .get("data")
                 .and_then(|d| d.get("raw"))
                 .and_then(|r| r.as_str())
                 .unwrap_or(title);
             Ok(raw.to_string())
         } else {
-            let msg = result.get("message")
+            let msg = result
+                .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("Unlock failed");
             Err(BitwardenError::auth_failed(msg))
@@ -106,12 +120,16 @@ impl VaultApiClient {
     /// Lock the vault via the API.
     pub async fn lock(&self) -> Result<(), BitwardenError> {
         let url = format!("{}/lock", self.base_url);
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Lock request failed: {}", e)))?;
 
-        let result: Value = resp.json().await
+        let result: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Lock parse error: {}", e)))?;
 
         if result.get("success").and_then(|v| v.as_bool()) == Some(true) {
@@ -126,12 +144,16 @@ impl VaultApiClient {
     /// Trigger a vault sync.
     pub async fn sync(&self) -> Result<(), BitwardenError> {
         let url = format!("{}/sync", self.base_url);
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Sync request failed: {}", e)))?;
 
-        let result: Value = resp.json().await
+        let result: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Sync parse error: {}", e)))?;
 
         if result.get("success").and_then(|v| v.as_bool()) == Some(true) {
@@ -146,13 +168,20 @@ impl VaultApiClient {
     /// List all items.
     pub async fn list_items(&self) -> Result<Vec<VaultItem>, BitwardenError> {
         let url = format!("{}/list/object/items", self.base_url);
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("List items failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data")
+        let data = body
+            .get("data")
             .and_then(|d| d.get("data"))
             .cloned()
             .unwrap_or_else(|| Value::Array(vec![]));
@@ -163,14 +192,25 @@ impl VaultApiClient {
 
     /// Search items.
     pub async fn search_items(&self, search: &str) -> Result<Vec<VaultItem>, BitwardenError> {
-        let url = format!("{}/list/object/items?search={}", self.base_url, urlencoding::encode(search));
-        let resp = self.client.get(&url).send().await
+        let url = format!(
+            "{}/list/object/items?search={}",
+            self.base_url,
+            urlencoding::encode(search)
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("Search failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data")
+        let data = body
+            .get("data")
             .and_then(|d| d.get("data"))
             .cloned()
             .unwrap_or_else(|| Value::Array(vec![]));
@@ -182,20 +222,29 @@ impl VaultApiClient {
     /// Get an item by ID.
     pub async fn get_item(&self, id: &str) -> Result<VaultItem, BitwardenError> {
         let url = format!("{}/object/item/{}", self.base_url, id);
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("Get item failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
         if body.get("success").and_then(|v| v.as_bool()) != Some(true) {
-            let msg = body.get("message")
+            let msg = body
+                .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("Item not found");
             return Err(BitwardenError::not_found(msg));
         }
 
-        let data = body.get("data").ok_or_else(|| BitwardenError::parse("No data in response"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| BitwardenError::parse("No data in response"))?;
         serde_json::from_value(data.clone())
             .map_err(|e| BitwardenError::parse(format!("Item parse error: {}", e)))
     }
@@ -203,43 +252,65 @@ impl VaultApiClient {
     /// Create a new item.
     pub async fn create_item(&self, item: &VaultItem) -> Result<VaultItem, BitwardenError> {
         let url = format!("{}/object/item", self.base_url);
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(item)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Create item failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
         if body.get("success").and_then(|v| v.as_bool()) != Some(true) {
-            let msg = body.get("message").and_then(|m| m.as_str()).unwrap_or("Create failed");
+            let msg = body
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Create failed");
             return Err(BitwardenError::api(msg));
         }
 
-        let data = body.get("data").ok_or_else(|| BitwardenError::parse("No data in response"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| BitwardenError::parse("No data in response"))?;
         serde_json::from_value(data.clone())
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
 
     /// Update an existing item.
-    pub async fn update_item(&self, id: &str, item: &VaultItem) -> Result<VaultItem, BitwardenError> {
+    pub async fn update_item(
+        &self,
+        id: &str,
+        item: &VaultItem,
+    ) -> Result<VaultItem, BitwardenError> {
         let url = format!("{}/object/item/{}", self.base_url, id);
-        let resp = self.client.put(&url)
+        let resp = self
+            .client
+            .put(&url)
             .json(item)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Update item failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
         if body.get("success").and_then(|v| v.as_bool()) != Some(true) {
-            let msg = body.get("message").and_then(|m| m.as_str()).unwrap_or("Update failed");
+            let msg = body
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Update failed");
             return Err(BitwardenError::api(msg));
         }
 
-        let data = body.get("data").ok_or_else(|| BitwardenError::parse("No data in response"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| BitwardenError::parse("No data in response"))?;
         serde_json::from_value(data.clone())
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
@@ -247,16 +318,25 @@ impl VaultApiClient {
     /// Delete an item.
     pub async fn delete_item(&self, id: &str) -> Result<(), BitwardenError> {
         let url = format!("{}/object/item/{}", self.base_url, id);
-        let resp = self.client.delete(&url).send().await
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("Delete item failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
         if body.get("success").and_then(|v| v.as_bool()) == Some(true) {
             Ok(())
         } else {
-            let msg = body.get("message").and_then(|m| m.as_str()).unwrap_or("Delete failed");
+            let msg = body
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Delete failed");
             Err(BitwardenError::api(msg))
         }
     }
@@ -266,13 +346,20 @@ impl VaultApiClient {
     /// List all folders.
     pub async fn list_folders(&self) -> Result<Vec<Folder>, BitwardenError> {
         let url = format!("{}/list/object/folders", self.base_url);
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("List folders failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data")
+        let data = body
+            .get("data")
             .and_then(|d| d.get("data"))
             .cloned()
             .unwrap_or_else(|| Value::Array(vec![]));
@@ -284,16 +371,22 @@ impl VaultApiClient {
     /// Create a folder.
     pub async fn create_folder(&self, folder: &Folder) -> Result<Folder, BitwardenError> {
         let url = format!("{}/object/folder", self.base_url);
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(folder)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Create folder failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data").ok_or_else(|| BitwardenError::parse("No data"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| BitwardenError::parse("No data"))?;
         serde_json::from_value(data.clone())
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
@@ -301,16 +394,22 @@ impl VaultApiClient {
     /// Update a folder.
     pub async fn update_folder(&self, id: &str, folder: &Folder) -> Result<Folder, BitwardenError> {
         let url = format!("{}/object/folder/{}", self.base_url, id);
-        let resp = self.client.put(&url)
+        let resp = self
+            .client
+            .put(&url)
             .json(folder)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Update folder failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data").ok_or_else(|| BitwardenError::parse("No data"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| BitwardenError::parse("No data"))?;
         serde_json::from_value(data.clone())
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
@@ -318,10 +417,16 @@ impl VaultApiClient {
     /// Delete a folder.
     pub async fn delete_folder(&self, id: &str) -> Result<(), BitwardenError> {
         let url = format!("{}/object/folder/{}", self.base_url, id);
-        let resp = self.client.delete(&url).send().await
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("Delete folder failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
         if body.get("success").and_then(|v| v.as_bool()) == Some(true) {
@@ -336,13 +441,20 @@ impl VaultApiClient {
     /// List all sends.
     pub async fn list_sends(&self) -> Result<Vec<Send>, BitwardenError> {
         let url = format!("{}/list/object/send", self.base_url);
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("List sends failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data")
+        let data = body
+            .get("data")
             .and_then(|d| d.get("data"))
             .cloned()
             .unwrap_or_else(|| Value::Array(vec![]));
@@ -354,16 +466,22 @@ impl VaultApiClient {
     /// Create a send.
     pub async fn create_send(&self, send: &Send) -> Result<Send, BitwardenError> {
         let url = format!("{}/object/send", self.base_url);
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(send)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Create send failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data").ok_or_else(|| BitwardenError::parse("No data"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| BitwardenError::parse("No data"))?;
         serde_json::from_value(data.clone())
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
@@ -371,10 +489,16 @@ impl VaultApiClient {
     /// Delete a send.
     pub async fn delete_send(&self, id: &str) -> Result<(), BitwardenError> {
         let url = format!("{}/object/send/{}", self.base_url, id);
-        let resp = self.client.delete(&url).send().await
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("Delete send failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
         if body.get("success").and_then(|v| v.as_bool()) == Some(true) {
@@ -387,7 +511,10 @@ impl VaultApiClient {
     // ── Generate ────────────────────────────────────────────────────
 
     /// Generate a password via the API.
-    pub async fn generate_password(&self, opts: &PasswordGenerateOptions) -> Result<String, BitwardenError> {
+    pub async fn generate_password(
+        &self,
+        opts: &PasswordGenerateOptions,
+    ) -> Result<String, BitwardenError> {
         let mut params = Vec::new();
         if opts.passphrase {
             params.push("type=passphrase".to_string());
@@ -405,18 +532,36 @@ impl VaultApiClient {
             }
         } else {
             params.push(format!("length={}", opts.length));
-            if opts.uppercase { params.push("uppercase=true".to_string()); }
-            if opts.lowercase { params.push("lowercase=true".to_string()); }
-            if opts.numbers { params.push("number=true".to_string()); }
-            if opts.special { params.push("special=true".to_string()); }
+            if opts.uppercase {
+                params.push("uppercase=true".to_string());
+            }
+            if opts.lowercase {
+                params.push("lowercase=true".to_string());
+            }
+            if opts.numbers {
+                params.push("number=true".to_string());
+            }
+            if opts.special {
+                params.push("special=true".to_string());
+            }
         }
 
-        let query = if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) };
+        let query = if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        };
         let url = format!("{}/generate{}", self.base_url, query);
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| BitwardenError::network(format!("Generate request failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
         body.get("data")
@@ -438,21 +583,25 @@ impl VaultApiClient {
     ) -> Result<VaultItem, BitwardenError> {
         let url = format!("{}/attachment?itemid={}", self.base_url, item_id);
 
-        let part = reqwest::multipart::Part::bytes(file_data)
-            .file_name(filename.to_string());
-        let form = reqwest::multipart::Form::new()
-            .part("file", part);
+        let part = reqwest::multipart::Part::bytes(file_data).file_name(filename.to_string());
+        let form = reqwest::multipart::Form::new().part("file", part);
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .multipart(form)
             .send()
             .await
             .map_err(|e| BitwardenError::network(format!("Upload attachment failed: {}", e)))?;
 
-        let body: Value = resp.json().await
+        let body: Value = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))?;
 
-        let data = body.get("data").ok_or_else(|| BitwardenError::parse("No data"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| BitwardenError::parse("No data"))?;
         serde_json::from_value(data.clone())
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
@@ -502,7 +651,12 @@ impl PublicApiClient {
         client_id: &str,
         client_secret: &str,
     ) -> Result<Self, BitwardenError> {
-        Self::new(&config.api_url, &config.identity_url, client_id, client_secret)
+        Self::new(
+            &config.api_url,
+            &config.identity_url,
+            client_id,
+            client_secret,
+        )
     }
 
     /// Authenticate with OAuth2 client_credentials grant.
@@ -516,7 +670,9 @@ impl PublicApiClient {
             ("client_secret", &self.client_secret),
         ];
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .form(&params)
             .send()
             .await
@@ -526,11 +682,14 @@ impl PublicApiClient {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(BitwardenError::auth_failed(format!(
-                "OAuth2 authentication failed ({}): {}", status, body
+                "OAuth2 authentication failed ({}): {}",
+                status, body
             )));
         }
 
-        let token: BearerToken = resp.json().await
+        let token: BearerToken = resp
+            .json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Token parse error: {}", e)))?;
 
         self.access_token = Some(token.access_token.clone());
@@ -544,11 +703,15 @@ impl PublicApiClient {
 
     /// Make an authenticated API request.
     async fn api_get(&self, path: &str) -> Result<Value, BitwardenError> {
-        let token = self.access_token.as_ref()
+        let token = self
+            .access_token
+            .as_ref()
             .ok_or_else(|| BitwardenError::auth_failed("Not authenticated"))?;
 
         let url = format!("{}{}", self.api_url, path);
-        let resp = self.client.get(&url)
+        let resp = self
+            .client
+            .get(&url)
             .bearer_auth(token)
             .send()
             .await
@@ -557,20 +720,28 @@ impl PublicApiClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(BitwardenError::api(format!("API error ({}): {}", status, body)));
+            return Err(BitwardenError::api(format!(
+                "API error ({}): {}",
+                status, body
+            )));
         }
 
-        resp.json().await
+        resp.json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
 
     /// Make an authenticated POST request.
     async fn api_post(&self, path: &str, body: &Value) -> Result<Value, BitwardenError> {
-        let token = self.access_token.as_ref()
+        let token = self
+            .access_token
+            .as_ref()
             .ok_or_else(|| BitwardenError::auth_failed("Not authenticated"))?;
 
         let url = format!("{}{}", self.api_url, path);
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .bearer_auth(token)
             .json(body)
             .send()
@@ -580,20 +751,28 @@ impl PublicApiClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body_text = resp.text().await.unwrap_or_default();
-            return Err(BitwardenError::api(format!("API error ({}): {}", status, body_text)));
+            return Err(BitwardenError::api(format!(
+                "API error ({}): {}",
+                status, body_text
+            )));
         }
 
-        resp.json().await
+        resp.json()
+            .await
             .map_err(|e| BitwardenError::parse(format!("Parse error: {}", e)))
     }
 
     /// Make an authenticated DELETE request.
     async fn api_delete(&self, path: &str) -> Result<(), BitwardenError> {
-        let token = self.access_token.as_ref()
+        let token = self
+            .access_token
+            .as_ref()
             .ok_or_else(|| BitwardenError::auth_failed("Not authenticated"))?;
 
         let url = format!("{}{}", self.api_url, path);
-        let resp = self.client.delete(&url)
+        let resp = self
+            .client
+            .delete(&url)
             .bearer_auth(token)
             .send()
             .await
@@ -602,7 +781,10 @@ impl PublicApiClient {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(BitwardenError::api(format!("API error ({}): {}", status, body)));
+            return Err(BitwardenError::api(format!(
+                "API error ({}): {}",
+                status, body
+            )));
         }
 
         Ok(())
@@ -613,7 +795,10 @@ impl PublicApiClient {
     /// List organization members.
     pub async fn list_members(&self) -> Result<Vec<OrgMember>, BitwardenError> {
         let result = self.api_get("/public/members").await?;
-        let data = result.get("data").cloned().unwrap_or_else(|| Value::Array(vec![]));
+        let data = result
+            .get("data")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]));
         serde_json::from_value(data)
             .map_err(|e| BitwardenError::parse(format!("Members parse error: {}", e)))
     }
@@ -645,7 +830,11 @@ impl PublicApiClient {
 
     /// Reinvite a member.
     pub async fn reinvite_member(&self, id: &str) -> Result<(), BitwardenError> {
-        self.api_post(&format!("/public/members/{}/reinvite", id), &serde_json::json!({})).await?;
+        self.api_post(
+            &format!("/public/members/{}/reinvite", id),
+            &serde_json::json!({}),
+        )
+        .await?;
         Ok(())
     }
 
@@ -659,7 +848,10 @@ impl PublicApiClient {
     /// List organization collections.
     pub async fn list_collections(&self) -> Result<Vec<Collection>, BitwardenError> {
         let result = self.api_get("/public/collections").await?;
-        let data = result.get("data").cloned().unwrap_or_else(|| Value::Array(vec![]));
+        let data = result
+            .get("data")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]));
         serde_json::from_value(data)
             .map_err(|e| BitwardenError::parse(format!("Collections parse error: {}", e)))
     }
@@ -673,7 +865,8 @@ impl PublicApiClient {
 
     /// Delete a collection.
     pub async fn delete_collection(&self, id: &str) -> Result<(), BitwardenError> {
-        self.api_delete(&format!("/public/collections/{}", id)).await
+        self.api_delete(&format!("/public/collections/{}", id))
+            .await
     }
 
     // ── Groups ──────────────────────────────────────────────────────
@@ -681,7 +874,10 @@ impl PublicApiClient {
     /// List organization groups.
     pub async fn list_groups(&self) -> Result<Vec<Value>, BitwardenError> {
         let result = self.api_get("/public/groups").await?;
-        let data = result.get("data").cloned().unwrap_or_else(|| Value::Array(vec![]));
+        let data = result
+            .get("data")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]));
         serde_json::from_value(data)
             .map_err(|e| BitwardenError::parse(format!("Groups parse error: {}", e)))
     }
@@ -701,9 +897,16 @@ impl PublicApiClient {
         if let Some(e) = end {
             params.push(format!("end={}", e));
         }
-        let query = if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) };
+        let query = if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        };
         let result = self.api_get(&format!("/public/events{}", query)).await?;
-        let data = result.get("data").cloned().unwrap_or_else(|| Value::Array(vec![]));
+        let data = result
+            .get("data")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]));
         serde_json::from_value(data)
             .map_err(|e| BitwardenError::parse(format!("Events parse error: {}", e)))
     }
@@ -713,7 +916,10 @@ impl PublicApiClient {
     /// List organization policies.
     pub async fn list_policies(&self) -> Result<Vec<Value>, BitwardenError> {
         let result = self.api_get("/public/policies").await?;
-        let data = result.get("data").cloned().unwrap_or_else(|| Value::Array(vec![]));
+        let data = result
+            .get("data")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(vec![]));
         serde_json::from_value(data)
             .map_err(|e| BitwardenError::parse(format!("Policies parse error: {}", e)))
     }
@@ -771,7 +977,8 @@ mod tests {
             "https://identity.bitwarden.com",
             "client_id",
             "client_secret",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(client.api_url, "https://api.bitwarden.com");
         assert_eq!(client.identity_url, "https://identity.bitwarden.com");
     }
@@ -790,7 +997,8 @@ mod tests {
             "https://identity.bitwarden.com/",
             "cid",
             "csec",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(client.api_url, "https://api.bitwarden.com");
         assert_eq!(client.identity_url, "https://identity.bitwarden.com");
     }
@@ -802,7 +1010,8 @@ mod tests {
             "https://identity.bitwarden.com",
             "cid",
             "csec",
-        ).unwrap();
+        )
+        .unwrap();
         assert!(client.access_token.is_none());
         client.set_access_token("test_token");
         assert_eq!(client.access_token.as_deref(), Some("test_token"));
@@ -820,7 +1029,10 @@ mod tests {
 
     #[test]
     fn urlencoding_special_chars() {
-        assert_eq!(urlencoding::encode("test@example.com"), "test%40example.com");
+        assert_eq!(
+            urlencoding::encode("test@example.com"),
+            "test%40example.com"
+        );
         assert_eq!(urlencoding::encode("100%"), "100%25");
     }
 
@@ -843,7 +1055,8 @@ mod tests {
             "https://identity.bitwarden.com",
             "cid",
             "csec",
-        ).unwrap();
+        )
+        .unwrap();
         // Should fail because we're not authenticated
         let result = client.list_members().await;
         assert!(result.is_err());

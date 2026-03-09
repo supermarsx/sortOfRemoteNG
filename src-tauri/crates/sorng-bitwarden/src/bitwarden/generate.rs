@@ -14,64 +14,45 @@ const SPECIAL: &[u8] = b"!@#$%^&*()-_=+[]{}|;:',.<>?/`~";
 
 /// Default passphrase word list (EFF short word list subset).
 const WORD_LIST: &[&str] = &[
-    "acid", "acme", "aged", "also", "area", "army", "away", "baby",
-    "back", "bail", "bait", "bake", "bald", "ball", "band", "bank",
-    "barn", "base", "bath", "bead", "beam", "bear", "beat", "been",
-    "bell", "belt", "best", "bike", "bird", "bite", "blow", "blue",
-    "blur", "boat", "body", "bold", "bolt", "bomb", "bond", "bone",
-    "book", "bore", "born", "boss", "both", "bowl", "bulk", "bump",
-    "burn", "bush", "busy", "buzz", "cafe", "cage", "cake", "calm",
-    "came", "camp", "cape", "card", "care", "cart", "case", "cash",
-    "cast", "cave", "cell", "chat", "chip", "chop", "cite", "city",
-    "clam", "clan", "clap", "claw", "clay", "clip", "clock", "club",
-    "clue", "coal", "coat", "code", "coil", "coin", "cola", "cold",
-    "colt", "comb", "come", "cone", "cook", "cool", "cope", "copy",
-    "cord", "core", "cork", "corn", "cost", "cozy", "crab", "crew",
-    "crop", "crow", "cube", "cult", "curb", "cure", "curl", "cute",
-    "dare", "dark", "dart", "dash", "data", "date", "dawn", "deal",
-    "dear", "debt", "deck", "deed", "deem", "deep", "deer", "demo",
-    "dent", "deny", "desk", "dial", "dice", "diet", "dine", "disc",
-    "dish", "dock", "does", "dome", "done", "doom", "door", "dose",
-    "dove", "down", "drag", "draw", "drip", "drop", "drum", "dual",
-    "duck", "duel", "duke", "dull", "dumb", "dump", "dune", "dusk",
-    "dust", "duty", "each", "earl", "earn", "ease", "east", "easy",
-    "echo", "edge", "edit", "else", "emit", "epic", "even", "ever",
-    "exam", "exit", "face", "fact", "fade", "fail", "fair", "fake",
-    "fall", "fame", "fang", "farm", "fast", "fate", "fear", "feat",
-    "feed", "feel", "file", "fill", "film", "find", "fine", "fire",
-    "firm", "fish", "fist", "five", "flag", "flame", "flat", "flaw",
-    "fled", "flew", "flip", "float", "flow", "foam", "fold", "folk",
-    "fond", "font", "food", "fool", "foot", "ford", "fore", "fork",
-    "form", "fort", "foul", "four", "free", "frog", "from", "fuel",
-    "full", "fund", "fury", "fuse", "fuss", "gain", "gait", "gale",
-    "game", "gang", "gape", "gate", "gave", "gaze", "gear", "gene",
-    "gift", "girl", "glad", "glee", "glen", "glow", "glue", "goat",
-    "goes", "gold", "golf", "gone", "good", "grab", "gram", "gray",
-    "grew", "grid", "grim", "grin", "grip", "grit", "grow", "gulf",
-    "guru", "gust", "guts", "hack", "hail", "hair", "half", "hall",
-    "halt", "hand", "hang", "hare", "harm", "harp", "hash", "haste",
-    "hate", "haul", "have", "hawk", "haze", "head", "heal", "heap",
-    "heat", "heel", "held", "helm", "help", "herb", "herd", "here",
-    "hero", "hide", "high", "hike", "hill", "hint", "hire", "hold",
-    "hole", "holy", "home", "hook", "hope", "horn", "host", "hour",
-    "huge", "hull", "hung", "hunt", "hurt", "hush", "hymn", "icon",
-    "idea", "idle", "inch", "info", "iron", "item", "jack", "jade",
-    "jail", "jazz", "jean", "jest", "jobs", "join", "joke", "joy",
-    "jump", "june", "jury", "just", "keen", "keep", "kelp", "kept",
-    "kick", "kill", "kind", "king", "kiss", "kite", "knee", "knelt",
-    "knew", "knit", "knob", "knot", "know", "lace", "lack", "laid",
-    "lake", "lamp", "land", "lane", "lark", "last", "late", "lawn",
-    "lead", "leaf", "leak", "lean", "leap", "left", "lend", "lens",
-    "less", "liar", "lick", "life", "lift", "like", "lily", "limb",
-    "lime", "limp", "line", "link", "lion", "list", "live", "load",
-    "loaf", "loan", "lock", "loft", "logo", "long", "look", "loop",
-    "lord", "lore", "lose", "loss", "lost", "loud", "love", "luck",
-    "lump", "lung", "lure", "lurk", "lush", "made", "mail", "main",
-    "make", "male", "mall", "malt", "mane", "many", "mare", "mark",
-    "mars", "mask", "mass", "mast", "mate", "maze", "meal", "mean",
-    "meat", "meet", "meld", "melt", "memo", "mend", "menu", "mere",
-    "mesh", "mild", "milk", "mill", "mime", "mind", "mine", "mint",
-    "miss", "mist", "moan", "moat", "mock", "mode", "mold", "mole",
+    "acid", "acme", "aged", "also", "area", "army", "away", "baby", "back", "bail", "bait", "bake",
+    "bald", "ball", "band", "bank", "barn", "base", "bath", "bead", "beam", "bear", "beat", "been",
+    "bell", "belt", "best", "bike", "bird", "bite", "blow", "blue", "blur", "boat", "body", "bold",
+    "bolt", "bomb", "bond", "bone", "book", "bore", "born", "boss", "both", "bowl", "bulk", "bump",
+    "burn", "bush", "busy", "buzz", "cafe", "cage", "cake", "calm", "came", "camp", "cape", "card",
+    "care", "cart", "case", "cash", "cast", "cave", "cell", "chat", "chip", "chop", "cite", "city",
+    "clam", "clan", "clap", "claw", "clay", "clip", "clock", "club", "clue", "coal", "coat",
+    "code", "coil", "coin", "cola", "cold", "colt", "comb", "come", "cone", "cook", "cool", "cope",
+    "copy", "cord", "core", "cork", "corn", "cost", "cozy", "crab", "crew", "crop", "crow", "cube",
+    "cult", "curb", "cure", "curl", "cute", "dare", "dark", "dart", "dash", "data", "date", "dawn",
+    "deal", "dear", "debt", "deck", "deed", "deem", "deep", "deer", "demo", "dent", "deny", "desk",
+    "dial", "dice", "diet", "dine", "disc", "dish", "dock", "does", "dome", "done", "doom", "door",
+    "dose", "dove", "down", "drag", "draw", "drip", "drop", "drum", "dual", "duck", "duel", "duke",
+    "dull", "dumb", "dump", "dune", "dusk", "dust", "duty", "each", "earl", "earn", "ease", "east",
+    "easy", "echo", "edge", "edit", "else", "emit", "epic", "even", "ever", "exam", "exit", "face",
+    "fact", "fade", "fail", "fair", "fake", "fall", "fame", "fang", "farm", "fast", "fate", "fear",
+    "feat", "feed", "feel", "file", "fill", "film", "find", "fine", "fire", "firm", "fish", "fist",
+    "five", "flag", "flame", "flat", "flaw", "fled", "flew", "flip", "float", "flow", "foam",
+    "fold", "folk", "fond", "font", "food", "fool", "foot", "ford", "fore", "fork", "form", "fort",
+    "foul", "four", "free", "frog", "from", "fuel", "full", "fund", "fury", "fuse", "fuss", "gain",
+    "gait", "gale", "game", "gang", "gape", "gate", "gave", "gaze", "gear", "gene", "gift", "girl",
+    "glad", "glee", "glen", "glow", "glue", "goat", "goes", "gold", "golf", "gone", "good", "grab",
+    "gram", "gray", "grew", "grid", "grim", "grin", "grip", "grit", "grow", "gulf", "guru", "gust",
+    "guts", "hack", "hail", "hair", "half", "hall", "halt", "hand", "hang", "hare", "harm", "harp",
+    "hash", "haste", "hate", "haul", "have", "hawk", "haze", "head", "heal", "heap", "heat",
+    "heel", "held", "helm", "help", "herb", "herd", "here", "hero", "hide", "high", "hike", "hill",
+    "hint", "hire", "hold", "hole", "holy", "home", "hook", "hope", "horn", "host", "hour", "huge",
+    "hull", "hung", "hunt", "hurt", "hush", "hymn", "icon", "idea", "idle", "inch", "info", "iron",
+    "item", "jack", "jade", "jail", "jazz", "jean", "jest", "jobs", "join", "joke", "joy", "jump",
+    "june", "jury", "just", "keen", "keep", "kelp", "kept", "kick", "kill", "kind", "king", "kiss",
+    "kite", "knee", "knelt", "knew", "knit", "knob", "knot", "know", "lace", "lack", "laid",
+    "lake", "lamp", "land", "lane", "lark", "last", "late", "lawn", "lead", "leaf", "leak", "lean",
+    "leap", "left", "lend", "lens", "less", "liar", "lick", "life", "lift", "like", "lily", "limb",
+    "lime", "limp", "line", "link", "lion", "list", "live", "load", "loaf", "loan", "lock", "loft",
+    "logo", "long", "look", "loop", "lord", "lore", "lose", "loss", "lost", "loud", "love", "luck",
+    "lump", "lung", "lure", "lurk", "lush", "made", "mail", "main", "make", "male", "mall", "malt",
+    "mane", "many", "mare", "mark", "mars", "mask", "mass", "mast", "mate", "maze", "meal", "mean",
+    "meat", "meet", "meld", "melt", "memo", "mend", "menu", "mere", "mesh", "mild", "milk", "mill",
+    "mime", "mind", "mine", "mint", "miss", "mist", "moan", "moat", "mock", "mode", "mold", "mole",
 ];
 
 /// Simple entropy source for password generation.
@@ -89,7 +70,9 @@ impl SimpleRng {
             .as_nanos() as u64;
         // Mix with thread ID for uniqueness across threads
         let thread_id: u64 = format!("{:?}", std::thread::current().id()).len() as u64;
-        Self { state: seed ^ (thread_id.wrapping_mul(0x9E3779B97F4A7C15)) }
+        Self {
+            state: seed ^ (thread_id.wrapping_mul(0x9E3779B97F4A7C15)),
+        }
     }
 
     #[cfg(test)]
@@ -106,7 +89,9 @@ impl SimpleRng {
     }
 
     fn next_range(&mut self, max: usize) -> usize {
-        if max == 0 { return 0; }
+        if max == 0 {
+            return 0;
+        }
         (self.next_u64() as usize) % max
     }
 
@@ -179,7 +164,9 @@ pub fn generate_password(opts: &PasswordGenerateOptions) -> Result<String, Bitwa
 fn generate_passphrase(opts: &PasswordGenerateOptions) -> Result<String, BitwardenError> {
     let word_count = opts.words.unwrap_or(4) as usize;
     if word_count == 0 {
-        return Err(BitwardenError::invalid_config("Word count must be at least 1"));
+        return Err(BitwardenError::invalid_config(
+            "Word count must be at least 1",
+        ));
     }
 
     let separator = opts.separator.as_deref().unwrap_or("-");
@@ -210,27 +197,43 @@ fn generate_passphrase(opts: &PasswordGenerateOptions) -> Result<String, Bitward
 
 /// Calculate the entropy of a password in bits.
 pub fn calculate_entropy(password: &str) -> f64 {
-    if password.is_empty() { return 0.0; }
+    if password.is_empty() {
+        return 0.0;
+    }
 
     let has_lower = password.chars().any(|c| c.is_ascii_lowercase());
     let has_upper = password.chars().any(|c| c.is_ascii_uppercase());
     let has_digit = password.chars().any(|c| c.is_ascii_digit());
-    let has_special = password.chars().any(|c| !c.is_alphanumeric() && c.is_ascii());
+    let has_special = password
+        .chars()
+        .any(|c| !c.is_alphanumeric() && c.is_ascii());
 
     let mut pool_size: f64 = 0.0;
-    if has_lower { pool_size += 26.0; }
-    if has_upper { pool_size += 26.0; }
-    if has_digit { pool_size += 10.0; }
-    if has_special { pool_size += 32.0; }
+    if has_lower {
+        pool_size += 26.0;
+    }
+    if has_upper {
+        pool_size += 26.0;
+    }
+    if has_digit {
+        pool_size += 10.0;
+    }
+    if has_special {
+        pool_size += 32.0;
+    }
 
-    if pool_size == 0.0 { pool_size = 1.0; }
+    if pool_size == 0.0 {
+        pool_size = 1.0;
+    }
 
     (password.len() as f64) * pool_size.log2()
 }
 
 /// Estimate the entropy of a passphrase.
 pub fn passphrase_entropy(word_count: u32, word_list_size: u32) -> f64 {
-    if word_count == 0 || word_list_size == 0 { return 0.0; }
+    if word_count == 0 || word_list_size == 0 {
+        return 0.0;
+    }
     (word_count as f64) * (word_list_size as f64).log2()
 }
 
@@ -254,7 +257,10 @@ mod tests {
 
     #[test]
     fn generate_password_length() {
-        let opts = PasswordGenerateOptions { length: 32, ..Default::default() };
+        let opts = PasswordGenerateOptions {
+            length: 32,
+            ..Default::default()
+        };
         let password = generate_password(&opts).unwrap();
         assert_eq!(password.len(), 32);
     }
@@ -388,8 +394,10 @@ mod tests {
         let phrase = generate_password(&opts).unwrap();
         for word in phrase.split('-') {
             // Each word-part (before any appended numbers) should start uppercase
-            assert!(word.chars().next().unwrap().is_ascii_uppercase()
-                || word.chars().next().unwrap().is_ascii_digit());
+            assert!(
+                word.chars().next().unwrap().is_ascii_uppercase()
+                    || word.chars().next().unwrap().is_ascii_digit()
+            );
         }
     }
 
@@ -503,8 +511,11 @@ mod tests {
     #[test]
     fn word_list_all_lowercase() {
         for word in WORD_LIST {
-            assert!(word.chars().all(|c| c.is_ascii_lowercase()),
-                "Word '{}' is not all lowercase", word);
+            assert!(
+                word.chars().all(|c| c.is_ascii_lowercase()),
+                "Word '{}' is not all lowercase",
+                word
+            );
         }
     }
 }

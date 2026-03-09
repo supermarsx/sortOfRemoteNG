@@ -10,17 +10,17 @@
 //! - Sync engine for keeping local caches up to date
 //! - TOTP code generation from stored vault items
 
-pub mod types;
-pub mod crypto;
-pub mod cli;
 pub mod api;
-pub mod vault;
-pub mod sync;
+pub mod cli;
+pub mod commands;
+pub mod crypto;
 pub mod generate;
 pub mod service;
-pub mod commands;
+pub mod sync;
+pub mod types;
+pub mod vault;
 
 // Re-export top-level items for convenience.
-pub use types::*;
-pub use service::{BitwardenService, BitwardenServiceState};
 pub use commands::*;
+pub use service::{BitwardenService, BitwardenServiceState};
+pub use types::*;

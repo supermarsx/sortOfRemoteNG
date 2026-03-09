@@ -22,14 +22,18 @@ pub fn match_credentials(items: &[VaultItem], target_uri: &str) -> Vec<Credentia
             continue;
         }
 
-        let Some(ref login) = item.login else { continue };
+        let Some(ref login) = item.login else {
+            continue;
+        };
         let Some(ref uris) = login.uris else { continue };
 
         let mut best_score: f64 = 0.0;
         let mut matched_uri: Option<String> = None;
 
         for login_uri in uris {
-            let Some(ref uri) = login_uri.uri else { continue };
+            let Some(ref uri) = login_uri.uri else {
+                continue;
+            };
             let score = compute_uri_match_score(
                 uri,
                 target_uri,
@@ -56,7 +60,11 @@ pub fn match_credentials(items: &[VaultItem], target_uri: &str) -> Vec<Credentia
         }
     }
 
-    matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    matches.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     matches
 }
 
@@ -72,18 +80,18 @@ fn compute_uri_match_score(
     let stored_domain = extract_domain(stored_uri);
 
     match match_type.and_then(UriMatchType::from_u8) {
-        Some(UriMatchType::Never) => return 0.0,
+        Some(UriMatchType::Never) => 0.0,
         Some(UriMatchType::Exact) => {
             if normalized_stored == normalized_target {
                 return 1.0;
             }
-            return 0.0;
+            0.0
         }
         Some(UriMatchType::StartsWith) => {
             if normalized_target.starts_with(&normalized_stored) {
                 return 0.9;
             }
-            return 0.0;
+            0.0
         }
         Some(UriMatchType::Host) => {
             let stored_host = extract_host(stored_uri);
@@ -91,18 +99,15 @@ fn compute_uri_match_score(
             if stored_host == target_host {
                 return 0.85;
             }
-            return 0.0;
+            0.0
         }
         Some(UriMatchType::RegularExpression) => {
-            match regex::Regex::new(stored_uri) {
-                Ok(re) => {
-                    if re.is_match(target_uri) {
-                        return 0.7;
-                    }
+            if let Ok(re) = regex::Regex::new(stored_uri) {
+                if re.is_match(target_uri) {
+                    return 0.7;
                 }
-                Err(_) => {}
             }
-            return 0.0;
+            0.0
         }
         // Default and Domain match
         _ => {
@@ -126,7 +131,10 @@ fn compute_uri_match_score(
 /// Normalize a URI for matching: lowercase, strip protocol, strip trailing slash.
 fn normalize_for_matching(uri: &str) -> String {
     let s = uri.to_lowercase();
-    let s = s.strip_prefix("https://").or_else(|| s.strip_prefix("http://")).unwrap_or(&s);
+    let s = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .unwrap_or(&s);
     let s = s.strip_prefix("www.").unwrap_or(s);
     s.trim_end_matches('/').to_string()
 }
@@ -146,11 +154,18 @@ fn extract_domain(uri: &str) -> String {
 /// Extract the hostname from a URI.
 fn extract_host(uri: &str) -> String {
     let s = uri.to_lowercase();
-    let s = s.strip_prefix("https://").or_else(|| s.strip_prefix("http://")).unwrap_or(&s);
+    let s = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .unwrap_or(&s);
     let s = s.strip_prefix("www.").unwrap_or(s);
     // Take everything before the first / or : (port)
-    s.split('/').next().unwrap_or(s)
-        .split(':').next().unwrap_or(s)
+    s.split('/')
+        .next()
+        .unwrap_or(s)
+        .split(':')
+        .next()
+        .unwrap_or(s)
         .to_string()
 }
 
@@ -159,100 +174,126 @@ fn extract_host(uri: &str) -> String {
 /// Search items by name, username, URI, or notes.
 pub fn search_items<'a>(items: &'a [VaultItem], query: &str) -> Vec<&'a VaultItem> {
     let q = query.to_lowercase();
-    items.iter().filter(|item| {
-        if item.is_deleted() { return false; }
-
-        // Match on name
-        if item.name.to_lowercase().contains(&q) { return true; }
-
-        // Match on notes
-        if let Some(ref notes) = item.notes {
-            if notes.to_lowercase().contains(&q) { return true; }
-        }
-
-        // Match on login fields
-        if let Some(ref login) = item.login {
-            if let Some(ref u) = login.username {
-                if u.to_lowercase().contains(&q) { return true; }
+    items
+        .iter()
+        .filter(|item| {
+            if item.is_deleted() {
+                return false;
             }
-            if let Some(ref uris) = login.uris {
-                for uri in uris {
-                    if let Some(ref u) = uri.uri {
-                        if u.to_lowercase().contains(&q) { return true; }
+
+            // Match on name
+            if item.name.to_lowercase().contains(&q) {
+                return true;
+            }
+
+            // Match on notes
+            if let Some(ref notes) = item.notes {
+                if notes.to_lowercase().contains(&q) {
+                    return true;
+                }
+            }
+
+            // Match on login fields
+            if let Some(ref login) = item.login {
+                if let Some(ref u) = login.username {
+                    if u.to_lowercase().contains(&q) {
+                        return true;
+                    }
+                }
+                if let Some(ref uris) = login.uris {
+                    for uri in uris {
+                        if let Some(ref u) = uri.uri {
+                            if u.to_lowercase().contains(&q) {
+                                return true;
+                            }
+                        }
                     }
                 }
             }
-        }
 
-        // Match on card fields
-        if let Some(ref card) = item.card {
-            if let Some(ref name) = card.cardholder_name {
-                if name.to_lowercase().contains(&q) { return true; }
-            }
-            if let Some(ref brand) = card.brand {
-                if brand.to_lowercase().contains(&q) { return true; }
-            }
-        }
-
-        // Match on identity fields
-        if let Some(ref id) = item.identity {
-            if let Some(ref first) = id.first_name {
-                if first.to_lowercase().contains(&q) { return true; }
-            }
-            if let Some(ref last) = id.last_name {
-                if last.to_lowercase().contains(&q) { return true; }
-            }
-            if let Some(ref email) = id.email {
-                if email.to_lowercase().contains(&q) { return true; }
-            }
-        }
-
-        // Match on custom fields
-        if let Some(ref fields) = item.fields {
-            for field in fields {
-                if let Some(ref name) = field.name {
-                    if name.to_lowercase().contains(&q) { return true; }
+            // Match on card fields
+            if let Some(ref card) = item.card {
+                if let Some(ref name) = card.cardholder_name {
+                    if name.to_lowercase().contains(&q) {
+                        return true;
+                    }
                 }
-                if field.field_type != FieldType::Hidden as u8 {
-                    if let Some(ref val) = field.value {
-                        if val.to_lowercase().contains(&q) { return true; }
+                if let Some(ref brand) = card.brand {
+                    if brand.to_lowercase().contains(&q) {
+                        return true;
                     }
                 }
             }
-        }
 
-        false
-    }).collect()
+            // Match on identity fields
+            if let Some(ref id) = item.identity {
+                if let Some(ref first) = id.first_name {
+                    if first.to_lowercase().contains(&q) {
+                        return true;
+                    }
+                }
+                if let Some(ref last) = id.last_name {
+                    if last.to_lowercase().contains(&q) {
+                        return true;
+                    }
+                }
+                if let Some(ref email) = id.email {
+                    if email.to_lowercase().contains(&q) {
+                        return true;
+                    }
+                }
+            }
+
+            // Match on custom fields
+            if let Some(ref fields) = item.fields {
+                for field in fields {
+                    if let Some(ref name) = field.name {
+                        if name.to_lowercase().contains(&q) {
+                            return true;
+                        }
+                    }
+                    if field.field_type != FieldType::Hidden as u8 {
+                        if let Some(ref val) = field.value {
+                            if val.to_lowercase().contains(&q) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            false
+        })
+        .collect()
 }
 
 /// Filter items by type.
 pub fn filter_by_type(items: &[VaultItem], item_type: ItemType) -> Vec<&VaultItem> {
-    items.iter()
+    items
+        .iter()
         .filter(|item| item.item_type == item_type as u8 && !item.is_deleted())
         .collect()
 }
 
 /// Filter items by folder.
 pub fn filter_by_folder<'a>(items: &'a [VaultItem], folder_id: Option<&str>) -> Vec<&'a VaultItem> {
-    items.iter()
-        .filter(|item| {
-            !item.is_deleted() && item.folder_id.as_deref() == folder_id
-        })
+    items
+        .iter()
+        .filter(|item| !item.is_deleted() && item.folder_id.as_deref() == folder_id)
         .collect()
 }
 
 /// Filter favorite items.
 pub fn filter_favorites(items: &[VaultItem]) -> Vec<&VaultItem> {
-    items.iter()
+    items
+        .iter()
         .filter(|item| !item.is_deleted() && item.favorite == Some(true))
         .collect()
 }
 
 /// Filter items in trash.
 pub fn filter_trash(items: &[VaultItem]) -> Vec<&VaultItem> {
-    items.iter()
-        .filter(|item| item.is_deleted())
-        .collect()
+    items.iter().filter(|item| item.is_deleted()).collect()
 }
 
 // ── Password health analysis ────────────────────────────────────────
@@ -264,7 +305,9 @@ pub fn analyze_password_health(items: &[VaultItem]) -> Vec<PasswordHealthReport>
 
     // First pass: collect all passwords
     for item in items {
-        if item.is_deleted() || !item.is_login() { continue; }
+        if item.is_deleted() || !item.is_login() {
+            continue;
+        }
         if let Some(pw) = item.password() {
             password_map
                 .entry(pw.to_string())
@@ -275,19 +318,20 @@ pub fn analyze_password_health(items: &[VaultItem]) -> Vec<PasswordHealthReport>
 
     // Second pass: generate reports
     for item in items {
-        if item.is_deleted() || !item.is_login() { continue; }
+        if item.is_deleted() || !item.is_login() {
+            continue;
+        }
         let Some(pw) = item.password() else { continue };
 
-        let is_reused = password_map.get(pw)
-            .map_or(false, |ids| ids.len() > 1);
+        let is_reused = password_map.get(pw).is_some_and(|ids| ids.len() > 1);
 
         let is_weak = check_password_weakness(pw);
 
-        let password_age_days = item.login.as_ref()
+        let password_age_days = item
+            .login
+            .as_ref()
             .and_then(|l| l.password_revision_date.as_ref())
-            .and_then(|d| {
-                chrono::DateTime::parse_from_rfc3339(d).ok()
-            })
+            .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
             .map(|d| {
                 let now = chrono::Utc::now();
                 (now - d.with_timezone(&chrono::Utc)).num_days() as u64
@@ -308,7 +352,9 @@ pub fn analyze_password_health(items: &[VaultItem]) -> Vec<PasswordHealthReport>
 
 /// Basic password weakness check.
 fn check_password_weakness(password: &str) -> bool {
-    if password.len() < 8 { return true; }
+    if password.len() < 8 {
+        return true;
+    }
 
     let has_upper = password.chars().any(|c| c.is_uppercase());
     let has_lower = password.chars().any(|c| c.is_lowercase());
@@ -316,7 +362,9 @@ fn check_password_weakness(password: &str) -> bool {
     let has_special = password.chars().any(|c| !c.is_alphanumeric());
 
     let char_classes = [has_upper, has_lower, has_digit, has_special]
-        .iter().filter(|&&b| b).count();
+        .iter()
+        .filter(|&&b| b)
+        .count();
 
     // Weak if fewer than 3 character classes or length < 10
     char_classes < 2 || (char_classes < 3 && password.len() < 12)
@@ -326,13 +374,21 @@ fn check_password_weakness(password: &str) -> bool {
 pub fn password_strength_score(password: &str) -> u8 {
     let mut score: u8 = 0;
 
-    if password.len() >= 8 { score += 1; }
-    if password.len() >= 16 { score += 1; }
+    if password.len() >= 8 {
+        score += 1;
+    }
+    if password.len() >= 16 {
+        score += 1;
+    }
     if password.chars().any(|c| c.is_uppercase()) && password.chars().any(|c| c.is_lowercase()) {
         score += 1;
     }
-    if password.chars().any(|c| c.is_ascii_digit()) { score += 1; }
-    if password.chars().any(|c| !c.is_alphanumeric()) { score += 1; }
+    if password.chars().any(|c| c.is_ascii_digit()) {
+        score += 1;
+    }
+    if password.chars().any(|c| !c.is_alphanumeric()) {
+        score += 1;
+    }
 
     score.min(4)
 }
@@ -353,17 +409,15 @@ pub fn sort_items(items: &mut [VaultItem], by: SortBy, ascending: bool) {
     items.sort_by(|a, b| {
         let cmp = match by {
             SortBy::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            SortBy::DateModified => {
-                a.revision_date.cmp(&b.revision_date)
-            }
-            SortBy::DateCreated => {
-                a.creation_date.cmp(&b.creation_date)
-            }
-            SortBy::ItemType => {
-                a.item_type.cmp(&b.item_type)
-            }
+            SortBy::DateModified => a.revision_date.cmp(&b.revision_date),
+            SortBy::DateCreated => a.creation_date.cmp(&b.creation_date),
+            SortBy::ItemType => a.item_type.cmp(&b.item_type),
         };
-        if ascending { cmp } else { cmp.reverse() }
+        if ascending {
+            cmp
+        } else {
+            cmp.reverse()
+        }
     });
 }
 
@@ -372,7 +426,8 @@ pub fn sort_items(items: &mut [VaultItem], by: SortBy, ascending: bool) {
 /// Find potential duplicate items.
 pub fn find_duplicates(items: &[VaultItem]) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
-    let active: Vec<&VaultItem> = items.iter()
+    let active: Vec<&VaultItem> = items
+        .iter()
         .filter(|item| !item.is_deleted() && item.is_login())
         .collect();
 
@@ -429,9 +484,12 @@ mod tests {
 
     #[test]
     fn match_domain_uri() {
-        let items = vec![
-            make_login("GitHub", "user", "pass", "https://github.com/login"),
-        ];
+        let items = vec![make_login(
+            "GitHub",
+            "user",
+            "pass",
+            "https://github.com/login",
+        )];
 
         let matches = match_credentials(&items, "https://github.com/dashboard");
         assert_eq!(matches.len(), 1);
@@ -440,9 +498,7 @@ mod tests {
 
     #[test]
     fn match_no_result() {
-        let items = vec![
-            make_login("GitHub", "user", "pass", "https://github.com"),
-        ];
+        let items = vec![make_login("GitHub", "user", "pass", "https://github.com")];
 
         let matches = match_credentials(&items, "https://example.com");
         assert_eq!(matches.len(), 0);
@@ -460,9 +516,7 @@ mod tests {
 
     #[test]
     fn match_skips_non_login() {
-        let items = vec![
-            VaultItem::new_secure_note("Note", "content"),
-        ];
+        let items = vec![VaultItem::new_secure_note("Note", "content")];
 
         let matches = match_credentials(&items, "https://example.com");
         assert_eq!(matches.len(), 0);

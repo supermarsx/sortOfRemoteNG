@@ -132,18 +132,14 @@ pub async fn bw_unlock(
 
 /// Lock the vault.
 #[tauri::command]
-pub async fn bw_lock(
-    state: tauri::State<'_, BitwardenServiceState>,
-) -> Result<(), String> {
+pub async fn bw_lock(state: tauri::State<'_, BitwardenServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.lock().await.map_err(|e| e.message)
 }
 
 /// Logout.
 #[tauri::command]
-pub async fn bw_logout(
-    state: tauri::State<'_, BitwardenServiceState>,
-) -> Result<(), String> {
+pub async fn bw_logout(state: tauri::State<'_, BitwardenServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.logout().await.map_err(|e| e.message)
 }
@@ -152,9 +148,7 @@ pub async fn bw_logout(
 
 /// Sync the vault.
 #[tauri::command]
-pub async fn bw_sync(
-    state: tauri::State<'_, BitwardenServiceState>,
-) -> Result<SyncResult, String> {
+pub async fn bw_sync(state: tauri::State<'_, BitwardenServiceState>) -> Result<SyncResult, String> {
     let mut svc = state.lock().await;
     svc.sync().await.map_err(|e| e.message)
 }
@@ -322,7 +316,11 @@ pub async fn bw_edit_folder(
     name: String,
 ) -> Result<Folder, String> {
     let svc = state.lock().await;
-    let folder = Folder { object: Some("folder".into()), id: Some(id.clone()), name };
+    let folder = Folder {
+        object: Some("folder".into()),
+        id: Some(id.clone()),
+        name,
+    };
     svc.edit_folder(&id, &folder).await.map_err(|e| e.message)
 }
 
@@ -541,18 +539,14 @@ pub async fn bw_find_duplicates(
 
 /// Start the `bw serve` local API server.
 #[tauri::command]
-pub async fn bw_start_serve(
-    state: tauri::State<'_, BitwardenServiceState>,
-) -> Result<(), String> {
+pub async fn bw_start_serve(state: tauri::State<'_, BitwardenServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.start_serve().await.map_err(|e| e.message)
 }
 
 /// Stop the `bw serve` local API server.
 #[tauri::command]
-pub async fn bw_stop_serve(
-    state: tauri::State<'_, BitwardenServiceState>,
-) -> Result<(), String> {
+pub async fn bw_stop_serve(state: tauri::State<'_, BitwardenServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.stop_serve().await;
     Ok(())

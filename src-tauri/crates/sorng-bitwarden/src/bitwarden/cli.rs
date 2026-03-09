@@ -24,6 +24,7 @@ pub struct BitwardenCli {
     /// Command timeout.
     timeout: Duration,
     /// Server URL (if non-default).
+    #[allow(dead_code)]
     server_url: Option<String>,
 }
 
@@ -73,8 +74,10 @@ impl BitwardenCli {
 
     /// Set API key credentials.
     pub fn set_api_key(&mut self, client_id: &str, client_secret: &str) {
-        self.env_vars.insert("BW_CLIENTID".to_string(), client_id.to_string());
-        self.env_vars.insert("BW_CLIENTSECRET".to_string(), client_secret.to_string());
+        self.env_vars
+            .insert("BW_CLIENTID".to_string(), client_id.to_string());
+        self.env_vars
+            .insert("BW_CLIENTSECRET".to_string(), client_secret.to_string());
     }
 
     /// Get the CLI binary path.
@@ -153,7 +156,11 @@ impl BitwardenCli {
                     }
 
                     let msg = if !stderr.is_empty() { stderr } else { stdout };
-                    Err(BitwardenError::api(format!("bw command failed (exit {}): {}", code, msg.trim())))
+                    Err(BitwardenError::api(format!(
+                        "bw command failed (exit {}): {}",
+                        code,
+                        msg.trim()
+                    )))
                 } else {
                     Ok(stdout)
                 }
@@ -162,10 +169,17 @@ impl BitwardenCli {
     }
 
     /// Run a command and parse JSON output.
-    async fn run_json<T: serde::de::DeserializeOwned>(&self, args: &[&str]) -> Result<T, BitwardenError> {
+    async fn run_json<T: serde::de::DeserializeOwned>(
+        &self,
+        args: &[&str],
+    ) -> Result<T, BitwardenError> {
         let output = self.run_command(args).await?;
         serde_json::from_str(&output).map_err(|e| {
-            BitwardenError::parse(format!("Failed to parse JSON: {} (output: {})", e, &output[..output.len().min(200)]))
+            BitwardenError::parse(format!(
+                "Failed to parse JSON: {} (output: {})",
+                e,
+                &output[..output.len().min(200)]
+            ))
         })
     }
 
@@ -197,9 +211,9 @@ impl BitwardenCli {
         email: &str,
         password: &str,
     ) -> Result<String, BitwardenError> {
-        let output = self.run_command(&[
-            "login", email, password, "--raw",
-        ]).await?;
+        let output = self
+            .run_command(&["login", email, password, "--raw"])
+            .await?;
         Ok(output.trim().to_string())
     }
 
@@ -212,12 +226,18 @@ impl BitwardenCli {
         method: TwoFactorMethod,
     ) -> Result<String, BitwardenError> {
         let method_str = (method as u8).to_string();
-        let output = self.run_command(&[
-            "login", email, password,
-            "--method", &method_str,
-            "--code", code,
-            "--raw",
-        ]).await?;
+        let output = self
+            .run_command(&[
+                "login",
+                email,
+                password,
+                "--method",
+                &method_str,
+                "--code",
+                code,
+                "--raw",
+            ])
+            .await?;
         Ok(output.trim().to_string())
     }
 
@@ -293,18 +313,30 @@ impl BitwardenCli {
     }
 
     /// List items filtered by folder ID.
-    pub async fn list_items_by_folder(&self, folder_id: &str) -> Result<Vec<VaultItem>, BitwardenError> {
-        self.run_json(&["list", "items", "--folderid", folder_id]).await
+    pub async fn list_items_by_folder(
+        &self,
+        folder_id: &str,
+    ) -> Result<Vec<VaultItem>, BitwardenError> {
+        self.run_json(&["list", "items", "--folderid", folder_id])
+            .await
     }
 
     /// List items filtered by collection ID.
-    pub async fn list_items_by_collection(&self, collection_id: &str) -> Result<Vec<VaultItem>, BitwardenError> {
-        self.run_json(&["list", "items", "--collectionid", collection_id]).await
+    pub async fn list_items_by_collection(
+        &self,
+        collection_id: &str,
+    ) -> Result<Vec<VaultItem>, BitwardenError> {
+        self.run_json(&["list", "items", "--collectionid", collection_id])
+            .await
     }
 
     /// List items filtered by organization ID.
-    pub async fn list_items_by_organization(&self, org_id: &str) -> Result<Vec<VaultItem>, BitwardenError> {
-        self.run_json(&["list", "items", "--organizationid", org_id]).await
+    pub async fn list_items_by_organization(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<VaultItem>, BitwardenError> {
+        self.run_json(&["list", "items", "--organizationid", org_id])
+            .await
     }
 
     /// List items matching a URL.
@@ -334,12 +366,17 @@ impl BitwardenCli {
 
     /// List org members (requires org_id).
     pub async fn list_org_members(&self, org_id: &str) -> Result<Vec<OrgMember>, BitwardenError> {
-        self.run_json(&["list", "org-members", "--organizationid", org_id]).await
+        self.run_json(&["list", "org-members", "--organizationid", org_id])
+            .await
     }
 
     /// List org collections.
-    pub async fn list_org_collections(&self, org_id: &str) -> Result<Vec<Collection>, BitwardenError> {
-        self.run_json(&["list", "org-collections", "--organizationid", org_id]).await
+    pub async fn list_org_collections(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<Collection>, BitwardenError> {
+        self.run_json(&["list", "org-collections", "--organizationid", org_id])
+            .await
     }
 
     // ── Get operations ──────────────────────────────────────────────
@@ -446,7 +483,8 @@ impl BitwardenCli {
 
     /// Permanently delete a trashed item.
     pub async fn delete_item_permanent(&self, id: &str) -> Result<(), BitwardenError> {
-        self.run_command(&["delete", "item", id, "--permanent"]).await?;
+        self.run_command(&["delete", "item", id, "--permanent"])
+            .await?;
         Ok(())
     }
 
@@ -471,10 +509,14 @@ impl BitwardenCli {
         file_path: &str,
     ) -> Result<VaultItem, BitwardenError> {
         self.run_json(&[
-            "create", "attachment",
-            "--file", file_path,
-            "--itemid", item_id,
-        ]).await
+            "create",
+            "attachment",
+            "--file",
+            file_path,
+            "--itemid",
+            item_id,
+        ])
+        .await
     }
 
     /// Delete an attachment from an item.
@@ -483,10 +525,8 @@ impl BitwardenCli {
         attachment_id: &str,
         item_id: &str,
     ) -> Result<(), BitwardenError> {
-        self.run_command(&[
-            "delete", "attachment", attachment_id,
-            "--itemid", item_id,
-        ]).await?;
+        self.run_command(&["delete", "attachment", attachment_id, "--itemid", item_id])
+            .await?;
         Ok(())
     }
 
@@ -498,10 +538,15 @@ impl BitwardenCli {
         output_path: &str,
     ) -> Result<(), BitwardenError> {
         self.run_command(&[
-            "get", "attachment", attachment_id,
-            "--itemid", item_id,
-            "--output", output_path,
-        ]).await?;
+            "get",
+            "attachment",
+            attachment_id,
+            "--itemid",
+            item_id,
+            "--output",
+            output_path,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -635,7 +680,11 @@ impl BitwardenCli {
     }
 
     /// Receive a send by URL.
-    pub async fn receive_send(&self, url: &str, password: Option<&str>) -> Result<String, BitwardenError> {
+    pub async fn receive_send(
+        &self,
+        url: &str,
+        password: Option<&str>,
+    ) -> Result<String, BitwardenError> {
         let mut args = vec!["send", "receive", url];
         if let Some(pw) = password {
             args.push("--password");
@@ -725,7 +774,10 @@ mod tests {
         let mut cli = BitwardenCli::new();
         cli.set_api_key("client_id_value", "client_secret_value");
         assert_eq!(cli.env_vars.get("BW_CLIENTID").unwrap(), "client_id_value");
-        assert_eq!(cli.env_vars.get("BW_CLIENTSECRET").unwrap(), "client_secret_value");
+        assert_eq!(
+            cli.env_vars.get("BW_CLIENTSECRET").unwrap(),
+            "client_secret_value"
+        );
     }
 
     #[test]

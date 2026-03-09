@@ -97,7 +97,7 @@ impl SyncEngine {
                 elapsed.to_std().unwrap_or_default() > interval
             }
             (Some(_), None) => true, // Never synced
-            _ => false, // No auto-sync configured
+            _ => false,              // No auto-sync configured
         }
     }
 
@@ -153,7 +153,10 @@ impl SyncEngine {
     }
 
     /// Perform a full sync using the Vault Management API.
-    pub async fn sync_via_api(&mut self, api: &VaultApiClient) -> Result<SyncResult, BitwardenError> {
+    pub async fn sync_via_api(
+        &mut self,
+        api: &VaultApiClient,
+    ) -> Result<SyncResult, BitwardenError> {
         let start = std::time::Instant::now();
         info!("Starting vault sync via API");
 
@@ -311,16 +314,14 @@ mod tests {
 
     #[test]
     fn sync_engine_with_auto_sync() {
-        let engine = SyncEngine::new(SyncSource::Api)
-            .with_auto_sync(300);
+        let engine = SyncEngine::new(SyncSource::Api).with_auto_sync(300);
         assert!(engine.auto_sync_interval.is_some());
         assert_eq!(engine.auto_sync_interval.unwrap().as_secs(), 300);
     }
 
     #[test]
     fn sync_engine_needs_sync_never_synced() {
-        let engine = SyncEngine::new(SyncSource::Cli)
-            .with_auto_sync(300);
+        let engine = SyncEngine::new(SyncSource::Cli).with_auto_sync(300);
         assert!(engine.needs_sync());
     }
 
