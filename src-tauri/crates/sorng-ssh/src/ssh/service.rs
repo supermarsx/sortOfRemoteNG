@@ -1420,10 +1420,12 @@ impl SshService {
                 },
             )
             .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?,
-            _ => return Err(format!(
+            _ => {
+                return Err(format!(
                 "Unsupported key type: {}. Supported: rsa, ed25519, ecdsa, ed25519-sk, ecdsa-sk",
                 key_type
-            )),
+            ))
+            }
         };
 
         let final_priv_key = if let Some(pass) = passphrase.filter(|p| !p.is_empty()) {

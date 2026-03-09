@@ -108,8 +108,8 @@ pub mod commands {
         description: Option<String>,
         folder_path: Option<String>,
     ) -> Result<String, String> {
-        let app_path =
-            std::env::current_exe().map_err(|e| format!("Failed to get application path: {}", e))?;
+        let app_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get application path: {}", e))?;
 
         let mut args = Vec::new();
         if let Some(collection_id) = collection_id {
