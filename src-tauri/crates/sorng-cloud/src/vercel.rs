@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type VercelServiceState = Arc<Mutex<VercelService>>;
 
@@ -51,7 +51,7 @@ pub struct VercelEnvVar {
     pub key: String,
     pub value: String,
     pub target: Vec<String>, // ["production", "preview", "development"]
-    pub r#type: String, // "encrypted" or "plain"
+    pub r#type: String,      // "encrypted" or "plain"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,7 +121,10 @@ impl VercelService {
         }))
     }
 
-    pub async fn connect_vercel(&mut self, config: VercelConnectionConfig) -> Result<String, String> {
+    pub async fn connect_vercel(
+        &mut self,
+        config: VercelConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // In a real implementation, this would validate the Vercel token
@@ -163,58 +166,60 @@ impl VercelService {
         self.sessions.get(session_id).cloned()
     }
 
-    pub async fn list_vercel_projects(&self, session_id: &str) -> Result<Vec<VercelProject>, String> {
+    pub async fn list_vercel_projects(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<VercelProject>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }
 
         // Mock Vercel projects for demonstration
-        Ok(vec![
-            VercelProject {
-                id: "prj_123".to_string(),
-                name: "my-nextjs-app".to_string(),
-                framework: Some("nextjs".to_string()),
-                git_url: Some("https://github.com/user/my-nextjs-app".to_string()),
-                created_at: "2024-01-01T00:00:00Z".to_string(),
-                updated_at: "2024-01-03T12:00:00Z".to_string(),
-                domains: vec!["my-app.vercel.app".to_string()],
-                environment_variables: vec![
-                    VercelEnvVar {
-                        key: "DATABASE_URL".to_string(),
-                        value: "postgresql://...".to_string(),
-                        target: vec!["production".to_string()],
-                        r#type: "encrypted".to_string(),
-                    },
-                ],
-            },
-        ])
+        Ok(vec![VercelProject {
+            id: "prj_123".to_string(),
+            name: "my-nextjs-app".to_string(),
+            framework: Some("nextjs".to_string()),
+            git_url: Some("https://github.com/user/my-nextjs-app".to_string()),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-03T12:00:00Z".to_string(),
+            domains: vec!["my-app.vercel.app".to_string()],
+            environment_variables: vec![VercelEnvVar {
+                key: "DATABASE_URL".to_string(),
+                value: "postgresql://...".to_string(),
+                target: vec!["production".to_string()],
+                r#type: "encrypted".to_string(),
+            }],
+        }])
     }
 
-    pub async fn list_vercel_deployments(&self, session_id: &str, _project_id: Option<String>) -> Result<Vec<VercelDeployment>, String> {
+    pub async fn list_vercel_deployments(
+        &self,
+        session_id: &str,
+        _project_id: Option<String>,
+    ) -> Result<Vec<VercelDeployment>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }
 
         // Mock Vercel deployments for demonstration
-        Ok(vec![
-            VercelDeployment {
-                id: "dpl_123".to_string(),
-                name: "my-nextjs-app-abc123".to_string(),
-                url: "my-nextjs-app-abc123.vercel.app".to_string(),
-                state: "READY".to_string(),
-                created_at: "2024-01-03T12:00:00Z".to_string(),
-                ready_at: Some("2024-01-03T12:05:00Z".to_string()),
-                building_at: Some("2024-01-03T12:00:30Z".to_string()),
-                error: None,
-                functions: Some(HashMap::from([
-                    ("api/hello".to_string(), VercelFunction {
-                        size: 1024000,
-                        ready_state: "READY".to_string(),
-                        ready_state_at: "2024-01-03T12:04:00Z".to_string(),
-                    }),
-                ])),
-            },
-        ])
+        Ok(vec![VercelDeployment {
+            id: "dpl_123".to_string(),
+            name: "my-nextjs-app-abc123".to_string(),
+            url: "my-nextjs-app-abc123.vercel.app".to_string(),
+            state: "READY".to_string(),
+            created_at: "2024-01-03T12:00:00Z".to_string(),
+            ready_at: Some("2024-01-03T12:05:00Z".to_string()),
+            building_at: Some("2024-01-03T12:00:30Z".to_string()),
+            error: None,
+            functions: Some(HashMap::from([(
+                "api/hello".to_string(),
+                VercelFunction {
+                    size: 1024000,
+                    ready_state: "READY".to_string(),
+                    ready_state_at: "2024-01-03T12:04:00Z".to_string(),
+                },
+            )])),
+        }])
     }
 
     pub async fn list_vercel_domains(&self, session_id: &str) -> Result<Vec<VercelDomain>, String> {
@@ -249,40 +254,51 @@ impl VercelService {
         }
 
         // Mock Vercel teams for demonstration
-        Ok(vec![
-            VercelTeam {
-                id: "team_123".to_string(),
-                name: "My Team".to_string(),
-                slug: "my-team".to_string(),
-                created_at: "2024-01-01T00:00:00Z".to_string(),
-                members: vec![
-                    VercelTeamMember {
-                        uid: "user_123".to_string(),
-                        username: "johndoe".to_string(),
-                        email: "john@example.com".to_string(),
-                        role: "OWNER".to_string(),
-                    },
-                    VercelTeamMember {
-                        uid: "user_456".to_string(),
-                        username: "janedoe".to_string(),
-                        email: "jane@example.com".to_string(),
-                        role: "MEMBER".to_string(),
-                    },
-                ],
-            },
-        ])
+        Ok(vec![VercelTeam {
+            id: "team_123".to_string(),
+            name: "My Team".to_string(),
+            slug: "my-team".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            members: vec![
+                VercelTeamMember {
+                    uid: "user_123".to_string(),
+                    username: "johndoe".to_string(),
+                    email: "john@example.com".to_string(),
+                    role: "OWNER".to_string(),
+                },
+                VercelTeamMember {
+                    uid: "user_456".to_string(),
+                    username: "janedoe".to_string(),
+                    email: "jane@example.com".to_string(),
+                    role: "MEMBER".to_string(),
+                },
+            ],
+        }])
     }
 
-    pub async fn create_vercel_deployment(&self, session_id: &str, project_id: &str, files: HashMap<String, String>) -> Result<String, String> {
+    pub async fn create_vercel_deployment(
+        &self,
+        session_id: &str,
+        project_id: &str,
+        files: HashMap<String, String>,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }
 
         // Mock deployment creation
-        Ok(format!("Deployment created for project {} with {} files", project_id, files.len()))
+        Ok(format!(
+            "Deployment created for project {} with {} files",
+            project_id,
+            files.len()
+        ))
     }
 
-    pub async fn redeploy_vercel_project(&self, session_id: &str, project_id: &str) -> Result<String, String> {
+    pub async fn redeploy_vercel_project(
+        &self,
+        session_id: &str,
+        project_id: &str,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }
@@ -291,7 +307,12 @@ impl VercelService {
         Ok(format!("Redeployment initiated for project {}", project_id))
     }
 
-    pub async fn add_vercel_domain(&self, session_id: &str, domain_name: &str, project_id: Option<String>) -> Result<String, String> {
+    pub async fn add_vercel_domain(
+        &self,
+        session_id: &str,
+        domain_name: &str,
+        project_id: Option<String>,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }
@@ -301,13 +322,23 @@ impl VercelService {
         Ok(format!("Domain {} added{}", domain_name, project_msg))
     }
 
-    pub async fn set_vercel_env_var(&self, session_id: &str, project_id: &str, key: &str, _value: &str, target: Vec<String>) -> Result<String, String> {
+    pub async fn set_vercel_env_var(
+        &self,
+        session_id: &str,
+        project_id: &str,
+        key: &str,
+        _value: &str,
+        target: Vec<String>,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }
 
         // Mock environment variable setting
-        Ok(format!("Environment variable {} set for project {} with target {:?}", key, project_id, target))
+        Ok(format!(
+            "Environment variable {} set for project {} with target {:?}",
+            key, project_id, target
+        ))
     }
 }
 
@@ -344,7 +375,8 @@ pub async fn get_vercel_session(
     session_id: String,
 ) -> Result<VercelSession, String> {
     let vercel = state.lock().await;
-    vercel.get_vercel_session(&session_id)
+    vercel
+        .get_vercel_session(&session_id)
         .await
         .ok_or_else(|| format!("Vercel session {} not found", session_id))
 }
@@ -365,7 +397,9 @@ pub async fn list_vercel_deployments(
     project_id: Option<String>,
 ) -> Result<Vec<VercelDeployment>, String> {
     let vercel = state.lock().await;
-    vercel.list_vercel_deployments(&session_id, project_id).await
+    vercel
+        .list_vercel_deployments(&session_id, project_id)
+        .await
 }
 
 #[tauri::command]
@@ -394,7 +428,9 @@ pub async fn create_vercel_deployment(
     files: HashMap<String, String>,
 ) -> Result<String, String> {
     let vercel = state.lock().await;
-    vercel.create_vercel_deployment(&session_id, &project_id, files).await
+    vercel
+        .create_vercel_deployment(&session_id, &project_id, files)
+        .await
 }
 
 #[tauri::command]
@@ -404,7 +440,9 @@ pub async fn redeploy_vercel_project(
     project_id: String,
 ) -> Result<String, String> {
     let vercel = state.lock().await;
-    vercel.redeploy_vercel_project(&session_id, &project_id).await
+    vercel
+        .redeploy_vercel_project(&session_id, &project_id)
+        .await
 }
 
 #[tauri::command]
@@ -415,7 +453,9 @@ pub async fn add_vercel_domain(
     project_id: Option<String>,
 ) -> Result<String, String> {
     let vercel = state.lock().await;
-    vercel.add_vercel_domain(&session_id, &domain_name, project_id).await
+    vercel
+        .add_vercel_domain(&session_id, &domain_name, project_id)
+        .await
 }
 
 #[tauri::command]
@@ -428,5 +468,7 @@ pub async fn set_vercel_env_var(
     target: Vec<String>,
 ) -> Result<String, String> {
     let vercel = state.lock().await;
-    vercel.set_vercel_env_var(&session_id, &project_id, &key, &value, target).await
+    vercel
+        .set_vercel_env_var(&session_id, &project_id, &key, &value, target)
+        .await
 }

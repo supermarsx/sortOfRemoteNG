@@ -8,12 +8,12 @@
 //! GCP has been moved to its own crate: `sorng-gcp`.
 
 pub mod aws;
-pub mod gcp;
-pub mod ibm;
+pub mod cloudflare;
 pub mod digital_ocean;
+pub mod gcp;
 pub mod heroku;
-pub mod scaleway;
+pub mod ibm;
 pub mod linode;
 pub mod ovh;
+pub mod scaleway;
 pub mod vercel;
-pub mod cloudflare;

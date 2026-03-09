@@ -1,11 +1,11 @@
+use chrono::{DateTime, Utc};
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 
 pub type GcpServiceState = Arc<Mutex<GcpService>>;
 
@@ -159,7 +159,9 @@ impl GcpService {
     }
 
     pub async fn list_instances(&mut self, session_id: &str) -> Result<Vec<GcpInstance>, String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or("GCP session not found")?;
 
         if !session.is_connected {
@@ -167,15 +169,21 @@ impl GcpService {
         }
 
         // Parse service account key
-        let service_account: ServiceAccountKey = serde_json::from_str(&session.config.service_account_key)
-            .map_err(|e| format!("Failed to parse service account key: {}", e))?;
+        let service_account: ServiceAccountKey =
+            serde_json::from_str(&session.config.service_account_key)
+                .map_err(|e| format!("Failed to parse service account key: {}", e))?;
 
         // Get access token
-        let access_token = self.get_access_token(&service_account).await
+        let access_token = self
+            .get_access_token(&service_account)
+            .await
             .map_err(|e| format!("Failed to get access token: {}", e))?;
 
         // Determine zone to query
-        let zone = session.config.zone.as_ref()
+        let zone = session
+            .config
+            .zone
+            .as_ref()
             .ok_or("Zone must be specified in GCP config")?;
 
         // Make API call to list instances
@@ -184,7 +192,8 @@ impl GcpService {
             session.config.project_id, zone
         );
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", access_token))
             .send()
@@ -202,11 +211,13 @@ impl GcpService {
             .await
             .map_err(|e| format!("Failed to parse API response: {}", e))?;
 
-        let instances = api_response.items
+        let instances = api_response
+            .items
             .unwrap_or_default()
             .into_iter()
             .map(|api_instance| {
-                let tags = api_instance.tags
+                let tags = api_instance
+                    .tags
                     .and_then(|t| t.items)
                     .unwrap_or_default()
                     .into_iter()
@@ -221,13 +232,15 @@ impl GcpService {
                     status: api_instance.status,
                     zone: api_instance.zone,
                     creation_timestamp: api_instance.creationTimestamp,
-                    network_interfaces: api_instance.networkInterfaces
+                    network_interfaces: api_instance
+                        .networkInterfaces
                         .into_iter()
                         .map(|ni| GcpNetworkInterface {
                             network: ni.network,
                             subnetwork: ni.subnetwork,
                             network_ip: ni.networkIP,
-                            access_configs: ni.accessConfigs
+                            access_configs: ni
+                                .accessConfigs
                                 .unwrap_or_default()
                                 .into_iter()
                                 .map(|ac| GcpAccessConfig {
@@ -255,7 +268,10 @@ impl GcpService {
         self.sessions.get(session_id)
     }
 
-    pub async fn get_access_token(&self, service_account: &ServiceAccountKey) -> Result<String, String> {
+    pub async fn get_access_token(
+        &self,
+        service_account: &ServiceAccountKey,
+    ) -> Result<String, String> {
         // Create JWT claims
         let now = Utc::now().timestamp();
         let claims = JwtClaims {
@@ -274,9 +290,13 @@ impl GcpService {
         };
 
         // Load private key
-        let private_key_pem = service_account.private_key
+        let private_key_pem = service_account
+            .private_key
             .replace("\\n", "\n")
-            .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+            .replace(
+                "-----BEGIN PRIVATE KEY-----",
+                "-----BEGIN PRIVATE KEY-----\n",
+            )
             .replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----");
 
         let encoding_key = EncodingKey::from_rsa_pem(private_key_pem.as_bytes())
@@ -291,7 +311,8 @@ impl GcpService {
         form_data.insert("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
         form_data.insert("assertion", &jwt);
 
-        let response = self.client
+        let response = self
+            .client
             .post(&service_account.token_uri)
             .form(&form_data)
             .send()
@@ -354,9 +375,10 @@ pub async fn get_gcp_session(
     state: tauri::State<'_, GcpServiceState>,
 ) -> Result<GcpSession, String> {
     let service = state.lock().await;
-    service.get_session(&session_id)
+    service
+        .get_session(&session_id)
         .await
-        .map(|s| s.clone())
+        .cloned()
         .ok_or("GCP session not found".to_string())
 }
 

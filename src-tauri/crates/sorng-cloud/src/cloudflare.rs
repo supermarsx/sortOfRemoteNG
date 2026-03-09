@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type CloudflareServiceState = Arc<Mutex<CloudflareService>>;
 
@@ -172,7 +172,10 @@ impl CloudflareService {
         }))
     }
 
-    pub async fn connect_cloudflare(&mut self, config: CloudflareConnectionConfig) -> Result<String, String> {
+    pub async fn connect_cloudflare(
+        &mut self,
+        config: CloudflareConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // In a real implementation, this would validate the Cloudflare credentials
@@ -190,16 +193,14 @@ impl CloudflareService {
                 last_name: Some("Doe".to_string()),
                 username: Some("johndoe".to_string()),
             }),
-            accounts: vec![
-                CloudflareAccount {
-                    id: "account_123".to_string(),
-                    name: "My Company".to_string(),
-                    r#type: "standard".to_string(),
-                    settings: CloudflareAccountSettings {
-                        enforce_twofactor: true,
-                    },
+            accounts: vec![CloudflareAccount {
+                id: "account_123".to_string(),
+                name: "My Company".to_string(),
+                r#type: "standard".to_string(),
+                settings: CloudflareAccountSettings {
+                    enforce_twofactor: true,
                 },
-            ],
+            }],
         };
 
         self.sessions.insert(session_id.clone(), session);
@@ -224,38 +225,43 @@ impl CloudflareService {
         self.sessions.get(session_id).cloned()
     }
 
-    pub async fn list_cloudflare_zones(&self, session_id: &str) -> Result<Vec<CloudflareZone>, String> {
+    pub async fn list_cloudflare_zones(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<CloudflareZone>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
 
         // Mock Cloudflare zones for demonstration
-        Ok(vec![
-            CloudflareZone {
-                id: "zone_123".to_string(),
-                name: "example.com".to_string(),
-                status: "active".to_string(),
-                paused: false,
-                r#type: "full".to_string(),
-                development_mode: 0,
-                name_servers: vec![
-                    "ns1.cloudflare.com".to_string(),
-                    "ns2.cloudflare.com".to_string(),
-                ],
-                original_name_servers: vec![
-                    "ns1.original.com".to_string(),
-                    "ns2.original.com".to_string(),
-                ],
-                original_registrar: Some("GoDaddy".to_string()),
-                original_dnshost: Some("GoDaddy".to_string()),
-                modified_on: "2024-01-03T12:00:00Z".to_string(),
-                created_on: "2024-01-01T00:00:00Z".to_string(),
-                activated_on: Some("2024-01-01T12:00:00Z".to_string()),
-            },
-        ])
+        Ok(vec![CloudflareZone {
+            id: "zone_123".to_string(),
+            name: "example.com".to_string(),
+            status: "active".to_string(),
+            paused: false,
+            r#type: "full".to_string(),
+            development_mode: 0,
+            name_servers: vec![
+                "ns1.cloudflare.com".to_string(),
+                "ns2.cloudflare.com".to_string(),
+            ],
+            original_name_servers: vec![
+                "ns1.original.com".to_string(),
+                "ns2.original.com".to_string(),
+            ],
+            original_registrar: Some("GoDaddy".to_string()),
+            original_dnshost: Some("GoDaddy".to_string()),
+            modified_on: "2024-01-03T12:00:00Z".to_string(),
+            created_on: "2024-01-01T00:00:00Z".to_string(),
+            activated_on: Some("2024-01-01T12:00:00Z".to_string()),
+        }])
     }
 
-    pub async fn list_cloudflare_dns_records(&self, session_id: &str, zone_id: &str) -> Result<Vec<CloudflareDNSRecord>, String> {
+    pub async fn list_cloudflare_dns_records(
+        &self,
+        session_id: &str,
+        zone_id: &str,
+    ) -> Result<Vec<CloudflareDNSRecord>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
@@ -293,97 +299,137 @@ impl CloudflareService {
         ])
     }
 
-    pub async fn create_cloudflare_dns_record(&self, session_id: &str, zone_id: &str, record: CloudflareDNSRecord) -> Result<String, String> {
+    pub async fn create_cloudflare_dns_record(
+        &self,
+        session_id: &str,
+        zone_id: &str,
+        record: CloudflareDNSRecord,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
 
         // Mock DNS record creation
-        Ok(format!("DNS record {} created in zone {}", record.name, zone_id))
+        Ok(format!(
+            "DNS record {} created in zone {}",
+            record.name, zone_id
+        ))
     }
 
-    pub async fn update_cloudflare_dns_record(&self, session_id: &str, zone_id: &str, record_id: &str, _record: CloudflareDNSRecord) -> Result<String, String> {
+    pub async fn update_cloudflare_dns_record(
+        &self,
+        session_id: &str,
+        zone_id: &str,
+        record_id: &str,
+        _record: CloudflareDNSRecord,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
 
         // Mock DNS record update
-        Ok(format!("DNS record {} updated in zone {}", record_id, zone_id))
+        Ok(format!(
+            "DNS record {} updated in zone {}",
+            record_id, zone_id
+        ))
     }
 
-    pub async fn delete_cloudflare_dns_record(&self, session_id: &str, zone_id: &str, record_id: &str) -> Result<String, String> {
+    pub async fn delete_cloudflare_dns_record(
+        &self,
+        session_id: &str,
+        zone_id: &str,
+        record_id: &str,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
 
         // Mock DNS record deletion
-        Ok(format!("DNS record {} deleted from zone {}", record_id, zone_id))
+        Ok(format!(
+            "DNS record {} deleted from zone {}",
+            record_id, zone_id
+        ))
     }
 
-    pub async fn list_cloudflare_workers(&self, session_id: &str, _account_id: &str) -> Result<Vec<CloudflareWorker>, String> {
+    pub async fn list_cloudflare_workers(
+        &self,
+        session_id: &str,
+        _account_id: &str,
+    ) -> Result<Vec<CloudflareWorker>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
 
         // Mock Cloudflare Workers for demonstration
-        Ok(vec![
-            CloudflareWorker {
-                id: "worker_123".to_string(),
-                script: CloudflareWorkerScript {
-                    id: "script_123".to_string(),
-                    etag: "etag123".to_string(),
-                    size: 1024,
-                    created_on: "2024-01-01T00:00:00Z".to_string(),
-                    modified_on: "2024-01-03T12:00:00Z".to_string(),
-                },
+        Ok(vec![CloudflareWorker {
+            id: "worker_123".to_string(),
+            script: CloudflareWorkerScript {
+                id: "script_123".to_string(),
+                etag: "etag123".to_string(),
+                size: 1024,
                 created_on: "2024-01-01T00:00:00Z".to_string(),
                 modified_on: "2024-01-03T12:00:00Z".to_string(),
             },
-        ])
+            created_on: "2024-01-01T00:00:00Z".to_string(),
+            modified_on: "2024-01-03T12:00:00Z".to_string(),
+        }])
     }
 
-    pub async fn deploy_cloudflare_worker(&self, session_id: &str, account_id: &str, script_name: &str, _script_content: &str) -> Result<String, String> {
+    pub async fn deploy_cloudflare_worker(
+        &self,
+        session_id: &str,
+        account_id: &str,
+        script_name: &str,
+        _script_content: &str,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
 
         // Mock Worker deployment
-        Ok(format!("Worker {} deployed to account {}", script_name, account_id))
+        Ok(format!(
+            "Worker {} deployed to account {}",
+            script_name, account_id
+        ))
     }
 
-    pub async fn list_cloudflare_page_rules(&self, session_id: &str, _zone_id: &str) -> Result<Vec<CloudflarePageRule>, String> {
+    pub async fn list_cloudflare_page_rules(
+        &self,
+        session_id: &str,
+        _zone_id: &str,
+    ) -> Result<Vec<CloudflarePageRule>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
 
         // Mock Page Rules for demonstration
-        Ok(vec![
-            CloudflarePageRule {
-                id: "rule_123".to_string(),
-                targets: vec![
-                    CloudflarePageRuleTarget {
-                        target: "url".to_string(),
-                        constraint: CloudflarePageRuleConstraint {
-                            operator: "matches".to_string(),
-                            value: "*.example.com/images/*".to_string(),
-                        },
-                    },
-                ],
-                actions: vec![
-                    CloudflarePageRuleAction {
-                        id: "cache_level".to_string(),
-                        value: Some("cache_everything".to_string()),
-                    },
-                ],
-                priority: 1,
-                status: "active".to_string(),
-                created_on: "2024-01-01T00:00:00Z".to_string(),
-                modified_on: "2024-01-01T00:00:00Z".to_string(),
-            },
-        ])
+        Ok(vec![CloudflarePageRule {
+            id: "rule_123".to_string(),
+            targets: vec![CloudflarePageRuleTarget {
+                target: "url".to_string(),
+                constraint: CloudflarePageRuleConstraint {
+                    operator: "matches".to_string(),
+                    value: "*.example.com/images/*".to_string(),
+                },
+            }],
+            actions: vec![CloudflarePageRuleAction {
+                id: "cache_level".to_string(),
+                value: Some("cache_everything".to_string()),
+            }],
+            priority: 1,
+            status: "active".to_string(),
+            created_on: "2024-01-01T00:00:00Z".to_string(),
+            modified_on: "2024-01-01T00:00:00Z".to_string(),
+        }])
     }
 
-    pub async fn get_cloudflare_analytics(&self, session_id: &str, zone_id: &str, _since: Option<String>, _until: Option<String>) -> Result<CloudflareAnalytics, String> {
+    pub async fn get_cloudflare_analytics(
+        &self,
+        session_id: &str,
+        zone_id: &str,
+        _since: Option<String>,
+        _until: Option<String>,
+    ) -> Result<CloudflareAnalytics, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
@@ -398,8 +444,8 @@ impl CloudflareService {
                     uncached: 200000,
                 },
                 bandwidth: CloudflareAnalyticsMetric {
-                    all: 10737418240, // 10GB
-                    cached: 8589934592, // 8GB
+                    all: 10737418240,     // 10GB
+                    cached: 8589934592,   // 8GB
                     uncached: 2147483648, // 2GB
                 },
                 threats: CloudflareAnalyticsMetric {
@@ -412,7 +458,14 @@ impl CloudflareService {
         })
     }
 
-    pub async fn purge_cloudflare_cache(&self, session_id: &str, zone_id: &str, files: Option<Vec<String>>, tags: Option<Vec<String>>, hosts: Option<Vec<String>>) -> Result<String, String> {
+    pub async fn purge_cloudflare_cache(
+        &self,
+        session_id: &str,
+        zone_id: &str,
+        files: Option<Vec<String>>,
+        tags: Option<Vec<String>>,
+        hosts: Option<Vec<String>>,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
@@ -428,7 +481,10 @@ impl CloudflareService {
             "everything"
         };
 
-        Ok(format!("Cache purged for zone {} (type: {})", zone_id, purge_type))
+        Ok(format!(
+            "Cache purged for zone {} (type: {})",
+            zone_id, purge_type
+        ))
     }
 }
 
@@ -465,7 +521,8 @@ pub async fn get_cloudflare_session(
     session_id: String,
 ) -> Result<CloudflareSession, String> {
     let cloudflare = state.lock().await;
-    cloudflare.get_cloudflare_session(&session_id)
+    cloudflare
+        .get_cloudflare_session(&session_id)
         .await
         .ok_or_else(|| format!("Cloudflare session {} not found", session_id))
 }
@@ -486,7 +543,9 @@ pub async fn list_cloudflare_dns_records(
     zone_id: String,
 ) -> Result<Vec<CloudflareDNSRecord>, String> {
     let cloudflare = state.lock().await;
-    cloudflare.list_cloudflare_dns_records(&session_id, &zone_id).await
+    cloudflare
+        .list_cloudflare_dns_records(&session_id, &zone_id)
+        .await
 }
 
 #[tauri::command]
@@ -497,7 +556,9 @@ pub async fn create_cloudflare_dns_record(
     record: CloudflareDNSRecord,
 ) -> Result<String, String> {
     let cloudflare = state.lock().await;
-    cloudflare.create_cloudflare_dns_record(&session_id, &zone_id, record).await
+    cloudflare
+        .create_cloudflare_dns_record(&session_id, &zone_id, record)
+        .await
 }
 
 #[tauri::command]
@@ -509,7 +570,9 @@ pub async fn update_cloudflare_dns_record(
     record: CloudflareDNSRecord,
 ) -> Result<String, String> {
     let cloudflare = state.lock().await;
-    cloudflare.update_cloudflare_dns_record(&session_id, &zone_id, &record_id, record).await
+    cloudflare
+        .update_cloudflare_dns_record(&session_id, &zone_id, &record_id, record)
+        .await
 }
 
 #[tauri::command]
@@ -520,7 +583,9 @@ pub async fn delete_cloudflare_dns_record(
     record_id: String,
 ) -> Result<String, String> {
     let cloudflare = state.lock().await;
-    cloudflare.delete_cloudflare_dns_record(&session_id, &zone_id, &record_id).await
+    cloudflare
+        .delete_cloudflare_dns_record(&session_id, &zone_id, &record_id)
+        .await
 }
 
 #[tauri::command]
@@ -530,7 +595,9 @@ pub async fn list_cloudflare_workers(
     account_id: String,
 ) -> Result<Vec<CloudflareWorker>, String> {
     let cloudflare = state.lock().await;
-    cloudflare.list_cloudflare_workers(&session_id, &account_id).await
+    cloudflare
+        .list_cloudflare_workers(&session_id, &account_id)
+        .await
 }
 
 #[tauri::command]
@@ -542,7 +609,9 @@ pub async fn deploy_cloudflare_worker(
     script_content: String,
 ) -> Result<String, String> {
     let cloudflare = state.lock().await;
-    cloudflare.deploy_cloudflare_worker(&session_id, &account_id, &script_name, &script_content).await
+    cloudflare
+        .deploy_cloudflare_worker(&session_id, &account_id, &script_name, &script_content)
+        .await
 }
 
 #[tauri::command]
@@ -552,7 +621,9 @@ pub async fn list_cloudflare_page_rules(
     zone_id: String,
 ) -> Result<Vec<CloudflarePageRule>, String> {
     let cloudflare = state.lock().await;
-    cloudflare.list_cloudflare_page_rules(&session_id, &zone_id).await
+    cloudflare
+        .list_cloudflare_page_rules(&session_id, &zone_id)
+        .await
 }
 
 #[tauri::command]
@@ -564,7 +635,9 @@ pub async fn get_cloudflare_analytics(
     until: Option<String>,
 ) -> Result<CloudflareAnalytics, String> {
     let cloudflare = state.lock().await;
-    cloudflare.get_cloudflare_analytics(&session_id, &zone_id, since, until).await
+    cloudflare
+        .get_cloudflare_analytics(&session_id, &zone_id, since, until)
+        .await
 }
 
 #[tauri::command]
@@ -577,5 +650,7 @@ pub async fn purge_cloudflare_cache(
     hosts: Option<Vec<String>>,
 ) -> Result<String, String> {
     let cloudflare = state.lock().await;
-    cloudflare.purge_cloudflare_cache(&session_id, &zone_id, files, tags, hosts).await
+    cloudflare
+        .purge_cloudflare_cache(&session_id, &zone_id, files, tags, hosts)
+        .await
 }

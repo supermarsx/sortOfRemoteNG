@@ -1,11 +1,11 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
-use sha1::{Digest, Sha1};
 
 pub type OvhServiceState = Arc<Mutex<OvhService>>;
 
@@ -108,7 +108,9 @@ impl OvhService {
     }
 
     pub async fn list_instances(&mut self, session_id: &str) -> Result<Vec<OvhInstance>, String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or("OVH session not found")?;
 
         if !session.is_connected {
@@ -144,16 +146,10 @@ impl OvhService {
             project_id
         );
         let timestamp = self.get_ovh_timestamp().await?;
-        let signature = self.sign_request(
-            app_secret,
-            consumer_key,
-            "GET",
-            &url,
-            "",
-            timestamp,
-        );
+        let signature = self.sign_request(app_secret, consumer_key, "GET", &url, "", timestamp);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("X-Ovh-Application", app_key)
             .header("X-Ovh-Consumer", consumer_key)
@@ -178,9 +174,7 @@ impl OvhService {
         let instances: Vec<OvhInstance> = response_body
             .into_iter()
             .filter(|instance| {
-                region_filter.map_or(true, |region| {
-                    instance.region.as_deref().map_or(false, |r| r == region)
-                })
+                region_filter.is_none_or(|region| instance.region.as_deref() == Some(region))
             })
             .map(|instance| OvhInstance {
                 id: instance.id,
@@ -191,11 +185,7 @@ impl OvhService {
                     .region
                     .or_else(|| session.config.region.clone())
                     .unwrap_or_else(|| "unknown".to_string()),
-                ip_addresses: instance
-                    .ip_addresses
-                    .into_iter()
-                    .map(|ip| ip.ip)
-                    .collect(),
+                ip_addresses: instance.ip_addresses.into_iter().map(|ip| ip.ip).collect(),
                 created_at: instance.created_at.unwrap_or_else(Utc::now),
                 updated_at: instance.updated_at.unwrap_or_else(Utc::now),
             })
@@ -211,7 +201,8 @@ impl OvhService {
     }
 
     async fn get_ovh_timestamp(&self) -> Result<i64, String> {
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.ovh.com/1.0/auth/time")
             .send()
             .await
@@ -303,9 +294,10 @@ pub async fn get_ovh_session(
     state: tauri::State<'_, OvhServiceState>,
 ) -> Result<OvhSession, String> {
     let service = state.lock().await;
-    service.get_session(&session_id)
+    service
+        .get_session(&session_id)
         .await
-        .map(|s| s.clone())
+        .cloned()
         .ok_or("OVH session not found".to_string())
 }
 

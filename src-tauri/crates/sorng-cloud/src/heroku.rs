@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type HerokuServiceState = Arc<Mutex<HerokuService>>;
 
@@ -60,7 +60,10 @@ impl HerokuService {
         }))
     }
 
-    pub async fn connect_heroku(&mut self, config: HerokuConnectionConfig) -> Result<String, String> {
+    pub async fn connect_heroku(
+        &mut self,
+        config: HerokuConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // Basic validation
@@ -92,7 +95,9 @@ impl HerokuService {
     }
 
     pub async fn list_dynos(&mut self, session_id: &str) -> Result<Vec<HerokuDyno>, String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or("Heroku session not found")?;
 
         if !session.is_connected {
@@ -105,7 +110,8 @@ impl HerokuService {
             .as_deref()
             .ok_or("Heroku app name is required")?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(format!("https://api.heroku.com/apps/{}/dynos", app_name))
             .bearer_auth(&session.config.api_key)
             .header("Accept", "application/vnd.heroku+json; version=3")
@@ -197,9 +203,10 @@ pub async fn get_heroku_session(
     state: tauri::State<'_, HerokuServiceState>,
 ) -> Result<HerokuSession, String> {
     let service = state.lock().await;
-    service.get_session(&session_id)
+    service
+        .get_session(&session_id)
         .await
-        .map(|s| s.clone())
+        .cloned()
         .ok_or("Heroku session not found".to_string())
 }
 

@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type LinodeServiceState = Arc<Mutex<LinodeService>>;
 
@@ -69,7 +69,10 @@ impl LinodeService {
         }))
     }
 
-    pub async fn connect_linode(&mut self, config: LinodeConnectionConfig) -> Result<String, String> {
+    pub async fn connect_linode(
+        &mut self,
+        config: LinodeConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // Basic validation
@@ -101,14 +104,17 @@ impl LinodeService {
     }
 
     pub async fn list_linodes(&mut self, session_id: &str) -> Result<Vec<LinodeInstance>, String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or("Linode session not found")?;
 
         if !session.is_connected {
             return Err("Linode session is not connected".to_string());
         }
 
-        let response = self.client
+        let response = self
+            .client
             .get("https://api.linode.com/v4/linode/instances")
             .bearer_auth(&session.config.api_key)
             .send()
@@ -130,9 +136,7 @@ impl LinodeService {
         let linodes: Vec<LinodeInstance> = response_body
             .data
             .into_iter()
-            .filter(|instance| {
-                region_filter.map_or(true, |region| instance.region == region)
-            })
+            .filter(|instance| region_filter.is_none_or(|region| instance.region == region))
             .map(|instance| LinodeInstance {
                 id: instance.id,
                 label: instance.label,
@@ -206,9 +210,10 @@ pub async fn get_linode_session(
     state: tauri::State<'_, LinodeServiceState>,
 ) -> Result<LinodeSession, String> {
     let service = state.lock().await;
-    service.get_session(&session_id)
+    service
+        .get_session(&session_id)
         .await
-        .map(|s| s.clone())
+        .cloned()
         .ok_or("Linode session not found".to_string())
 }
 

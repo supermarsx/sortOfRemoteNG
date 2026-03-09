@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type ScalewayServiceState = Arc<Mutex<ScalewayService>>;
 
@@ -78,7 +78,10 @@ impl ScalewayService {
         }))
     }
 
-    pub async fn connect_scaleway(&mut self, config: ScalewayConnectionConfig) -> Result<String, String> {
+    pub async fn connect_scaleway(
+        &mut self,
+        config: ScalewayConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // Basic validation
@@ -109,8 +112,13 @@ impl ScalewayService {
         }
     }
 
-    pub async fn list_instances(&mut self, session_id: &str) -> Result<Vec<ScalewayInstance>, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn list_instances(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Vec<ScalewayInstance>, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or("Scaleway session not found")?;
 
         if !session.is_connected {
@@ -123,8 +131,12 @@ impl ScalewayService {
             .as_deref()
             .ok_or("Scaleway region (zone) is required")?;
 
-        let response = self.client
-            .get(format!("https://api.scaleway.com/instance/v1/zones/{}/servers", zone))
+        let response = self
+            .client
+            .get(format!(
+                "https://api.scaleway.com/instance/v1/zones/{}/servers",
+                zone
+            ))
             .header("X-Auth-Token", &session.config.api_key)
             .send()
             .await
@@ -218,9 +230,10 @@ pub async fn get_scaleway_session(
     state: tauri::State<'_, ScalewayServiceState>,
 ) -> Result<ScalewaySession, String> {
     let service = state.lock().await;
-    service.get_session(&session_id)
+    service
+        .get_session(&session_id)
         .await
-        .map(|s| s.clone())
+        .cloned()
         .ok_or("Scaleway session not found".to_string())
 }
 

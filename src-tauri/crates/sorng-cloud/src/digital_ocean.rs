@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type DigitalOceanServiceState = Arc<Mutex<DigitalOceanService>>;
 
@@ -76,7 +76,10 @@ impl DigitalOceanService {
         }))
     }
 
-    pub async fn connect_digital_ocean(&mut self, config: DigitalOceanConnectionConfig) -> Result<String, String> {
+    pub async fn connect_digital_ocean(
+        &mut self,
+        config: DigitalOceanConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // Basic validation
@@ -107,8 +110,13 @@ impl DigitalOceanService {
         }
     }
 
-    pub async fn list_droplets(&mut self, session_id: &str) -> Result<Vec<DigitalOceanDroplet>, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn list_droplets(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Vec<DigitalOceanDroplet>, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or("DigitalOcean session not found")?;
 
         if !session.is_connected {
@@ -118,9 +126,13 @@ impl DigitalOceanService {
         // Make API call to list droplets
         let url = "https://api.digitalocean.com/v2/droplets";
 
-        let response = self.client
+        let response = self
+            .client
             .get(url)
-            .header("Authorization", format!("Bearer {}", session.config.api_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", session.config.api_token),
+            )
             .header("Content-Type", "application/json")
             .send()
             .await
@@ -204,9 +216,10 @@ pub async fn get_digital_ocean_session(
     state: tauri::State<'_, DigitalOceanServiceState>,
 ) -> Result<DigitalOceanSession, String> {
     let service = state.lock().await;
-    service.get_session(&session_id)
+    service
+        .get_session(&session_id)
         .await
-        .map(|s| s.clone())
+        .cloned()
         .ok_or("DigitalOcean session not found".to_string())
 }
 

@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type AwsServiceState = Arc<Mutex<AwsService>>;
 
@@ -231,88 +231,113 @@ impl AwsService {
         }
 
         // Mock RDS instances for demonstration
-        Ok(vec![
-            RdsInstance {
-                db_instance_identifier: "my-database".to_string(),
-                db_instance_class: "db.t3.micro".to_string(),
-                engine: "mysql".to_string(),
-                db_instance_status: "available".to_string(),
-                endpoint: Some("my-database.cluster-random.us-east-1.rds.amazonaws.com".to_string()),
-                port: Some(3306),
-                allocated_storage: Some(20),
-            },
-        ])
+        Ok(vec![RdsInstance {
+            db_instance_identifier: "my-database".to_string(),
+            db_instance_class: "db.t3.micro".to_string(),
+            engine: "mysql".to_string(),
+            db_instance_status: "available".to_string(),
+            endpoint: Some("my-database.cluster-random.us-east-1.rds.amazonaws.com".to_string()),
+            port: Some(3306),
+            allocated_storage: Some(20),
+        }])
     }
 
-    pub async fn list_lambda_functions(&self, session_id: &str) -> Result<Vec<LambdaFunction>, String> {
+    pub async fn list_lambda_functions(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<LambdaFunction>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("AWS session {} not found", session_id));
         }
 
         // Mock Lambda functions for demonstration
-        Ok(vec![
-            LambdaFunction {
-                function_name: "my-api-function".to_string(),
-                runtime: "nodejs18.x".to_string(),
-                handler: "index.handler".to_string(),
-                last_modified: "2024-01-01T00:00:00Z".to_string(),
-                state: "Active".to_string(),
-                state_reason: None,
-            },
-        ])
+        Ok(vec![LambdaFunction {
+            function_name: "my-api-function".to_string(),
+            runtime: "nodejs18.x".to_string(),
+            handler: "index.handler".to_string(),
+            last_modified: "2024-01-01T00:00:00Z".to_string(),
+            state: "Active".to_string(),
+            state_reason: None,
+        }])
     }
 
-    pub async fn get_cloudwatch_metrics(&self, session_id: &str, namespace: &str, metric_name: &str) -> Result<Vec<CloudWatchMetric>, String> {
+    pub async fn get_cloudwatch_metrics(
+        &self,
+        session_id: &str,
+        namespace: &str,
+        metric_name: &str,
+    ) -> Result<Vec<CloudWatchMetric>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("AWS session {} not found", session_id));
         }
 
         // Mock CloudWatch metrics for demonstration
-        Ok(vec![
-            CloudWatchMetric {
-                namespace: namespace.to_string(),
-                metric_name: metric_name.to_string(),
-                dimensions: HashMap::from([
-                    ("InstanceId".to_string(), "i-1234567890abcdef0".to_string()),
-                ]),
-                value: 75.0,
-                unit: "Percent".to_string(),
-                timestamp: "2024-01-03T12:00:00Z".to_string(),
-            },
-        ])
+        Ok(vec![CloudWatchMetric {
+            namespace: namespace.to_string(),
+            metric_name: metric_name.to_string(),
+            dimensions: HashMap::from([(
+                "InstanceId".to_string(),
+                "i-1234567890abcdef0".to_string(),
+            )]),
+            value: 75.0,
+            unit: "Percent".to_string(),
+            timestamp: "2024-01-03T12:00:00Z".to_string(),
+        }])
     }
 
-    pub async fn execute_ec2_action(&self, session_id: &str, instance_id: &str, action: &str) -> Result<String, String> {
+    pub async fn execute_ec2_action(
+        &self,
+        session_id: &str,
+        instance_id: &str,
+        action: &str,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("AWS session {} not found", session_id));
         }
 
         // Mock EC2 actions for demonstration
         match action {
-            "start" | "stop" | "reboot" | "terminate" => {
-                Ok(format!("EC2 instance {} {} action initiated", instance_id, action))
-            },
+            "start" | "stop" | "reboot" | "terminate" => Ok(format!(
+                "EC2 instance {} {} action initiated",
+                instance_id, action
+            )),
             _ => Err(format!("Unknown EC2 action: {}", action)),
         }
     }
 
-    pub async fn create_s3_bucket(&self, session_id: &str, bucket_name: &str, region: &str) -> Result<String, String> {
+    pub async fn create_s3_bucket(
+        &self,
+        session_id: &str,
+        bucket_name: &str,
+        region: &str,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("AWS session {} not found", session_id));
         }
 
         // Mock S3 bucket creation
-        Ok(format!("S3 bucket {} created in region {}", bucket_name, region))
+        Ok(format!(
+            "S3 bucket {} created in region {}",
+            bucket_name, region
+        ))
     }
 
-    pub async fn invoke_lambda_function(&self, session_id: &str, function_name: &str, payload: Option<String>) -> Result<String, String> {
+    pub async fn invoke_lambda_function(
+        &self,
+        session_id: &str,
+        function_name: &str,
+        payload: Option<String>,
+    ) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("AWS session {} not found", session_id));
         }
 
         // Mock Lambda invocation
         let payload_str = payload.unwrap_or_else(|| "{}".to_string());
-        Ok(format!("Lambda function {} invoked with payload: {}", function_name, payload_str))
+        Ok(format!(
+            "Lambda function {} invoked with payload: {}",
+            function_name, payload_str
+        ))
     }
 }
 
@@ -398,7 +423,8 @@ pub async fn get_cloudwatch_metrics(
     metric_name: String,
 ) -> Result<Vec<CloudWatchMetric>, String> {
     let aws = state.lock().await;
-    aws.get_cloudwatch_metrics(&session_id, &namespace, &metric_name).await
+    aws.get_cloudwatch_metrics(&session_id, &namespace, &metric_name)
+        .await
 }
 
 #[tauri::command]
@@ -409,7 +435,8 @@ pub async fn execute_ec2_action(
     action: String,
 ) -> Result<String, String> {
     let aws = state.lock().await;
-    aws.execute_ec2_action(&session_id, &instance_id, &action).await
+    aws.execute_ec2_action(&session_id, &instance_id, &action)
+        .await
 }
 
 #[tauri::command]
@@ -420,7 +447,8 @@ pub async fn create_s3_bucket(
     region: String,
 ) -> Result<String, String> {
     let aws = state.lock().await;
-    aws.create_s3_bucket(&session_id, &bucket_name, &region).await
+    aws.create_s3_bucket(&session_id, &bucket_name, &region)
+        .await
 }
 
 #[tauri::command]
@@ -431,7 +459,8 @@ pub async fn invoke_lambda_function(
     payload: Option<String>,
 ) -> Result<String, String> {
     let aws = state.lock().await;
-    aws.invoke_lambda_function(&session_id, &function_name, payload).await
+    aws.invoke_lambda_function(&session_id, &function_name, payload)
+        .await
 }
 
 #[cfg(test)]
@@ -537,7 +566,11 @@ mod tests {
         let mut svc = state.lock().await;
         let id = svc.connect_aws(test_config()).await.unwrap();
         let session = svc.get_aws_session(&id).await.unwrap();
-        let svc_names: Vec<String> = session.services.iter().map(|s| s.service_name.clone()).collect();
+        let svc_names: Vec<String> = session
+            .services
+            .iter()
+            .map(|s| s.service_name.clone())
+            .collect();
         assert!(svc_names.contains(&"EC2".to_string()));
         assert!(svc_names.contains(&"S3".to_string()));
         assert!(svc_names.contains(&"RDS".to_string()));
@@ -613,8 +646,11 @@ mod tests {
         let id = svc.connect_aws(test_config()).await.unwrap();
         let session = svc.get_aws_session(&id).await.unwrap();
         for svc_info in &session.services {
-            assert!(svc_info.endpoint.contains("us-east-1"), 
-                "Endpoint {} should contain region", svc_info.endpoint);
+            assert!(
+                svc_info.endpoint.contains("us-east-1"),
+                "Endpoint {} should contain region",
+                svc_info.endpoint
+            );
         }
     }
 }

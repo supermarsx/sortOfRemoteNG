@@ -1,10 +1,10 @@
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 
 pub type IbmServiceState = Arc<Mutex<IbmService>>;
 
@@ -158,8 +158,13 @@ impl IbmService {
         }
     }
 
-    pub async fn list_virtual_servers(&mut self, session_id: &str) -> Result<Vec<IbmVirtualServer>, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn list_virtual_servers(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Vec<IbmVirtualServer>, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or("IBM Cloud session not found")?;
 
         if !session.is_connected {
@@ -174,8 +179,12 @@ impl IbmService {
 
         let access_token = self.get_access_token(&session.config.api_key).await?;
 
-        let response = self.client
-            .get(format!("https://{}.iaas.cloud.ibm.com/v1/instances", region))
+        let response = self
+            .client
+            .get(format!(
+                "https://{}.iaas.cloud.ibm.com/v1/instances",
+                region
+            ))
             .query(&[("version", "2021-11-01"), ("generation", "2")])
             .bearer_auth(access_token)
             .send()
@@ -212,16 +221,15 @@ impl IbmService {
                         id: iface.id,
                         name: iface.name,
                         primary_ip: IbmIpAddress {
-                            address: iface
-                                .primary_ip
-                                .map(|ip| ip.address)
-                                .unwrap_or_default(),
+                            address: iface.primary_ip.map(|ip| ip.address).unwrap_or_default(),
                         },
                     })
                     .unwrap_or(IbmNetworkInterface {
                         id: String::new(),
                         name: String::new(),
-                        primary_ip: IbmIpAddress { address: String::new() },
+                        primary_ip: IbmIpAddress {
+                            address: String::new(),
+                        },
                     }),
                 floating_ips: instance
                     .floating_ips
@@ -247,7 +255,8 @@ impl IbmService {
     }
 
     async fn get_access_token(&self, api_key: &str) -> Result<String, String> {
-        let response = self.client
+        let response = self
+            .client
             .post("https://iam.cloud.ibm.com/identity/token")
             .header("Accept", "application/json")
             .form(&[
@@ -323,9 +332,10 @@ pub async fn get_ibm_session(
     state: tauri::State<'_, IbmServiceState>,
 ) -> Result<IbmSession, String> {
     let service = state.lock().await;
-    service.get_session(&session_id)
+    service
+        .get_session(&session_id)
         .await
-        .map(|s| s.clone())
+        .cloned()
         .ok_or("IBM Cloud session not found".to_string())
 }
 
