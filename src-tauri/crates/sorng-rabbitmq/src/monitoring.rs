@@ -1,8 +1,6 @@
 use crate::client::RabbitApiClient;
 use crate::error::RabbitError;
-use crate::types::{
-    ClusterNode, MessageStats, ObjectTotals, OverviewInfo, QueueInfo, QueueTotals,
-};
+use crate::types::{ClusterNode, MessageStats, ObjectTotals, OverviewInfo, QueueInfo, QueueTotals};
 
 // ---------------------------------------------------------------------------
 // Overview & health
@@ -12,32 +10,24 @@ use crate::types::{
 ///
 /// This is the single most useful monitoring endpoint — it includes server
 /// version info, object counts, message rates, listeners, and more.
-pub async fn get_overview(
-    client: &RabbitApiClient,
-) -> Result<OverviewInfo, RabbitError> {
+pub async fn get_overview(client: &RabbitApiClient) -> Result<OverviewInfo, RabbitError> {
     client.get("overview").await
 }
 
 /// Get object totals (connections, channels, exchanges, queues, consumers).
-pub async fn get_object_totals(
-    client: &RabbitApiClient,
-) -> Result<ObjectTotals, RabbitError> {
+pub async fn get_object_totals(client: &RabbitApiClient) -> Result<ObjectTotals, RabbitError> {
     let overview = get_overview(client).await?;
     Ok(overview.object_totals.unwrap_or_default())
 }
 
 /// Get aggregated queue totals (messages, ready, unacknowledged) with rates.
-pub async fn get_queue_totals(
-    client: &RabbitApiClient,
-) -> Result<QueueTotals, RabbitError> {
+pub async fn get_queue_totals(client: &RabbitApiClient) -> Result<QueueTotals, RabbitError> {
     let overview = get_overview(client).await?;
     Ok(overview.queue_totals.unwrap_or_default())
 }
 
 /// Get the top-level message stats from the overview (publish, deliver, etc. rates).
-pub async fn get_message_rates(
-    client: &RabbitApiClient,
-) -> Result<MessageStats, RabbitError> {
+pub async fn get_message_rates(client: &RabbitApiClient) -> Result<MessageStats, RabbitError> {
     let overview = get_overview(client).await?;
     Ok(overview.message_stats.unwrap_or_default())
 }
@@ -47,9 +37,7 @@ pub async fn get_message_rates(
 // ---------------------------------------------------------------------------
 
 /// Get metrics for all cluster nodes.
-pub async fn get_node_metrics(
-    client: &RabbitApiClient,
-) -> Result<Vec<ClusterNode>, RabbitError> {
+pub async fn get_node_metrics(client: &RabbitApiClient) -> Result<Vec<ClusterNode>, RabbitError> {
     client.get("nodes").await
 }
 
@@ -216,9 +204,7 @@ pub async fn health_check_certificate(
 pub async fn health_check_quorum_critical(
     client: &RabbitApiClient,
 ) -> Result<serde_json::Value, RabbitError> {
-    client
-        .get("health/checks/node-is-quorum-critical")
-        .await
+    client.get("health/checks/node-is-quorum-critical").await
 }
 
 // ---------------------------------------------------------------------------

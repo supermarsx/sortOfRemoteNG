@@ -129,6 +129,7 @@ pub async fn rabbit_get_exchange(
     svc.get_exchange(&session_id, &vhost, &name).await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn rabbit_create_exchange(
     state: State<'_, RabbitServiceState>,
@@ -193,6 +194,7 @@ pub async fn rabbit_get_queue(
     svc.get_queue(&session_id, &vhost, &name).await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn rabbit_create_queue(
     state: State<'_, RabbitServiceState>,
@@ -256,6 +258,7 @@ pub async fn rabbit_list_bindings(
     svc.list_bindings(&session_id, vhost.as_deref()).await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn rabbit_create_binding(
     state: State<'_, RabbitServiceState>,
@@ -379,6 +382,7 @@ pub async fn rabbit_list_policies(
     svc.list_policies(&session_id, vhost.as_deref()).await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn rabbit_create_policy(
     state: State<'_, RabbitServiceState>,

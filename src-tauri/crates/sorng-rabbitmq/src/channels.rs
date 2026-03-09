@@ -7,9 +7,7 @@ use crate::types::{ChannelInfo, ConsumerInfo};
 // ---------------------------------------------------------------------------
 
 /// List all open channels across the broker.
-pub async fn list_channels(
-    client: &RabbitApiClient,
-) -> Result<Vec<ChannelInfo>, RabbitError> {
+pub async fn list_channels(client: &RabbitApiClient) -> Result<Vec<ChannelInfo>, RabbitError> {
     client.get("channels").await
 }
 
@@ -17,10 +15,7 @@ pub async fn list_channels(
 ///
 /// Channel names are typically of the form
 /// `{connection_ip}:{port} -> {node_ip}:{port} (N)`.
-pub async fn get_channel(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<ChannelInfo, RabbitError> {
+pub async fn get_channel(client: &RabbitApiClient, name: &str) -> Result<ChannelInfo, RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
     client.get(&format!("channels/{}", encoded)).await
 }
@@ -67,9 +62,7 @@ pub async fn list_channels_for_vhost(
     vhost: &str,
 ) -> Result<Vec<ChannelInfo>, RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
-    client
-        .get(&format!("vhosts/{}/channels", ev))
-        .await
+    client.get(&format!("vhosts/{}/channels", ev)).await
 }
 
 /// List channels belonging to a specific user.

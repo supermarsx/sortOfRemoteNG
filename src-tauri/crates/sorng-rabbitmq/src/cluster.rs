@@ -1,5 +1,5 @@
 use crate::client::RabbitApiClient;
-use crate::error::{RabbitError, RabbitErrorKind};
+use crate::error::RabbitError;
 use crate::types::{ClusterName, ClusterNode, NodeMemory};
 
 // ---------------------------------------------------------------------------
@@ -7,17 +7,12 @@ use crate::types::{ClusterName, ClusterNode, NodeMemory};
 // ---------------------------------------------------------------------------
 
 /// List all nodes in the cluster.
-pub async fn list_nodes(
-    client: &RabbitApiClient,
-) -> Result<Vec<ClusterNode>, RabbitError> {
+pub async fn list_nodes(client: &RabbitApiClient) -> Result<Vec<ClusterNode>, RabbitError> {
     client.get("nodes").await
 }
 
 /// Get detailed information about a specific node.
-pub async fn get_node(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<ClusterNode, RabbitError> {
+pub async fn get_node(client: &RabbitApiClient, name: &str) -> Result<ClusterNode, RabbitError> {
     let en = RabbitApiClient::encode_path_segment(name);
     client.get(&format!("nodes/{}", en)).await
 }
@@ -28,9 +23,7 @@ pub async fn get_node_with_memory(
     name: &str,
 ) -> Result<ClusterNode, RabbitError> {
     let en = RabbitApiClient::encode_path_segment(name);
-    client
-        .get(&format!("nodes/{}?memory=true", en))
-        .await
+    client.get(&format!("nodes/{}?memory=true", en)).await
 }
 
 /// Get the memory breakdown for a node.
@@ -47,17 +40,12 @@ pub async fn get_node_memory(
 // ---------------------------------------------------------------------------
 
 /// Get the current cluster name.
-pub async fn get_cluster_name(
-    client: &RabbitApiClient,
-) -> Result<ClusterName, RabbitError> {
+pub async fn get_cluster_name(client: &RabbitApiClient) -> Result<ClusterName, RabbitError> {
     client.get("cluster-name").await
 }
 
 /// Set (rename) the cluster.
-pub async fn set_cluster_name(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<(), RabbitError> {
+pub async fn set_cluster_name(client: &RabbitApiClient, name: &str) -> Result<(), RabbitError> {
     let body = ClusterName {
         name: name.to_string(),
     };
@@ -72,9 +60,7 @@ pub async fn set_cluster_name(
 ///
 /// Each element is a JSON object with `node`, `resource`, and `source` keys.
 /// An empty list means no alarms are active.
-pub async fn list_alarms(
-    client: &RabbitApiClient,
-) -> Result<Vec<serde_json::Value>, RabbitError> {
+pub async fn list_alarms(client: &RabbitApiClient) -> Result<Vec<serde_json::Value>, RabbitError> {
     // The alarms are embedded in node details. We extract them from each node
     // by reading the health check endpoint which aggregates alarm info.
     let nodes = list_nodes(client).await?;
@@ -102,9 +88,7 @@ pub async fn list_alarms(
 ///
 /// Returns `Ok(true)` if there are **no** alarms (healthy), `Ok(false)`
 /// if one or more alarms are active.
-pub async fn check_alarms(
-    client: &RabbitApiClient,
-) -> Result<bool, RabbitError> {
+pub async fn check_alarms(client: &RabbitApiClient) -> Result<bool, RabbitError> {
     let alarms = list_alarms(client).await?;
     Ok(alarms.is_empty())
 }
@@ -140,9 +124,7 @@ pub async fn get_partitions(
 }
 
 /// Check whether any network partitions exist in the cluster.
-pub async fn has_partitions(
-    client: &RabbitApiClient,
-) -> Result<bool, RabbitError> {
+pub async fn has_partitions(client: &RabbitApiClient) -> Result<bool, RabbitError> {
     let partitions = get_partitions(client).await?;
     Ok(partitions.values().any(|v| !v.is_empty()))
 }
@@ -155,10 +137,7 @@ pub async fn has_partitions(
 ///
 /// This iterates all queues on the given node and triggers a sync action
 /// for each one that has unsynchronised mirrors.
-pub async fn force_sync(
-    client: &RabbitApiClient,
-    node: &str,
-) -> Result<u32, RabbitError> {
+pub async fn force_sync(client: &RabbitApiClient, node: &str) -> Result<u32, RabbitError> {
     let queues: Vec<crate::types::QueueInfo> = client.get("queues").await?;
     let mut synced = 0u32;
 
@@ -197,10 +176,7 @@ pub async fn list_node_plugins(
 }
 
 /// Check if a specific node is running and reachable.
-pub async fn is_node_running(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<bool, RabbitError> {
+pub async fn is_node_running(client: &RabbitApiClient, name: &str) -> Result<bool, RabbitError> {
     let node = get_node(client, name).await?;
     Ok(node.running == Some(true))
 }

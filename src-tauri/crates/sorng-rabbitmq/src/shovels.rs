@@ -27,15 +27,12 @@ pub async fn get_shovel(
     name: &str,
 ) -> Result<ShovelInfo, RabbitError> {
     let shovels = list_shovels(client, Some(vhost)).await?;
-    shovels
-        .into_iter()
-        .find(|s| s.name == name)
-        .ok_or_else(|| {
-            RabbitError::new(
-                RabbitErrorKind::ShovelError,
-                format!("Shovel not found: {}/{}", vhost, name),
-            )
-        })
+    shovels.into_iter().find(|s| s.name == name).ok_or_else(|| {
+        RabbitError::new(
+            RabbitErrorKind::ShovelError,
+            format!("Shovel not found: {}/{}", vhost, name),
+        )
+    })
 }
 
 /// Create a dynamic shovel by setting a runtime parameter.
@@ -190,11 +187,7 @@ pub async fn shovel_status_summary(
     let shovels = list_shovels(client, Some(vhost)).await?;
     let mut counts = std::collections::HashMap::new();
     for s in &shovels {
-        let status = s
-            .status
-            .as_deref()
-            .unwrap_or("unknown")
-            .to_string();
+        let status = s.status.as_deref().unwrap_or("unknown").to_string();
         *counts.entry(status).or_insert(0) += 1;
     }
     Ok(counts)

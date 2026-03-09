@@ -7,9 +7,7 @@ use crate::types::ConsumerInfo;
 // ---------------------------------------------------------------------------
 
 /// List all consumers across the entire broker.
-pub async fn list_consumers(
-    client: &RabbitApiClient,
-) -> Result<Vec<ConsumerInfo>, RabbitError> {
+pub async fn list_consumers(client: &RabbitApiClient) -> Result<Vec<ConsumerInfo>, RabbitError> {
     client.get("consumers").await
 }
 
@@ -106,10 +104,7 @@ pub async fn list_active_consumers(
     let all = list_consumers_for_vhost(client, vhost).await?;
     Ok(all
         .into_iter()
-        .filter(|c| {
-            c.active == Some(true)
-                || c.activity_status.as_deref() == Some("up")
-        })
+        .filter(|c| c.active == Some(true) || c.activity_status.as_deref() == Some("up"))
         .collect())
 }
 
@@ -164,18 +159,9 @@ pub async fn consumer_summary(
 ) -> Result<serde_json::Value, RabbitError> {
     let all = list_consumers_for_vhost(client, vhost).await?;
     let total = all.len() as u64;
-    let active = all
-        .iter()
-        .filter(|c| c.active == Some(true))
-        .count() as u64;
-    let exclusive = all
-        .iter()
-        .filter(|c| c.exclusive == Some(true))
-        .count() as u64;
-    let auto_ack = all
-        .iter()
-        .filter(|c| c.ack_required == Some(false))
-        .count() as u64;
+    let active = all.iter().filter(|c| c.active == Some(true)).count() as u64;
+    let exclusive = all.iter().filter(|c| c.exclusive == Some(true)).count() as u64;
+    let auto_ack = all.iter().filter(|c| c.ack_required == Some(false)).count() as u64;
 
     Ok(serde_json::json!({
         "total": total,

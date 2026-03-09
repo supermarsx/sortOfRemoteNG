@@ -77,10 +77,7 @@ pub async fn delete_upstream(
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let en = RabbitApiClient::encode_path_segment(name);
     client
-        .delete(&format!(
-            "parameters/federation-upstream/{}/{}",
-            ev, en
-        ))
+        .delete(&format!("parameters/federation-upstream/{}/{}", ev, en))
         .await
 }
 
@@ -108,10 +105,7 @@ pub async fn get_upstream_set(
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let en = RabbitApiClient::encode_path_segment(name);
     client
-        .get(&format!(
-            "parameters/federation-upstream-set/{}/{}",
-            ev, en
-        ))
+        .get(&format!("parameters/federation-upstream-set/{}/{}", ev, en))
         .await
 }
 
@@ -142,10 +136,7 @@ pub async fn delete_upstream_set(
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let en = RabbitApiClient::encode_path_segment(name);
     client
-        .delete(&format!(
-            "parameters/federation-upstream-set/{}/{}",
-            ev, en
-        ))
+        .delete(&format!("parameters/federation-upstream-set/{}/{}", ev, en))
         .await
 }
 
@@ -154,9 +145,7 @@ pub async fn delete_upstream_set(
 // ---------------------------------------------------------------------------
 
 /// List all active federation links across all vhosts.
-pub async fn list_links(
-    client: &RabbitApiClient,
-) -> Result<Vec<FederationLink>, RabbitError> {
+pub async fn list_links(client: &RabbitApiClient) -> Result<Vec<FederationLink>, RabbitError> {
     client.get("federation-links").await
 }
 
@@ -166,9 +155,7 @@ pub async fn list_links_for_vhost(
     vhost: &str,
 ) -> Result<Vec<FederationLink>, RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
-    client
-        .get(&format!("federation-links/{}", ev))
-        .await
+    client.get(&format!("federation-links/{}", ev)).await
 }
 
 /// Get the status of a specific federation link by its name and vhost.
@@ -181,26 +168,18 @@ pub async fn get_link_status(
     name: &str,
 ) -> Result<FederationLink, RabbitError> {
     let links = list_links_for_vhost(client, vhost).await?;
-    links
-        .into_iter()
-        .find(|l| l.name == name)
-        .ok_or_else(|| {
-            RabbitError::new(
-                RabbitErrorKind::FederationError,
-                format!("Federation link not found: {}/{}", vhost, name),
-            )
-        })
+    links.into_iter().find(|l| l.name == name).ok_or_else(|| {
+        RabbitError::new(
+            RabbitErrorKind::FederationError,
+            format!("Federation link not found: {}/{}", vhost, name),
+        )
+    })
 }
 
 /// Check whether all federation links in a vhost are running.
-pub async fn all_links_healthy(
-    client: &RabbitApiClient,
-    vhost: &str,
-) -> Result<bool, RabbitError> {
+pub async fn all_links_healthy(client: &RabbitApiClient, vhost: &str) -> Result<bool, RabbitError> {
     let links = list_links_for_vhost(client, vhost).await?;
-    Ok(links
-        .iter()
-        .all(|l| l.status.as_deref() == Some("running")))
+    Ok(links.iter().all(|l| l.status.as_deref() == Some("running")))
 }
 
 /// Count federation links grouped by status.

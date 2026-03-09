@@ -8,10 +8,7 @@ pub async fn list_vhosts(client: &RabbitApiClient) -> Result<Vec<VhostInfo>, Rab
 }
 
 /// Get details of a single virtual host.
-pub async fn get_vhost(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<VhostInfo, RabbitError> {
+pub async fn get_vhost(client: &RabbitApiClient, name: &str) -> Result<VhostInfo, RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
     client.get(&format!("vhosts/{}", encoded)).await
 }
@@ -38,10 +35,7 @@ pub async fn create_vhost(
 }
 
 /// Delete a virtual host and all its resources.
-pub async fn delete_vhost(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<(), RabbitError> {
+pub async fn delete_vhost(client: &RabbitApiClient, name: &str) -> Result<(), RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
     client.delete(&format!("vhosts/{}", encoded)).await
 }
@@ -52,9 +46,7 @@ pub async fn get_vhost_permissions(
     name: &str,
 ) -> Result<Vec<PermissionInfo>, RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
-    client
-        .get(&format!("vhosts/{}/permissions", encoded))
-        .await
+    client.get(&format!("vhosts/{}/permissions", encoded)).await
 }
 
 /// Set resource limits on a virtual host (max connections, max queues).
@@ -69,20 +61,14 @@ pub async fn set_vhost_limits(
     if let Some(mc) = max_connections {
         let body = serde_json::json!({ "value": mc });
         client
-            .put_no_content(
-                &format!("vhost-limits/{}/max-connections", encoded),
-                &body,
-            )
+            .put_no_content(&format!("vhost-limits/{}/max-connections", encoded), &body)
             .await?;
     }
 
     if let Some(mq) = max_queues {
         let body = serde_json::json!({ "value": mq });
         client
-            .put_no_content(
-                &format!("vhost-limits/{}/max-queues", encoded),
-                &body,
-            )
+            .put_no_content(&format!("vhost-limits/{}/max-queues", encoded), &body)
             .await?;
     }
 
@@ -95,20 +81,13 @@ pub async fn get_vhost_limits(
     name: &str,
 ) -> Result<Vec<VhostLimits>, RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
-    client
-        .get(&format!("vhost-limits/{}", encoded))
-        .await
+    client.get(&format!("vhost-limits/{}", encoded)).await
 }
 
 /// Clear all limits from a virtual host.
-pub async fn delete_vhost_limits(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<(), RabbitError> {
+pub async fn delete_vhost_limits(client: &RabbitApiClient, name: &str) -> Result<(), RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
-    client
-        .delete(&format!("vhost-limits/{}", encoded))
-        .await
+    client.delete(&format!("vhost-limits/{}", encoded)).await
 }
 
 /// Start a vhost on a particular node.

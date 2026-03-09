@@ -149,6 +149,9 @@ impl From<serde_json::Error> for RabbitError {
 
 impl From<url::ParseError> for RabbitError {
     fn from(err: url::ParseError) -> Self {
-        Self::new(RabbitErrorKind::ConnectionFailed, format!("Invalid URL: {}", err))
+        Self::new(
+            RabbitErrorKind::ConnectionFailed,
+            format!("Invalid URL: {}", err),
+        )
     }
 }

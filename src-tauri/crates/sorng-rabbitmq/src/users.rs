@@ -1,8 +1,8 @@
 use crate::client::RabbitApiClient;
 use crate::error::RabbitError;
 use crate::types::{
-    ChannelInfo, ConnectionInfo, PermissionInfo, TopicPermissionInfo, UserCreateRequest,
-    UserInfo, UserLimits,
+    ChannelInfo, ConnectionInfo, PermissionInfo, TopicPermissionInfo, UserCreateRequest, UserInfo,
+    UserLimits,
 };
 
 /// List all users.
@@ -11,10 +11,7 @@ pub async fn list_users(client: &RabbitApiClient) -> Result<Vec<UserInfo>, Rabbi
 }
 
 /// Get details of a single user.
-pub async fn get_user(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<UserInfo, RabbitError> {
+pub async fn get_user(client: &RabbitApiClient, name: &str) -> Result<UserInfo, RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
     client.get(&format!("users/{}", encoded)).await
 }
@@ -62,10 +59,7 @@ pub async fn update_user(
 }
 
 /// Delete a user.
-pub async fn delete_user(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<(), RabbitError> {
+pub async fn delete_user(client: &RabbitApiClient, name: &str) -> Result<(), RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
     client.delete(&format!("users/{}", encoded)).await
 }
@@ -76,9 +70,7 @@ pub async fn list_user_permissions(
     name: &str,
 ) -> Result<Vec<PermissionInfo>, RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
-    client
-        .get(&format!("users/{}/permissions", encoded))
-        .await
+    client.get(&format!("users/{}/permissions", encoded)).await
 }
 
 /// List all topic permissions granted to a user.
@@ -144,20 +136,14 @@ pub async fn set_user_limits(
     if let Some(mc) = max_connections {
         let body = serde_json::json!({ "value": mc });
         client
-            .put_no_content(
-                &format!("user-limits/{}/max-connections", encoded),
-                &body,
-            )
+            .put_no_content(&format!("user-limits/{}/max-connections", encoded), &body)
             .await?;
     }
 
     if let Some(mch) = max_channels {
         let body = serde_json::json!({ "value": mch });
         client
-            .put_no_content(
-                &format!("user-limits/{}/max-channels", encoded),
-                &body,
-            )
+            .put_no_content(&format!("user-limits/{}/max-channels", encoded), &body)
             .await?;
     }
 
@@ -170,18 +156,11 @@ pub async fn get_user_limits(
     name: &str,
 ) -> Result<Vec<UserLimits>, RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
-    client
-        .get(&format!("user-limits/{}", encoded))
-        .await
+    client.get(&format!("user-limits/{}", encoded)).await
 }
 
 /// Delete all limits for a user.
-pub async fn delete_user_limits(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<(), RabbitError> {
+pub async fn delete_user_limits(client: &RabbitApiClient, name: &str) -> Result<(), RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
-    client
-        .delete(&format!("user-limits/{}", encoded))
-        .await
+    client.delete(&format!("user-limits/{}", encoded)).await
 }

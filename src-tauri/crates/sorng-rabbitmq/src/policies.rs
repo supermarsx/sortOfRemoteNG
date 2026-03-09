@@ -69,9 +69,7 @@ pub async fn list_operator_policies(
     match vhost {
         Some(v) => {
             let encoded = RabbitApiClient::encode_path_segment(v);
-            client
-                .get(&format!("operator-policies/{}", encoded))
-                .await
+            client.get(&format!("operator-policies/{}", encoded)).await
         }
         None => client.get("operator-policies").await,
     }
@@ -164,7 +162,5 @@ pub async fn delete_global_parameter(
     name: &str,
 ) -> Result<(), RabbitError> {
     let en = RabbitApiClient::encode_path_segment(name);
-    client
-        .delete(&format!("global-parameters/{}", en))
-        .await
+    client.delete(&format!("global-parameters/{}", en)).await
 }

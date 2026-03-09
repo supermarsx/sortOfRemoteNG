@@ -24,9 +24,7 @@ pub async fn import_definitions(
     client: &RabbitApiClient,
     definitions: &DefinitionsExport,
 ) -> Result<(), RabbitError> {
-    client
-        .post_no_content("definitions", definitions)
-        .await
+    client.post_no_content("definitions", definitions).await
 }
 
 /// Import definitions from a raw JSON value.
@@ -98,13 +96,10 @@ pub async fn clone_vhost(
 // ---------------------------------------------------------------------------
 
 /// Export definitions as a pretty-printed JSON string.
-pub async fn export_definitions_json(
-    client: &RabbitApiClient,
-) -> Result<String, RabbitError> {
+pub async fn export_definitions_json(client: &RabbitApiClient) -> Result<String, RabbitError> {
     let defs = export_definitions(client).await?;
-    serde_json::to_string_pretty(&defs).map_err(|e| {
-        RabbitError::new(RabbitErrorKind::SerializationError, e.to_string())
-    })
+    serde_json::to_string_pretty(&defs)
+        .map_err(|e| RabbitError::new(RabbitErrorKind::SerializationError, e.to_string()))
 }
 
 /// Export vhost definitions as a pretty-printed JSON string.
@@ -113,16 +108,14 @@ pub async fn export_vhost_definitions_json(
     vhost: &str,
 ) -> Result<String, RabbitError> {
     let defs = export_vhost_definitions(client, vhost).await?;
-    serde_json::to_string_pretty(&defs).map_err(|e| {
-        RabbitError::new(RabbitErrorKind::SerializationError, e.to_string())
-    })
+    serde_json::to_string_pretty(&defs)
+        .map_err(|e| RabbitError::new(RabbitErrorKind::SerializationError, e.to_string()))
 }
 
 /// Parse a JSON string into a `DefinitionsExport`.
 pub fn parse_definitions(json: &str) -> Result<DefinitionsExport, RabbitError> {
-    serde_json::from_str(json).map_err(|e| {
-        RabbitError::new(RabbitErrorKind::SerializationError, e.to_string())
-    })
+    serde_json::from_str(json)
+        .map_err(|e| RabbitError::new(RabbitErrorKind::SerializationError, e.to_string()))
 }
 
 /// Import definitions from a JSON string.
@@ -179,10 +172,7 @@ pub async fn definitions_summary(
 /// Diff two definitions exports and return which objects differ.
 ///
 /// Compares object counts and identifies categories that have changed.
-pub fn diff_definitions(
-    a: &DefinitionsExport,
-    b: &DefinitionsExport,
-) -> serde_json::Value {
+pub fn diff_definitions(a: &DefinitionsExport, b: &DefinitionsExport) -> serde_json::Value {
     let mut diffs = Vec::new();
 
     if a.users.len() != b.users.len() {

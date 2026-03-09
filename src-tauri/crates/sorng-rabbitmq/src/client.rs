@@ -34,10 +34,7 @@ impl RabbitApiClient {
         let auth_header = format!("Basic {}", BASE64.encode(credentials.as_bytes()));
 
         let mut headers = HeaderMap::new();
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
@@ -250,11 +247,7 @@ impl RabbitApiClient {
     }
 
     /// DELETE with a query string appended.
-    pub async fn delete_with_query(
-        &self,
-        path: &str,
-        query: &str,
-    ) -> Result<(), RabbitError> {
+    pub async fn delete_with_query(&self, path: &str, query: &str) -> Result<(), RabbitError> {
         let url = if query.is_empty() {
             self.url(path)
         } else {
@@ -291,7 +284,11 @@ impl RabbitApiClient {
         serde_json::from_str(&body).map_err(|e| {
             RabbitError::new(
                 RabbitErrorKind::SerializationError,
-                format!("Failed to deserialize response: {} — body: {}", e, &body[..body.len().min(500)]),
+                format!(
+                    "Failed to deserialize response: {} — body: {}",
+                    e,
+                    &body[..body.len().min(500)]
+                ),
             )
         })
     }

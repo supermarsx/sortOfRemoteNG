@@ -7,27 +7,27 @@
 //! permissions, policies, shovels, federation, cluster nodes, connections,
 //! channels, consumers, monitoring, and full broker definition import/export.
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod vhosts;
-pub mod exchanges;
-pub mod queues;
 pub mod bindings;
-pub mod users;
+pub mod channels;
+pub mod client;
+pub mod cluster;
+pub mod commands;
+pub mod connections;
+pub mod consumers;
+pub mod definitions;
+pub mod error;
+pub mod exchanges;
+pub mod federation;
+pub mod monitoring;
 pub mod permissions;
 pub mod policies;
-pub mod shovels;
-pub mod federation;
-pub mod cluster;
-pub mod connections;
-pub mod channels;
-pub mod consumers;
-pub mod monitoring;
-pub mod definitions;
+pub mod queues;
 pub mod service;
-pub mod commands;
+pub mod shovels;
+pub mod types;
+pub mod users;
+pub mod vhosts;
 
-pub use types::*;
 pub use error::*;
-pub use service::{RabbitService, RabbitServiceState, new_state};
+pub use service::{new_state, RabbitService, RabbitServiceState};
+pub use types::*;

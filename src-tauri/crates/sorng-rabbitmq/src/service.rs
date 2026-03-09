@@ -3,12 +3,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::client::RabbitApiClient;
-use crate::error::{RabbitError, RabbitErrorKind};
+use crate::error::RabbitError;
 use crate::types::{
     BindingInfo, ChannelInfo, ClusterName, ClusterNode, ConnectionInfo, ConsumerInfo,
     DefinitionsExport, ExchangeInfo, FederationLink, FederationUpstream, FederationUpstreamDef,
     OverviewInfo, PermissionInfo, PolicyInfo, QueueInfo, RabbitConnectionConfig, RabbitSession,
-    ServerInfo, ShovelDefinition, ShovelInfo, TopicPermissionInfo, UserInfo, VhostInfo,
+    ServerInfo, ShovelDefinition, ShovelInfo, UserInfo, VhostInfo,
 };
 
 // ---------------------------------------------------------------------------
@@ -139,11 +139,7 @@ impl RabbitService {
         crate::vhosts::list_vhosts(client).await
     }
 
-    pub async fn get_vhost(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<VhostInfo, RabbitError> {
+    pub async fn get_vhost(&self, session_id: &str, name: &str) -> Result<VhostInfo, RabbitError> {
         let client = self.get_client(session_id)?;
         crate::vhosts::get_vhost(client, name).await
     }
@@ -162,11 +158,7 @@ impl RabbitService {
             .await
     }
 
-    pub async fn delete_vhost(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), RabbitError> {
+    pub async fn delete_vhost(&self, session_id: &str, name: &str) -> Result<(), RabbitError> {
         let client = self.get_client(session_id)?;
         crate::vhosts::delete_vhost(client, name).await
     }
@@ -192,6 +184,7 @@ impl RabbitService {
         crate::exchanges::get_exchange(client, vhost, name).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_exchange(
         &self,
         session_id: &str,
@@ -249,6 +242,7 @@ impl RabbitService {
         crate::queues::get_queue(client, vhost, name).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_queue(
         &self,
         session_id: &str,
@@ -260,8 +254,16 @@ impl RabbitService {
         arguments: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<(), RabbitError> {
         let client = self.get_client(session_id)?;
-        crate::queues::create_queue(client, vhost, name, durable, auto_delete, queue_type, arguments)
-            .await
+        crate::queues::create_queue(
+            client,
+            vhost,
+            name,
+            durable,
+            auto_delete,
+            queue_type,
+            arguments,
+        )
+        .await
     }
 
     pub async fn delete_queue(
@@ -297,6 +299,7 @@ impl RabbitService {
         crate::bindings::list_bindings(client, vhost).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_binding(
         &self,
         session_id: &str,
@@ -309,7 +312,13 @@ impl RabbitService {
     ) -> Result<(), RabbitError> {
         let client = self.get_client(session_id)?;
         crate::bindings::create_binding(
-            client, vhost, source, destination, dest_type, routing_key, arguments,
+            client,
+            vhost,
+            source,
+            destination,
+            dest_type,
+            routing_key,
+            arguments,
         )
         .await
     }
@@ -353,11 +362,7 @@ impl RabbitService {
         crate::users::create_user(client, name, password, tags).await
     }
 
-    pub async fn delete_user(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), RabbitError> {
+    pub async fn delete_user(&self, session_id: &str, name: &str) -> Result<(), RabbitError> {
         let client = self.get_client(session_id)?;
         crate::users::delete_user(client, name).await
     }
@@ -396,6 +401,7 @@ impl RabbitService {
         crate::policies::list_policies(client, vhost).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_policy(
         &self,
         session_id: &str,
@@ -504,44 +510,27 @@ impl RabbitService {
 
     // -- cluster -----------------------------------------------------------
 
-    pub async fn list_nodes(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<ClusterNode>, RabbitError> {
+    pub async fn list_nodes(&self, session_id: &str) -> Result<Vec<ClusterNode>, RabbitError> {
         let client = self.get_client(session_id)?;
         crate::cluster::list_nodes(client).await
     }
 
-    pub async fn get_node(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<ClusterNode, RabbitError> {
+    pub async fn get_node(&self, session_id: &str, name: &str) -> Result<ClusterNode, RabbitError> {
         let client = self.get_client(session_id)?;
         crate::cluster::get_node(client, name).await
     }
 
-    pub async fn get_cluster_name(
-        &self,
-        session_id: &str,
-    ) -> Result<ClusterName, RabbitError> {
+    pub async fn get_cluster_name(&self, session_id: &str) -> Result<ClusterName, RabbitError> {
         let client = self.get_client(session_id)?;
         crate::cluster::get_cluster_name(client).await
     }
 
-    pub async fn set_cluster_name(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), RabbitError> {
+    pub async fn set_cluster_name(&self, session_id: &str, name: &str) -> Result<(), RabbitError> {
         let client = self.get_client(session_id)?;
         crate::cluster::set_cluster_name(client, name).await
     }
 
-    pub async fn check_alarms(
-        &self,
-        session_id: &str,
-    ) -> Result<bool, RabbitError> {
+    pub async fn check_alarms(&self, session_id: &str) -> Result<bool, RabbitError> {
         let client = self.get_client(session_id)?;
         crate::cluster::check_alarms(client).await
     }
@@ -565,21 +554,14 @@ impl RabbitService {
         crate::connections::get_connection(client, name).await
     }
 
-    pub async fn close_connection(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), RabbitError> {
+    pub async fn close_connection(&self, session_id: &str, name: &str) -> Result<(), RabbitError> {
         let client = self.get_client(session_id)?;
         crate::connections::close_connection(client, name).await
     }
 
     // -- channels ----------------------------------------------------------
 
-    pub async fn list_channels(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<ChannelInfo>, RabbitError> {
+    pub async fn list_channels(&self, session_id: &str) -> Result<Vec<ChannelInfo>, RabbitError> {
         let client = self.get_client(session_id)?;
         crate::channels::list_channels(client).await
     }
@@ -619,10 +601,7 @@ impl RabbitService {
 
     // -- monitoring --------------------------------------------------------
 
-    pub async fn get_overview(
-        &self,
-        session_id: &str,
-    ) -> Result<OverviewInfo, RabbitError> {
+    pub async fn get_overview(&self, session_id: &str) -> Result<OverviewInfo, RabbitError> {
         let client = self.get_client(session_id)?;
         crate::monitoring::get_overview(client).await
     }

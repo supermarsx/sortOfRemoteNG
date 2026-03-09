@@ -26,10 +26,7 @@ pub async fn get_connection(
 ///
 /// The optional `reason` parameter is sent as the `X-Reason` header and
 /// appears in the broker logs and in the AMQP `connection.close` reason.
-pub async fn close_connection(
-    client: &RabbitApiClient,
-    name: &str,
-) -> Result<(), RabbitError> {
+pub async fn close_connection(client: &RabbitApiClient, name: &str) -> Result<(), RabbitError> {
     let encoded = RabbitApiClient::encode_path_segment(name);
     client.delete(&format!("connections/{}", encoded)).await
 }
@@ -40,9 +37,7 @@ pub async fn list_connections_for_vhost(
     vhost: &str,
 ) -> Result<Vec<ConnectionInfo>, RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
-    client
-        .get(&format!("vhosts/{}/connections", ev))
-        .await
+    client.get(&format!("vhosts/{}/connections", ev)).await
 }
 
 /// List the channels belonging to a specific connection.

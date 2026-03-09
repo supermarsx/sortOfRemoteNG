@@ -35,11 +35,21 @@ pub struct RabbitConnectionConfig {
     pub timeout: u64,
 }
 
-fn default_amqp_port() -> u16 { 5672 }
-fn default_management_port() -> u16 { 15672 }
-fn default_vhost() -> String { "/".to_string() }
-fn default_true() -> bool { true }
-fn default_timeout() -> u64 { 30 }
+fn default_amqp_port() -> u16 {
+    5672
+}
+fn default_management_port() -> u16 {
+    15672
+}
+fn default_vhost() -> String {
+    "/".to_string()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_timeout() -> u64 {
+    30
+}
 
 /// An active management API session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -519,13 +529,14 @@ pub struct TopicPermissionInfo {
 // ---------------------------------------------------------------------------
 
 /// What resource types a policy applies to.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ApplyTo {
     #[serde(rename = "queues")]
     Queues,
     #[serde(rename = "exchanges")]
     Exchanges,
     #[serde(rename = "all")]
+    #[default]
     All,
     #[serde(rename = "classic_queues")]
     ClassicQueues,
@@ -535,12 +546,6 @@ pub enum ApplyTo {
     Streams,
     #[serde(untagged)]
     Other(String),
-}
-
-impl Default for ApplyTo {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 /// Information about an operator or user policy.
@@ -572,9 +577,15 @@ pub struct PolicyDefinition {
     pub max_length: Option<i64>,
     #[serde(rename = "max-length-bytes", skip_serializing_if = "Option::is_none")]
     pub max_length_bytes: Option<i64>,
-    #[serde(rename = "dead-letter-exchange", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dead-letter-exchange",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub dead_letter_exchange: Option<String>,
-    #[serde(rename = "dead-letter-routing-key", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dead-letter-routing-key",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub dead_letter_routing_key: Option<String>,
     #[serde(rename = "queue-mode", skip_serializing_if = "Option::is_none")]
     pub queue_mode: Option<String>,
@@ -590,9 +601,15 @@ pub struct PolicyDefinition {
     pub max_priority: Option<u8>,
     #[serde(rename = "alternate-exchange", skip_serializing_if = "Option::is_none")]
     pub alternate_exchange: Option<String>,
-    #[serde(rename = "federation-upstream", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "federation-upstream",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub federation_upstream: Option<String>,
-    #[serde(rename = "federation-upstream-set", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "federation-upstream-set",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub federation_upstream_set: Option<String>,
 }
 
@@ -616,20 +633,15 @@ fn default_apply_all() -> String {
 // ---------------------------------------------------------------------------
 
 /// Acknowledgement mode for shovels.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum AckMode {
     #[serde(rename = "on-confirm")]
+    #[default]
     OnConfirm,
     #[serde(rename = "on-publish")]
     OnPublish,
     #[serde(rename = "no-ack")]
     NoAck,
-}
-
-impl Default for AckMode {
-    fn default() -> Self {
-        Self::OnConfirm
-    }
 }
 
 /// Runtime information about a shovel.

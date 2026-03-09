@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::client::RabbitApiClient;
 use crate::error::RabbitError;
-use crate::types::{BindingInfo, ExchangeCreateRequest, ExchangeInfo, PublishMessage, PublishProperties};
+use crate::types::{
+    BindingInfo, ExchangeCreateRequest, ExchangeInfo, PublishMessage, PublishProperties,
+};
 
 /// List all exchanges, optionally filtered to a specific vhost.
 pub async fn list_exchanges(
@@ -30,6 +32,7 @@ pub async fn get_exchange(
 }
 
 /// Declare (create) an exchange.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_exchange(
     client: &RabbitApiClient,
     vhost: &str,

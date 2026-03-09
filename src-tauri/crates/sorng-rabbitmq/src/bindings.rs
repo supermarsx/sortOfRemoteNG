@@ -26,9 +26,7 @@ pub async fn list_queue_bindings(
 ) -> Result<Vec<BindingInfo>, RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let eq = RabbitApiClient::encode_path_segment(queue);
-    client
-        .get(&format!("queues/{}/{}/bindings", ev, eq))
-        .await
+    client.get(&format!("queues/{}/{}/bindings", ev, eq)).await
 }
 
 /// Create a binding from a source exchange to a destination (queue or exchange).
@@ -59,10 +57,7 @@ pub async fn create_binding(
     };
 
     client
-        .post_no_content(
-            &format!("bindings/{}/e/{}/{}/{}", ev, es, dt, ed),
-            &body,
-        )
+        .post_no_content(&format!("bindings/{}/e/{}/{}/{}", ev, es, dt, ed), &body)
         .await
 }
 
@@ -90,10 +85,7 @@ pub async fn delete_binding(
     };
 
     client
-        .delete(&format!(
-            "bindings/{}/e/{}/{}/{}/{}",
-            ev, es, dt, ed, ep
-        ))
+        .delete(&format!("bindings/{}/e/{}/{}/{}/{}", ev, es, dt, ed, ep))
         .await
 }
 

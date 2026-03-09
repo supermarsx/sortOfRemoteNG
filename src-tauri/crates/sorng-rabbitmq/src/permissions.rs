@@ -17,9 +17,7 @@ pub async fn get_permission(
 ) -> Result<PermissionInfo, RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let eu = RabbitApiClient::encode_path_segment(user);
-    client
-        .get(&format!("permissions/{}/{}", ev, eu))
-        .await
+    client.get(&format!("permissions/{}/{}", ev, eu)).await
 }
 
 /// Set permissions for a user on a vhost.
@@ -54,9 +52,7 @@ pub async fn delete_permission(
 ) -> Result<(), RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let eu = RabbitApiClient::encode_path_segment(user);
-    client
-        .delete(&format!("permissions/{}/{}", ev, eu))
-        .await
+    client.delete(&format!("permissions/{}/{}", ev, eu)).await
 }
 
 /// List all topic permissions for all users.
@@ -121,7 +117,5 @@ pub async fn get_user_topic_permissions(
     user: &str,
 ) -> Result<Vec<TopicPermissionInfo>, RabbitError> {
     let eu = RabbitApiClient::encode_path_segment(user);
-    client
-        .get(&format!("users/{}/topic-permissions", eu))
-        .await
+    client.get(&format!("users/{}/topic-permissions", eu)).await
 }

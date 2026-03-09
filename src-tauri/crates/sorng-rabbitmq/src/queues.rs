@@ -92,7 +92,9 @@ pub async fn purge_queue(
 ) -> Result<(), RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let en = RabbitApiClient::encode_path_segment(name);
-    client.delete(&format!("queues/{}/{}/contents", ev, en)).await
+    client
+        .delete(&format!("queues/{}/{}/contents", ev, en))
+        .await
 }
 
 /// Get messages from a queue without removing them (peek).
@@ -130,9 +132,7 @@ pub async fn get_queue_bindings(
 ) -> Result<Vec<BindingInfo>, RabbitError> {
     let ev = RabbitApiClient::encode_path_segment(vhost);
     let en = RabbitApiClient::encode_path_segment(name);
-    client
-        .get(&format!("queues/{}/{}/bindings", ev, en))
-        .await
+    client.get(&format!("queues/{}/{}/bindings", ev, en)).await
 }
 
 /// Pause a quorum queue (sets the queue into a paused state).
@@ -170,6 +170,7 @@ pub async fn resume_queue(
 /// Update queue properties by setting optional arguments via a policy or
 /// direct API manipulation. This is a convenience wrapper that sets queue
 /// arguments via the management API.
+#[allow(clippy::too_many_arguments)]
 pub async fn set_queue_properties(
     client: &RabbitApiClient,
     vhost: &str,
@@ -198,10 +199,7 @@ pub async fn set_queue_properties(
         args.insert("x-overflow".to_string(), serde_json::json!(of));
     }
     if let Some(dle) = dead_letter_exchange {
-        args.insert(
-            "x-dead-letter-exchange".to_string(),
-            serde_json::json!(dle),
-        );
+        args.insert("x-dead-letter-exchange".to_string(), serde_json::json!(dle));
     }
     if let Some(dlrk) = dead_letter_routing_key {
         args.insert(
@@ -290,9 +288,6 @@ pub async fn add_queue_member(
     let en = RabbitApiClient::encode_path_segment(name);
     let body = serde_json::json!({ "node": node });
     client
-        .post_no_content(
-            &format!("queues/{}/{}/replicas/add", ev, en),
-            &body,
-        )
+        .post_no_content(&format!("queues/{}/{}/replicas/add", ev, en), &body)
         .await
 }
