@@ -40,6 +40,12 @@ pub struct RedisService {
     sessions: HashMap<String, SessionEntry>,
 }
 
+impl Default for RedisService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RedisService {
     /// Create an empty service with no sessions.
     pub fn new() -> Self {
@@ -136,9 +142,7 @@ impl RedisService {
     /// Test connectivity by PINGing the server.
     pub async fn test_connection(&mut self, session_id: &str) -> Result<bool, RedisError> {
         let client = self.get_client(session_id)?;
-        let result: Result<String, _> = redis::cmd("PING")
-            .query_async(client.con())
-            .await;
+        let result: Result<String, _> = redis::cmd("PING").query_async(client.con()).await;
         Ok(result.map(|s| s == "PONG").unwrap_or(false))
     }
 
@@ -221,11 +225,7 @@ impl RedisService {
         crate::keys::set_ttl(client, key, ttl).await
     }
 
-    pub async fn persist_key(
-        &mut self,
-        session_id: &str,
-        key: &str,
-    ) -> Result<bool, RedisError> {
+    pub async fn persist_key(&mut self, session_id: &str, key: &str) -> Result<bool, RedisError> {
         let client = self.get_client(session_id)?;
         crate::keys::persist_key(client, key).await
     }
@@ -260,20 +260,12 @@ impl RedisService {
         crate::strings::mget(client, keys).await
     }
 
-    pub async fn string_incr(
-        &mut self,
-        session_id: &str,
-        key: &str,
-    ) -> Result<i64, RedisError> {
+    pub async fn string_incr(&mut self, session_id: &str, key: &str) -> Result<i64, RedisError> {
         let client = self.get_client(session_id)?;
         crate::strings::incr(client, key).await
     }
 
-    pub async fn string_decr(
-        &mut self,
-        session_id: &str,
-        key: &str,
-    ) -> Result<i64, RedisError> {
+    pub async fn string_decr(&mut self, session_id: &str, key: &str) -> Result<i64, RedisError> {
         let client = self.get_client(session_id)?;
         crate::strings::decr(client, key).await
     }
@@ -320,11 +312,7 @@ impl RedisService {
         }
     }
 
-    pub async fn list_len(
-        &mut self,
-        session_id: &str,
-        key: &str,
-    ) -> Result<i64, RedisError> {
+    pub async fn list_len(&mut self, session_id: &str, key: &str) -> Result<i64, RedisError> {
         let client = self.get_client(session_id)?;
         crate::lists::llen(client, key).await
     }
@@ -360,11 +348,7 @@ impl RedisService {
         crate::sets::srem(client, key, members).await
     }
 
-    pub async fn set_card(
-        &mut self,
-        session_id: &str,
-        key: &str,
-    ) -> Result<u64, RedisError> {
+    pub async fn set_card(&mut self, session_id: &str, key: &str) -> Result<u64, RedisError> {
         let client = self.get_client(session_id)?;
         crate::sets::scard(client, key).await
     }
@@ -490,11 +474,7 @@ impl RedisService {
         crate::streams::xrange(client, key, start, end, count).await
     }
 
-    pub async fn stream_len(
-        &mut self,
-        session_id: &str,
-        key: &str,
-    ) -> Result<u64, RedisError> {
+    pub async fn stream_len(&mut self, session_id: &str, key: &str) -> Result<u64, RedisError> {
         let client = self.get_client(session_id)?;
         crate::streams::xlen(client, key).await
     }
@@ -582,11 +562,7 @@ impl RedisService {
         crate::server::dbsize(client).await
     }
 
-    pub async fn flushdb(
-        &mut self,
-        session_id: &str,
-        r#async: bool,
-    ) -> Result<(), RedisError> {
+    pub async fn flushdb(&mut self, session_id: &str, r#async: bool) -> Result<(), RedisError> {
         let client = self.get_client(session_id)?;
         crate::server::flushdb(client, r#async).await
     }
@@ -608,10 +584,7 @@ impl RedisService {
         crate::server::client_list(client).await
     }
 
-    pub async fn memory_stats(
-        &mut self,
-        session_id: &str,
-    ) -> Result<RedisMemoryStats, RedisError> {
+    pub async fn memory_stats(&mut self, session_id: &str) -> Result<RedisMemoryStats, RedisError> {
         let client = self.get_client(session_id)?;
         crate::server::memory_stats(client).await
     }
@@ -642,10 +615,7 @@ impl RedisService {
 
     // ── Cluster ─────────────────────────────────────────────────────
 
-    pub async fn cluster_info(
-        &mut self,
-        session_id: &str,
-    ) -> Result<RedisClusterInfo, RedisError> {
+    pub async fn cluster_info(&mut self, session_id: &str) -> Result<RedisClusterInfo, RedisError> {
         let client = self.get_client(session_id)?;
         crate::cluster::cluster_info(client).await
     }
@@ -658,10 +628,7 @@ impl RedisService {
         crate::cluster::cluster_nodes(client).await
     }
 
-    pub async fn cluster_myid(
-        &mut self,
-        session_id: &str,
-    ) -> Result<String, RedisError> {
+    pub async fn cluster_myid(&mut self, session_id: &str) -> Result<String, RedisError> {
         let client = self.get_client(session_id)?;
         crate::cluster::cluster_myid(client).await
     }

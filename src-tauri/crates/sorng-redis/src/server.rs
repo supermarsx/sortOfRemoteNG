@@ -71,9 +71,7 @@ pub async fn config_resetstat(client: &mut RedisClient) -> Result<(), RedisError
 
 /// DBSIZE → number of keys in the current DB
 pub async fn dbsize(client: &mut RedisClient) -> Result<i64, RedisError> {
-    let v: i64 = redis::cmd("DBSIZE")
-        .query_async(client.con())
-        .await?;
+    let v: i64 = redis::cmd("DBSIZE").query_async(client.con()).await?;
     Ok(v)
 }
 
@@ -176,10 +174,7 @@ pub async fn client_list(client: &mut RedisClient) -> Result<Vec<RedisClientInfo
 }
 
 /// CLIENT KILL ID client-id
-pub async fn client_kill(
-    client: &mut RedisClient,
-    client_id: &str,
-) -> Result<(), RedisError> {
+pub async fn client_kill(client: &mut RedisClient, client_id: &str) -> Result<(), RedisError> {
     redis::cmd("CLIENT")
         .arg("KILL")
         .arg("ID")
@@ -190,10 +185,7 @@ pub async fn client_kill(
 }
 
 /// CLIENT SETNAME connection-name
-pub async fn client_setname(
-    client: &mut RedisClient,
-    name: &str,
-) -> Result<(), RedisError> {
+pub async fn client_setname(client: &mut RedisClient, name: &str) -> Result<(), RedisError> {
     redis::cmd("CLIENT")
         .arg("SETNAME")
         .arg(name)
@@ -204,36 +196,25 @@ pub async fn client_setname(
 
 /// TIME → (unix_timestamp_seconds, microseconds)
 pub async fn time(client: &mut RedisClient) -> Result<(i64, i64), RedisError> {
-    let v: (String, String) = redis::cmd("TIME")
-        .query_async(client.con())
-        .await?;
-    Ok((
-        v.0.parse().unwrap_or(0),
-        v.1.parse().unwrap_or(0),
-    ))
+    let v: (String, String) = redis::cmd("TIME").query_async(client.con()).await?;
+    Ok((v.0.parse().unwrap_or(0), v.1.parse().unwrap_or(0)))
 }
 
 /// LASTSAVE → unix timestamp of last successful save
 pub async fn lastsave(client: &mut RedisClient) -> Result<i64, RedisError> {
-    let v: i64 = redis::cmd("LASTSAVE")
-        .query_async(client.con())
-        .await?;
+    let v: i64 = redis::cmd("LASTSAVE").query_async(client.con()).await?;
     Ok(v)
 }
 
 /// BGSAVE
 pub async fn bgsave(client: &mut RedisClient) -> Result<String, RedisError> {
-    let v: String = redis::cmd("BGSAVE")
-        .query_async(client.con())
-        .await?;
+    let v: String = redis::cmd("BGSAVE").query_async(client.con()).await?;
     Ok(v)
 }
 
 /// BGREWRITEAOF
 pub async fn bgrewriteaof(client: &mut RedisClient) -> Result<String, RedisError> {
-    let v: String = redis::cmd("BGREWRITEAOF")
-        .query_async(client.con())
-        .await?;
+    let v: String = redis::cmd("BGREWRITEAOF").query_async(client.con()).await?;
     Ok(v)
 }
 
@@ -248,10 +229,7 @@ pub async fn debug_sleep(client: &mut RedisClient, seconds: f64) -> Result<(), R
 }
 
 /// MEMORY USAGE key → bytes
-pub async fn memory_usage(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Option<i64>, RedisError> {
+pub async fn memory_usage(client: &mut RedisClient, key: &str) -> Result<Option<i64>, RedisError> {
     let v: Option<i64> = redis::cmd("MEMORY")
         .arg("USAGE")
         .arg(key)
@@ -278,10 +256,7 @@ pub async fn memory_stats(client: &mut RedisClient) -> Result<RedisMemoryStats, 
             .get("used_memory")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0),
-        used_memory_human: mem
-            .get("used_memory_human")
-            .cloned()
-            .unwrap_or_default(),
+        used_memory_human: mem.get("used_memory_human").cloned().unwrap_or_default(),
         used_memory_peak: mem
             .get("used_memory_peak")
             .and_then(|v| v.parse().ok())
@@ -299,21 +274,13 @@ pub async fn memory_stats(client: &mut RedisClient) -> Result<RedisMemoryStats, 
             .get("maxmemory")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0),
-        maxmemory_human: mem
-            .get("maxmemory_human")
-            .cloned()
-            .unwrap_or_default(),
-        maxmemory_policy: mem
-            .get("maxmemory_policy")
-            .cloned()
-            .unwrap_or_default(),
+        maxmemory_human: mem.get("maxmemory_human").cloned().unwrap_or_default(),
+        maxmemory_policy: mem.get("maxmemory_policy").cloned().unwrap_or_default(),
         mem_fragmentation_ratio: mem
             .get("mem_fragmentation_ratio")
             .and_then(|v| v.parse().ok()),
         mem_allocator: mem.get("mem_allocator").cloned(),
-        total_system_memory: mem
-            .get("total_system_memory")
-            .and_then(|v| v.parse().ok()),
+        total_system_memory: mem.get("total_system_memory").and_then(|v| v.parse().ok()),
         total_system_memory_human: mem.get("total_system_memory_human").cloned(),
     })
 }
@@ -338,9 +305,7 @@ pub async fn module_list(client: &mut RedisClient) -> Result<Vec<RedisModuleInfo
 }
 
 /// Parse INFO commandstats section into `RedisCommandStats` list.
-pub async fn command_stats(
-    client: &mut RedisClient,
-) -> Result<Vec<RedisCommandStats>, RedisError> {
+pub async fn command_stats(client: &mut RedisClient) -> Result<Vec<RedisCommandStats>, RedisError> {
     let info_str: String = redis::cmd("INFO")
         .arg("commandstats")
         .query_async(client.con())
@@ -364,20 +329,13 @@ pub async fn command_stats(
                         .get("calls")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0),
-                    usec: fields
-                        .get("usec")
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0),
+                    usec: fields.get("usec").and_then(|v| v.parse().ok()).unwrap_or(0),
                     usec_per_call: fields
                         .get("usec_per_call")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0.0),
-                    rejected_calls: fields
-                        .get("rejected_calls")
-                        .and_then(|v| v.parse().ok()),
-                    failed_calls: fields
-                        .get("failed_calls")
-                        .and_then(|v| v.parse().ok()),
+                    rejected_calls: fields.get("rejected_calls").and_then(|v| v.parse().ok()),
+                    failed_calls: fields.get("failed_calls").and_then(|v| v.parse().ok()),
                 });
             }
         }
@@ -386,9 +344,7 @@ pub async fn command_stats(
 }
 
 /// Parse INFO keyspace section.
-pub async fn keyspace_info(
-    client: &mut RedisClient,
-) -> Result<Vec<RedisKeyspaceInfo>, RedisError> {
+pub async fn keyspace_info(client: &mut RedisClient) -> Result<Vec<RedisKeyspaceInfo>, RedisError> {
     let info_str: String = redis::cmd("INFO")
         .arg("keyspace")
         .query_async(client.con())
@@ -399,10 +355,7 @@ pub async fn keyspace_info(
         let line = line.trim();
         if line.starts_with("db") {
             if let Some((db_part, values)) = line.split_once(':') {
-                let db_num: u32 = db_part
-                    .trim_start_matches("db")
-                    .parse()
-                    .unwrap_or(0);
+                let db_num: u32 = db_part.trim_start_matches("db").parse().unwrap_or(0);
                 let mut fields = HashMap::new();
                 for part in values.split(',') {
                     if let Some((k, v)) = part.split_once('=') {
@@ -411,10 +364,7 @@ pub async fn keyspace_info(
                 }
                 result.push(RedisKeyspaceInfo {
                     db: db_num,
-                    keys: fields
-                        .get("keys")
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0),
+                    keys: fields.get("keys").and_then(|v| v.parse().ok()).unwrap_or(0),
                     expires: fields
                         .get("expires")
                         .and_then(|v| v.parse().ok())

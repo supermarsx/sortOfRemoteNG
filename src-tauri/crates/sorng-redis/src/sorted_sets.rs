@@ -55,10 +55,7 @@ pub async fn zrange(
             .await?;
         Ok(members
             .into_iter()
-            .map(|member| ZSetMember {
-                member,
-                score: 0.0,
-            })
+            .map(|member| ZSetMember { member, score: 0.0 })
             .collect())
     }
 }
@@ -87,10 +84,7 @@ pub async fn zrevrange(
             .await?;
         Ok(members
             .into_iter()
-            .map(|member| ZSetMember {
-                member,
-                score: 0.0,
-            })
+            .map(|member| ZSetMember { member, score: 0.0 })
             .collect())
     }
 }
@@ -143,10 +137,7 @@ pub async fn zrevrank(
 }
 
 /// ZCARD key → cardinality
-pub async fn zcard(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<u64, RedisError> {
+pub async fn zcard(client: &mut RedisClient, key: &str) -> Result<u64, RedisError> {
     let v: u64 = client.con().zcard(key).await?;
     Ok(v)
 }
@@ -268,8 +259,7 @@ pub async fn zscan(
     if let Some(c) = count {
         cmd.arg("COUNT").arg(c);
     }
-    let (new_cursor, flat): (u64, Vec<String>) =
-        cmd.query_async(client.con()).await?;
+    let (new_cursor, flat): (u64, Vec<String>) = cmd.query_async(client.con()).await?;
     let mut result = Vec::new();
     let mut iter = flat.into_iter();
     while let Some(member) = iter.next() {

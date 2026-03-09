@@ -52,10 +52,7 @@ pub async fn sentinel_slaves(
         let map = redis_value_to_map(item);
         slaves.push(RedisSentinelSlave {
             ip: map.get("ip").cloned().unwrap_or_default(),
-            port: map
-                .get("port")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0),
+            port: map.get("port").and_then(|v| v.parse().ok()).unwrap_or(0),
             flags: map.get("flags").cloned().unwrap_or_default(),
             master_host: map.get("master-host").cloned(),
             master_port: map.get("master-port").and_then(|v| v.parse().ok()),
@@ -115,10 +112,7 @@ pub async fn sentinel_monitor(
 }
 
 /// SENTINEL REMOVE name
-pub async fn sentinel_remove(
-    client: &mut RedisClient,
-    name: &str,
-) -> Result<(), RedisError> {
+pub async fn sentinel_remove(client: &mut RedisClient, name: &str) -> Result<(), RedisError> {
     redis::cmd("SENTINEL")
         .arg("REMOVE")
         .arg(name)
@@ -165,16 +159,11 @@ fn parse_sentinel_master(map: &HashMap<String, String>) -> RedisSentinelMaster {
     RedisSentinelMaster {
         name: map.get("name").cloned().unwrap_or_default(),
         ip: map.get("ip").cloned().unwrap_or_default(),
-        port: map
-            .get("port")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0),
+        port: map.get("port").and_then(|v| v.parse().ok()).unwrap_or(0),
         runid: map.get("runid").cloned(),
         flags: map.get("flags").cloned().unwrap_or_default(),
         num_slaves: map.get("num-slaves").and_then(|v| v.parse().ok()),
-        num_other_sentinels: map
-            .get("num-other-sentinels")
-            .and_then(|v| v.parse().ok()),
+        num_other_sentinels: map.get("num-other-sentinels").and_then(|v| v.parse().ok()),
         quorum: map.get("quorum").and_then(|v| v.parse().ok()),
         raw: map.clone(),
     }

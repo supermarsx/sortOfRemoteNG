@@ -51,10 +51,7 @@ pub async fn pubsub_numsub(
     let mut result = Vec::new();
     let mut iter = flat.into_iter();
     while let Some(channel) = iter.next() {
-        let subscribers = iter
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
+        let subscribers = iter.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
         result.push(RedisPubSubChannel {
             channel,
             subscribers,
@@ -64,9 +61,7 @@ pub async fn pubsub_numsub(
 }
 
 /// PUBSUB NUMPAT → number of active pattern subscriptions
-pub async fn pubsub_numpat(
-    client: &mut RedisClient,
-) -> Result<u64, RedisError> {
+pub async fn pubsub_numpat(client: &mut RedisClient) -> Result<u64, RedisError> {
     let v: u64 = redis::cmd("PUBSUB")
         .arg("NUMPAT")
         .query_async(client.con())
@@ -103,10 +98,7 @@ pub async fn pubsub_shardnumsub(
     let mut result = Vec::new();
     let mut iter = flat.into_iter();
     while let Some(channel) = iter.next() {
-        let subscribers = iter
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
+        let subscribers = iter.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
         result.push(RedisPubSubChannel {
             channel,
             subscribers,

@@ -1,7 +1,7 @@
 //! Tauri commands for the Redis integration.
 
-use crate::redis::service::RedisServiceState;
-use crate::redis::types::*;
+use super::service::RedisServiceState;
+use super::types::*;
 use std::collections::HashMap;
 
 // ── Connection ──────────────────────────────────────────────────────

@@ -7,24 +7,26 @@
 //! pub/sub, server administration, cluster management, sentinel operations,
 //! and replication monitoring.
 
-pub mod types;
-pub mod error;
 pub mod client;
-pub mod keys;
-pub mod strings;
-pub mod lists;
-pub mod sets;
+pub mod cluster;
+pub mod error;
 pub mod hashes;
+pub mod keys;
+pub mod lists;
+pub mod pubsub;
+pub mod replication;
+pub mod sentinel;
+pub mod server;
+pub mod service;
+pub mod sets;
 pub mod sorted_sets;
 pub mod streams;
-pub mod pubsub;
-pub mod server;
-pub mod cluster;
-pub mod sentinel;
-pub mod replication;
-pub mod service;
-pub mod commands;
+pub mod strings;
+pub mod types;
 
-pub use types::*;
 pub use error::*;
-pub use service::{RedisService, RedisServiceState, new_state};
+pub use service::{new_state, RedisService, RedisServiceState};
+pub use types::*;
+
+#[path = "redis/mod.rs"]
+pub mod redis_impl;

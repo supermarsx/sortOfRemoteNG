@@ -6,20 +6,13 @@ use crate::client::RedisClient;
 use crate::error::RedisError;
 
 /// GET key
-pub async fn get(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Option<String>, RedisError> {
+pub async fn get(client: &mut RedisClient, key: &str) -> Result<Option<String>, RedisError> {
     let v: Option<String> = client.con().get(key).await?;
     Ok(v)
 }
 
 /// SET key value
-pub async fn set(
-    client: &mut RedisClient,
-    key: &str,
-    value: &str,
-) -> Result<(), RedisError> {
+pub async fn set(client: &mut RedisClient, key: &str, value: &str) -> Result<(), RedisError> {
     client.con().set::<_, _, ()>(key, value).await?;
     Ok(())
 }
@@ -34,10 +27,7 @@ pub async fn mget(
 }
 
 /// MSET key value [key value ...]
-pub async fn mset(
-    client: &mut RedisClient,
-    pairs: &[(String, String)],
-) -> Result<(), RedisError> {
+pub async fn mset(client: &mut RedisClient, pairs: &[(String, String)]) -> Result<(), RedisError> {
     let items: Vec<(&str, &str)> = pairs
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
@@ -47,20 +37,13 @@ pub async fn mset(
 }
 
 /// APPEND key value → new length
-pub async fn append(
-    client: &mut RedisClient,
-    key: &str,
-    value: &str,
-) -> Result<i64, RedisError> {
+pub async fn append(client: &mut RedisClient, key: &str, value: &str) -> Result<i64, RedisError> {
     let len: i64 = client.con().append(key, value).await?;
     Ok(len)
 }
 
 /// STRLEN key → length
-pub async fn strlen(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<i64, RedisError> {
+pub async fn strlen(client: &mut RedisClient, key: &str) -> Result<i64, RedisError> {
     let len: i64 = redis::cmd("STRLEN")
         .arg(key)
         .query_async(client.con())
@@ -69,19 +52,13 @@ pub async fn strlen(
 }
 
 /// INCR key → new value
-pub async fn incr(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<i64, RedisError> {
+pub async fn incr(client: &mut RedisClient, key: &str) -> Result<i64, RedisError> {
     let v: i64 = client.con().incr(key, 1i64).await?;
     Ok(v)
 }
 
 /// DECR key → new value
-pub async fn decr(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<i64, RedisError> {
+pub async fn decr(client: &mut RedisClient, key: &str) -> Result<i64, RedisError> {
     let v: i64 = client.con().decr(key, 1i64).await?;
     Ok(v)
 }
@@ -153,11 +130,7 @@ pub async fn setrange(
 }
 
 /// SETNX key value → true if the key was set (did not exist before)
-pub async fn setnx(
-    client: &mut RedisClient,
-    key: &str,
-    value: &str,
-) -> Result<bool, RedisError> {
+pub async fn setnx(client: &mut RedisClient, key: &str, value: &str) -> Result<bool, RedisError> {
     let ok: bool = client.con().set_nx(key, value).await?;
     Ok(ok)
 }

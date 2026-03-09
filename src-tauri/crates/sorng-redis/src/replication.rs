@@ -36,10 +36,7 @@ pub async fn replication_info(
             }
             slaves.push(RedisReplicaSummary {
                 ip: fields.get("ip").cloned().unwrap_or_default(),
-                port: fields
-                    .get("port")
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(0),
+                port: fields.get("port").and_then(|v| v.parse().ok()).unwrap_or(0),
                 state: fields
                     .get("state")
                     .cloned()
@@ -57,37 +54,23 @@ pub async fn replication_info(
             .get("role")
             .cloned()
             .unwrap_or_else(|| "unknown".to_string()),
-        connected_slaves: repl
-            .get("connected_slaves")
-            .and_then(|v| v.parse().ok()),
+        connected_slaves: repl.get("connected_slaves").and_then(|v| v.parse().ok()),
         master_host: repl.get("master_host").cloned(),
-        master_port: repl
-            .get("master_port")
-            .and_then(|v| v.parse().ok()),
+        master_port: repl.get("master_port").and_then(|v| v.parse().ok()),
         master_link_status: repl.get("master_link_status").cloned(),
         master_last_io_seconds_ago: repl
             .get("master_last_io_seconds_ago")
             .and_then(|v| v.parse().ok()),
-        master_sync_in_progress: repl
-            .get("master_sync_in_progress")
-            .map(|v| v == "1"),
-        repl_backlog_active: repl
-            .get("repl_backlog_active")
-            .map(|v| v == "1"),
-        repl_backlog_size: repl
-            .get("repl_backlog_size")
-            .and_then(|v| v.parse().ok()),
+        master_sync_in_progress: repl.get("master_sync_in_progress").map(|v| v == "1"),
+        repl_backlog_active: repl.get("repl_backlog_active").map(|v| v == "1"),
+        repl_backlog_size: repl.get("repl_backlog_size").and_then(|v| v.parse().ok()),
         slaves,
         raw: repl,
     })
 }
 
 /// SLAVEOF host port (or SLAVEOF NO ONE to become a master).
-pub async fn slaveof(
-    client: &mut RedisClient,
-    host: &str,
-    port: u16,
-) -> Result<(), RedisError> {
+pub async fn slaveof(client: &mut RedisClient, host: &str, port: u16) -> Result<(), RedisError> {
     redis::cmd("SLAVEOF")
         .arg(host)
         .arg(port)
@@ -97,11 +80,7 @@ pub async fn slaveof(
 }
 
 /// REPLICAOF host port (Redis 5.0+, alias for SLAVEOF).
-pub async fn replicaof(
-    client: &mut RedisClient,
-    host: &str,
-    port: u16,
-) -> Result<(), RedisError> {
+pub async fn replicaof(client: &mut RedisClient, host: &str, port: u16) -> Result<(), RedisError> {
     redis::cmd("REPLICAOF")
         .arg(host)
         .arg(port)

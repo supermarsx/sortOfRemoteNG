@@ -80,25 +80,13 @@ pub struct SshTunnelConfig {
 // ── TLS config ──────────────────────────────────────────────────────
 
 /// TLS/SSL options for Redis connections.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TlsConfig {
     pub enabled: bool,
     pub ca_cert_path: Option<String>,
     pub client_cert_path: Option<String>,
     pub client_key_path: Option<String>,
     pub allow_invalid_certificates: bool,
-}
-
-impl Default for TlsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            ca_cert_path: None,
-            client_cert_path: None,
-            client_key_path: None,
-            allow_invalid_certificates: false,
-        }
-    }
 }
 
 // ── Connection config ───────────────────────────────────────────────
@@ -149,12 +137,7 @@ impl RedisConnectionConfig {
             return url.clone();
         }
 
-        let scheme = if self
-            .tls
-            .as_ref()
-            .map(|t| t.enabled)
-            .unwrap_or(false)
-        {
+        let scheme = if self.tls.as_ref().map(|t| t.enabled).unwrap_or(false) {
             "rediss"
         } else {
             "redis"
@@ -169,7 +152,10 @@ impl RedisConnectionConfig {
 
         let db = self.database.unwrap_or(0);
 
-        format!("{}://{}{}:{}/{}", scheme, userinfo, self.host, self.port, db)
+        format!(
+            "{}://{}{}:{}/{}",
+            scheme, userinfo, self.host, self.port, db
+        )
     }
 }
 

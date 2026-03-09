@@ -26,9 +26,7 @@ impl RedisClient {
         let connection = client
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| {
-                RedisError::connection_failed(format!("Failed to connect: {}", e))
-            })?;
+            .map_err(|e| RedisError::connection_failed(format!("Failed to connect: {}", e)))?;
 
         Ok(Self {
             connection,
@@ -57,9 +55,7 @@ impl RedisClient {
 
     /// Fetch and parse the full INFO output into a [`RedisServerInfo`].
     pub async fn get_server_info(&mut self) -> Result<RedisServerInfo, RedisError> {
-        let info_str: String = redis::cmd("INFO")
-            .query_async(&mut self.connection)
-            .await?;
+        let info_str: String = redis::cmd("INFO").query_async(&mut self.connection).await?;
         Ok(build_server_info(&info_str))
     }
 
@@ -81,9 +77,7 @@ impl RedisClient {
 // ---------------------------------------------------------------------------
 
 /// Parse the full INFO output into section maps.
-pub fn parse_info_sections(
-    info: &str,
-) -> HashMap<String, HashMap<String, String>> {
+pub fn parse_info_sections(info: &str) -> HashMap<String, HashMap<String, String>> {
     let mut sections: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut current = "default".to_string();
 
@@ -194,9 +188,7 @@ pub fn format_redis_value(val: &redis::Value) -> String {
 pub fn redis_value_to_i64(val: &redis::Value) -> i64 {
     match val {
         redis::Value::Int(i) => *i,
-        redis::Value::BulkString(data) => {
-            String::from_utf8_lossy(data).parse().unwrap_or(0)
-        }
+        redis::Value::BulkString(data) => String::from_utf8_lossy(data).parse().unwrap_or(0),
         _ => 0,
     }
 }
@@ -215,10 +207,7 @@ pub fn redis_value_to_string(val: &redis::Value) -> Option<String> {
 /// Extract a Vec<String> from an array `redis::Value`.
 pub fn redis_value_to_strings(val: &redis::Value) -> Vec<String> {
     match val {
-        redis::Value::Array(arr) => arr
-            .iter()
-            .filter_map(redis_value_to_string)
-            .collect(),
+        redis::Value::Array(arr) => arr.iter().filter_map(redis_value_to_string).collect(),
         _ => vec![],
     }
 }
@@ -229,7 +218,9 @@ pub fn redis_value_to_map(val: &redis::Value) -> HashMap<String, String> {
     match val {
         redis::Value::Map(pairs) => {
             for (k, v) in pairs {
-                if let (Some(key), Some(value)) = (redis_value_to_string(k), redis_value_to_string(v)) {
+                if let (Some(key), Some(value)) =
+                    (redis_value_to_string(k), redis_value_to_string(v))
+                {
                     map.insert(key, value);
                 }
             }
@@ -238,7 +229,9 @@ pub fn redis_value_to_map(val: &redis::Value) -> HashMap<String, String> {
             let mut iter = arr.iter();
             while let Some(k) = iter.next() {
                 if let Some(v) = iter.next() {
-                    if let (Some(key), Some(value)) = (redis_value_to_string(k), redis_value_to_string(v)) {
+                    if let (Some(key), Some(value)) =
+                        (redis_value_to_string(k), redis_value_to_string(v))
+                    {
                         map.insert(key, value);
                     }
                 }
@@ -262,7 +255,9 @@ mod tests {
             Some(&"7.2.0".to_string())
         );
         assert_eq!(
-            sections.get("clients").and_then(|m| m.get("connected_clients")),
+            sections
+                .get("clients")
+                .and_then(|m| m.get("connected_clients")),
             Some(&"5".to_string())
         );
     }

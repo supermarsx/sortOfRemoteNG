@@ -30,10 +30,7 @@ pub async fn scan_keys(
 }
 
 /// Get the type of a key.
-pub async fn key_type(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<RedisKeyType, RedisError> {
+pub async fn key_type(client: &mut RedisClient, key: &str) -> Result<RedisKeyType, RedisError> {
     let t: String = redis::cmd("TYPE")
         .arg(key)
         .query_async(client.con())
@@ -42,10 +39,7 @@ pub async fn key_type(
 }
 
 /// Get detailed info about a key (type, TTL, encoding, memory usage).
-pub async fn get_key_info(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<RedisKeyInfo, RedisError> {
+pub async fn get_key_info(client: &mut RedisClient, key: &str) -> Result<RedisKeyInfo, RedisError> {
     let kt = key_type(client, key).await?;
     let ttl: i64 = client.con().ttl(key).await?;
 
@@ -92,8 +86,7 @@ pub async fn get_key_value(
             Ok(RedisKeyValue::Set(v))
         }
         RedisKeyType::ZSet => {
-            let pairs: Vec<(String, f64)> =
-                client.con().zrange_withscores(key, 0, -1).await?;
+            let pairs: Vec<(String, f64)> = client.con().zrange_withscores(key, 0, -1).await?;
             Ok(RedisKeyValue::SortedSet(
                 pairs
                     .into_iter()
@@ -136,48 +129,31 @@ pub async fn set_key_value(
 }
 
 /// Delete one or more keys. Returns the number of keys removed.
-pub async fn delete_keys(
-    client: &mut RedisClient,
-    keys: &[String],
-) -> Result<u64, RedisError> {
+pub async fn delete_keys(client: &mut RedisClient, keys: &[String]) -> Result<u64, RedisError> {
     let count: u64 = client.con().del(keys).await?;
     Ok(count)
 }
 
 /// Rename a key.
-pub async fn rename_key(
-    client: &mut RedisClient,
-    from: &str,
-    to: &str,
-) -> Result<(), RedisError> {
+pub async fn rename_key(client: &mut RedisClient, from: &str, to: &str) -> Result<(), RedisError> {
     client.con().rename::<_, _, ()>(from, to).await?;
     Ok(())
 }
 
 /// Set TTL on a key in seconds.
-pub async fn set_ttl(
-    client: &mut RedisClient,
-    key: &str,
-    ttl: i64,
-) -> Result<bool, RedisError> {
+pub async fn set_ttl(client: &mut RedisClient, key: &str, ttl: i64) -> Result<bool, RedisError> {
     let ok: bool = client.con().expire(key, ttl).await?;
     Ok(ok)
 }
 
 /// Remove TTL (make key persistent).
-pub async fn persist_key(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<bool, RedisError> {
+pub async fn persist_key(client: &mut RedisClient, key: &str) -> Result<bool, RedisError> {
     let ok: bool = client.con().persist(key).await?;
     Ok(ok)
 }
 
 /// Check if one or more keys exist. Returns the number that exist.
-pub async fn exists(
-    client: &mut RedisClient,
-    keys: &[String],
-) -> Result<u64, RedisError> {
+pub async fn exists(client: &mut RedisClient, keys: &[String]) -> Result<u64, RedisError> {
     let count: u64 = redis::cmd("EXISTS")
         .arg(keys)
         .query_async(client.con())
@@ -186,19 +162,13 @@ pub async fn exists(
 }
 
 /// Get TTL in seconds (-1 = no expiry, -2 = key missing).
-pub async fn ttl(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<i64, RedisError> {
+pub async fn ttl(client: &mut RedisClient, key: &str) -> Result<i64, RedisError> {
     let v: i64 = client.con().ttl(key).await?;
     Ok(v)
 }
 
 /// Get TTL in milliseconds.
-pub async fn pttl(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<i64, RedisError> {
+pub async fn pttl(client: &mut RedisClient, key: &str) -> Result<i64, RedisError> {
     let v: i64 = redis::cmd("PTTL")
         .arg(key)
         .query_async(client.con())
@@ -207,20 +177,13 @@ pub async fn pttl(
 }
 
 /// Return a random key from the database.
-pub async fn random_key(
-    client: &mut RedisClient,
-) -> Result<Option<String>, RedisError> {
-    let v: Option<String> = redis::cmd("RANDOMKEY")
-        .query_async(client.con())
-        .await?;
+pub async fn random_key(client: &mut RedisClient) -> Result<Option<String>, RedisError> {
+    let v: Option<String> = redis::cmd("RANDOMKEY").query_async(client.con()).await?;
     Ok(v)
 }
 
 /// Dump the serialized representation of a key.
-pub async fn dump(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Vec<u8>, RedisError> {
+pub async fn dump(client: &mut RedisClient, key: &str) -> Result<Vec<u8>, RedisError> {
     let v: Vec<u8> = redis::cmd("DUMP")
         .arg(key)
         .query_async(client.con())
@@ -229,10 +192,7 @@ pub async fn dump(
 }
 
 /// Unlink (async delete) one or more keys.
-pub async fn unlink(
-    client: &mut RedisClient,
-    keys: &[String],
-) -> Result<u64, RedisError> {
+pub async fn unlink(client: &mut RedisClient, keys: &[String]) -> Result<u64, RedisError> {
     let count: u64 = redis::cmd("UNLINK")
         .arg(keys)
         .query_async(client.con())

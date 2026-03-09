@@ -1,9 +1,9 @@
 //! Redis service providing multi-session connection management,
 //! key-value operations, data structure commands, pub/sub, and server admin.
 
-use crate::redis::types::*;
+use super::types::*;
 use chrono::Utc;
-use log::{error, info, warn};
+use log::{info, warn};
 use redis::AsyncCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,6 +29,12 @@ struct RedisSession {
 /// Manages multiple named Redis sessions.
 pub struct RedisService {
     sessions: HashMap<String, RedisSession>,
+}
+
+impl Default for RedisService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RedisService {
@@ -57,24 +63,19 @@ impl RedisService {
         };
 
         let url = config.to_url();
-        let client = redis::Client::open(url.as_str()).map_err(|e| {
-            RedisError::connection_failed(format!("Failed to create client: {e}"))
-        })?;
+        let client = redis::Client::open(url.as_str())
+            .map_err(|e| RedisError::connection_failed(format!("Failed to create client: {e}")))?;
 
         let mut con = client
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| {
-                RedisError::connection_failed(format!("Failed to connect: {e}"))
-            })?;
+            .map_err(|e| RedisError::connection_failed(format!("Failed to connect: {e}")))?;
 
         // Verify connectivity
         let pong: String = redis::cmd("PING")
             .query_async(&mut con)
             .await
-            .map_err(|e| {
-                RedisError::connection_failed(format!("PING failed: {e}"))
-            })?;
+            .map_err(|e| RedisError::connection_failed(format!("PING failed: {e}")))?;
 
         if pong != "PONG" {
             return Err(RedisError::connection_failed(format!(
@@ -104,10 +105,7 @@ impl RedisService {
             role,
         };
 
-        info!(
-            "Redis connected: {} ({})",
-            session_info.label, session_id
-        );
+        info!("Redis connected: {} ({})", session_info.label, session_id);
 
         self.sessions.insert(
             session_id.clone(),
@@ -193,9 +191,10 @@ impl RedisService {
     /// Get the value of a key as a string.
     pub async fn get(&mut self, session_id: &str, key: &str) -> Result<Option<String>, RedisError> {
         let con = self.get_con(session_id)?;
-        let val: Option<String> = con.get(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("GET: {e}"))
-        })?;
+        let val: Option<String> = con
+            .get(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("GET: {e}")))?;
         Ok(val)
     }
 
@@ -220,9 +219,9 @@ impl RedisService {
                     RedisError::new(RedisErrorKind::CommandError, format!("SET EX: {e}"))
                 })?;
         } else {
-            con.set::<_, _, ()>(key, value).await.map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("SET: {e}"))
-            })?;
+            con.set::<_, _, ()>(key, value)
+                .await
+                .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("SET: {e}")))?;
         }
         Ok(())
     }
@@ -230,18 +229,20 @@ impl RedisService {
     /// Delete one or more keys.
     pub async fn del(&mut self, session_id: &str, keys: &[String]) -> Result<i64, RedisError> {
         let con = self.get_con(session_id)?;
-        let count: i64 = con.del(keys).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("DEL: {e}"))
-        })?;
+        let count: i64 = con
+            .del(keys)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("DEL: {e}")))?;
         Ok(count)
     }
 
     /// Check if a key exists.
     pub async fn exists(&mut self, session_id: &str, key: &str) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let exists: bool = con.exists(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("EXISTS: {e}"))
-        })?;
+        let exists: bool = con
+            .exists(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("EXISTS: {e}")))?;
         Ok(exists)
     }
 
@@ -253,40 +254,45 @@ impl RedisService {
         ttl_secs: i64,
     ) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let ok: bool = con.expire(key, ttl_secs).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("EXPIRE: {e}"))
-        })?;
+        let ok: bool = con
+            .expire(key, ttl_secs)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("EXPIRE: {e}")))?;
         Ok(ok)
     }
 
     /// Remove TTL from a key (make it persistent).
     pub async fn persist(&mut self, session_id: &str, key: &str) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let ok: bool = con.persist(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("PERSIST: {e}"))
-        })?;
+        let ok: bool = con
+            .persist(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("PERSIST: {e}")))?;
         Ok(ok)
     }
 
     /// Get the TTL of a key in seconds.
     pub async fn ttl(&mut self, session_id: &str, key: &str) -> Result<i64, RedisError> {
         let con = self.get_con(session_id)?;
-        let ttl: i64 = con.ttl(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("TTL: {e}"))
-        })?;
+        let ttl: i64 = con
+            .ttl(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("TTL: {e}")))?;
         Ok(ttl)
     }
 
     /// Get the type of a key.
-    pub async fn key_type(&mut self, session_id: &str, key: &str) -> Result<RedisKeyType, RedisError> {
+    pub async fn key_type(
+        &mut self,
+        session_id: &str,
+        key: &str,
+    ) -> Result<RedisKeyType, RedisError> {
         let con = self.get_con(session_id)?;
         let t: String = redis::cmd("TYPE")
             .arg(key)
             .query_async(con)
             .await
-            .map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("TYPE: {e}"))
-            })?;
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("TYPE: {e}")))?;
         Ok(RedisKeyType::from(t.as_str()))
     }
 
@@ -298,9 +304,9 @@ impl RedisService {
         new_key: &str,
     ) -> Result<(), RedisError> {
         let con = self.get_con(session_id)?;
-        con.rename::<_, _, ()>(key, new_key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("RENAME: {e}"))
-        })?;
+        con.rename::<_, _, ()>(key, new_key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("RENAME: {e}")))?;
         Ok(())
     }
 
@@ -323,9 +329,7 @@ impl RedisService {
             .arg(count_val)
             .query_async(con)
             .await
-            .map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("SCAN: {e}"))
-            })?;
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("SCAN: {e}")))?;
 
         Ok(ScanResult {
             cursor: new_cursor,
@@ -334,11 +338,7 @@ impl RedisService {
     }
 
     /// Get detailed info about a key.
-    pub async fn key_info(
-        &mut self,
-        session_id: &str,
-        key: &str,
-    ) -> Result<KeyInfo, RedisError> {
+    pub async fn key_info(&mut self, session_id: &str, key: &str) -> Result<KeyInfo, RedisError> {
         let key_type = self.key_type(session_id, key).await?;
         let ttl = self.ttl(session_id, key).await?;
 
@@ -375,9 +375,7 @@ impl RedisService {
         let size: i64 = redis::cmd("DBSIZE")
             .query_async(con)
             .await
-            .map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("DBSIZE: {e}"))
-            })?;
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("DBSIZE: {e}")))?;
         Ok(size)
     }
 
@@ -387,9 +385,7 @@ impl RedisService {
         redis::cmd("FLUSHDB")
             .query_async::<()>(con)
             .await
-            .map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("FLUSHDB: {e}"))
-            })?;
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("FLUSHDB: {e}")))?;
         Ok(())
     }
 
@@ -402,9 +398,10 @@ impl RedisService {
         key: &str,
     ) -> Result<HashMap<String, String>, RedisError> {
         let con = self.get_con(session_id)?;
-        let map: HashMap<String, String> = con.hgetall(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("HGETALL: {e}"))
-        })?;
+        let map: HashMap<String, String> = con
+            .hgetall(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("HGETALL: {e}")))?;
         Ok(map)
     }
 
@@ -416,9 +413,10 @@ impl RedisService {
         field: &str,
     ) -> Result<Option<String>, RedisError> {
         let con = self.get_con(session_id)?;
-        let val: Option<String> = con.hget(key, field).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("HGET: {e}"))
-        })?;
+        let val: Option<String> = con
+            .hget(key, field)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("HGET: {e}")))?;
         Ok(val)
     }
 
@@ -433,9 +431,7 @@ impl RedisService {
         let con = self.get_con(session_id)?;
         con.hset::<_, _, _, ()>(key, field, value)
             .await
-            .map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("HSET: {e}"))
-            })?;
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("HSET: {e}")))?;
         Ok(())
     }
 
@@ -447,9 +443,10 @@ impl RedisService {
         field: &str,
     ) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let removed: bool = con.hdel(key, field).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("HDEL: {e}"))
-        })?;
+        let removed: bool = con
+            .hdel(key, field)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("HDEL: {e}")))?;
         Ok(removed)
     }
 
@@ -464,9 +461,10 @@ impl RedisService {
         stop: i64,
     ) -> Result<Vec<String>, RedisError> {
         let con = self.get_con(session_id)?;
-        let vals: Vec<String> = con.lrange(key, start as isize, stop as isize).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("LRANGE: {e}"))
-        })?;
+        let vals: Vec<String> = con
+            .lrange(key, start as isize, stop as isize)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("LRANGE: {e}")))?;
         Ok(vals)
     }
 
@@ -478,9 +476,10 @@ impl RedisService {
         value: &str,
     ) -> Result<i64, RedisError> {
         let con = self.get_con(session_id)?;
-        let len: i64 = con.lpush(key, value).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("LPUSH: {e}"))
-        })?;
+        let len: i64 = con
+            .lpush(key, value)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("LPUSH: {e}")))?;
         Ok(len)
     }
 
@@ -492,18 +491,20 @@ impl RedisService {
         value: &str,
     ) -> Result<i64, RedisError> {
         let con = self.get_con(session_id)?;
-        let len: i64 = con.rpush(key, value).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("RPUSH: {e}"))
-        })?;
+        let len: i64 = con
+            .rpush(key, value)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("RPUSH: {e}")))?;
         Ok(len)
     }
 
     /// Get list length.
     pub async fn llen(&mut self, session_id: &str, key: &str) -> Result<i64, RedisError> {
         let con = self.get_con(session_id)?;
-        let len: i64 = con.llen(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("LLEN: {e}"))
-        })?;
+        let len: i64 = con
+            .llen(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("LLEN: {e}")))?;
         Ok(len)
     }
 
@@ -516,9 +517,10 @@ impl RedisService {
         key: &str,
     ) -> Result<Vec<String>, RedisError> {
         let con = self.get_con(session_id)?;
-        let members: Vec<String> = con.smembers(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("SMEMBERS: {e}"))
-        })?;
+        let members: Vec<String> = con
+            .smembers(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("SMEMBERS: {e}")))?;
         Ok(members)
     }
 
@@ -530,9 +532,10 @@ impl RedisService {
         member: &str,
     ) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let added: bool = con.sadd(key, member).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("SADD: {e}"))
-        })?;
+        let added: bool = con
+            .sadd(key, member)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("SADD: {e}")))?;
         Ok(added)
     }
 
@@ -544,18 +547,20 @@ impl RedisService {
         member: &str,
     ) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let removed: bool = con.srem(key, member).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("SREM: {e}"))
-        })?;
+        let removed: bool = con
+            .srem(key, member)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("SREM: {e}")))?;
         Ok(removed)
     }
 
     /// Get set size.
     pub async fn scard(&mut self, session_id: &str, key: &str) -> Result<i64, RedisError> {
         let con = self.get_con(session_id)?;
-        let size: i64 = con.scard(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("SCARD: {e}"))
-        })?;
+        let size: i64 = con
+            .scard(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("SCARD: {e}")))?;
         Ok(size)
     }
 
@@ -570,10 +575,10 @@ impl RedisService {
         stop: i64,
     ) -> Result<Vec<ZSetMember>, RedisError> {
         let con = self.get_con(session_id)?;
-        let pairs: Vec<(String, f64)> =
-            con.zrange_withscores(key, start as isize, stop as isize).await.map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("ZRANGE: {e}"))
-            })?;
+        let pairs: Vec<(String, f64)> = con
+            .zrange_withscores(key, start as isize, stop as isize)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("ZRANGE: {e}")))?;
         Ok(pairs
             .into_iter()
             .map(|(member, score)| ZSetMember { member, score })
@@ -589,9 +594,10 @@ impl RedisService {
         score: f64,
     ) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let added: bool = con.zadd(key, member, score).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("ZADD: {e}"))
-        })?;
+        let added: bool = con
+            .zadd(key, member, score)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("ZADD: {e}")))?;
         Ok(added)
     }
 
@@ -603,18 +609,20 @@ impl RedisService {
         member: &str,
     ) -> Result<bool, RedisError> {
         let con = self.get_con(session_id)?;
-        let removed: bool = con.zrem(key, member).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("ZREM: {e}"))
-        })?;
+        let removed: bool = con
+            .zrem(key, member)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("ZREM: {e}")))?;
         Ok(removed)
     }
 
     /// Get sorted set size.
     pub async fn zcard(&mut self, session_id: &str, key: &str) -> Result<i64, RedisError> {
         let con = self.get_con(session_id)?;
-        let size: i64 = con.zcard(key).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("ZCARD: {e}"))
-        })?;
+        let size: i64 = con
+            .zcard(key)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("ZCARD: {e}")))?;
         Ok(size)
     }
 
@@ -632,16 +640,12 @@ impl RedisService {
                 .arg(sec)
                 .query_async(con)
                 .await
-                .map_err(|e| {
-                    RedisError::new(RedisErrorKind::CommandError, format!("INFO: {e}"))
-                })?
+                .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("INFO: {e}")))?
         } else {
             redis::cmd("INFO")
                 .query_async(con)
                 .await
-                .map_err(|e| {
-                    RedisError::new(RedisErrorKind::CommandError, format!("INFO: {e}"))
-                })?
+                .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("INFO: {e}")))?
         };
 
         Ok(parse_info(&info_str))
@@ -662,10 +666,7 @@ impl RedisService {
                 .get("used_memory")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
-            used_memory_human: mem
-                .get("used_memory_human")
-                .cloned()
-                .unwrap_or_default(),
+            used_memory_human: mem.get("used_memory_human").cloned().unwrap_or_default(),
             used_memory_peak: mem
                 .get("used_memory_peak")
                 .and_then(|v| v.parse().ok())
@@ -682,14 +683,8 @@ impl RedisService {
                 .get("maxmemory")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
-            maxmemory_human: mem
-                .get("maxmemory_human")
-                .cloned()
-                .unwrap_or_default(),
-            maxmemory_policy: mem
-                .get("maxmemory_policy")
-                .cloned()
-                .unwrap_or_default(),
+            maxmemory_human: mem.get("maxmemory_human").cloned().unwrap_or_default(),
+            maxmemory_policy: mem.get("maxmemory_policy").cloned().unwrap_or_default(),
         })
     }
 
@@ -774,8 +769,8 @@ impl RedisService {
                 let timestamp = redis_value_to_i64(&entry[1]);
                 let duration_us = redis_value_to_i64(&entry[2]);
                 let command = redis_value_to_strings(&entry[3]);
-                let client_addr = entry.get(4).and_then(|v| redis_value_to_string(v));
-                let client_name = entry.get(5).and_then(|v| redis_value_to_string(v));
+                let client_addr = entry.get(4).and_then(redis_value_to_string);
+                let client_name = entry.get(5).and_then(redis_value_to_string);
 
                 entries.push(SlowLogEntry {
                     id,
@@ -855,27 +850,22 @@ impl RedisService {
             cmd.arg(arg);
         }
 
-        let val: redis::Value = cmd.query_async(con).await.map_err(|e| {
-            RedisError::new(RedisErrorKind::CommandError, format!("raw: {e}"))
-        })?;
+        let val: redis::Value = cmd
+            .query_async(con)
+            .await
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("raw: {e}")))?;
 
         Ok(format_redis_value(&val))
     }
 
     /// Select a database index.
-    pub async fn select_db(
-        &mut self,
-        session_id: &str,
-        db: u8,
-    ) -> Result<(), RedisError> {
+    pub async fn select_db(&mut self, session_id: &str, db: u8) -> Result<(), RedisError> {
         let con = self.get_con(session_id)?;
         redis::cmd("SELECT")
             .arg(db)
             .query_async::<()>(con)
             .await
-            .map_err(|e| {
-                RedisError::new(RedisErrorKind::CommandError, format!("SELECT: {e}"))
-            })?;
+            .map_err(|e| RedisError::new(RedisErrorKind::CommandError, format!("SELECT: {e}")))?;
 
         // Update session info
         if let Some(session) = self.sessions.get_mut(session_id) {
@@ -908,10 +898,7 @@ fn parse_info(info: &str) -> ServerInfo {
             continue;
         }
         if line.starts_with('#') {
-            current_section = line
-                .trim_start_matches('#')
-                .trim()
-                .to_lowercase();
+            current_section = line.trim_start_matches('#').trim().to_lowercase();
             continue;
         }
         if let Some((key, val)) = line.split_once(':') {
@@ -930,9 +917,7 @@ fn format_redis_value(val: &redis::Value) -> String {
     match val {
         redis::Value::Nil => "(nil)".to_string(),
         redis::Value::Int(i) => format!("(integer) {i}"),
-        redis::Value::BulkString(data) => {
-            String::from_utf8_lossy(data).to_string()
-        }
+        redis::Value::BulkString(data) => String::from_utf8_lossy(data).to_string(),
         redis::Value::Array(arr) => {
             let mut out = String::new();
             for (i, v) in arr.iter().enumerate() {
@@ -963,11 +948,7 @@ fn format_redis_value(val: &redis::Value) -> String {
 fn redis_value_to_i64(val: &redis::Value) -> i64 {
     match val {
         redis::Value::Int(i) => *i,
-        redis::Value::BulkString(data) => {
-            String::from_utf8_lossy(data)
-                .parse()
-                .unwrap_or(0)
-        }
+        redis::Value::BulkString(data) => String::from_utf8_lossy(data).parse().unwrap_or(0),
         _ => 0,
     }
 }
@@ -984,10 +965,7 @@ fn redis_value_to_string(val: &redis::Value) -> Option<String> {
 
 fn redis_value_to_strings(val: &redis::Value) -> Vec<String> {
     match val {
-        redis::Value::Array(arr) => arr
-            .iter()
-            .filter_map(|v| redis_value_to_string(v))
-            .collect(),
+        redis::Value::Array(arr) => arr.iter().filter_map(redis_value_to_string).collect(),
         _ => vec![],
     }
 }
@@ -1018,10 +996,7 @@ mod tests {
             parse_info_field(info, "redis_version"),
             Some("7.2.0".to_string())
         );
-        assert_eq!(
-            parse_info_field(info, "role"),
-            Some("master".to_string())
-        );
+        assert_eq!(parse_info_field(info, "role"), Some("master".to_string()));
         assert_eq!(parse_info_field(info, "missing"), None);
     }
 
@@ -1031,14 +1006,8 @@ mod tests {
         let parsed = parse_info(info);
         assert!(parsed.sections.contains_key("server"));
         assert!(parsed.sections.contains_key("clients"));
-        assert_eq!(
-            parsed.sections["server"]["redis_version"],
-            "7.2.0"
-        );
-        assert_eq!(
-            parsed.sections["clients"]["connected_clients"],
-            "5"
-        );
+        assert_eq!(parsed.sections["server"]["redis_version"], "7.2.0");
+        assert_eq!(parsed.sections["clients"]["connected_clients"], "5");
     }
 
     #[test]
@@ -1048,10 +1017,7 @@ mod tests {
 
     #[test]
     fn test_format_redis_value_int() {
-        assert_eq!(
-            format_redis_value(&redis::Value::Int(42)),
-            "(integer) 42"
-        );
+        assert_eq!(format_redis_value(&redis::Value::Int(42)), "(integer) 42");
     }
 
     #[test]

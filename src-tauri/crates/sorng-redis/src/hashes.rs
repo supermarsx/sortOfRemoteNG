@@ -37,7 +37,10 @@ pub async fn hmset(
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
-    client.con().hset_multiple::<_, _, _, ()>(key, &items).await?;
+    client
+        .con()
+        .hset_multiple::<_, _, _, ()>(key, &items)
+        .await?;
     Ok(())
 }
 
@@ -71,38 +74,25 @@ pub async fn hgetall(
 }
 
 /// HKEYS key → all field names
-pub async fn hkeys(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Vec<String>, RedisError> {
+pub async fn hkeys(client: &mut RedisClient, key: &str) -> Result<Vec<String>, RedisError> {
     let v: Vec<String> = client.con().hkeys(key).await?;
     Ok(v)
 }
 
 /// HVALS key → all values
-pub async fn hvals(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Vec<String>, RedisError> {
+pub async fn hvals(client: &mut RedisClient, key: &str) -> Result<Vec<String>, RedisError> {
     let v: Vec<String> = client.con().hvals(key).await?;
     Ok(v)
 }
 
 /// HLEN key → number of fields
-pub async fn hlen(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<u64, RedisError> {
+pub async fn hlen(client: &mut RedisClient, key: &str) -> Result<u64, RedisError> {
     let v: u64 = client.con().hlen(key).await?;
     Ok(v)
 }
 
 /// HEXISTS key field → bool
-pub async fn hexists(
-    client: &mut RedisClient,
-    key: &str,
-    field: &str,
-) -> Result<bool, RedisError> {
+pub async fn hexists(client: &mut RedisClient, key: &str, field: &str) -> Result<bool, RedisError> {
     let v: bool = client.con().hexists(key, field).await?;
     Ok(v)
 }
@@ -150,8 +140,7 @@ pub async fn hscan(
     if let Some(c) = count {
         cmd.arg("COUNT").arg(c);
     }
-    let (new_cursor, flat): (u64, Vec<String>) =
-        cmd.query_async(client.con()).await?;
+    let (new_cursor, flat): (u64, Vec<String>) = cmd.query_async(client.con()).await?;
 
     let mut map = HashMap::new();
     let mut iter = flat.into_iter();

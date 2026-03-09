@@ -123,10 +123,7 @@ pub async fn cluster_myid(client: &mut RedisClient) -> Result<String, RedisError
 }
 
 /// CLUSTER KEYSLOT key → hash slot number
-pub async fn cluster_keyslot(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<u64, RedisError> {
+pub async fn cluster_keyslot(client: &mut RedisClient, key: &str) -> Result<u64, RedisError> {
     let v: u64 = redis::cmd("CLUSTER")
         .arg("KEYSLOT")
         .arg(key)
@@ -136,10 +133,7 @@ pub async fn cluster_keyslot(
 }
 
 /// CLUSTER COUNTKEYSINSLOT slot → number of keys in that slot
-pub async fn cluster_count_keys(
-    client: &mut RedisClient,
-    slot: u64,
-) -> Result<u64, RedisError> {
+pub async fn cluster_count_keys(client: &mut RedisClient, slot: u64) -> Result<u64, RedisError> {
     let v: u64 = redis::cmd("CLUSTER")
         .arg("COUNTKEYSINSLOT")
         .arg(slot)
@@ -149,10 +143,7 @@ pub async fn cluster_count_keys(
 }
 
 /// CLUSTER ADDSLOTS slot [slot ...]
-pub async fn cluster_addslots(
-    client: &mut RedisClient,
-    slots: &[u64],
-) -> Result<(), RedisError> {
+pub async fn cluster_addslots(client: &mut RedisClient, slots: &[u64]) -> Result<(), RedisError> {
     let mut cmd = redis::cmd("CLUSTER");
     cmd.arg("ADDSLOTS");
     for s in slots {
@@ -163,10 +154,7 @@ pub async fn cluster_addslots(
 }
 
 /// CLUSTER DELSLOTS slot [slot ...]
-pub async fn cluster_delslots(
-    client: &mut RedisClient,
-    slots: &[u64],
-) -> Result<(), RedisError> {
+pub async fn cluster_delslots(client: &mut RedisClient, slots: &[u64]) -> Result<(), RedisError> {
     let mut cmd = redis::cmd("CLUSTER");
     cmd.arg("DELSLOTS");
     for s in slots {
@@ -191,10 +179,7 @@ pub async fn cluster_failover(
 }
 
 /// CLUSTER REPLICATE node-id
-pub async fn cluster_replicate(
-    client: &mut RedisClient,
-    node_id: &str,
-) -> Result<(), RedisError> {
+pub async fn cluster_replicate(client: &mut RedisClient, node_id: &str) -> Result<(), RedisError> {
     redis::cmd("CLUSTER")
         .arg("REPLICATE")
         .arg(node_id)
@@ -204,11 +189,7 @@ pub async fn cluster_replicate(
 }
 
 /// CLUSTER MEET ip port
-pub async fn cluster_meet(
-    client: &mut RedisClient,
-    ip: &str,
-    port: u16,
-) -> Result<(), RedisError> {
+pub async fn cluster_meet(client: &mut RedisClient, ip: &str, port: u16) -> Result<(), RedisError> {
     redis::cmd("CLUSTER")
         .arg("MEET")
         .arg(ip)
@@ -219,10 +200,7 @@ pub async fn cluster_meet(
 }
 
 /// CLUSTER FORGET node-id
-pub async fn cluster_forget(
-    client: &mut RedisClient,
-    node_id: &str,
-) -> Result<(), RedisError> {
+pub async fn cluster_forget(client: &mut RedisClient, node_id: &str) -> Result<(), RedisError> {
     redis::cmd("CLUSTER")
         .arg("FORGET")
         .arg(node_id)
@@ -232,10 +210,7 @@ pub async fn cluster_forget(
 }
 
 /// CLUSTER RESET [HARD|SOFT]
-pub async fn cluster_reset(
-    client: &mut RedisClient,
-    hard: bool,
-) -> Result<(), RedisError> {
+pub async fn cluster_reset(client: &mut RedisClient, hard: bool) -> Result<(), RedisError> {
     let opt = if hard { "HARD" } else { "SOFT" };
     redis::cmd("CLUSTER")
         .arg("RESET")

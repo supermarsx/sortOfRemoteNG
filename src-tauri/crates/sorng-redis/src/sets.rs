@@ -27,10 +27,7 @@ pub async fn srem(
 }
 
 /// SMEMBERS key → all members
-pub async fn smembers(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Vec<String>, RedisError> {
+pub async fn smembers(client: &mut RedisClient, key: &str) -> Result<Vec<String>, RedisError> {
     let v: Vec<String> = client.con().smembers(key).await?;
     Ok(v)
 }
@@ -46,37 +43,25 @@ pub async fn sismember(
 }
 
 /// SCARD key → cardinality
-pub async fn scard(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<u64, RedisError> {
+pub async fn scard(client: &mut RedisClient, key: &str) -> Result<u64, RedisError> {
     let v: u64 = client.con().scard(key).await?;
     Ok(v)
 }
 
 /// SDIFF key [key ...] → members in first set but not in others
-pub async fn sdiff(
-    client: &mut RedisClient,
-    keys: &[String],
-) -> Result<Vec<String>, RedisError> {
+pub async fn sdiff(client: &mut RedisClient, keys: &[String]) -> Result<Vec<String>, RedisError> {
     let v: Vec<String> = client.con().sdiff(keys).await?;
     Ok(v)
 }
 
 /// SINTER key [key ...] → intersection
-pub async fn sinter(
-    client: &mut RedisClient,
-    keys: &[String],
-) -> Result<Vec<String>, RedisError> {
+pub async fn sinter(client: &mut RedisClient, keys: &[String]) -> Result<Vec<String>, RedisError> {
     let v: Vec<String> = client.con().sinter(keys).await?;
     Ok(v)
 }
 
 /// SUNION key [key ...] → union
-pub async fn sunion(
-    client: &mut RedisClient,
-    keys: &[String],
-) -> Result<Vec<String>, RedisError> {
+pub async fn sunion(client: &mut RedisClient, keys: &[String]) -> Result<Vec<String>, RedisError> {
     let v: Vec<String> = client.con().sunion(keys).await?;
     Ok(v)
 }
@@ -149,8 +134,7 @@ pub async fn sscan(
     if let Some(c) = count {
         cmd.arg("COUNT").arg(c);
     }
-    let (new_cursor, members): (u64, Vec<String>) =
-        cmd.query_async(client.con()).await?;
+    let (new_cursor, members): (u64, Vec<String>) = cmd.query_async(client.con()).await?;
     Ok(RedisScanResult {
         cursor: new_cursor,
         keys: members,

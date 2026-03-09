@@ -26,19 +26,13 @@ pub async fn rpush(
 }
 
 /// LPOP key → removed element
-pub async fn lpop(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Option<String>, RedisError> {
+pub async fn lpop(client: &mut RedisClient, key: &str) -> Result<Option<String>, RedisError> {
     let v: Option<String> = client.con().lpop(key, None).await?;
     Ok(v)
 }
 
 /// RPOP key → removed element
-pub async fn rpop(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<Option<String>, RedisError> {
+pub async fn rpop(client: &mut RedisClient, key: &str) -> Result<Option<String>, RedisError> {
     let v: Option<String> = client.con().rpop(key, None).await?;
     Ok(v)
 }
@@ -68,10 +62,7 @@ pub async fn lrange(
 }
 
 /// LLEN key → length
-pub async fn llen(
-    client: &mut RedisClient,
-    key: &str,
-) -> Result<i64, RedisError> {
+pub async fn llen(client: &mut RedisClient, key: &str) -> Result<i64, RedisError> {
     let v: i64 = client.con().llen(key).await?;
     Ok(v)
 }
@@ -83,7 +74,10 @@ pub async fn lset(
     index: i64,
     value: &str,
 ) -> Result<(), RedisError> {
-    client.con().lset::<_, _, ()>(key, index as isize, value).await?;
+    client
+        .con()
+        .lset::<_, _, ()>(key, index as isize, value)
+        .await?;
     Ok(())
 }
 
