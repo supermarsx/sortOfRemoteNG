@@ -80,7 +80,10 @@ impl CyrusSaslProcessManager {
 
     /// Get comprehensive SASL info.
     pub async fn info(client: &CyrusSaslClient) -> CyrusSaslResult<SaslInfo> {
-        let version = client.version().await.unwrap_or_else(|_| "unknown".to_string());
+        let version = client
+            .version()
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
         let mechs = client.list_mechanisms().await.unwrap_or_default();
         let status = client.saslauthd_status().await;
         let running = status.as_ref().map(|s| s.running).unwrap_or(false);
@@ -118,7 +121,10 @@ impl CyrusSaslProcessManager {
         }
 
         // Check config directory exists
-        let config_exists = client.file_exists(client.config_dir()).await.unwrap_or(false);
+        let config_exists = client
+            .file_exists(client.config_dir())
+            .await
+            .unwrap_or(false);
         if !config_exists {
             return Ok(SaslTestResult {
                 success: false,

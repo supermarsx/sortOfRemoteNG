@@ -10,7 +10,9 @@ impl MechanismManager {
     /// List all SASL mechanisms known to the system (enabled & disabled).
     pub async fn list(client: &CyrusSaslClient) -> CyrusSaslResult<Vec<SaslMechanism>> {
         let out = client
-            .exec_ssh("pluginviewer --saslmechlist -c 2>/dev/null || pluginviewer 2>/dev/null || echo ''")
+            .exec_ssh(
+                "pluginviewer --saslmechlist -c 2>/dev/null || pluginviewer 2>/dev/null || echo ''",
+            )
             .await?;
         let mechanisms = parse_mechanism_list(&out.stdout);
         Ok(mechanisms)
@@ -50,7 +52,7 @@ impl MechanismManager {
         }
         let mechs: Vec<String> = line
             .split(':')
-            .last()
+            .next_back()
             .unwrap_or("")
             .split_whitespace()
             .map(String::from)
@@ -69,7 +71,10 @@ impl MechanismManager {
         let mech_line = format!("mech_list: {}", enabled.join(" "));
         let config_path = format!("{}/sasl-mech.conf", client.config_dir());
 
-        let existing = client.read_remote_file(&config_path).await.unwrap_or_default();
+        let existing = client
+            .read_remote_file(&config_path)
+            .await
+            .unwrap_or_default();
         let new_content = if existing.contains("mech_list:") {
             existing
                 .lines()
@@ -105,7 +110,10 @@ impl MechanismManager {
         let mech_line = format!("mech_list: {}", filtered.join(" "));
         let config_path = format!("{}/sasl-mech.conf", client.config_dir());
 
-        let existing = client.read_remote_file(&config_path).await.unwrap_or_default();
+        let existing = client
+            .read_remote_file(&config_path)
+            .await
+            .unwrap_or_default();
         let new_content = if existing.contains("mech_list:") {
             existing
                 .lines()
@@ -164,7 +172,9 @@ fn parse_mechanism_list(raw: &str) -> Vec<SaslMechanism> {
             for token in trimmed.split_whitespace() {
                 let name = token.trim_end_matches(',').to_uppercase();
                 if !name.is_empty()
-                    && name.chars().all(|c| c.is_ascii_uppercase() || c == '-' || c == '_')
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_uppercase() || c == '-' || c == '_')
                     && seen.insert(name.clone())
                 {
                     let description = describe_mechanism(&name);

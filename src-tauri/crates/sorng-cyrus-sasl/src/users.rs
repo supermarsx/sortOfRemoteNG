@@ -200,11 +200,7 @@ fn parse_user_list(raw: &str) -> Vec<SaslUser> {
                 // Update existing entry if we now see a password property
                 if let Some(u) = users.iter_mut().find(|u| {
                     u.username == user_part.split('@').next().unwrap_or("")
-                        && u.realm
-                            == user_part
-                                .split('@')
-                                .nth(1)
-                                .unwrap_or("")
+                        && u.realm == user_part.split('@').nth(1).unwrap_or("")
                 }) {
                     u.password_exists = true;
                 }

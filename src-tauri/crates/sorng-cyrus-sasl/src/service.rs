@@ -14,8 +14,8 @@ use crate::app_config::AppConfigManager;
 use crate::auxprop::AuxpropManager;
 use crate::mechanisms::MechanismManager;
 use crate::process::CyrusSaslProcessManager;
-use crate::sasldb::SaslDbManager;
 use crate::saslauthd::SaslauthdManager;
+use crate::sasldb::SaslDbManager;
 use crate::users::SaslUserManager;
 
 /// Shared Tauri state handle.
@@ -24,6 +24,12 @@ pub type CyrusSaslServiceState = Arc<Mutex<CyrusSaslService>>;
 /// Main Cyrus SASL service managing connections.
 pub struct CyrusSaslService {
     connections: HashMap<String, CyrusSaslClient>,
+}
+
+impl Default for CyrusSaslService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CyrusSaslService {
@@ -57,15 +63,12 @@ impl CyrusSaslService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> CyrusSaslResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| {
-                CyrusSaslError::new(
-                    crate::error::CyrusSaslErrorKind::NotConnected,
-                    format!("No connection '{}'", id),
-                )
-            })
+        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+            CyrusSaslError::new(
+                crate::error::CyrusSaslErrorKind::NotConnected,
+                format!("No connection '{}'", id),
+            )
+        })
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -98,10 +101,7 @@ impl CyrusSaslService {
         MechanismManager::get(self.client(id)?, name).await
     }
 
-    pub async fn list_available_mechanisms(
-        &self,
-        id: &str,
-    ) -> CyrusSaslResult<Vec<SaslMechanism>> {
+    pub async fn list_available_mechanisms(&self, id: &str) -> CyrusSaslResult<Vec<SaslMechanism>> {
         MechanismManager::list_available(self.client(id)?).await
     }
 
@@ -132,11 +132,7 @@ impl CyrusSaslService {
         SaslUserManager::get(self.client(id)?, username, realm).await
     }
 
-    pub async fn create_user(
-        &self,
-        id: &str,
-        req: CreateSaslUserRequest,
-    ) -> CyrusSaslResult<()> {
+    pub async fn create_user(&self, id: &str, req: CreateSaslUserRequest) -> CyrusSaslResult<()> {
         SaslUserManager::create(self.client(id)?, &req).await
     }
 
@@ -202,11 +198,7 @@ impl CyrusSaslService {
         SaslauthdManager::set_mechanism(self.client(id)?, mech).await
     }
 
-    pub async fn set_saslauthd_flags(
-        &self,
-        id: &str,
-        flags: Vec<String>,
-    ) -> CyrusSaslResult<()> {
+    pub async fn set_saslauthd_flags(&self, id: &str, flags: Vec<String>) -> CyrusSaslResult<()> {
         SaslauthdManager::set_flags(self.client(id)?, flags).await
     }
 
@@ -227,11 +219,7 @@ impl CyrusSaslService {
         AppConfigManager::list_apps(self.client(id)?).await
     }
 
-    pub async fn get_app_config(
-        &self,
-        id: &str,
-        app_name: &str,
-    ) -> CyrusSaslResult<SaslAppConfig> {
+    pub async fn get_app_config(&self, id: &str, app_name: &str) -> CyrusSaslResult<SaslAppConfig> {
         AppConfigManager::get_app_config(self.client(id)?, app_name).await
     }
 

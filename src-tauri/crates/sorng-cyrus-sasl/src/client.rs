@@ -19,15 +19,24 @@ impl CyrusSaslClient {
     // ── Paths ────────────────────────────────────────────────────────
 
     pub fn saslauthd_bin(&self) -> &str {
-        self.config.saslauthd_bin.as_deref().unwrap_or("/usr/sbin/saslauthd")
+        self.config
+            .saslauthd_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/saslauthd")
     }
 
     pub fn sasldblistusers_bin(&self) -> &str {
-        self.config.sasldblistusers_bin.as_deref().unwrap_or("/usr/sbin/sasldblistusers2")
+        self.config
+            .sasldblistusers_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/sasldblistusers2")
     }
 
     pub fn saslpasswd_bin(&self) -> &str {
-        self.config.saslpasswd_bin.as_deref().unwrap_or("/usr/sbin/saslpasswd2")
+        self.config
+            .saslpasswd_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/saslpasswd2")
     }
 
     pub fn config_dir(&self) -> &str {
@@ -49,7 +58,9 @@ impl CyrusSaslClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> CyrusSaslResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 
@@ -100,7 +111,10 @@ impl CyrusSaslClient {
             .filter(|l| !l.is_empty())
             .flat_map(|l| {
                 l.split_whitespace()
-                    .filter(|w| w.chars().all(|c| c.is_ascii_uppercase() || c == '-' || c == '_'))
+                    .filter(|w| {
+                        w.chars()
+                            .all(|c| c.is_ascii_uppercase() || c == '-' || c == '_')
+                    })
                     .map(String::from)
                     .collect::<Vec<_>>()
             })

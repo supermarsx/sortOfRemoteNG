@@ -11,7 +11,9 @@ impl AuxpropManager {
     /// List all available auxprop plugins.
     pub async fn list(client: &CyrusSaslClient) -> CyrusSaslResult<Vec<AuxpropPlugin>> {
         let out = client
-            .exec_ssh("pluginviewer --auxprop-list 2>/dev/null || pluginviewer -a 2>/dev/null || echo ''")
+            .exec_ssh(
+                "pluginviewer --auxprop-list 2>/dev/null || pluginviewer -a 2>/dev/null || echo ''",
+            )
             .await?;
         let plugins = parse_auxprop_list(&out.stdout);
         Ok(plugins)
@@ -22,7 +24,9 @@ impl AuxpropManager {
         let all = Self::list(client).await?;
         all.into_iter()
             .find(|p| p.name.eq_ignore_ascii_case(name))
-            .ok_or_else(|| CyrusSaslError::plugin_error(format!("Auxprop plugin not found: {name}")))
+            .ok_or_else(|| {
+                CyrusSaslError::plugin_error(format!("Auxprop plugin not found: {name}"))
+            })
     }
 
     /// Configure an auxprop plugin by writing settings into the SASL config.
@@ -61,7 +65,10 @@ impl AuxpropManager {
         let message = if found {
             format!("Auxprop plugin '{}' is available and loadable", name)
         } else {
-            format!("Auxprop plugin '{}' was not found or cannot be loaded", name)
+            format!(
+                "Auxprop plugin '{}' was not found or cannot be loaded",
+                name
+            )
         };
 
         Ok(SaslTestResult {

@@ -112,7 +112,10 @@ impl SaslDbManager {
 
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             if parts.len() < 2 {
-                errors.push(format!("Invalid line (need username password [realm]): {}", trimmed));
+                errors.push(format!(
+                    "Invalid line (need username password [realm]): {}",
+                    trimmed
+                ));
                 continue;
             }
 

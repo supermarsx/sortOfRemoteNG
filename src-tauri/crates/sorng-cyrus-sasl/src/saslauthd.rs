@@ -12,10 +12,7 @@ impl SaslauthdManager {
         let content = client
             .read_remote_file("/etc/default/saslauthd")
             .await
-            .or_else(|_| {
-                // FreeBSD-style path
-                Err(CyrusSaslError::config_not_found("/etc/default/saslauthd"))
-            })?;
+            .map_err(|_| CyrusSaslError::config_not_found("/etc/default/saslauthd"))?;
         Ok(parse_saslauthd_config(&content))
     }
 
@@ -127,10 +124,7 @@ impl SaslauthdManager {
         let out = client.exec_ssh(&cmd).await?;
         let success = out.exit_code == 0 && out.stdout.contains("OK");
         let message = if success {
-            format!(
-                "Authentication succeeded for {} via {}",
-                username, service
-            )
+            format!("Authentication succeeded for {} via {}", username, service)
         } else {
             format!(
                 "Authentication failed for {}: {}",

@@ -40,15 +40,24 @@ impl std::error::Error for CyrusSaslError {}
 
 impl CyrusSaslError {
     pub fn new(kind: CyrusSaslErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected() -> Self {
-        Self::new(CyrusSaslErrorKind::NotConnected, "Not connected to SASL host")
+        Self::new(
+            CyrusSaslErrorKind::NotConnected,
+            "Not connected to SASL host",
+        )
     }
 
     pub fn already_connected(id: &str) -> Self {
-        Self::new(CyrusSaslErrorKind::AlreadyConnected, format!("Already connected: {id}"))
+        Self::new(
+            CyrusSaslErrorKind::AlreadyConnected,
+            format!("Already connected: {id}"),
+        )
     }
 
     pub fn connection_failed(msg: impl fmt::Display) -> Self {
@@ -60,15 +69,24 @@ impl CyrusSaslError {
     }
 
     pub fn config_not_found(path: &str) -> Self {
-        Self::new(CyrusSaslErrorKind::ConfigNotFound, format!("Config not found: {path}"))
+        Self::new(
+            CyrusSaslErrorKind::ConfigNotFound,
+            format!("Config not found: {path}"),
+        )
     }
 
     pub fn mechanism_not_found(name: &str) -> Self {
-        Self::new(CyrusSaslErrorKind::MechanismNotFound, format!("Mechanism not found: {name}"))
+        Self::new(
+            CyrusSaslErrorKind::MechanismNotFound,
+            format!("Mechanism not found: {name}"),
+        )
     }
 
     pub fn user_not_found(username: &str, realm: &str) -> Self {
-        Self::new(CyrusSaslErrorKind::UserNotFound, format!("User not found: {username}@{realm}"))
+        Self::new(
+            CyrusSaslErrorKind::UserNotFound,
+            format!("User not found: {username}@{realm}"),
+        )
     }
 
     pub fn plugin_error(msg: impl fmt::Display) -> Self {

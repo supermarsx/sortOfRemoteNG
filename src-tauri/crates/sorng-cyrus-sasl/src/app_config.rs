@@ -33,9 +33,10 @@ impl AppConfigManager {
         app_name: &str,
     ) -> CyrusSaslResult<SaslAppConfig> {
         let path = format!("{}/{}.conf", client.config_dir(), app_name);
-        let content = client.read_remote_file(&path).await.map_err(|_| {
-            CyrusSaslError::config_not_found(&path)
-        })?;
+        let content = client
+            .read_remote_file(&path)
+            .await
+            .map_err(|_| CyrusSaslError::config_not_found(&path))?;
         Ok(parse_app_config(app_name, &content))
     }
 
