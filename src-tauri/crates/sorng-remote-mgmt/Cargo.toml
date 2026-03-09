@@ -12,5 +12,5 @@ tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-tokio-tungstenite = "0.21"
+tokio-tungstenite = { workspace = true }
 futures-util = "0.3"

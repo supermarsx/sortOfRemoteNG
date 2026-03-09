@@ -14,7 +14,7 @@ tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true, features = ["cookies", "blocking", "native-tls"] }
+reqwest = { workspace = true, features = ["cookies", "blocking"] }
 base64 = { workspace = true }
 url = { workspace = true }
 futures = { workspace = true }

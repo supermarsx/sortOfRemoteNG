@@ -13,7 +13,7 @@ tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio", "tls-rustls", "chrono"] }
+sqlx = { workspace = true, features = ["postgres", "runtime-tokio", "tls-rustls", "chrono"] }
 ssh2 = { workspace = true }
 thiserror = { workspace = true }
 

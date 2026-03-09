@@ -8,4 +8,4 @@ description = "Tauri shell and desktop integration commands for the app crate"
 serde = { workspace = true }
 tauri = { workspace = true }
 dirs = { workspace = true }
-tauri-plugin-autostart = "2"
+tauri-plugin-autostart = "=2.5.1"

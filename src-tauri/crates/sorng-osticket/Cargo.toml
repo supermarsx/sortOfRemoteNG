@@ -11,5 +11,5 @@ tokio = { workspace = true }
 tauri = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true, features = ["cookies", "blocking", "native-tls"] }
+reqwest = { workspace = true, features = ["cookies", "blocking"] }
 url = { workspace = true }

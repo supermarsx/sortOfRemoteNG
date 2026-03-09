@@ -9,7 +9,7 @@ sorng-core = { path = "../sorng-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { version = "2", features = [] }
+tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

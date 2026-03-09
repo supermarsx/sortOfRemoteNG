@@ -74,6 +74,7 @@ members = [
   "crates/sorng-gateway",
   "crates/sorng-biometrics",
   "crates/sorng-vault",
+  "crates/sorng-vault-windows",
   "crates/sorng-p2p",
   "crates/sorng-tailscale",
   "crates/sorng-zerotier",
@@ -202,16 +203,25 @@ futures = "0.3"
 async-trait = "0.1"
 
 # ── Framework ─────────────────────────────────────────────────────────
-tauri = { version = "2.9.5", features = ["devtools"] }
+tauri = { version = "=2.10.3", features = ["devtools"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }
-reqwest = { version = "0.11", features = ["json", "cookies", "stream", "multipart"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "cookies", "stream", "multipart", "rustls-tls-native-roots"] }
 url = "2.5"
-native-tls = "0.2"
-tokio-native-tls = "0.3"
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
+tokio-rustls = "0.24"
+rustls-native-certs = "0.6"
+tokio-tungstenite = { version = "0.21", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 bytes = "1"
 ssh2 = "0.9"
+windows = "=0.62.2"
+windows-sys = "=0.61.2"
+
+# ── Database ──────────────────────────────────────────────────────────
+# Keep SQLx exact and feature-less at the workspace root so crate-level
+# manifests only opt into the specific backend/runtime features they need.
+sqlx = { version = "=0.7.4", default-features = false }
 
 # ── Cryptography ──────────────────────────────────────────────────────
 sha2 = "0.10"
@@ -226,7 +236,7 @@ uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.21"
 rand = "0.8"
-dirs = "5.0"
+dirs = "=6.0.0"
 regex = "1.10"
 lazy_static = "1.4"
 thiserror = "1.0"
@@ -252,7 +262,7 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.5.3", features = [] }
+tauri-build = { version = "=2.5.6", features = [] }
 
 [dependencies]
 sorng-app-auth = { path = "crates/sorng-app-auth" }
@@ -264,13 +274,13 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 log = { workspace = true }
 tauri = { workspace = true }
-tauri-plugin-log = "2"
-tauri-plugin-autostart = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
+tauri-plugin-log = "=2.8.0"
+tauri-plugin-autostart = "=2.5.1"
+tauri-plugin-dialog = "=2.6.0"
+tauri-plugin-fs = "=2.4.5"
 tokio = { workspace = true }
 dirs = { workspace = true }
-tauri-plugin-window-state = "2"
+tauri-plugin-window-state = "=2.4.1"
 axum = "0.7"
 
 [dev-dependencies]
@@ -283,9 +293,12 @@ uuid = { workspace = true }
 
 [features]
 default = ["rdp"]
-full = ["kafka", "rdp"]
+full = ["cert-auth", "kafka", "rdp", "script-engine", "tls-cert-details"]
+cert-auth = ["sorng-app-domains/cert-auth"]
 kafka = ["dep:sorng-kafka"]
 rdp = ["sorng-app-domains/rdp"]
+script-engine = ["sorng-app-domains/script-engine"]
+tls-cert-details = ["sorng-app-domains/tls-cert-details"]
 
 # ═══════════════════════════════════════════════════════════════════════
 # Build performance profiles
@@ -324,22 +337,32 @@ opt-level = 1
 # A single codegen unit forces sequential LLVM work on one thread,
 # which caps peak memory.  debug=0 avoids emitting debug info for
 # crates we'll never step into.
-[profile.dev.package.mongodb]
-codegen-units = 1
-opt-level = 1
-debug = 0
-
-[profile.dev.package.bson]
-codegen-units = 1
-opt-level = 1
-debug = 0
-
 [profile.dev.package.sqlx-postgres]
 codegen-units = 1
 opt-level = 1
 debug = 0
 
 [profile.dev.package.sqlx-mysql]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.sqlx-core]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.sqlx-sqlite]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.sqlx-macros]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.sqlx-macros-core]
 codegen-units = 1
 opt-level = 1
 debug = 0
@@ -358,6 +381,16 @@ debug = 0
 # of thousands of generated bindings.  Compiling with 8 CGUs + debuginfo
 # exhausts 32 GB during typeck.
 [profile.dev.package.windows]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.windows-core]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.windows-sys]
 codegen-units = 1
 opt-level = 1
 debug = 0

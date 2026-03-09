@@ -18,5 +18,3 @@ base64 = { workspace = true }
 url = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
-native-tls = { workspace = true }
-tokio-native-tls = { workspace = true }

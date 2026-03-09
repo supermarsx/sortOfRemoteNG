@@ -16,6 +16,20 @@ jobs = 1
 # Re-enable locally once the wrapper issue is understood.
 # rustc-wrapper = "sccache"
 
+[alias]
+# Opt-in parallel commands for warm-cache developer loops.
+# Keep the default build at `jobs = 1` because cold workspace builds can
+# still OOM on this machine, especially when RDP / windows-heavy crates
+# are in the graph. Use these after the first successful build:
+#   cargo c2
+#   cargo b2
+#   cargo t2 --no-run
+#   cargo r2
+c2 = "check -j 2"
+b2 = "build -j 2"
+t2 = "test -j 2"
+r2 = "run -j 2"
+
 [net]
 # Retry failed downloads up to 3 times
 retry = 3

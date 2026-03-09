@@ -13,7 +13,7 @@ tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"] }
+sqlx = { workspace = true, features = ["sqlite", "runtime-tokio"] }
 thiserror = { workspace = true }
 
 [dev-dependencies]
