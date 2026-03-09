@@ -1,33 +1,98 @@
 import React from "react";
+import dynamic from "next/dynamic";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { CollectionManager } from "../../utils/connection/collectionManager";
-import { CollectionSelector } from "../connection/CollectionSelector";
-import { ConnectionEditor } from "../connection/ConnectionEditor";
-import { QuickConnect } from "../connection/QuickConnect";
-import { PasswordDialog } from "../security/PasswordDialog";
 import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
-import { SettingsDialog } from "../settingsDialog";
-import { ImportExport } from "../importExport";
-import { PerformanceMonitor } from "../monitoring/PerformanceMonitor";
-import { ActionLogViewer } from "../monitoring/ActionLogViewer";
-import { ShortcutManagerDialog } from "./ShortcutManagerDialog";
-import { ProxyChainMenu } from "../network/ProxyChainMenu";
-import { InternalProxyManager } from "../network/InternalProxyManager";
-import { RDPSessionPanel } from "../rdp/RDPSessionPanel";
-import { WOLQuickTool } from "../network/WOLQuickTool";
-import { BulkSSHCommander } from "../ssh/BulkSSHCommander";
-import { ServerStatsPanel } from "../ssh/ServerStatsPanel";
-import { OpksshPanel } from "../ssh/OpksshPanel";
-import { McpServerPanel } from "../ssh/McpServerPanel";
-import { ScriptManager } from "../recording/ScriptManager";
-import { MacroManager } from "../recording/MacroManager";
-import { RecordingManager } from "../recording/RecordingManager";
-import { ConnectionDiagnostics } from "../connection/ConnectionDiagnostics";
+import RDPSessionPanel from "../rdp/RDPSessionPanel";
 import { ErrorLogBar } from "./ErrorLogBar";
-import { AutoLockManager } from "../security/AutoLockManager";
 import { Modal } from "../ui/overlays/Modal";
+
+const AutoLockManager = dynamic(
+  () => import("../security/AutoLockManager").then((module) => module.AutoLockManager),
+  { ssr: false },
+);
+const CollectionSelector = dynamic(
+  () => import("../connection/CollectionSelector").then((module) => module.CollectionSelector),
+  { ssr: false },
+);
+const ConnectionEditor = dynamic(
+  () => import("../connection/ConnectionEditor").then((module) => module.ConnectionEditor),
+  { ssr: false },
+);
+const QuickConnect = dynamic(
+  () => import("../connection/QuickConnect").then((module) => module.QuickConnect),
+  { ssr: false },
+);
+const PasswordDialog = dynamic(
+  () => import("../security/PasswordDialog"),
+  { ssr: false },
+);
+const SettingsDialog = dynamic(
+  () => import("../settingsDialog").then((module) => module.SettingsDialog),
+  { ssr: false },
+);
+const ImportExport = dynamic(
+  () => import("../importExport").then((module) => module.ImportExport),
+  { ssr: false },
+);
+const PerformanceMonitor = dynamic(
+  () => import("../monitoring/PerformanceMonitor").then((module) => module.PerformanceMonitor),
+  { ssr: false },
+);
+const ActionLogViewer = dynamic(
+  () => import("../monitoring/ActionLogViewer").then((module) => module.ActionLogViewer),
+  { ssr: false },
+);
+const ShortcutManagerDialog = dynamic(
+  () => import("./ShortcutManagerDialog").then((module) => module.ShortcutManagerDialog),
+  { ssr: false },
+);
+const ProxyChainMenu = dynamic(
+  () => import("../network/ProxyChainMenu"),
+  { ssr: false },
+);
+const InternalProxyManager = dynamic(
+  () => import("../network/InternalProxyManager").then((module) => module.InternalProxyManager),
+  { ssr: false },
+);
+const WOLQuickTool = dynamic(
+  () => import("../network/WOLQuickTool").then((module) => module.WOLQuickTool),
+  { ssr: false },
+);
+const BulkSSHCommander = dynamic(
+  () => import("../ssh/BulkSSHCommander").then((module) => module.BulkSSHCommander),
+  { ssr: false },
+);
+const ServerStatsPanel = dynamic(
+  () => import("../ssh/ServerStatsPanel").then((module) => module.ServerStatsPanel),
+  { ssr: false },
+);
+const OpksshPanel = dynamic(
+  () => import("../ssh/OpksshPanel").then((module) => module.OpksshPanel),
+  { ssr: false },
+);
+const McpServerPanel = dynamic(
+  () => import("../ssh/McpServerPanel").then((module) => module.McpServerPanel),
+  { ssr: false },
+);
+const ScriptManager = dynamic(
+  () => import("../recording/ScriptManager").then((module) => module.ScriptManager),
+  { ssr: false },
+);
+const MacroManager = dynamic(
+  () => import("../recording/MacroManager"),
+  { ssr: false },
+);
+const RecordingManager = dynamic(
+  () => import("../recording/RecordingManager"),
+  { ssr: false },
+);
+const ConnectionDiagnostics = dynamic(
+  () => import("../connection/ConnectionDiagnostics").then((module) => module.ConnectionDiagnostics),
+  { ssr: false },
+);
 
 interface AppDialogsProps {
   appSettings: GlobalSettings;

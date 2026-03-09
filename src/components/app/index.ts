@@ -8,11 +8,13 @@ export { default as SplashScreen } from "./SplashScreen";
 export { ThemeSelector } from "./ThemeSelector";
 export {
   ToolTabViewer,
+} from "./ToolPanel";
+export {
   TOOL_PROTOCOL_PREFIX,
   TOOL_LABELS,
   isToolProtocol,
   getToolKeyFromProtocol,
   getToolProtocol,
   createToolSession,
-} from "./ToolPanel";
-export type { ToolKey } from "./ToolPanel";
+} from "./toolSession";
+export type { ToolKey } from "./toolSession";

@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
+import dynamic from "next/dynamic";
 import { Monitor, Zap, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -28,7 +29,7 @@ import { TabLayoutManager } from "./components/session/TabLayoutManager";
 import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import { SplashScreen } from "./components/app/SplashScreen";
 import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
-import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/app/ToolPanel";
+import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/app/toolSession";
 import { generateId } from "./utils/core/id";
 import { useTooltipSystem } from "./hooks/window/useTooltipSystem";
 import { useWindowControls } from "./hooks/window/useWindowControls";
@@ -36,9 +37,13 @@ import { useWindowTheme } from "./hooks/window/useWindowTheme";
 import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
 import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
 import { AppToolbar } from "./components/app/AppToolbar";
-import { AppDialogs } from "./components/app/AppDialogs";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
+
+const AppDialogs = dynamic(
+  () => import("./components/app/AppDialogs").then((module) => module.AppDialogs),
+  { ssr: false },
+);
 
 /**
  * Core application component responsible for rendering the main layout and

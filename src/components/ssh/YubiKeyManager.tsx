@@ -74,9 +74,7 @@ const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
 }) => (
   <span
     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-      ok
-        ? "bg-success/10 text-success"
-        : "bg-error/10 text-error"
+      ok ? "bg-success/10 text-success" : "bg-error/10 text-error"
     }`}
   >
     {ok ? (
@@ -147,9 +145,7 @@ const InterfaceBadge: React.FC<{ label: string; active: boolean }> = ({
 }) => (
   <span
     className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-      active
-        ? "bg-primary/10 text-primary"
-        : "bg-muted text-muted-foreground"
+      active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
     }`}
   >
     {label}
@@ -161,13 +157,41 @@ const InterfaceBadge: React.FC<{ label: string; active: boolean }> = ({
 /* ------------------------------------------------------------------ */
 
 const tabDefs: { id: YubiKeyTab; icon: React.ReactNode; labelKey: string }[] = [
-  { id: "devices", icon: <Usb className="w-4 h-4" />, labelKey: "yubikey.tabs.devices" },
-  { id: "piv", icon: <CreditCard className="w-4 h-4" />, labelKey: "yubikey.tabs.piv" },
-  { id: "fido2", icon: <Fingerprint className="w-4 h-4" />, labelKey: "yubikey.tabs.fido2" },
-  { id: "oath", icon: <Timer className="w-4 h-4" />, labelKey: "yubikey.tabs.oath" },
-  { id: "otp", icon: <KeyRound className="w-4 h-4" />, labelKey: "yubikey.tabs.otp" },
-  { id: "config", icon: <Settings className="w-4 h-4" />, labelKey: "yubikey.tabs.config" },
-  { id: "audit", icon: <Activity className="w-4 h-4" />, labelKey: "yubikey.tabs.audit" },
+  {
+    id: "devices",
+    icon: <Usb className="w-4 h-4" />,
+    labelKey: "yubikey.tabs.devices",
+  },
+  {
+    id: "piv",
+    icon: <CreditCard className="w-4 h-4" />,
+    labelKey: "yubikey.tabs.piv",
+  },
+  {
+    id: "fido2",
+    icon: <Fingerprint className="w-4 h-4" />,
+    labelKey: "yubikey.tabs.fido2",
+  },
+  {
+    id: "oath",
+    icon: <Timer className="w-4 h-4" />,
+    labelKey: "yubikey.tabs.oath",
+  },
+  {
+    id: "otp",
+    icon: <KeyRound className="w-4 h-4" />,
+    labelKey: "yubikey.tabs.otp",
+  },
+  {
+    id: "config",
+    icon: <Settings className="w-4 h-4" />,
+    labelKey: "yubikey.tabs.config",
+  },
+  {
+    id: "audit",
+    icon: <Activity className="w-4 h-4" />,
+    labelKey: "yubikey.tabs.audit",
+  },
 ];
 
 const TabBar: React.FC<{
@@ -219,7 +243,9 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             disabled={mgr.loading}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${mgr.loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${mgr.loading ? "animate-spin" : ""}`}
+            />
             {t("yubikey.devices.refresh", "Refresh")}
           </button>
           <button
@@ -239,7 +265,8 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
     <div className="sor-yk-devices space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-sm font-medium">
-          {t("yubikey.devices.detected", "Detected Devices")} ({mgr.devices.length})
+          {t("yubikey.devices.detected", "Detected Devices")} (
+          {mgr.devices.length})
         </h3>
         <div className="flex gap-2">
           <button
@@ -247,7 +274,9 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             disabled={mgr.loading}
             className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
+            />
             {t("yubikey.devices.refresh", "Refresh")}
           </button>
           <button
@@ -289,7 +318,8 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                 <Cpu className="w-3 h-3" />
-                {t("yubikey.devices.firmware", "Firmware")}: {dev.firmware_version}
+                {t("yubikey.devices.firmware", "Firmware")}:{" "}
+                {dev.firmware_version}
                 {dev.form_factor && (
                   <span className="ml-2 flex items-center gap-1">
                     <Smartphone className="w-3 h-3" />
@@ -298,16 +328,38 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 )}
               </div>
               <div className="flex flex-wrap gap-1 mb-2">
-                <span className="text-[10px] text-muted-foreground mr-1">USB:</span>
-                <InterfaceBadge label="OTP" active={dev.usb_interfaces?.includes("OTP") ?? false} />
-                <InterfaceBadge label="FIDO" active={dev.usb_interfaces?.includes("FIDO") ?? false} />
-                <InterfaceBadge label="CCID" active={dev.usb_interfaces?.includes("CCID") ?? false} />
+                <span className="text-[10px] text-muted-foreground mr-1">
+                  USB:
+                </span>
+                <InterfaceBadge
+                  label="OTP"
+                  active={dev.usb_interfaces?.includes("OTP") ?? false}
+                />
+                <InterfaceBadge
+                  label="FIDO"
+                  active={dev.usb_interfaces?.includes("FIDO") ?? false}
+                />
+                <InterfaceBadge
+                  label="CCID"
+                  active={dev.usb_interfaces?.includes("CCID") ?? false}
+                />
                 {dev.nfc_interfaces && (
                   <>
-                    <span className="text-[10px] text-muted-foreground ml-2 mr-1">NFC:</span>
-                    <InterfaceBadge label="OTP" active={dev.nfc_interfaces.includes("OTP")} />
-                    <InterfaceBadge label="FIDO" active={dev.nfc_interfaces.includes("FIDO")} />
-                    <InterfaceBadge label="CCID" active={dev.nfc_interfaces.includes("CCID")} />
+                    <span className="text-[10px] text-muted-foreground ml-2 mr-1">
+                      NFC:
+                    </span>
+                    <InterfaceBadge
+                      label="OTP"
+                      active={dev.nfc_interfaces.includes("OTP")}
+                    />
+                    <InterfaceBadge
+                      label="FIDO"
+                      active={dev.nfc_interfaces.includes("FIDO")}
+                    />
+                    <InterfaceBadge
+                      label="CCID"
+                      active={dev.nfc_interfaces.includes("CCID")}
+                    />
                   </>
                 )}
               </div>
@@ -327,12 +379,14 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     {t("yubikey.devices.nfc", "NFC")}
                   </span>
                 )}
-                {dev.auto_eject_timeout != null && dev.auto_eject_timeout > 0 && (
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Timer className="w-3 h-3" />
-                    {t("yubikey.devices.autoEject", "Auto-eject")}: {dev.auto_eject_timeout}s
-                  </span>
-                )}
+                {dev.auto_eject_timeout != null &&
+                  dev.auto_eject_timeout > 0 && (
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <Timer className="w-3 h-3" />
+                      {t("yubikey.devices.autoEject", "Auto-eject")}:{" "}
+                      {dev.auto_eject_timeout}s
+                    </span>
+                  )}
               </div>
             </button>
           );
@@ -347,10 +401,22 @@ const DevicesTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 /* ------------------------------------------------------------------ */
 
 const PIV_SLOTS: { slot: string; name: string; icon: React.ReactNode }[] = [
-  { slot: "9a", name: "Authentication", icon: <UserCheck className="w-4 h-4" /> },
-  { slot: "9c", name: "Digital Signature", icon: <FileKey className="w-4 h-4" /> },
+  {
+    slot: "9a",
+    name: "Authentication",
+    icon: <UserCheck className="w-4 h-4" />,
+  },
+  {
+    slot: "9c",
+    name: "Digital Signature",
+    icon: <FileKey className="w-4 h-4" />,
+  },
   { slot: "9d", name: "Key Management", icon: <Key className="w-4 h-4" /> },
-  { slot: "9e", name: "Card Authentication", icon: <CreditCard className="w-4 h-4" /> },
+  {
+    slot: "9e",
+    name: "Card Authentication",
+    icon: <CreditCard className="w-4 h-4" />,
+  },
 ];
 
 const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -375,7 +441,9 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             disabled={mgr.loading}
             className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
+            />
             {t("yubikey.piv.refresh", "Refresh")}
           </button>
         </div>
@@ -451,21 +519,42 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
                 <div className="flex flex-wrap gap-1">
                   <button
-                    onClick={() => mgr.pivGenerateKey(serial, slot as never, "ECCP256" as never, "DEFAULT" as never, "DEFAULT" as never)}
+                    onClick={() =>
+                      mgr.pivGenerateKey(
+                        serial,
+                        slot as never,
+                        "ECCP256" as never,
+                        "DEFAULT" as never,
+                        "DEFAULT" as never,
+                      )
+                    }
                     disabled={mgr.loading}
                     className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
                   >
                     {t("yubikey.piv.genKey", "Gen Key")}
                   </button>
                   <button
-                    onClick={() => mgr.pivSelfSignCert(serial, slot as never, "CN=YubiKey", 365)}
+                    onClick={() =>
+                      mgr.pivSelfSignCert(
+                        serial,
+                        slot as never,
+                        "CN=YubiKey",
+                        365,
+                      )
+                    }
                     disabled={mgr.loading}
                     className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
                   >
                     {t("yubikey.piv.selfSign", "Self-Sign")}
                   </button>
                   <button
-                    onClick={() => mgr.pivGenerateCsr(serial, slot as never, { subject: "CN=YubiKey" } as never)}
+                    onClick={() =>
+                      mgr.pivGenerateCsr(
+                        serial,
+                        slot as never,
+                        { subject: "CN=YubiKey" } as never,
+                      )
+                    }
                     disabled={mgr.loading}
                     className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
                   >
@@ -565,16 +654,22 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Change PIN */}
           <div className="space-y-2">
-            <label className="text-xs font-medium">{t("yubikey.piv.changePin", "Change PIN")}</label>
+            <label className="text-xs font-medium">
+              {t("yubikey.piv.changePin", "Change PIN")}
+            </label>
             <PasswordInput
               value={pinForm.oldPin}
-              onChange={(e) => setPinForm((f) => ({ ...f, oldPin: e.target.value }))}
+              onChange={(e) =>
+                setPinForm((f) => ({ ...f, oldPin: e.target.value }))
+              }
               placeholder={t("yubikey.piv.currentPin", "Current PIN")}
               className="w-full"
             />
             <PasswordInput
               value={pinForm.newPin}
-              onChange={(e) => setPinForm((f) => ({ ...f, newPin: e.target.value }))}
+              onChange={(e) =>
+                setPinForm((f) => ({ ...f, newPin: e.target.value }))
+              }
               placeholder={t("yubikey.piv.newPin", "New PIN")}
               className="w-full"
             />
@@ -592,16 +687,22 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
           {/* Change PUK */}
           <div className="space-y-2">
-            <label className="text-xs font-medium">{t("yubikey.piv.changePuk", "Change PUK")}</label>
+            <label className="text-xs font-medium">
+              {t("yubikey.piv.changePuk", "Change PUK")}
+            </label>
             <PasswordInput
               value={pukForm.oldPuk}
-              onChange={(e) => setPukForm((f) => ({ ...f, oldPuk: e.target.value }))}
+              onChange={(e) =>
+                setPukForm((f) => ({ ...f, oldPuk: e.target.value }))
+              }
               placeholder={t("yubikey.piv.currentPuk", "Current PUK")}
               className="w-full"
             />
             <PasswordInput
               value={pukForm.newPuk}
-              onChange={(e) => setPukForm((f) => ({ ...f, newPuk: e.target.value }))}
+              onChange={(e) =>
+                setPukForm((f) => ({ ...f, newPuk: e.target.value }))
+              }
               placeholder={t("yubikey.piv.newPuk", "New PUK")}
               className="w-full"
             />
@@ -619,22 +720,34 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
           {/* Change Management Key */}
           <div className="space-y-2">
-            <label className="text-xs font-medium">{t("yubikey.piv.changeMgmt", "Change Management Key")}</label>
+            <label className="text-xs font-medium">
+              {t("yubikey.piv.changeMgmt", "Change Management Key")}
+            </label>
             <PasswordInput
               value={mgmtForm.current}
-              onChange={(e) => setMgmtForm((f) => ({ ...f, current: e.target.value }))}
+              onChange={(e) =>
+                setMgmtForm((f) => ({ ...f, current: e.target.value }))
+              }
               placeholder={t("yubikey.piv.currentMgmt", "Current Key")}
               className="w-full"
             />
             <PasswordInput
               value={mgmtForm.newKey}
-              onChange={(e) => setMgmtForm((f) => ({ ...f, newKey: e.target.value }))}
+              onChange={(e) =>
+                setMgmtForm((f) => ({ ...f, newKey: e.target.value }))
+              }
               placeholder={t("yubikey.piv.newMgmt", "New Key")}
               className="w-full"
             />
             <button
               onClick={() => {
-                mgr.pivChangeMgmtKey(serial, mgmtForm.current, mgmtForm.newKey, "TDES" as never, false);
+                mgr.pivChangeMgmtKey(
+                  serial,
+                  mgmtForm.current,
+                  mgmtForm.newKey,
+                  "TDES" as never,
+                  false,
+                );
                 setMgmtForm({ current: "", newKey: "" });
               }}
               disabled={!mgmtForm.current || !mgmtForm.newKey || mgr.loading}
@@ -646,16 +759,22 @@ const PivTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
           {/* Unblock PIN */}
           <div className="space-y-2">
-            <label className="text-xs font-medium">{t("yubikey.piv.unblockPin", "Unblock PIN")}</label>
+            <label className="text-xs font-medium">
+              {t("yubikey.piv.unblockPin", "Unblock PIN")}
+            </label>
             <PasswordInput
               value={unblockForm.puk}
-              onChange={(e) => setUnblockForm((f) => ({ ...f, puk: e.target.value }))}
+              onChange={(e) =>
+                setUnblockForm((f) => ({ ...f, puk: e.target.value }))
+              }
               placeholder={t("yubikey.piv.puk", "PUK")}
               className="w-full"
             />
             <PasswordInput
               value={unblockForm.newPin}
-              onChange={(e) => setUnblockForm((f) => ({ ...f, newPin: e.target.value }))}
+              onChange={(e) =>
+                setUnblockForm((f) => ({ ...f, newPin: e.target.value }))
+              }
               placeholder={t("yubikey.piv.newPin", "New PIN")}
               className="w-full"
             />
@@ -719,7 +838,9 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
             <div>
-              <span className="text-muted-foreground">{t("yubikey.fido2.version", "Version")}:</span>{" "}
+              <span className="text-muted-foreground">
+                {t("yubikey.fido2.version", "Version")}:
+              </span>{" "}
               {mgr.fido2Info.version}
             </div>
             <div className="font-mono">
@@ -738,7 +859,10 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {mgr.fido2Info.extensions && mgr.fido2Info.extensions.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {mgr.fido2Info.extensions.map((ext) => (
-                <span key={ext} className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground">
+                <span
+                  key={ext}
+                  className="px-1.5 py-0.5 bg-muted rounded text-[10px] text-muted-foreground"
+                >
                   {ext}
                 </span>
               ))}
@@ -782,7 +906,8 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
             {mgr.fido2PinStatus.retries != null && (
               <span>
-                {t("yubikey.fido2.retries", "Retries")}: {mgr.fido2PinStatus.retries}
+                {t("yubikey.fido2.retries", "Retries")}:{" "}
+                {mgr.fido2PinStatus.retries}
               </span>
             )}
             {mgr.fido2PinStatus.force_change && (
@@ -806,7 +931,9 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {!mgr.fido2PinStatus?.is_set ? (
             <div className="space-y-2">
-              <label className="text-xs font-medium">{t("yubikey.fido2.setPin", "Set PIN")}</label>
+              <label className="text-xs font-medium">
+                {t("yubikey.fido2.setPin", "Set PIN")}
+              </label>
               <PasswordInput
                 value={newPinInput}
                 onChange={(e) => setNewPinInput(e.target.value)}
@@ -826,7 +953,9 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             </div>
           ) : (
             <div className="space-y-2">
-              <label className="text-xs font-medium">{t("yubikey.fido2.changePin", "Change PIN")}</label>
+              <label className="text-xs font-medium">
+                {t("yubikey.fido2.changePin", "Change PIN")}
+              </label>
               <PasswordInput
                 value={oldPinInput}
                 onChange={(e) => setOldPinInput(e.target.value)}
@@ -884,7 +1013,10 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <EmptyState
             icon={Fingerprint}
             message={t("yubikey.fido2.noCreds", "No Credentials")}
-            hint={t("yubikey.fido2.noCredsDesc", "Enter PIN and click List to view discoverable credentials.")}
+            hint={t(
+              "yubikey.fido2.noCredsDesc",
+              "Enter PIN and click List to view discoverable credentials.",
+            )}
           />
         ) : (
           <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -907,13 +1039,20 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     {cred.user_name}
                     {cred.creation_time && (
                       <span className="ml-2">
-                        <Clock className="w-3 h-3 inline" /> {cred.creation_time}
+                        <Clock className="w-3 h-3 inline" />{" "}
+                        {cred.creation_time}
                       </span>
                     )}
                   </div>
                 </div>
                 <button
-                  onClick={() => mgr.fido2DeleteCredential(serial, cred.credential_id, pinInput)}
+                  onClick={() =>
+                    mgr.fido2DeleteCredential(
+                      serial,
+                      cred.credential_id,
+                      pinInput,
+                    )
+                  }
                   disabled={!pinInput || mgr.loading}
                   className="flex-shrink-0 p-1 text-error hover:bg-error/10 rounded disabled:opacity-50"
                 >
@@ -986,7 +1125,8 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium flex items-center gap-2">
           <Timer className="w-4 h-4" />
-          {t("yubikey.oath.accounts", "OATH Accounts")} ({mgr.oathAccounts.length})
+          {t("yubikey.oath.accounts", "OATH Accounts")} (
+          {mgr.oathAccounts.length})
         </h3>
         <div className="flex gap-2">
           <button
@@ -994,7 +1134,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             disabled={mgr.loading}
             className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
+            />
             {t("yubikey.oath.refresh", "Refresh")}
           </button>
           <button
@@ -1013,24 +1155,31 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <EmptyState
           icon={Timer}
           message={t("yubikey.oath.empty", "No OATH Accounts")}
-          hint={t("yubikey.oath.emptyDesc", "Add an account to store TOTP/HOTP credentials.")}
+          hint={t(
+            "yubikey.oath.emptyDesc",
+            "Add an account to store TOTP/HOTP credentials.",
+          )}
         />
       ) : (
         <div className="space-y-2 max-h-60 overflow-y-auto">
-          {mgr.oathAccounts.map((acct) => {
+          {mgr.oathAccounts.map((acct, idx) => {
             const code = mgr.oathCodes[acct.credential_id];
             return (
               <div
-                key={acct.credential_id}
+                key={`${acct.credential_id}-${idx}`}
                 className="bg-card border border-border rounded-lg p-3 space-y-2"
               >
                 <div className="flex items-center justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       {acct.issuer && (
-                        <span className="text-xs font-medium">{acct.issuer}</span>
+                        <span className="text-xs font-medium">
+                          {acct.issuer}
+                        </span>
                       )}
-                      <span className="text-xs text-muted-foreground">{acct.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {acct.name}
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                       <span
@@ -1062,14 +1211,18 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
-                      onClick={() => mgr.oathCalculate(serial, acct.credential_id)}
+                      onClick={() =>
+                        mgr.oathCalculate(serial, acct.credential_id)
+                      }
                       disabled={mgr.loading}
                       className="px-2 py-1 text-xs bg-primary/10 text-primary rounded hover:bg-primary/20 disabled:opacity-50"
                     >
                       {t("yubikey.oath.calculate", "Calc")}
                     </button>
                     <button
-                      onClick={() => mgr.oathDeleteAccount(serial, acct.credential_id)}
+                      onClick={() =>
+                        mgr.oathDeleteAccount(serial, acct.credential_id)
+                      }
                       disabled={mgr.loading}
                       className="p-1 text-error hover:bg-error/10 rounded disabled:opacity-50"
                     >
@@ -1085,7 +1238,11 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                     {code.valid_to && (
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {Math.max(0, Math.round((code.valid_to - Date.now() / 1000)))}s
+                        {Math.max(
+                          0,
+                          Math.round(code.valid_to - Date.now() / 1000),
+                        )}
+                        s
                       </span>
                     )}
                     <button
@@ -1111,13 +1268,17 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="grid grid-cols-2 gap-2">
           <input
             value={addForm.issuer}
-            onChange={(e) => setAddForm((f) => ({ ...f, issuer: e.target.value }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, issuer: e.target.value }))
+            }
             placeholder={t("yubikey.oath.issuer", "Issuer")}
             className="px-2 py-1.5 text-xs bg-background border border-border rounded"
           />
           <input
             value={addForm.name}
-            onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, name: e.target.value }))
+            }
             placeholder={t("yubikey.oath.name", "Account Name")}
             className="px-2 py-1.5 text-xs bg-background border border-border rounded"
           />
@@ -1126,7 +1287,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <input
             type={showSecret ? "text" : "password"}
             value={addForm.secret}
-            onChange={(e) => setAddForm((f) => ({ ...f, secret: e.target.value }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, secret: e.target.value }))
+            }
             placeholder={t("yubikey.oath.secret", "Secret (Base32)")}
             className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded pr-8"
           />
@@ -1134,13 +1297,19 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             onClick={() => setShowSecret(!showSecret)}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
           >
-            {showSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            {showSecret ? (
+              <EyeOff className="w-3 h-3" />
+            ) : (
+              <Eye className="w-3 h-3" />
+            )}
           </button>
         </div>
         <div className="grid grid-cols-4 gap-2">
           <select
             value={addForm.type}
-            onChange={(e) => setAddForm((f) => ({ ...f, type: e.target.value }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, type: e.target.value }))
+            }
             className="px-2 py-1.5 text-xs bg-background border border-border rounded"
           >
             <option value="TOTP">TOTP</option>
@@ -1148,7 +1317,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </select>
           <select
             value={addForm.algorithm}
-            onChange={(e) => setAddForm((f) => ({ ...f, algorithm: e.target.value }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, algorithm: e.target.value }))
+            }
             className="px-2 py-1.5 text-xs bg-background border border-border rounded"
           >
             <option value="SHA1">SHA1</option>
@@ -1158,7 +1329,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <input
             type="number"
             value={addForm.digits}
-            onChange={(e) => setAddForm((f) => ({ ...f, digits: Number(e.target.value) }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, digits: Number(e.target.value) }))
+            }
             min={6}
             max={8}
             className="px-2 py-1.5 text-xs bg-background border border-border rounded"
@@ -1166,7 +1339,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <input
             type="number"
             value={addForm.period}
-            onChange={(e) => setAddForm((f) => ({ ...f, period: Number(e.target.value) }))}
+            onChange={(e) =>
+              setAddForm((f) => ({ ...f, period: Number(e.target.value) }))
+            }
             min={15}
             max={60}
             className="px-2 py-1.5 text-xs bg-background border border-border rounded"
@@ -1177,7 +1352,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <input
               type="checkbox"
               checked={addForm.touch}
-              onChange={(e) => setAddForm((f) => ({ ...f, touch: e.target.checked }))}
+              onChange={(e) =>
+                setAddForm((f) => ({ ...f, touch: e.target.checked }))
+              }
               className="rounded"
             />
             <Fingerprint className="w-3 h-3" />
@@ -1196,7 +1373,16 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 addForm.period,
                 addForm.touch,
               );
-              setAddForm({ issuer: "", name: "", secret: "", type: "TOTP", algorithm: "SHA1", digits: 6, period: 30, touch: false });
+              setAddForm({
+                issuer: "",
+                name: "",
+                secret: "",
+                type: "TOTP",
+                algorithm: "SHA1",
+                digits: 6,
+                period: 30,
+                touch: false,
+              });
             }}
             disabled={!addForm.name || !addForm.secret || mgr.loading}
             className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
@@ -1209,7 +1395,9 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       {/* OATH Password */}
       <div className="bg-card border border-border rounded-lg p-4 space-y-2">
-        <h3 className="text-xs font-medium">{t("yubikey.oath.password", "OATH Applet Password")}</h3>
+        <h3 className="text-xs font-medium">
+          {t("yubikey.oath.password", "OATH Applet Password")}
+        </h3>
         <div className="flex gap-2 items-center">
           <PasswordInput
             value={oathPw}
@@ -1218,7 +1406,10 @@ const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             className="flex-1"
           />
           <button
-            onClick={() => { mgr.oathSetPassword(serial, oathPw); setOathPw(""); }}
+            onClick={() => {
+              mgr.oathSetPassword(serial, oathPw);
+              setOathPw("");
+            }}
             disabled={!oathPw || mgr.loading}
             className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
           >
@@ -1253,7 +1444,11 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const serial = mgr.selectedDevice?.serial;
   const [configSlot, setConfigSlot] = useState<0 | 1 | null>(null);
   const [configType, setConfigType] = useState<string | null>(null);
-  const [yubicoForm, setYubicoForm] = useState({ publicId: "", privateId: "", key: "" });
+  const [yubicoForm, setYubicoForm] = useState({
+    publicId: "",
+    privateId: "",
+    key: "",
+  });
   const [chalRespForm, setChalRespForm] = useState({ key: "", touch: false });
   const [staticForm, setStaticForm] = useState({ password: "", layout: "US" });
   const [hotpForm, setHotpForm] = useState({ key: "", digits: 6 });
@@ -1272,7 +1467,9 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           disabled={mgr.loading}
           className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
         >
-          <RefreshCw className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
+          />
           {t("yubikey.otp.refresh", "Refresh")}
         </button>
       </div>
@@ -1280,45 +1477,69 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       {/* Slot Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {mgr.otpSlots.map((slotCfg, idx) => (
-          <div key={idx} className="bg-card border border-border rounded-lg p-4 space-y-3">
+          <div
+            key={idx}
+            className="bg-card border border-border rounded-lg p-4 space-y-3"
+          >
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">{OTP_SLOT_NAMES[idx]}</span>
               <StatusBadge
                 ok={slotCfg != null}
-                label={slotCfg ? t("yubikey.otp.configured", "Configured") : t("yubikey.otp.empty", "Empty")}
+                label={
+                  slotCfg
+                    ? t("yubikey.otp.configured", "Configured")
+                    : t("yubikey.otp.empty", "Empty")
+                }
               />
             </div>
             {slotCfg && (
               <div className="text-xs text-muted-foreground space-y-0.5">
-                {slotCfg.slot_type && <div>{t("yubikey.otp.type", "Type")}: {slotCfg.slot_type}</div>}
+                {slotCfg.slot_type && (
+                  <div>
+                    {t("yubikey.otp.type", "Type")}: {slotCfg.slot_type}
+                  </div>
+                )}
                 {slotCfg.touch_required && (
                   <span className="flex items-center gap-1 text-warning">
-                    <Fingerprint className="w-3 h-3" /> {t("yubikey.otp.touchRequired", "Touch Required")}
+                    <Fingerprint className="w-3 h-3" />{" "}
+                    {t("yubikey.otp.touchRequired", "Touch Required")}
                   </span>
                 )}
               </div>
             )}
             <div className="flex flex-wrap gap-1">
               <button
-                onClick={() => { setConfigSlot(idx as 0 | 1); setConfigType("yubico"); }}
+                onClick={() => {
+                  setConfigSlot(idx as 0 | 1);
+                  setConfigType("yubico");
+                }}
                 className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20"
               >
                 {t("yubikey.otp.yubicoOtp", "Yubico OTP")}
               </button>
               <button
-                onClick={() => { setConfigSlot(idx as 0 | 1); setConfigType("chalresp"); }}
+                onClick={() => {
+                  setConfigSlot(idx as 0 | 1);
+                  setConfigType("chalresp");
+                }}
                 className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20"
               >
                 {t("yubikey.otp.chalResp", "Challenge-Response")}
               </button>
               <button
-                onClick={() => { setConfigSlot(idx as 0 | 1); setConfigType("static"); }}
+                onClick={() => {
+                  setConfigSlot(idx as 0 | 1);
+                  setConfigType("static");
+                }}
                 className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20"
               >
                 {t("yubikey.otp.static", "Static")}
               </button>
               <button
-                onClick={() => { setConfigSlot(idx as 0 | 1); setConfigType("hotp"); }}
+                onClick={() => {
+                  setConfigSlot(idx as 0 | 1);
+                  setConfigType("hotp");
+                }}
                 className="px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded hover:bg-primary/20"
               >
                 {t("yubikey.otp.hotp", "HOTP")}
@@ -1350,19 +1571,63 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <div className="bg-card border border-border rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-medium">
-              {t("yubikey.otp.configure", "Configure")} {OTP_SLOT_NAMES[configSlot]} — {configType}
+              {t("yubikey.otp.configure", "Configure")}{" "}
+              {OTP_SLOT_NAMES[configSlot]} — {configType}
             </h3>
-            <button onClick={() => { setConfigSlot(null); setConfigType(null); }} className="text-xs text-muted-foreground hover:text-foreground">
+            <button
+              onClick={() => {
+                setConfigSlot(null);
+                setConfigType(null);
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
               {t("common.cancel", "Cancel")}
             </button>
           </div>
 
           {configType === "yubico" && (
             <div className="space-y-2">
-              <input value={yubicoForm.publicId} onChange={(e) => setYubicoForm((f) => ({ ...f, publicId: e.target.value }))} placeholder={t("yubikey.otp.publicId", "Public ID")} className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded" />
-              <input value={yubicoForm.privateId} onChange={(e) => setYubicoForm((f) => ({ ...f, privateId: e.target.value }))} placeholder={t("yubikey.otp.privateId", "Private ID")} className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded" />
-              <PasswordInput value={yubicoForm.key} onChange={(e) => setYubicoForm((f) => ({ ...f, key: e.target.value }))} placeholder={t("yubikey.otp.secretKey", "Secret Key")} className="w-full" />
-              <button onClick={() => { mgr.otpConfigureYubico(serial, slotId(configSlot), yubicoForm.publicId, yubicoForm.privateId, yubicoForm.key); setConfigSlot(null); setConfigType(null); }} disabled={!yubicoForm.publicId || !yubicoForm.key || mgr.loading} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50">
+              <input
+                value={yubicoForm.publicId}
+                onChange={(e) =>
+                  setYubicoForm((f) => ({ ...f, publicId: e.target.value }))
+                }
+                placeholder={t("yubikey.otp.publicId", "Public ID")}
+                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
+              />
+              <input
+                value={yubicoForm.privateId}
+                onChange={(e) =>
+                  setYubicoForm((f) => ({ ...f, privateId: e.target.value }))
+                }
+                placeholder={t("yubikey.otp.privateId", "Private ID")}
+                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
+              />
+              <PasswordInput
+                value={yubicoForm.key}
+                onChange={(e) =>
+                  setYubicoForm((f) => ({ ...f, key: e.target.value }))
+                }
+                placeholder={t("yubikey.otp.secretKey", "Secret Key")}
+                className="w-full"
+              />
+              <button
+                onClick={() => {
+                  mgr.otpConfigureYubico(
+                    serial,
+                    slotId(configSlot),
+                    yubicoForm.publicId,
+                    yubicoForm.privateId,
+                    yubicoForm.key,
+                  );
+                  setConfigSlot(null);
+                  setConfigType(null);
+                }}
+                disabled={
+                  !yubicoForm.publicId || !yubicoForm.key || mgr.loading
+                }
+                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+              >
                 {t("yubikey.otp.apply", "Apply")}
               </button>
             </div>
@@ -1370,12 +1635,39 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
           {configType === "chalresp" && (
             <div className="space-y-2">
-              <PasswordInput value={chalRespForm.key} onChange={(e) => setChalRespForm((f) => ({ ...f, key: e.target.value }))} placeholder={t("yubikey.otp.key", "Key")} className="w-full" />
+              <PasswordInput
+                value={chalRespForm.key}
+                onChange={(e) =>
+                  setChalRespForm((f) => ({ ...f, key: e.target.value }))
+                }
+                placeholder={t("yubikey.otp.key", "Key")}
+                className="w-full"
+              />
               <label className="flex items-center gap-1.5 text-xs">
-                <input type="checkbox" checked={chalRespForm.touch} onChange={(e) => setChalRespForm((f) => ({ ...f, touch: e.target.checked }))} className="rounded" />
+                <input
+                  type="checkbox"
+                  checked={chalRespForm.touch}
+                  onChange={(e) =>
+                    setChalRespForm((f) => ({ ...f, touch: e.target.checked }))
+                  }
+                  className="rounded"
+                />
                 {t("yubikey.otp.touchRequired", "Touch Required")}
               </label>
-              <button onClick={() => { mgr.otpConfigureChalResp(serial, slotId(configSlot), chalRespForm.key, chalRespForm.touch); setConfigSlot(null); setConfigType(null); }} disabled={!chalRespForm.key || mgr.loading} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50">
+              <button
+                onClick={() => {
+                  mgr.otpConfigureChalResp(
+                    serial,
+                    slotId(configSlot),
+                    chalRespForm.key,
+                    chalRespForm.touch,
+                  );
+                  setConfigSlot(null);
+                  setConfigType(null);
+                }}
+                disabled={!chalRespForm.key || mgr.loading}
+                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+              >
                 {t("yubikey.otp.apply", "Apply")}
               </button>
             </div>
@@ -1383,14 +1675,40 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
           {configType === "static" && (
             <div className="space-y-2">
-              <PasswordInput value={staticForm.password} onChange={(e) => setStaticForm((f) => ({ ...f, password: e.target.value }))} placeholder={t("yubikey.otp.password", "Password")} className="w-full" />
-              <select value={staticForm.layout} onChange={(e) => setStaticForm((f) => ({ ...f, layout: e.target.value }))} className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded">
+              <PasswordInput
+                value={staticForm.password}
+                onChange={(e) =>
+                  setStaticForm((f) => ({ ...f, password: e.target.value }))
+                }
+                placeholder={t("yubikey.otp.password", "Password")}
+                className="w-full"
+              />
+              <select
+                value={staticForm.layout}
+                onChange={(e) =>
+                  setStaticForm((f) => ({ ...f, layout: e.target.value }))
+                }
+                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
+              >
                 <option value="US">US</option>
                 <option value="DE">DE</option>
                 <option value="FR">FR</option>
                 <option value="SE">SE</option>
               </select>
-              <button onClick={() => { mgr.otpConfigureStatic(serial, slotId(configSlot), staticForm.password, staticForm.layout); setConfigSlot(null); setConfigType(null); }} disabled={!staticForm.password || mgr.loading} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50">
+              <button
+                onClick={() => {
+                  mgr.otpConfigureStatic(
+                    serial,
+                    slotId(configSlot),
+                    staticForm.password,
+                    staticForm.layout,
+                  );
+                  setConfigSlot(null);
+                  setConfigType(null);
+                }}
+                disabled={!staticForm.password || mgr.loading}
+                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+              >
                 {t("yubikey.otp.apply", "Apply")}
               </button>
             </div>
@@ -1398,9 +1716,38 @@ const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
           {configType === "hotp" && (
             <div className="space-y-2">
-              <PasswordInput value={hotpForm.key} onChange={(e) => setHotpForm((f) => ({ ...f, key: e.target.value }))} placeholder={t("yubikey.otp.key", "Key")} className="w-full" />
-              <input type="number" value={hotpForm.digits} onChange={(e) => setHotpForm((f) => ({ ...f, digits: Number(e.target.value) }))} min={6} max={8} className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded" />
-              <button onClick={() => { mgr.otpConfigureHotp(serial, slotId(configSlot), hotpForm.key, hotpForm.digits); setConfigSlot(null); setConfigType(null); }} disabled={!hotpForm.key || mgr.loading} className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50">
+              <PasswordInput
+                value={hotpForm.key}
+                onChange={(e) =>
+                  setHotpForm((f) => ({ ...f, key: e.target.value }))
+                }
+                placeholder={t("yubikey.otp.key", "Key")}
+                className="w-full"
+              />
+              <input
+                type="number"
+                value={hotpForm.digits}
+                onChange={(e) =>
+                  setHotpForm((f) => ({ ...f, digits: Number(e.target.value) }))
+                }
+                min={6}
+                max={8}
+                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
+              />
+              <button
+                onClick={() => {
+                  mgr.otpConfigureHotp(
+                    serial,
+                    slotId(configSlot),
+                    hotpForm.key,
+                    hotpForm.digits,
+                  );
+                  setConfigSlot(null);
+                  setConfigType(null);
+                }}
+                disabled={!hotpForm.key || mgr.loading}
+                className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+              >
                 {t("yubikey.otp.apply", "Apply")}
               </button>
             </div>
@@ -1429,7 +1776,9 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           disabled={mgr.loading}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${mgr.loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-4 h-4 ${mgr.loading ? "animate-spin" : ""}`}
+          />
           {t("yubikey.config.load", "Load Configuration")}
         </button>
       </div>
@@ -1446,14 +1795,23 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </h3>
         <div className="flex gap-3">
           {["OTP", "FIDO", "CCID"].map((iface) => (
-            <label key={`usb-${iface}`} className="flex items-center gap-1.5 text-xs">
+            <label
+              key={`usb-${iface}`}
+              className="flex items-center gap-1.5 text-xs"
+            >
               <input
                 type="checkbox"
                 checked={cfg.usb_interfaces?.includes(iface) ?? false}
                 onChange={(e) => {
                   const usb = cfg.usb_interfaces ?? [];
-                  const updated = e.target.checked ? [...usb, iface] : usb.filter((i: string) => i !== iface);
-                  mgr.setInterfaces(serial, updated as never, (cfg.nfc_interfaces ?? []) as never);
+                  const updated = e.target.checked
+                    ? [...usb, iface]
+                    : usb.filter((i: string) => i !== iface);
+                  mgr.setInterfaces(
+                    serial,
+                    updated as never,
+                    (cfg.nfc_interfaces ?? []) as never,
+                  );
                 }}
                 className="rounded"
               />
@@ -1471,14 +1829,23 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </h3>
         <div className="flex gap-3">
           {["OTP", "FIDO", "CCID"].map((iface) => (
-            <label key={`nfc-${iface}`} className="flex items-center gap-1.5 text-xs">
+            <label
+              key={`nfc-${iface}`}
+              className="flex items-center gap-1.5 text-xs"
+            >
               <input
                 type="checkbox"
                 checked={cfg.nfc_interfaces?.includes(iface) ?? false}
                 onChange={(e) => {
                   const nfc = cfg.nfc_interfaces ?? [];
-                  const updated = e.target.checked ? [...nfc, iface] : nfc.filter((i: string) => i !== iface);
-                  mgr.setInterfaces(serial, (cfg.usb_interfaces ?? []) as never, updated as never);
+                  const updated = e.target.checked
+                    ? [...nfc, iface]
+                    : nfc.filter((i: string) => i !== iface);
+                  mgr.setInterfaces(
+                    serial,
+                    (cfg.usb_interfaces ?? []) as never,
+                    updated as never,
+                  );
                 }}
                 className="rounded"
               />
@@ -1499,28 +1866,41 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <input
               type="checkbox"
               checked={cfg.auto_detect ?? true}
-              onChange={(e) => mgr.updateConfig({ ...cfg, auto_detect: e.target.checked })}
+              onChange={(e) =>
+                mgr.updateConfig({ ...cfg, auto_detect: e.target.checked })
+              }
               className="rounded"
             />
             {t("yubikey.config.autoDetect", "Auto-detect devices")}
           </label>
           <div className="flex items-center gap-2">
-            <label className="text-muted-foreground">{t("yubikey.config.pollInterval", "Poll Interval (ms)")}:</label>
+            <label className="text-muted-foreground">
+              {t("yubikey.config.pollInterval", "Poll Interval (ms)")}:
+            </label>
             <input
               type="number"
               value={cfg.poll_interval ?? 5000}
-              onChange={(e) => mgr.updateConfig({ ...cfg, poll_interval: Number(e.target.value) })}
+              onChange={(e) =>
+                mgr.updateConfig({
+                  ...cfg,
+                  poll_interval: Number(e.target.value),
+                })
+              }
               className="w-20 px-2 py-1 bg-background border border-border rounded"
               min={1000}
               max={60000}
             />
           </div>
           <div className="flex items-center gap-2 col-span-2">
-            <label className="text-muted-foreground">{t("yubikey.config.ykmanPath", "ykman Path")}:</label>
+            <label className="text-muted-foreground">
+              {t("yubikey.config.ykmanPath", "ykman Path")}:
+            </label>
             <input
               type="text"
               value={cfg.ykman_path ?? ""}
-              onChange={(e) => mgr.updateConfig({ ...cfg, ykman_path: e.target.value })}
+              onChange={(e) =>
+                mgr.updateConfig({ ...cfg, ykman_path: e.target.value })
+              }
               className="flex-1 px-2 py-1 bg-background border border-border rounded font-mono text-xs"
               placeholder="ykman"
             />
@@ -1535,9 +1915,18 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("yubikey.config.pivDefaults", "PIV Defaults")}
           </h4>
           <div className="space-y-1 text-xs">
-            <div>{t("yubikey.config.algorithm", "Algorithm")}: {cfg.piv_defaults?.algorithm ?? "ECCP256"}</div>
-            <div>{t("yubikey.config.pinPolicy", "PIN Policy")}: {cfg.piv_defaults?.pin_policy ?? "DEFAULT"}</div>
-            <div>{t("yubikey.config.touchPolicy", "Touch Policy")}: {cfg.piv_defaults?.touch_policy ?? "DEFAULT"}</div>
+            <div>
+              {t("yubikey.config.algorithm", "Algorithm")}:{" "}
+              {cfg.piv_defaults?.algorithm ?? "ECCP256"}
+            </div>
+            <div>
+              {t("yubikey.config.pinPolicy", "PIN Policy")}:{" "}
+              {cfg.piv_defaults?.pin_policy ?? "DEFAULT"}
+            </div>
+            <div>
+              {t("yubikey.config.touchPolicy", "Touch Policy")}:{" "}
+              {cfg.piv_defaults?.touch_policy ?? "DEFAULT"}
+            </div>
           </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-3 space-y-2">
@@ -1545,9 +1934,18 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("yubikey.config.oathDefaults", "OATH Defaults")}
           </h4>
           <div className="space-y-1 text-xs">
-            <div>{t("yubikey.config.algorithm", "Algorithm")}: {cfg.oath_defaults?.algorithm ?? "SHA1"}</div>
-            <div>{t("yubikey.config.digits", "Digits")}: {cfg.oath_defaults?.digits ?? 6}</div>
-            <div>{t("yubikey.config.period", "Period")}: {cfg.oath_defaults?.period ?? 30}s</div>
+            <div>
+              {t("yubikey.config.algorithm", "Algorithm")}:{" "}
+              {cfg.oath_defaults?.algorithm ?? "SHA1"}
+            </div>
+            <div>
+              {t("yubikey.config.digits", "Digits")}:{" "}
+              {cfg.oath_defaults?.digits ?? 6}
+            </div>
+            <div>
+              {t("yubikey.config.period", "Period")}:{" "}
+              {cfg.oath_defaults?.period ?? 30}s
+            </div>
           </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-3 space-y-2">
@@ -1555,9 +1953,16 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("yubikey.config.fido2Defaults", "FIDO2 Defaults")}
           </h4>
           <div className="space-y-1 text-xs">
-            <div>UV Preferred: {cfg.fido2_defaults?.uv_preferred ? "Yes" : "No"}</div>
-            <div>Auto Attestation: {cfg.fido2_defaults?.auto_attestation ? "Yes" : "No"}</div>
-            <div>Require Touch: {cfg.fido2_defaults?.require_touch ? "Yes" : "No"}</div>
+            <div>
+              UV Preferred: {cfg.fido2_defaults?.uv_preferred ? "Yes" : "No"}
+            </div>
+            <div>
+              Auto Attestation:{" "}
+              {cfg.fido2_defaults?.auto_attestation ? "Yes" : "No"}
+            </div>
+            <div>
+              Require Touch: {cfg.fido2_defaults?.require_touch ? "Yes" : "No"}
+            </div>
           </div>
         </div>
       </div>
@@ -1576,7 +1981,10 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             className="flex-1"
           />
           <button
-            onClick={() => { mgr.lockConfig(serial, lockCode); setLockCode(""); }}
+            onClick={() => {
+              mgr.lockConfig(serial, lockCode);
+              setLockCode("");
+            }}
             disabled={!lockCode || mgr.loading}
             className="flex items-center gap-1 px-3 py-1.5 text-xs bg-warning text-white rounded hover:bg-warning/90 disabled:opacity-50"
           >
@@ -1584,7 +1992,10 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("yubikey.config.lock", "Lock")}
           </button>
           <button
-            onClick={() => { mgr.unlockConfig(serial, lockCode); setLockCode(""); }}
+            onClick={() => {
+              mgr.unlockConfig(serial, lockCode);
+              setLockCode("");
+            }}
             disabled={!lockCode || mgr.loading}
             className="flex items-center gap-1 px-3 py-1.5 text-xs bg-success text-white rounded hover:bg-success/90 disabled:opacity-50"
           >
@@ -1617,7 +2028,9 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             disabled={mgr.loading}
             className="flex items-center gap-1 px-2 py-1 text-xs bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-3 h-3 ${mgr.loading ? "animate-spin" : ""}`}
+            />
             {t("yubikey.audit.refresh", "Refresh")}
           </button>
           <button
@@ -1643,7 +2056,10 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <EmptyState
           icon={Activity}
           message={t("yubikey.audit.empty", "No Audit Entries")}
-          hint={t("yubikey.audit.emptyDesc", "Audit entries will appear here as YubiKey operations occur.")}
+          hint={t(
+            "yubikey.audit.emptyDesc",
+            "Audit entries will appear here as YubiKey operations occur.",
+          )}
         />
       ) : (
         <div className="max-h-80 overflow-y-auto space-y-1">
@@ -1716,14 +2132,20 @@ const YubiKeyManager: React.FC<YubiKeyManagerProps> = ({ isOpen, onClose }) => {
         {mgr.selectedDevice && (
           <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
             <HardDrive className="w-3 h-3" />
-            {t("yubikey.selected", "Selected")}: {t("yubikey.devices.serial", "Serial")} #{mgr.selectedDevice.serial}
+            {t("yubikey.selected", "Selected")}:{" "}
+            {t("yubikey.devices.serial", "Serial")} #{mgr.selectedDevice.serial}
             {mgr.selectedDevice.firmware_version && (
-              <span className="ml-2">FW {mgr.selectedDevice.firmware_version}</span>
+              <span className="ml-2">
+                FW {mgr.selectedDevice.firmware_version}
+              </span>
             )}
           </div>
         )}
 
-        <TabBar active={mgr.activeTab} onChange={(tab) => mgr.setActiveTab(tab)} />
+        <TabBar
+          active={mgr.activeTab}
+          onChange={(tab) => mgr.setActiveTab(tab)}
+        />
 
         <div className="relative">
           {mgr.activeTab === "devices" && <DevicesTab mgr={mgr} />}

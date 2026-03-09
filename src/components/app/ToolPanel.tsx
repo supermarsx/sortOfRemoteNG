@@ -1,70 +1,78 @@
 /* eslint-disable react-refresh/only-export-components */
-import React from 'react';
-import { ConnectionSession } from '../../types/connection/connection';
-import { ToolDisplayModes } from '../../types/settings/settings';
-import { PerformanceMonitor } from '../monitoring/PerformanceMonitor';
-import { ActionLogViewer } from '../monitoring/ActionLogViewer';
-import { ShortcutManagerDialog } from './ShortcutManagerDialog';
-import { ProxyChainMenu } from '../network/ProxyChainMenu';
-import { InternalProxyManager } from '../network/InternalProxyManager';
-import { WOLQuickTool } from '../network/WOLQuickTool';
-import { BulkSSHCommander } from '../ssh/BulkSSHCommander';
-import { ServerStatsPanel } from '../ssh/ServerStatsPanel';
-import { OpksshPanel } from '../ssh/OpksshPanel';
-import { McpServerPanel } from '../ssh/McpServerPanel';
-import { ScriptManager } from '../recording/ScriptManager';
-import { MacroManager } from '../recording/MacroManager';
-import { RecordingManager } from '../recording/RecordingManager';
-import { WindowsBackupPanel } from '../sync/WindowsBackupPanel';
-import { generateId } from '../../utils/core/id';
+import React from "react";
+import dynamic from "next/dynamic";
+import { ConnectionSession } from "../../types/connection/connection";
+import {
+  getToolKeyFromProtocol,
+  ToolKey,
+} from "./toolSession";
 
-export type ToolKey = Exclude<keyof ToolDisplayModes, 'globalDefault'>;
-
-/** Protocol prefix for tool tabs in the session system */
-export const TOOL_PROTOCOL_PREFIX = 'tool:';
-
-/** Map of tool key to display name */
-export const TOOL_LABELS: Record<ToolKey, string> = {
-  performanceMonitor: 'Performance Monitor',
-  actionLog: 'Action Log',
-  shortcutManager: 'Shortcuts',
-  proxyChain: 'Proxy Chain',
-  internalProxy: 'Internal Proxy',
-  wol: 'Wake-on-LAN',
-  bulkSsh: 'Bulk SSH',
-  serverStats: 'Server Stats',
-  opkssh: 'opkssh',
-  mcpServer: 'MCP Server',
-  scriptManager: 'Script Manager',
-  macroManager: 'Macros',
-  recordingManager: 'Recording Manager',
-  windowsBackup: 'Windows Backup',
-};
-
-/** Check if a protocol string is a tool tab */
-export const isToolProtocol = (protocol: string): boolean =>
-  protocol.startsWith(TOOL_PROTOCOL_PREFIX);
-
-/** Extract the tool key from a tool protocol string */
-export const getToolKeyFromProtocol = (protocol: string): ToolKey | null => {
-  if (!protocol.startsWith(TOOL_PROTOCOL_PREFIX)) return null;
-  return protocol.slice(TOOL_PROTOCOL_PREFIX.length) as ToolKey;
-};
-
-/** Build the protocol string for a tool */
-export const getToolProtocol = (toolKey: ToolKey): string =>
-  `${TOOL_PROTOCOL_PREFIX}${toolKey}`;
-
-/** Create a ConnectionSession for a tool tab */
-export const createToolSession = (toolKey: ToolKey): ConnectionSession => ({
-  id: generateId(),
-  connectionId: `tool-${toolKey}`,
-  name: TOOL_LABELS[toolKey],
-  status: 'connected',
-  startTime: new Date(),
-  protocol: getToolProtocol(toolKey),
-  hostname: '',
-});
+const PerformanceMonitor = dynamic(
+  () =>
+    import("../monitoring/PerformanceMonitor").then(
+      (module) => module.PerformanceMonitor,
+    ),
+  { ssr: false },
+);
+const ActionLogViewer = dynamic(
+  () =>
+    import("../monitoring/ActionLogViewer").then(
+      (module) => module.ActionLogViewer,
+    ),
+  { ssr: false },
+);
+const ShortcutManagerDialog = dynamic(
+  () => import("./ShortcutManagerDialog").then((module) => module.ShortcutManagerDialog),
+  { ssr: false },
+);
+const ProxyChainMenu = dynamic(
+  () => import("../network/ProxyChainMenu"),
+  { ssr: false },
+);
+const InternalProxyManager = dynamic(
+  () =>
+    import("../network/InternalProxyManager").then(
+      (module) => module.InternalProxyManager,
+    ),
+  { ssr: false },
+);
+const WOLQuickTool = dynamic(
+  () =>
+    import("../network/WOLQuickTool").then((module) => module.WOLQuickTool),
+  { ssr: false },
+);
+const BulkSSHCommander = dynamic(
+  () => import("../ssh/BulkSSHCommander").then((module) => module.BulkSSHCommander),
+  { ssr: false },
+);
+const ServerStatsPanel = dynamic(
+  () => import("../ssh/ServerStatsPanel").then((module) => module.ServerStatsPanel),
+  { ssr: false },
+);
+const OpksshPanel = dynamic(
+  () => import("../ssh/OpksshPanel").then((module) => module.OpksshPanel),
+  { ssr: false },
+);
+const McpServerPanel = dynamic(
+  () => import("../ssh/McpServerPanel").then((module) => module.McpServerPanel),
+  { ssr: false },
+);
+const ScriptManager = dynamic(
+  () => import("../recording/ScriptManager").then((module) => module.ScriptManager),
+  { ssr: false },
+);
+const MacroManager = dynamic(
+  () => import("../recording/MacroManager"),
+  { ssr: false },
+);
+const RecordingManager = dynamic(
+  () => import("../recording/RecordingManager"),
+  { ssr: false },
+);
+const WindowsBackupPanel = dynamic(
+  () => import("../sync/WindowsBackupPanel"),
+  { ssr: false },
+);
 
 interface ToolTabViewerProps {
   session: ConnectionSession;
@@ -101,3 +109,13 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
     </div>
   );
 };
+
+export {
+  getToolKeyFromProtocol,
+  TOOL_LABELS,
+  TOOL_PROTOCOL_PREFIX,
+  createToolSession,
+  getToolProtocol,
+  isToolProtocol,
+} from "./toolSession";
+export type { ToolKey } from "./toolSession";

@@ -1,11 +1,29 @@
 import React from 'react';
+import dynamic from 'next/dynamic';
 import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection/connection';
-import { WebTerminal } from '../ssh/WebTerminal';
-import { WebBrowser } from '../protocol/WebBrowser';
-import RDPClient from '../rdp/RDPClient';
-import { AnyDeskClient } from '../protocol/AnyDeskClient';
-import { isToolProtocol, ToolTabViewer } from '../app/ToolPanel';
+import { isToolProtocol } from '../app/toolSession';
+
+const ToolTabViewer = dynamic(
+  () => import('../app/ToolPanel').then((module) => module.ToolTabViewer),
+  { ssr: false },
+);
+const WebTerminal = dynamic(
+  () => import('../ssh/WebTerminal'),
+  { ssr: false },
+);
+const WebBrowser = dynamic(
+  () => import('../protocol/WebBrowser').then((module) => module.WebBrowser),
+  { ssr: false },
+);
+const RDPClient = dynamic(
+  () => import('../rdp/RDPClient'),
+  { ssr: false },
+);
+const AnyDeskClient = dynamic(
+  () => import('../protocol/AnyDeskClient').then((module) => module.AnyDeskClient),
+  { ssr: false },
+);
 
 interface SessionViewerProps {
   session: ConnectionSession;

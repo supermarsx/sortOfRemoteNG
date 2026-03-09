@@ -69,31 +69,31 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
       icon: Server,
       title: t("idrac.dashboard.server", "Server"),
       lines: [
-        `${d.system.manufacturer} ${d.system.model}`,
-        `SN: ${d.system.serialNumber}`,
-        `Tag: ${d.system.serviceTag}`,
-        `BIOS: ${d.system.biosVersion}`,
+        `${d.system?.manufacturer ?? "N/A"} ${d.system?.model ?? "N/A"}`,
+        `SN: ${d.system?.serialNumber ?? "N/A"}`,
+        `Tag: ${d.system?.serviceTag ?? "N/A"}`,
+        `BIOS: ${d.system?.biosVersion ?? "N/A"}`,
       ],
     },
     {
       icon: HeartPulse,
       title: t("idrac.dashboard.health", "Health"),
-      extra: <HealthBadge health={d.health.overallHealth} />,
+      extra: <HealthBadge health={d.health?.overallHealth} />,
       lines: [
-        `CPU: ${d.health.processors.health ?? "N/A"}`,
-        `Memory: ${d.health.memory.health ?? "N/A"}`,
-        `Storage: ${d.health.storage.health ?? "N/A"}`,
-        `Fans: ${d.health.fans.health ?? "N/A"}`,
+        `CPU: ${d.health?.processors?.health ?? "N/A"}`,
+        `Memory: ${d.health?.memory?.health ?? "N/A"}`,
+        `Storage: ${d.health?.storage?.health ?? "N/A"}`,
+        `Fans: ${d.health?.fans?.health ?? "N/A"}`,
       ],
     },
     {
       icon: Power,
       title: t("idrac.dashboard.power", "Power"),
       lines: [
-        `State: ${d.system.powerState}`,
-        `Current: ${d.power.currentWatts ?? "N/A"} W`,
-        `Peak: ${d.power.maxWatts ?? "N/A"} W`,
-        `Cap: ${d.power.powerCapEnabled ? `${d.power.powerCapWatts} W` : "Disabled"}`,
+        `State: ${d.system?.powerState ?? "N/A"}`,
+        `Current: ${d.power?.currentWatts ?? "N/A"} W`,
+        `Peak: ${d.power?.maxWatts ?? "N/A"} W`,
+        `Cap: ${d.power?.powerCapEnabled ? `${d.power.powerCapWatts} W` : "Disabled"}`,
       ],
     },
     {
@@ -112,36 +112,36 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
       icon: Cpu,
       title: t("idrac.dashboard.cpu", "Processors"),
       lines: [
-        `${d.system.processorCount}× ${d.system.processorModel}`,
+        `${d.system?.processorCount ?? "N/A"}× ${d.system?.processorModel ?? "N/A"}`,
       ],
     },
     {
       icon: MemoryStick,
       title: t("idrac.dashboard.memory", "Memory"),
       lines: [
-        `${d.system.memoryGib} GiB total`,
-        `${d.memoryDimmCount} DIMMs installed`,
+        `${d.system?.memoryGib ?? "N/A"} GiB total`,
+        `${d.memoryDimmCount ?? 0} DIMMs installed`,
       ],
     },
     {
       icon: HardDrive,
       title: t("idrac.dashboard.storage", "Storage"),
       lines: [
-        `${d.virtualDiskCount} virtual disk(s)`,
-        `${d.physicalDiskCount} physical disk(s)`,
+        `${d.virtualDiskCount ?? 0} virtual disk(s)`,
+        `${d.physicalDiskCount ?? 0} physical disk(s)`,
       ],
     },
     {
       icon: Network,
       title: t("idrac.dashboard.network", "Network"),
-      lines: [`${d.nicCount} NIC(s) detected`],
+      lines: [`${d.nicCount ?? 0} NIC(s) detected`],
     },
     {
       icon: Package,
       title: t("idrac.dashboard.firmware", "Firmware"),
       lines: [
-        `iDRAC: ${d.idrac.firmwareVersion}`,
-        `${d.firmwareCount} components`,
+        `iDRAC: ${d.idrac?.firmwareVersion ?? "N/A"}`,
+        `${d.firmwareCount ?? 0} components`,
       ],
     },
   ];
@@ -180,13 +180,13 @@ const DashboardView: React.FC<SubProps> = ({ mgr }) => {
       </div>
 
       {/* Recent events */}
-      {d.recentEvents.length > 0 && (
+      {(d.recentEvents?.length ?? 0) > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
           <h3 className="text-xs font-medium text-[var(--color-text)] mb-2">
             {t("idrac.dashboard.recent_events", "Recent Events")}
           </h3>
           <div className="space-y-1 max-h-48 overflow-y-auto">
-            {d.recentEvents.slice(0, 15).map((ev) => (
+            {d.recentEvents?.slice(0, 15).map((ev) => (
               <div
                 key={ev.id}
                 className="flex items-start gap-2 text-[10px] py-1 border-b border-[var(--color-border)] last:border-0"

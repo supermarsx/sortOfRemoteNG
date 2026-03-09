@@ -23,7 +23,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
-import { isToolProtocol, getToolKeyFromProtocol } from "../app/ToolPanel";
+import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
 
 const getToolIcon = (toolKey: string) => {
   switch (toolKey) {
