@@ -282,9 +282,7 @@ pub async fn totp_set_password(
 }
 
 #[tauri::command]
-pub async fn totp_lock(
-    state: tauri::State<'_, TotpServiceState>,
-) -> Result<(), String> {
+pub async fn totp_lock(state: tauri::State<'_, TotpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.lock();
     Ok(())
@@ -302,17 +300,13 @@ pub async fn totp_unlock(
 }
 
 #[tauri::command]
-pub async fn totp_is_locked(
-    state: tauri::State<'_, TotpServiceState>,
-) -> Result<bool, String> {
+pub async fn totp_is_locked(state: tauri::State<'_, TotpServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_locked())
 }
 
 #[tauri::command]
-pub async fn totp_save_vault(
-    state: tauri::State<'_, TotpServiceState>,
-) -> Result<String, String> {
+pub async fn totp_save_vault(state: tauri::State<'_, TotpServiceState>) -> Result<String, String> {
     let svc = state.lock().await;
     svc.save_vault().map_err(|e| e.to_string())
 }
@@ -352,9 +346,7 @@ pub async fn totp_password_strength(
 }
 
 #[tauri::command]
-pub async fn totp_deduplicate(
-    state: tauri::State<'_, TotpServiceState>,
-) -> Result<usize, String> {
+pub async fn totp_deduplicate(state: tauri::State<'_, TotpServiceState>) -> Result<usize, String> {
     let mut svc = state.lock().await;
     svc.deduplicate().map_err(|e| e.to_string())
 }

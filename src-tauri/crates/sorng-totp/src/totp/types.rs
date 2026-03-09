@@ -11,16 +11,12 @@ use std::fmt;
 /// Hash algorithm used for HMAC-based OTP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Default)]
 pub enum Algorithm {
+    #[default]
     Sha1,
     Sha256,
     Sha512,
-}
-
-impl Default for Algorithm {
-    fn default() -> Self {
-        Self::Sha1
-    }
 }
 
 impl fmt::Display for Algorithm {
@@ -61,15 +57,11 @@ impl Algorithm {
 /// Whether this entry uses time-based or counter-based OTP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OtpType {
+    #[default]
     Totp,
     Hotp,
-}
-
-impl Default for OtpType {
-    fn default() -> Self {
-        Self::Totp
-    }
 }
 
 impl fmt::Display for OtpType {
@@ -223,17 +215,17 @@ impl TotpEntry {
 
     /// Check if the secret is valid base-32.
     pub fn is_secret_valid(&self) -> bool {
-        let cleaned = self.secret.replace(' ', "").replace('-', "");
-        base32::decode(base32::Alphabet::Rfc4648 { padding: false }, &cleaned.to_uppercase())
-            .is_some()
+        let cleaned = self.secret.replace([' ', '-'], "");
+        base32::decode(
+            base32::Alphabet::Rfc4648 { padding: false },
+            &cleaned.to_uppercase(),
+        )
+        .is_some()
     }
 
     /// Normalise the secret (uppercase, no spaces/dashes).
     pub fn normalised_secret(&self) -> String {
-        self.secret
-            .replace(' ', "")
-            .replace('-', "")
-            .to_uppercase()
+        self.secret.replace([' ', '-'], "").to_uppercase()
     }
 }
 
@@ -543,8 +535,14 @@ mod tests {
     #[test]
     fn algorithm_from_str_loose() {
         assert_eq!(Algorithm::from_str_loose("sha1"), Some(Algorithm::Sha1));
-        assert_eq!(Algorithm::from_str_loose("SHA-256"), Some(Algorithm::Sha256));
-        assert_eq!(Algorithm::from_str_loose("HMAC-SHA512"), Some(Algorithm::Sha512));
+        assert_eq!(
+            Algorithm::from_str_loose("SHA-256"),
+            Some(Algorithm::Sha256)
+        );
+        assert_eq!(
+            Algorithm::from_str_loose("HMAC-SHA512"),
+            Some(Algorithm::Sha512)
+        );
         assert_eq!(Algorithm::from_str_loose("MD5"), None);
     }
 
@@ -746,8 +744,8 @@ mod tests {
 
     #[test]
     fn error_display() {
-        let err = TotpError::new(TotpErrorKind::InvalidSecret, "bad base32")
-            .with_detail("extra info");
+        let err =
+            TotpError::new(TotpErrorKind::InvalidSecret, "bad base32").with_detail("extra info");
         let s = err.to_string();
         assert!(s.contains("InvalidSecret"));
         assert!(s.contains("bad base32"));

@@ -69,8 +69,16 @@ fn export_csv(entries: &[TotpEntry]) -> Result<String, TotpError> {
 
         out.push_str(&format!(
             "{},{},{},{},{},{},{},{},{},{}\n",
-            name, secret, issuer, algo, entry.digits, entry.period, otp_type, entry.counter,
-            notes, tags
+            name,
+            secret,
+            issuer,
+            algo,
+            entry.digits,
+            entry.period,
+            otp_type,
+            entry.counter,
+            notes,
+            tags
         ));
     }
 
@@ -232,7 +240,9 @@ mod tests {
     fn export_csv_has_header() {
         let entries = sample_entries();
         let csv = export_csv(&entries).unwrap();
-        assert!(csv.starts_with("name,secret,issuer,algorithm,digits,period,type,counter,notes,tags\n"));
+        assert!(
+            csv.starts_with("name,secret,issuer,algorithm,digits,period,type,counter,notes,tags\n")
+        );
     }
 
     #[test]

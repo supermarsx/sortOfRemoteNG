@@ -23,20 +23,17 @@ pub fn hotp_raw(key: &[u8], counter: u64, digits: u8, algo: Algorithm) -> String
 fn compute_hmac(key: &[u8], data: &[u8], algo: Algorithm) -> Vec<u8> {
     match algo {
         Algorithm::Sha1 => {
-            let mut mac =
-                Hmac::<Sha1>::new_from_slice(key).expect("HMAC accepts any key length");
+            let mut mac = Hmac::<Sha1>::new_from_slice(key).expect("HMAC accepts any key length");
             mac.update(data);
             mac.finalize().into_bytes().to_vec()
         }
         Algorithm::Sha256 => {
-            let mut mac =
-                Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts any key length");
+            let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts any key length");
             mac.update(data);
             mac.finalize().into_bytes().to_vec()
         }
         Algorithm::Sha512 => {
-            let mut mac =
-                Hmac::<Sha512>::new_from_slice(key).expect("HMAC accepts any key length");
+            let mut mac = Hmac::<Sha512>::new_from_slice(key).expect("HMAC accepts any key length");
             mac.update(data);
             mac.finalize().into_bytes().to_vec()
         }
@@ -60,7 +57,12 @@ fn truncate(hmac_result: &[u8], digits: u8) -> String {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Generate an HOTP code from a base-32 encoded secret.
-pub fn generate_hotp(secret_b32: &str, counter: u64, digits: u8, algo: Algorithm) -> Result<String, TotpError> {
+pub fn generate_hotp(
+    secret_b32: &str,
+    counter: u64,
+    digits: u8,
+    algo: Algorithm,
+) -> Result<String, TotpError> {
     let key = decode_secret(secret_b32)?;
     Ok(hotp_raw(&key, counter, digits, algo))
 }
@@ -238,7 +240,7 @@ pub fn verify_code_at(
 
 /// Decode a base-32 secret (with or without spaces/dashes, case-insensitive).
 pub fn decode_secret(b32: &str) -> Result<Vec<u8>, TotpError> {
-    let cleaned = b32.replace(' ', "").replace('-', "").to_uppercase();
+    let cleaned = b32.replace([' ', '-'], "").to_uppercase();
     // Pad to multiple of 8 if needed
     let padded = pad_base32(&cleaned);
     base32::decode(base32::Alphabet::Rfc4648 { padding: true }, &padded)
@@ -301,11 +303,13 @@ pub fn format_code_display(code: &str) -> String {
 
 /// Check if a string looks like a valid base-32 secret.
 pub fn is_valid_base32(s: &str) -> bool {
-    let cleaned = s.replace(' ', "").replace('-', "").to_uppercase();
+    let cleaned = s.replace([' ', '-'], "").to_uppercase();
     if cleaned.is_empty() {
         return false;
     }
-    cleaned.chars().all(|c| matches!(c, 'A'..='Z' | '2'..='7' | '='))
+    cleaned
+        .chars()
+        .all(|c| matches!(c, 'A'..='Z' | '2'..='7' | '='))
         && decode_secret(&cleaned).is_ok()
 }
 
@@ -321,8 +325,8 @@ mod tests {
     #[test]
     fn rfc4226_hotp_vectors() {
         let expected = [
-            "755224", "287082", "359152", "969429", "338314",
-            "254676", "287922", "162583", "399871", "520489",
+            "755224", "287082", "359152", "969429", "338314", "254676", "287922", "162583",
+            "399871", "520489",
         ];
         for (counter, exp) in expected.iter().enumerate() {
             let code = generate_hotp(RFC4226_SECRET, counter as u64, 6, Algorithm::Sha1).unwrap();

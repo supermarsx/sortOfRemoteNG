@@ -21,7 +21,10 @@ const QUIET_ZONE: u32 = 4;
 /// Generate a PNG image (as bytes) of a QR code encoding the given text.
 pub fn text_to_qr_png(text: &str, module_px: Option<u32>) -> Result<Vec<u8>, TotpError> {
     let code = QrCode::new(text.as_bytes()).map_err(|e| {
-        TotpError::new(TotpErrorKind::QrEncodeFailed, format!("QR encode error: {}", e))
+        TotpError::new(
+            TotpErrorKind::QrEncodeFailed,
+            format!("QR encode error: {}", e),
+        )
     })?;
 
     let px = module_px.unwrap_or(MODULE_PX);
@@ -55,7 +58,12 @@ pub fn text_to_qr_png(text: &str, module_px: Option<u32>) -> Result<Vec<u8>, Tot
         img_size,
         image::ExtendedColorType::L8,
     )
-    .map_err(|e| TotpError::new(TotpErrorKind::QrEncodeFailed, format!("PNG encode error: {}", e)))?;
+    .map_err(|e| {
+        TotpError::new(
+            TotpErrorKind::QrEncodeFailed,
+            format!("PNG encode error: {}", e),
+        )
+    })?;
 
     Ok(buf)
 }
@@ -93,9 +101,12 @@ fn base64_encode(data: &[u8]) -> String {
 /// Extract the QR matrix width from a QR code (useful for testing).
 pub fn qr_matrix_width(text: &str) -> Result<usize, TotpError> {
     let code = QrCode::new(text.as_bytes()).map_err(|e| {
-        TotpError::new(TotpErrorKind::QrEncodeFailed, format!("QR encode error: {}", e))
+        TotpError::new(
+            TotpErrorKind::QrEncodeFailed,
+            format!("QR encode error: {}", e),
+        )
     })?;
-    Ok(code.width() as usize)
+    Ok(code.width())
 }
 
 #[cfg(test)]

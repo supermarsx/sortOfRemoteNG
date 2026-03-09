@@ -12,9 +12,8 @@ use crate::totp::types::*;
 
 /// Parse an `otpauth://` URI into a `TotpEntry`.
 pub fn parse_otpauth_uri(uri: &str) -> Result<TotpEntry, TotpError> {
-    let url = url::Url::parse(uri).map_err(|e| {
-        TotpError::new(TotpErrorKind::InvalidUri, format!("Invalid URI: {}", e))
-    })?;
+    let url = url::Url::parse(uri)
+        .map_err(|e| TotpError::new(TotpErrorKind::InvalidUri, format!("Invalid URI: {}", e)))?;
 
     if url.scheme() != "otpauth" {
         return Err(TotpError::new(
@@ -87,9 +86,8 @@ pub fn parse_otpauth_uri(uri: &str) -> Result<TotpEntry, TotpError> {
         }
     }
 
-    let secret = secret.ok_or_else(|| {
-        TotpError::new(TotpErrorKind::InvalidUri, "Missing 'secret' parameter")
-    })?;
+    let secret = secret
+        .ok_or_else(|| TotpError::new(TotpErrorKind::InvalidUri, "Missing 'secret' parameter"))?;
 
     // Prefer issuer from query param, then from path prefix
     let issuer = param_issuer.or(path_issuer);
@@ -157,12 +155,7 @@ pub fn build_otpauth_uri(entry: &TotpEntry) -> String {
         params.push(format!("counter={}", entry.counter));
     }
 
-    format!(
-        "otpauth://{}/{}?{}",
-        otp_type,
-        path,
-        params.join("&")
-    )
+    format!("otpauth://{}/{}?{}", otp_type, path, params.join("&"))
 }
 
 /// Generate URIs for multiple entries (one per line).
@@ -307,8 +300,7 @@ mod tests {
 
     #[test]
     fn build_basic_totp_uri() {
-        let entry = TotpEntry::new("alice@example.com", "JBSWY3DPEHPK3PXP")
-            .with_issuer("Example");
+        let entry = TotpEntry::new("alice@example.com", "JBSWY3DPEHPK3PXP").with_issuer("Example");
         let uri = build_otpauth_uri(&entry);
         assert!(uri.starts_with("otpauth://totp/"));
         assert!(uri.contains("secret=JBSWY3DPEHPK3PXP"));
@@ -385,10 +377,7 @@ otpauth://hotp/C:c?secret=CCCC&counter=1
 
     #[test]
     fn build_uris_multiple() {
-        let entries = vec![
-            TotpEntry::new("a", "AAAA"),
-            TotpEntry::new("b", "BBBB"),
-        ];
+        let entries = vec![TotpEntry::new("a", "AAAA"), TotpEntry::new("b", "BBBB")];
         let output = build_otpauth_uris(&entries);
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(lines.len(), 2);

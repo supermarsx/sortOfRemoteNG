@@ -113,10 +113,9 @@ impl TotpService {
     /// Get an entry by ID.
     pub fn get_entry(&self, id: &str) -> Result<TotpEntry, TotpError> {
         self.require_unlocked()?;
-        self.vault
-            .get_entry(id)
-            .cloned()
-            .ok_or_else(|| TotpError::new(TotpErrorKind::NotFound, format!("Entry not found: {}", id)))
+        self.vault.get_entry(id).cloned().ok_or_else(|| {
+            TotpError::new(TotpErrorKind::NotFound, format!("Entry not found: {}", id))
+        })
     }
 
     /// Update an existing entry.
@@ -152,7 +151,12 @@ impl TotpService {
     /// Filter entries.
     pub fn filter_entries(&self, filter: EntryFilter) -> Result<Vec<TotpEntry>, TotpError> {
         self.require_unlocked()?;
-        Ok(self.vault.filter_entries(&filter).into_iter().cloned().collect())
+        Ok(self
+            .vault
+            .filter_entries(&filter)
+            .into_iter()
+            .cloned()
+            .collect())
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -175,11 +179,7 @@ impl TotpService {
     /// Generate codes for all entries.
     pub fn generate_all_codes(&self) -> Result<Vec<GeneratedCode>, TotpError> {
         self.require_unlocked()?;
-        self.vault
-            .entries
-            .iter()
-            .map(core::generate_code)
-            .collect()
+        self.vault.entries.iter().map(core::generate_code).collect()
     }
 
     /// Verify a code against an entry.
@@ -195,7 +195,7 @@ impl TotpService {
             .get_entry(id)
             .ok_or_else(|| TotpError::new(TotpErrorKind::NotFound, "Entry not found"))?;
         let window = drift_window.unwrap_or(1);
-        Ok(core::verify_code(entry, code, window)?)
+        core::verify_code(entry, code, window)
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -264,7 +264,10 @@ impl TotpService {
         if self.vault.reorder_entry(from_idx, to_idx) {
             Ok(())
         } else {
-            Err(TotpError::new(TotpErrorKind::InvalidInput, "Invalid reorder indices"))
+            Err(TotpError::new(
+                TotpErrorKind::InvalidInput,
+                "Invalid reorder indices",
+            ))
         }
     }
 
@@ -398,7 +401,10 @@ impl TotpService {
         if let Ok(envelope) = serde_json::from_str::<crypto::VaultEnvelope>(trimmed) {
             // Encrypted
             let pw = password.ok_or_else(|| {
-                TotpError::new(TotpErrorKind::VaultLocked, "Vault is encrypted, password required")
+                TotpError::new(
+                    TotpErrorKind::VaultLocked,
+                    "Vault is encrypted, password required",
+                )
             })?;
             let plain = crypto::decrypt_vault(data, pw)?;
             self.vault = TotpVault::from_json(&plain)?;
@@ -425,7 +431,10 @@ impl TotpService {
 
     fn require_unlocked(&self) -> Result<(), TotpError> {
         if self.is_locked() {
-            Err(TotpError::new(TotpErrorKind::VaultLocked, "Vault is locked"))
+            Err(TotpError::new(
+                TotpErrorKind::VaultLocked,
+                "Vault is locked",
+            ))
         } else {
             Ok(())
         }
@@ -467,7 +476,14 @@ mod tests {
     async fn create_entry_with_defaults() {
         let mut svc = new_svc().await;
         let entry = svc
-            .create_entry("user".into(), "ABCDEF".into(), Some("Acme".into()), None, None, None)
+            .create_entry(
+                "user".into(),
+                "ABCDEF".into(),
+                Some("Acme".into()),
+                None,
+                None,
+                None,
+            )
             .unwrap();
         assert_eq!(entry.issuer.as_deref(), Some("Acme"));
         assert_eq!(entry.algorithm, Algorithm::Sha1);
@@ -519,7 +535,8 @@ mod tests {
 
         let entry = TotpEntry::new("a", "A");
         let eid = svc.add_entry(entry).unwrap();
-        svc.move_entry_to_group(&eid, Some(group.id.clone())).unwrap();
+        svc.move_entry_to_group(&eid, Some(group.id.clone()))
+            .unwrap();
 
         svc.remove_group(&group.id).unwrap();
         let e = svc.get_entry(&eid).unwrap();
@@ -581,9 +598,8 @@ mod tests {
     #[tokio::test]
     async fn export_import_roundtrip() {
         let mut svc = new_svc().await;
-        svc.add_entry(
-            TotpEntry::new("alice", "JBSWY3DPEHPK3PXP").with_issuer("GitHub"),
-        ).unwrap();
+        svc.add_entry(TotpEntry::new("alice", "JBSWY3DPEHPK3PXP").with_issuer("GitHub"))
+            .unwrap();
         let uris = svc.export_entries(ExportFormat::OtpAuthUris, None).unwrap();
 
         let mut svc2 = new_svc().await;
@@ -594,8 +610,10 @@ mod tests {
     #[tokio::test]
     async fn deduplicate() {
         let mut svc = new_svc().await;
-        svc.add_entry(TotpEntry::new("a", "AAAA").with_issuer("X")).unwrap();
-        svc.add_entry(TotpEntry::new("b", "AAAA").with_issuer("X")).unwrap();
+        svc.add_entry(TotpEntry::new("a", "AAAA").with_issuer("X"))
+            .unwrap();
+        svc.add_entry(TotpEntry::new("b", "AAAA").with_issuer("X"))
+            .unwrap();
         let removed = svc.deduplicate().unwrap();
         assert_eq!(removed, 1);
     }

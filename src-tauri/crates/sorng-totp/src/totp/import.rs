@@ -62,7 +62,11 @@ pub fn detect_format(data: &str) -> Option<ImportFormat> {
     // CSV heuristic
     if trimmed.contains(',') && trimmed.lines().count() >= 2 {
         let first_line = trimmed.lines().next().unwrap_or("").to_lowercase();
-        if first_line.contains("secret") || first_line.contains("issuer") || first_line.contains("name") || first_line.contains("otp") {
+        if first_line.contains("secret")
+            || first_line.contains("issuer")
+            || first_line.contains("name")
+            || first_line.contains("otp")
+        {
             return Some(ImportFormat::GenericCsv);
         }
     }
@@ -110,7 +114,11 @@ fn detect_json_format(val: &Value) -> Option<ImportFormat> {
     if let Some(arr) = val.as_array() {
         if let Some(first) = arr.first() {
             // andOTP: array of { "secret", "type", "algorithm" }
-            if first.get("type").and_then(|t| t.as_str()).map_or(false, |t| t == "TOTP" || t == "HOTP" || t == "totp" || t == "hotp") {
+            if first
+                .get("type")
+                .and_then(|t| t.as_str())
+                .is_some_and(|t| t == "TOTP" || t == "HOTP" || t == "totp" || t == "hotp")
+            {
                 return Some(ImportFormat::AndOtpJson);
             }
             // RAIVO: array of { "secret", "timer", "issuer" }
@@ -388,9 +396,7 @@ fn parse_otp_parameters(data: &[u8], warnings: &mut Vec<String>) -> Option<TotpE
     }
 
     let secret_b32 = match secret_bytes {
-        Some(ref bytes) if !bytes.is_empty() => {
-            crate::totp::core::encode_secret(bytes)
-        }
+        Some(ref bytes) if !bytes.is_empty() => crate::totp::core::encode_secret(bytes),
         _ => {
             warnings.push(format!("Entry '{}' has no secret, skipping", name));
             return None;
@@ -730,7 +736,10 @@ fn import_andotp_json(data: &str) -> ImportResult {
 
         let issuer = item.get("issuer").and_then(|i| i.as_str()).unwrap_or("");
         let label = item.get("label").and_then(|l| l.as_str()).unwrap_or("");
-        let algo_str = item.get("algorithm").and_then(|a| a.as_str()).unwrap_or("SHA1");
+        let algo_str = item
+            .get("algorithm")
+            .and_then(|a| a.as_str())
+            .unwrap_or("SHA1");
         let digits = item.get("digits").and_then(|d| d.as_u64()).unwrap_or(6) as u8;
         let period = item.get("period").and_then(|p| p.as_u64()).unwrap_or(30) as u32;
         let counter = item.get("counter").and_then(|c| c.as_u64()).unwrap_or(0);
@@ -938,7 +947,10 @@ fn import_bitwarden_json(data: &str) -> ImportResult {
         }
         total_with_totp += 1;
 
-        let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
+        let name = item
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown");
 
         // The TOTP field may be:
         // 1. An otpauth:// URI
@@ -1008,11 +1020,30 @@ fn import_raivo_json(data: &str) -> ImportResult {
 
         let issuer = item.get("issuer").and_then(|i| i.as_str()).unwrap_or("");
         let account = item.get("account").and_then(|a| a.as_str()).unwrap_or("");
-        let algo_str = item.get("algorithm").and_then(|a| a.as_str()).unwrap_or("SHA1");
-        let digits = item.get("digits").and_then(|d| d.as_str()).and_then(|s| s.parse().ok()).unwrap_or(6u8);
-        let timer = item.get("timer").and_then(|t| t.as_str()).and_then(|s| s.parse().ok()).unwrap_or(30u32);
-        let counter = item.get("counter").and_then(|c| c.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0u64);
-        let kind = item.get("kind").and_then(|k| k.as_str()).unwrap_or("TOTP").to_uppercase();
+        let algo_str = item
+            .get("algorithm")
+            .and_then(|a| a.as_str())
+            .unwrap_or("SHA1");
+        let digits = item
+            .get("digits")
+            .and_then(|d| d.as_str())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(6u8);
+        let timer = item
+            .get("timer")
+            .and_then(|t| t.as_str())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(30u32);
+        let counter = item
+            .get("counter")
+            .and_then(|c| c.as_str())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0u64);
+        let kind = item
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .unwrap_or("TOTP")
+            .to_uppercase();
 
         let algo = Algorithm::from_str_loose(algo_str).unwrap_or(Algorithm::Sha1);
 
@@ -1114,16 +1145,10 @@ fn import_authy_json(data: &str) -> ImportResult {
             .and_then(|n| n.as_str())
             .unwrap_or("Unknown");
 
-        let digits = item
-            .get("digits")
-            .and_then(|d| d.as_u64())
-            .unwrap_or(6) as u8;
+        let digits = item.get("digits").and_then(|d| d.as_u64()).unwrap_or(6) as u8;
 
         // Authy defaults to 7 digits / 10s period for some accounts
-        let period = item
-            .get("period")
-            .and_then(|p| p.as_u64())
-            .unwrap_or(30) as u32;
+        let period = item.get("period").and_then(|p| p.as_u64()).unwrap_or(30) as u32;
 
         let entry = TotpEntry::new(name, &secret)
             .with_digits(digits)
@@ -1195,10 +1220,17 @@ fn import_generic_csv(data: &str) -> ImportResult {
         let secret = get_field("secret");
         if secret.is_empty() {
             // Maybe there's an otpauth URI column
-            let uri_field = get_field("uri")
-                .to_string();
-            let uri_field = if uri_field.is_empty() { get_field("otpauth") } else { uri_field };
-            let uri_field = if uri_field.is_empty() { get_field("url") } else { uri_field };
+            let uri_field = get_field("uri").to_string();
+            let uri_field = if uri_field.is_empty() {
+                get_field("otpauth")
+            } else {
+                uri_field
+            };
+            let uri_field = if uri_field.is_empty() {
+                get_field("url")
+            } else {
+                uri_field
+            };
 
             if !uri_field.is_empty() && uri_field.starts_with("otpauth://") {
                 match crate::totp::uri::parse_otpauth_uri(&uri_field) {
@@ -1218,7 +1250,11 @@ fn import_generic_csv(data: &str) -> ImportResult {
 
         let name = {
             let n = get_field("name");
-            if n.is_empty() { get_field("label") } else { n }
+            if n.is_empty() {
+                get_field("label")
+            } else {
+                n
+            }
         };
         let name = if name.is_empty() {
             get_field("account")
@@ -1309,7 +1345,10 @@ fn build_column_map(columns: &[String]) -> HashMap<String, usize> {
     let mut map = HashMap::new();
 
     let aliases: &[(&str, &[&str])] = &[
-        ("secret", &["secret", "seed", "key", "totp_secret", "otp_secret"]),
+        (
+            "secret",
+            &["secret", "seed", "key", "totp_secret", "otp_secret"],
+        ),
         ("name", &["name", "account_name", "service", "title"]),
         ("label", &["label"]),
         ("account", &["account", "email", "user", "username"]),

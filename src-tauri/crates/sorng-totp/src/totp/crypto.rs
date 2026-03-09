@@ -75,24 +75,36 @@ pub fn generate_nonce() -> [u8; NONCE_LEN] {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Encrypt plaintext bytes with AES-256-GCM.
-pub fn aes_encrypt(key: &[u8; KEY_LEN], nonce_bytes: &[u8; NONCE_LEN], plaintext: &[u8]) -> Result<Vec<u8>, TotpError> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| {
-        TotpError::new(TotpErrorKind::EncryptionFailed, format!("AES init: {}", e))
-    })?;
+pub fn aes_encrypt(
+    key: &[u8; KEY_LEN],
+    nonce_bytes: &[u8; NONCE_LEN],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, TotpError> {
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| TotpError::new(TotpErrorKind::EncryptionFailed, format!("AES init: {}", e)))?;
     let nonce = Nonce::from_slice(nonce_bytes);
     cipher.encrypt(nonce, plaintext).map_err(|e| {
-        TotpError::new(TotpErrorKind::EncryptionFailed, format!("AES encrypt: {}", e))
+        TotpError::new(
+            TotpErrorKind::EncryptionFailed,
+            format!("AES encrypt: {}", e),
+        )
     })
 }
 
 /// Decrypt ciphertext bytes with AES-256-GCM.
-pub fn aes_decrypt(key: &[u8; KEY_LEN], nonce_bytes: &[u8; NONCE_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, TotpError> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| {
-        TotpError::new(TotpErrorKind::DecryptionFailed, format!("AES init: {}", e))
-    })?;
+pub fn aes_decrypt(
+    key: &[u8; KEY_LEN],
+    nonce_bytes: &[u8; NONCE_LEN],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, TotpError> {
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| TotpError::new(TotpErrorKind::DecryptionFailed, format!("AES init: {}", e)))?;
     let nonce = Nonce::from_slice(nonce_bytes);
     cipher.decrypt(nonce, ciphertext).map_err(|_e| {
-        TotpError::new(TotpErrorKind::DecryptionFailed, "Decryption failed – wrong password or corrupted data")
+        TotpError::new(
+            TotpErrorKind::DecryptionFailed,
+            "Decryption failed – wrong password or corrupted data",
+        )
     })
 }
 
@@ -116,7 +128,10 @@ pub fn encrypt_vault(plaintext: &str, password: &str) -> Result<String, TotpErro
     };
 
     serde_json::to_string_pretty(&envelope).map_err(|e| {
-        TotpError::new(TotpErrorKind::EncryptionFailed, format!("JSON serialize: {}", e))
+        TotpError::new(
+            TotpErrorKind::EncryptionFailed,
+            format!("JSON serialize: {}", e),
+        )
     })
 }
 
@@ -130,19 +145,32 @@ pub fn decrypt_vault(envelope_json: &str, password: &str) -> Result<String, Totp
     })?;
 
     let salt = hex::decode(&envelope.salt).map_err(|e| {
-        TotpError::new(TotpErrorKind::DecryptionFailed, format!("Bad salt hex: {}", e))
+        TotpError::new(
+            TotpErrorKind::DecryptionFailed,
+            format!("Bad salt hex: {}", e),
+        )
     })?;
     let nonce_bytes = hex::decode(&envelope.nonce).map_err(|e| {
-        TotpError::new(TotpErrorKind::DecryptionFailed, format!("Bad nonce hex: {}", e))
+        TotpError::new(
+            TotpErrorKind::DecryptionFailed,
+            format!("Bad nonce hex: {}", e),
+        )
     })?;
     let ciphertext = hex::decode(&envelope.ciphertext).map_err(|e| {
-        TotpError::new(TotpErrorKind::DecryptionFailed, format!("Bad ciphertext hex: {}", e))
+        TotpError::new(
+            TotpErrorKind::DecryptionFailed,
+            format!("Bad ciphertext hex: {}", e),
+        )
     })?;
 
     if nonce_bytes.len() != NONCE_LEN {
         return Err(TotpError::new(
             TotpErrorKind::DecryptionFailed,
-            format!("Nonce length {} != expected {}", nonce_bytes.len(), NONCE_LEN),
+            format!(
+                "Nonce length {} != expected {}",
+                nonce_bytes.len(),
+                NONCE_LEN
+            ),
         ));
     }
 

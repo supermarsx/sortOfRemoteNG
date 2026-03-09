@@ -95,10 +95,10 @@ impl TotpVault {
                 e.label.to_lowercase().contains(&q)
                     || e.issuer
                         .as_deref()
-                        .map_or(false, |i| i.to_lowercase().contains(&q))
+                        .is_some_and(|i| i.to_lowercase().contains(&q))
                     || e.notes
                         .as_deref()
-                        .map_or(false, |n| n.to_lowercase().contains(&q))
+                        .is_some_and(|n| n.to_lowercase().contains(&q))
                     || e.tags.iter().any(|t| t.to_lowercase().contains(&q))
             })
             .collect()
@@ -247,11 +247,11 @@ impl TotpVault {
                 e.issuer.as_deref().unwrap_or(""),
                 e.normalised_secret()
             );
-            if seen.contains_key(&key) {
-                false
-            } else {
-                seen.insert(key, true);
+            if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(key) {
+                e.insert(true);
                 true
+            } else {
+                false
             }
         });
         let removed = before - self.entries.len();
@@ -267,14 +267,20 @@ impl TotpVault {
     /// Serialise vault to JSON.
     pub fn to_json(&self) -> Result<String, TotpError> {
         serde_json::to_string_pretty(self).map_err(|e| {
-            TotpError::new(TotpErrorKind::ExportFailed, format!("JSON serialise: {}", e))
+            TotpError::new(
+                TotpErrorKind::ExportFailed,
+                format!("JSON serialise: {}", e),
+            )
         })
     }
 
     /// Deserialise vault from JSON.
     pub fn from_json(json: &str) -> Result<Self, TotpError> {
         serde_json::from_str(json).map_err(|e| {
-            TotpError::new(TotpErrorKind::ImportFailed, format!("JSON deserialise: {}", e))
+            TotpError::new(
+                TotpErrorKind::ImportFailed,
+                format!("JSON deserialise: {}", e),
+            )
         })
     }
 
