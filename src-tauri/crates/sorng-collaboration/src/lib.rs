@@ -32,16 +32,16 @@
 //! - [`conflict`] — Vector-clock based conflict resolution
 //! - [`discovery`] — User and team discovery, invitations
 
-pub mod types;
-pub mod service;
-pub mod workspace;
-pub mod presence;
-pub mod sharing;
-pub mod session_share;
-pub mod sync;
 pub mod audit;
-pub mod rbac;
-pub mod messaging;
-pub mod notifications;
 pub mod conflict;
 pub mod discovery;
+pub mod messaging;
+pub mod notifications;
+pub mod presence;
+pub mod rbac;
+pub mod service;
+pub mod session_share;
+pub mod sharing;
+pub mod sync;
+pub mod types;
+pub mod workspace;

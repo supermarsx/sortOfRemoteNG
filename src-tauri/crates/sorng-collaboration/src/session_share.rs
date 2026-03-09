@@ -13,6 +13,12 @@ pub struct SessionShareManager {
     sessions: HashMap<String, SharedSession>,
 }
 
+impl Default for SessionShareManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionShareManager {
     pub fn new() -> Self {
         Self {
@@ -31,11 +37,10 @@ impl SessionShareManager {
         max_participants: u32,
     ) -> Result<SharedSession, String> {
         // Check if there's already an active share for this connection by this owner
-        let already_shared = self.sessions.values().any(|s| {
-            s.connection_id == connection_id
-                && s.owner_id == owner_id
-                && s.active
-        });
+        let already_shared = self
+            .sessions
+            .values()
+            .any(|s| s.connection_id == connection_id && s.owner_id == owner_id && s.active);
         if already_shared {
             return Err("This session is already being shared".to_string());
         }
@@ -98,11 +103,7 @@ impl SessionShareManager {
     }
 
     /// Leave a shared session.
-    pub fn leave_session(
-        &mut self,
-        session_id: &str,
-        user_id: &str,
-    ) -> Result<(), String> {
+    pub fn leave_session(&mut self, session_id: &str, user_id: &str) -> Result<(), String> {
         let session = self
             .sessions
             .get_mut(session_id)

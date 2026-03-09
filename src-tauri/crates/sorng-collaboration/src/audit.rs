@@ -29,6 +29,7 @@ impl AuditLog {
     }
 
     /// Log an auditable action.
+    #[allow(clippy::too_many_arguments)]
     pub fn log_action(
         &mut self,
         user_id: &str,
@@ -62,7 +63,7 @@ impl AuditLog {
         );
 
         if let Some(ws_id) = workspace_id {
-            let ws_entries = self.entries.entry(ws_id.to_string()).or_insert_with(Vec::new);
+            let ws_entries = self.entries.entry(ws_id.to_string()).or_default();
             ws_entries.push(entry);
         } else {
             self.global_entries.push(entry);

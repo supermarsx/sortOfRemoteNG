@@ -14,6 +14,12 @@ pub struct NotificationService {
     notifications: HashMap<String, Vec<CollabNotification>>,
 }
 
+impl Default for NotificationService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NotificationService {
     pub fn new() -> Self {
         Self {
@@ -47,7 +53,7 @@ impl NotificationService {
         let user_notifications = self
             .notifications
             .entry(target_user_id.to_string())
-            .or_insert_with(Vec::new);
+            .or_default();
         user_notifications.push(notification);
     }
 
@@ -64,14 +70,7 @@ impl NotificationService {
         if let Ok(members) = workspaces.get_member_ids(workspace_id) {
             for member_id in members {
                 if member_id != actor_id {
-                    self.notify_user(
-                        &member_id,
-                        category,
-                        title,
-                        body,
-                        Some(workspace_id),
-                        None,
-                    );
+                    self.notify_user(&member_id, category, title, body, Some(workspace_id), None);
                 }
             }
         }
@@ -81,12 +80,7 @@ impl NotificationService {
     pub fn get_for_user(&self, user_id: &str) -> Vec<CollabNotification> {
         self.notifications
             .get(user_id)
-            .map(|n| {
-                n.iter()
-                    .filter(|notif| !notif.dismissed)
-                    .cloned()
-                    .collect()
-            })
+            .map(|n| n.iter().filter(|notif| !notif.dismissed).cloned().collect())
             .unwrap_or_default()
     }
 

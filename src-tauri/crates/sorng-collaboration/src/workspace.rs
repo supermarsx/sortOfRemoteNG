@@ -90,11 +90,7 @@ impl WorkspaceManager {
     }
 
     /// Remove a member from a workspace.
-    pub fn remove_member(
-        &mut self,
-        workspace_id: &str,
-        user_id: &str,
-    ) -> Result<(), String> {
+    pub fn remove_member(&mut self, workspace_id: &str, user_id: &str) -> Result<(), String> {
         let ws = self
             .workspaces
             .get_mut(workspace_id)

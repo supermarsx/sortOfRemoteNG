@@ -15,6 +15,12 @@ pub struct PresenceTracker {
     heartbeat_interval_secs: u64,
 }
 
+impl Default for PresenceTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PresenceTracker {
     pub fn new() -> Self {
         Self {
@@ -60,7 +66,12 @@ impl PresenceTracker {
     }
 
     /// Record a heartbeat from a user, keeping them marked as online.
-    pub fn heartbeat(&mut self, user_id: &str, client_info: Option<String>, client_ip: Option<String>) {
+    pub fn heartbeat(
+        &mut self,
+        user_id: &str,
+        client_info: Option<String>,
+        client_ip: Option<String>,
+    ) {
         let presence = self
             .presences
             .entry(user_id.to_string())
@@ -98,7 +109,15 @@ impl PresenceTracker {
     pub fn get_online_users(&self) -> Vec<&UserPresence> {
         self.presences
             .values()
-            .filter(|p| matches!(p.status, PresenceStatus::Online | PresenceStatus::Busy | PresenceStatus::Away | PresenceStatus::DoNotDisturb))
+            .filter(|p| {
+                matches!(
+                    p.status,
+                    PresenceStatus::Online
+                        | PresenceStatus::Busy
+                        | PresenceStatus::Away
+                        | PresenceStatus::DoNotDisturb
+                )
+            })
             .collect()
     }
 
@@ -110,8 +129,12 @@ impl PresenceTracker {
 
         for presence in self.presences.values_mut() {
             if presence.status != PresenceStatus::Offline {
-                if let Some(elapsed) = now.signed_duration_since(presence.last_heartbeat).to_std().ok() {
-                    if elapsed > timeout.to_std().unwrap_or(std::time::Duration::from_secs(60)) {
+                if let Ok(elapsed) = now.signed_duration_since(presence.last_heartbeat).to_std() {
+                    if elapsed
+                        > timeout
+                            .to_std()
+                            .unwrap_or(std::time::Duration::from_secs(60))
+                    {
                         log::info!(
                             "Marking user {} as offline (heartbeat timeout)",
                             presence.user_id

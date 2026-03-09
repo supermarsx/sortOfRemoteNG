@@ -81,7 +81,11 @@ impl CollaborationService {
 
     /// Set the current user for this collaboration session.
     pub fn set_current_user(&mut self, user: CollabUser) {
-        log::info!("Collaboration user set: {} ({})", user.display_name, user.id);
+        log::info!(
+            "Collaboration user set: {} ({})",
+            user.display_name,
+            user.id
+        );
         self.presence.set_status(&user.id, PresenceStatus::Online);
         self.current_user = Some(user);
     }
@@ -206,12 +210,9 @@ impl CollaborationService {
             WorkspaceRole::Editor,
         )?;
 
-        let resource = self.sharing.share_connection(
-            workspace_id,
-            connection_id,
-            &user.id,
-            permissions,
-        )?;
+        let resource =
+            self.sharing
+                .share_connection(workspace_id, connection_id, &user.id, permissions)?;
         self.audit.log_action(
             &user.id,
             Some(workspace_id),
@@ -297,10 +298,7 @@ impl CollaborationService {
     }
 
     /// Join an active shared session.
-    pub async fn join_shared_session(
-        &mut self,
-        session_id: &str,
-    ) -> Result<SharedSession, String> {
+    pub async fn join_shared_session(&mut self, session_id: &str) -> Result<SharedSession, String> {
         let user = self.require_user()?.clone();
         let session = self.session_share.join_session(session_id, &user.id)?;
         self.audit.log_action(
@@ -352,10 +350,7 @@ impl CollaborationService {
     }
 
     /// Get presence information for all members of a workspace.
-    pub fn get_workspace_presence(
-        &self,
-        workspace_id: &str,
-    ) -> Result<Vec<UserPresence>, String> {
+    pub fn get_workspace_presence(&self, workspace_id: &str) -> Result<Vec<UserPresence>, String> {
         let user = self.require_user()?;
         self.rbac.require_permission(
             &self.workspaces,
@@ -427,8 +422,7 @@ impl CollaborationService {
     /// Mark a notification as read.
     pub fn mark_notification_read(&mut self, notification_id: &str) -> Result<(), String> {
         let user_id = self.require_user()?.id.clone();
-        self.notifications
-            .mark_read(&user_id, notification_id)
+        self.notifications.mark_read(&user_id, notification_id)
     }
 
     /// Dismiss all notifications for the current user.

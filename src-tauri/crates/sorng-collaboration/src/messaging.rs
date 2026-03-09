@@ -52,10 +52,7 @@ impl MessagingService {
             deleted: false,
         };
 
-        let ws_messages = self
-            .messages
-            .entry(workspace_id.to_string())
-            .or_insert_with(Vec::new);
+        let ws_messages = self.messages.entry(workspace_id.to_string()).or_default();
         ws_messages.push(message.clone());
         self.persist();
         Ok(message)
@@ -161,11 +158,7 @@ impl MessagingService {
     }
 
     /// Get the thread (replies) for a specific message.
-    pub fn get_thread(
-        &self,
-        workspace_id: &str,
-        parent_message_id: &str,
-    ) -> Vec<CollabMessage> {
+    pub fn get_thread(&self, workspace_id: &str, parent_message_id: &str) -> Vec<CollabMessage> {
         let ws_messages = self
             .messages
             .get(workspace_id)

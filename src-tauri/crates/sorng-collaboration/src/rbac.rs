@@ -11,6 +11,12 @@ pub struct RbacEnforcer {
     // Stateless enforcer — all state comes from WorkspaceManager
 }
 
+impl Default for RbacEnforcer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RbacEnforcer {
     pub fn new() -> Self {
         Self {}

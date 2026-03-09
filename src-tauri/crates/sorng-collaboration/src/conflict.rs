@@ -53,6 +53,12 @@ pub struct ConflictPair {
     pub op_b: SyncOperation,
 }
 
+impl Default for ConflictResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConflictResolver {
     pub fn new() -> Self {
         Self {
@@ -140,7 +146,7 @@ impl ConflictResolver {
         for op in operations {
             by_resource
                 .entry(op.resource_id.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(op);
         }
 

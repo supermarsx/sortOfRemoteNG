@@ -84,11 +84,7 @@ impl SharingManager {
     }
 
     /// Remove sharing for a resource.
-    pub fn unshare(
-        &mut self,
-        workspace_id: &str,
-        resource_id: &str,
-    ) -> Result<(), String> {
+    pub fn unshare(&mut self, workspace_id: &str, resource_id: &str) -> Result<(), String> {
         let key = format!("{}:{}", workspace_id, resource_id);
         self.resources
             .remove(&key)

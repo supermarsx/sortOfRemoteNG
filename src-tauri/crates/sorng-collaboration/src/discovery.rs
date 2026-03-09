@@ -48,6 +48,7 @@ impl DiscoveryService {
     }
 
     /// Create a new invitation.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_invitation(
         &mut self,
         invitation_type: InvitationType,
@@ -138,11 +139,7 @@ impl DiscoveryService {
     }
 
     /// Revoke an invitation (by the sender).
-    pub fn revoke_invitation(
-        &mut self,
-        invitation_id: &str,
-        user_id: &str,
-    ) -> Result<(), String> {
+    pub fn revoke_invitation(&mut self, invitation_id: &str, user_id: &str) -> Result<(), String> {
         let invitation = self
             .invitations
             .get_mut(invitation_id)

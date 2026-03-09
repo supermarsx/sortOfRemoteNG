@@ -17,6 +17,12 @@ pub struct SyncEngine {
     node_id: String,
 }
 
+impl Default for SyncEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SyncEngine {
     pub fn new() -> Self {
         let node_id = uuid::Uuid::new_v4().to_string();
@@ -34,19 +40,12 @@ impl SyncEngine {
         op.vector_clock = self.local_clock.clone();
         op.origin_node = self.node_id.clone();
 
-        let workspace_ops = self
-            .operations
-            .entry(op.workspace_id.clone())
-            .or_insert_with(Vec::new);
+        let workspace_ops = self.operations.entry(op.workspace_id.clone()).or_default();
         workspace_ops.push(op);
     }
 
     /// Pull operations for a workspace that are causally after the given clock.
-    pub fn pull(
-        &self,
-        workspace_id: &str,
-        since_clock: &VectorClock,
-    ) -> Vec<SyncOperation> {
+    pub fn pull(&self, workspace_id: &str, since_clock: &VectorClock) -> Vec<SyncOperation> {
         if let Some(ops) = self.operations.get(workspace_id) {
             ops.iter()
                 .filter(|op| {
@@ -66,10 +65,7 @@ impl SyncEngine {
     pub fn merge_remote(&mut self, remote_ops: Vec<SyncOperation>) {
         for op in remote_ops {
             self.local_clock.merge(&op.vector_clock);
-            let workspace_ops = self
-                .operations
-                .entry(op.workspace_id.clone())
-                .or_insert_with(Vec::new);
+            let workspace_ops = self.operations.entry(op.workspace_id.clone()).or_default();
 
             // Avoid duplicates
             if !workspace_ops.iter().any(|existing| existing.id == op.id) {
