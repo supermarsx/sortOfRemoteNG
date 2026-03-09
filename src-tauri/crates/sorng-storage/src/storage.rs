@@ -27,16 +27,16 @@
 //! ## Example
 //!
 
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
+use base64::{engine::general_purpose, Engine as _};
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use aes_gcm::{Aes256Gcm, Nonce};
-use aes_gcm::aead::{Aead, KeyInit};
-use base64::{Engine as _, engine::general_purpose};
-use rand::RngCore;
-use sha2::Sha256;
 
 /// Represents the structure of data stored by the secure storage system.
 ///
@@ -83,7 +83,10 @@ impl SecureStorage {
     /// # Example
     ///
     pub fn new(store_path: String) -> SecureStorageState {
-        Arc::new(Mutex::new(SecureStorage { store_path, password: None }))
+        Arc::new(Mutex::new(SecureStorage {
+            store_path,
+            password: None,
+        }))
     }
 
     /// Sets the password for storage encryption.
@@ -140,12 +143,7 @@ impl SecureStorage {
     /// Derive a 256-bit encryption key from a password using PBKDF2-HMAC-SHA256.
     fn derive_encryption_key(password: &str, salt: &[u8]) -> [u8; 32] {
         let mut key = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(
-            password.as_bytes(),
-            salt,
-            600_000,
-            &mut key,
-        );
+        pbkdf2::pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, 600_000, &mut key);
         key
     }
 
@@ -233,7 +231,8 @@ impl SecureStorage {
         // This prevents data loss if the process crashes mid-write.
         let tmp_path = format!("{}.tmp", &self.store_path);
         fs::write(&tmp_path, &content).map_err(|e| format!("Failed to write temp file: {}", e))?;
-        fs::rename(&tmp_path, &self.store_path).map_err(|e| format!("Failed to rename temp file: {}", e))
+        fs::rename(&tmp_path, &self.store_path)
+            .map_err(|e| format!("Failed to rename temp file: {}", e))
     }
 
     /// Loads data from persistent storage.
@@ -260,19 +259,18 @@ impl SecureStorage {
         }
         let raw = fs::read_to_string(&self.store_path).map_err(|e| e.to_string())?;
 
-        if raw.starts_with("SORNG_ENC:") {
+        if let Some(encoded) = raw.strip_prefix("SORNG_ENC:") {
             // Encrypted data
             let password = self
                 .password
                 .as_ref()
                 .ok_or_else(|| "Storage is encrypted but no password is set".to_string())?;
-            let encoded = &raw["SORNG_ENC:".len()..];
             let combined = general_purpose::STANDARD
                 .decode(encoded.as_bytes())
                 .map_err(|e| format!("Base64 decode: {}", e))?;
             let json_bytes = Self::decrypt_bytes(&combined, password)?;
-            let json_str = String::from_utf8(json_bytes)
-                .map_err(|e| format!("UTF-8 decode: {}", e))?;
+            let json_str =
+                String::from_utf8(json_bytes).map_err(|e| format!("UTF-8 decode: {}", e))?;
             let storage_data: StorageData =
                 serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
             Ok(Some(storage_data))
@@ -333,7 +331,9 @@ pub async fn has_stored_data(state: tauri::State<'_, SecureStorageState>) -> Res
 ///
 /// `Ok(false)` (encryption not yet implemented)
 #[tauri::command]
-pub async fn is_storage_encrypted(state: tauri::State<'_, SecureStorageState>) -> Result<bool, String> {
+pub async fn is_storage_encrypted(
+    state: tauri::State<'_, SecureStorageState>,
+) -> Result<bool, String> {
     let storage = state.lock().await;
     storage.is_storage_encrypted().await
 }
@@ -350,7 +350,11 @@ pub async fn is_storage_encrypted(state: tauri::State<'_, SecureStorageState>) -
 ///
 /// `Ok(())` on success, `Err(String)` on error
 #[tauri::command]
-pub async fn save_data(state: tauri::State<'_, SecureStorageState>, data: StorageData, use_password: bool) -> Result<(), String> {
+pub async fn save_data(
+    state: tauri::State<'_, SecureStorageState>,
+    data: StorageData,
+    use_password: bool,
+) -> Result<(), String> {
     let storage = state.lock().await;
     storage.save_data(data, use_password).await
 }
@@ -365,7 +369,9 @@ pub async fn save_data(state: tauri::State<'_, SecureStorageState>, data: Storag
 ///
 /// `Ok(Some(StorageData))` if data exists, `Ok(None)` if no data, `Err(String)` on error
 #[tauri::command]
-pub async fn load_data(state: tauri::State<'_, SecureStorageState>) -> Result<Option<StorageData>, String> {
+pub async fn load_data(
+    state: tauri::State<'_, SecureStorageState>,
+) -> Result<Option<StorageData>, String> {
     let storage = state.lock().await;
     storage.load_data().await
 }
@@ -396,7 +402,10 @@ pub async fn clear_storage(state: tauri::State<'_, SecureStorageState>) -> Resul
 ///
 /// `Ok(())` always (password stored for future encryption)
 #[tauri::command]
-pub async fn set_storage_password(state: tauri::State<'_, SecureStorageState>, password: Option<String>) -> Result<(), String> {
+pub async fn set_storage_password(
+    state: tauri::State<'_, SecureStorageState>,
+    password: Option<String>,
+) -> Result<(), String> {
     let mut storage = state.lock().await;
     storage.set_password(password).await;
     Ok(())

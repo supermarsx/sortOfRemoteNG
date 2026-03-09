@@ -12,20 +12,20 @@
 //! - Encryption (AES-256-GCM)
 //! - Backup verification and integrity checking
 
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use flate2::write::GzEncoder;
-use flate2::read::GzDecoder;
-use flate2::Compression;
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
-use rand::RngCore;
 
 /// Backup frequency options
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -117,14 +117,14 @@ impl Default for BackupConfig {
 pub struct BackupMetadata {
     pub id: String,
     pub created_at: u64,
-    pub backup_type: String,  // "full" or "differential"
+    pub backup_type: String, // "full" or "differential"
     pub version: String,
     pub checksum: String,
     pub encrypted: bool,
     pub compressed: bool,
     pub size_bytes: u64,
     pub connections_count: u32,
-    pub parent_backup_id: Option<String>,  // For differential backups
+    pub parent_backup_id: Option<String>, // For differential backups
 }
 
 /// Backup status for frontend updates
@@ -134,7 +134,7 @@ pub struct BackupStatus {
     pub is_running: bool,
     pub last_backup_time: Option<u64>,
     pub last_backup_type: Option<String>,
-    pub last_backup_status: Option<String>,  // "success" | "failed" | "partial"
+    pub last_backup_status: Option<String>, // "success" | "failed" | "partial"
     pub last_error: Option<String>,
     pub next_scheduled_time: Option<u64>,
     pub backup_count: u32,
@@ -214,7 +214,7 @@ impl BackupService {
 
         // Parse scheduled time (HH:MM)
         let parts: Vec<&str> = self.config.scheduled_time.split(':').collect();
-        let hour: u64 = parts.get(0).and_then(|h| h.parse().ok()).unwrap_or(3);
+        let hour: u64 = parts.first().and_then(|h| h.parse().ok()).unwrap_or(3);
         let minute: u64 = parts.get(1).and_then(|m| m.parse().ok()).unwrap_or(0);
         let time_of_day_secs = hour * 3600 + minute * 60;
 
@@ -237,12 +237,12 @@ impl BackupService {
             BackupFrequency::Weekly => {
                 // Simplified: just add 7 days from last backup or now
                 let base = self.status.last_backup_time.unwrap_or(now);
-                Some(base + 604800)  // 7 days in seconds
+                Some(base + 604800) // 7 days in seconds
             }
             BackupFrequency::Monthly => {
                 // Simplified: add ~30 days from last backup or now
                 let base = self.status.last_backup_time.unwrap_or(now);
-                Some(base + 2592000)  // 30 days in seconds
+                Some(base + 2592000) // 30 days in seconds
             }
         };
 
@@ -250,7 +250,11 @@ impl BackupService {
     }
 
     /// Run a backup with the current configuration
-    pub async fn run_backup(&mut self, backup_type: &str, data: &serde_json::Value) -> Result<BackupMetadata, String> {
+    pub async fn run_backup(
+        &mut self,
+        backup_type: &str,
+        data: &serde_json::Value,
+    ) -> Result<BackupMetadata, String> {
         if self.status.is_running {
             return Err("Backup already in progress".to_string());
         }
@@ -268,12 +272,12 @@ impl BackupService {
                 self.status.last_backup_type = Some(metadata.backup_type.clone());
                 self.status.last_backup_status = Some("success".to_string());
                 self.calculate_next_scheduled_time();
-                
+
                 // Cleanup old backups
                 if self.config.max_backups_to_keep > 0 {
                     self.cleanup_old_backups().await?;
                 }
-                
+
                 // Update backup count and size
                 self.update_backup_stats().await?;
             }
@@ -287,11 +291,16 @@ impl BackupService {
     }
 
     /// Perform the actual backup operation
-    async fn perform_backup(&self, backup_type: &str, data: &serde_json::Value) -> Result<BackupMetadata, String> {
+    async fn perform_backup(
+        &self,
+        backup_type: &str,
+        data: &serde_json::Value,
+    ) -> Result<BackupMetadata, String> {
         // Ensure destination directory exists
         let dest_path = Path::new(&self.config.destination_path);
         if !dest_path.exists() {
-            fs::create_dir_all(dest_path).map_err(|e| format!("Failed to create backup directory: {}", e))?;
+            fs::create_dir_all(dest_path)
+                .map_err(|e| format!("Failed to create backup directory: {}", e))?;
         }
 
         // Generate backup ID and filename
@@ -299,8 +308,16 @@ impl BackupService {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
-        let backup_id = format!("{}-{}", now, uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("0"));
+
+        let backup_id = format!(
+            "{}-{}",
+            now,
+            uuid::Uuid::new_v4()
+                .to_string()
+                .split('-')
+                .next()
+                .unwrap_or("0")
+        );
         let extension = match (&self.config.format, self.config.compress_backups) {
             (BackupFormat::Json, true) => "json.gz",
             (BackupFormat::Json, false) => "json",
@@ -324,32 +341,38 @@ impl BackupService {
         // Compress if enabled
         let final_data = if self.config.compress_backups {
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(json_data.as_bytes())
+            encoder
+                .write_all(json_data.as_bytes())
                 .map_err(|e| format!("Failed to compress backup: {}", e))?;
-            encoder.finish()
+            encoder
+                .finish()
                 .map_err(|e| format!("Failed to finish compression: {}", e))?
         } else {
             json_data.as_bytes().to_vec()
         };
 
         // Encrypt if enabled
-        let encrypted_data = if self.config.encrypt_backups && self.config.encryption_password.is_some() {
-            let password = self.config.encryption_password.as_ref().unwrap();
-            self.encrypt_backup_data(&final_data, password)?
+        let encrypted_data = if self.config.encrypt_backups {
+            if let Some(password) = self.config.encryption_password.as_ref() {
+                self.encrypt_backup_data(&final_data, password)?
+            } else {
+                final_data
+            }
         } else {
             final_data
         };
 
         // Write to file
-        let mut file = File::create(&file_path)
-            .map_err(|e| format!("Failed to create backup file: {}", e))?;
+        let mut file =
+            File::create(&file_path).map_err(|e| format!("Failed to create backup file: {}", e))?;
         file.write_all(&encrypted_data)
             .map_err(|e| format!("Failed to write backup file: {}", e))?;
 
         let size_bytes = encrypted_data.len() as u64;
 
         // Count connections
-        let connections_count = data.get("connections")
+        let connections_count = data
+            .get("connections")
             .and_then(|c| c.as_array())
             .map(|arr| arr.len() as u32)
             .unwrap_or(0);
@@ -389,18 +412,21 @@ impl BackupService {
         for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let path = entry.path();
-            
-            if path.extension().map(|e| e == "meta" || e == "json").unwrap_or(false) {
-                continue;  // Skip metadata files, handle them with their backup
+
+            if path
+                .extension()
+                .map(|e| e == "meta" || e == "json")
+                .unwrap_or(false)
+            {
+                continue; // Skip metadata files, handle them with their backup
             }
 
-            let filename = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
             if filename.starts_with("backup_") {
                 // Get creation time from filename or file metadata
-                let created = entry.metadata()
+                let created = entry
+                    .metadata()
                     .and_then(|m| m.created())
                     .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs())
                     .unwrap_or(0);
@@ -438,9 +464,7 @@ impl BackupService {
         for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let path = entry.path();
-            let filename = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
             if filename.starts_with("backup_") && !filename.contains(".meta.") {
                 count += 1;
@@ -467,7 +491,8 @@ impl BackupService {
         for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let path = entry.path();
-            let filename = path.file_name()
+            let filename = path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string();
@@ -477,14 +502,21 @@ impl BackupService {
             }
 
             // Try to read metadata
-            let meta_path = path.parent()
+            let meta_path = path
+                .parent()
                 .map(|p| p.join(format!("{}.meta.json", filename)))
                 .unwrap_or_default();
 
             let (id, backup_type, created_at, encrypted, compressed) = if meta_path.exists() {
                 let meta_content = fs::read_to_string(&meta_path).unwrap_or_default();
                 if let Ok(meta) = serde_json::from_str::<BackupMetadata>(&meta_content) {
-                    (meta.id, meta.backup_type, meta.created_at, meta.encrypted, meta.compressed)
+                    (
+                        meta.id,
+                        meta.backup_type,
+                        meta.created_at,
+                        meta.encrypted,
+                        meta.compressed,
+                    )
                 } else {
                     (filename.clone(), "unknown".to_string(), 0, false, false)
                 }
@@ -514,16 +546,14 @@ impl BackupService {
     /// Restore from a backup file
     pub async fn restore_backup(&self, backup_id: &str) -> Result<serde_json::Value, String> {
         let dest_path = Path::new(&self.config.destination_path);
-        
+
         // Find the backup file
         let mut backup_path: Option<PathBuf> = None;
         for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let path = entry.path();
-            let filename = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
             if filename.contains(backup_id) && !filename.contains(".meta.") {
                 backup_path = Some(path);
                 break;
@@ -533,13 +563,15 @@ impl BackupService {
         let path = backup_path.ok_or_else(|| format!("Backup not found: {}", backup_id))?;
 
         // Read file
-        let file_data = fs::read(&path)
-            .map_err(|e| format!("Failed to read backup file: {}", e))?;
+        let file_data =
+            fs::read(&path).map_err(|e| format!("Failed to read backup file: {}", e))?;
 
         // Decrypt if needed
         let decrypted_data = if self.is_encrypted_backup(&file_data) {
-            let password = self.config.encryption_password.as_ref()
-                .ok_or_else(|| "Backup is encrypted but no password is configured".to_string())?;
+            let password =
+                self.config.encryption_password.as_ref().ok_or_else(|| {
+                    "Backup is encrypted but no password is configured".to_string()
+                })?;
             self.decrypt_backup_data(&file_data, password)?
         } else {
             file_data
@@ -550,7 +582,8 @@ impl BackupService {
         let json_data = if is_compressed {
             let mut decoder = GzDecoder::new(&decrypted_data[..]);
             let mut decompressed = String::new();
-            decoder.read_to_string(&mut decompressed)
+            decoder
+                .read_to_string(&mut decompressed)
                 .map_err(|e| format!("Failed to decompress backup: {}", e))?;
             decompressed
         } else {
@@ -568,14 +601,12 @@ impl BackupService {
     /// Delete a specific backup
     pub async fn delete_backup(&mut self, backup_id: &str) -> Result<(), String> {
         let dest_path = Path::new(&self.config.destination_path);
-        
+
         for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let path = entry.path();
-            let filename = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
             if filename.contains(backup_id) {
                 fs::remove_file(&path)
                     .map_err(|e| format!("Failed to delete backup file: {}", e))?;
@@ -593,7 +624,8 @@ impl BackupService {
         let mut nonce_bytes = [0u8; 12];
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher.encrypt(nonce, plaintext)
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext)
             .map_err(|e| format!("Failed to encrypt backup: {}", e))?;
         let mut out = Vec::with_capacity(6 + nonce_bytes.len() + ciphertext.len());
         out.extend_from_slice(b"SORNG1");
@@ -612,7 +644,8 @@ impl BackupService {
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| format!("Failed to create cipher: {}", e))?;
         let nonce = Nonce::from_slice(nonce_bytes);
-        cipher.decrypt(nonce, ciphertext)
+        cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| format!("Failed to decrypt backup: {}", e))
     }
 
@@ -630,12 +663,7 @@ impl BackupService {
         let salt = salt_hasher.finalize();
 
         let mut key = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(
-            password.as_bytes(),
-            &salt,
-            600_000,
-            &mut key,
-        );
+        pbkdf2::pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 600_000, &mut key);
         key
     }
 }
@@ -790,8 +818,12 @@ mod tests {
     #[test]
     fn day_of_week_serde_roundtrip() {
         let days = vec![
-            DayOfWeek::Sunday, DayOfWeek::Monday, DayOfWeek::Tuesday,
-            DayOfWeek::Wednesday, DayOfWeek::Thursday, DayOfWeek::Friday,
+            DayOfWeek::Sunday,
+            DayOfWeek::Monday,
+            DayOfWeek::Tuesday,
+            DayOfWeek::Wednesday,
+            DayOfWeek::Thursday,
+            DayOfWeek::Friday,
             DayOfWeek::Saturday,
         ];
         for d in days {
@@ -803,7 +835,10 @@ mod tests {
 
     #[test]
     fn day_of_week_rename_all_lowercase() {
-        assert_eq!(serde_json::to_string(&DayOfWeek::Wednesday).unwrap(), "\"wednesday\"");
+        assert_eq!(
+            serde_json::to_string(&DayOfWeek::Wednesday).unwrap(),
+            "\"wednesday\""
+        );
     }
 
     // ── BackupConfig serde ──────────────────────────────────────────────

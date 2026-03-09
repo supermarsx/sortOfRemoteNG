@@ -29,8 +29,10 @@ use tokio::sync::Mutex;
 /// How to handle first-time and recurring identity encounters.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum TrustPolicy {
     /// Trust On First Use — accept + memorize silently
+    #[default]
     Tofu,
     /// TOFU but auto-expire after `expiry_days` (re-prompt when stale)
     TofuWithExpiry,
@@ -52,12 +54,6 @@ pub enum TrustPolicy {
     CaTrustOnly,
     /// Threshold-based: trust after N successful verifications
     ThresholdTrust,
-}
-
-impl Default for TrustPolicy {
-    fn default() -> Self {
-        TrustPolicy::Tofu
-    }
 }
 
 /// Configuration knobs that accompany certain trust policies.
@@ -84,8 +80,10 @@ pub struct TrustPolicyConfig {
 /// Why an identity was stored / changed.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum IdentityChangeReason {
     /// First time this host was encountered
+    #[default]
     Initial,
     /// Host presented a new identity and user accepted
     UserAccepted,
@@ -101,12 +99,6 @@ pub enum IdentityChangeReason {
     Migrated,
     /// Admin forced override
     AdminOverride,
-}
-
-impl Default for IdentityChangeReason {
-    fn default() -> Self {
-        IdentityChangeReason::Initial
-    }
 }
 
 /// A single entry in the identity-change history.
@@ -355,14 +347,13 @@ impl TrustStoreService {
     }
 
     /// Determine the effective policy for a record (per-host override wins).
+    #[allow(dead_code)]
     fn effective_policy<'a>(&'a self, record: &'a TrustRecord) -> &'a TrustPolicy {
-        record
-            .host_policy
-            .as_ref()
-            .unwrap_or(&self.data.policy)
+        record.host_policy.as_ref().unwrap_or(&self.data.policy)
     }
 
     /// Determine the effective policy config for a record.
+    #[allow(dead_code)]
     fn effective_config<'a>(&'a self, record: &'a TrustRecord) -> &'a TrustPolicyConfig {
         record
             .host_policy_config
@@ -487,12 +478,10 @@ impl TrustStoreService {
                             presented: identity,
                         }
                     }
-                    TrustPolicy::CertificatePinning => {
-                        TrustVerifyResult::ChainMismatch {
-                            stored: record.identity.clone(),
-                            presented: identity,
-                        }
-                    }
+                    TrustPolicy::CertificatePinning => TrustVerifyResult::ChainMismatch {
+                        stored: record.identity.clone(),
+                        presented: identity,
+                    },
                     _ => TrustVerifyResult::Mismatch {
                         stored: record.identity.clone(),
                         presented: identity,
@@ -525,6 +514,7 @@ impl TrustStoreService {
     }
 
     /// Trust an identity with a specific reason and metadata.
+    #[allow(clippy::too_many_arguments)]
     pub async fn trust_identity_with_reason(
         &mut self,
         host: String,
@@ -541,9 +531,7 @@ impl TrustStoreService {
         // Compute trust expiry if using TofuWithExpiry
         let trust_expires = if self.data.policy == TrustPolicy::TofuWithExpiry {
             let days = self.data.policy_config.expiry_days.unwrap_or(90);
-            Some(
-                (Utc::now() + chrono::Duration::days(days as i64)).to_rfc3339(),
-            )
+            Some((Utc::now() + chrono::Duration::days(days as i64)).to_rfc3339())
         } else {
             None
         };
@@ -594,11 +582,7 @@ impl TrustStoreService {
     }
 
     /// Remove a trust record for a host.
-    pub async fn remove_identity(
-        &mut self,
-        host: &str,
-        record_type: &str,
-    ) -> Result<(), String> {
+    pub async fn remove_identity(&mut self, host: &str, record_type: &str) -> Result<(), String> {
         let key = Self::record_key(record_type, host);
         self.data
             .records
@@ -608,11 +592,7 @@ impl TrustStoreService {
     }
 
     /// Get the stored identity for a host.
-    pub async fn get_stored_identity(
-        &self,
-        host: &str,
-        record_type: &str,
-    ) -> Option<TrustRecord> {
+    pub async fn get_stored_identity(&self, host: &str, record_type: &str) -> Option<TrustRecord> {
         let key = Self::record_key(record_type, host);
         self.data.records.get(&key).cloned()
     }
@@ -694,11 +674,7 @@ impl TrustStoreService {
     }
 
     /// Revoke trust for a host identity (soft-delete: keeps history).
-    pub async fn revoke_identity(
-        &mut self,
-        host: &str,
-        record_type: &str,
-    ) -> Result<(), String> {
+    pub async fn revoke_identity(&mut self, host: &str, record_type: &str) -> Result<(), String> {
         let key = Self::record_key(record_type, host);
         let record = self
             .data
@@ -788,15 +764,16 @@ impl TrustStoreService {
         let records: Vec<&TrustRecord> = self.data.records.values().collect();
         let total = records.len() as u64;
         let revoked = records.iter().filter(|r| r.revoked).count() as u64;
-        let expired = records
-            .iter()
-            .filter(|r| Self::is_trust_expired(r))
-            .count() as u64;
+        let expired = records.iter().filter(|r| Self::is_trust_expired(r)).count() as u64;
         let with_history = records.iter().filter(|r| !r.history.is_empty()).count() as u64;
         let total_checks: u64 = records.iter().map(|r| r.stats.total_checks).sum();
         let total_mismatches: u64 = records.iter().map(|r| r.stats.mismatch_count).sum();
         let avg_score = if total > 0 {
-            (records.iter().map(|r| r.stats.trust_score as u64).sum::<u64>() / total) as u8
+            (records
+                .iter()
+                .map(|r| r.stats.trust_score as u64)
+                .sum::<u64>()
+                / total) as u8
         } else {
             0
         };
@@ -854,6 +831,7 @@ pub async fn trust_store_identity(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn trust_store_identity_with_reason(
     state: tauri::State<'_, TrustStoreServiceState>,
     host: String,
