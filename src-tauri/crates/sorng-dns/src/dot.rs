@@ -20,22 +20,16 @@ pub async fn execute_dot_query(
 
     let address = &server.address;
     let port = server.effective_port(DnsProtocol::DoT);
-    let _tls_hostname = server
-        .tls_hostname
-        .as_deref()
-        .unwrap_or(address);
+    let _tls_hostname = server.tls_hostname.as_deref().unwrap_or(address);
     let timeout = std::time::Duration::from_millis(config.timeout_ms);
 
     // Build the TCP + TLS connection
     let tcp_addr = format!("{}:{}", address, port);
 
-    let tcp_stream = tokio::time::timeout(
-        timeout,
-        tokio::net::TcpStream::connect(&tcp_addr),
-    )
-    .await
-    .map_err(|_| format!("DoT connection to {} timed out", tcp_addr))?
-    .map_err(|e| format!("DoT TCP connection failed: {}", e))?;
+    let tcp_stream = tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&tcp_addr))
+        .await
+        .map_err(|_| format!("DoT connection to {} timed out", tcp_addr))?
+        .map_err(|e| format!("DoT TCP connection failed: {}", e))?;
 
     // Use native-tls for TLS (via tokio-native-tls style wrapping)
     // Since we don't have tokio-native-tls as a dep, we simulate with

@@ -329,22 +329,34 @@ pub fn provider_by_id(id: &str) -> Option<DnsProvider> {
 
 /// Get all providers that support DoH.
 pub fn doh_providers() -> Vec<DnsProvider> {
-    all_providers().into_iter().filter(|p| p.supports_doh).collect()
+    all_providers()
+        .into_iter()
+        .filter(|p| p.supports_doh)
+        .collect()
 }
 
 /// Get all providers that support DoT.
 pub fn dot_providers() -> Vec<DnsProvider> {
-    all_providers().into_iter().filter(|p| p.supports_dot).collect()
+    all_providers()
+        .into_iter()
+        .filter(|p| p.supports_dot)
+        .collect()
 }
 
 /// Get only non-filtering (privacy) providers.
 pub fn privacy_providers() -> Vec<DnsProvider> {
-    all_providers().into_iter().filter(|p| !p.filtering).collect()
+    all_providers()
+        .into_iter()
+        .filter(|p| !p.filtering)
+        .collect()
 }
 
 /// Get only filtering (security) providers.
 pub fn filtering_providers() -> Vec<DnsProvider> {
-    all_providers().into_iter().filter(|p| p.filtering).collect()
+    all_providers()
+        .into_iter()
+        .filter(|p| p.filtering)
+        .collect()
 }
 
 /// Build a `DnsResolverConfig` from a provider, choosing the most secure protocol.
@@ -360,11 +372,7 @@ pub fn resolver_config_from_provider(provider: &DnsProvider) -> DnsResolverConfi
     let doh_servers: Vec<DnsServer> = provider
         .servers
         .iter()
-        .filter(|s| {
-            s.protocol
-                .as_ref()
-                .map_or(false, |p| *p == DnsProtocol::DoH)
-        })
+        .filter(|s| s.protocol.as_ref().is_some_and(|p| *p == DnsProtocol::DoH))
         .cloned()
         .collect();
 

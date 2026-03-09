@@ -40,8 +40,10 @@ impl DnsService {
 
     /// Create a service with a specific profile.
     pub fn with_profile(profile: DnsProfile) -> Self {
-        let mut settings = DnsSettings::default();
-        settings.profile = profile;
+        let settings = DnsSettings {
+            profile,
+            ..Default::default()
+        };
         let config = config::effective_config(&settings);
         let resolver = DnsResolver::new(config);
 
@@ -97,10 +99,7 @@ impl DnsService {
     }
 
     /// MX record lookup.
-    pub async fn lookup_mx(
-        &mut self,
-        domain: &str,
-    ) -> Result<Vec<(u16, String)>, String> {
+    pub async fn lookup_mx(&mut self, domain: &str) -> Result<Vec<(u16, String)>, String> {
         let result = self.resolver.lookup_mx(domain).await?;
         self.log_query(domain, DnsRecordType::MX, true);
         Ok(result)
@@ -114,20 +113,14 @@ impl DnsService {
     }
 
     /// SRV record lookup.
-    pub async fn lookup_srv(
-        &mut self,
-        name: &str,
-    ) -> Result<Vec<(u16, u16, u16, String)>, String> {
+    pub async fn lookup_srv(&mut self, name: &str) -> Result<Vec<(u16, u16, u16, String)>, String> {
         let result = self.resolver.lookup_srv(name).await?;
         self.log_query(name, DnsRecordType::SRV, true);
         Ok(result)
     }
 
     /// SSHFP record lookup.
-    pub async fn lookup_sshfp(
-        &mut self,
-        hostname: &str,
-    ) -> Result<Vec<(u8, u8, String)>, String> {
+    pub async fn lookup_sshfp(&mut self, hostname: &str) -> Result<Vec<(u8, u8, String)>, String> {
         let result = self.resolver.lookup_sshfp(hostname).await?;
         self.log_query(hostname, DnsRecordType::SSHFP, true);
         Ok(result)
@@ -155,10 +148,7 @@ impl DnsService {
     // ━━━━━━━━━━━━━━━ Domain-override-aware resolution ━━━━━━━━━━━━━━━
 
     /// Resolve with domain-specific overrides (split-horizon DNS).
-    pub async fn resolve_with_overrides(
-        &mut self,
-        hostname: &str,
-    ) -> Result<Vec<String>, String> {
+    pub async fn resolve_with_overrides(&mut self, hostname: &str) -> Result<Vec<String>, String> {
         if let Some(override_config) =
             config::find_domain_override(hostname, &self.settings.domain_overrides)
         {
@@ -190,7 +180,10 @@ impl DnsService {
         let config = config::effective_config(&settings);
         self.resolver = DnsResolver::new(config);
         self.settings = settings;
-        log::info!("DNS service reconfigured with profile: {}", self.settings.profile);
+        log::info!(
+            "DNS service reconfigured with profile: {}",
+            self.settings.profile
+        );
     }
 
     /// Switch to a different profile.
@@ -266,9 +259,7 @@ impl DnsService {
     // ━━━━━━━━━━━━━━━ Diagnostics ━━━━━━━━━━━━━━━
 
     /// Run DNS diagnostics.
-    pub async fn run_diagnostics(
-        &mut self,
-    ) -> crate::diagnostics::DnsDiagnosticReport {
+    pub async fn run_diagnostics(&mut self) -> crate::diagnostics::DnsDiagnosticReport {
         crate::diagnostics::generate_diagnostic_report(&mut self.resolver).await
     }
 
@@ -281,19 +272,14 @@ impl DnsService {
     }
 
     /// Compare protocol performance.
-    pub async fn compare_protocols(
-        &self,
-        domain: &str,
-    ) -> crate::diagnostics::ProtocolComparison {
+    pub async fn compare_protocols(&self, domain: &str) -> crate::diagnostics::ProtocolComparison {
         crate::diagnostics::compare_protocols(domain).await
     }
 
     // ━━━━━━━━━━━━━━━ Leak detection ━━━━━━━━━━━━━━━
 
     /// Run DNS leak test.
-    pub async fn run_leak_test(
-        &mut self,
-    ) -> crate::leak_detection::LeakTestReport {
+    pub async fn run_leak_test(&mut self) -> crate::leak_detection::LeakTestReport {
         crate::leak_detection::run_leak_test(&mut self.resolver).await
     }
 
@@ -310,7 +296,7 @@ impl DnsService {
         name: &str,
         record_type: DnsRecordType,
     ) -> Result<DnsResponse, String> {
-        let result = self.resolver.resolve_record(name, record_type.clone()).await;
+        let result = self.resolver.resolve_record(name, record_type).await;
         self.log_query(name, record_type, result.is_ok());
         result
     }

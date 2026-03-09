@@ -61,7 +61,12 @@ pub async fn benchmark_resolver(
         };
 
         // Use the first server as the representative server for this result
-        let server = resolver.config().servers.first().cloned().unwrap_or_else(|| DnsServer::plain("system"));
+        let server = resolver
+            .config()
+            .servers
+            .first()
+            .cloned()
+            .unwrap_or_else(|| DnsServer::plain("system"));
 
         results.push(DnsBenchmarkResult {
             server,
@@ -267,7 +272,11 @@ pub async fn compare_protocols(domain: &str) -> ProtocolComparison {
     let fastest = results
         .iter()
         .filter(|r| r.success)
-        .min_by(|a, b| a.latency_ms.partial_cmp(&b.latency_ms).unwrap_or(std::cmp::Ordering::Equal))
+        .min_by(|a, b| {
+            a.latency_ms
+                .partial_cmp(&b.latency_ms)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .map(|r| r.protocol.clone())
         .unwrap_or_else(|| "None".to_string());
 

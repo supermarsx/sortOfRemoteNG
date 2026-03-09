@@ -123,7 +123,10 @@ async fn execute_doh_json_query(
         .map_err(|e| format!("DoH JSON request failed: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("DoH JSON server returned HTTP {}", response.status()));
+        return Err(format!(
+            "DoH JSON server returned HTTP {}",
+            response.status()
+        ));
     }
 
     let body = response

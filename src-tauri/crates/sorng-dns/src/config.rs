@@ -74,11 +74,7 @@ fn privacy_config() -> DnsResolverConfig {
     let doh_servers: Vec<DnsServer> = mullvad
         .servers
         .into_iter()
-        .filter(|s| {
-            s.protocol
-                .as_ref()
-                .map_or(false, |p| *p == DnsProtocol::DoH)
-        })
+        .filter(|s| s.protocol.as_ref().is_some_and(|p| *p == DnsProtocol::DoH))
         .collect();
 
     DnsResolverConfig {
@@ -120,9 +116,7 @@ fn speed_config() -> DnsResolverConfig {
 fn security_config() -> DnsResolverConfig {
     DnsResolverConfig {
         protocol: DnsProtocol::DoH,
-        servers: vec![
-            DnsServer::doh("https://dns.quad9.net/dns-query"),
-        ],
+        servers: vec![DnsServer::doh("https://dns.quad9.net/dns-query")],
         fallback_protocol: Some(DnsProtocol::DoT),
         cache_enabled: true,
         cache_max_entries: 2000,
@@ -321,10 +315,7 @@ pub struct DomainOverride {
 /// Get the effective resolver config from settings.
 pub fn effective_config(settings: &DnsSettings) -> DnsResolverConfig {
     match settings.profile {
-        DnsProfile::Custom => settings
-            .custom_config
-            .clone()
-            .unwrap_or_default(),
+        DnsProfile::Custom => settings.custom_config.clone().unwrap_or_default(),
         profile => config_for_profile(profile),
     }
 }

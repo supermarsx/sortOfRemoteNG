@@ -44,8 +44,8 @@ pub fn analyze_spf(txt_records: &[String]) -> SpfResult {
 
     for part in record.split_whitespace().skip(1) {
         // skip "v=spf1"
-        if part.starts_with("include:") {
-            includes.push(part["include:".len()..].to_string());
+        if let Some(stripped) = part.strip_prefix("include:") {
+            includes.push(stripped.to_string());
         } else if part.starts_with('+')
             || part.starts_with('-')
             || part.starts_with('~')
@@ -69,7 +69,9 @@ pub fn analyze_spf(txt_records: &[String]) -> SpfResult {
 
     // Validate
     if qualifier == "+" || !record.contains("all") {
-        issues.push("SPF record allows all senders (+all or missing 'all') — very permissive".to_string());
+        issues.push(
+            "SPF record allows all senders (+all or missing 'all') — very permissive".to_string(),
+        );
     }
 
     if includes.len() > 10 {
@@ -145,7 +147,10 @@ pub fn analyze_dkim(txt_records: &[String]) -> DkimResult {
         if let Some(ref pk) = public_key {
             // Check minimum RSA key size (base64 encoded: 256 bytes ≈ 344 chars for 2048-bit)
             if pk.len() < 300 {
-                issues.push("DKIM RSA key appears to be less than 2048 bits — upgrade recommended".to_string());
+                issues.push(
+                    "DKIM RSA key appears to be less than 2048 bits — upgrade recommended"
+                        .to_string(),
+                );
             }
         }
     }
@@ -218,10 +223,7 @@ pub fn analyze_dmarc(txt_records: &[String]) -> DmarcResult {
     }
 
     if pct < 100 {
-        issues.push(format!(
-            "DMARC only applies to {}% of messages",
-            pct
-        ));
+        issues.push(format!("DMARC only applies to {}% of messages", pct));
     }
 
     DmarcResult {
@@ -247,16 +249,28 @@ pub fn srv_name(service: &str, protocol: &str, domain: &str) -> String {
 /// Common SRV lookups for RDP, SSH, Kerberos, LDAP, etc.
 pub fn common_srv_queries(domain: &str) -> Vec<(String, String)> {
     vec![
-        (srv_name("kerberos", "tcp", domain), "Kerberos KDC".to_string()),
-        (srv_name("kerberos", "udp", domain), "Kerberos KDC (UDP)".to_string()),
+        (
+            srv_name("kerberos", "tcp", domain),
+            "Kerberos KDC".to_string(),
+        ),
+        (
+            srv_name("kerberos", "udp", domain),
+            "Kerberos KDC (UDP)".to_string(),
+        ),
         (srv_name("ldap", "tcp", domain), "LDAP".to_string()),
         (srv_name("ldaps", "tcp", domain), "LDAPS".to_string()),
-        (srv_name("kpasswd", "tcp", domain), "Kerberos password change".to_string()),
+        (
+            srv_name("kpasswd", "tcp", domain),
+            "Kerberos password change".to_string(),
+        ),
         (srv_name("gc", "tcp", domain), "Global Catalog".to_string()),
         (srv_name("rdp", "tcp", domain), "Remote Desktop".to_string()),
         (srv_name("ssh", "tcp", domain), "SSH".to_string()),
         (srv_name("sip", "tcp", domain), "SIP".to_string()),
-        (srv_name("xmpp-client", "tcp", domain), "XMPP client".to_string()),
+        (
+            srv_name("xmpp-client", "tcp", domain),
+            "XMPP client".to_string(),
+        ),
     ]
 }
 
@@ -336,11 +350,10 @@ pub fn verify_sshfp(
 
     let fp_normalized = host_key_fingerprint_sha256
         .to_lowercase()
-        .replace(':', "")
-        .replace(' ', "");
+        .replace([':', ' '], "");
 
     for (_, _, record_fp) in &matches {
-        let record_normalized = record_fp.to_lowercase().replace(':', "").replace(' ', "");
+        let record_normalized = record_fp.to_lowercase().replace([':', ' '], "");
         if record_normalized == fp_normalized {
             return SshfpVerification {
                 verified: true,
@@ -465,9 +478,7 @@ pub fn analyze_caa(response: &DnsResponse) -> CaaAnalysis {
         .map(|(_, _, value)| value.clone())
         .collect();
 
-    let allows_wildcard = caa_records
-        .iter()
-        .any(|(_, tag, _)| tag == "issuewild")
+    let allows_wildcard = caa_records.iter().any(|(_, tag, _)| tag == "issuewild")
         || allowed_issuers.iter().any(|v| !v.is_empty() && v != ";");
 
     let has_iodef = caa_records.iter().any(|(_, tag, _)| tag == "iodef");

@@ -63,9 +63,7 @@ pub struct LeakTestItem {
 /// 1. Query unique subdomains through system DNS and check which resolver was used.
 /// 2. Compare configured resolver IPs with what's actually resolving queries.
 /// 3. Check if DNS requests bypass the configured encrypted protocol.
-pub async fn run_leak_test(
-    resolver: &mut crate::resolver::DnsResolver,
-) -> LeakTestReport {
+pub async fn run_leak_test(resolver: &mut crate::resolver::DnsResolver) -> LeakTestReport {
     let test_id = uuid::Uuid::new_v4().to_string();
     let mut tests = Vec::new();
     let mut resolver_ips_seen: HashSet<String> = HashSet::new();
@@ -110,8 +108,7 @@ pub async fn run_leak_test(
         .cloned()
         .collect();
 
-    let leak_detected = !unexpected.is_empty()
-        || tests.iter().any(|t| !t.passed);
+    let leak_detected = !unexpected.is_empty() || tests.iter().any(|t| !t.passed);
 
     let resolver_infos: Vec<ResolverInfo> = resolver_ips_seen
         .into_iter()
@@ -179,10 +176,8 @@ async fn test_system_resolver_detection() -> LeakTestItem {
 }
 
 /// Test 2: Verify encrypted DNS is actually being used.
-async fn test_encrypted_dns_active(
-    resolver: &mut crate::resolver::DnsResolver,
-) -> LeakTestItem {
-    let protocol = resolver.config().protocol.clone();
+async fn test_encrypted_dns_active(resolver: &mut crate::resolver::DnsResolver) -> LeakTestItem {
+    let protocol = resolver.config().protocol;
 
     if !protocol.is_encrypted() {
         return LeakTestItem {
@@ -234,9 +229,7 @@ async fn test_encrypted_dns_active(
 }
 
 /// Test 3: Check if fallback to unencrypted DNS happens.
-async fn test_fallback_leak(
-    resolver: &mut crate::resolver::DnsResolver,
-) -> LeakTestItem {
+async fn test_fallback_leak(resolver: &mut crate::resolver::DnsResolver) -> LeakTestItem {
     let stats = resolver.stats();
     let has_fallback = stats.fallback_used > 0;
 
@@ -323,9 +316,7 @@ fn identify_resolver_provider(ip: &str) -> Option<String> {
     match ip {
         "1.1.1.1" | "1.0.0.1" | "1.1.1.2" | "1.0.0.2" => Some("Cloudflare".to_string()),
         "8.8.8.8" | "8.8.4.4" => Some("Google".to_string()),
-        "9.9.9.9" | "149.112.112.112" | "9.9.9.10" | "149.112.112.10" => {
-            Some("Quad9".to_string())
-        }
+        "9.9.9.9" | "149.112.112.112" | "9.9.9.10" | "149.112.112.10" => Some("Quad9".to_string()),
         "94.140.14.14" | "94.140.15.15" | "94.140.14.140" | "94.140.14.141" => {
             Some("AdGuard".to_string())
         }
@@ -351,7 +342,11 @@ pub fn format_leak_summary(report: &LeakTestReport) -> String {
     lines.push(format!("DNS Leak Test — {}", report.timestamp));
     lines.push(format!(
         "Status: {}",
-        if report.leak_detected { "LEAK DETECTED" } else { "SECURE" }
+        if report.leak_detected {
+            "LEAK DETECTED"
+        } else {
+            "SECURE"
+        }
     ));
     lines.push(String::new());
 
@@ -364,7 +359,11 @@ pub fn format_leak_summary(report: &LeakTestReport) -> String {
         lines.push(String::new());
         lines.push("Detected DNS resolvers:".to_string());
         for r in &report.resolver_ips {
-            let status = if r.is_expected { "(expected)" } else { "(UNEXPECTED)" };
+            let status = if r.is_expected {
+                "(expected)"
+            } else {
+                "(UNEXPECTED)"
+            };
             let provider = r.provider.as_deref().unwrap_or("Unknown");
             lines.push(format!("  {} — {} {}", r.ip, provider, status));
         }

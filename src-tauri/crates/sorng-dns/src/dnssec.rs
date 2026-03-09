@@ -170,11 +170,7 @@ pub fn validate_response(response: &DnsResponse) -> DnssecValidationResult {
 
     if has_rrsig_answers || has_rrsig_authority {
         // Parse RRSIG records for chain info
-        for record in response
-            .answers
-            .iter()
-            .chain(response.authority.iter())
-        {
+        for record in response.answers.iter().chain(response.authority.iter()) {
             if let DnsRecordData::RRSIG {
                 type_covered,
                 algorithm,
@@ -249,6 +245,7 @@ pub fn validate_response(response: &DnsResponse) -> DnssecValidationResult {
 }
 
 /// Verify a DS record matches a DNSKEY record.
+#[allow(clippy::too_many_arguments)]
 pub fn verify_ds_against_dnskey(
     ds_key_tag: u16,
     ds_algorithm: u8,
@@ -314,9 +311,7 @@ pub async fn check_dnssec_enabled(
     resolver: &mut crate::resolver::DnsResolver,
     domain: &str,
 ) -> Result<bool, String> {
-    let response = resolver
-        .resolve_record(domain, DnsRecordType::DS)
-        .await;
+    let response = resolver.resolve_record(domain, DnsRecordType::DS).await;
 
     match response {
         Ok(resp) => {
@@ -335,9 +330,7 @@ pub fn check_denial_of_existence(response: &DnsResponse) -> DenialResult {
     let nsec_records: Vec<&DnsRecord> = response
         .authority
         .iter()
-        .filter(|r| {
-            r.record_type == DnsRecordType::NSEC || r.record_type == DnsRecordType::NSEC3
-        })
+        .filter(|r| r.record_type == DnsRecordType::NSEC || r.record_type == DnsRecordType::NSEC3)
         .collect();
 
     if nsec_records.is_empty() {

@@ -208,7 +208,12 @@ pub fn build_query(query: &DnsQuery, id: u16, edns0: bool, edns0_payload: u16) -
 }
 
 /// Parse a DNS wire-format response into a DnsResponse.
-pub fn parse_response(data: &[u8], server: &str, protocol: DnsProtocol, duration_ms: u64) -> Option<DnsResponse> {
+pub fn parse_response(
+    data: &[u8],
+    server: &str,
+    protocol: DnsProtocol,
+    duration_ms: u64,
+) -> Option<DnsResponse> {
     let header = DnsHeader::decode(data)?;
 
     if !header.is_response() {
@@ -304,12 +309,23 @@ fn parse_records(data: &[u8], offset: &mut usize, count: u16) -> Option<Vec<DnsR
     Some(records)
 }
 
-fn parse_rdata(data: &[u8], offset: &mut usize, rtype: DnsRecordType, rdlength: usize) -> DnsRecordData {
+fn parse_rdata(
+    data: &[u8],
+    offset: &mut usize,
+    rtype: DnsRecordType,
+    rdlength: usize,
+) -> DnsRecordData {
     let start = *offset;
 
     match rtype {
         DnsRecordType::A if rdlength == 4 => {
-            let addr = format!("{}.{}.{}.{}", data[*offset], data[*offset + 1], data[*offset + 2], data[*offset + 3]);
+            let addr = format!(
+                "{}.{}.{}.{}",
+                data[*offset],
+                data[*offset + 1],
+                data[*offset + 2],
+                data[*offset + 3]
+            );
             *offset += 4;
             DnsRecordData::A { address: addr }
         }
@@ -362,21 +378,61 @@ fn parse_rdata(data: &[u8], offset: &mut usize, rtype: DnsRecordType, rdlength: 
             let port = u16::from_be_bytes([data[*offset + 4], data[*offset + 5]]);
             *offset += 6;
             let target = decode_name(data, offset).unwrap_or_default();
-            DnsRecordData::SRV { priority, weight, port, target }
+            DnsRecordData::SRV {
+                priority,
+                weight,
+                port,
+                target,
+            }
         }
         DnsRecordType::SOA => {
             let mname = decode_name(data, offset).unwrap_or_default();
             let rname = decode_name(data, offset).unwrap_or_default();
             if *offset + 20 <= data.len() {
-                let serial = u32::from_be_bytes([data[*offset], data[*offset + 1], data[*offset + 2], data[*offset + 3]]);
-                let refresh = u32::from_be_bytes([data[*offset + 4], data[*offset + 5], data[*offset + 6], data[*offset + 7]]);
-                let retry = u32::from_be_bytes([data[*offset + 8], data[*offset + 9], data[*offset + 10], data[*offset + 11]]);
-                let expire = u32::from_be_bytes([data[*offset + 12], data[*offset + 13], data[*offset + 14], data[*offset + 15]]);
-                let minimum = u32::from_be_bytes([data[*offset + 16], data[*offset + 17], data[*offset + 18], data[*offset + 19]]);
+                let serial = u32::from_be_bytes([
+                    data[*offset],
+                    data[*offset + 1],
+                    data[*offset + 2],
+                    data[*offset + 3],
+                ]);
+                let refresh = u32::from_be_bytes([
+                    data[*offset + 4],
+                    data[*offset + 5],
+                    data[*offset + 6],
+                    data[*offset + 7],
+                ]);
+                let retry = u32::from_be_bytes([
+                    data[*offset + 8],
+                    data[*offset + 9],
+                    data[*offset + 10],
+                    data[*offset + 11],
+                ]);
+                let expire = u32::from_be_bytes([
+                    data[*offset + 12],
+                    data[*offset + 13],
+                    data[*offset + 14],
+                    data[*offset + 15],
+                ]);
+                let minimum = u32::from_be_bytes([
+                    data[*offset + 16],
+                    data[*offset + 17],
+                    data[*offset + 18],
+                    data[*offset + 19],
+                ]);
                 *offset += 20;
-                DnsRecordData::SOA { mname, rname, serial, refresh, retry, expire, minimum }
+                DnsRecordData::SOA {
+                    mname,
+                    rname,
+                    serial,
+                    refresh,
+                    retry,
+                    expire,
+                    minimum,
+                }
             } else {
-                DnsRecordData::Raw { data: data[start..start + rdlength].to_vec() }
+                DnsRecordData::Raw {
+                    data: data[start..start + rdlength].to_vec(),
+                }
             }
         }
         DnsRecordType::CAA if rdlength >= 2 => {
@@ -405,7 +461,11 @@ fn parse_rdata(data: &[u8], offset: &mut usize, rtype: DnsRecordType, rdlength: 
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
             *offset += fp_len;
-            DnsRecordData::SSHFP { algorithm, fingerprint_type: fp_type, fingerprint }
+            DnsRecordData::SSHFP {
+                algorithm,
+                fingerprint_type: fp_type,
+                fingerprint,
+            }
         }
         DnsRecordType::TLSA if rdlength >= 3 => {
             let usage = data[*offset];
@@ -418,11 +478,18 @@ fn parse_rdata(data: &[u8], offset: &mut usize, rtype: DnsRecordType, rdlength: 
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
             *offset += cert_len;
-            DnsRecordData::TLSA { usage, selector, matching_type, certificate_data }
+            DnsRecordData::TLSA {
+                usage,
+                selector,
+                matching_type,
+                certificate_data,
+            }
         }
         _ => {
             *offset = start + rdlength;
-            DnsRecordData::Raw { data: data[start..start + rdlength].to_vec() }
+            DnsRecordData::Raw {
+                data: data[start..start + rdlength].to_vec(),
+            }
         }
     }
 }

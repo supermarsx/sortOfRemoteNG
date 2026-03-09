@@ -17,23 +17,23 @@
 //! sorng-wireguard, sorng-tailscale, sorng-zerotier, sorng-p2p, sorng-core) should
 //! use this crate for DNS instead of rolling their own resolution.
 
-pub mod types;
-pub mod resolver;
-pub mod system;
+pub mod cache;
+pub mod config;
+pub mod diagnostics;
+pub mod dnssec;
 pub mod doh;
 pub mod dot;
-pub mod odoh;
-pub mod dnssec;
-pub mod cache;
-pub mod records;
-pub mod providers;
-pub mod mdns;
-pub mod diagnostics;
-pub mod wire;
-pub mod config;
 pub mod leak_detection;
+pub mod mdns;
+pub mod odoh;
+pub mod providers;
+pub mod records;
+pub mod resolver;
 pub mod service;
+pub mod system;
+pub mod types;
+pub mod wire;
 
-pub use types::*;
 pub use resolver::{DnsResolver, DnsResolverState};
 pub use service::DnsService;
+pub use types::*;

@@ -177,15 +177,9 @@ pub fn seed_cache(cache: &mut DnsCache, entries: &[(String, DnsRecordType, Vec<S
                 record_type: *rtype,
                 ttl: 86400, // 24h for pinned entries
                 data: match rtype {
-                    DnsRecordType::A => DnsRecordData::A {
-                        address: v.clone(),
-                    },
-                    DnsRecordType::AAAA => DnsRecordData::AAAA {
-                        address: v.clone(),
-                    },
-                    DnsRecordType::CNAME => DnsRecordData::CNAME {
-                        target: v.clone(),
-                    },
+                    DnsRecordType::A => DnsRecordData::A { address: v.clone() },
+                    DnsRecordType::AAAA => DnsRecordData::AAAA { address: v.clone() },
+                    DnsRecordType::CNAME => DnsRecordData::CNAME { target: v.clone() },
                     _ => DnsRecordData::TXT { text: v.clone() },
                 },
             })

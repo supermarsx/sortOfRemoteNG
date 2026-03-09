@@ -52,17 +52,21 @@ impl DnsResolver {
 
     /// Create with DoH config.
     pub fn with_doh(servers: Vec<DnsServer>) -> Self {
-        let mut config = DnsResolverConfig::default();
-        config.protocol = DnsProtocol::DoH;
-        config.servers = servers;
+        let config = DnsResolverConfig {
+            protocol: DnsProtocol::DoH,
+            servers,
+            ..Default::default()
+        };
         Self::new(config)
     }
 
     /// Create with DoT config.
     pub fn with_dot(servers: Vec<DnsServer>) -> Self {
-        let mut config = DnsResolverConfig::default();
-        config.protocol = DnsProtocol::DoT;
-        config.servers = servers;
+        let config = DnsResolverConfig {
+            protocol: DnsProtocol::DoT,
+            servers,
+            ..Default::default()
+        };
         Self::new(config)
     }
 
@@ -172,10 +176,7 @@ impl DnsResolver {
     }
 
     /// Look up SRV records.
-    pub async fn lookup_srv(
-        &mut self,
-        name: &str,
-    ) -> Result<Vec<(u16, u16, u16, String)>, String> {
+    pub async fn lookup_srv(&mut self, name: &str) -> Result<Vec<(u16, u16, u16, String)>, String> {
         let response = self.resolve_record(name, DnsRecordType::SRV).await?;
         Ok(response.srv_records())
     }
@@ -208,9 +209,7 @@ impl DnsResolver {
         self.stats.queries_total += 1;
 
         let server = self.next_server();
-        let protocol = server
-            .protocol
-            .unwrap_or(self.config.protocol);
+        let protocol = server.protocol.unwrap_or(self.config.protocol);
 
         let result = match protocol {
             DnsProtocol::DoH => {
@@ -224,7 +223,7 @@ impl DnsResolver {
             DnsProtocol::ODoH => {
                 crate::odoh::execute_odoh_query(query, &server, &self.config).await
             }
-            DnsProtocol::System | _ => {
+            _ => {
                 self.stats.system_queries += 1;
                 crate::system::execute_system_query(query, &self.config).await
             }
@@ -246,9 +245,7 @@ impl DnsResolver {
                     DnsProtocol::DoT => {
                         crate::dot::execute_dot_query(query, &server, &self.config).await
                     }
-                    DnsProtocol::System | _ => {
-                        crate::system::execute_system_query(query, &self.config).await
-                    }
+                    _ => crate::system::execute_system_query(query, &self.config).await,
                 };
             }
         }

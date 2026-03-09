@@ -45,12 +45,15 @@ async fn resolve_address(
     let host = hostname.to_string();
     let timeout = std::time::Duration::from_millis(timeout_ms);
 
-    let result = tokio::time::timeout(timeout, tokio::task::spawn_blocking(move || {
-        let addr_with_port = format!("{}:0", host);
-        addr_with_port
-            .to_socket_addrs()
-            .map(|addrs| addrs.collect::<Vec<_>>())
-    }))
+    let result = tokio::time::timeout(
+        timeout,
+        tokio::task::spawn_blocking(move || {
+            let addr_with_port = format!("{}:0", host);
+            addr_with_port
+                .to_socket_addrs()
+                .map(|addrs| addrs.collect::<Vec<_>>())
+        }),
+    )
     .await
     .map_err(|_| "DNS resolution timed out".to_string())?
     .map_err(|e| format!("DNS resolution task failed: {}", e))?
@@ -85,7 +88,11 @@ async fn resolve_address(
     }
 
     if answers.is_empty() {
-        return Err(format!("No {} records found for {}", record_type.as_str(), hostname));
+        return Err(format!(
+            "No {} records found for {}",
+            record_type.as_str(),
+            hostname
+        ));
     }
 
     Ok(DnsResponse {
@@ -111,12 +118,16 @@ async fn reverse_resolve(ptr_name: &str, timeout_ms: u64) -> Result<DnsResponse,
     let timeout = std::time::Duration::from_millis(timeout_ms);
     let ip_clone = ip.clone();
 
-    let result = tokio::time::timeout(timeout, tokio::task::spawn_blocking(move || {
-        let addr: std::net::IpAddr = ip_clone.parse().map_err(|e| format!("Invalid IP: {}", e))?;
-        // Use platform reverse DNS
-        let hostname = reverse_lookup_blocking(&addr)?;
-        Ok::<String, String>(hostname)
-    }))
+    let result = tokio::time::timeout(
+        timeout,
+        tokio::task::spawn_blocking(move || {
+            let addr: std::net::IpAddr =
+                ip_clone.parse().map_err(|e| format!("Invalid IP: {}", e))?;
+            // Use platform reverse DNS
+            let hostname = reverse_lookup_blocking(&addr)?;
+            Ok::<String, String>(hostname)
+        }),
+    )
     .await
     .map_err(|_| "Reverse DNS timed out".to_string())?
     .map_err(|e| format!("Reverse DNS task failed: {}", e))?
@@ -132,9 +143,7 @@ async fn reverse_resolve(ptr_name: &str, timeout_ms: u64) -> Result<DnsResponse,
             name: ptr_name.to_string(),
             record_type: DnsRecordType::PTR,
             ttl: 300,
-            data: DnsRecordData::PTR {
-                domain: result,
-            },
+            data: DnsRecordData::PTR { domain: result },
         }],
         authority: Vec::new(),
         additional: Vec::new(),
@@ -152,7 +161,10 @@ fn ptr_name_to_ip(name: &str) -> Option<String> {
         let prefix = name.strip_suffix(".in-addr.arpa")?;
         let octets: Vec<&str> = prefix.split('.').collect();
         if octets.len() == 4 {
-            Some(format!("{}.{}.{}.{}", octets[3], octets[2], octets[1], octets[0]))
+            Some(format!(
+                "{}.{}.{}.{}",
+                octets[3], octets[2], octets[1], octets[0]
+            ))
         } else {
             None
         }

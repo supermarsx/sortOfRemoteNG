@@ -154,10 +154,7 @@ pub async fn unregister_service(
         log::info!("Unregistered mDNS service: {}", registration_id);
         Ok(())
     } else {
-        Err(format!(
-            "Registration not found: {}",
-            registration_id
-        ))
+        Err(format!("Registration not found: {}", registration_id))
     }
 }
 
@@ -166,10 +163,7 @@ pub async fn unregister_service(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Start mDNS browsing for a service type.
-pub async fn start_browsing(
-    state: &MdnsBrowserState,
-    service_type: &str,
-) -> Result<(), String> {
+pub async fn start_browsing(state: &MdnsBrowserState, service_type: &str) -> Result<(), String> {
     let mut browser = state.lock().await;
 
     if browser.running {
@@ -211,9 +205,7 @@ pub async fn process_mdns_response(
 
     for record in records {
         match &record.data {
-            DnsRecordData::SRV {
-                target, port, ..
-            } => {
+            DnsRecordData::SRV { target, port, .. } => {
                 srv_records.insert(record.name.clone(), (target.clone(), *port));
             }
             DnsRecordData::A { address } => {
@@ -243,8 +235,14 @@ pub async fn process_mdns_response(
 
     // Build discovered services from SRV records
     for (instance_name, (hostname, port)) in &srv_records {
-        let ipv4 = a_records.get(hostname.as_str()).cloned().unwrap_or_default();
-        let ipv6 = aaaa_records.get(hostname.as_str()).cloned().unwrap_or_default();
+        let ipv4 = a_records
+            .get(hostname.as_str())
+            .cloned()
+            .unwrap_or_default();
+        let ipv6 = aaaa_records
+            .get(hostname.as_str())
+            .cloned()
+            .unwrap_or_default();
         let txt = txt_records.get(instance_name).cloned().unwrap_or_default();
 
         let service = DiscoveredService {
@@ -297,9 +295,7 @@ pub async fn purge_expired_services(state: &MdnsBrowserState) -> usize {
     let before = browser.discovered.len();
 
     browser.discovered.retain(|_, service| {
-        let age = now
-            .signed_duration_since(service.last_seen)
-            .num_seconds();
+        let age = now.signed_duration_since(service.last_seen).num_seconds();
         age < service.ttl_seconds as i64 * 2 // 2x TTL grace period
     });
 

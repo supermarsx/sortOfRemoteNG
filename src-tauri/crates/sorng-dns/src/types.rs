@@ -186,14 +186,34 @@ pub struct DnsRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DnsRecordData {
-    A { address: String },
-    AAAA { address: String },
-    CNAME { target: String },
-    MX { priority: u16, exchange: String },
-    TXT { text: String },
-    SRV { priority: u16, weight: u16, port: u16, target: String },
-    PTR { domain: String },
-    NS { nameserver: String },
+    A {
+        address: String,
+    },
+    AAAA {
+        address: String,
+    },
+    CNAME {
+        target: String,
+    },
+    MX {
+        priority: u16,
+        exchange: String,
+    },
+    TXT {
+        text: String,
+    },
+    SRV {
+        priority: u16,
+        weight: u16,
+        port: u16,
+        target: String,
+    },
+    PTR {
+        domain: String,
+    },
+    NS {
+        nameserver: String,
+    },
     SOA {
         mname: String,
         rname: String,
@@ -203,7 +223,11 @@ pub enum DnsRecordData {
         expire: u32,
         minimum: u32,
     },
-    CAA { flags: u8, tag: String, value: String },
+    CAA {
+        flags: u8,
+        tag: String,
+        value: String,
+    },
     NAPTR {
         order: u16,
         preference: u16,
@@ -212,12 +236,39 @@ pub enum DnsRecordData {
         regexp: String,
         replacement: String,
     },
-    SSHFP { algorithm: u8, fingerprint_type: u8, fingerprint: String },
-    TLSA { usage: u8, selector: u8, matching_type: u8, certificate_data: String },
-    HTTPS { priority: u16, target: String, params: HashMap<String, String> },
-    SVCB { priority: u16, target: String, params: HashMap<String, String> },
-    DNSKEY { flags: u16, protocol: u8, algorithm: u8, public_key: String },
-    DS { key_tag: u16, algorithm: u8, digest_type: u8, digest: String },
+    SSHFP {
+        algorithm: u8,
+        fingerprint_type: u8,
+        fingerprint: String,
+    },
+    TLSA {
+        usage: u8,
+        selector: u8,
+        matching_type: u8,
+        certificate_data: String,
+    },
+    HTTPS {
+        priority: u16,
+        target: String,
+        params: HashMap<String, String>,
+    },
+    SVCB {
+        priority: u16,
+        target: String,
+        params: HashMap<String, String>,
+    },
+    DNSKEY {
+        flags: u16,
+        protocol: u8,
+        algorithm: u8,
+        public_key: String,
+    },
+    DS {
+        key_tag: u16,
+        algorithm: u8,
+        digest_type: u8,
+        digest: String,
+    },
     RRSIG {
         type_covered: String,
         algorithm: u8,
@@ -229,7 +280,9 @@ pub enum DnsRecordData {
         signer: String,
         signature: String,
     },
-    Raw { data: Vec<u8> },
+    Raw {
+        data: Vec<u8>,
+    },
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -350,9 +403,7 @@ impl DnsResponse {
             .answers
             .iter()
             .filter_map(|r| match &r.data {
-                DnsRecordData::MX { priority, exchange } => {
-                    Some((*priority, exchange.clone()))
-                }
+                DnsRecordData::MX { priority, exchange } => Some((*priority, exchange.clone())),
                 _ => None,
             })
             .collect();
@@ -714,9 +765,8 @@ impl DnsServer {
 
     /// Effective port.
     pub fn effective_port(&self, default_protocol: DnsProtocol) -> u16 {
-        self.port.unwrap_or_else(|| {
-            self.protocol.unwrap_or(default_protocol).default_port()
-        })
+        self.port
+            .unwrap_or_else(|| self.protocol.unwrap_or(default_protocol).default_port())
     }
 }
 
