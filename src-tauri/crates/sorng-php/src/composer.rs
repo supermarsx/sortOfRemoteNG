@@ -1,6 +1,6 @@
 // ── sorng-php – Composer (PHP dependency manager) ────────────────────────────
 
-use crate::client::{PhpClient, shell_escape};
+use crate::client::{shell_escape, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -19,7 +19,7 @@ impl ComposerManager {
             .find(|l| l.contains("Composer"))
             .and_then(|l| {
                 l.split_whitespace()
-                    .find(|w| w.chars().next().map_or(false, |c| c.is_ascii_digit()))
+                    .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
             })
             .unwrap_or("unknown")
             .to_string();
@@ -52,10 +52,11 @@ impl ComposerManager {
     }
 
     /// List globally installed Composer packages.
-    pub async fn list_global_packages(
-        client: &PhpClient,
-    ) -> PhpResult<Vec<ComposerGlobalPackage>> {
-        let cmd = format!("{} global show --format=json 2>/dev/null", client.composer_bin());
+    pub async fn list_global_packages(client: &PhpClient) -> PhpResult<Vec<ComposerGlobalPackage>> {
+        let cmd = format!(
+            "{} global show --format=json 2>/dev/null",
+            client.composer_bin()
+        );
         let out = client.exec_ssh(&cmd).await?;
 
         if out.stdout.trim().is_empty() {
@@ -137,10 +138,7 @@ impl ComposerManager {
     }
 
     /// Get Composer project info by reading composer.json and composer.lock.
-    pub async fn get_project(
-        client: &PhpClient,
-        project_path: &str,
-    ) -> PhpResult<ComposerProject> {
+    pub async fn get_project(client: &PhpClient, project_path: &str) -> PhpResult<ComposerProject> {
         let json_path = format!("{}/composer.json", project_path);
         let json_content = client.read_remote_file(&json_path).await.map_err(|_| {
             PhpError::composer(format!("composer.json not found at {}", project_path))
@@ -349,10 +347,7 @@ impl ComposerManager {
     }
 
     /// Run `composer validate` to check composer.json.
-    pub async fn validate(
-        client: &PhpClient,
-        project_path: &str,
-    ) -> PhpResult<ComposerRunResult> {
+    pub async fn validate(client: &PhpClient, project_path: &str) -> PhpResult<ComposerRunResult> {
         let cmd = format!(
             "cd {} && {} validate 2>&1",
             shell_escape(project_path),
@@ -449,14 +444,20 @@ fn parse_composer_package(val: &serde_json::Value) -> ComposerPackage {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
         license: val.get("license").and_then(|v| {
-            v.as_array()
-                .map(|a| a.iter().filter_map(|l| l.as_str().map(|s| s.to_string())).collect())
+            v.as_array().map(|a| {
+                a.iter()
+                    .filter_map(|l| l.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
         }),
         authors: val.get("authors").and_then(|v| {
             v.as_array().map(|a| {
                 a.iter()
                     .map(|author| ComposerAuthor {
-                        name: author.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        name: author
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         email: author
                             .get("email")
                             .and_then(|v| v.as_str())

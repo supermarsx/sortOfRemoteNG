@@ -10,15 +10,15 @@ use crate::client::PhpClient;
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
-use crate::versions::VersionManager;
+use crate::composer::ComposerManager;
 use crate::fpm::FpmManager;
 use crate::ini::IniManager;
+use crate::logs::LogManager;
 use crate::modules::ModuleManager;
 use crate::opcache::OpcacheManager;
-use crate::sessions::SessionManager;
-use crate::composer::ComposerManager;
-use crate::logs::LogManager;
 use crate::process::ProcessManager;
+use crate::sessions::SessionManager;
+use crate::versions::VersionManager;
 
 /// Shared Tauri state handle.
 pub type PhpServiceState = Arc<Mutex<PhpService>>;
@@ -28,26 +28,41 @@ pub struct PhpService {
     connections: HashMap<String, PhpClient>,
 }
 
+impl Default for PhpService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PhpService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: PhpConnectionConfig) -> PhpResult<PhpConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: PhpConnectionConfig,
+    ) -> PhpResult<PhpConnectionSummary> {
         let client = PhpClient::new(config)?;
 
-        let installed_versions = VersionManager::list(&client).await
+        let installed_versions = VersionManager::list(&client)
+            .await
             .map(|vs| vs.into_iter().map(|v| v.version).collect::<Vec<_>>())
             .unwrap_or_default();
 
-        let default_version = VersionManager::get_default(&client).await
+        let default_version = VersionManager::get_default(&client)
+            .await
             .map(|v| Some(v.version))
             .unwrap_or(None);
 
         let fpm_running = if let Some(ref ver) = default_version {
-            ProcessManager::get_service_status(&client, ver).await
+            ProcessManager::get_service_status(&client, ver)
+                .await
                 .map(|s| s.active)
                 .unwrap_or(false)
         } else {
@@ -67,7 +82,8 @@ impl PhpService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> PhpResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| PhpError::not_connected(format!("No connection '{}'", id)))
     }
@@ -77,7 +93,8 @@ impl PhpService {
     }
 
     fn client(&self, id: &str) -> PhpResult<&PhpClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| PhpError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -125,11 +142,21 @@ impl PhpService {
         FpmManager::get_pool(self.client(id)?, version, name).await
     }
 
-    pub async fn create_fpm_pool(&self, id: &str, req: &CreateFpmPoolRequest) -> PhpResult<PhpFpmPool> {
+    pub async fn create_fpm_pool(
+        &self,
+        id: &str,
+        req: &CreateFpmPoolRequest,
+    ) -> PhpResult<PhpFpmPool> {
         FpmManager::create_pool(self.client(id)?, req).await
     }
 
-    pub async fn update_fpm_pool(&self, id: &str, version: &str, name: &str, req: &UpdateFpmPoolRequest) -> PhpResult<PhpFpmPool> {
+    pub async fn update_fpm_pool(
+        &self,
+        id: &str,
+        version: &str,
+        name: &str,
+        req: &UpdateFpmPoolRequest,
+    ) -> PhpResult<PhpFpmPool> {
         FpmManager::update_pool(self.client(id)?, version, name, req).await
     }
 
@@ -145,11 +172,21 @@ impl PhpService {
         FpmManager::disable_pool(self.client(id)?, version, name).await
     }
 
-    pub async fn get_fpm_pool_status(&self, id: &str, version: &str, name: &str) -> PhpResult<PhpFpmPoolStatus> {
+    pub async fn get_fpm_pool_status(
+        &self,
+        id: &str,
+        version: &str,
+        name: &str,
+    ) -> PhpResult<PhpFpmPoolStatus> {
         FpmManager::get_pool_status(self.client(id)?, version, name).await
     }
 
-    pub async fn list_fpm_pool_processes(&self, id: &str, version: &str, name: &str) -> PhpResult<Vec<FpmWorkerProcess>> {
+    pub async fn list_fpm_pool_processes(
+        &self,
+        id: &str,
+        version: &str,
+        name: &str,
+    ) -> PhpResult<Vec<FpmWorkerProcess>> {
         FpmManager::list_pool_processes(self.client(id)?, version, name).await
     }
 
@@ -159,11 +196,22 @@ impl PhpService {
         IniManager::get_ini_file(self.client(id)?, version, sapi).await
     }
 
-    pub async fn list_ini_directives(&self, id: &str, version: &str, sapi: &str) -> PhpResult<Vec<PhpIniDirective>> {
+    pub async fn list_ini_directives(
+        &self,
+        id: &str,
+        version: &str,
+        sapi: &str,
+    ) -> PhpResult<Vec<PhpIniDirective>> {
         IniManager::list_directives(self.client(id)?, version, sapi).await
     }
 
-    pub async fn get_ini_directive(&self, id: &str, version: &str, sapi: &str, key: &str) -> PhpResult<PhpIniDirective> {
+    pub async fn get_ini_directive(
+        &self,
+        id: &str,
+        version: &str,
+        sapi: &str,
+        key: &str,
+    ) -> PhpResult<PhpIniDirective> {
         IniManager::get_directive(self.client(id)?, version, sapi, key).await
     }
 
@@ -171,11 +219,22 @@ impl PhpService {
         IniManager::set_directive(self.client(id)?, req).await
     }
 
-    pub async fn remove_ini_directive(&self, id: &str, version: &str, sapi: &str, key: &str) -> PhpResult<()> {
+    pub async fn remove_ini_directive(
+        &self,
+        id: &str,
+        version: &str,
+        sapi: &str,
+        key: &str,
+    ) -> PhpResult<()> {
         IniManager::remove_directive(self.client(id)?, version, sapi, key).await
     }
 
-    pub async fn get_ini_scan_dir(&self, id: &str, version: &str, sapi: &str) -> PhpResult<PhpIniScanDir> {
+    pub async fn get_ini_scan_dir(
+        &self,
+        id: &str,
+        version: &str,
+        sapi: &str,
+    ) -> PhpResult<PhpIniScanDir> {
         IniManager::get_scan_dir(self.client(id)?, version, sapi).await
     }
 
@@ -187,7 +246,12 @@ impl PhpService {
         IniManager::backup_ini(self.client(id)?, version, sapi).await
     }
 
-    pub async fn restore_ini(&self, id: &str, backup_path: &str, target_path: &str) -> PhpResult<()> {
+    pub async fn restore_ini(
+        &self,
+        id: &str,
+        backup_path: &str,
+        target_path: &str,
+    ) -> PhpResult<()> {
         IniManager::restore_ini(self.client(id)?, backup_path, target_path).await
     }
 
@@ -217,7 +281,12 @@ impl PhpService {
         ModuleManager::install_module(self.client(id)?, req).await
     }
 
-    pub async fn uninstall_module(&self, id: &str, version: &str, module_name: &str) -> PhpResult<()> {
+    pub async fn uninstall_module(
+        &self,
+        id: &str,
+        version: &str,
+        module_name: &str,
+    ) -> PhpResult<()> {
         ModuleManager::uninstall_module(self.client(id)?, version, module_name).await
     }
 
@@ -233,7 +302,12 @@ impl PhpService {
         ModuleManager::list_pecl_packages(self.client(id)?).await
     }
 
-    pub async fn install_pecl_package(&self, id: &str, name: &str, version: Option<&str>) -> PhpResult<()> {
+    pub async fn install_pecl_package(
+        &self,
+        id: &str,
+        name: &str,
+        version: Option<&str>,
+    ) -> PhpResult<()> {
         ModuleManager::install_pecl_package(self.client(id)?, name, version).await
     }
 
@@ -255,11 +329,20 @@ impl PhpService {
         OpcacheManager::reset(self.client(id)?, version).await
     }
 
-    pub async fn list_cached_scripts(&self, id: &str, version: &str) -> PhpResult<Vec<CachedScript>> {
+    pub async fn list_cached_scripts(
+        &self,
+        id: &str,
+        version: &str,
+    ) -> PhpResult<Vec<CachedScript>> {
         OpcacheManager::list_cached_scripts(self.client(id)?, version).await
     }
 
-    pub async fn invalidate_cached_script(&self, id: &str, version: &str, path: &str) -> PhpResult<()> {
+    pub async fn invalidate_cached_script(
+        &self,
+        id: &str,
+        version: &str,
+        path: &str,
+    ) -> PhpResult<()> {
         OpcacheManager::invalidate_script(self.client(id)?, version, path).await
     }
 
@@ -267,7 +350,12 @@ impl PhpService {
         OpcacheManager::is_enabled(self.client(id)?, version).await
     }
 
-    pub async fn update_opcache_config(&self, id: &str, version: &str, config: &OpcacheConfig) -> PhpResult<()> {
+    pub async fn update_opcache_config(
+        &self,
+        id: &str,
+        version: &str,
+        config: &OpcacheConfig,
+    ) -> PhpResult<()> {
         OpcacheManager::update_config(self.client(id)?, version, config).await
     }
 
@@ -277,7 +365,11 @@ impl PhpService {
         SessionManager::get_config(self.client(id)?, version).await
     }
 
-    pub async fn update_session_config(&self, id: &str, req: &UpdateSessionConfigRequest) -> PhpResult<()> {
+    pub async fn update_session_config(
+        &self,
+        id: &str,
+        req: &UpdateSessionConfigRequest,
+    ) -> PhpResult<()> {
         SessionManager::update_config(self.client(id)?, req).await
     }
 
@@ -285,7 +377,12 @@ impl PhpService {
         SessionManager::get_stats(self.client(id)?, version).await
     }
 
-    pub async fn cleanup_sessions(&self, id: &str, version: &str, max_age_secs: Option<u64>) -> PhpResult<u64> {
+    pub async fn cleanup_sessions(
+        &self,
+        id: &str,
+        version: &str,
+        max_age_secs: Option<u64>,
+    ) -> PhpResult<u64> {
         SessionManager::cleanup_sessions(self.client(id)?, version, max_age_secs).await
     }
 
@@ -307,47 +404,92 @@ impl PhpService {
         ComposerManager::is_installed(self.client(id)?).await
     }
 
-    pub async fn list_composer_global_packages(&self, id: &str) -> PhpResult<Vec<ComposerGlobalPackage>> {
+    pub async fn list_composer_global_packages(
+        &self,
+        id: &str,
+    ) -> PhpResult<Vec<ComposerGlobalPackage>> {
         ComposerManager::list_global_packages(self.client(id)?).await
     }
 
-    pub async fn install_composer_global_package(&self, id: &str, package: &str, version: Option<&str>) -> PhpResult<ComposerRunResult> {
+    pub async fn install_composer_global_package(
+        &self,
+        id: &str,
+        package: &str,
+        version: Option<&str>,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::install_global_package(self.client(id)?, package, version).await
     }
 
-    pub async fn remove_composer_global_package(&self, id: &str, package: &str) -> PhpResult<ComposerRunResult> {
+    pub async fn remove_composer_global_package(
+        &self,
+        id: &str,
+        package: &str,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::remove_global_package(self.client(id)?, package).await
     }
 
-    pub async fn get_composer_project(&self, id: &str, project_path: &str) -> PhpResult<ComposerProject> {
+    pub async fn get_composer_project(
+        &self,
+        id: &str,
+        project_path: &str,
+    ) -> PhpResult<ComposerProject> {
         ComposerManager::get_project(self.client(id)?, project_path).await
     }
 
-    pub async fn composer_install(&self, id: &str, req: &ComposerInstallRequest) -> PhpResult<ComposerRunResult> {
+    pub async fn composer_install(
+        &self,
+        id: &str,
+        req: &ComposerInstallRequest,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::install(self.client(id)?, req).await
     }
 
-    pub async fn composer_update(&self, id: &str, req: &ComposerUpdateRequest) -> PhpResult<ComposerRunResult> {
+    pub async fn composer_update(
+        &self,
+        id: &str,
+        req: &ComposerUpdateRequest,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::update(self.client(id)?, req).await
     }
 
-    pub async fn composer_require(&self, id: &str, req: &RequirePackageRequest) -> PhpResult<ComposerRunResult> {
+    pub async fn composer_require(
+        &self,
+        id: &str,
+        req: &RequirePackageRequest,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::require_package(self.client(id)?, req).await
     }
 
-    pub async fn composer_remove(&self, id: &str, req: &RemovePackageRequest) -> PhpResult<ComposerRunResult> {
+    pub async fn composer_remove(
+        &self,
+        id: &str,
+        req: &RemovePackageRequest,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::remove_package(self.client(id)?, req).await
     }
 
-    pub async fn composer_dump_autoload(&self, id: &str, project_path: &str, optimize: bool) -> PhpResult<ComposerRunResult> {
+    pub async fn composer_dump_autoload(
+        &self,
+        id: &str,
+        project_path: &str,
+        optimize: bool,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::dump_autoload(self.client(id)?, project_path, optimize).await
     }
 
-    pub async fn composer_validate(&self, id: &str, project_path: &str) -> PhpResult<ComposerRunResult> {
+    pub async fn composer_validate(
+        &self,
+        id: &str,
+        project_path: &str,
+    ) -> PhpResult<ComposerRunResult> {
         ComposerManager::validate(self.client(id)?, project_path).await
     }
 
-    pub async fn composer_outdated(&self, id: &str, project_path: &str) -> PhpResult<Vec<ComposerPackage>> {
+    pub async fn composer_outdated(
+        &self,
+        id: &str,
+        project_path: &str,
+    ) -> PhpResult<Vec<ComposerPackage>> {
         ComposerManager::outdated(self.client(id)?, project_path).await
     }
 
@@ -361,7 +503,11 @@ impl PhpService {
 
     // ── Logs ─────────────────────────────────────────────────────
 
-    pub async fn read_php_log(&self, id: &str, req: &PhpLogReadRequest) -> PhpResult<Vec<PhpLogEntry>> {
+    pub async fn read_php_log(
+        &self,
+        id: &str,
+        req: &PhpLogReadRequest,
+    ) -> PhpResult<Vec<PhpLogEntry>> {
         LogManager::read_log(self.client(id)?, req).await
     }
 
@@ -399,7 +545,11 @@ impl PhpService {
 
     // ── Process ──────────────────────────────────────────────────
 
-    pub async fn get_fpm_service_status(&self, id: &str, version: &str) -> PhpResult<PhpFpmServiceStatus> {
+    pub async fn get_fpm_service_status(
+        &self,
+        id: &str,
+        version: &str,
+    ) -> PhpResult<PhpFpmServiceStatus> {
         ProcessManager::get_service_status(self.client(id)?, version).await
     }
 
@@ -431,7 +581,11 @@ impl PhpService {
         ProcessManager::test_config(self.client(id)?, version).await
     }
 
-    pub async fn get_fpm_master_process(&self, id: &str, version: &str) -> PhpResult<PhpFpmMasterProcess> {
+    pub async fn get_fpm_master_process(
+        &self,
+        id: &str,
+        version: &str,
+    ) -> PhpResult<PhpFpmMasterProcess> {
         ProcessManager::get_master_process(self.client(id)?, version).await
     }
 

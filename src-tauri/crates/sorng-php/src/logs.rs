@@ -1,7 +1,7 @@
 // ── sorng-php – PHP error log management ─────────────────────────────────────
 //! Read, rotate, and manage PHP error logs on a remote host.
 
-use crate::client::{PhpClient, shell_escape};
+use crate::client::{shell_escape, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -34,9 +34,7 @@ impl LogManager {
         // Apply optional level filter.
         if let Some(ref level) = req.level_filter {
             let target = format!("{:?}", level).to_lowercase();
-            entries.retain(|e| {
-                format!("{:?}", e.level).to_lowercase() == target
-            });
+            entries.retain(|e| format!("{:?}", e.level).to_lowercase() == target);
         }
         // Apply optional search filter.
         if let Some(ref search) = req.search {
@@ -48,10 +46,7 @@ impl LogManager {
     }
 
     /// Get error logging configuration from php.ini directives.
-    pub async fn get_log_config(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<PhpLogConfig> {
+    pub async fn get_log_config(client: &PhpClient, version: &str) -> PhpResult<PhpLogConfig> {
         let php = client.versioned_php_bin(version);
         let cmd = format!(
             "{php} -r \"echo json_encode([\
@@ -77,18 +72,11 @@ impl LogManager {
     }
 
     /// Get FPM-specific log configuration.
-    pub async fn get_fpm_log_config(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<FpmLogConfig> {
-        let config_path = format!(
-            "{}/{}/fpm/php-fpm.conf",
-            client.config_dir(),
-            version
-        );
+    pub async fn get_fpm_log_config(client: &PhpClient, version: &str) -> PhpResult<FpmLogConfig> {
+        let config_path = format!("{}/{}/fpm/php-fpm.conf", client.config_dir(), version);
         let content = client.read_remote_file(&config_path).await?;
 
-        fn extract_value<'a>(content: &'a str, key: &str) -> Option<String> {
+        fn extract_value(content: &str, key: &str) -> Option<String> {
             for line in content.lines() {
                 let trimmed = line.trim();
                 if trimmed.starts_with(';') || trimmed.starts_with('#') {
@@ -115,10 +103,7 @@ impl LogManager {
     }
 
     /// Get the error_log path for a PHP version.
-    pub async fn get_log_path(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<String> {
+    pub async fn get_log_path(client: &PhpClient, version: &str) -> PhpResult<String> {
         let cmd = format!(
             "{} -r \"echo ini_get('error_log');\"",
             client.versioned_php_bin(version)
@@ -139,14 +124,11 @@ impl LogManager {
     }
 
     /// Get the FPM error log path from FPM config.
-    pub async fn get_fpm_log_path(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<String> {
+    pub async fn get_fpm_log_path(client: &PhpClient, version: &str) -> PhpResult<String> {
         let config = Self::get_fpm_log_config(client, version).await?;
-        config.error_log.ok_or_else(|| {
-            PhpError::config_not_found("FPM error_log not set in php-fpm.conf")
-        })
+        config
+            .error_log
+            .ok_or_else(|| PhpError::config_not_found("FPM error_log not set in php-fpm.conf"))
     }
 
     /// Truncate a log file.
@@ -163,11 +145,7 @@ impl LogManager {
     }
 
     /// Get the last N lines from a log file as raw text.
-    pub async fn tail_log(
-        client: &PhpClient,
-        log_path: &str,
-        lines: u32,
-    ) -> PhpResult<String> {
+    pub async fn tail_log(client: &PhpClient, log_path: &str, lines: u32) -> PhpResult<String> {
         let cmd = format!("tail -n {} {}", lines, shell_escape(log_path));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -180,10 +158,7 @@ impl LogManager {
     }
 
     /// Get the size of a log file in bytes.
-    pub async fn get_log_size(
-        client: &PhpClient,
-        log_path: &str,
-    ) -> PhpResult<u64> {
+    pub async fn get_log_size(client: &PhpClient, log_path: &str) -> PhpResult<u64> {
         let cmd = format!("stat -c %s {} 2>/dev/null", shell_escape(log_path));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -199,10 +174,7 @@ impl LogManager {
     }
 
     /// Rotate a log file: rename with timestamp suffix, create empty new file.
-    pub async fn rotate_log(
-        client: &PhpClient,
-        log_path: &str,
-    ) -> PhpResult<()> {
+    pub async fn rotate_log(client: &PhpClient, log_path: &str) -> PhpResult<()> {
         let cmd = format!(
             "sudo mv {} {}.$(date +%Y%m%d%H%M%S) && sudo touch {} && sudo chmod 640 {}",
             shell_escape(log_path),

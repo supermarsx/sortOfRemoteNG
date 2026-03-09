@@ -1,13 +1,15 @@
 // ── sorng-php/src/commands.rs ────────────────────────────────────────────────
 //! Tauri commands – thin wrappers around `PhpService`.
 
-use tauri::State;
 use crate::service::PhpServiceState;
 use crate::types::*;
+use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 
-fn map_err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
+fn map_err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 // ── Connection ────────────────────────────────────────────────────
 
@@ -17,21 +19,21 @@ pub async fn php_connect(
     id: String,
     config: PhpConnectionConfig,
 ) -> CmdResult<PhpConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn php_disconnect(
-    state: State<'_, PhpServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn php_disconnect(state: State<'_, PhpServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn php_list_connections(
-    state: State<'_, PhpServiceState>,
-) -> CmdResult<Vec<String>> {
+pub async fn php_list_connections(state: State<'_, PhpServiceState>) -> CmdResult<Vec<String>> {
     Ok(state.lock().await.list_connections())
 }
 
@@ -50,7 +52,12 @@ pub async fn php_get_default_version(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<PhpVersion> {
-    state.lock().await.get_default_version(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_default_version(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -59,7 +66,12 @@ pub async fn php_get_version_detail(
     id: String,
     version: String,
 ) -> CmdResult<PhpVersionDetail> {
-    state.lock().await.get_version_detail(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_version_detail(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -68,7 +80,12 @@ pub async fn php_set_default_version(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.set_default_version(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .set_default_version(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -77,7 +94,12 @@ pub async fn php_list_sapis(
     id: String,
     version: String,
 ) -> CmdResult<Vec<PhpSapi>> {
-    state.lock().await.list_sapis(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_sapis(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -87,7 +109,12 @@ pub async fn php_get_config_path(
     version: String,
     sapi: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_config_path(&id, &version, &sapi).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_config_path(&id, &version, &sapi)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -96,7 +123,12 @@ pub async fn php_get_extension_dir(
     id: String,
     version: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_extension_dir(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_extension_dir(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -105,7 +137,12 @@ pub async fn php_check_version_installed(
     id: String,
     version: String,
 ) -> CmdResult<bool> {
-    state.lock().await.check_version_installed(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .check_version_installed(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 // ── FPM Pools ─────────────────────────────────────────────────────
@@ -116,7 +153,12 @@ pub async fn php_list_fpm_pools(
     id: String,
     version: String,
 ) -> CmdResult<Vec<PhpFpmPool>> {
-    state.lock().await.list_fpm_pools(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_fpm_pools(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -126,7 +168,12 @@ pub async fn php_get_fpm_pool(
     version: String,
     name: String,
 ) -> CmdResult<PhpFpmPool> {
-    state.lock().await.get_fpm_pool(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_fpm_pool(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -135,7 +182,12 @@ pub async fn php_create_fpm_pool(
     id: String,
     request: CreateFpmPoolRequest,
 ) -> CmdResult<PhpFpmPool> {
-    state.lock().await.create_fpm_pool(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_fpm_pool(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -146,7 +198,12 @@ pub async fn php_update_fpm_pool(
     name: String,
     request: UpdateFpmPoolRequest,
 ) -> CmdResult<PhpFpmPool> {
-    state.lock().await.update_fpm_pool(&id, &version, &name, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_fpm_pool(&id, &version, &name, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -156,7 +213,12 @@ pub async fn php_delete_fpm_pool(
     version: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_fpm_pool(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_fpm_pool(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -166,7 +228,12 @@ pub async fn php_enable_fpm_pool(
     version: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_fpm_pool(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_fpm_pool(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -176,7 +243,12 @@ pub async fn php_disable_fpm_pool(
     version: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_fpm_pool(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_fpm_pool(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -186,7 +258,12 @@ pub async fn php_get_fpm_pool_status(
     version: String,
     name: String,
 ) -> CmdResult<PhpFpmPoolStatus> {
-    state.lock().await.get_fpm_pool_status(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_fpm_pool_status(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -196,7 +273,12 @@ pub async fn php_list_fpm_pool_processes(
     version: String,
     name: String,
 ) -> CmdResult<Vec<FpmWorkerProcess>> {
-    state.lock().await.list_fpm_pool_processes(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_fpm_pool_processes(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── INI ───────────────────────────────────────────────────────────
@@ -208,7 +290,12 @@ pub async fn php_get_ini_file(
     version: String,
     sapi: String,
 ) -> CmdResult<PhpIniFile> {
-    state.lock().await.get_ini_file(&id, &version, &sapi).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_ini_file(&id, &version, &sapi)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -218,7 +305,12 @@ pub async fn php_list_ini_directives(
     version: String,
     sapi: String,
 ) -> CmdResult<Vec<PhpIniDirective>> {
-    state.lock().await.list_ini_directives(&id, &version, &sapi).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_ini_directives(&id, &version, &sapi)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -229,7 +321,12 @@ pub async fn php_get_ini_directive(
     sapi: String,
     key: String,
 ) -> CmdResult<PhpIniDirective> {
-    state.lock().await.get_ini_directive(&id, &version, &sapi, &key).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_ini_directive(&id, &version, &sapi, &key)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -238,7 +335,12 @@ pub async fn php_set_ini_directive(
     id: String,
     request: SetIniDirectiveRequest,
 ) -> CmdResult<()> {
-    state.lock().await.set_ini_directive(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .set_ini_directive(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -249,7 +351,12 @@ pub async fn php_remove_ini_directive(
     sapi: String,
     key: String,
 ) -> CmdResult<()> {
-    state.lock().await.remove_ini_directive(&id, &version, &sapi, &key).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .remove_ini_directive(&id, &version, &sapi, &key)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -259,7 +366,12 @@ pub async fn php_get_ini_scan_dir(
     version: String,
     sapi: String,
 ) -> CmdResult<PhpIniScanDir> {
-    state.lock().await.get_ini_scan_dir(&id, &version, &sapi).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_ini_scan_dir(&id, &version, &sapi)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -268,7 +380,12 @@ pub async fn php_list_loaded_ini_files(
     id: String,
     version: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.list_loaded_ini_files(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_loaded_ini_files(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -278,7 +395,12 @@ pub async fn php_backup_ini(
     version: String,
     sapi: String,
 ) -> CmdResult<IniBackup> {
-    state.lock().await.backup_ini(&id, &version, &sapi).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .backup_ini(&id, &version, &sapi)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -288,7 +410,12 @@ pub async fn php_restore_ini(
     backup_path: String,
     target_path: String,
 ) -> CmdResult<()> {
-    state.lock().await.restore_ini(&id, &backup_path, &target_path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .restore_ini(&id, &backup_path, &target_path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -297,7 +424,12 @@ pub async fn php_validate_ini(
     id: String,
     version: String,
 ) -> CmdResult<bool> {
-    state.lock().await.validate_ini(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .validate_ini(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 // ── Modules ───────────────────────────────────────────────────────
@@ -308,7 +440,12 @@ pub async fn php_list_modules(
     id: String,
     version: String,
 ) -> CmdResult<Vec<PhpModule>> {
-    state.lock().await.list_modules(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_modules(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -318,7 +455,12 @@ pub async fn php_get_module(
     version: String,
     name: String,
 ) -> CmdResult<PhpModule> {
-    state.lock().await.get_module(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_module(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -327,7 +469,12 @@ pub async fn php_enable_module(
     id: String,
     request: EnableModuleRequest,
 ) -> CmdResult<()> {
-    state.lock().await.enable_module(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_module(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -336,7 +483,12 @@ pub async fn php_disable_module(
     id: String,
     request: DisableModuleRequest,
 ) -> CmdResult<()> {
-    state.lock().await.disable_module(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_module(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -345,7 +497,12 @@ pub async fn php_install_module(
     id: String,
     request: InstallModuleRequest,
 ) -> CmdResult<()> {
-    state.lock().await.install_module(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .install_module(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -355,7 +512,12 @@ pub async fn php_uninstall_module(
     version: String,
     module_name: String,
 ) -> CmdResult<()> {
-    state.lock().await.uninstall_module(&id, &version, &module_name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .uninstall_module(&id, &version, &module_name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -365,7 +527,12 @@ pub async fn php_is_module_loaded(
     version: String,
     name: String,
 ) -> CmdResult<bool> {
-    state.lock().await.is_module_loaded(&id, &version, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .is_module_loaded(&id, &version, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -374,7 +541,12 @@ pub async fn php_list_available_modules(
     id: String,
     version: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.list_available_modules(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_available_modules(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -382,7 +554,12 @@ pub async fn php_list_pecl_packages(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<Vec<PeclPackage>> {
-    state.lock().await.list_pecl_packages(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_pecl_packages(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -392,7 +569,12 @@ pub async fn php_install_pecl_package(
     name: String,
     version: Option<String>,
 ) -> CmdResult<()> {
-    state.lock().await.install_pecl_package(&id, &name, version.as_deref()).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .install_pecl_package(&id, &name, version.as_deref())
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -401,7 +583,12 @@ pub async fn php_uninstall_pecl_package(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.uninstall_pecl_package(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .uninstall_pecl_package(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── OPcache ───────────────────────────────────────────────────────
@@ -412,7 +599,12 @@ pub async fn php_get_opcache_status(
     id: String,
     version: String,
 ) -> CmdResult<OpcacheStatus> {
-    state.lock().await.get_opcache_status(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_opcache_status(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -421,7 +613,12 @@ pub async fn php_get_opcache_config(
     id: String,
     version: String,
 ) -> CmdResult<OpcacheConfig> {
-    state.lock().await.get_opcache_config(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_opcache_config(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -430,7 +627,12 @@ pub async fn php_reset_opcache(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.reset_opcache(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .reset_opcache(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -439,7 +641,12 @@ pub async fn php_list_cached_scripts(
     id: String,
     version: String,
 ) -> CmdResult<Vec<CachedScript>> {
-    state.lock().await.list_cached_scripts(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_cached_scripts(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -449,7 +656,12 @@ pub async fn php_invalidate_cached_script(
     version: String,
     path: String,
 ) -> CmdResult<()> {
-    state.lock().await.invalidate_cached_script(&id, &version, &path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .invalidate_cached_script(&id, &version, &path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -458,7 +670,12 @@ pub async fn php_is_opcache_enabled(
     id: String,
     version: String,
 ) -> CmdResult<bool> {
-    state.lock().await.is_opcache_enabled(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .is_opcache_enabled(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -468,7 +685,12 @@ pub async fn php_update_opcache_config(
     version: String,
     config: OpcacheConfig,
 ) -> CmdResult<()> {
-    state.lock().await.update_opcache_config(&id, &version, &config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_opcache_config(&id, &version, &config)
+        .await
+        .map_err(map_err)
 }
 
 // ── Sessions ──────────────────────────────────────────────────────
@@ -479,7 +701,12 @@ pub async fn php_get_session_config(
     id: String,
     version: String,
 ) -> CmdResult<PhpSessionConfig> {
-    state.lock().await.get_session_config(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_session_config(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -488,7 +715,12 @@ pub async fn php_update_session_config(
     id: String,
     request: UpdateSessionConfigRequest,
 ) -> CmdResult<()> {
-    state.lock().await.update_session_config(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_session_config(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -497,7 +729,12 @@ pub async fn php_get_session_stats(
     id: String,
     version: String,
 ) -> CmdResult<SessionStats> {
-    state.lock().await.get_session_stats(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_session_stats(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -507,7 +744,12 @@ pub async fn php_cleanup_sessions(
     version: String,
     max_age_secs: Option<u64>,
 ) -> CmdResult<u64> {
-    state.lock().await.cleanup_sessions(&id, &version, max_age_secs).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .cleanup_sessions(&id, &version, max_age_secs)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -516,7 +758,12 @@ pub async fn php_list_session_files(
     id: String,
     version: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.list_session_files(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_session_files(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -525,7 +772,12 @@ pub async fn php_get_session_save_path(
     id: String,
     version: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_session_save_path(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_session_save_path(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 // ── Composer ──────────────────────────────────────────────────────
@@ -535,7 +787,12 @@ pub async fn php_get_composer_info(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<ComposerInfo> {
-    state.lock().await.get_composer_info(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_composer_info(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -543,7 +800,12 @@ pub async fn php_is_composer_installed(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<bool> {
-    state.lock().await.is_composer_installed(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .is_composer_installed(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -551,7 +813,12 @@ pub async fn php_list_composer_global_packages(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<Vec<ComposerGlobalPackage>> {
-    state.lock().await.list_composer_global_packages(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_composer_global_packages(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -561,7 +828,12 @@ pub async fn php_install_composer_global_package(
     package: String,
     version: Option<String>,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.install_composer_global_package(&id, &package, version.as_deref()).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .install_composer_global_package(&id, &package, version.as_deref())
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -570,7 +842,12 @@ pub async fn php_remove_composer_global_package(
     id: String,
     package: String,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.remove_composer_global_package(&id, &package).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .remove_composer_global_package(&id, &package)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -579,7 +856,12 @@ pub async fn php_get_composer_project(
     id: String,
     project_path: String,
 ) -> CmdResult<ComposerProject> {
-    state.lock().await.get_composer_project(&id, &project_path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_composer_project(&id, &project_path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -588,7 +870,12 @@ pub async fn php_composer_install(
     id: String,
     request: ComposerInstallRequest,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.composer_install(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_install(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -597,7 +884,12 @@ pub async fn php_composer_update(
     id: String,
     request: ComposerUpdateRequest,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.composer_update(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_update(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -606,7 +898,12 @@ pub async fn php_composer_require(
     id: String,
     request: RequirePackageRequest,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.composer_require(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_require(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -615,7 +912,12 @@ pub async fn php_composer_remove(
     id: String,
     request: RemovePackageRequest,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.composer_remove(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_remove(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -625,7 +927,12 @@ pub async fn php_composer_dump_autoload(
     project_path: String,
     optimize: bool,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.composer_dump_autoload(&id, &project_path, optimize).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_dump_autoload(&id, &project_path, optimize)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -634,7 +941,12 @@ pub async fn php_composer_validate(
     id: String,
     project_path: String,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.composer_validate(&id, &project_path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_validate(&id, &project_path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -643,7 +955,12 @@ pub async fn php_composer_outdated(
     id: String,
     project_path: String,
 ) -> CmdResult<Vec<ComposerPackage>> {
-    state.lock().await.composer_outdated(&id, &project_path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_outdated(&id, &project_path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -651,7 +968,12 @@ pub async fn php_composer_clear_cache(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state.lock().await.composer_clear_cache(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_clear_cache(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -659,7 +981,12 @@ pub async fn php_composer_self_update(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<ComposerRunResult> {
-    state.lock().await.composer_self_update(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .composer_self_update(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Logs ──────────────────────────────────────────────────────────
@@ -670,7 +997,12 @@ pub async fn php_read_log(
     id: String,
     request: PhpLogReadRequest,
 ) -> CmdResult<Vec<PhpLogEntry>> {
-    state.lock().await.read_php_log(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .read_php_log(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -679,7 +1011,12 @@ pub async fn php_get_log_config(
     id: String,
     version: String,
 ) -> CmdResult<PhpLogConfig> {
-    state.lock().await.get_log_config(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_log_config(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -688,7 +1025,12 @@ pub async fn php_get_fpm_log_config(
     id: String,
     version: String,
 ) -> CmdResult<FpmLogConfig> {
-    state.lock().await.get_fpm_log_config(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_fpm_log_config(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -697,7 +1039,12 @@ pub async fn php_get_log_path(
     id: String,
     version: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_log_path(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_log_path(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -706,7 +1053,12 @@ pub async fn php_get_fpm_log_path(
     id: String,
     version: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_fpm_log_path(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_fpm_log_path(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -715,7 +1067,12 @@ pub async fn php_clear_log(
     id: String,
     log_path: String,
 ) -> CmdResult<()> {
-    state.lock().await.clear_log(&id, &log_path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .clear_log(&id, &log_path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -725,7 +1082,12 @@ pub async fn php_tail_log(
     log_path: String,
     lines: u32,
 ) -> CmdResult<String> {
-    state.lock().await.tail_log(&id, &log_path, lines).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .tail_log(&id, &log_path, lines)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -734,7 +1096,12 @@ pub async fn php_get_log_size(
     id: String,
     log_path: String,
 ) -> CmdResult<u64> {
-    state.lock().await.get_log_size(&id, &log_path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_log_size(&id, &log_path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -743,7 +1110,12 @@ pub async fn php_rotate_log(
     id: String,
     log_path: String,
 ) -> CmdResult<()> {
-    state.lock().await.rotate_log(&id, &log_path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .rotate_log(&id, &log_path)
+        .await
+        .map_err(map_err)
 }
 
 // ── Process ───────────────────────────────────────────────────────
@@ -754,7 +1126,12 @@ pub async fn php_get_fpm_service_status(
     id: String,
     version: String,
 ) -> CmdResult<PhpFpmServiceStatus> {
-    state.lock().await.get_fpm_service_status(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_fpm_service_status(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -763,7 +1140,12 @@ pub async fn php_start_fpm(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.start_fpm(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .start_fpm(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -772,7 +1154,12 @@ pub async fn php_stop_fpm(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.stop_fpm(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .stop_fpm(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -781,7 +1168,12 @@ pub async fn php_restart_fpm(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.restart_fpm(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .restart_fpm(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -790,7 +1182,12 @@ pub async fn php_reload_fpm(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.reload_fpm(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .reload_fpm(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -799,7 +1196,12 @@ pub async fn php_enable_fpm(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_fpm(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_fpm(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -808,7 +1210,12 @@ pub async fn php_disable_fpm(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_fpm(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_fpm(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -817,7 +1224,12 @@ pub async fn php_test_fpm_config(
     id: String,
     version: String,
 ) -> CmdResult<ConfigTestResult> {
-    state.lock().await.test_fpm_config(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .test_fpm_config(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -826,7 +1238,12 @@ pub async fn php_get_fpm_master_process(
     id: String,
     version: String,
 ) -> CmdResult<PhpFpmMasterProcess> {
-    state.lock().await.get_fpm_master_process(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_fpm_master_process(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -835,7 +1252,12 @@ pub async fn php_list_fpm_worker_pids(
     id: String,
     version: String,
 ) -> CmdResult<Vec<u32>> {
-    state.lock().await.list_fpm_worker_pids(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_fpm_worker_pids(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -844,7 +1266,12 @@ pub async fn php_graceful_restart_fpm(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.graceful_restart_fpm(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .graceful_restart_fpm(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -853,7 +1280,12 @@ pub async fn php_reopen_fpm_logs(
     id: String,
     version: String,
 ) -> CmdResult<()> {
-    state.lock().await.reopen_fpm_logs(&id, &version).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .reopen_fpm_logs(&id, &version)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -861,5 +1293,10 @@ pub async fn php_list_all_fpm_services(
     state: State<'_, PhpServiceState>,
     id: String,
 ) -> CmdResult<Vec<PhpFpmServiceStatus>> {
-    state.lock().await.list_all_fpm_services(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_all_fpm_services(&id)
+        .await
+        .map_err(map_err)
 }

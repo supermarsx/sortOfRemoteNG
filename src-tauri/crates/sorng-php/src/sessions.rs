@@ -1,7 +1,7 @@
 // ── sorng-php – PHP session management ───────────────────────────────────────
 //! Query, configure, and clean up PHP sessions on a remote host.
 
-use crate::client::{PhpClient, shell_escape};
+use crate::client::{shell_escape, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -10,10 +10,7 @@ pub struct SessionManager;
 
 impl SessionManager {
     /// Get session configuration from php.ini `session.*` directives.
-    pub async fn get_config(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<PhpSessionConfig> {
+    pub async fn get_config(client: &PhpClient, version: &str) -> PhpResult<PhpSessionConfig> {
         let php = client.versioned_php_bin(version);
         let cmd = format!(
             "{php} -r \"echo json_encode([\
@@ -54,11 +51,7 @@ impl SessionManager {
         client: &PhpClient,
         req: &UpdateSessionConfigRequest,
     ) -> PhpResult<()> {
-        let ini_path = format!(
-            "{}/{}/cli/php.ini",
-            client.config_dir(),
-            req.version
-        );
+        let ini_path = format!("{}/{}/cli/php.ini", client.config_dir(), req.version);
         let mut content = client.read_remote_file(&ini_path).await.unwrap_or_default();
 
         fn set_directive(content: &mut String, key: &str, value: &str) {
@@ -99,28 +92,16 @@ impl SessionManager {
             set_directive(&mut content, "cookie_lifetime", &v.to_string());
         }
         if let Some(v) = req.cookie_secure {
-            set_directive(
-                &mut content,
-                "cookie_secure",
-                if v { "1" } else { "0" },
-            );
+            set_directive(&mut content, "cookie_secure", if v { "1" } else { "0" });
         }
         if let Some(v) = req.cookie_httponly {
-            set_directive(
-                &mut content,
-                "cookie_httponly",
-                if v { "1" } else { "0" },
-            );
+            set_directive(&mut content, "cookie_httponly", if v { "1" } else { "0" });
         }
         if let Some(ref v) = req.cookie_samesite {
             set_directive(&mut content, "cookie_samesite", v);
         }
         if let Some(v) = req.use_strict_mode {
-            set_directive(
-                &mut content,
-                "use_strict_mode",
-                if v { "1" } else { "0" },
-            );
+            set_directive(&mut content, "use_strict_mode", if v { "1" } else { "0" });
         }
         if let Some(v) = req.sid_length {
             set_directive(&mut content, "sid_length", &v.to_string());
@@ -130,10 +111,7 @@ impl SessionManager {
     }
 
     /// Get session statistics: count, total size, oldest/newest timestamps.
-    pub async fn get_stats(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<SessionStats> {
+    pub async fn get_stats(client: &PhpClient, version: &str) -> PhpResult<SessionStats> {
         let save_path = Self::get_save_path(client, version).await?;
         let handler = {
             let cmd = format!(
@@ -187,7 +165,7 @@ impl SessionManager {
         max_age_secs: Option<u64>,
     ) -> PhpResult<u64> {
         let save_path = Self::get_save_path(client, version).await?;
-        let max_age = max_age_secs.unwrap_or_else(|| {
+        let max_age = max_age_secs.unwrap_or({
             // Default to gc_maxlifetime (1440 seconds) when not specified.
             1440
         });
@@ -208,10 +186,7 @@ impl SessionManager {
     }
 
     /// List session files in the save_path directory.
-    pub async fn list_session_files(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<Vec<String>> {
+    pub async fn list_session_files(client: &PhpClient, version: &str) -> PhpResult<Vec<String>> {
         let save_path = Self::get_save_path(client, version).await?;
         let cmd = format!(
             "find {} -maxdepth 1 -name 'sess_*' -printf '%f\\n' 2>/dev/null",
@@ -227,10 +202,7 @@ impl SessionManager {
     }
 
     /// Get the session save path for a PHP version.
-    pub async fn get_save_path(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<String> {
+    pub async fn get_save_path(client: &PhpClient, version: &str) -> PhpResult<String> {
         let cmd = format!(
             "{} -r \"echo ini_get('session.save_path');\"",
             client.versioned_php_bin(version)

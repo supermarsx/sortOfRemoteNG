@@ -1,6 +1,6 @@
 // ── sorng-php – PHP-FPM process/service control ─────────────────────────────
 
-use crate::client::{PhpClient, shell_escape};
+use crate::client::{shell_escape, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -35,9 +35,7 @@ impl ProcessManager {
                     "ActiveState" => active_state = Some(val.to_string()),
                     "SubState" => sub_state = Some(val.to_string()),
                     "MainPID" => main_pid = val.parse().ok().filter(|&p: &u32| p > 0),
-                    "MemoryCurrent" => {
-                        memory_bytes = val.parse().ok().filter(|v| *v < u64::MAX)
-                    }
+                    "MemoryCurrent" => memory_bytes = val.parse().ok().filter(|v| *v < u64::MAX),
                     "CPUUsageNSec" => cpu_ns = val.parse().ok(),
                     "TasksCurrent" => tasks = val.parse().ok().filter(|v| *v < u32::MAX),
                     "UnitFileState" => unit_file_state = Some(val.to_string()),
@@ -191,10 +189,7 @@ impl ProcessManager {
     }
 
     /// Test FPM configuration via `php-fpm{version} -t`.
-    pub async fn test_config(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<ConfigTestResult> {
+    pub async fn test_config(client: &PhpClient, version: &str) -> PhpResult<ConfigTestResult> {
         let cmd = format!("php-fpm{} -t 2>&1", version);
         let out = client.exec_ssh(&cmd).await?;
 
@@ -255,7 +250,10 @@ impl ProcessManager {
 
         // Get config file from /proc cmdline
         let cmdline_out = client
-            .exec_ssh(&format!("cat /proc/{}/cmdline 2>/dev/null | tr '\\0' ' '", pid))
+            .exec_ssh(&format!(
+                "cat /proc/{}/cmdline 2>/dev/null | tr '\\0' ' '",
+                pid
+            ))
             .await?;
         let config_file = cmdline_out
             .stdout
@@ -267,10 +265,7 @@ impl ProcessManager {
 
         // Count worker processes
         let workers_out = client
-            .exec_ssh(&format!(
-                "pgrep -P {} --count 2>/dev/null || echo 0",
-                pid,
-            ))
+            .exec_ssh(&format!("pgrep -P {} --count 2>/dev/null || echo 0", pid,))
             .await?;
         let worker_count: u32 = workers_out.stdout.trim().parse().unwrap_or(0);
 
@@ -286,10 +281,7 @@ impl ProcessManager {
 
         // Get uptime from /proc/PID/stat
         let uptime_out = client
-            .exec_ssh(&format!(
-                "ps -p {} -o etimes= 2>/dev/null || echo ''",
-                pid,
-            ))
+            .exec_ssh(&format!("ps -p {} -o etimes= 2>/dev/null || echo ''", pid,))
             .await?;
         let uptime_secs = uptime_out.stdout.trim().parse::<u64>().ok();
 
@@ -356,9 +348,7 @@ impl ProcessManager {
             return Err(PhpError::fpm_not_running(format!("{} not running", svc)));
         }
 
-        let out = client
-            .exec_ssh(&format!("sudo kill -USR2 {}", pid))
-            .await?;
+        let out = client.exec_ssh(&format!("sudo kill -USR2 {}", pid)).await?;
         if out.exit_code != 0 {
             return Err(PhpError::process(format!(
                 "Failed to send USR2 to PID {}: {}",
@@ -386,9 +376,7 @@ impl ProcessManager {
             return Err(PhpError::fpm_not_running(format!("{} not running", svc)));
         }
 
-        let out = client
-            .exec_ssh(&format!("sudo kill -USR1 {}", pid))
-            .await?;
+        let out = client.exec_ssh(&format!("sudo kill -USR1 {}", pid)).await?;
         if out.exit_code != 0 {
             return Err(PhpError::process(format!(
                 "Failed to send USR1 to PID {}: {}",
@@ -399,9 +387,7 @@ impl ProcessManager {
     }
 
     /// List all installed php-fpm service versions and their statuses.
-    pub async fn list_all_fpm_services(
-        client: &PhpClient,
-    ) -> PhpResult<Vec<PhpFpmServiceStatus>> {
+    pub async fn list_all_fpm_services(client: &PhpClient) -> PhpResult<Vec<PhpFpmServiceStatus>> {
         let out = client
             .exec_ssh(
                 "systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null | grep 'php.*fpm' || true",
@@ -431,7 +417,7 @@ impl ProcessManager {
                 Ok(status) => services.push(status),
                 Err(_) => {
                     // Include a minimal entry for services we can't query
-                    let enabled = parts.get(1).map_or(false, |s| *s == "enabled");
+                    let enabled = parts.get(1).is_some_and(|s| *s == "enabled");
                     services.push(PhpFpmServiceStatus {
                         version: version.to_string(),
                         service_name: service_file

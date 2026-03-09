@@ -1,7 +1,7 @@
 // ── sorng-php – php.ini configuration management ─────────────────────────────
 //! Read, parse, modify, back up, and validate php.ini files on a remote host.
 
-use crate::client::{PhpClient, shell_escape};
+use crate::client::{shell_escape, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -16,9 +16,10 @@ impl IniManager {
         sapi: &str,
     ) -> PhpResult<PhpIniFile> {
         let path = ini_path(client.config_dir(), version, sapi);
-        let raw_content = client.read_remote_file(&path).await.map_err(|_| {
-            PhpError::config_not_found(&path)
-        })?;
+        let raw_content = client
+            .read_remote_file(&path)
+            .await
+            .map_err(|_| PhpError::config_not_found(&path))?;
         let directives = parse_ini_content(&raw_content);
         Ok(PhpIniFile {
             path,
@@ -72,10 +73,7 @@ impl IniManager {
     ///
     /// If the directive already exists it is updated in-place; otherwise it is
     /// appended at the end of the file.
-    pub async fn set_directive(
-        client: &PhpClient,
-        req: &SetIniDirectiveRequest,
-    ) -> PhpResult<()> {
+    pub async fn set_directive(client: &PhpClient, req: &SetIniDirectiveRequest) -> PhpResult<()> {
         let path = req
             .file_path
             .clone()
@@ -193,11 +191,7 @@ impl IniManager {
     }
 
     /// Create a backup of the php.ini file.
-    pub async fn backup_ini(
-        client: &PhpClient,
-        version: &str,
-        sapi: &str,
-    ) -> PhpResult<IniBackup> {
+    pub async fn backup_ini(client: &PhpClient, version: &str, sapi: &str) -> PhpResult<IniBackup> {
         let path = ini_path(client.config_dir(), version, sapi);
         let backup_path = client.backup_file(&path).await?;
         Ok(IniBackup {

@@ -35,9 +35,10 @@ impl PhpClient {
     }
 
     pub fn fpm_pool_dir(&self, version: &str) -> String {
-        self.config.fpm_pool_dir.clone().unwrap_or_else(|| {
-            format!("{}/{}/fpm/pool.d", self.config_dir(), version)
-        })
+        self.config
+            .fpm_pool_dir
+            .clone()
+            .unwrap_or_else(|| format!("{}/{}/fpm/pool.d", self.config_dir(), version))
     }
 
     /// Versioned PHP binary path
@@ -61,7 +62,9 @@ impl PhpClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> PhpResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 
@@ -138,7 +141,10 @@ impl PhpClient {
     /// Check if a command / binary exists on the remote host.
     pub async fn command_exists(&self, cmd: &str) -> PhpResult<bool> {
         let out = self
-            .exec_ssh(&format!("command -v {} >/dev/null 2>&1 && echo yes || echo no", shell_escape(cmd)))
+            .exec_ssh(&format!(
+                "command -v {} >/dev/null 2>&1 && echo yes || echo no",
+                shell_escape(cmd)
+            ))
             .await?;
         Ok(out.stdout.trim() == "yes")
     }

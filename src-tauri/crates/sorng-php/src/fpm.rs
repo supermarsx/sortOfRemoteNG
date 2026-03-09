@@ -2,7 +2,7 @@
 //! Create, update, delete, enable/disable FPM pools and query their runtime
 //! status on remote Linux servers.
 
-use crate::client::{PhpClient, shell_escape};
+use crate::client::{shell_escape, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 use std::collections::HashMap;
@@ -11,10 +11,7 @@ pub struct FpmManager;
 
 impl FpmManager {
     /// List all FPM pools for a PHP version by reading its `pool.d` directory.
-    pub async fn list_pools(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<Vec<PhpFpmPool>> {
+    pub async fn list_pools(client: &PhpClient, version: &str) -> PhpResult<Vec<PhpFpmPool>> {
         let pool_dir = client.fpm_pool_dir(version);
         let files = client.list_dir(&pool_dir).await?;
 
@@ -35,11 +32,7 @@ impl FpmManager {
     }
 
     /// Get a specific FPM pool by name.
-    pub async fn get_pool(
-        client: &PhpClient,
-        version: &str,
-        name: &str,
-    ) -> PhpResult<PhpFpmPool> {
+    pub async fn get_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<PhpFpmPool> {
         let pool_dir = client.fpm_pool_dir(version);
 
         // Try enabled first, then disabled
@@ -75,7 +68,9 @@ impl FpmManager {
         }
 
         let config_content = Self::generate_pool_config(req);
-        client.write_remote_file(&conf_path, &config_content).await?;
+        client
+            .write_remote_file(&conf_path, &config_content)
+            .await?;
 
         Self::get_pool(client, &req.version, &req.name).await
     }
@@ -150,11 +145,7 @@ impl FpmManager {
     }
 
     /// Delete an FPM pool config file.
-    pub async fn delete_pool(
-        client: &PhpClient,
-        version: &str,
-        name: &str,
-    ) -> PhpResult<()> {
+    pub async fn delete_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<()> {
         let pool_dir = client.fpm_pool_dir(version);
         let conf_path = format!("{}/{}.conf", pool_dir, name);
         let disabled_path = format!("{}/{}.conf.disabled", pool_dir, name);
@@ -170,11 +161,7 @@ impl FpmManager {
     }
 
     /// Enable a disabled pool by renaming `.conf.disabled` → `.conf`.
-    pub async fn enable_pool(
-        client: &PhpClient,
-        version: &str,
-        name: &str,
-    ) -> PhpResult<()> {
+    pub async fn enable_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<()> {
         let pool_dir = client.fpm_pool_dir(version);
         let conf_path = format!("{}/{}.conf", pool_dir, name);
         let disabled_path = format!("{}/{}.conf.disabled", pool_dir, name);
@@ -203,11 +190,7 @@ impl FpmManager {
     }
 
     /// Disable a pool without deleting it (rename `.conf` → `.conf.disabled`).
-    pub async fn disable_pool(
-        client: &PhpClient,
-        version: &str,
-        name: &str,
-    ) -> PhpResult<()> {
+    pub async fn disable_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<()> {
         let pool_dir = client.fpm_pool_dir(version);
         let conf_path = format!("{}/{}.conf", pool_dir, name);
         let disabled_path = format!("{}/{}.conf.disabled", pool_dir, name);
@@ -310,10 +293,7 @@ impl FpmManager {
         lines.push(format!("user = {}", user));
         lines.push(format!("group = {}", group));
 
-        let listen = pool
-            .listen
-            .as_deref()
-            .unwrap_or_else(|| "/run/php/php-fpm.sock");
+        let listen = pool.listen.as_deref().unwrap_or("/run/php/php-fpm.sock");
         lines.push(format!("listen = {}", listen));
         lines.push("listen.owner = www-data".to_string());
         lines.push("listen.group = www-data".to_string());
@@ -456,10 +436,7 @@ fn parse_pool_config(
                 php_values.insert(inner.to_string(), value.to_string());
                 continue;
             }
-            if let Some(inner) = key
-                .strip_prefix("env[")
-                .and_then(|s| s.strip_suffix(']'))
-            {
+            if let Some(inner) = key.strip_prefix("env[").and_then(|s| s.strip_suffix(']')) {
                 env_vars.insert(inner.to_string(), value.to_string());
                 continue;
             }
@@ -604,8 +581,8 @@ fn parse_pool_status(output: &str, pool_name: &str) -> PhpResult<PhpFpmPoolStatu
     })?;
     let json_str = &output[json_start..];
 
-    let val: serde_json::Value =
-        serde_json::from_str(json_str).map_err(|e| PhpError::parse(format!("status JSON: {}", e)))?;
+    let val: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| PhpError::parse(format!("status JSON: {}", e)))?;
 
     Ok(PhpFpmPoolStatus {
         pool: val["pool"].as_str().unwrap_or(pool_name).to_string(),
@@ -635,8 +612,8 @@ fn parse_worker_processes(output: &str) -> PhpResult<Vec<FpmWorkerProcess>> {
         .ok_or_else(|| PhpError::fpm_not_running("no status response for worker list"))?;
     let json_str = &output[json_start..];
 
-    let val: serde_json::Value =
-        serde_json::from_str(json_str).map_err(|e| PhpError::parse(format!("status JSON: {}", e)))?;
+    let val: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| PhpError::parse(format!("status JSON: {}", e)))?;
 
     let procs = val["processes"]
         .as_array()

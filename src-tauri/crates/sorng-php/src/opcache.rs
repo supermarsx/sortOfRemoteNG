@@ -10,10 +10,7 @@ pub struct OpcacheManager;
 
 impl OpcacheManager {
     /// Get OPcache status by running `opcache_get_status()` via CLI.
-    pub async fn get_status(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<OpcacheStatus> {
+    pub async fn get_status(client: &PhpClient, version: &str) -> PhpResult<OpcacheStatus> {
         let cmd = format!(
             "{} -r \"echo json_encode(opcache_get_status());\"",
             client.versioned_php_bin(version)
@@ -34,10 +31,7 @@ impl OpcacheManager {
     }
 
     /// Get OPcache configuration via `opcache_get_configuration()`.
-    pub async fn get_config(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<OpcacheConfig> {
+    pub async fn get_config(client: &PhpClient, version: &str) -> PhpResult<OpcacheConfig> {
         let cmd = format!(
             "{} -r \"echo json_encode(opcache_get_configuration());\"",
             client.versioned_php_bin(version)
@@ -111,11 +105,7 @@ impl OpcacheManager {
     }
 
     /// Invalidate a specific cached script.
-    pub async fn invalidate_script(
-        client: &PhpClient,
-        version: &str,
-        path: &str,
-    ) -> PhpResult<()> {
+    pub async fn invalidate_script(client: &PhpClient, version: &str, path: &str) -> PhpResult<()> {
         let escaped_path = path.replace('\'', "\\'");
         let cmd = format!(
             "{} -r \"opcache_invalidate('{}', true);\"",
@@ -133,10 +123,7 @@ impl OpcacheManager {
     }
 
     /// Check whether OPcache is enabled for the given PHP version.
-    pub async fn is_enabled(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<bool> {
+    pub async fn is_enabled(client: &PhpClient, version: &str) -> PhpResult<bool> {
         let cmd = format!(
             "{} -r \"echo opcache_get_status() === false ? 'no' : 'yes';\"",
             client.versioned_php_bin(version)
@@ -184,10 +171,7 @@ impl OpcacheManager {
             directives.push(format!("opcache.revalidate_freq={v}"));
         }
         if let Some(v) = config.save_comments {
-            directives.push(format!(
-                "opcache.save_comments={}",
-                if v { 1 } else { 0 }
-            ));
+            directives.push(format!("opcache.save_comments={}", if v { 1 } else { 0 }));
         }
         if let Some(v) = config.enable_file_override {
             directives.push(format!(

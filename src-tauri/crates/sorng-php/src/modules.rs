@@ -2,7 +2,7 @@
 //! Enable, disable, install, and query PHP modules and PECL packages on a
 //! remote host.
 
-use crate::client::{PhpClient, shell_escape};
+use crate::client::{shell_escape, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -12,10 +12,7 @@ pub struct ModuleManager;
 impl ModuleManager {
     /// List all PHP modules by running `php{version} -m` and categorising
     /// each as core, dynamic, or Zend.
-    pub async fn list_modules(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<Vec<PhpModule>> {
+    pub async fn list_modules(client: &PhpClient, version: &str) -> PhpResult<Vec<PhpModule>> {
         let cmd = format!("{} -m", client.versioned_php_bin(version));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -56,11 +53,7 @@ impl ModuleManager {
     }
 
     /// Get info about a specific module.
-    pub async fn get_module(
-        client: &PhpClient,
-        version: &str,
-        name: &str,
-    ) -> PhpResult<PhpModule> {
+    pub async fn get_module(client: &PhpClient, version: &str, name: &str) -> PhpResult<PhpModule> {
         let modules = Self::list_modules(client, version).await?;
         modules
             .into_iter()
@@ -70,10 +63,7 @@ impl ModuleManager {
 
     /// Enable a module using `phpenmod` or by creating a symlink in the
     /// mods-available / conf.d directories.
-    pub async fn enable_module(
-        client: &PhpClient,
-        req: &EnableModuleRequest,
-    ) -> PhpResult<()> {
+    pub async fn enable_module(client: &PhpClient, req: &EnableModuleRequest) -> PhpResult<()> {
         let sapi_flag = req
             .sapi
             .as_deref()
@@ -96,10 +86,7 @@ impl ModuleManager {
     }
 
     /// Disable a module using `phpdismod` or by removing the symlink.
-    pub async fn disable_module(
-        client: &PhpClient,
-        req: &DisableModuleRequest,
-    ) -> PhpResult<()> {
+    pub async fn disable_module(client: &PhpClient, req: &DisableModuleRequest) -> PhpResult<()> {
         let sapi_flag = req
             .sapi
             .as_deref()
@@ -123,10 +110,7 @@ impl ModuleManager {
 
     /// Install a PHP module via apt (`apt-get install php{version}-{module}`)
     /// or PECL, depending on the request's `method` field.
-    pub async fn install_module(
-        client: &PhpClient,
-        req: &InstallModuleRequest,
-    ) -> PhpResult<()> {
+    pub async fn install_module(client: &PhpClient, req: &InstallModuleRequest) -> PhpResult<()> {
         let method = req.method.as_deref().unwrap_or("apt");
         let cmd = match method {
             "pecl" => format!("sudo pecl install {}", shell_escape(&req.module_name)),
@@ -247,10 +231,7 @@ impl ModuleManager {
     }
 
     /// Uninstall a PECL package.
-    pub async fn uninstall_pecl_package(
-        client: &PhpClient,
-        name: &str,
-    ) -> PhpResult<()> {
+    pub async fn uninstall_pecl_package(client: &PhpClient, name: &str) -> PhpResult<()> {
         let cmd = format!("sudo pecl uninstall {}", shell_escape(name));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {

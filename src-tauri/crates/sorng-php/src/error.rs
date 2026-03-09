@@ -51,7 +51,10 @@ impl std::error::Error for PhpError {}
 
 impl PhpError {
     pub fn new(kind: PhpErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(PhpErrorKind::NotConnected, msg)
@@ -60,22 +63,34 @@ impl PhpError {
         Self::new(PhpErrorKind::ConnectionFailed, msg)
     }
     pub fn version_not_found(ver: &str) -> Self {
-        Self::new(PhpErrorKind::VersionNotFound, format!("PHP version not found: {ver}"))
+        Self::new(
+            PhpErrorKind::VersionNotFound,
+            format!("PHP version not found: {ver}"),
+        )
     }
     pub fn pool_not_found(name: &str) -> Self {
-        Self::new(PhpErrorKind::FpmPoolNotFound, format!("FPM pool not found: {name}"))
+        Self::new(
+            PhpErrorKind::FpmPoolNotFound,
+            format!("FPM pool not found: {name}"),
+        )
     }
     pub fn fpm_not_running(msg: impl Into<String>) -> Self {
         Self::new(PhpErrorKind::FpmNotRunning, msg)
     }
     pub fn module_not_found(name: &str) -> Self {
-        Self::new(PhpErrorKind::ModuleNotFound, format!("Module not found: {name}"))
+        Self::new(
+            PhpErrorKind::ModuleNotFound,
+            format!("Module not found: {name}"),
+        )
     }
     pub fn config_syntax(msg: impl Into<String>) -> Self {
         Self::new(PhpErrorKind::ConfigSyntaxError, msg)
     }
     pub fn config_not_found(path: &str) -> Self {
-        Self::new(PhpErrorKind::ConfigNotFound, format!("Config file not found: {path}"))
+        Self::new(
+            PhpErrorKind::ConfigNotFound,
+            format!("Config file not found: {path}"),
+        )
     }
     pub fn parse(msg: impl Into<String>) -> Self {
         Self::new(PhpErrorKind::ParseError, msg)

@@ -147,10 +147,7 @@ impl VersionManager {
     pub async fn set_default(client: &PhpClient, version: &str) -> PhpResult<()> {
         Self::ensure_installed(client, version).await?;
 
-        let cmd = format!(
-            "sudo update-alternatives --set php /usr/bin/php{}",
-            version
-        );
+        let cmd = format!("sudo update-alternatives --set php /usr/bin/php{}", version);
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
             return Err(PhpError::command_failed(format!(
@@ -183,10 +180,7 @@ impl VersionManager {
                 ),
                 "cgi" => (
                     format!("/usr/bin/php-cgi{}", version),
-                    format!(
-                        "test -f /usr/bin/php-cgi{} && echo yes || echo no",
-                        version
-                    ),
+                    format!("test -f /usr/bin/php-cgi{} && echo yes || echo no", version),
                 ),
                 "apache2" => (
                     format!("/usr/lib/apache2/modules/libphp{}.so", version),
@@ -200,9 +194,7 @@ impl VersionManager {
 
             let check = client.exec_ssh(&check_cmd).await?;
             if check.stdout.trim() == "yes" {
-                let config_file = Self::get_config_path(client, version, sapi_name)
-                    .await
-                    .ok();
+                let config_file = Self::get_config_path(client, version, sapi_name).await.ok();
                 sapis.push(PhpSapi {
                     name: sapi_name.to_string(),
                     version: version.to_string(),
@@ -250,14 +242,8 @@ impl VersionManager {
     }
 
     /// Check whether a specific PHP version is installed.
-    pub async fn check_version_installed(
-        client: &PhpClient,
-        version: &str,
-    ) -> PhpResult<bool> {
-        let cmd = format!(
-            "test -f /usr/bin/php{} && echo yes || echo no",
-            version
-        );
+    pub async fn check_version_installed(client: &PhpClient, version: &str) -> PhpResult<bool> {
+        let cmd = format!("test -f /usr/bin/php{} && echo yes || echo no", version);
         let out = client.exec_ssh(&cmd).await?;
         Ok(out.stdout.trim() == "yes")
     }
@@ -299,10 +285,7 @@ impl VersionManager {
 fn parse_version_output(output: &str, binary_path: &str) -> Option<PhpVersion> {
     // Typical first line: "PHP 8.3.12 (cli) (built: ...)"
     let first = output.lines().next()?;
-    let version_str = first
-        .strip_prefix("PHP ")?
-        .split_whitespace()
-        .next()?;
+    let version_str = first.strip_prefix("PHP ")?.split_whitespace().next()?;
 
     let parts: Vec<&str> = version_str.split('.').collect();
     if parts.len() < 3 {
