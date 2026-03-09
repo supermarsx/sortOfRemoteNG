@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type CommanderServiceState = Arc<Mutex<CommanderService>>;
 
@@ -125,7 +125,10 @@ impl CommanderService {
         }))
     }
 
-    pub async fn connect_commander(&mut self, config: CommanderConnectionConfig) -> Result<String, String> {
+    pub async fn connect_commander(
+        &mut self,
+        config: CommanderConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // For now, simulate commander connection
@@ -153,8 +156,14 @@ impl CommanderService {
         }
     }
 
-    pub async fn execute_commander_command(&self, session_id: &str, _command: CommanderCommand) -> Result<String, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn execute_commander_command(
+        &self,
+        session_id: &str,
+        _command: CommanderCommand,
+    ) -> Result<String, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
         if let CommanderStatus::Connected = &session.status {
@@ -171,8 +180,14 @@ impl CommanderService {
         }
     }
 
-    pub async fn get_commander_command_result(&self, session_id: &str, command_id: &str) -> Result<CommanderCommandResult, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn get_commander_command_result(
+        &self,
+        session_id: &str,
+        command_id: &str,
+    ) -> Result<CommanderCommandResult, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
         if let CommanderStatus::Connected = &session.status {
@@ -198,8 +213,15 @@ impl CommanderService {
         }
     }
 
-    pub async fn upload_commander_file(&self, session_id: &str, local_path: String, remote_path: String) -> Result<String, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn upload_commander_file(
+        &self,
+        session_id: &str,
+        local_path: String,
+        remote_path: String,
+    ) -> Result<String, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
         if let CommanderStatus::Connected = &session.status {
@@ -225,8 +247,15 @@ impl CommanderService {
         }
     }
 
-    pub async fn download_commander_file(&self, session_id: &str, remote_path: String, local_path: String) -> Result<String, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn download_commander_file(
+        &self,
+        session_id: &str,
+        remote_path: String,
+        local_path: String,
+    ) -> Result<String, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
         if let CommanderStatus::Connected = &session.status {
@@ -252,8 +281,14 @@ impl CommanderService {
         }
     }
 
-    pub async fn get_commander_file_transfer(&self, session_id: &str, transfer_id: &str) -> Result<CommanderFileTransfer, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn get_commander_file_transfer(
+        &self,
+        session_id: &str,
+        transfer_id: &str,
+    ) -> Result<CommanderFileTransfer, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
         if let CommanderStatus::Connected = &session.status {
@@ -277,8 +312,14 @@ impl CommanderService {
         }
     }
 
-    pub async fn list_commander_directory(&self, session_id: &str, _path: String) -> Result<Vec<serde_json::Value>, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn list_commander_directory(
+        &self,
+        session_id: &str,
+        _path: String,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
         if let CommanderStatus::Connected = &session.status {
@@ -313,7 +354,11 @@ impl CommanderService {
         self.sessions.values().cloned().collect()
     }
 
-    pub async fn update_commander_status(&mut self, session_id: &str, status: CommanderStatus) -> Result<(), String> {
+    pub async fn update_commander_status(
+        &mut self,
+        session_id: &str,
+        status: CommanderStatus,
+    ) -> Result<(), String> {
         if let Some(session) = self.sessions.get_mut(session_id) {
             session.status = status;
             Ok(())
@@ -322,8 +367,13 @@ impl CommanderService {
         }
     }
 
-    pub async fn get_commander_system_info(&self, session_id: &str) -> Result<serde_json::Value, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn get_commander_system_info(
+        &self,
+        session_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
         if let CommanderStatus::Connected = &session.status {
@@ -371,7 +421,9 @@ pub async fn execute_commander_command(
     command: CommanderCommand,
 ) -> Result<String, String> {
     let commander = state.lock().await;
-    commander.execute_commander_command(&session_id, command).await
+    commander
+        .execute_commander_command(&session_id, command)
+        .await
 }
 
 #[tauri::command]
@@ -381,7 +433,9 @@ pub async fn get_commander_command_result(
     command_id: String,
 ) -> Result<CommanderCommandResult, String> {
     let commander = state.lock().await;
-    commander.get_commander_command_result(&session_id, &command_id).await
+    commander
+        .get_commander_command_result(&session_id, &command_id)
+        .await
 }
 
 #[tauri::command]
@@ -392,7 +446,9 @@ pub async fn upload_commander_file(
     remote_path: String,
 ) -> Result<String, String> {
     let commander = state.lock().await;
-    commander.upload_commander_file(&session_id, local_path, remote_path).await
+    commander
+        .upload_commander_file(&session_id, local_path, remote_path)
+        .await
 }
 
 #[tauri::command]
@@ -403,7 +459,9 @@ pub async fn download_commander_file(
     local_path: String,
 ) -> Result<String, String> {
     let commander = state.lock().await;
-    commander.download_commander_file(&session_id, remote_path, local_path).await
+    commander
+        .download_commander_file(&session_id, remote_path, local_path)
+        .await
 }
 
 #[tauri::command]
@@ -413,7 +471,9 @@ pub async fn get_commander_file_transfer(
     transfer_id: String,
 ) -> Result<CommanderFileTransfer, String> {
     let commander = state.lock().await;
-    commander.get_commander_file_transfer(&session_id, &transfer_id).await
+    commander
+        .get_commander_file_transfer(&session_id, &transfer_id)
+        .await
 }
 
 #[tauri::command]
@@ -432,7 +492,9 @@ pub async fn get_commander_session(
     session_id: String,
 ) -> Result<CommanderSession, String> {
     let commander = state.lock().await;
-    commander.get_commander_session(&session_id).await
+    commander
+        .get_commander_session(&session_id)
+        .await
         .ok_or_else(|| format!("Commander session {} not found", session_id))
 }
 

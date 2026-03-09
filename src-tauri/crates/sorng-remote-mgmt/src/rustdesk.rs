@@ -1,13 +1,13 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use tokio::process::Command;
-use std::process::Stdio;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use tokio::task;
-use tokio::sync::mpsc;
+use std::collections::HashMap;
+use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio::task;
+use uuid::Uuid;
 
 pub type RustDeskServiceState = Arc<Mutex<RustDeskService>>;
 
@@ -89,7 +89,9 @@ impl RustDeskService {
         let session_id = Uuid::new_v4().to_string();
 
         // Check if RustDesk is installed
-        let rustdesk_path = self.rustdesk_path.as_ref()
+        let rustdesk_path = self
+            .rustdesk_path
+            .as_ref()
             .ok_or_else(|| "RustDesk binary not found. Please install RustDesk.".to_string())?;
 
         // Create channels for shutdown signaling
@@ -114,12 +116,8 @@ impl RustDeskService {
         let password = config.password.clone();
 
         let handle = task::spawn(async move {
-            Self::run_rustdesk_connection(
-                rustdesk_path_clone,
-                remote_id,
-                password,
-                shutdown_rx,
-            ).await;
+            Self::run_rustdesk_connection(rustdesk_path_clone, remote_id, password, shutdown_rx)
+                .await;
         });
 
         let connection = RustDeskConnection {
@@ -198,7 +196,7 @@ impl RustDeskService {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
                         println!("Shutting down RustDesk connection to {}", remote_id);
-                        let _ = child.kill();
+                        let _ = child.kill().await;
                     }
                     status = child.wait() => {
                         match status {
@@ -235,11 +233,16 @@ impl RustDeskService {
     }
 
     pub async fn get_rustdesk_session(&self, session_id: &str) -> Option<RustDeskSession> {
-        self.connections.get(session_id).map(|conn| conn.session.clone())
+        self.connections
+            .get(session_id)
+            .map(|conn| conn.session.clone())
     }
 
     pub async fn list_rustdesk_sessions(&self) -> Vec<RustDeskSession> {
-        self.connections.values().map(|conn| conn.session.clone()).collect()
+        self.connections
+            .values()
+            .map(|conn| conn.session.clone())
+            .collect()
     }
 
     pub async fn update_rustdesk_settings(
@@ -282,7 +285,10 @@ impl RustDeskService {
         // This would require more advanced integration with RustDesk
         // For now, we'll return a placeholder implementation
         if self.connections.contains_key(session_id) {
-            println!("Sending {} input to RustDesk session {}: {:?}", input_type, session_id, data);
+            println!(
+                "Sending {} input to RustDesk session {}: {:?}",
+                input_type, session_id, data
+            );
             Ok(())
         } else {
             Err(format!("RustDesk session {} not found", session_id))
@@ -304,13 +310,12 @@ impl RustDeskService {
     }
 
     pub async fn get_rustdesk_version(&self) -> Result<String, String> {
-        let rustdesk_path = self.rustdesk_path.as_ref()
+        let rustdesk_path = self
+            .rustdesk_path
+            .as_ref()
             .ok_or_else(|| "RustDesk binary not found".to_string())?;
 
-        match Command::new(rustdesk_path)
-            .arg("--version")
-            .output().await
-        {
+        match Command::new(rustdesk_path).arg("--version").output().await {
             Ok(output) if output.status.success() => {
                 Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
             }
@@ -344,7 +349,9 @@ pub async fn get_rustdesk_session(
     state: tauri::State<'_, RustDeskServiceState>,
 ) -> Result<RustDeskSession, String> {
     let service = state.lock().await;
-    service.get_rustdesk_session(&session_id).await
+    service
+        .get_rustdesk_session(&session_id)
+        .await
         .ok_or_else(|| format!("Session {} not found", session_id))
 }
 
@@ -367,14 +374,16 @@ pub async fn update_rustdesk_settings(
     state: tauri::State<'_, RustDeskServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_rustdesk_settings(
-        &session_id,
-        quality,
-        view_only,
-        enable_audio,
-        enable_clipboard,
-        enable_file_transfer,
-    ).await
+    service
+        .update_rustdesk_settings(
+            &session_id,
+            quality,
+            view_only,
+            enable_audio,
+            enable_clipboard,
+            enable_file_transfer,
+        )
+        .await
 }
 
 #[tauri::command]
@@ -385,7 +394,9 @@ pub async fn send_rustdesk_input(
     state: tauri::State<'_, RustDeskServiceState>,
 ) -> Result<(), String> {
     let service = state.lock().await;
-    service.send_rustdesk_input(&session_id, input_type, data).await
+    service
+        .send_rustdesk_input(&session_id, input_type, data)
+        .await
 }
 
 #[tauri::command]

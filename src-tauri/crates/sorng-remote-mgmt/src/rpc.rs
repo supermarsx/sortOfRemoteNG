@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type RpcServiceState = Arc<Mutex<RpcService>>;
 
@@ -27,9 +27,17 @@ pub enum RpcProtocol {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RpcAuthMethod {
     None,
-    Basic { username: String, password: String },
-    Bearer { token: String },
-    Custom { method: String, credentials: serde_json::Value },
+    Basic {
+        username: String,
+        password: String,
+    },
+    Bearer {
+        token: String,
+    },
+    Custom {
+        method: String,
+        credentials: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,8 +108,14 @@ impl RpcService {
         }
     }
 
-    pub async fn call_rpc_method(&self, session_id: &str, request: RpcRequest) -> Result<RpcResponse, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn call_rpc_method(
+        &self,
+        session_id: &str,
+        request: RpcRequest,
+    ) -> Result<RpcResponse, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("RPC session {} not found", session_id))?;
 
         // For now, simulate RPC method call
@@ -111,7 +125,11 @@ impl RpcService {
         // Mock response based on method
         let response = match request.method.as_str() {
             "system.listMethods" => RpcResponse {
-                result: Some(serde_json::json!(["method1", "method2", "system.listMethods"])),
+                result: Some(serde_json::json!([
+                    "method1",
+                    "method2",
+                    "system.listMethods"
+                ])),
                 error: None,
                 id: request.id,
             },
@@ -143,7 +161,9 @@ impl RpcService {
     }
 
     pub async fn discover_rpc_methods(&self, session_id: &str) -> Result<Vec<String>, String> {
-        let _session = self.sessions.get(session_id)
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("RPC session {} not found", session_id))?;
 
         // For now, return mock RPC methods
@@ -160,8 +180,14 @@ impl RpcService {
         Ok(methods)
     }
 
-    pub async fn batch_rpc_calls(&self, session_id: &str, requests: Vec<RpcRequest>) -> Result<Vec<RpcResponse>, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn batch_rpc_calls(
+        &self,
+        session_id: &str,
+        requests: Vec<RpcRequest>,
+    ) -> Result<Vec<RpcResponse>, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("RPC session {} not found", session_id))?;
 
         // For now, simulate batch RPC calls
@@ -211,7 +237,8 @@ pub async fn get_rpc_session(
     session_id: String,
 ) -> Result<RpcSession, String> {
     let rpc = state.lock().await;
-    rpc.get_rpc_session(&session_id).await
+    rpc.get_rpc_session(&session_id)
+        .await
         .ok_or_else(|| format!("RPC session {} not found", session_id))
 }
 
@@ -277,11 +304,16 @@ mod tests {
     fn rpc_auth_method_serde_roundtrip() {
         let variants: Vec<RpcAuthMethod> = vec![
             RpcAuthMethod::None,
-            RpcAuthMethod::Basic { username: "user".to_string(), password: "pass".to_string() },
-            RpcAuthMethod::Bearer { token: "tok123".to_string() },
-            RpcAuthMethod::Custom { 
-                method: "hmac".to_string(), 
-                credentials: serde_json::json!({"key": "value"}) 
+            RpcAuthMethod::Basic {
+                username: "user".to_string(),
+                password: "pass".to_string(),
+            },
+            RpcAuthMethod::Bearer {
+                token: "tok123".to_string(),
+            },
+            RpcAuthMethod::Custom {
+                method: "hmac".to_string(),
+                credentials: serde_json::json!({"key": "value"}),
             },
         ];
         for v in variants {
@@ -435,11 +467,17 @@ mod tests {
         let state = RpcService::new();
         let mut svc = state.lock().await;
         let id = svc.connect_rpc(test_config()).await.unwrap();
-        let resp = svc.call_rpc_method(&id, RpcRequest {
-            method: "system.listMethods".to_string(),
-            params: serde_json::json!(null),
-            id: Some(serde_json::json!(1)),
-        }).await.unwrap();
+        let resp = svc
+            .call_rpc_method(
+                &id,
+                RpcRequest {
+                    method: "system.listMethods".to_string(),
+                    params: serde_json::json!(null),
+                    id: Some(serde_json::json!(1)),
+                },
+            )
+            .await
+            .unwrap();
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert!(result.as_array().unwrap().len() > 0);
@@ -450,11 +488,17 @@ mod tests {
         let state = RpcService::new();
         let mut svc = state.lock().await;
         let id = svc.connect_rpc(test_config()).await.unwrap();
-        let resp = svc.call_rpc_method(&id, RpcRequest {
-            method: "system.describe".to_string(),
-            params: serde_json::json!(null),
-            id: Some(serde_json::json!(2)),
-        }).await.unwrap();
+        let resp = svc
+            .call_rpc_method(
+                &id,
+                RpcRequest {
+                    method: "system.describe".to_string(),
+                    params: serde_json::json!(null),
+                    id: Some(serde_json::json!(2)),
+                },
+            )
+            .await
+            .unwrap();
         let result = resp.result.unwrap();
         assert!(result["service"].is_string());
     }
@@ -464,11 +508,17 @@ mod tests {
         let state = RpcService::new();
         let mut svc = state.lock().await;
         let id = svc.connect_rpc(test_config()).await.unwrap();
-        let resp = svc.call_rpc_method(&id, RpcRequest {
-            method: "custom.method".to_string(),
-            params: serde_json::json!({}),
-            id: Some(serde_json::json!(3)),
-        }).await.unwrap();
+        let resp = svc
+            .call_rpc_method(
+                &id,
+                RpcRequest {
+                    method: "custom.method".to_string(),
+                    params: serde_json::json!({}),
+                    id: Some(serde_json::json!(3)),
+                },
+            )
+            .await
+            .unwrap();
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert_eq!(result["method"], "custom.method");
@@ -478,11 +528,16 @@ mod tests {
     async fn call_on_nonexistent_session_fails() {
         let state = RpcService::new();
         let svc = state.lock().await;
-        let result = svc.call_rpc_method("nonexistent", RpcRequest {
-            method: "test".to_string(),
-            params: serde_json::json!(null),
-            id: None,
-        }).await;
+        let result = svc
+            .call_rpc_method(
+                "nonexistent",
+                RpcRequest {
+                    method: "test".to_string(),
+                    params: serde_json::json!(null),
+                    id: None,
+                },
+            )
+            .await;
         assert!(result.is_err());
     }
 
@@ -514,9 +569,21 @@ mod tests {
         let mut svc = state.lock().await;
         let id = svc.connect_rpc(test_config()).await.unwrap();
         let requests = vec![
-            RpcRequest { method: "m1".to_string(), params: serde_json::json!(null), id: Some(serde_json::json!(1)) },
-            RpcRequest { method: "m2".to_string(), params: serde_json::json!(null), id: Some(serde_json::json!(2)) },
-            RpcRequest { method: "m3".to_string(), params: serde_json::json!(null), id: Some(serde_json::json!(3)) },
+            RpcRequest {
+                method: "m1".to_string(),
+                params: serde_json::json!(null),
+                id: Some(serde_json::json!(1)),
+            },
+            RpcRequest {
+                method: "m2".to_string(),
+                params: serde_json::json!(null),
+                id: Some(serde_json::json!(2)),
+            },
+            RpcRequest {
+                method: "m3".to_string(),
+                params: serde_json::json!(null),
+                id: Some(serde_json::json!(3)),
+            },
         ];
         let responses = svc.batch_rpc_calls(&id, requests).await.unwrap();
         assert_eq!(responses.len(), 3);
@@ -546,11 +613,17 @@ mod tests {
         let state = RpcService::new();
         let mut svc = state.lock().await;
         let id = svc.connect_rpc(test_config()).await.unwrap();
-        let resp = svc.call_rpc_method(&id, RpcRequest {
-            method: "test".to_string(),
-            params: serde_json::json!(null),
-            id: Some(serde_json::json!("my-id-42")),
-        }).await.unwrap();
+        let resp = svc
+            .call_rpc_method(
+                &id,
+                RpcRequest {
+                    method: "test".to_string(),
+                    params: serde_json::json!(null),
+                    id: Some(serde_json::json!("my-id-42")),
+                },
+            )
+            .await
+            .unwrap();
         assert_eq!(resp.id, Some(serde_json::json!("my-id-42")));
     }
 
@@ -559,11 +632,17 @@ mod tests {
         let state = RpcService::new();
         let mut svc = state.lock().await;
         let id = svc.connect_rpc(test_config()).await.unwrap();
-        let resp = svc.call_rpc_method(&id, RpcRequest {
-            method: "test".to_string(),
-            params: serde_json::json!(null),
-            id: None,
-        }).await.unwrap();
+        let resp = svc
+            .call_rpc_method(
+                &id,
+                RpcRequest {
+                    method: "test".to_string(),
+                    params: serde_json::json!(null),
+                    id: None,
+                },
+            )
+            .await
+            .unwrap();
         assert!(resp.id.is_none());
     }
 }

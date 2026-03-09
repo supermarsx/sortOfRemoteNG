@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type AgentServiceState = Arc<Mutex<AgentService>>;
 
@@ -122,7 +122,9 @@ impl AgentService {
     }
 
     pub async fn get_agent_metrics(&self, session_id: &str) -> Result<AgentMetrics, String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
         if let AgentStatus::Connected = &session.status {
@@ -147,8 +149,14 @@ impl AgentService {
         }
     }
 
-    pub async fn get_agent_logs(&self, session_id: &str, limit: Option<usize>) -> Result<Vec<AgentLogEntry>, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn get_agent_logs(
+        &self,
+        session_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<AgentLogEntry>, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
         if let AgentStatus::Connected = &session.status {
@@ -160,7 +168,14 @@ impl AgentService {
             for i in 0..limit.min(10) {
                 logs.push(AgentLogEntry {
                     timestamp: Utc::now() - chrono::Duration::minutes(i as i64),
-                    level: if i % 3 == 0 { "ERROR" } else if i % 2 == 0 { "WARN" } else { "INFO" }.to_string(),
+                    level: if i % 3 == 0 {
+                        "ERROR"
+                    } else if i % 2 == 0 {
+                        "WARN"
+                    } else {
+                        "INFO"
+                    }
+                    .to_string(),
                     message: format!("Sample log message {}", i + 1),
                     source: "agent".to_string(),
                     metadata: Some(serde_json::json!({"line": i + 1})),
@@ -173,8 +188,14 @@ impl AgentService {
         }
     }
 
-    pub async fn execute_agent_command(&self, session_id: &str, _command: AgentCommand) -> Result<String, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn execute_agent_command(
+        &self,
+        session_id: &str,
+        _command: AgentCommand,
+    ) -> Result<String, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
         if let AgentStatus::Connected = &session.status {
@@ -191,8 +212,14 @@ impl AgentService {
         }
     }
 
-    pub async fn get_agent_command_result(&self, session_id: &str, command_id: &str) -> Result<AgentCommandResult, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn get_agent_command_result(
+        &self,
+        session_id: &str,
+        command_id: &str,
+    ) -> Result<AgentCommandResult, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
         if let AgentStatus::Connected = &session.status {
@@ -220,7 +247,11 @@ impl AgentService {
         self.sessions.values().cloned().collect()
     }
 
-    pub async fn update_agent_status(&mut self, session_id: &str, status: AgentStatus) -> Result<(), String> {
+    pub async fn update_agent_status(
+        &mut self,
+        session_id: &str,
+        status: AgentStatus,
+    ) -> Result<(), String> {
         if let Some(session) = self.sessions.get_mut(session_id) {
             session.status = status;
             Ok(())
@@ -230,7 +261,9 @@ impl AgentService {
     }
 
     pub async fn get_agent_info(&self, session_id: &str) -> Result<serde_json::Value, String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 
         // For now, return mock agent info
@@ -302,7 +335,9 @@ pub async fn get_agent_command_result(
     command_id: String,
 ) -> Result<AgentCommandResult, String> {
     let agent = state.lock().await;
-    agent.get_agent_command_result(&session_id, &command_id).await
+    agent
+        .get_agent_command_result(&session_id, &command_id)
+        .await
 }
 
 #[tauri::command]
@@ -311,7 +346,9 @@ pub async fn get_agent_session(
     session_id: String,
 ) -> Result<AgentSession, String> {
     let agent = state.lock().await;
-    agent.get_agent_session(&session_id).await
+    agent
+        .get_agent_session(&session_id)
+        .await
         .ok_or_else(|| format!("Agent session {} not found", session_id))
 }
 

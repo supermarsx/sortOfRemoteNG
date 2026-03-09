@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::process::Command;
+use std::sync::Arc;
 use tauri::command;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type AnyDeskServiceState = Arc<Mutex<AnyDeskService>>;
 
@@ -33,7 +33,11 @@ impl AnyDeskService {
         }))
     }
 
-    pub async fn launch_anydesk(&mut self, anydesk_id: String, password: Option<String>) -> Result<String, String> {
+    pub async fn launch_anydesk(
+        &mut self,
+        anydesk_id: String,
+        password: Option<String>,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // Create session info
@@ -60,9 +64,7 @@ impl AnyDeskService {
         #[cfg(target_os = "windows")]
         {
             // On Windows, try to launch AnyDesk with the ID
-            let result = Command::new("anydesk.exe")
-                .arg(anydesk_id)
-                .spawn();
+            let result = Command::new("anydesk.exe").arg(anydesk_id).spawn();
 
             match result {
                 Ok(_) => {
@@ -84,9 +86,7 @@ impl AnyDeskService {
         {
             // On macOS, try to open AnyDesk with URL scheme
             let url = format!("anydesk://{}", anydesk_id);
-            let result = Command::new("open")
-                .arg(url)
-                .spawn();
+            let result = Command::new("open").arg(url).spawn();
 
             match result {
                 Ok(_) => {
@@ -105,9 +105,7 @@ impl AnyDeskService {
         #[cfg(target_os = "linux")]
         {
             // On Linux, try various methods
-            let result = Command::new("anydesk")
-                .arg(anydesk_id)
-                .spawn();
+            let result = Command::new("anydesk").arg(anydesk_id).spawn();
 
             match result {
                 Ok(_) => {
@@ -119,9 +117,7 @@ impl AnyDeskService {
                 Err(_) => {
                     // Try alternative method with URL scheme
                     let url = format!("anydesk://{}", anydesk_id);
-                    let result = Command::new("xdg-open")
-                        .arg(url)
-                        .spawn();
+                    let result = Command::new("xdg-open").arg(url).spawn();
 
                     match result {
                         Ok(_) => {
@@ -157,13 +153,15 @@ impl AnyDeskService {
     }
 
     pub async fn get_anydesk_sessions(&self) -> Vec<AnyDeskSession> {
-        self.connections.values()
+        self.connections
+            .values()
             .map(|conn| conn.session.clone())
             .collect()
     }
 
     pub fn get_anydesk_session(&self, session_id: &str) -> Option<AnyDeskSession> {
-        self.connections.get(session_id)
+        self.connections
+            .get(session_id)
             .map(|conn| conn.session.clone())
     }
 }
@@ -201,12 +199,12 @@ impl AnyDeskService {
 /// });
 /// ```
 pub async fn launch_anydesk(
-  anydesk_id: String,
-  password: Option<String>,
-  anydesk_service: tauri::State<'_, AnyDeskServiceState>,
+    anydesk_id: String,
+    password: Option<String>,
+    anydesk_service: tauri::State<'_, AnyDeskServiceState>,
 ) -> Result<String, String> {
-  let mut service = anydesk_service.lock().await;
-  service.launch_anydesk(anydesk_id, password).await
+    let mut service = anydesk_service.lock().await;
+    service.launch_anydesk(anydesk_id, password).await
 }
 
 #[command]
@@ -236,11 +234,11 @@ pub async fn launch_anydesk(
 /// });
 /// ```
 pub async fn disconnect_anydesk(
-  session_id: String,
-  anydesk_service: tauri::State<'_, AnyDeskServiceState>,
+    session_id: String,
+    anydesk_service: tauri::State<'_, AnyDeskServiceState>,
 ) -> Result<(), String> {
-  let mut service = anydesk_service.lock().await;
-  service.disconnect_anydesk(&session_id).await
+    let mut service = anydesk_service.lock().await;
+    service.disconnect_anydesk(&session_id).await
 }
 
 #[command]
@@ -263,11 +261,11 @@ pub async fn disconnect_anydesk(
 /// });
 /// ```
 pub async fn get_anydesk_session(
-  session_id: String,
-  anydesk_service: tauri::State<'_, AnyDeskServiceState>,
+    session_id: String,
+    anydesk_service: tauri::State<'_, AnyDeskServiceState>,
 ) -> Result<Option<AnyDeskSession>, String> {
-  let service = anydesk_service.lock().await;
-  Ok(service.get_anydesk_session(&session_id))
+    let service = anydesk_service.lock().await;
+    Ok(service.get_anydesk_session(&session_id))
 }
 
 #[command]
@@ -287,8 +285,8 @@ pub async fn get_anydesk_session(
 /// const sessions = await invoke('list_anydesk_sessions');
 /// ```
 pub async fn list_anydesk_sessions(
-  anydesk_service: tauri::State<'_, AnyDeskServiceState>,
+    anydesk_service: tauri::State<'_, AnyDeskServiceState>,
 ) -> Result<Vec<AnyDeskSession>, String> {
-  let service = anydesk_service.lock().await;
-  Ok(service.get_anydesk_sessions().await)
+    let service = anydesk_service.lock().await;
+    Ok(service.get_anydesk_sessions().await)
 }

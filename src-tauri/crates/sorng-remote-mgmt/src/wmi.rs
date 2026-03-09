@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type WmiServiceState = Arc<Mutex<WmiService>>;
 
@@ -54,7 +54,9 @@ impl WmiService {
             id: session_id.clone(),
             host: config.host.clone(),
             connected_at: Utc::now(),
-            namespace: config.namespace.unwrap_or_else(|| "root\\cimv2".to_string()),
+            namespace: config
+                .namespace
+                .unwrap_or_else(|| "root\\cimv2".to_string()),
             authenticated: config.username.is_some(),
         };
 
@@ -70,8 +72,14 @@ impl WmiService {
         }
     }
 
-    pub async fn execute_wmi_query(&self, session_id: &str, _query: String) -> Result<WmiQueryResult, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn execute_wmi_query(
+        &self,
+        session_id: &str,
+        _query: String,
+    ) -> Result<WmiQueryResult, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("WMI session {} not found", session_id))?;
 
         // For now, simulate WMI query execution
@@ -85,10 +93,22 @@ impl WmiService {
 
         // Mock result for demonstration
         let result = WmiQueryResult {
-            columns: vec!["Name".to_string(), "Status".to_string(), "Description".to_string()],
+            columns: vec![
+                "Name".to_string(),
+                "Status".to_string(),
+                "Description".to_string(),
+            ],
             rows: vec![
-                vec!["Service1".to_string(), "Running".to_string(), "Sample service".to_string()],
-                vec!["Service2".to_string(), "Stopped".to_string(), "Another service".to_string()],
+                vec![
+                    "Service1".to_string(),
+                    "Running".to_string(),
+                    "Sample service".to_string(),
+                ],
+                vec![
+                    "Service2".to_string(),
+                    "Stopped".to_string(),
+                    "Another service".to_string(),
+                ],
             ],
             execution_time_ms: execution_time,
         };
@@ -104,8 +124,14 @@ impl WmiService {
         self.sessions.values().cloned().collect()
     }
 
-    pub async fn get_wmi_classes(&self, session_id: &str, _namespace: Option<String>) -> Result<Vec<String>, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn get_wmi_classes(
+        &self,
+        session_id: &str,
+        _namespace: Option<String>,
+    ) -> Result<Vec<String>, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("WMI session {} not found", session_id))?;
 
         // For now, return mock WMI classes
@@ -123,7 +149,9 @@ impl WmiService {
     }
 
     pub async fn get_wmi_namespaces(&self, session_id: &str) -> Result<Vec<String>, String> {
-        let _session = self.sessions.get(session_id)
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("WMI session {} not found", session_id))?;
 
         // For now, return common WMI namespaces
@@ -172,7 +200,8 @@ pub async fn get_wmi_session(
     session_id: String,
 ) -> Result<WmiSession, String> {
     let wmi = state.lock().await;
-    wmi.get_wmi_session(&session_id).await
+    wmi.get_wmi_session(&session_id)
+        .await
         .ok_or_else(|| format!("WMI session {} not found", session_id))
 }
 

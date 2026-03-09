@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type MeshCentralServiceState = Arc<Mutex<MeshCentralService>>;
 
@@ -88,7 +88,10 @@ impl MeshCentralService {
         }))
     }
 
-    pub async fn connect_meshcentral(&mut self, config: MeshCentralConnectionConfig) -> Result<String, String> {
+    pub async fn connect_meshcentral(
+        &mut self,
+        config: MeshCentralConnectionConfig,
+    ) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
         // For now, simulate MeshCentral connection
@@ -120,8 +123,13 @@ impl MeshCentralService {
         }
     }
 
-    pub async fn get_meshcentral_devices(&self, session_id: &str) -> Result<Vec<MeshCentralDevice>, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn get_meshcentral_devices(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<MeshCentralDevice>, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
 
         // For now, return mock devices
@@ -154,8 +162,13 @@ impl MeshCentralService {
         Ok(devices)
     }
 
-    pub async fn get_meshcentral_groups(&self, session_id: &str) -> Result<Vec<MeshCentralGroup>, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn get_meshcentral_groups(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<MeshCentralGroup>, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
 
         // For now, return mock groups
@@ -179,8 +192,14 @@ impl MeshCentralService {
         Ok(groups)
     }
 
-    pub async fn execute_meshcentral_command(&self, session_id: &str, _command: MeshCentralCommand) -> Result<String, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn execute_meshcentral_command(
+        &self,
+        session_id: &str,
+        _command: MeshCentralCommand,
+    ) -> Result<String, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
 
         // For now, simulate command execution
@@ -193,8 +212,14 @@ impl MeshCentralService {
         Ok(command_id)
     }
 
-    pub async fn get_meshcentral_command_result(&self, session_id: &str, command_id: &str) -> Result<MeshCentralCommandResult, String> {
-        let _session = self.sessions.get(session_id)
+    pub async fn get_meshcentral_command_result(
+        &self,
+        session_id: &str,
+        command_id: &str,
+    ) -> Result<MeshCentralCommandResult, String> {
+        let _session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
 
         // For now, return mock command result
@@ -219,11 +244,18 @@ impl MeshCentralService {
         self.sessions.values().cloned().collect()
     }
 
-    pub async fn get_meshcentral_server_info(&self, session_id: &str) -> Result<MeshCentralServerInfo, String> {
-        let session = self.sessions.get(session_id)
+    pub async fn get_meshcentral_server_info(
+        &self,
+        session_id: &str,
+    ) -> Result<MeshCentralServerInfo, String> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
 
-        session.server_info.clone()
+        session
+            .server_info
+            .clone()
             .ok_or_else(|| "Server info not available".to_string())
     }
 }
@@ -271,7 +303,9 @@ pub async fn execute_meshcentral_command(
     command: MeshCentralCommand,
 ) -> Result<String, String> {
     let meshcentral = state.lock().await;
-    meshcentral.execute_meshcentral_command(&session_id, command).await
+    meshcentral
+        .execute_meshcentral_command(&session_id, command)
+        .await
 }
 
 #[tauri::command]
@@ -281,7 +315,9 @@ pub async fn get_meshcentral_command_result(
     command_id: String,
 ) -> Result<MeshCentralCommandResult, String> {
     let meshcentral = state.lock().await;
-    meshcentral.get_meshcentral_command_result(&session_id, &command_id).await
+    meshcentral
+        .get_meshcentral_command_result(&session_id, &command_id)
+        .await
 }
 
 #[tauri::command]
@@ -290,7 +326,9 @@ pub async fn get_meshcentral_session(
     session_id: String,
 ) -> Result<MeshCentralSession, String> {
     let meshcentral = state.lock().await;
-    meshcentral.get_meshcentral_session(&session_id).await
+    meshcentral
+        .get_meshcentral_session(&session_id)
+        .await
         .ok_or_else(|| format!("MeshCentral session {} not found", session_id))
 }
 
