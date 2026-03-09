@@ -1,24 +1,27 @@
 use super::*;
 
 pub(crate) struct ApiHandles {
-    pub(crate) agent_service: agent::AgentService,
-    pub(crate) aws_service: aws::AwsService,
-    pub(crate) cloudflare_service: cloudflare::CloudflareService,
-    pub(crate) commander_service: commander::CommanderService,
-    pub(crate) db_service: DbService,
-    pub(crate) ftp_service: FtpService,
-    pub(crate) meshcentral_service: meshcentral::MeshCentralService,
-    pub(crate) network_service: NetworkService,
-    pub(crate) qr_service: QrService,
-    pub(crate) rpc_service: rpc::RpcService,
-    pub(crate) rustdesk_service: RustDeskService,
-    pub(crate) security_service: SecurityService,
-    pub(crate) vercel_service: vercel::VercelService,
-    pub(crate) wmi_service: wmi::WmiService,
-    pub(crate) wol_service: WolService,
+    pub(crate) agent_service: Arc<Mutex<agent::AgentService>>,
+    pub(crate) aws_service: Arc<Mutex<aws::AwsService>>,
+    pub(crate) cloudflare_service: Arc<Mutex<cloudflare::CloudflareService>>,
+    pub(crate) commander_service: Arc<Mutex<commander::CommanderService>>,
+    pub(crate) db_service: Arc<Mutex<DbService>>,
+    pub(crate) ftp_service: Arc<Mutex<FtpService>>,
+    pub(crate) meshcentral_service: Arc<Mutex<meshcentral::MeshCentralService>>,
+    pub(crate) network_service: Arc<Mutex<NetworkService>>,
+    pub(crate) qr_service: Arc<Mutex<QrService>>,
+    pub(crate) rpc_service: Arc<Mutex<rpc::RpcService>>,
+    pub(crate) rustdesk_service: Arc<Mutex<RustDeskService>>,
+    pub(crate) security_service: Arc<Mutex<SecurityService>>,
+    pub(crate) vercel_service: Arc<Mutex<vercel::VercelService>>,
+    pub(crate) wmi_service: Arc<Mutex<wmi::WmiService>>,
+    pub(crate) wol_service: Arc<Mutex<WolService>>,
 }
 
-pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, ssh_service: SshService) -> ApiHandles {
+pub(crate) fn register(
+    app: &mut tauri::App<tauri::Wry>,
+    ssh_service: Arc<Mutex<SshService>>,
+) -> ApiHandles {
     #[cfg(feature = "rdp")]
     {
         let rdp_service = RdpService::new();
@@ -49,7 +52,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, ssh_service: SshService
     let wol_service = WolService::new();
     app.manage(wol_service.clone());
 
-    let script_service = ScriptService::new(ssh_service);
+    let script_service = ScriptService::new(ssh_service.clone());
     app.manage(script_service);
 
     let openvpn_service = OpenVPNService::new();
