@@ -1,5 +1,5 @@
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Categorized error kinds for Kafka operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,15 +59,24 @@ impl KafkaError {
     }
 
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(KafkaErrorKind::SessionNotFound, format!("Session not found: {}", id))
+        Self::new(
+            KafkaErrorKind::SessionNotFound,
+            format!("Session not found: {}", id),
+        )
     }
 
     pub fn topic_not_found(name: &str) -> Self {
-        Self::new(KafkaErrorKind::TopicNotFound, format!("Topic not found: {}", name))
+        Self::new(
+            KafkaErrorKind::TopicNotFound,
+            format!("Topic not found: {}", name),
+        )
     }
 
     pub fn group_not_found(id: &str) -> Self {
-        Self::new(KafkaErrorKind::GroupNotFound, format!("Group not found: {}", id))
+        Self::new(
+            KafkaErrorKind::GroupNotFound,
+            format!("Group not found: {}", id),
+        )
     }
 
     pub fn broker_error(msg: impl Into<String>) -> Self {

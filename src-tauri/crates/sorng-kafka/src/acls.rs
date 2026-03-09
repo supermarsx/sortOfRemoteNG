@@ -7,10 +7,7 @@ use crate::types::*;
 /// Note: rdkafka 0.36 does not expose ACL admin APIs.  The KafkaAdminClient
 /// stub logs a warning and returns Ok(()) until a future rdkafka release adds
 /// support.
-pub async fn create_acls(
-    admin: &KafkaAdminClient,
-    entries: &[AclEntry],
-) -> KafkaResult<()> {
+pub async fn create_acls(admin: &KafkaAdminClient, entries: &[AclEntry]) -> KafkaResult<()> {
     if entries.is_empty() {
         return Ok(());
     }
@@ -35,10 +32,7 @@ pub async fn delete_acls(
 }
 
 /// List all ACL entries matching the given filter.
-pub async fn list_acls(
-    admin: &KafkaAdminClient,
-    filter: &AclFilter,
-) -> KafkaResult<Vec<AclEntry>> {
+pub async fn list_acls(admin: &KafkaAdminClient, filter: &AclFilter) -> KafkaResult<Vec<AclEntry>> {
     admin.describe_acls(filter).await
 }
 

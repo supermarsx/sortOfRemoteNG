@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tauri::State;
 
-use crate::error::{KafkaError, KafkaResult};
+use crate::error::KafkaError;
 use crate::service::KafkaServiceState;
 use crate::types::*;
 
@@ -29,9 +29,7 @@ pub async fn kafka_disconnect(
 }
 
 #[tauri::command]
-pub async fn kafka_test_connection(
-    config: KafkaConnectionConfig,
-) -> Result<bool, KafkaError> {
+pub async fn kafka_test_connection(config: KafkaConnectionConfig) -> Result<bool, KafkaError> {
     crate::service::KafkaService::test_connection(&config)?;
     Ok(true)
 }
@@ -85,7 +83,8 @@ pub async fn kafka_update_broker_config(
     configs: HashMap<String, String>,
 ) -> Result<(), KafkaError> {
     let svc = state.lock().await;
-    svc.update_broker_config(&session_id, broker_id, &configs).await
+    svc.update_broker_config(&session_id, broker_id, &configs)
+        .await
 }
 
 #[tauri::command]

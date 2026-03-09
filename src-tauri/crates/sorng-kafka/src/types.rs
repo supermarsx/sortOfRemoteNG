@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 // ---------------------------------------------------------------------------
 // Connection & Security
@@ -9,7 +9,9 @@ use chrono::{DateTime, Utc};
 /// Security protocol used to communicate with Kafka brokers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum SecurityProtocol {
+    #[default]
     Plaintext,
     Ssl,
     SaslPlaintext,
@@ -24,12 +26,6 @@ impl SecurityProtocol {
             SecurityProtocol::SaslPlaintext => "sasl_plaintext",
             SecurityProtocol::SaslSsl => "sasl_ssl",
         }
-    }
-}
-
-impl Default for SecurityProtocol {
-    fn default() -> Self {
-        SecurityProtocol::Plaintext
     }
 }
 
@@ -206,19 +202,15 @@ pub struct TopicConfig {
 /// The originating source of a configuration entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Default)]
 pub enum ConfigSource {
     DynamicTopicConfig,
     DynamicBrokerConfig,
     DynamicDefaultBrokerConfig,
     StaticBrokerConfig,
     DefaultConfig,
+    #[default]
     Unknown,
-}
-
-impl Default for ConfigSource {
-    fn default() -> Self {
-        ConfigSource::Unknown
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -245,19 +237,15 @@ pub struct PartitionInfo {
 /// State of a consumer group.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
+#[derive(Default)]
 pub enum GroupState {
     Stable,
     PreparingRebalance,
     CompletingRebalance,
     Empty,
     Dead,
+    #[default]
     Unknown,
-}
-
-impl Default for GroupState {
-    fn default() -> Self {
-        GroupState::Unknown
-    }
 }
 
 impl GroupState {
@@ -493,7 +481,7 @@ pub struct AclEntry {
 }
 
 /// Filter structure for querying/deleting ACLs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AclFilter {
     pub resource_type: Option<ResourceType>,
     pub resource_name: Option<String>,
@@ -504,20 +492,6 @@ pub struct AclFilter {
     pub permission_type: Option<AclPermissionType>,
 }
 
-impl Default for AclFilter {
-    fn default() -> Self {
-        Self {
-            resource_type: None,
-            resource_name: None,
-            pattern_type: None,
-            principal: None,
-            host: None,
-            operation: None,
-            permission_type: None,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Schema Registry
 // ---------------------------------------------------------------------------
@@ -525,22 +499,20 @@ impl Default for AclFilter {
 /// Schema type in the Confluent Schema Registry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
+#[derive(Default)]
 pub enum SchemaType {
+    #[default]
     Avro,
     Json,
     Protobuf,
 }
 
-impl Default for SchemaType {
-    fn default() -> Self {
-        SchemaType::Avro
-    }
-}
-
 /// Compatibility level for schemas.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Default)]
 pub enum CompatibilityLevel {
+    #[default]
     Backward,
     BackwardTransitive,
     Forward,
@@ -548,12 +520,6 @@ pub enum CompatibilityLevel {
     Full,
     FullTransitive,
     None,
-}
-
-impl Default for CompatibilityLevel {
-    fn default() -> Self {
-        CompatibilityLevel::Backward
-    }
 }
 
 /// Reference to another schema (used for Protobuf imports, etc.).
@@ -591,18 +557,14 @@ pub enum ConnectorType {
 /// Connector runtime state.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
+#[derive(Default)]
 pub enum ConnectorState {
+    #[default]
     Running,
     Paused,
     Unassigned,
     Failed,
     Restarting,
-}
-
-impl Default for ConnectorState {
-    fn default() -> Self {
-        ConnectorState::Running
-    }
 }
 
 impl ConnectorState {

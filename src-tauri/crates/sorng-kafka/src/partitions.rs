@@ -41,10 +41,7 @@ pub fn get_partition_info(
 }
 
 /// List all partitions for a topic.
-pub fn list_partitions(
-    admin: &KafkaAdminClient,
-    topic: &str,
-) -> KafkaResult<Vec<PartitionInfo>> {
+pub fn list_partitions(admin: &KafkaAdminClient, topic: &str) -> KafkaResult<Vec<PartitionInfo>> {
     let metadata = admin.get_metadata(Some(topic))?;
     let topic_meta = metadata
         .topics()
@@ -105,7 +102,7 @@ pub fn get_partition_replicas(
 /// Trigger preferred leader election for the given topic-partition pairs.
 /// Each tuple is (topic, partition_id).
 pub async fn preferred_leader_election(
-    admin: &KafkaAdminClient,
+    _admin: &KafkaAdminClient,
     _topic_partitions: &[(String, i32)],
 ) -> KafkaResult<()> {
     // rdkafka doesn't expose ElectLeaders API directly.
@@ -134,7 +131,9 @@ pub fn get_under_replicated_partitions(
 }
 
 /// Get all offline partitions across all topics.
-pub fn get_offline_partitions(admin: &KafkaAdminClient) -> KafkaResult<Vec<(String, PartitionInfo)>> {
+pub fn get_offline_partitions(
+    admin: &KafkaAdminClient,
+) -> KafkaResult<Vec<(String, PartitionInfo)>> {
     let metadata = admin.get_metadata(None)?;
     let mut offline = Vec::new();
 

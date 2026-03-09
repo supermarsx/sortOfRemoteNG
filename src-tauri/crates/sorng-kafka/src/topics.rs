@@ -137,7 +137,10 @@ pub async fn delete_topic(admin: &KafkaAdminClient, name: &str) -> KafkaResult<(
 }
 
 /// Get configuration entries for a topic.
-pub async fn get_topic_config(admin: &KafkaAdminClient, name: &str) -> KafkaResult<Vec<TopicConfig>> {
+pub async fn get_topic_config(
+    admin: &KafkaAdminClient,
+    name: &str,
+) -> KafkaResult<Vec<TopicConfig>> {
     let _topic = get_topic(admin, name).await?;
     // describe_configs is async but we call the blocking version here
     // In the service layer the async version will be used.
@@ -162,7 +165,9 @@ pub async fn set_topic_config(
 ) -> KafkaResult<()> {
     let mut configs = HashMap::new();
     configs.insert(key.to_string(), value.to_string());
-    admin.alter_configs(&ResourceType::Topic, name, &configs).await
+    admin
+        .alter_configs(&ResourceType::Topic, name, &configs)
+        .await
 }
 
 /// Get per-partition offsets (earliest and latest) for a topic.
@@ -225,11 +230,7 @@ pub async fn get_topic_size(
 // ---------------------------------------------------------------------------
 
 /// Set `retention.ms` for a topic.
-pub async fn set_retention_ms(
-    admin: &KafkaAdminClient,
-    name: &str,
-    ms: i64,
-) -> KafkaResult<()> {
+pub async fn set_retention_ms(admin: &KafkaAdminClient, name: &str, ms: i64) -> KafkaResult<()> {
     set_topic_config(admin, name, "retention.ms", &ms.to_string()).await
 }
 
@@ -288,10 +289,6 @@ pub async fn set_segment_bytes(
 }
 
 /// Set `segment.ms` for a topic.
-pub async fn set_segment_ms(
-    admin: &KafkaAdminClient,
-    name: &str,
-    ms: i64,
-) -> KafkaResult<()> {
+pub async fn set_segment_ms(admin: &KafkaAdminClient, name: &str, ms: i64) -> KafkaResult<()> {
     set_topic_config(admin, name, "segment.ms", &ms.to_string()).await
 }

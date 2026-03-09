@@ -1,7 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
-
-use rdkafka::admin::AdminOptions;
 
 use crate::admin::KafkaAdminClient;
 use crate::error::{KafkaError, KafkaResult};
@@ -83,7 +80,7 @@ pub async fn describe_quotas(
 /// - `consumer_byte_rate`: Maximum bytes/sec the consumer can fetch
 /// - `request_percentage`: Maximum percentage of request handler time
 pub async fn alter_user_quotas(
-    admin: &KafkaAdminClient,
+    _admin: &KafkaAdminClient,
     username: &str,
     quotas: &HashMap<String, f64>,
 ) -> KafkaResult<()> {
@@ -109,11 +106,7 @@ pub async fn alter_user_quotas(
 
     // Use alter_configs on the broker with user-quota scoped configs
     // In practice, this requires the AlterClientQuotas API
-    log::info!(
-        "Setting quotas for user '{}': {:?}",
-        username,
-        config_map
-    );
+    log::info!("Setting quotas for user '{}': {:?}", username, config_map);
 
     // Store quota info for retrieval
     Ok(())
@@ -121,7 +114,7 @@ pub async fn alter_user_quotas(
 
 /// Alter quotas for a client-id entity.
 pub async fn alter_client_quotas(
-    admin: &KafkaAdminClient,
+    _admin: &KafkaAdminClient,
     client_id: &str,
     quotas: &HashMap<String, f64>,
 ) -> KafkaResult<()> {
@@ -154,7 +147,7 @@ pub async fn alter_client_quotas(
 
 /// Alter quotas for an IP entity.
 pub async fn alter_ip_quotas(
-    admin: &KafkaAdminClient,
+    _admin: &KafkaAdminClient,
     ip: &str,
     quotas: &HashMap<String, f64>,
 ) -> KafkaResult<()> {
@@ -191,7 +184,7 @@ pub async fn alter_quotas(
 
 /// Remove all quotas for an entity.
 pub async fn remove_quotas(
-    admin: &KafkaAdminClient,
+    _admin: &KafkaAdminClient,
     entity_type: &QuotaEntityType,
     entity_name: &str,
 ) -> KafkaResult<()> {

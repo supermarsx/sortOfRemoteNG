@@ -87,9 +87,7 @@ pub fn list_broker_ids(admin: &KafkaAdminClient) -> KafkaResult<Vec<i32>> {
 }
 
 /// Get the number of partitions led by each broker.
-pub fn get_partition_leaders(
-    admin: &KafkaAdminClient,
-) -> KafkaResult<HashMap<i32, i32>> {
+pub fn get_partition_leaders(admin: &KafkaAdminClient) -> KafkaResult<HashMap<i32, i32>> {
     let metadata = admin.get_metadata(None)?;
     let mut leader_counts: HashMap<i32, i32> = HashMap::new();
 
@@ -111,9 +109,7 @@ pub fn get_partition_leaders(
 }
 
 /// Get the number of replicas hosted on each broker.
-pub fn get_replica_counts(
-    admin: &KafkaAdminClient,
-) -> KafkaResult<HashMap<i32, i32>> {
+pub fn get_replica_counts(admin: &KafkaAdminClient) -> KafkaResult<HashMap<i32, i32>> {
     let metadata = admin.get_metadata(None)?;
     let mut replica_counts: HashMap<i32, i32> = HashMap::new();
 
@@ -203,10 +199,7 @@ pub struct BrokerWithLoad {
 }
 
 /// Get topics that have partitions led by a specific broker.
-pub fn get_broker_topics(
-    admin: &KafkaAdminClient,
-    broker_id: i32,
-) -> KafkaResult<Vec<String>> {
+pub fn get_broker_topics(admin: &KafkaAdminClient, broker_id: i32) -> KafkaResult<Vec<String>> {
     let metadata = admin.get_metadata(None)?;
     let mut topics = Vec::new();
 

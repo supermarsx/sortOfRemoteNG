@@ -14,20 +14,20 @@
 //! - **Partition reassignment** — replica moves, rebalancing, replication factor changes
 //! - **Metrics** — cluster, broker, topic, and consumer group metrics
 
-pub mod types;
-pub mod error;
-pub mod admin;
-pub mod topics;
-pub mod partitions;
-pub mod consumer_groups;
-pub mod producer;
-pub mod consumer;
 pub mod acls;
-pub mod schema_registry;
+pub mod admin;
+pub mod broker;
+pub mod commands;
 pub mod connect;
+pub mod consumer;
+pub mod consumer_groups;
+pub mod error;
+pub mod metrics;
+pub mod partitions;
+pub mod producer;
 pub mod quotas;
 pub mod reassignment;
-pub mod metrics;
-pub mod broker;
+pub mod schema_registry;
 pub mod service;
-pub mod commands;
+pub mod topics;
+pub mod types;

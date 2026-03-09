@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
-use rdkafka::ClientConfig;
 
 use crate::admin::KafkaAdminClient;
 use crate::error::{KafkaError, KafkaResult};
@@ -11,7 +9,7 @@ use crate::types::*;
 
 /// List all consumer groups in the cluster.
 pub fn list_consumer_groups(admin: &KafkaAdminClient) -> KafkaResult<Vec<ConsumerGroupInfo>> {
-    let metadata = admin.get_metadata(None)?;
+    let _metadata = admin.get_metadata(None)?;
     let group_list = admin
         .inner()
         .inner()
@@ -168,8 +166,8 @@ pub fn get_consumer_group_offsets(
     group_id: &str,
 ) -> KafkaResult<Vec<ConsumerGroupOffset>> {
     // Create a temporary consumer with this group.id to fetch committed offsets
-    let metadata = admin.get_metadata(None)?;
-    let config = admin.inner().inner();
+    let _metadata = admin.get_metadata(None)?;
+    let _config = admin.inner().inner();
 
     // We need to iterate all topics assigned to the group and check offsets.
     // A simpler approach: describe the group to find assigned topics, then query.
@@ -253,7 +251,7 @@ pub async fn reset_consumer_group_offsets(
                 let (_, hi) = admin.list_offsets(topic, pid).unwrap_or((0, 0));
                 Offset::Offset(hi)
             }
-            OffsetResetStrategy::Timestamp(ts) => {
+            OffsetResetStrategy::Timestamp(_ts) => {
                 // Timestamp-based seek requires OffsetsForTimes which is available
                 // through the consumer API. Using latest as fallback.
                 let (_, hi) = admin.list_offsets(topic, pid).unwrap_or((0, 0));
@@ -279,10 +277,7 @@ pub async fn reset_consumer_group_offsets(
 }
 
 /// Delete a consumer group.
-pub async fn delete_consumer_group(
-    admin: &KafkaAdminClient,
-    group_id: &str,
-) -> KafkaResult<()> {
+pub async fn delete_consumer_group(admin: &KafkaAdminClient, group_id: &str) -> KafkaResult<()> {
     // Verify group exists and is inactive
     let group = describe_consumer_group(admin, group_id)?;
     if group.state == GroupState::Stable {
@@ -301,7 +296,7 @@ pub async fn delete_consumer_group(
 
 /// Delete committed offsets for specific topic-partitions in a group.
 pub async fn delete_consumer_group_offsets(
-    admin: &KafkaAdminClient,
+    _admin: &KafkaAdminClient,
     group_id: &str,
     topic: &str,
     partitions: &[i32],
@@ -329,15 +324,11 @@ pub fn list_group_members(
 
 /// Remove a specific member from a consumer group (force leave).
 pub async fn remove_group_member(
-    admin: &KafkaAdminClient,
+    _admin: &KafkaAdminClient,
     group_id: &str,
     member_id: &str,
 ) -> KafkaResult<()> {
-    log::info!(
-        "Removing member '{}' from group '{}'",
-        member_id,
-        group_id
-    );
+    log::info!("Removing member '{}' from group '{}'", member_id, group_id);
     // RemoveMembersFromConsumerGroup is not exposed by rdkafka directly.
     Err(KafkaError::admin_error(
         "RemoveMembersFromConsumerGroup API is not directly available in rdkafka",

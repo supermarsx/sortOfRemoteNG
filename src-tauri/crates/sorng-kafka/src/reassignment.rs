@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::time::Duration;
-
 use crate::admin::KafkaAdminClient;
 use crate::error::{KafkaError, KafkaResult};
 use crate::types::*;
@@ -45,7 +42,11 @@ pub async fn start_reassignment(
             .ok_or_else(|| KafkaError::topic_not_found(&proposal.topic))?;
 
         // Verify partition exists
-        if topic.partitions().iter().all(|p| p.id() != proposal.partition) {
+        if topic
+            .partitions()
+            .iter()
+            .all(|p| p.id() != proposal.partition)
+        {
             return Err(KafkaError::partition_error(format!(
                 "Partition {} does not exist in topic '{}'",
                 proposal.partition, proposal.topic
@@ -67,10 +68,7 @@ pub async fn start_reassignment(
 
     // rdkafka doesn't expose AlterPartitionReassignments directly.
     // In a real implementation, this would use the Kafka protocol.
-    log::info!(
-        "Starting reassignment for {} partition(s)",
-        proposals.len()
-    );
+    log::info!("Starting reassignment for {} partition(s)", proposals.len());
 
     for proposal in proposals {
         log::info!(
@@ -110,9 +108,7 @@ pub async fn cancel_reassignment(
 }
 
 /// List all in-progress partition reassignments.
-pub async fn list_reassignments(
-    admin: &KafkaAdminClient,
-) -> KafkaResult<Vec<ReassignmentInfo>> {
+pub async fn list_reassignments(admin: &KafkaAdminClient) -> KafkaResult<Vec<ReassignmentInfo>> {
     // Query metadata to detect partitions that may be in reassignment
     // (where adding_replicas or removing_replicas are non-empty).
     // Since rdkafka doesn't expose ListPartitionReassignments directly,

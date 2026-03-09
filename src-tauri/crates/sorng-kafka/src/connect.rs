@@ -14,6 +14,7 @@ pub struct KafkaConnectClient {
 }
 
 /// Status response from the Connect REST API.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ConnectorStatusResponse {
     name: String,
@@ -39,6 +40,7 @@ struct TaskStatusDetail {
 }
 
 /// Full connector details from GET /connectors/{name}.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ConnectorDetailResponse {
     name: String,
@@ -48,6 +50,7 @@ struct ConnectorDetailResponse {
     type_name: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TaskIdResponse {
     connector: String,
@@ -79,12 +82,14 @@ struct ValidationResponse {
     configs: Vec<ValidationConfigEntry>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ValidationConfigEntry {
     definition: ValidationConfigDefinition,
     value: ValidationConfigValue,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ValidationConfigDefinition {
     name: String,
@@ -224,7 +229,10 @@ impl KafkaConnectClient {
         config: HashMap<String, String>,
     ) -> KafkaResult<ConnectorInfo> {
         let mut body = HashMap::new();
-        body.insert("name".to_string(), serde_json::Value::String(name.to_string()));
+        body.insert(
+            "name".to_string(),
+            serde_json::Value::String(name.to_string()),
+        );
         body.insert(
             "config".to_string(),
             serde_json::to_value(&config)
@@ -369,10 +377,8 @@ impl KafkaConnectClient {
     }
 
     /// Get the status of a connector and its tasks.
-    pub async fn get_connector_status(
-        &self,
-        name: &str,
-    ) -> KafkaResult<ConnectorStatusResponse> {
+    #[allow(private_interfaces)]
+    pub async fn get_connector_status(&self, name: &str) -> KafkaResult<ConnectorStatusResponse> {
         let path = format!("/connectors/{}/status", name);
         let resp = self
             .request(reqwest::Method::GET, &path)
@@ -453,10 +459,13 @@ impl KafkaConnectClient {
         Ok(plugins
             .into_iter()
             .map(|p| {
-                let type_name = p.type_name.as_deref().map(|t| match t.to_lowercase().as_str() {
-                    "source" => ConnectorType::Source,
-                    _ => ConnectorType::Sink,
-                });
+                let type_name = p
+                    .type_name
+                    .as_deref()
+                    .map(|t| match t.to_lowercase().as_str() {
+                        "source" => ConnectorType::Source,
+                        _ => ConnectorType::Sink,
+                    });
                 ConnectorPlugin {
                     class_name: p.class,
                     type_name,

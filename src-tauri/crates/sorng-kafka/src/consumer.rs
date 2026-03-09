@@ -4,7 +4,6 @@ use std::time::Duration;
 use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
 use rdkafka::message::{BorrowedMessage, Headers, Message};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
-use rdkafka::ClientConfig;
 
 use crate::error::{KafkaError, KafkaResult};
 use crate::types::*;
@@ -29,7 +28,10 @@ impl KafkaConsumerClient {
         let mut client_config = config.to_client_config();
         client_config
             .set("group.id", group_id)
-            .set("enable.auto.commit", if auto_commit { "true" } else { "false" })
+            .set(
+                "enable.auto.commit",
+                if auto_commit { "true" } else { "false" },
+            )
             .set("auto.offset.reset", "earliest")
             .set("session.timeout.ms", "30000")
             .set("max.poll.interval.ms", "300000")
@@ -153,14 +155,14 @@ impl KafkaConsumerClient {
     }
 
     /// Seek to a specific offset on a topic-partition.
-    pub fn seek(
-        &self,
-        topic: &str,
-        partition: i32,
-        offset: i64,
-    ) -> KafkaResult<()> {
+    pub fn seek(&self, topic: &str, partition: i32, offset: i64) -> KafkaResult<()> {
         self.consumer
-            .seek(topic, partition, Offset::Offset(offset), Duration::from_secs(10))
+            .seek(
+                topic,
+                partition,
+                Offset::Offset(offset),
+                Duration::from_secs(10),
+            )
             .map_err(|e| KafkaError::consumer_error(format!("Seek failed: {}", e)))
     }
 
@@ -305,7 +307,9 @@ impl KafkaConsumerClient {
     /// Convert a borrowed rdkafka message into our ConsumedMessage type.
     fn borrowed_to_consumed(&self, msg: &BorrowedMessage<'_>) -> ConsumedMessage {
         let key = msg.key().map(|k| String::from_utf8_lossy(k).to_string());
-        let value = msg.payload().map(|v| String::from_utf8_lossy(v).to_string());
+        let value = msg
+            .payload()
+            .map(|v| String::from_utf8_lossy(v).to_string());
 
         let mut headers = Vec::new();
         if let Some(h) = msg.headers() {

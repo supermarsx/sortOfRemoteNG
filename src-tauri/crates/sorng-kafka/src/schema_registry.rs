@@ -20,6 +20,7 @@ struct RegisterSchemaResponse {
 }
 
 /// Response from getting schema by ID.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SchemaByIdResponse {
     schema: String,
@@ -155,16 +156,8 @@ impl SchemaRegistryClient {
     }
 
     /// Get schema info for a specific subject version.
-    pub async fn get_schema(
-        &self,
-        subject: &str,
-        version: i32,
-    ) -> KafkaResult<SchemaInfo> {
-        let path = format!(
-            "/subjects/{}/versions/{}",
-            encode_subject(subject),
-            version
-        );
+    pub async fn get_schema(&self, subject: &str, version: i32) -> KafkaResult<SchemaInfo> {
+        let path = format!("/subjects/{}/versions/{}", encode_subject(subject), version);
         let resp = self
             .request(reqwest::Method::GET, &path)
             .send()
@@ -323,16 +316,8 @@ impl SchemaRegistryClient {
     }
 
     /// Delete a specific version of a subject.
-    pub async fn delete_schema_version(
-        &self,
-        subject: &str,
-        version: i32,
-    ) -> KafkaResult<i32> {
-        let path = format!(
-            "/subjects/{}/versions/{}",
-            encode_subject(subject),
-            version
-        );
+    pub async fn delete_schema_version(&self, subject: &str, version: i32) -> KafkaResult<i32> {
+        let path = format!("/subjects/{}/versions/{}", encode_subject(subject), version);
         let resp = self
             .request(reqwest::Method::DELETE, &path)
             .send()
@@ -423,10 +408,7 @@ impl SchemaRegistryClient {
     }
 
     /// Get the compatibility configuration for a specific subject.
-    pub async fn get_subject_config(
-        &self,
-        subject: &str,
-    ) -> KafkaResult<CompatibilityLevel> {
+    pub async fn get_subject_config(&self, subject: &str) -> KafkaResult<CompatibilityLevel> {
         let path = format!("/config/{}", encode_subject(subject));
         let resp = self
             .request(reqwest::Method::GET, &path)
@@ -520,7 +502,10 @@ impl SchemaRegistryClient {
             .await
             .map_err(|e| KafkaError::schema_registry_error(format!("Parse error: {}", e)))?;
 
-        Ok(body.get("mode").cloned().unwrap_or_else(|| "UNKNOWN".to_string()))
+        Ok(body
+            .get("mode")
+            .cloned()
+            .unwrap_or_else(|| "UNKNOWN".to_string()))
     }
 }
 

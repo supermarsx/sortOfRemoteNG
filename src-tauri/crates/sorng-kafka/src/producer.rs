@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
-use rdkafka::ClientConfig;
 
 use crate::error::{KafkaError, KafkaResult};
 use crate::types::*;
@@ -113,9 +112,9 @@ impl KafkaProducerWrapper {
 
     /// Flush all pending messages within the given timeout.
     pub fn flush(&self, timeout: Duration) -> KafkaResult<()> {
-        self.producer.flush(timeout).map_err(|e| {
-            KafkaError::producer_error(format!("Flush failed: {}", e))
-        })
+        self.producer
+            .flush(timeout)
+            .map_err(|e| KafkaError::producer_error(format!("Flush failed: {}", e)))
     }
 
     /// Get producer performance metrics.
@@ -125,10 +124,7 @@ impl KafkaProducerWrapper {
             "messages_sent".to_string(),
             serde_json::Value::from(self.messages_sent),
         );
-        metrics.insert(
-            "errors".to_string(),
-            serde_json::Value::from(self.errors),
-        );
+        metrics.insert("errors".to_string(), serde_json::Value::from(self.errors));
         metrics.insert(
             "total_bytes".to_string(),
             serde_json::Value::from(self.total_bytes),

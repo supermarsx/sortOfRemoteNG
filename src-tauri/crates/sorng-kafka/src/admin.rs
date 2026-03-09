@@ -2,13 +2,12 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use rdkafka::admin::{
-    AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication,
-    ResourceSpecifier, AlterConfig,
+    AdminClient, AdminOptions, AlterConfig, NewPartitions, NewTopic, ResourceSpecifier,
+    TopicReplication,
 };
 use rdkafka::client::DefaultClientContext;
 use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::metadata::Metadata;
-use rdkafka::ClientConfig;
 
 use crate::error::{KafkaError, KafkaResult};
 use crate::types::*;
@@ -25,14 +24,16 @@ impl KafkaAdminClient {
     pub fn create(config: &KafkaConnectionConfig) -> KafkaResult<Self> {
         let mut client_config = config.to_client_config();
 
-        let admin: AdminClient<DefaultClientContext> = client_config
-            .create()
-            .map_err(|e| KafkaError::connection_failed(format!("Failed to create admin client: {}", e)))?;
+        let admin: AdminClient<DefaultClientContext> = client_config.create().map_err(|e| {
+            KafkaError::connection_failed(format!("Failed to create admin client: {}", e))
+        })?;
 
         let consumer: BaseConsumer = client_config
             .set("group.id", "__sorng_admin_metadata")
             .create()
-            .map_err(|e| KafkaError::connection_failed(format!("Failed to create metadata consumer: {}", e)))?;
+            .map_err(|e| {
+                KafkaError::connection_failed(format!("Failed to create metadata consumer: {}", e))
+            })?;
 
         Ok(Self {
             admin,
@@ -55,10 +56,7 @@ impl KafkaAdminClient {
     // -----------------------------------------------------------------------
 
     /// Create one or more topics.
-    pub async fn create_topics(
-        &self,
-        topics: &[CreateTopicRequest],
-    ) -> KafkaResult<()> {
+    pub async fn create_topics(&self, topics: &[CreateTopicRequest]) -> KafkaResult<()> {
         let new_topics: Vec<NewTopic<'_>> = topics
             .iter()
             .map(|t| {
@@ -74,7 +72,10 @@ impl KafkaAdminClient {
             })
             .collect();
 
-        let results = self.admin.create_topics(&new_topics, &self.admin_opts()).await?;
+        let results = self
+            .admin
+            .create_topics(&new_topics, &self.admin_opts())
+            .await?;
 
         for result in results {
             if let Err((topic, code)) = result {
@@ -103,11 +104,7 @@ impl KafkaAdminClient {
     }
 
     /// Increase the partition count of a topic.
-    pub async fn create_partitions(
-        &self,
-        topic: &str,
-        new_total_count: i32,
-    ) -> KafkaResult<()> {
+    pub async fn create_partitions(&self, topic: &str, new_total_count: i32) -> KafkaResult<()> {
         let new_parts = NewPartitions::new(topic, new_total_count as usize);
         let results = self
             .admin
@@ -192,7 +189,10 @@ impl KafkaAdminClient {
             alter = alter.set(k, v);
         }
 
-        let results = self.admin.alter_configs(&[alter], &self.admin_opts()).await?;
+        let results = self
+            .admin
+            .alter_configs(&[alter], &self.admin_opts())
+            .await?;
 
         for result in results {
             if let Err((_, code)) = result {
@@ -261,18 +261,16 @@ impl KafkaAdminClient {
     // -----------------------------------------------------------------------
 
     /// List offsets for a topic+partition (earliest and latest).
-    pub fn list_offsets(
-        &self,
-        topic: &str,
-        partition: i32,
-    ) -> KafkaResult<(i64, i64)> {
-        use rdkafka::topic_partition_list::{TopicPartitionList, Offset};
+    pub fn list_offsets(&self, topic: &str, partition: i32) -> KafkaResult<(i64, i64)> {
+        use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 
         let mut tpl = TopicPartitionList::new();
         tpl.add_partition_offset(topic, partition, Offset::Beginning)
-            .map_err(|e| KafkaError::offset_error(format!("Failed to set beginning offset: {}", e)))?;
+            .map_err(|e| {
+                KafkaError::offset_error(format!("Failed to set beginning offset: {}", e))
+            })?;
 
-        let earliest_offsets = self
+        let _earliest_offsets = self
             .consumer
             .committed_offsets(tpl, self.timeout)
             .map_err(|e| KafkaError::offset_error(format!("Failed to query offsets: {}", e)))?;

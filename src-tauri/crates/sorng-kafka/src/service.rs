@@ -5,11 +5,10 @@ use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::admin::KafkaAdminClient;
 use crate::acls;
+use crate::admin::KafkaAdminClient;
 use crate::broker;
 use crate::connect::KafkaConnectClient;
-use crate::consumer::KafkaConsumerClient;
 use crate::consumer_groups;
 use crate::error::{KafkaError, KafkaResult};
 use crate::metrics;
@@ -44,6 +43,12 @@ pub struct KafkaService {
     sessions: HashMap<String, KafkaSession>,
 }
 
+impl Default for KafkaService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KafkaService {
     pub fn new() -> Self {
         Self {
@@ -66,10 +71,7 @@ impl KafkaService {
             .as_deref()
             .map(SchemaRegistryClient::new);
 
-        let connect = config
-            .connect_url
-            .as_deref()
-            .map(KafkaConnectClient::new);
+        let connect = config.connect_url.as_deref().map(KafkaConnectClient::new);
 
         let session_id = Uuid::new_v4().to_string();
         let session = KafkaSession {
@@ -209,7 +211,14 @@ impl KafkaService {
         configs: HashMap<String, String>,
     ) -> KafkaResult<()> {
         let session = self.get_session(session_id)?;
-        topics::create_topic(&session.admin, name, partitions, replication_factor, configs).await
+        topics::create_topic(
+            &session.admin,
+            name,
+            partitions,
+            replication_factor,
+            configs,
+        )
+        .await
     }
 
     pub async fn delete_topic(&self, session_id: &str, name: &str) -> KafkaResult<()> {
@@ -244,10 +253,7 @@ impl KafkaService {
     // Consumer groups
     // -----------------------------------------------------------------------
 
-    pub fn list_consumer_groups(
-        &self,
-        session_id: &str,
-    ) -> KafkaResult<Vec<ConsumerGroupInfo>> {
+    pub fn list_consumer_groups(&self, session_id: &str) -> KafkaResult<Vec<ConsumerGroupInfo>> {
         let session = self.get_session(session_id)?;
         consumer_groups::list_consumer_groups(&session.admin)
     }
@@ -285,12 +291,7 @@ impl KafkaService {
             session.producer = Some(KafkaProducerWrapper::create(&session.config)?);
         }
 
-        session
-            .producer
-            .as_mut()
-            .unwrap()
-            .produce(message)
-            .await
+        session.producer.as_mut().unwrap().produce(message).await
     }
 
     // -----------------------------------------------------------------------
@@ -306,11 +307,7 @@ impl KafkaService {
         acls::list_acls(&session.admin, filter).await
     }
 
-    pub async fn create_acls(
-        &self,
-        session_id: &str,
-        entries: &[AclEntry],
-    ) -> KafkaResult<()> {
+    pub async fn create_acls(&self, session_id: &str, entries: &[AclEntry]) -> KafkaResult<()> {
         let session = self.get_session(session_id)?;
         acls::create_acls(&session.admin, entries).await
     }
@@ -366,11 +363,7 @@ impl KafkaService {
         sr.register_schema(subject, schema, schema_type, None).await
     }
 
-    pub async fn delete_subject(
-        &self,
-        session_id: &str,
-        subject: &str,
-    ) -> KafkaResult<Vec<i32>> {
+    pub async fn delete_subject(&self, session_id: &str, subject: &str) -> KafkaResult<Vec<i32>> {
         let session = self.get_session(session_id)?;
         let sr = session
             .schema_registry
@@ -392,11 +385,7 @@ impl KafkaService {
         kc.list_connectors().await
     }
 
-    pub async fn get_connector(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> KafkaResult<ConnectorInfo> {
+    pub async fn get_connector(&self, session_id: &str, name: &str) -> KafkaResult<ConnectorInfo> {
         let session = self.get_session(session_id)?;
         let kc = session
             .connect
@@ -483,10 +472,7 @@ impl KafkaService {
         reassignment::start_reassignment(&session.admin, proposals).await
     }
 
-    pub async fn list_reassignments(
-        &self,
-        session_id: &str,
-    ) -> KafkaResult<Vec<ReassignmentInfo>> {
+    pub async fn list_reassignments(&self, session_id: &str) -> KafkaResult<Vec<ReassignmentInfo>> {
         let session = self.get_session(session_id)?;
         reassignment::list_reassignments(&session.admin).await
     }
@@ -495,10 +481,7 @@ impl KafkaService {
     // Metrics
     // -----------------------------------------------------------------------
 
-    pub fn get_cluster_metrics(
-        &self,
-        session_id: &str,
-    ) -> KafkaResult<ClusterMetrics> {
+    pub fn get_cluster_metrics(&self, session_id: &str) -> KafkaResult<ClusterMetrics> {
         let session = self.get_session(session_id)?;
         metrics::get_cluster_metrics(&session.admin)
     }

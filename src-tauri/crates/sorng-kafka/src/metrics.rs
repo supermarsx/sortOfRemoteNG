@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use crate::admin::KafkaAdminClient;
 use crate::consumer_groups;
@@ -60,24 +59,19 @@ pub fn get_cluster_metrics(admin: &KafkaAdminClient) -> KafkaResult<ClusterMetri
 }
 
 /// Get per-broker metrics.
-pub fn get_broker_metrics(
-    admin: &KafkaAdminClient,
-    broker_id: i32,
-) -> KafkaResult<BrokerMetrics> {
+pub fn get_broker_metrics(admin: &KafkaAdminClient, broker_id: i32) -> KafkaResult<BrokerMetrics> {
     let metadata = admin.get_metadata(None)?;
 
     // Verify broker exists
-    let broker = metadata
+    let _broker = metadata
         .brokers()
         .iter()
         .find(|b| b.id() == broker_id)
-        .ok_or_else(|| {
-            KafkaError::broker_error(format!("Broker {} not found", broker_id))
-        })?;
+        .ok_or_else(|| KafkaError::broker_error(format!("Broker {} not found", broker_id)))?;
 
     let mut under_replicated = 0;
     let mut offline = 0;
-    let mut is_controller = false;
+    let is_controller = false;
 
     // Count partitions where this broker is a replica but not in ISR
     for topic in metadata.topics() {
@@ -116,10 +110,7 @@ pub fn get_broker_metrics(
 }
 
 /// Get per-topic metrics.
-pub fn get_topic_metrics(
-    admin: &KafkaAdminClient,
-    topic_name: &str,
-) -> KafkaResult<TopicMetrics> {
+pub fn get_topic_metrics(admin: &KafkaAdminClient, topic_name: &str) -> KafkaResult<TopicMetrics> {
     let metadata = admin.get_metadata(Some(topic_name))?;
     let topic = metadata
         .topics()
@@ -246,9 +237,7 @@ pub struct UnderReplicatedPartition {
 }
 
 /// Get a summary of cluster health.
-pub fn get_cluster_health_summary(
-    admin: &KafkaAdminClient,
-) -> KafkaResult<ClusterHealthSummary> {
+pub fn get_cluster_health_summary(admin: &KafkaAdminClient) -> KafkaResult<ClusterHealthSummary> {
     let cluster_metrics = get_cluster_metrics(admin)?;
     let under_replicated = get_under_replicated_partitions(admin)?;
 
