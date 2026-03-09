@@ -3,13 +3,13 @@
 // Entry management: create, read, update, delete, move, copy, recycle,
 // history tracking, field references, OTP generation.
 
-use std::collections::HashMap;
 use chrono::Utc;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use uuid::Uuid;
-use sha2::{Sha256, Digest};
 
-use super::types::*;
 use super::service::KeePassService;
+use super::types::*;
 
 impl KeePassService {
     // ─── Create Entry ─────────────────────────────────────────────────
@@ -95,20 +95,27 @@ impl KeePassService {
     /// Get a single entry by UUID.
     pub fn get_entry(&self, db_id: &str, entry_uuid: &str) -> Result<KeePassEntry, String> {
         let db = self.get_database(db_id)?;
-        db.entries.get(entry_uuid)
+        db.entries
+            .get(entry_uuid)
             .cloned()
             .ok_or_else(|| format!("Entry not found: {}", entry_uuid))
     }
 
     /// List all entries in a group (non-recursive).
-    pub fn list_entries_in_group(&self, db_id: &str, group_uuid: &str) -> Result<Vec<EntrySummary>, String> {
+    pub fn list_entries_in_group(
+        &self,
+        db_id: &str,
+        group_uuid: &str,
+    ) -> Result<Vec<EntrySummary>, String> {
         let db = self.get_database(db_id)?;
         if !db.groups.contains_key(group_uuid) {
             return Err(format!("Group not found: {}", group_uuid));
         }
 
         let now = Utc::now();
-        let entries: Vec<EntrySummary> = db.entries.values()
+        let entries: Vec<EntrySummary> = db
+            .entries
+            .values()
             .filter(|e| e.group_uuid == group_uuid)
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
@@ -120,19 +127,27 @@ impl KeePassService {
     pub fn list_all_entries(&self, db_id: &str) -> Result<Vec<EntrySummary>, String> {
         let db = self.get_database(db_id)?;
         let now = Utc::now();
-        let entries: Vec<EntrySummary> = db.entries.values()
+        let entries: Vec<EntrySummary> = db
+            .entries
+            .values()
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
         Ok(entries)
     }
 
     /// List entries in a group recursively.
-    pub fn list_entries_recursive(&self, db_id: &str, group_uuid: &str) -> Result<Vec<EntrySummary>, String> {
+    pub fn list_entries_recursive(
+        &self,
+        db_id: &str,
+        group_uuid: &str,
+    ) -> Result<Vec<EntrySummary>, String> {
         let db = self.get_database(db_id)?;
         let group_uuids = self.collect_descendant_group_uuids(db, group_uuid);
         let now = Utc::now();
 
-        let entries: Vec<EntrySummary> = db.entries.values()
+        let entries: Vec<EntrySummary> = db
+            .entries
+            .values()
             .filter(|e| group_uuids.contains(&e.group_uuid))
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
@@ -143,7 +158,12 @@ impl KeePassService {
     // ─── Update Entry ─────────────────────────────────────────────────
 
     /// Update an existing entry.
-    pub fn update_entry(&mut self, db_id: &str, entry_uuid: &str, req: EntryRequest) -> Result<KeePassEntry, String> {
+    pub fn update_entry(
+        &mut self,
+        db_id: &str,
+        entry_uuid: &str,
+        req: EntryRequest,
+    ) -> Result<KeePassEntry, String> {
         // Save history snapshot before updating
         self.save_entry_history(db_id, entry_uuid)?;
 
@@ -155,7 +175,9 @@ impl KeePassService {
             return Err("Database is read-only".to_string());
         }
 
-        let entry = db.entries.get_mut(entry_uuid)
+        let entry = db
+            .entries
+            .get_mut(entry_uuid)
             .ok_or_else(|| format!("Entry not found: {}", entry_uuid))?;
 
         let now = Utc::now().to_rfc3339();
@@ -241,7 +263,12 @@ impl KeePassService {
     // ─── Delete / Recycle Entry ───────────────────────────────────────
 
     /// Move an entry to the recycle bin (or permanently delete if bin is disabled).
-    pub fn delete_entry(&mut self, db_id: &str, entry_uuid: &str, permanent: bool) -> Result<(), String> {
+    pub fn delete_entry(
+        &mut self,
+        db_id: &str,
+        entry_uuid: &str,
+        permanent: bool,
+    ) -> Result<(), String> {
         let (recycle_bin_id, recycle_enabled, title) = {
             let db = self.get_database(db_id)?;
             if db.info.locked {
@@ -250,7 +277,9 @@ impl KeePassService {
             if db.read_only {
                 return Err("Database is read-only".to_string());
             }
-            let entry = db.entries.get(entry_uuid)
+            let entry = db
+                .entries
+                .get(entry_uuid)
                 .ok_or_else(|| format!("Entry not found: {}", entry_uuid))?;
             (
                 db.info.recycle_bin_id.clone(),
@@ -308,13 +337,20 @@ impl KeePassService {
     }
 
     /// Restore an entry from the recycle bin.
-    pub fn restore_entry(&mut self, db_id: &str, entry_uuid: &str, target_group_uuid: Option<&str>) -> Result<KeePassEntry, String> {
+    pub fn restore_entry(
+        &mut self,
+        db_id: &str,
+        entry_uuid: &str,
+        target_group_uuid: Option<&str>,
+    ) -> Result<KeePassEntry, String> {
         let db = self.get_database_mut(db_id)?;
         if db.info.locked {
             return Err("Database is locked".to_string());
         }
 
-        let entry = db.entries.get_mut(entry_uuid)
+        let entry = db
+            .entries
+            .get_mut(entry_uuid)
             .ok_or_else(|| format!("Entry not found: {}", entry_uuid))?;
 
         if !entry.is_recycled {
@@ -352,7 +388,9 @@ impl KeePassService {
             if db.info.locked {
                 return Err("Database is locked".to_string());
             }
-            db.info.recycle_bin_id.clone()
+            db.info
+                .recycle_bin_id
+                .clone()
                 .ok_or_else(|| "Recycle bin is not enabled".to_string())?
         };
 
@@ -360,7 +398,9 @@ impl KeePassService {
         let now = Utc::now().to_rfc3339();
 
         // Collect recycled entries
-        let recycled_uuids: Vec<String> = db.entries.values()
+        let recycled_uuids: Vec<String> = db
+            .entries
+            .values()
             .filter(|e| e.group_uuid == recycle_bin_id || e.is_recycled)
             .map(|e| e.uuid.clone())
             .collect();
@@ -377,8 +417,12 @@ impl KeePassService {
         }
 
         // Remove recycled groups (except the recycle bin itself)
-        let recycled_groups: Vec<String> = db.groups.values()
-            .filter(|g| g.parent_uuid.as_deref() == Some(&recycle_bin_id) && g.uuid != recycle_bin_id)
+        let recycled_groups: Vec<String> = db
+            .groups
+            .values()
+            .filter(|g| {
+                g.parent_uuid.as_deref() == Some(&recycle_bin_id) && g.uuid != recycle_bin_id
+            })
             .map(|g| g.uuid.clone())
             .collect();
 
@@ -396,7 +440,12 @@ impl KeePassService {
     // ─── Move / Copy Entry ────────────────────────────────────────────
 
     /// Move an entry to a different group.
-    pub fn move_entry(&mut self, db_id: &str, entry_uuid: &str, target_group_uuid: &str) -> Result<(), String> {
+    pub fn move_entry(
+        &mut self,
+        db_id: &str,
+        entry_uuid: &str,
+        target_group_uuid: &str,
+    ) -> Result<(), String> {
         let db = self.get_database_mut(db_id)?;
         if db.info.locked {
             return Err("Database is locked".to_string());
@@ -405,7 +454,9 @@ impl KeePassService {
             return Err(format!("Target group not found: {}", target_group_uuid));
         }
 
-        let entry = db.entries.get_mut(entry_uuid)
+        let entry = db
+            .entries
+            .get_mut(entry_uuid)
             .ok_or_else(|| format!("Entry not found: {}", entry_uuid))?;
 
         entry.group_uuid = target_group_uuid.to_string();
@@ -419,7 +470,12 @@ impl KeePassService {
     }
 
     /// Copy an entry (creates a new UUID).
-    pub fn copy_entry(&mut self, db_id: &str, entry_uuid: &str, target_group_uuid: Option<&str>) -> Result<KeePassEntry, String> {
+    pub fn copy_entry(
+        &mut self,
+        db_id: &str,
+        entry_uuid: &str,
+        target_group_uuid: Option<&str>,
+    ) -> Result<KeePassEntry, String> {
         let source = self.get_entry(db_id, entry_uuid)?;
 
         let db = self.get_database(db_id)?;
@@ -467,11 +523,16 @@ impl KeePassService {
     fn save_entry_history(&mut self, db_id: &str, entry_uuid: &str) -> Result<(), String> {
         let db = self.get_database_mut(db_id)?;
 
-        let entry = db.entries.get(entry_uuid)
+        let entry = db
+            .entries
+            .get(entry_uuid)
             .ok_or_else(|| format!("Entry not found: {}", entry_uuid))?
             .clone();
 
-        let history = db.history.entry(entry_uuid.to_string()).or_insert_with(Vec::new);
+        let history = db
+            .history
+            .entry(entry_uuid.to_string())
+            .or_insert_with(Vec::new);
         let index = history.len();
 
         history.push(EntryHistoryItem {
@@ -500,23 +561,40 @@ impl KeePassService {
     }
 
     /// Get the history of an entry.
-    pub fn get_entry_history(&self, db_id: &str, entry_uuid: &str) -> Result<Vec<EntryHistoryItem>, String> {
+    pub fn get_entry_history(
+        &self,
+        db_id: &str,
+        entry_uuid: &str,
+    ) -> Result<Vec<EntryHistoryItem>, String> {
         let db = self.get_database(db_id)?;
         Ok(db.history.get(entry_uuid).cloned().unwrap_or_default())
     }
 
     /// Get a specific history item.
-    pub fn get_entry_history_item(&self, db_id: &str, entry_uuid: &str, index: usize) -> Result<EntryHistoryItem, String> {
+    pub fn get_entry_history_item(
+        &self,
+        db_id: &str,
+        entry_uuid: &str,
+        index: usize,
+    ) -> Result<EntryHistoryItem, String> {
         let db = self.get_database(db_id)?;
-        let history = db.history.get(entry_uuid)
+        let history = db
+            .history
+            .get(entry_uuid)
             .ok_or_else(|| format!("No history for entry: {}", entry_uuid))?;
-        history.get(index)
+        history
+            .get(index)
             .cloned()
             .ok_or_else(|| format!("History index out of range: {}", index))
     }
 
     /// Restore an entry from a history item.
-    pub fn restore_entry_from_history(&mut self, db_id: &str, entry_uuid: &str, history_index: usize) -> Result<KeePassEntry, String> {
+    pub fn restore_entry_from_history(
+        &mut self,
+        db_id: &str,
+        entry_uuid: &str,
+        history_index: usize,
+    ) -> Result<KeePassEntry, String> {
         // Save current state to history first
         self.save_entry_history(db_id, entry_uuid)?;
 
@@ -556,7 +634,12 @@ impl KeePassService {
     }
 
     /// Compare current entry with a history item.
-    pub fn diff_entry_with_history(&self, db_id: &str, entry_uuid: &str, history_index: usize) -> Result<EntryDiff, String> {
+    pub fn diff_entry_with_history(
+        &self,
+        db_id: &str,
+        entry_uuid: &str,
+        history_index: usize,
+    ) -> Result<EntryDiff, String> {
         let current = self.get_entry(db_id, entry_uuid)?;
         let historical = self.get_entry_history_item(db_id, entry_uuid, history_index)?;
 
@@ -599,18 +682,41 @@ impl KeePassService {
         }
 
         // Custom field diffs
-        let current_keys: std::collections::HashSet<&String> = current.custom_fields.keys().collect();
-        let history_keys: std::collections::HashSet<&String> = historical.entry.custom_fields.keys().collect();
+        let current_keys: std::collections::HashSet<&String> =
+            current.custom_fields.keys().collect();
+        let history_keys: std::collections::HashSet<&String> =
+            historical.entry.custom_fields.keys().collect();
 
-        let added_custom_fields: Vec<String> = current_keys.difference(&history_keys).map(|k| (*k).clone()).collect();
-        let removed_custom_fields: Vec<String> = history_keys.difference(&current_keys).map(|k| (*k).clone()).collect();
+        let added_custom_fields: Vec<String> = current_keys
+            .difference(&history_keys)
+            .map(|k| (*k).clone())
+            .collect();
+        let removed_custom_fields: Vec<String> = history_keys
+            .difference(&current_keys)
+            .map(|k| (*k).clone())
+            .collect();
 
         // Attachment diffs
-        let current_att: std::collections::HashSet<&str> = current.attachments.iter().map(|a| a.filename.as_str()).collect();
-        let history_att: std::collections::HashSet<&str> = historical.entry.attachments.iter().map(|a| a.filename.as_str()).collect();
+        let current_att: std::collections::HashSet<&str> = current
+            .attachments
+            .iter()
+            .map(|a| a.filename.as_str())
+            .collect();
+        let history_att: std::collections::HashSet<&str> = historical
+            .entry
+            .attachments
+            .iter()
+            .map(|a| a.filename.as_str())
+            .collect();
 
-        let added_attachments: Vec<String> = current_att.difference(&history_att).map(|k: &&str| k.to_string()).collect();
-        let removed_attachments: Vec<String> = history_att.difference(&current_att).map(|k: &&str| k.to_string()).collect();
+        let added_attachments: Vec<String> = current_att
+            .difference(&history_att)
+            .map(|k: &&str| k.to_string())
+            .collect();
+        let removed_attachments: Vec<String> = history_att
+            .difference(&current_att)
+            .map(|k: &&str| k.to_string())
+            .collect();
 
         Ok(EntryDiff {
             uuid: entry_uuid.to_string(),
@@ -627,10 +733,14 @@ impl KeePassService {
     /// Get the current OTP value for an entry.
     pub fn get_entry_otp(&self, db_id: &str, entry_uuid: &str) -> Result<OtpValue, String> {
         let db = self.get_database(db_id)?;
-        let entry = db.entries.get(entry_uuid)
+        let entry = db
+            .entries
+            .get(entry_uuid)
             .ok_or_else(|| format!("Entry not found: {}", entry_uuid))?;
 
-        let otp = entry.otp.as_ref()
+        let otp = entry
+            .otp
+            .as_ref()
             .ok_or_else(|| "Entry has no OTP configuration".to_string())?;
 
         match otp.otp_type {
@@ -644,7 +754,8 @@ impl KeePassService {
 
                 // Generate TOTP code (simplified — uses time-based counter)
                 let counter = now.as_secs() / period as u64;
-                let code = Self::generate_otp_code(&otp.secret, counter, otp.digits, &otp.algorithm)?;
+                let code =
+                    Self::generate_otp_code(&otp.secret, counter, otp.digits, &otp.algorithm)?;
 
                 let display_code = if otp.otp_type == OtpType::Steam {
                     Self::totp_to_steam(&code, 5)
@@ -661,7 +772,8 @@ impl KeePassService {
             }
             OtpType::Hotp => {
                 let counter = otp.counter.unwrap_or(0);
-                let code = Self::generate_otp_code(&otp.secret, counter, otp.digits, &otp.algorithm)?;
+                let code =
+                    Self::generate_otp_code(&otp.secret, counter, otp.digits, &otp.algorithm)?;
 
                 Ok(OtpValue {
                     code,
@@ -680,10 +792,10 @@ impl KeePassService {
         }
 
         let without_scheme = &uri[10..];
-        let (otp_type, rest) = if without_scheme.starts_with("totp/") {
-            (OtpType::Totp, &without_scheme[5..])
-        } else if without_scheme.starts_with("hotp/") {
-            (OtpType::Hotp, &without_scheme[5..])
+        let (otp_type, rest) = if let Some(stripped) = without_scheme.strip_prefix("totp/") {
+            (OtpType::Totp, stripped)
+        } else if let Some(stripped) = without_scheme.strip_prefix("hotp/") {
+            (OtpType::Hotp, stripped)
         } else {
             return Err("Unknown OTP type".to_string());
         };
@@ -696,7 +808,10 @@ impl KeePassService {
 
         // Parse label: issuer:account or just account
         let (issuer_from_label, account) = if let Some(cpos) = label.find(':') {
-            (Some(label[..cpos].to_string()), label[cpos + 1..].to_string())
+            (
+                Some(label[..cpos].to_string()),
+                label[cpos + 1..].to_string(),
+            )
         } else {
             (None, label.to_string())
         };
@@ -709,7 +824,8 @@ impl KeePassService {
             }
         }
 
-        let secret = params.get("secret")
+        let secret = params
+            .get("secret")
             .ok_or_else(|| "Missing secret parameter".to_string())?
             .clone();
 
@@ -721,15 +837,14 @@ impl KeePassService {
             _ => OtpAlgorithm::Sha1,
         };
 
-        let digits = params.get("digits")
+        let digits = params
+            .get("digits")
             .and_then(|s| s.parse().ok())
             .unwrap_or(6);
 
-        let period = params.get("period")
-            .and_then(|s| s.parse().ok());
+        let period = params.get("period").and_then(|s| s.parse().ok());
 
-        let counter = params.get("counter")
-            .and_then(|s| s.parse().ok());
+        let counter = params.get("counter").and_then(|s| s.parse().ok());
 
         Ok(OtpConfig {
             otp_type,
@@ -805,17 +920,27 @@ impl KeePassService {
             let mut hasher = Sha256::new();
             hasher.update(entry.password.as_bytes());
             let hash = hex::encode(hasher.finalize());
-            password_hashes.entry(hash)
-                .or_insert_with(Vec::new)
+            password_hashes
+                .entry(hash)
+                .or_default()
                 .push((entry.uuid.clone(), entry.title.clone()));
         }
 
         let analyzed = db.entries.values().filter(|e| !e.is_recycled).count();
         let non_empty = analyzed - empty;
-        let average_entropy = if non_empty > 0 { total_entropy / non_empty as f64 } else { 0.0 };
-        let average_length = if non_empty > 0 { total_length as f64 / non_empty as f64 } else { 0.0 };
+        let average_entropy = if non_empty > 0 {
+            total_entropy / non_empty as f64
+        } else {
+            0.0
+        };
+        let average_length = if non_empty > 0 {
+            total_length as f64 / non_empty as f64
+        } else {
+            0.0
+        };
 
-        let reused_passwords: Vec<ReusedPassword> = password_hashes.into_iter()
+        let reused_passwords: Vec<ReusedPassword> = password_hashes
+            .into_iter()
             .filter(|(_, entries)| entries.len() > 1)
             .map(|(hash, entries)| {
                 let count = entries.len();
@@ -830,12 +955,18 @@ impl KeePassService {
             .collect();
 
         // Expired entries
-        let expired_entries: Vec<EntrySummary> = db.entries.values()
+        let expired_entries: Vec<EntrySummary> = db
+            .entries
+            .values()
             .filter(|e| {
-                !e.is_recycled && e.times.expires && e.times.expiry_time.as_ref()
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                    .map(|t| t < now)
-                    .unwrap_or(false)
+                !e.is_recycled
+                    && e.times.expires
+                    && e.times
+                        .expiry_time
+                        .as_ref()
+                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                        .map(|t| t < now)
+                        .unwrap_or(false)
             })
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
@@ -860,11 +991,18 @@ impl KeePassService {
     // ─── Helpers ──────────────────────────────────────────────────────
 
     /// Convert an entry to a summary (safe for list views).
-    pub(crate) fn entry_to_summary(entry: &KeePassEntry, now: &chrono::DateTime<Utc>) -> EntrySummary {
-        let is_expired = entry.times.expires && entry.times.expiry_time.as_ref()
-            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-            .map(|t| t < *now)
-            .unwrap_or(false);
+    pub(crate) fn entry_to_summary(
+        entry: &KeePassEntry,
+        now: &chrono::DateTime<Utc>,
+    ) -> EntrySummary {
+        let is_expired = entry.times.expires
+            && entry
+                .times
+                .expiry_time
+                .as_ref()
+                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t < *now)
+                .unwrap_or(false);
 
         EntrySummary {
             uuid: entry.uuid.clone(),
@@ -888,9 +1026,15 @@ impl KeePassService {
     }
 
     /// Collect all descendant group UUIDs (including the given group).
-    pub(crate) fn collect_descendant_group_uuids(&self, db: &super::service::DatabaseInstance, group_uuid: &str) -> Vec<String> {
+    pub(crate) fn collect_descendant_group_uuids(
+        &self,
+        db: &super::service::DatabaseInstance,
+        group_uuid: &str,
+    ) -> Vec<String> {
         let mut result = vec![group_uuid.to_string()];
-        let children: Vec<String> = db.groups.values()
+        let children: Vec<String> = db
+            .groups
+            .values()
             .filter(|g| g.parent_uuid.as_deref() == Some(group_uuid))
             .map(|g| g.uuid.clone())
             .collect();
@@ -912,14 +1056,26 @@ impl KeePassService {
         let has_digit = password.chars().any(|c| c.is_ascii_digit());
         let has_special = password.chars().any(|c| c.is_ascii_punctuation());
         let has_space = password.chars().any(|c| c == ' ');
-        let has_unicode = password.chars().any(|c| !c.is_ascii());
+        let has_unicode = !password.is_ascii();
 
-        if has_lower { charset_size += 26; }
-        if has_upper { charset_size += 26; }
-        if has_digit { charset_size += 10; }
-        if has_special { charset_size += 33; }
-        if has_space { charset_size += 1; }
-        if has_unicode { charset_size += 100; }
+        if has_lower {
+            charset_size += 26;
+        }
+        if has_upper {
+            charset_size += 26;
+        }
+        if has_digit {
+            charset_size += 10;
+        }
+        if has_special {
+            charset_size += 33;
+        }
+        if has_space {
+            charset_size += 1;
+        }
+        if has_unicode {
+            charset_size += 100;
+        }
 
         if charset_size == 0 {
             return 0.0;

@@ -3,10 +3,10 @@
 // Advanced entry search with field matching, regex support, tag filtering,
 // expiry queries, sorting, and pagination.
 
-use chrono::{Utc, DateTime};
+use chrono::{DateTime, Utc};
 
-use super::types::*;
 use super::service::KeePassService;
+use super::types::*;
 
 impl KeePassService {
     // ─── Search ──────────────────────────────────────────────────────
@@ -42,7 +42,9 @@ impl KeePassService {
             matched.sort_by(|a, b| {
                 let cmp = match sort_field {
                     SearchSortField::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
-                    SearchSortField::Username => a.username.to_lowercase().cmp(&b.username.to_lowercase()),
+                    SearchSortField::Username => {
+                        a.username.to_lowercase().cmp(&b.username.to_lowercase())
+                    }
                     SearchSortField::Url => a.url.to_lowercase().cmp(&b.url.to_lowercase()),
                     SearchSortField::Created => a.created_at.cmp(&b.created_at),
                     SearchSortField::Modified => a.modified_at.cmp(&b.modified_at),
@@ -57,7 +59,11 @@ impl KeePassService {
                         a_val.cmp(b_val)
                     }
                 };
-                if ascending { cmp } else { cmp.reverse() }
+                if ascending {
+                    cmp
+                } else {
+                    cmp.reverse()
+                }
             });
         }
 
@@ -66,10 +72,7 @@ impl KeePassService {
         // Pagination
         let offset = query.offset.unwrap_or(0);
         let limit = query.limit.unwrap_or(total);
-        let paginated: Vec<EntrySummary> = matched.into_iter()
-            .skip(offset)
-            .take(limit)
-            .collect();
+        let paginated: Vec<EntrySummary> = matched.into_iter().skip(offset).take(limit).collect();
 
         let elapsed = start.elapsed();
 
@@ -82,11 +85,7 @@ impl KeePassService {
     }
 
     /// Quick text search across all standard fields.
-    pub fn quick_search(
-        &self,
-        db_id: &str,
-        term: &str,
-    ) -> Result<Vec<EntrySummary>, String> {
+    pub fn quick_search(&self, db_id: &str, term: &str) -> Result<Vec<EntrySummary>, String> {
         let query = SearchQuery {
             text: Some(term.to_string()),
             fields: Some(vec![
@@ -150,13 +149,11 @@ impl KeePassService {
     }
 
     /// Find duplicate entries (same title+username+url).
-    pub fn find_duplicates(
-        &self,
-        db_id: &str,
-    ) -> Result<Vec<Vec<EntrySummary>>, String> {
+    pub fn find_duplicates(&self, db_id: &str) -> Result<Vec<Vec<EntrySummary>>, String> {
         let db = self.get_database(db_id)?;
 
-        let mut groups: std::collections::HashMap<String, Vec<&KeePassEntry>> = std::collections::HashMap::new();
+        let mut groups: std::collections::HashMap<String, Vec<&KeePassEntry>> =
+            std::collections::HashMap::new();
 
         for entry in db.entries.values() {
             let key = format!(
@@ -173,14 +170,25 @@ impl KeePassService {
             .into_values()
             .filter(|v| v.len() > 1)
             .map(|entries| {
-                entries.iter().map(|e| Self::entry_to_summary(e, &now)).collect()
+                entries
+                    .iter()
+                    .map(|e| Self::entry_to_summary(e, &now))
+                    .collect()
             })
             .collect();
 
         // Sort groups by first entry title
         duplicates.sort_by(|a, b| {
-            let a_title = a.first().map(|e| &e.title).unwrap_or(&String::new()).to_lowercase();
-            let b_title = b.first().map(|e| &e.title).unwrap_or(&String::new()).to_lowercase();
+            let a_title = a
+                .first()
+                .map(|e| &e.title)
+                .unwrap_or(&String::new())
+                .to_lowercase();
+            let b_title = b
+                .first()
+                .map(|e| &e.title)
+                .unwrap_or(&String::new())
+                .to_lowercase();
             a_title.cmp(&b_title)
         });
 
@@ -261,13 +269,12 @@ impl KeePassService {
     }
 
     /// Find entries without passwords.
-    pub fn find_entries_without_password(
-        &self,
-        db_id: &str,
-    ) -> Result<Vec<EntrySummary>, String> {
+    pub fn find_entries_without_password(&self, db_id: &str) -> Result<Vec<EntrySummary>, String> {
         let db = self.get_database(db_id)?;
         let now = Utc::now();
-        let mut results: Vec<EntrySummary> = db.entries.values()
+        let mut results: Vec<EntrySummary> = db
+            .entries
+            .values()
             .filter(|e| e.password.is_empty())
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
@@ -277,12 +284,10 @@ impl KeePassService {
     }
 
     /// Collect all unique tags across all entries in a database.
-    pub fn get_all_tags(
-        &self,
-        db_id: &str,
-    ) -> Result<Vec<TagCount>, String> {
+    pub fn get_all_tags(&self, db_id: &str) -> Result<Vec<TagCount>, String> {
         let db = self.get_database(db_id)?;
-        let mut tag_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut tag_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for entry in db.entries.values() {
             for tag in &entry.tags {
@@ -301,15 +306,13 @@ impl KeePassService {
     }
 
     /// Find entries by tag.
-    pub fn find_entries_by_tag(
-        &self,
-        db_id: &str,
-        tag: &str,
-    ) -> Result<Vec<EntrySummary>, String> {
+    pub fn find_entries_by_tag(&self, db_id: &str, tag: &str) -> Result<Vec<EntrySummary>, String> {
         let db = self.get_database(db_id)?;
         let lower_tag = tag.to_lowercase();
         let now = Utc::now();
-        let mut results: Vec<EntrySummary> = db.entries.values()
+        let mut results: Vec<EntrySummary> = db
+            .entries
+            .values()
             .filter(|e| e.tags.iter().any(|t| t.to_lowercase() == lower_tag))
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
@@ -324,7 +327,7 @@ impl KeePassService {
         // Text search
         if let Some(ref text) = query.text {
             if !text.is_empty() {
-                let fields = query.fields.as_ref().map(|v| v.as_slice()).unwrap_or(&[
+                let fields = query.fields.as_deref().unwrap_or(&[
                     SearchField::Title,
                     SearchField::Username,
                     SearchField::Url,
@@ -493,19 +496,19 @@ impl KeePassService {
             SearchField::Url => entry.url.clone(),
             SearchField::Notes => entry.notes.clone(),
             SearchField::Tags => entry.tags.join(" "),
-            SearchField::CustomFields => {
-                entry.custom_fields.iter()
-                    .map(|(key, cf)| format!("{} {}", key, cf.value))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            }
+            SearchField::CustomFields => entry
+                .custom_fields
+                .iter()
+                .map(|(key, cf)| format!("{} {}", key, cf.value))
+                .collect::<Vec<_>>()
+                .join(" "),
             SearchField::Uuid => entry.uuid.clone(),
-            SearchField::Attachments => {
-                entry.attachments.iter()
-                    .map(|a| a.filename.clone())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            }
+            SearchField::Attachments => entry
+                .attachments
+                .iter()
+                .map(|a| a.filename.clone())
+                .collect::<Vec<_>>()
+                .join(" "),
         }
     }
 
@@ -538,7 +541,10 @@ impl KeePassService {
                 if t.len() != p.len() {
                     return false;
                 }
-                return t.chars().zip(p.chars()).all(|(tc, pc)| pc == '?' || tc == pc);
+                return t
+                    .chars()
+                    .zip(p.chars())
+                    .all(|(tc, pc)| pc == '?' || tc == pc);
             }
 
             let mut pos = 0;

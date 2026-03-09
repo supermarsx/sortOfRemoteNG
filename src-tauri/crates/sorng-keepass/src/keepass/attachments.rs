@@ -3,10 +3,10 @@
 // Binary attachment CRUD, pool management with deduplication, hash verification,
 // and import/export of attachment data.
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
+use super::service::{AttachmentData, KeePassService};
 use super::types::*;
-use super::service::{KeePassService, AttachmentData};
 
 impl KeePassService {
     // ─── Attachment CRUD ─────────────────────────────────────────────
@@ -18,10 +18,9 @@ impl KeePassService {
         req: AddAttachmentRequest,
     ) -> Result<KeePassAttachment, String> {
         // Decode the attachment data
-        let data = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            &req.data_base64,
-        ).map_err(|e| format!("Invalid base64 attachment data: {}", e))?;
+        let data =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.data_base64)
+                .map_err(|e| format!("Invalid base64 attachment data: {}", e))?;
 
         // Compute hash for deduplication
         let mut hasher = Sha256::new();
@@ -36,7 +35,9 @@ impl KeePassService {
         }
 
         // Check if identical attachment already exists in pool (deduplication)
-        let ref_id = if let Some((existing_ref, existing_att)) = db.attachment_pool.iter_mut()
+        let ref_id = if let Some((existing_ref, existing_att)) = db
+            .attachment_pool
+            .iter_mut()
             .find(|(_, att)| att.hash == hash)
         {
             existing_att.ref_count += 1;
@@ -44,11 +45,14 @@ impl KeePassService {
         } else {
             // Add to pool
             let ref_id = db.next_attachment_ref_id();
-            db.attachment_pool.insert(ref_id.clone(), AttachmentData {
-                data: data.clone(),
-                hash: hash.clone(),
-                ref_count: 1,
-            });
+            db.attachment_pool.insert(
+                ref_id.clone(),
+                AttachmentData {
+                    data: data.clone(),
+                    hash: hash.clone(),
+                    ref_count: 1,
+                },
+            );
             ref_id
         };
 
@@ -57,11 +61,15 @@ impl KeePassService {
             filename: req.filename.clone(),
             size: data.len() as u64,
             hash: hash.clone(),
-            mime_type: req.mime_type.unwrap_or_else(|| Self::guess_mime_type(&req.filename)),
+            mime_type: req
+                .mime_type
+                .unwrap_or_else(|| Self::guess_mime_type(&req.filename)),
         };
 
         // Add reference to entry
-        let entry = db.entries.get_mut(&req.entry_uuid)
+        let entry = db
+            .entries
+            .get_mut(&req.entry_uuid)
             .ok_or("Entry not found")?;
         entry.attachments.push(EntryAttachmentRef {
             ref_id: ref_id.clone(),
@@ -80,8 +88,7 @@ impl KeePassService {
         entry_uuid: &str,
     ) -> Result<Vec<KeePassAttachment>, String> {
         let db = self.get_database(db_id)?;
-        let entry = db.entries.get(entry_uuid)
-            .ok_or("Entry not found")?;
+        let entry = db.entries.get(entry_uuid).ok_or("Entry not found")?;
 
         let mut attachments = Vec::new();
         for att_ref in &entry.attachments {
@@ -109,15 +116,18 @@ impl KeePassService {
         let db = self.get_database(db_id)?;
 
         // Verify entry has this attachment
-        let entry = db.entries.get(entry_uuid)
-            .ok_or("Entry not found")?;
+        let entry = db.entries.get(entry_uuid).ok_or("Entry not found")?;
 
-        let _att_ref = entry.attachments.iter()
+        let _att_ref = entry
+            .attachments
+            .iter()
             .find(|a| a.ref_id == ref_id)
             .ok_or("Attachment reference not found on entry")?;
 
         // Get data from pool
-        let pool_data = db.attachment_pool.get(ref_id)
+        let pool_data = db
+            .attachment_pool
+            .get(ref_id)
             .ok_or("Attachment data not found in pool")?;
 
         Ok(base64::Engine::encode(
@@ -136,8 +146,7 @@ impl KeePassService {
         let db = self.get_database_mut(db_id)?;
 
         // Remove reference from entry
-        let entry = db.entries.get_mut(entry_uuid)
-            .ok_or("Entry not found")?;
+        let entry = db.entries.get_mut(entry_uuid).ok_or("Entry not found")?;
 
         let initial_len = entry.attachments.len();
         entry.attachments.retain(|a| a.ref_id != ref_id);
@@ -176,10 +185,11 @@ impl KeePassService {
         }
 
         let db = self.get_database_mut(db_id)?;
-        let entry = db.entries.get_mut(entry_uuid)
-            .ok_or("Entry not found")?;
+        let entry = db.entries.get_mut(entry_uuid).ok_or("Entry not found")?;
 
-        let att_ref = entry.attachments.iter_mut()
+        let att_ref = entry
+            .attachments
+            .iter_mut()
             .find(|a| a.ref_id == ref_id)
             .ok_or("Attachment reference not found")?;
 
@@ -199,15 +209,18 @@ impl KeePassService {
         let db = self.get_database(db_id)?;
 
         // Verify entry has this attachment
-        let entry = db.entries.get(entry_uuid)
-            .ok_or("Entry not found")?;
+        let entry = db.entries.get(entry_uuid).ok_or("Entry not found")?;
 
-        let _att_ref = entry.attachments.iter()
+        let _att_ref = entry
+            .attachments
+            .iter()
             .find(|a| a.ref_id == ref_id)
             .ok_or("Attachment reference not found on entry")?;
 
         // Get data from pool
-        let pool_data = db.attachment_pool.get(ref_id)
+        let pool_data = db
+            .attachment_pool
+            .get(ref_id)
             .ok_or("Attachment data not found in pool")?;
 
         std::fs::write(output_path, &pool_data.data)
@@ -223,8 +236,7 @@ impl KeePassService {
         entry_uuid: &str,
         file_path: &str,
     ) -> Result<KeePassAttachment, String> {
-        let data = std::fs::read(file_path)
-            .map_err(|e| format!("Cannot read file: {}", e))?;
+        let data = std::fs::read(file_path).map_err(|e| format!("Cannot read file: {}", e))?;
 
         let filename = std::path::Path::new(file_path)
             .file_name()
@@ -232,39 +244,35 @@ impl KeePassService {
             .unwrap_or("attachment")
             .to_string();
 
-        let data_base64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &data,
-        );
+        let data_base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
 
-        self.add_attachment(db_id, AddAttachmentRequest {
-            entry_uuid: entry_uuid.to_string(),
-            filename,
-            data_base64,
-            mime_type: None,
-        })
+        self.add_attachment(
+            db_id,
+            AddAttachmentRequest {
+                entry_uuid: entry_uuid.to_string(),
+                filename,
+                data_base64,
+                mime_type: None,
+            },
+        )
     }
 
     // ─── Pool Management ─────────────────────────────────────────────
 
     /// Get total attachment pool size in bytes for a database.
-    pub fn get_attachment_pool_size(
-        &self,
-        db_id: &str,
-    ) -> Result<(usize, u64), String> {
+    pub fn get_attachment_pool_size(&self, db_id: &str) -> Result<(usize, u64), String> {
         let db = self.get_database(db_id)?;
         let count = db.attachment_pool.len();
-        let total_bytes: u64 = db.attachment_pool.values()
+        let total_bytes: u64 = db
+            .attachment_pool
+            .values()
             .map(|att| att.data.len() as u64)
             .sum();
         Ok((count, total_bytes))
     }
 
     /// Compact the attachment pool by removing unreferenced entries.
-    pub fn compact_attachment_pool(
-        &mut self,
-        db_id: &str,
-    ) -> Result<usize, String> {
+    pub fn compact_attachment_pool(&mut self, db_id: &str) -> Result<usize, String> {
         let db = self.get_database_mut(db_id)?;
 
         // Collect all referenced ref_ids
@@ -277,7 +285,8 @@ impl KeePassService {
 
         // Remove unreferenced
         let before = db.attachment_pool.len();
-        db.attachment_pool.retain(|ref_id, _| referenced.contains(ref_id));
+        db.attachment_pool
+            .retain(|ref_id, _| referenced.contains(ref_id));
         let removed = before - db.attachment_pool.len();
 
         if removed > 0 {
@@ -288,10 +297,7 @@ impl KeePassService {
     }
 
     /// Verify integrity of all attachments in the pool.
-    pub fn verify_attachment_integrity(
-        &self,
-        db_id: &str,
-    ) -> Result<Vec<String>, String> {
+    pub fn verify_attachment_integrity(&self, db_id: &str) -> Result<Vec<String>, String> {
         let db = self.get_database(db_id)?;
         let mut issues = Vec::new();
 
@@ -323,7 +329,8 @@ impl KeePassService {
         }
 
         // Check ref counts
-        let mut actual_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut actual_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for entry in db.entries.values() {
             for att_ref in &entry.attachments {
                 *actual_counts.entry(att_ref.ref_id.clone()).or_default() += 1;
@@ -385,6 +392,7 @@ impl KeePassService {
             "key" | "pem" | "crt" | "cer" => "application/x-pem-file",
             "p12" | "pfx" => "application/x-pkcs12",
             _ => "application/octet-stream",
-        }.to_string()
+        }
+        .to_string()
     }
 }

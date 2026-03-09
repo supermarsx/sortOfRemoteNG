@@ -4,11 +4,11 @@
 // tree operations, recycle bin support.
 
 use chrono::Utc;
-use uuid::Uuid;
 use std::collections::HashMap;
+use uuid::Uuid;
 
-use super::types::*;
 use super::service::KeePassService;
+use super::types::*;
 
 impl KeePassService {
     // ─── Create Group ─────────────────────────────────────────────────
@@ -24,8 +24,7 @@ impl KeePassService {
                 return Err("Database is read-only".to_string());
             }
 
-            let parent = req.parent_uuid.as_deref()
-                .unwrap_or(&db.info.root_group_id);
+            let parent = req.parent_uuid.as_deref().unwrap_or(&db.info.root_group_id);
 
             if !db.groups.contains_key(parent) {
                 return Err(format!("Parent group not found: {}", parent));
@@ -88,7 +87,8 @@ impl KeePassService {
     /// Get a single group by UUID.
     pub fn get_group(&self, db_id: &str, group_uuid: &str) -> Result<KeePassGroup, String> {
         let db = self.get_database(db_id)?;
-        db.groups.get(group_uuid)
+        db.groups
+            .get(group_uuid)
             .cloned()
             .ok_or_else(|| format!("Group not found: {}", group_uuid))
     }
@@ -100,9 +100,15 @@ impl KeePassService {
     }
 
     /// List child groups of a parent.
-    pub fn list_child_groups(&self, db_id: &str, parent_uuid: &str) -> Result<Vec<KeePassGroup>, String> {
+    pub fn list_child_groups(
+        &self,
+        db_id: &str,
+        parent_uuid: &str,
+    ) -> Result<Vec<KeePassGroup>, String> {
         let db = self.get_database(db_id)?;
-        Ok(db.groups.values()
+        Ok(db
+            .groups
+            .values()
             .filter(|g| g.parent_uuid.as_deref() == Some(parent_uuid))
             .cloned()
             .collect())
@@ -115,24 +121,36 @@ impl KeePassService {
         Ok(self.build_tree_node(db, &root_uuid, 0))
     }
 
-    fn build_tree_node(&self, db: &super::service::DatabaseInstance, group_uuid: &str, depth: usize) -> GroupTreeNode {
+    fn build_tree_node(
+        &self,
+        db: &super::service::DatabaseInstance,
+        group_uuid: &str,
+        depth: usize,
+    ) -> GroupTreeNode {
         let group = db.groups.get(group_uuid);
 
-        let name = group.map(|g| g.name.clone()).unwrap_or_else(|| "Root".to_string());
+        let name = group
+            .map(|g| g.name.clone())
+            .unwrap_or_else(|| "Root".to_string());
         let icon_id = group.map(|g| g.icon_id).unwrap_or(49);
         let custom_icon_uuid = group.and_then(|g| g.custom_icon_uuid.clone());
         let is_recycle_bin = group.map(|g| g.is_recycle_bin).unwrap_or(false);
 
-        let entry_count = db.entries.values()
+        let entry_count = db
+            .entries
+            .values()
             .filter(|e| e.group_uuid == group_uuid)
             .count();
 
-        let child_uuids: Vec<String> = db.groups.values()
+        let child_uuids: Vec<String> = db
+            .groups
+            .values()
             .filter(|g| g.parent_uuid.as_deref() == Some(group_uuid))
             .map(|g| g.uuid.clone())
             .collect();
 
-        let children = child_uuids.iter()
+        let children = child_uuids
+            .iter()
             .map(|uuid| self.build_tree_node(db, uuid, depth + 1))
             .collect();
 
@@ -170,7 +188,12 @@ impl KeePassService {
     // ─── Update Group ─────────────────────────────────────────────────
 
     /// Update a group's properties.
-    pub fn update_group(&mut self, db_id: &str, group_uuid: &str, req: GroupRequest) -> Result<KeePassGroup, String> {
+    pub fn update_group(
+        &mut self,
+        db_id: &str,
+        group_uuid: &str,
+        req: GroupRequest,
+    ) -> Result<KeePassGroup, String> {
         let db = self.get_database_mut(db_id)?;
         if db.info.locked {
             return Err("Database is locked".to_string());
@@ -180,7 +203,9 @@ impl KeePassService {
         }
 
         {
-            let group = db.groups.get_mut(group_uuid)
+            let group = db
+                .groups
+                .get_mut(group_uuid)
                 .ok_or_else(|| format!("Group not found: {}", group_uuid))?;
 
             group.name = req.name;
@@ -209,7 +234,10 @@ impl KeePassService {
 
         // Handle parent change (move)
         if let Some(ref new_parent) = req.parent_uuid {
-            let current_parent = db.groups.get(group_uuid).and_then(|g| g.parent_uuid.clone());
+            let current_parent = db
+                .groups
+                .get(group_uuid)
+                .and_then(|g| g.parent_uuid.clone());
             if current_parent.as_deref() != Some(new_parent) {
                 if !db.groups.contains_key(new_parent) {
                     return Err(format!("New parent group not found: {}", new_parent));
@@ -242,7 +270,12 @@ impl KeePassService {
     // ─── Delete Group ─────────────────────────────────────────────────
 
     /// Delete a group (moves to recycle bin or permanently deletes).
-    pub fn delete_group(&mut self, db_id: &str, group_uuid: &str, permanent: bool) -> Result<usize, String> {
+    pub fn delete_group(
+        &mut self,
+        db_id: &str,
+        group_uuid: &str,
+        permanent: bool,
+    ) -> Result<usize, String> {
         let (recycle_bin_id, recycle_enabled, _root_group_id, group_name) = {
             let db = self.get_database(db_id)?;
             if db.info.locked {
@@ -251,14 +284,19 @@ impl KeePassService {
             if db.read_only {
                 return Err("Database is read-only".to_string());
             }
-            let group = db.groups.get(group_uuid)
+            let group = db
+                .groups
+                .get(group_uuid)
                 .ok_or_else(|| format!("Group not found: {}", group_uuid))?;
 
             if group_uuid == db.info.root_group_id {
                 return Err("Cannot delete the root group".to_string());
             }
             if group.is_recycle_bin {
-                return Err("Cannot delete the recycle bin group directly (use empty_recycle_bin)".to_string());
+                return Err(
+                    "Cannot delete the recycle bin group directly (use empty_recycle_bin)"
+                        .to_string(),
+                );
             }
 
             (
@@ -273,7 +311,9 @@ impl KeePassService {
         let db = self.get_database(db_id)?;
         let descendant_groups = self.collect_descendant_group_uuids(db, group_uuid);
         // Get entry UUIDs affected by group deletion
-        let entry_uuids: Vec<String> = db.entries.values()
+        let entry_uuids: Vec<String> = db
+            .entries
+            .values()
             .filter(|e| descendant_groups.contains(&e.group_uuid))
             .map(|e| e.uuid.clone())
             .collect();
@@ -341,7 +381,11 @@ impl KeePassService {
             ChangeTargetType::Group,
             group_uuid,
             &group_name,
-            &format!("Permanently deleted group ({} entries, {} subgroups)", entry_uuids.len(), descendant_groups.len() - 1),
+            &format!(
+                "Permanently deleted group ({} entries, {} subgroups)",
+                entry_uuids.len(),
+                descendant_groups.len() - 1
+            ),
         );
 
         Ok(total_affected)
@@ -350,7 +394,12 @@ impl KeePassService {
     // ─── Move Group ───────────────────────────────────────────────────
 
     /// Move a group to a new parent.
-    pub fn move_group(&mut self, db_id: &str, group_uuid: &str, new_parent_uuid: &str) -> Result<(), String> {
+    pub fn move_group(
+        &mut self,
+        db_id: &str,
+        group_uuid: &str,
+        new_parent_uuid: &str,
+    ) -> Result<(), String> {
         // Validate move is not circular
         {
             let db = self.get_database(db_id)?;
@@ -364,7 +413,10 @@ impl KeePassService {
                 return Err("Cannot move the root group".to_string());
             }
             if !db.groups.contains_key(new_parent_uuid) {
-                return Err(format!("Target parent group not found: {}", new_parent_uuid));
+                return Err(format!(
+                    "Target parent group not found: {}",
+                    new_parent_uuid
+                ));
             }
 
             // Check for circular reference
@@ -400,7 +452,9 @@ impl KeePassService {
     /// Sort child groups of a parent alphabetically.
     pub fn sort_groups(&self, db_id: &str, parent_uuid: &str) -> Result<Vec<KeePassGroup>, String> {
         let db = self.get_database(db_id)?;
-        let mut children: Vec<KeePassGroup> = db.groups.values()
+        let mut children: Vec<KeePassGroup> = db
+            .groups
+            .values()
             .filter(|g| g.parent_uuid.as_deref() == Some(parent_uuid))
             .cloned()
             .collect();
@@ -412,16 +466,25 @@ impl KeePassService {
     // ─── Group Statistics ─────────────────────────────────────────────
 
     /// Get entry count for a group (recursive).
-    pub fn group_entry_count(&self, db_id: &str, group_uuid: &str, recursive: bool) -> Result<usize, String> {
+    pub fn group_entry_count(
+        &self,
+        db_id: &str,
+        group_uuid: &str,
+        recursive: bool,
+    ) -> Result<usize, String> {
         let db = self.get_database(db_id)?;
 
         if recursive {
             let descendant_groups = self.collect_descendant_group_uuids(db, group_uuid);
-            Ok(db.entries.values()
+            Ok(db
+                .entries
+                .values()
                 .filter(|e| descendant_groups.contains(&e.group_uuid))
                 .count())
         } else {
-            Ok(db.entries.values()
+            Ok(db
+                .entries
+                .values()
                 .filter(|e| e.group_uuid == group_uuid)
                 .count())
         }
@@ -441,7 +504,8 @@ impl KeePassService {
             }
         }
 
-        let mut tags: Vec<TagCount> = tag_counts.into_iter()
+        let mut tags: Vec<TagCount> = tag_counts
+            .into_iter()
             .map(|(tag, count)| TagCount { tag, count })
             .collect();
         tags.sort_by(|a, b| b.count.cmp(&a.count));
@@ -451,10 +515,15 @@ impl KeePassService {
     // ─── Custom Icons ─────────────────────────────────────────────────
 
     /// Add a custom icon to the database.
-    pub fn add_custom_icon(&mut self, db_id: &str, icon_data_base64: &str) -> Result<String, String> {
+    pub fn add_custom_icon(
+        &mut self,
+        db_id: &str,
+        icon_data_base64: &str,
+    ) -> Result<String, String> {
         let icon_uuid = Uuid::new_v4().to_string();
         let db = self.get_database_mut(db_id)?;
-        db.custom_icons.insert(icon_uuid.clone(), icon_data_base64.to_string());
+        db.custom_icons
+            .insert(icon_uuid.clone(), icon_data_base64.to_string());
         db.info.custom_icon_count = db.custom_icons.len();
         db.mark_modified();
         Ok(icon_uuid)
@@ -463,7 +532,8 @@ impl KeePassService {
     /// Get a custom icon by UUID.
     pub fn get_custom_icon(&self, db_id: &str, icon_uuid: &str) -> Result<String, String> {
         let db = self.get_database(db_id)?;
-        db.custom_icons.get(icon_uuid)
+        db.custom_icons
+            .get(icon_uuid)
             .cloned()
             .ok_or_else(|| format!("Custom icon not found: {}", icon_uuid))
     }
@@ -477,7 +547,8 @@ impl KeePassService {
     /// Delete a custom icon.
     pub fn delete_custom_icon(&mut self, db_id: &str, icon_uuid: &str) -> Result<(), String> {
         let db = self.get_database_mut(db_id)?;
-        db.custom_icons.remove(icon_uuid)
+        db.custom_icons
+            .remove(icon_uuid)
             .ok_or_else(|| format!("Custom icon not found: {}", icon_uuid))?;
         db.info.custom_icon_count = db.custom_icons.len();
         db.mark_modified();

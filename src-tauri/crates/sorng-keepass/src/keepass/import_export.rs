@@ -4,12 +4,12 @@
 //   KeePass XML, CSV, JSON, 1Password, LastPass, Bitwarden, Chrome, Firefox.
 // Also provides merge/sync capabilities.
 
-use uuid::Uuid;
 use chrono::Utc;
 use std::collections::HashMap;
+use uuid::Uuid;
 
-use super::types::*;
 use super::service::KeePassService;
+use super::types::*;
 
 impl KeePassService {
     // ─── Import ───────────────────────────────────────────────────────
@@ -34,7 +34,9 @@ impl KeePassService {
             ImportFormat::ChromeCsv => self.parse_chrome_csv(&raw_data)?,
             ImportFormat::FirefoxCsv => self.parse_firefox_csv(&raw_data)?,
             ImportFormat::KeePassXmlV1 => self.parse_keepass_xml_v1(&raw_data)?,
-            ImportFormat::Kdbx => return Err("KDBX import (database merge) should use merge_database()".to_string()),
+            ImportFormat::Kdbx => {
+                return Err("KDBX import (database merge) should use merge_database()".to_string())
+            }
         };
 
         // Insert parsed entries into the database
@@ -56,7 +58,7 @@ impl KeePassService {
         let mut groups_created = 0;
         let errors: Vec<ImportError> = Vec::new();
 
-        for (_line_num, parsed_entry) in parsed.into_iter().enumerate() {
+        for parsed_entry in parsed.into_iter() {
             // Check duplicate handling
             if config.duplicate_handling != DuplicateHandling::ImportAll {
                 let db = self.get_database_mut(db_id)?;
@@ -73,7 +75,9 @@ impl KeePassService {
                             continue;
                         }
                         DuplicateHandling::Replace => {
-                            let existing_id = db.entries.iter()
+                            let existing_id = db
+                                .entries
+                                .iter()
                                 .find(|(_, e)| {
                                     e.title == parsed_entry.title
                                         && e.username == parsed_entry.username
@@ -87,7 +91,9 @@ impl KeePassService {
                         }
                         DuplicateHandling::Merge => {
                             entries_merged += 1;
-                            let existing_id = db.entries.iter()
+                            let existing_id = db
+                                .entries
+                                .iter()
                                 .find(|(_, e)| {
                                     e.title == parsed_entry.title
                                         && e.username == parsed_entry.username
@@ -97,7 +103,9 @@ impl KeePassService {
 
                             if let Some(id) = existing_id {
                                 if let Some(existing) = db.entries.get_mut(&id) {
-                                    if existing.password.is_empty() && !parsed_entry.password.is_empty() {
+                                    if existing.password.is_empty()
+                                        && !parsed_entry.password.is_empty()
+                                    {
                                         existing.password = parsed_entry.password.clone();
                                     }
                                     if existing.notes.is_empty() && !parsed_entry.notes.is_empty() {
@@ -137,8 +145,18 @@ impl KeePassService {
                 override_url: None,
                 auto_type: None,
                 otp: None,
-                custom_fields: parsed_entry.custom_fields.into_iter()
-                    .map(|cf| (cf.key.clone(), CustomField { value: cf.value, is_protected: cf.is_protected }))
+                custom_fields: parsed_entry
+                    .custom_fields
+                    .into_iter()
+                    .map(|cf| {
+                        (
+                            cf.key.clone(),
+                            CustomField {
+                                value: cf.value,
+                                is_protected: cf.is_protected,
+                            },
+                        )
+                    })
                     .collect(),
                 attachments: Vec::new(),
                 times: KeePassTimes {
@@ -191,9 +209,11 @@ impl KeePassService {
             let db = self.get_database(db_id)?;
 
             // Check if child group with this name exists under current parent
-            let existing = db.groups.iter().find(|(_, g)| {
-                g.name == part && g.parent_uuid.as_deref() == Some(&current_group)
-            }).map(|(id, _)| id.clone());
+            let existing = db
+                .groups
+                .iter()
+                .find(|(_, g)| g.name == part && g.parent_uuid.as_deref() == Some(&current_group))
+                .map(|(id, _)| id.clone());
 
             if let Some(existing_id) = existing {
                 current_group = existing_id;
@@ -253,7 +273,8 @@ impl KeePassService {
 
         // Collect entries to export
         let entries: Vec<&KeePassEntry> = if let Some(ref group_uuid) = config.group_uuid {
-            db.entries.values()
+            db.entries
+                .values()
                 .filter(|e| e.group_uuid == *group_uuid)
                 .collect()
         } else {
@@ -330,7 +351,11 @@ impl KeePassService {
                     password: entry_fields.get("Password").cloned().unwrap_or_default(),
                     url: entry_fields.get("URL").cloned().unwrap_or_default(),
                     notes: entry_fields.get("Notes").cloned().unwrap_or_default(),
-                    group_path: if current_group_path.is_empty() { None } else { Some(current_group_path.clone()) },
+                    group_path: if current_group_path.is_empty() {
+                        None
+                    } else {
+                        Some(current_group_path.clone())
+                    },
                     tags: Vec::new(),
                     custom_fields: custom_fields.clone(),
                     icon_id: None,
@@ -362,53 +387,81 @@ impl KeePassService {
         Ok(entries)
     }
 
-    fn parse_keepass_csv(&self, data: &str, _config: &ImportConfig) -> Result<Vec<ParsedEntry>, String> {
-        self.parse_csv_with_mapping(data, &[
-            ("Title", "title"),
-            ("User Name", "username"),
-            ("Password", "password"),
-            ("URL", "url"),
-            ("Notes", "notes"),
-            ("Group", "group_path"),
-        ])
+    fn parse_keepass_csv(
+        &self,
+        data: &str,
+        _config: &ImportConfig,
+    ) -> Result<Vec<ParsedEntry>, String> {
+        self.parse_csv_with_mapping(
+            data,
+            &[
+                ("Title", "title"),
+                ("User Name", "username"),
+                ("Password", "password"),
+                ("URL", "url"),
+                ("Notes", "notes"),
+                ("Group", "group_path"),
+            ],
+        )
     }
 
-    fn parse_generic_csv(&self, data: &str, config: &ImportConfig) -> Result<Vec<ParsedEntry>, String> {
+    fn parse_generic_csv(
+        &self,
+        data: &str,
+        config: &ImportConfig,
+    ) -> Result<Vec<ParsedEntry>, String> {
         // For generic CSV, try auto-detecting columns
         let field_mapping = config.field_mapping.as_ref();
 
         if let Some(mapping) = field_mapping {
-            let map: Vec<(&str, &str)> = mapping.iter()
+            let map: Vec<(&str, &str)> = mapping
+                .iter()
                 .map(|m| (m.key.as_str(), m.value.as_str()))
                 .collect();
             self.parse_csv_with_mapping(data, &map)
         } else {
             // Auto-detect common header names
-            self.parse_csv_with_mapping(data, &[
-                ("title", "title"), ("name", "title"),
-                ("username", "username"), ("user", "username"), ("login", "username"), ("email", "username"),
-                ("password", "password"), ("pass", "password"),
-                ("url", "url"), ("website", "url"), ("site", "url"),
-                ("notes", "notes"), ("comment", "notes"), ("comments", "notes"),
-                ("group", "group_path"), ("folder", "group_path"),
-            ])
+            self.parse_csv_with_mapping(
+                data,
+                &[
+                    ("title", "title"),
+                    ("name", "title"),
+                    ("username", "username"),
+                    ("user", "username"),
+                    ("login", "username"),
+                    ("email", "username"),
+                    ("password", "password"),
+                    ("pass", "password"),
+                    ("url", "url"),
+                    ("website", "url"),
+                    ("site", "url"),
+                    ("notes", "notes"),
+                    ("comment", "notes"),
+                    ("comments", "notes"),
+                    ("group", "group_path"),
+                    ("folder", "group_path"),
+                ],
+            )
         }
     }
 
     fn parse_lastpass_csv(&self, data: &str) -> Result<Vec<ParsedEntry>, String> {
-        self.parse_csv_with_mapping(data, &[
-            ("name", "title"),
-            ("username", "username"),
-            ("password", "password"),
-            ("url", "url"),
-            ("extra", "notes"),
-            ("grouping", "group_path"),
-        ])
+        self.parse_csv_with_mapping(
+            data,
+            &[
+                ("name", "title"),
+                ("username", "username"),
+                ("password", "password"),
+                ("url", "url"),
+                ("extra", "notes"),
+                ("grouping", "group_path"),
+            ],
+        )
     }
 
     fn parse_bitwarden_json(&self, data: &str) -> Result<Vec<ParsedEntry>, String> {
-        let parsed: serde_json::Value = serde_json::from_str(data)
-            .map_err(|e| format!("Invalid Bitwarden JSON: {}", e))?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(data).map_err(|e| format!("Invalid Bitwarden JSON: {}", e))?;
 
         let mut entries = Vec::new();
 
@@ -416,26 +469,59 @@ impl KeePassService {
             for item in items {
                 let login = item.get("login");
                 let entry = ParsedEntry {
-                    title: item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    username: login.and_then(|l| l.get("username")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    password: login.and_then(|l| l.get("password")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    url: login.and_then(|l| l.get("uris"))
+                    title: item
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    username: login
+                        .and_then(|l| l.get("username"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    password: login
+                        .and_then(|l| l.get("password"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    url: login
+                        .and_then(|l| l.get("uris"))
                         .and_then(|v| v.as_array())
                         .and_then(|a| a.first())
                         .and_then(|u| u.get("uri"))
                         .and_then(|v| v.as_str())
-                        .unwrap_or("").to_string(),
-                    notes: item.get("notes").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    group_path: item.get("folderId").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        .unwrap_or("")
+                        .to_string(),
+                    notes: item
+                        .get("notes")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    group_path: item
+                        .get("folderId")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     tags: Vec::new(),
                     custom_fields: {
                         let mut cf = Vec::new();
                         if let Some(fields) = item.get("fields").and_then(|v| v.as_array()) {
                             for f in fields {
                                 cf.push(ParsedCustomField {
-                                    key: f.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                    value: f.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                    is_protected: f.get("type").and_then(|v| v.as_u64()).unwrap_or(0) == 1,
+                                    key: f
+                                        .get("name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    value: f
+                                        .get("value")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    is_protected: f
+                                        .get("type")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0)
+                                        == 1,
                                 });
                             }
                         }
@@ -451,45 +537,57 @@ impl KeePassService {
     }
 
     fn parse_bitwarden_csv(&self, data: &str) -> Result<Vec<ParsedEntry>, String> {
-        self.parse_csv_with_mapping(data, &[
-            ("name", "title"),
-            ("login_username", "username"),
-            ("login_password", "password"),
-            ("login_uri", "url"),
-            ("notes", "notes"),
-            ("folder", "group_path"),
-        ])
+        self.parse_csv_with_mapping(
+            data,
+            &[
+                ("name", "title"),
+                ("login_username", "username"),
+                ("login_password", "password"),
+                ("login_uri", "url"),
+                ("notes", "notes"),
+                ("folder", "group_path"),
+            ],
+        )
     }
 
     fn parse_1password_csv(&self, data: &str) -> Result<Vec<ParsedEntry>, String> {
-        self.parse_csv_with_mapping(data, &[
-            ("Title", "title"),
-            ("Username", "username"),
-            ("Password", "password"),
-            ("URL", "url"),
-            ("Notes", "notes"),
-            ("Type", "group_path"),
-        ])
+        self.parse_csv_with_mapping(
+            data,
+            &[
+                ("Title", "title"),
+                ("Username", "username"),
+                ("Password", "password"),
+                ("URL", "url"),
+                ("Notes", "notes"),
+                ("Type", "group_path"),
+            ],
+        )
     }
 
     fn parse_chrome_csv(&self, data: &str) -> Result<Vec<ParsedEntry>, String> {
-        self.parse_csv_with_mapping(data, &[
-            ("name", "title"),
-            ("username", "username"),
-            ("password", "password"),
-            ("url", "url"),
-            ("note", "notes"),
-        ])
+        self.parse_csv_with_mapping(
+            data,
+            &[
+                ("name", "title"),
+                ("username", "username"),
+                ("password", "password"),
+                ("url", "url"),
+                ("note", "notes"),
+            ],
+        )
     }
 
     fn parse_firefox_csv(&self, data: &str) -> Result<Vec<ParsedEntry>, String> {
-        self.parse_csv_with_mapping(data, &[
-            ("url", "url"),
-            ("username", "username"),
-            ("password", "password"),
-            ("hostname", "title"),
-            ("httpRealm", "notes"),
-        ])
+        self.parse_csv_with_mapping(
+            data,
+            &[
+                ("url", "url"),
+                ("username", "username"),
+                ("password", "password"),
+                ("hostname", "title"),
+                ("httpRealm", "notes"),
+            ],
+        )
     }
 
     fn parse_keepass_xml_v1(&self, data: &str) -> Result<Vec<ParsedEntry>, String> {
@@ -519,7 +617,11 @@ impl KeePassService {
                     password: entry_fields.get("password").cloned().unwrap_or_default(),
                     url: entry_fields.get("url").cloned().unwrap_or_default(),
                     notes: entry_fields.get("comment").cloned().unwrap_or_default(),
-                    group_path: if current_group.is_empty() { None } else { Some(current_group.clone()) },
+                    group_path: if current_group.is_empty() {
+                        None
+                    } else {
+                        Some(current_group.clone())
+                    },
                     tags: Vec::new(),
                     custom_fields: Vec::new(),
                     icon_id: None,
@@ -548,8 +650,11 @@ impl KeePassService {
         xml.push_str("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
         xml.push_str("<KeePassFile>\n");
         xml.push_str("\t<Root>\n");
-        xml.push_str(&format!("\t\t<Group>\n"));
-        xml.push_str(&format!("\t\t\t<Name>{}</Name>\n", Self::xml_escape(&db.info.name)));
+        xml.push_str("\t\t<Group>\n");
+        xml.push_str(&format!(
+            "\t\t\t<Name>{}</Name>\n",
+            Self::xml_escape(&db.info.name)
+        ));
 
         for entry in entries {
             xml.push_str("\t\t\t<Entry>\n");
@@ -562,10 +667,7 @@ impl KeePassService {
 
             for (key, cf) in &entry.custom_fields {
                 xml.push_str("\t\t\t\t<String>\n");
-                xml.push_str(&format!(
-                    "\t\t\t\t\t<Key>{}</Key>\n",
-                    Self::xml_escape(key)
-                ));
+                xml.push_str(&format!("\t\t\t\t\t<Key>{}</Key>\n", Self::xml_escape(key)));
                 if cf.is_protected {
                     xml.push_str(&format!(
                         "\t\t\t\t\t<Value Protected=\"True\">{}</Value>\n",
@@ -614,27 +716,30 @@ impl KeePassService {
     }
 
     fn export_json(&self, entries: &[&KeePassEntry]) -> Result<String, String> {
-        let simplified: Vec<serde_json::Value> = entries.iter().map(|e| {
-            serde_json::json!({
-                "uuid": e.uuid,
-                "title": e.title,
-                "username": e.username,
-                "password": e.password,
-                "url": e.url,
-                "notes": e.notes,
-                "tags": e.tags,
-                "group": e.group_uuid,
-                "created": e.times.created,
-                "modified": e.times.last_modified,
-                "custom_fields": e.custom_fields.iter().map(|(key, cf)| {
-                    serde_json::json!({
-                        "key": key,
-                        "value": cf.value,
-                        "protected": cf.is_protected,
-                    })
-                }).collect::<Vec<_>>(),
+        let simplified: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "uuid": e.uuid,
+                    "title": e.title,
+                    "username": e.username,
+                    "password": e.password,
+                    "url": e.url,
+                    "notes": e.notes,
+                    "tags": e.tags,
+                    "group": e.group_uuid,
+                    "created": e.times.created,
+                    "modified": e.times.last_modified,
+                    "custom_fields": e.custom_fields.iter().map(|(key, cf)| {
+                        serde_json::json!({
+                            "key": key,
+                            "value": cf.value,
+                            "protected": cf.is_protected,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
             })
-        }).collect();
+            .collect();
 
         serde_json::to_string_pretty(&simplified)
             .map_err(|e| format!("JSON serialization failed: {}", e))
@@ -648,7 +753,10 @@ impl KeePassService {
         let mut html = String::new();
         html.push_str("<!DOCTYPE html>\n<html>\n<head>\n");
         html.push_str("<meta charset=\"utf-8\">\n");
-        html.push_str(&format!("<title>{} - Export</title>\n", Self::html_escape(&db.info.name)));
+        html.push_str(&format!(
+            "<title>{} - Export</title>\n",
+            Self::html_escape(&db.info.name)
+        ));
         html.push_str("<style>\n");
         html.push_str("body { font-family: sans-serif; margin: 20px; }\n");
         html.push_str("table { border-collapse: collapse; width: 100%; }\n");
@@ -669,7 +777,11 @@ impl KeePassService {
                 if entry.url.is_empty() {
                     String::new()
                 } else {
-                    format!("<a href=\"{}\">{}</a>", Self::html_escape(&entry.url), Self::html_escape(&entry.url))
+                    format!(
+                        "<a href=\"{}\">{}</a>",
+                        Self::html_escape(&entry.url),
+                        Self::html_escape(&entry.url)
+                    )
                 },
                 Self::html_escape(&entry.notes),
             ));

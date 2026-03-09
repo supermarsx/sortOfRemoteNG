@@ -3,8 +3,8 @@
 // Thin wrappers that take `State<KeePassServiceState>`, lock the mutex, and
 // delegate to the service methods.  Every command returns `Result<T, String>`.
 
-use super::types::*;
 use super::service::KeePassServiceState;
+use super::types::*;
 
 // ─── Database Lifecycle ──────────────────────────────────────────────────────
 
@@ -123,9 +123,7 @@ pub async fn keepass_change_master_key(
 }
 
 #[tauri::command]
-pub async fn keepass_get_database_file_info(
-    file_path: String,
-) -> Result<DatabaseFileInfo, String> {
+pub async fn keepass_get_database_file_info(file_path: String) -> Result<DatabaseFileInfo, String> {
     super::service::KeePassService::get_database_file_info(&file_path)
 }
 
@@ -160,7 +158,15 @@ pub async fn keepass_update_database_metadata(
     recycle_bin_enabled: Option<bool>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.update_database_metadata(&db_id, name.as_deref(), description.as_deref(), default_username.as_deref(), color.as_deref(), recycle_bin_enabled).map(|_| ())
+    svc.update_database_metadata(
+        &db_id,
+        name.as_deref(),
+        description.as_deref(),
+        default_username.as_deref(),
+        color.as_deref(),
+        recycle_bin_enabled,
+    )
+    .map(|_| ())
 }
 
 // ─── Entries ─────────────────────────────────────────────────────────────────
@@ -244,7 +250,8 @@ pub async fn keepass_restore_entry(
     target_group_uuid: Option<String>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.restore_entry(&db_id, &entry_uuid, target_group_uuid.as_deref()).map(|_| ())
+    svc.restore_entry(&db_id, &entry_uuid, target_group_uuid.as_deref())
+        .map(|_| ())
 }
 
 #[tauri::command]
@@ -543,9 +550,7 @@ pub async fn keepass_generate_passwords(
 }
 
 #[tauri::command]
-pub async fn keepass_analyze_password(
-    password: String,
-) -> Result<PasswordAnalysis, String> {
+pub async fn keepass_analyze_password(password: String) -> Result<PasswordAnalysis, String> {
     Ok(super::service::KeePassService::analyze_password(&password))
 }
 
@@ -581,16 +586,12 @@ pub async fn keepass_remove_password_profile(
 // ─── Key File ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn keepass_create_key_file(
-    req: CreateKeyFileRequest,
-) -> Result<KeyFileInfo, String> {
+pub async fn keepass_create_key_file(req: CreateKeyFileRequest) -> Result<KeyFileInfo, String> {
     super::service::KeePassService::create_key_file(req)
 }
 
 #[tauri::command]
-pub async fn keepass_verify_key_file(
-    file_path: String,
-) -> Result<KeyFileInfo, String> {
+pub async fn keepass_verify_key_file(file_path: String) -> Result<KeyFileInfo, String> {
     super::service::KeePassService::verify_key_file(&file_path)
 }
 
@@ -711,7 +712,9 @@ pub async fn keepass_export_entries(
 pub async fn keepass_parse_autotype_sequence(
     sequence: String,
 ) -> Result<Vec<AutoTypeToken>, String> {
-    Ok(super::service::KeePassService::parse_autotype_sequence(&sequence))
+    Ok(super::service::KeePassService::parse_autotype_sequence(
+        &sequence,
+    ))
 }
 
 #[tauri::command]
@@ -745,9 +748,7 @@ pub async fn keepass_list_autotype_associations(
 }
 
 #[tauri::command]
-pub async fn keepass_validate_autotype_sequence(
-    sequence: String,
-) -> Result<Vec<String>, String> {
+pub async fn keepass_validate_autotype_sequence(sequence: String) -> Result<Vec<String>, String> {
     super::service::KeePassService::validate_autotype_sequence(&sequence)
 }
 
@@ -930,8 +931,8 @@ pub async fn keepass_update_settings(
     state: tauri::State<'_, KeePassServiceState>,
     settings_json: serde_json::Value,
 ) -> Result<(), String> {
-    let settings: super::service::KeePassSettings = serde_json::from_value(settings_json)
-        .map_err(|e| format!("Invalid settings: {}", e))?;
+    let settings: super::service::KeePassSettings =
+        serde_json::from_value(settings_json).map_err(|e| format!("Invalid settings: {}", e))?;
     let mut svc = state.lock().await;
     svc.update_settings(settings);
     Ok(())
@@ -940,9 +941,7 @@ pub async fn keepass_update_settings(
 // ─── Service Lifecycle ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn keepass_shutdown(
-    state: tauri::State<'_, KeePassServiceState>,
-) -> Result<(), String> {
+pub async fn keepass_shutdown(state: tauri::State<'_, KeePassServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.shutdown();
     Ok(())

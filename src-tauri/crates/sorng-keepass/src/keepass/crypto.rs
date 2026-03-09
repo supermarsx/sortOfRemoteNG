@@ -3,18 +3,21 @@
 // Key management, password generation, key file creation, composite key logic,
 // password analysis, and encryption utilities.
 
-use sha2::{Sha256, Digest};
-use rand::Rng;
 use chrono::Utc;
+use rand::Rng;
+use sha2::{Digest, Sha256};
 
-use super::types::*;
 use super::service::KeePassService;
+use super::types::*;
 
 impl KeePassService {
     // ─── Password Generation ──────────────────────────────────────────
 
     /// Generate a password based on the given configuration.
-    pub fn generate_password(&self, req: PasswordGeneratorRequest) -> Result<GeneratedPassword, String> {
+    pub fn generate_password(
+        &self,
+        req: PasswordGeneratorRequest,
+    ) -> Result<GeneratedPassword, String> {
         match req.mode {
             PasswordGenMode::CharacterSet => self.generate_charset_password(&req),
             PasswordGenMode::Pattern => self.generate_pattern_password(&req),
@@ -23,8 +26,11 @@ impl KeePassService {
     }
 
     /// Generate multiple passwords.
-    pub fn generate_passwords(&self, req: PasswordGeneratorRequest) -> Result<Vec<GeneratedPassword>, String> {
-        let count = req.count.unwrap_or(1).max(1).min(100);
+    pub fn generate_passwords(
+        &self,
+        req: PasswordGeneratorRequest,
+    ) -> Result<Vec<GeneratedPassword>, String> {
+        let count = req.count.unwrap_or(1).clamp(1, 100);
         let mut results = Vec::with_capacity(count);
         for _ in 0..count {
             results.push(self.generate_password(req.clone())?);
@@ -32,11 +38,16 @@ impl KeePassService {
         Ok(results)
     }
 
-    fn generate_charset_password(&self, req: &PasswordGeneratorRequest) -> Result<GeneratedPassword, String> {
+    fn generate_charset_password(
+        &self,
+        req: &PasswordGeneratorRequest,
+    ) -> Result<GeneratedPassword, String> {
         let mut charset = String::new();
         let mut rng = rand::thread_rng();
 
-        let sets = req.character_sets.as_ref()
+        let sets = req
+            .character_sets
+            .as_ref()
             .ok_or("Character sets are required for CharacterSet mode")?;
 
         // Build character set
@@ -63,7 +74,10 @@ impl KeePassService {
         // Remove look-alikes
         if req.exclude_lookalikes {
             let lookalikes = "0OIl1|`";
-            charset = charset.chars().filter(|c| !lookalikes.contains(*c)).collect();
+            charset = charset
+                .chars()
+                .filter(|c| !lookalikes.contains(*c))
+                .collect();
         }
 
         if charset.is_empty() {
@@ -78,7 +92,8 @@ impl KeePassService {
         // Ensure at least one char from each required set
         if req.ensure_each_set && !required_chars.is_empty() {
             for set_chars in &required_chars {
-                let filtered: Vec<char> = set_chars.chars()
+                let filtered: Vec<char> = set_chars
+                    .chars()
                     .filter(|c| charset_chars.contains(c))
                     .collect();
                 if !filtered.is_empty() {
@@ -107,8 +122,13 @@ impl KeePassService {
         self.analyze_generated_password(&pw_string)
     }
 
-    fn generate_pattern_password(&self, req: &PasswordGeneratorRequest) -> Result<GeneratedPassword, String> {
-        let pattern = req.pattern.as_ref()
+    fn generate_pattern_password(
+        &self,
+        req: &PasswordGeneratorRequest,
+    ) -> Result<GeneratedPassword, String> {
+        let pattern = req
+            .pattern
+            .as_ref()
             .ok_or("Pattern is required for Pattern mode")?;
 
         let mut rng = rand::thread_rng();
@@ -173,9 +193,12 @@ impl KeePassService {
         self.analyze_generated_password(&password)
     }
 
-    fn generate_passphrase(&self, req: &PasswordGeneratorRequest) -> Result<GeneratedPassword, String> {
+    fn generate_passphrase(
+        &self,
+        req: &PasswordGeneratorRequest,
+    ) -> Result<GeneratedPassword, String> {
         let mut rng = rand::thread_rng();
-        let word_count = req.length.max(3).min(20); // Use length as word count for passphrase
+        let word_count = req.length.clamp(3, 20); // Use length as word count for passphrase
 
         // Common English words for passphrases
         let wordlist = Self::get_passphrase_wordlist();
@@ -249,7 +272,7 @@ impl KeePassService {
         let has_lower = password.chars().any(|c| c.is_ascii_lowercase());
         let has_digits = password.chars().any(|c| c.is_ascii_digit());
         let has_special = password.chars().any(|c| c.is_ascii_punctuation());
-        let has_unicode = password.chars().any(|c| !c.is_ascii());
+        let has_unicode = !password.is_ascii();
 
         let entropy = Self::estimate_entropy(password);
         let strength = Self::entropy_to_strength(entropy);
@@ -283,8 +306,8 @@ impl KeePassService {
         let mut common_patterns = Vec::new();
         let lower = password.to_lowercase();
         let weak_patterns = [
-            "password", "123456", "qwerty", "abc123", "letmein",
-            "admin", "welcome", "monkey", "master", "dragon",
+            "password", "123456", "qwerty", "abc123", "letmein", "admin", "welcome", "monkey",
+            "master", "dragon",
         ];
         for pattern in &weak_patterns {
             if lower.contains(pattern) {
@@ -373,10 +396,8 @@ impl KeePassService {
             KeyFileFormat::Xml => {
                 // Generate XML key file (KeePass 2.x format)
                 let key_data: Vec<u8> = (0..32).map(|_| rng.gen()).collect();
-                let key_base64 = base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    &key_data,
-                );
+                let key_base64 =
+                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &key_data);
                 let mut hasher = Sha256::new();
                 hasher.update(&key_data);
                 let hash_hex = hex::encode(&hasher.finalize()[..4]);
@@ -392,7 +413,8 @@ impl KeePassService {
     </Key>
 </KeyFile>"#,
                     hash_hex, key_base64
-                ).into_bytes()
+                )
+                .into_bytes()
             }
             KeyFileFormat::Binary32 => {
                 // 32 random bytes
@@ -406,10 +428,8 @@ impl KeePassService {
             KeyFileFormat::Random => {
                 // Custom data or random 256 bytes
                 if let Some(ref custom) = req.custom_data {
-                    base64::Engine::decode(
-                        &base64::engine::general_purpose::STANDARD,
-                        custom,
-                    ).map_err(|e| format!("Invalid base64 custom data: {}", e))?
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, custom)
+                        .map_err(|e| format!("Invalid base64 custom data: {}", e))?
                 } else {
                     (0..256).map(|_| rng.gen()).collect()
                 }
@@ -435,8 +455,7 @@ impl KeePassService {
 
     /// Verify a key file and return its info.
     pub fn verify_key_file(file_path: &str) -> Result<KeyFileInfo, String> {
-        let data = std::fs::read(file_path)
-            .map_err(|e| format!("Cannot read key file: {}", e))?;
+        let data = std::fs::read(file_path).map_err(|e| format!("Cannot read key file: {}", e))?;
 
         let mut hasher = Sha256::new();
         hasher.update(&data);
@@ -471,59 +490,47 @@ impl KeePassService {
 
     fn get_passphrase_wordlist() -> Vec<&'static str> {
         vec![
-            "abandon", "ability", "able", "about", "above", "absent", "absorb",
-            "abstract", "absurd", "abuse", "access", "accident", "account",
-            "accuse", "achieve", "acid", "acoustic", "acquire", "across", "act",
-            "action", "actor", "actress", "actual", "adapt", "add", "addict",
-            "address", "adjust", "admit", "adult", "advance", "advice", "aerobic",
-            "affair", "afford", "afraid", "again", "age", "agent", "agree",
-            "ahead", "aim", "air", "airport", "aisle", "alarm", "album",
-            "alcohol", "alert", "alien", "all", "alley", "allow", "almost",
-            "alone", "alpha", "already", "also", "alter", "always", "amateur",
-            "amazing", "among", "amount", "amused", "analyst", "anchor",
-            "ancient", "anger", "angle", "angry", "animal", "ankle", "announce",
-            "annual", "another", "answer", "antenna", "antique", "anxiety",
-            "apart", "apology", "appear", "apple", "approve", "april",
-            "arch", "arctic", "area", "arena", "argue", "arm", "armed",
-            "armor", "army", "around", "arrange", "arrest", "arrive", "arrow",
-            "art", "artifact", "artist", "artwork", "ask", "aspect", "assault",
-            "asset", "assist", "assume", "asthma", "athlete", "atom", "attack",
-            "attend", "attitude", "attract", "auction", "audit", "august",
-            "aunt", "author", "auto", "autumn", "average", "avocado", "avoid",
-            "awake", "aware", "awesome", "awful", "awkward", "axis",
-            "baby", "bachelor", "bacon", "badge", "bag", "balance", "balcony",
-            "ball", "bamboo", "banana", "banner", "bar", "barely", "bargain",
-            "barrel", "base", "basic", "basket", "battle", "beach", "bean",
-            "beauty", "because", "become", "beef", "before", "begin", "behave",
-            "behind", "believe", "below", "belt", "bench", "benefit", "best",
-            "betray", "better", "between", "beyond", "bicycle", "bid", "bike",
-            "bind", "biology", "bird", "birth", "bitter", "black", "blade",
-            "blame", "blanket", "blast", "bleak", "bless", "blind", "blood",
-            "blossom", "blow", "blue", "blur", "blush", "board", "boat",
-            "body", "boil", "bomb", "bone", "bonus", "book", "boost", "border",
-            "boring", "borrow", "boss", "bottom", "bounce", "box", "boy",
-            "bracket", "brain", "brand", "brass", "brave", "bread", "breeze",
-            "brick", "bridge", "brief", "bright", "bring", "brisk", "broccoli",
-            "broken", "bronze", "broom", "brother", "brown", "brush", "bubble",
-            "buddy", "budget", "buffalo", "build", "bulb", "bulk", "bullet",
-            "bundle", "bunny", "burden", "burger", "burst", "bus", "business",
-            "busy", "butter", "buyer", "buzz", "cabbage", "cabin", "cable",
-            "cactus", "cage", "cake", "call", "calm", "camera", "camp",
-            "canal", "cancel", "candy", "cannon", "canoe", "canvas", "canyon",
-            "capable", "capital", "captain", "carbon", "card", "cargo",
-            "carpet", "carry", "cart", "case", "castle", "casual", "catalog",
-            "catch", "category", "cattle", "caught", "cause", "caution",
-            "cave", "ceiling", "celery", "cement", "census", "century",
-            "cereal", "certain", "chair", "chalk", "champion", "change",
-            "chaos", "chapter", "charge", "chase", "cheap", "check", "cheese",
-            "cherry", "chest", "chicken", "chief", "child", "chimney",
-            "choice", "choose", "chronic", "chunk", "cinema", "circle",
-            "citizen", "city", "civil", "claim", "clap", "clarify", "claw",
-            "clay", "clean", "clerk", "clever", "click", "client", "cliff",
-            "climb", "clinic", "clip", "clock", "close", "cloth", "cloud",
-            "clown", "club", "clump", "cluster", "clutch", "coach", "coast",
-            "coconut", "code", "coffee", "coil", "coin", "collect", "color",
-            "column", "combine", "come", "comfort", "comic", "common",
+            "abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract",
+            "absurd", "abuse", "access", "accident", "account", "accuse", "achieve", "acid",
+            "acoustic", "acquire", "across", "act", "action", "actor", "actress", "actual",
+            "adapt", "add", "addict", "address", "adjust", "admit", "adult", "advance", "advice",
+            "aerobic", "affair", "afford", "afraid", "again", "age", "agent", "agree", "ahead",
+            "aim", "air", "airport", "aisle", "alarm", "album", "alcohol", "alert", "alien", "all",
+            "alley", "allow", "almost", "alone", "alpha", "already", "also", "alter", "always",
+            "amateur", "amazing", "among", "amount", "amused", "analyst", "anchor", "ancient",
+            "anger", "angle", "angry", "animal", "ankle", "announce", "annual", "another",
+            "answer", "antenna", "antique", "anxiety", "apart", "apology", "appear", "apple",
+            "approve", "april", "arch", "arctic", "area", "arena", "argue", "arm", "armed",
+            "armor", "army", "around", "arrange", "arrest", "arrive", "arrow", "art", "artifact",
+            "artist", "artwork", "ask", "aspect", "assault", "asset", "assist", "assume", "asthma",
+            "athlete", "atom", "attack", "attend", "attitude", "attract", "auction", "audit",
+            "august", "aunt", "author", "auto", "autumn", "average", "avocado", "avoid", "awake",
+            "aware", "awesome", "awful", "awkward", "axis", "baby", "bachelor", "bacon", "badge",
+            "bag", "balance", "balcony", "ball", "bamboo", "banana", "banner", "bar", "barely",
+            "bargain", "barrel", "base", "basic", "basket", "battle", "beach", "bean", "beauty",
+            "because", "become", "beef", "before", "begin", "behave", "behind", "believe", "below",
+            "belt", "bench", "benefit", "best", "betray", "better", "between", "beyond", "bicycle",
+            "bid", "bike", "bind", "biology", "bird", "birth", "bitter", "black", "blade", "blame",
+            "blanket", "blast", "bleak", "bless", "blind", "blood", "blossom", "blow", "blue",
+            "blur", "blush", "board", "boat", "body", "boil", "bomb", "bone", "bonus", "book",
+            "boost", "border", "boring", "borrow", "boss", "bottom", "bounce", "box", "boy",
+            "bracket", "brain", "brand", "brass", "brave", "bread", "breeze", "brick", "bridge",
+            "brief", "bright", "bring", "brisk", "broccoli", "broken", "bronze", "broom",
+            "brother", "brown", "brush", "bubble", "buddy", "budget", "buffalo", "build", "bulb",
+            "bulk", "bullet", "bundle", "bunny", "burden", "burger", "burst", "bus", "business",
+            "busy", "butter", "buyer", "buzz", "cabbage", "cabin", "cable", "cactus", "cage",
+            "cake", "call", "calm", "camera", "camp", "canal", "cancel", "candy", "cannon",
+            "canoe", "canvas", "canyon", "capable", "capital", "captain", "carbon", "card",
+            "cargo", "carpet", "carry", "cart", "case", "castle", "casual", "catalog", "catch",
+            "category", "cattle", "caught", "cause", "caution", "cave", "ceiling", "celery",
+            "cement", "census", "century", "cereal", "certain", "chair", "chalk", "champion",
+            "change", "chaos", "chapter", "charge", "chase", "cheap", "check", "cheese", "cherry",
+            "chest", "chicken", "chief", "child", "chimney", "choice", "choose", "chronic",
+            "chunk", "cinema", "circle", "citizen", "city", "civil", "claim", "clap", "clarify",
+            "claw", "clay", "clean", "clerk", "clever", "click", "client", "cliff", "climb",
+            "clinic", "clip", "clock", "close", "cloth", "cloud", "clown", "club", "clump",
+            "cluster", "clutch", "coach", "coast", "coconut", "code", "coffee", "coil", "coin",
+            "collect", "color", "column", "combine", "come", "comfort", "comic", "common",
             "company", "concert", "conduct", "confirm", "congress",
         ]
     }

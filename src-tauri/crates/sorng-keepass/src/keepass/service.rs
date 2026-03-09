@@ -3,10 +3,10 @@
 // Core KeePass service managing open databases, providing the central
 // coordination layer between database I/O, entries, groups, crypto, and search.
 
+use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
 use uuid::Uuid;
 
 use super::types::*;
@@ -152,12 +152,16 @@ impl KeePassService {
 
     /// Get a reference to an open database.
     pub fn get_database(&self, db_id: &str) -> Result<&DatabaseInstance, String> {
-        self.databases.get(db_id).ok_or_else(|| format!("Database not found: {}", db_id))
+        self.databases
+            .get(db_id)
+            .ok_or_else(|| format!("Database not found: {}", db_id))
     }
 
     /// Get a mutable reference to an open database.
     pub fn get_database_mut(&mut self, db_id: &str) -> Result<&mut DatabaseInstance, String> {
-        self.databases.get_mut(db_id).ok_or_else(|| format!("Database not found: {}", db_id))
+        self.databases
+            .get_mut(db_id)
+            .ok_or_else(|| format!("Database not found: {}", db_id))
     }
 
     /// List all currently open databases.
@@ -167,12 +171,15 @@ impl KeePassService {
 
     /// Check if a database is open by file path.
     pub fn is_database_open(&self, file_path: &str) -> bool {
-        self.databases.values().any(|db| db.info.file_path == file_path)
+        self.databases
+            .values()
+            .any(|db| db.info.file_path == file_path)
     }
 
     /// Get the ID of a database opened from a given file path.
     pub fn database_id_for_path(&self, file_path: &str) -> Option<String> {
-        self.databases.iter()
+        self.databases
+            .iter()
             .find(|(_, db)| db.info.file_path == file_path)
             .map(|(id, _)| id.clone())
     }
@@ -186,7 +193,9 @@ impl KeePassService {
 
     /// Remove a database from the open registry.
     pub fn unregister_database(&mut self, db_id: &str) -> Result<DatabaseInstance, String> {
-        self.databases.remove(db_id).ok_or_else(|| format!("Database not found: {}", db_id))
+        self.databases
+            .remove(db_id)
+            .ok_or_else(|| format!("Database not found: {}", db_id))
     }
 
     /// Count open databases.
@@ -205,14 +214,17 @@ impl KeePassService {
         // Remove existing entry for this path
         self.recent_databases.retain(|r| r.file_path != file_path);
 
-        self.recent_databases.insert(0, RecentDatabase {
-            file_path: file_path.to_string(),
-            name: name.to_string(),
-            last_opened: now,
-            file_exists,
-            file_size,
-            is_favorite: false,
-        });
+        self.recent_databases.insert(
+            0,
+            RecentDatabase {
+                file_path: file_path.to_string(),
+                name: name.to_string(),
+                last_opened: now,
+                file_exists,
+                file_size,
+                is_favorite: false,
+            },
+        );
 
         // Trim to max
         let max = self.settings.max_recent_databases;
@@ -228,7 +240,11 @@ impl KeePassService {
 
     /// Toggle favorite status of a recent database.
     pub fn toggle_favorite(&mut self, file_path: &str) -> Result<bool, String> {
-        if let Some(recent) = self.recent_databases.iter_mut().find(|r| r.file_path == file_path) {
+        if let Some(recent) = self
+            .recent_databases
+            .iter_mut()
+            .find(|r| r.file_path == file_path)
+        {
             recent.is_favorite = !recent.is_favorite;
             Ok(recent.is_favorite)
         } else {
@@ -268,7 +284,11 @@ impl KeePassService {
         profile.modified_at = now;
         profile.is_builtin = false;
 
-        if let Some(existing) = self.password_profiles.iter_mut().find(|p| p.id == profile.id) {
+        if let Some(existing) = self
+            .password_profiles
+            .iter_mut()
+            .find(|p| p.id == profile.id)
+        {
             *existing = profile.clone();
         } else {
             self.password_profiles.push(profile.clone());
@@ -279,7 +299,8 @@ impl KeePassService {
     /// Delete a custom password profile.
     pub fn delete_password_profile(&mut self, id: &str) -> Result<(), String> {
         let initial_len = self.password_profiles.len();
-        self.password_profiles.retain(|p| p.id != id || p.is_builtin);
+        self.password_profiles
+            .retain(|p| p.id != id || p.is_builtin);
         if self.password_profiles.len() == initial_len {
             Err(format!("Profile not found or is built-in: {}", id))
         } else {
@@ -522,21 +543,28 @@ impl DatabaseInstance {
     }
 
     fn build_subtree(&self, parent_uuid: &str) -> GroupNode {
-        let name = self.groups.get(parent_uuid)
+        let name = self
+            .groups
+            .get(parent_uuid)
             .map(|g| g.name.clone())
             .unwrap_or_else(|| "Root".to_string());
 
-        let entry_uuids: Vec<String> = self.entries.values()
+        let entry_uuids: Vec<String> = self
+            .entries
+            .values()
             .filter(|e| e.group_uuid == parent_uuid)
             .map(|e| e.uuid.clone())
             .collect();
 
-        let child_uuids: Vec<String> = self.groups.values()
+        let child_uuids: Vec<String> = self
+            .groups
+            .values()
             .filter(|g| g.parent_uuid.as_deref() == Some(parent_uuid))
             .map(|g| g.uuid.clone())
             .collect();
 
-        let children = child_uuids.iter()
+        let children = child_uuids
+            .iter()
             .map(|uuid| self.build_subtree(uuid))
             .collect();
 

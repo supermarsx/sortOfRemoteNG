@@ -3,19 +3,22 @@
 // Database lifecycle operations: create, open, close, save, lock/unlock,
 // backup, change master key, get statistics, merge.
 
-use std::collections::HashMap;
 use chrono::Utc;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use uuid::Uuid;
-use sha2::{Sha256, Digest};
 
+use super::service::{CompositeKeyInternal, DatabaseInstance, KeePassService};
 use super::types::*;
-use super::service::{KeePassService, DatabaseInstance, CompositeKeyInternal};
 
 impl KeePassService {
     // ─── Create Database ──────────────────────────────────────────────
 
     /// Create a new empty KeePass database.
-    pub fn create_database(&mut self, req: CreateDatabaseRequest) -> Result<KeePassDatabase, String> {
+    pub fn create_database(
+        &mut self,
+        req: CreateDatabaseRequest,
+    ) -> Result<KeePassDatabase, String> {
         // Validate inputs
         if req.file_path.is_empty() {
             return Err("File path is required".to_string());
@@ -69,7 +72,8 @@ impl KeePassService {
         };
 
         // Build composite key hash
-        let composite_key = Self::build_composite_key(req.password.as_deref(), req.key_file_path.as_deref())?;
+        let composite_key =
+            Self::build_composite_key(req.password.as_deref(), req.key_file_path.as_deref())?;
 
         // Create root group
         let root_group = KeePassGroup {
@@ -164,17 +168,16 @@ impl KeePassService {
             .unwrap_or(0);
 
         // Build composite key
-        let composite_key = Self::build_composite_key(
-            req.password.as_deref(),
-            req.key_file_path.as_deref(),
-        )?;
+        let composite_key =
+            Self::build_composite_key(req.password.as_deref(), req.key_file_path.as_deref())?;
 
         let now = Utc::now().to_rfc3339();
         let db_id = Uuid::new_v4().to_string();
         let root_group_id = Uuid::new_v4().to_string();
 
         // Extract database name from file path
-        let name = path.file_stem()
+        let name = path
+            .file_stem()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Untitled".to_string());
 
@@ -275,7 +278,11 @@ impl KeePassService {
     // ─── Save Database ────────────────────────────────────────────────
 
     /// Save the database to disk.
-    pub fn save_database(&mut self, db_id: &str, options: Option<SaveDatabaseOptions>) -> Result<String, String> {
+    pub fn save_database(
+        &mut self,
+        db_id: &str,
+        options: Option<SaveDatabaseOptions>,
+    ) -> Result<String, String> {
         let db = self.get_database_mut(db_id)?;
 
         if db.read_only {
@@ -283,7 +290,9 @@ impl KeePassService {
         }
 
         let file_path = if let Some(ref opts) = options {
-            opts.file_path.clone().unwrap_or_else(|| db.info.file_path.clone())
+            opts.file_path
+                .clone()
+                .unwrap_or_else(|| db.info.file_path.clone())
         } else {
             db.info.file_path.clone()
         };
@@ -376,7 +385,8 @@ impl KeePassService {
         let backup_directory = if let Some(dir) = backup_dir {
             std::path::PathBuf::from(dir)
         } else {
-            source_path.parent()
+            source_path
+                .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .join("backups")
         };
@@ -388,18 +398,19 @@ impl KeePassService {
         }
 
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-        let stem = source_path.file_stem()
+        let stem = source_path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "database".to_string());
-        let extension = source_path.extension()
+        let extension = source_path
+            .extension()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "kdbx".to_string());
 
         let backup_name = format!("{}_{}.{}", stem, timestamp, extension);
         let backup_path = backup_directory.join(&backup_name);
 
-        std::fs::copy(source, &backup_path)
-            .map_err(|e| format!("Backup failed: {}", e))?;
+        std::fs::copy(source, &backup_path).map_err(|e| format!("Backup failed: {}", e))?;
 
         log::info!("Database backed up to: {}", backup_path.display());
         Ok(backup_path.to_string_lossy().to_string())
@@ -410,7 +421,8 @@ impl KeePassService {
         let db = self.get_database(db_id)?;
         let source_path = std::path::Path::new(&db.info.file_path);
 
-        let backup_directory = source_path.parent()
+        let backup_directory = source_path
+            .parent()
             .unwrap_or(std::path::Path::new("."))
             .join("backups");
 
@@ -418,7 +430,8 @@ impl KeePassService {
             return Ok(Vec::new());
         }
 
-        let stem = source_path.file_stem()
+        let stem = source_path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
@@ -426,7 +439,8 @@ impl KeePassService {
         if let Ok(entries) = std::fs::read_dir(&backup_directory) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let file_name = path.file_name()
+                let file_name = path
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
 
@@ -438,11 +452,10 @@ impl KeePassService {
                         format_version: None,
                         cipher: None,
                         kdf: None,
-                        created: metadata.and_then(|m| m.created().ok())
-                            .map(|t| {
-                                let dt: chrono::DateTime<Utc> = t.into();
-                                dt.to_rfc3339()
-                            }),
+                        created: metadata.and_then(|m| m.created().ok()).map(|t| {
+                            let dt: chrono::DateTime<Utc> = t.into();
+                            dt.to_rfc3339()
+                        }),
                         modified: None,
                     });
                 }
@@ -505,8 +518,8 @@ impl KeePassService {
             return Err(format!("File not found: {}", file_path));
         }
 
-        let metadata = std::fs::metadata(path)
-            .map_err(|e| format!("Cannot read metadata: {}", e))?;
+        let metadata =
+            std::fs::metadata(path).map_err(|e| format!("Cannot read metadata: {}", e))?;
 
         Ok(DatabaseFileInfo {
             file_path: file_path.to_string(),
@@ -530,29 +543,41 @@ impl KeePassService {
         let db = self.get_database(db_id)?;
         let now = Utc::now();
 
-        let expired_entries = db.entries.values()
+        let expired_entries = db
+            .entries
+            .values()
             .filter(|e| {
-                e.times.expires && e.times.expiry_time.as_ref()
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                    .map(|t| t < now)
-                    .unwrap_or(false)
+                e.times.expires
+                    && e.times
+                        .expiry_time
+                        .as_ref()
+                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                        .map(|t| t < now)
+                        .unwrap_or(false)
             })
             .count();
 
         let soon_threshold = now + chrono::Duration::days(30);
-        let entries_expiring_soon = db.entries.values()
+        let entries_expiring_soon = db
+            .entries
+            .values()
             .filter(|e| {
-                e.times.expires && e.times.expiry_time.as_ref()
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                    .map(|t| {
-                        let t_utc = t.with_timezone(&Utc);
-                        t_utc > now && t_utc <= soon_threshold
-                    })
-                    .unwrap_or(false)
+                e.times.expires
+                    && e.times
+                        .expiry_time
+                        .as_ref()
+                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                        .map(|t| {
+                            let t_utc = t.with_timezone(&Utc);
+                            t_utc > now && t_utc <= soon_threshold
+                        })
+                        .unwrap_or(false)
             })
             .count();
 
-        let entries_without_password = db.entries.values()
+        let entries_without_password = db
+            .entries
+            .values()
             .filter(|e| e.password.is_empty())
             .count();
 
@@ -563,25 +588,24 @@ impl KeePassService {
                 *password_counts.entry(entry.password.clone()).or_insert(0) += 1;
             }
         }
-        let entries_with_duplicate_password = password_counts.values()
-            .filter(|&&c| c > 1)
-            .sum::<usize>();
+        let entries_with_duplicate_password =
+            password_counts.values().filter(|&&c| c > 1).sum::<usize>();
 
-        let entries_with_otp = db.entries.values()
-            .filter(|e| e.otp.is_some())
-            .count();
+        let entries_with_otp = db.entries.values().filter(|e| e.otp.is_some()).count();
 
-        let entries_with_attachments = db.entries.values()
+        let entries_with_attachments = db
+            .entries
+            .values()
             .filter(|e| !e.attachments.is_empty())
             .count();
 
-        let total_attachment_size: u64 = db.attachment_pool.values()
+        let total_attachment_size: u64 = db
+            .attachment_pool
+            .values()
             .map(|a| a.data.len() as u64)
             .sum();
 
-        let total_history_items: usize = db.history.values()
-            .map(|h| h.len())
-            .sum();
+        let total_history_items: usize = db.history.values().map(|h| h.len()).sum();
 
         // Tag counts
         let mut tag_counts: HashMap<String, usize> = HashMap::new();
@@ -590,18 +614,25 @@ impl KeePassService {
                 *tag_counts.entry(tag.clone()).or_insert(0) += 1;
             }
         }
-        let mut most_used_tags: Vec<TagCount> = tag_counts.into_iter()
+        let mut most_used_tags: Vec<TagCount> = tag_counts
+            .into_iter()
             .map(|(tag, count)| TagCount { tag, count })
             .collect();
         most_used_tags.sort_by(|a, b| b.count.cmp(&a.count));
         most_used_tags.truncate(20);
 
         // Group distribution
-        let group_distribution: Vec<GroupEntryCount> = db.groups.values()
+        let group_distribution: Vec<GroupEntryCount> = db
+            .groups
+            .values()
             .map(|g| GroupEntryCount {
                 group_uuid: g.uuid.clone(),
                 group_name: g.name.clone(),
-                count: db.entries.values().filter(|e| e.group_uuid == g.uuid).count(),
+                count: db
+                    .entries
+                    .values()
+                    .filter(|e| e.group_uuid == g.uuid)
+                    .count(),
             })
             .collect();
 
@@ -636,7 +667,11 @@ impl KeePassService {
     // ─── Merge ────────────────────────────────────────────────────────
 
     /// Merge another database into the currently open one.
-    pub fn merge_database(&mut self, db_id: &str, config: MergeConfig) -> Result<MergeResult, String> {
+    pub fn merge_database(
+        &mut self,
+        db_id: &str,
+        config: MergeConfig,
+    ) -> Result<MergeResult, String> {
         let _db = self.get_database(db_id)?;
 
         // In a real implementation, this would:
@@ -724,8 +759,7 @@ impl KeePassService {
         });
 
         let key_file_hash = if let Some(path) = key_file_path {
-            let data = std::fs::read(path)
-                .map_err(|e| format!("Cannot read key file: {}", e))?;
+            let data = std::fs::read(path).map_err(|e| format!("Cannot read key file: {}", e))?;
             let mut h = Sha256::new();
             h.update(&data);
             Some(h.finalize().to_vec())

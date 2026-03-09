@@ -125,20 +125,15 @@ pub struct DatabaseFileInfo {
 // ─── Encryption / KDF ─────────────────────────────────────────────────────────
 
 /// Encryption ciphers supported by KDBX.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum KeePassCipher {
     /// AES-256-CBC (AES/Rijndael)
+    #[default]
     Aes256,
     /// Twofish-256-CBC
     Twofish,
     /// ChaCha20-Poly1305
     ChaCha20,
-}
-
-impl Default for KeePassCipher {
-    fn default() -> Self {
-        Self::Aes256
-    }
 }
 
 /// Key derivation function settings.
@@ -180,16 +175,11 @@ pub enum KdfAlgorithm {
 }
 
 /// Compression algorithms.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum KeePassCompression {
     None,
+    #[default]
     GZip,
-}
-
-impl Default for KeePassCompression {
-    fn default() -> Self {
-        Self::GZip
-    }
 }
 
 // ─── Composite Key Types ──────────────────────────────────────────────────────
@@ -590,17 +580,12 @@ pub enum OtpType {
 }
 
 /// OTP hash algorithm.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum OtpAlgorithm {
+    #[default]
     Sha1,
     Sha256,
     Sha512,
-}
-
-impl Default for OtpAlgorithm {
-    fn default() -> Self {
-        Self::Sha1
-    }
 }
 
 /// Current OTP value with time info.

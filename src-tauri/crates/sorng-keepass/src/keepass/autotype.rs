@@ -3,8 +3,8 @@
 // Auto-type sequence parsing, token generation, window matching, and
 // keystroke sequence building for KeePass auto-type functionality.
 
-use super::types::*;
 use super::service::KeePassService;
+use super::types::*;
 
 impl KeePassService {
     // ─── Auto-Type ───────────────────────────────────────────────────
@@ -20,7 +20,7 @@ impl KeePassService {
                 let mut placeholder = String::new();
                 let mut found_close = false;
 
-                while let Some(inner) = chars.next() {
+                for inner in chars.by_ref() {
                     if inner == '}' {
                         found_close = true;
                         break;
@@ -123,7 +123,10 @@ impl KeePassService {
                 if let Some(count_str) = arg {
                     if let Ok(count) = count_str.parse::<u32>() {
                         // Repeated key press
-                        return AutoTypeToken::Repeat(Box::new(AutoTypeToken::Key(key.to_string())), count);
+                        return AutoTypeToken::Repeat(
+                            Box::new(AutoTypeToken::Key(key.to_string())),
+                            count,
+                        );
                     }
                 }
                 AutoTypeToken::Literal(format!("{{{}}}", name))
@@ -144,64 +147,78 @@ impl KeePassService {
         sequence: Option<&str>,
     ) -> Result<Vec<AutoTypeToken>, String> {
         let db = self.get_database(db_id)?;
-        let entry = db.entries.get(entry_uuid)
-            .ok_or("Entry not found")?;
+        let entry = db.entries.get(entry_uuid).ok_or("Entry not found")?;
 
         let seq = sequence
             .map(|s| s.to_string())
-            .or_else(|| entry.auto_type.as_ref().and_then(|at| {
-                at.default_sequence.as_ref().filter(|s| !s.is_empty()).cloned()
-            }))
+            .or_else(|| {
+                entry.auto_type.as_ref().and_then(|at| {
+                    at.default_sequence
+                        .as_ref()
+                        .filter(|s| !s.is_empty())
+                        .cloned()
+                })
+            })
             .unwrap_or_else(Self::get_default_autotype_sequence);
 
         let tokens = Self::parse_autotype_sequence(&seq);
 
         // Resolve field references
-        let resolved: Vec<AutoTypeToken> = tokens.into_iter().map(|token| {
-            match token {
-                AutoTypeToken::FieldRef(ref field_name) => {
-                    let value = match field_name.as_str() {
-                        "UserName" => entry.username.clone(),
-                        "Password" => entry.password.clone(),
-                        "Title" => entry.title.clone(),
-                        "URL" => entry.url.clone(),
-                        "Notes" => entry.notes.clone(),
-                        "TOTP" => {
-                            // Generate TOTP if available
-                            if let Some(ref otp) = entry.otp {
-                                match otp.otp_type {
-                                    OtpType::Totp | OtpType::Steam => {
-                                        let period = otp.period.unwrap_or(30);
-                                        let now_ts = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default();
-                                        let counter = now_ts.as_secs() / period as u64;
-                                        Self::generate_otp_code(&otp.secret, counter, otp.digits, &otp.algorithm)
+        let resolved: Vec<AutoTypeToken> = tokens
+            .into_iter()
+            .map(|token| {
+                match token {
+                    AutoTypeToken::FieldRef(ref field_name) => {
+                        let value = match field_name.as_str() {
+                            "UserName" => entry.username.clone(),
+                            "Password" => entry.password.clone(),
+                            "Title" => entry.title.clone(),
+                            "URL" => entry.url.clone(),
+                            "Notes" => entry.notes.clone(),
+                            "TOTP" => {
+                                // Generate TOTP if available
+                                if let Some(ref otp) = entry.otp {
+                                    match otp.otp_type {
+                                        OtpType::Totp | OtpType::Steam => {
+                                            let period = otp.period.unwrap_or(30);
+                                            let now_ts = std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap_or_default();
+                                            let counter = now_ts.as_secs() / period as u64;
+                                            Self::generate_otp_code(
+                                                &otp.secret,
+                                                counter,
+                                                otp.digits,
+                                                &otp.algorithm,
+                                            )
                                             .unwrap_or_default()
+                                        }
+                                        _ => String::new(),
                                     }
-                                    _ => String::new(),
+                                } else {
+                                    String::new()
                                 }
-                            } else {
-                                String::new()
                             }
-                        }
-                        _ if field_name.starts_with("S:") => {
-                            let custom_key = &field_name[2..];
-                            entry.custom_fields.get(custom_key)
-                                .map(|cf| cf.value.clone())
-                                .unwrap_or_default()
-                        }
-                        _ => String::new(),
-                    };
-                    AutoTypeToken::Literal(value)
+                            _ if field_name.starts_with("S:") => {
+                                let custom_key = &field_name[2..];
+                                entry
+                                    .custom_fields
+                                    .get(custom_key)
+                                    .map(|cf| cf.value.clone())
+                                    .unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
+                        AutoTypeToken::Literal(value)
+                    }
+                    AutoTypeToken::Repeat(inner, count) => {
+                        // Expand repeats
+                        AutoTypeToken::Repeat(inner, count)
+                    }
+                    other => other,
                 }
-                AutoTypeToken::Repeat(inner, count) => {
-                    // Expand repeats
-                    AutoTypeToken::Repeat(inner, count)
-                }
-                other => other,
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(resolved)
     }
@@ -225,8 +242,8 @@ impl KeePassService {
                 // Check associations
                 for assoc in &at.associations {
                     if Self::matches_window_pattern(&assoc.window, window_title) {
-                        let sequence = if assoc.sequence.as_deref().map_or(true, str::is_empty) {
-                            if at.default_sequence.as_deref().map_or(true, str::is_empty) {
+                        let sequence = if assoc.sequence.as_deref().is_none_or(str::is_empty) {
+                            if at.default_sequence.as_deref().is_none_or(str::is_empty) {
                                 Self::get_default_autotype_sequence()
                             } else {
                                 at.default_sequence.clone().unwrap_or_default()
@@ -319,10 +336,7 @@ impl KeePassService {
     }
 
     /// Get all auto-type window associations from all entries.
-    pub fn list_autotype_associations(
-        &self,
-        db_id: &str,
-    ) -> Result<Vec<AutoTypeMatch>, String> {
+    pub fn list_autotype_associations(&self, db_id: &str) -> Result<Vec<AutoTypeMatch>, String> {
         let db = self.get_database(db_id)?;
         let mut associations = Vec::new();
 
@@ -332,8 +346,8 @@ impl KeePassService {
                     continue;
                 }
                 for assoc in &at.associations {
-                    let sequence = if assoc.sequence.as_deref().map_or(true, str::is_empty) {
-                        if at.default_sequence.as_deref().map_or(true, str::is_empty) {
+                    let sequence = if assoc.sequence.as_deref().is_none_or(str::is_empty) {
+                        if at.default_sequence.as_deref().is_none_or(str::is_empty) {
                             Self::get_default_autotype_sequence()
                         } else {
                             at.default_sequence.clone().unwrap_or_default()

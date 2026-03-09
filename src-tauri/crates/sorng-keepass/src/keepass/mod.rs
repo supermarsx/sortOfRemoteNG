@@ -15,18 +15,18 @@
 //   • OTP (TOTP/HOTP) integration
 //   • Tauri command bindings for the frontend
 
-pub mod types;
-pub mod service;
+pub mod attachments;
+pub mod autotype;
+pub mod commands;
+pub mod crypto;
 pub mod database;
 pub mod entries;
 pub mod groups;
-pub mod crypto;
 pub mod import_export;
 pub mod search;
-pub mod autotype;
-pub mod attachments;
-pub mod commands;
+pub mod service;
+pub mod types;
 
-pub use types::*;
-pub use service::KeePassService;
 pub use commands::*;
+pub use service::KeePassService;
+pub use types::*;
