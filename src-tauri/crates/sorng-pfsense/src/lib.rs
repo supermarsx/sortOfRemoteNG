@@ -1,20 +1,20 @@
 // ── sorng-pfsense – pfSense firewall appliance REST API management ───────────
 
-pub mod types;
-pub mod error;
+pub mod backups;
+pub mod certificates;
 pub mod client;
-pub mod interfaces;
-pub mod firewall;
-pub mod nat;
+pub mod commands;
 pub mod dhcp;
+pub mod diagnostics;
 pub mod dns;
-pub mod vpn;
+pub mod error;
+pub mod firewall;
+pub mod interfaces;
+pub mod nat;
 pub mod routing;
+pub mod service;
 pub mod services;
 pub mod system;
-pub mod certificates;
+pub mod types;
 pub mod users;
-pub mod diagnostics;
-pub mod backups;
-pub mod service;
-pub mod commands;
+pub mod vpn;

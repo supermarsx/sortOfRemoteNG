@@ -20,7 +20,12 @@ pub async fn pfsense_connect(
     id: String,
     config: PfsenseConnectionConfig,
 ) -> CmdResult<PfsenseConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -53,7 +58,12 @@ pub async fn pfsense_list_interfaces(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<NetworkInterface>> {
-    state.lock().await.list_interfaces(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_interfaces(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -62,7 +72,12 @@ pub async fn pfsense_get_interface(
     id: String,
     name: String,
 ) -> CmdResult<NetworkInterface> {
-    state.lock().await.get_interface(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_interface(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -71,7 +86,12 @@ pub async fn pfsense_create_interface(
     id: String,
     iface: InterfaceConfig,
 ) -> CmdResult<NetworkInterface> {
-    state.lock().await.create_interface(&id, &iface).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_interface(&id, &iface)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -81,7 +101,12 @@ pub async fn pfsense_update_interface(
     name: String,
     iface: InterfaceConfig,
 ) -> CmdResult<NetworkInterface> {
-    state.lock().await.update_interface(&id, &name, &iface).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_interface(&id, &name, &iface)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -90,7 +115,12 @@ pub async fn pfsense_delete_interface(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_interface(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_interface(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -98,7 +128,12 @@ pub async fn pfsense_apply_interfaces(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<serde_json::Value> {
-    state.lock().await.apply_interfaces(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .apply_interfaces(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -106,7 +141,38 @@ pub async fn pfsense_list_interface_stats(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<IfStats>> {
-    state.lock().await.list_interface_stats(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_interface_stats(&id)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_apply_interface_changes(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+) -> CmdResult<serde_json::Value> {
+    state
+        .lock()
+        .await
+        .apply_interfaces(&id)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_get_interface_stats(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+) -> CmdResult<Vec<IfStats>> {
+    state
+        .lock()
+        .await
+        .list_interface_stats(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Firewall ──────────────────────────────────────────────────────
@@ -116,7 +182,12 @@ pub async fn pfsense_list_firewall_rules(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<FirewallRule>> {
-    state.lock().await.list_firewall_rules(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_firewall_rules(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -125,7 +196,12 @@ pub async fn pfsense_get_firewall_rule(
     id: String,
     rule_id: String,
 ) -> CmdResult<FirewallRule> {
-    state.lock().await.get_firewall_rule(&id, &rule_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_firewall_rule(&id, &rule_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -134,7 +210,12 @@ pub async fn pfsense_create_firewall_rule(
     id: String,
     rule: FirewallRule,
 ) -> CmdResult<FirewallRule> {
-    state.lock().await.create_firewall_rule(&id, &rule).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_firewall_rule(&id, &rule)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -144,7 +225,12 @@ pub async fn pfsense_update_firewall_rule(
     rule_id: String,
     rule: FirewallRule,
 ) -> CmdResult<FirewallRule> {
-    state.lock().await.update_firewall_rule(&id, &rule_id, &rule).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_firewall_rule(&id, &rule_id, &rule)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -153,7 +239,12 @@ pub async fn pfsense_delete_firewall_rule(
     id: String,
     rule_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_firewall_rule(&id, &rule_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_firewall_rule(&id, &rule_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -161,7 +252,12 @@ pub async fn pfsense_apply_firewall_rules(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<serde_json::Value> {
-    state.lock().await.apply_firewall_rules(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .apply_firewall_rules(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -169,7 +265,12 @@ pub async fn pfsense_list_firewall_aliases(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<FirewallAlias>> {
-    state.lock().await.list_firewall_aliases(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_firewall_aliases(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -178,7 +279,12 @@ pub async fn pfsense_get_firewall_alias(
     id: String,
     name: String,
 ) -> CmdResult<FirewallAlias> {
-    state.lock().await.get_firewall_alias(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_firewall_alias(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -187,7 +293,27 @@ pub async fn pfsense_create_firewall_alias(
     id: String,
     alias: FirewallAlias,
 ) -> CmdResult<FirewallAlias> {
-    state.lock().await.create_firewall_alias(&id, &alias).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_firewall_alias(&id, &alias)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_update_firewall_alias(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    name: String,
+    alias: FirewallAlias,
+) -> CmdResult<FirewallAlias> {
+    state
+        .lock()
+        .await
+        .update_firewall_alias(&id, &name, &alias)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -196,7 +322,12 @@ pub async fn pfsense_delete_firewall_alias(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_firewall_alias(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_firewall_alias(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -204,7 +335,12 @@ pub async fn pfsense_get_firewall_states(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<FirewallState>> {
-    state.lock().await.get_firewall_states(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_firewall_states(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -212,7 +348,12 @@ pub async fn pfsense_flush_firewall_states(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state.lock().await.flush_firewall_states(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .flush_firewall_states(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── NAT ───────────────────────────────────────────────────────────
@@ -222,7 +363,12 @@ pub async fn pfsense_list_nat_port_forwards(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<NatPortForward>> {
-    state.lock().await.list_nat_port_forwards(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_nat_port_forwards(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -231,7 +377,27 @@ pub async fn pfsense_create_nat_port_forward(
     id: String,
     rule: NatPortForward,
 ) -> CmdResult<NatPortForward> {
-    state.lock().await.create_nat_port_forward(&id, &rule).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_nat_port_forward(&id, &rule)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_update_nat_port_forward(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    fwd_id: String,
+    rule: NatPortForward,
+) -> CmdResult<NatPortForward> {
+    state
+        .lock()
+        .await
+        .update_nat_port_forward(&id, &fwd_id, &rule)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -240,7 +406,12 @@ pub async fn pfsense_delete_nat_port_forward(
     id: String,
     fwd_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_nat_port_forward(&id, &fwd_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_nat_port_forward(&id, &fwd_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -248,7 +419,55 @@ pub async fn pfsense_list_nat_outbound(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<NatOutbound>> {
-    state.lock().await.list_nat_outbound(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_nat_outbound(&id)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_create_nat_outbound(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    rule: NatOutbound,
+) -> CmdResult<NatOutbound> {
+    state
+        .lock()
+        .await
+        .create_nat_outbound(&id, &rule)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_update_nat_outbound(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    out_id: String,
+    rule: NatOutbound,
+) -> CmdResult<NatOutbound> {
+    state
+        .lock()
+        .await
+        .update_nat_outbound(&id, &out_id, &rule)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_delete_nat_outbound(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    out_id: String,
+) -> CmdResult<()> {
+    state
+        .lock()
+        .await
+        .delete_nat_outbound(&id, &out_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -257,6 +476,49 @@ pub async fn pfsense_list_nat_1to1(
     id: String,
 ) -> CmdResult<Vec<Nat1to1>> {
     state.lock().await.list_nat_1to1(&id).await.map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_create_nat_1to1(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    rule: Nat1to1,
+) -> CmdResult<Nat1to1> {
+    state
+        .lock()
+        .await
+        .create_nat_1to1(&id, &rule)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_update_nat_1to1(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    rule_id: String,
+    rule: Nat1to1,
+) -> CmdResult<Nat1to1> {
+    state
+        .lock()
+        .await
+        .update_nat_1to1(&id, &rule_id, &rule)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_delete_nat_1to1(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    rule_id: String,
+) -> CmdResult<()> {
+    state
+        .lock()
+        .await
+        .delete_nat_1to1(&id, &rule_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -275,7 +537,12 @@ pub async fn pfsense_get_dhcp_config(
     id: String,
     interface: String,
 ) -> CmdResult<DhcpConfig> {
-    state.lock().await.get_dhcp_config(&id, &interface).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_dhcp_config(&id, &interface)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -285,7 +552,12 @@ pub async fn pfsense_update_dhcp_config(
     interface: String,
     config: DhcpConfig,
 ) -> CmdResult<DhcpConfig> {
-    state.lock().await.update_dhcp_config(&id, &interface, &config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_dhcp_config(&id, &interface, &config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -293,7 +565,12 @@ pub async fn pfsense_list_dhcp_leases(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<DhcpLease>> {
-    state.lock().await.list_dhcp_leases(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_dhcp_leases(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -302,7 +579,12 @@ pub async fn pfsense_list_dhcp_static_mappings(
     id: String,
     interface: String,
 ) -> CmdResult<Vec<DhcpStaticMapping>> {
-    state.lock().await.list_dhcp_static_mappings(&id, &interface).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_dhcp_static_mappings(&id, &interface)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -312,7 +594,28 @@ pub async fn pfsense_create_dhcp_static_mapping(
     interface: String,
     mapping: DhcpStaticMapping,
 ) -> CmdResult<DhcpStaticMapping> {
-    state.lock().await.create_dhcp_static_mapping(&id, &interface, &mapping).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_dhcp_static_mapping(&id, &interface, &mapping)
+        .await
+        .map_err(map_err)
+}
+
+#[tauri::command]
+pub async fn pfsense_update_dhcp_static_mapping(
+    state: State<'_, PfsenseServiceState>,
+    id: String,
+    interface: String,
+    mapping_id: String,
+    mapping: DhcpStaticMapping,
+) -> CmdResult<DhcpStaticMapping> {
+    state
+        .lock()
+        .await
+        .update_dhcp_static_mapping(&id, &interface, &mapping_id, &mapping)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -322,7 +625,12 @@ pub async fn pfsense_delete_dhcp_static_mapping(
     interface: String,
     mapping_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_dhcp_static_mapping(&id, &interface, &mapping_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_dhcp_static_mapping(&id, &interface, &mapping_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -330,7 +638,12 @@ pub async fn pfsense_get_dhcp_relay(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<DhcpRelay> {
-    state.lock().await.get_dhcp_relay(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_dhcp_relay(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── DNS ───────────────────────────────────────────────────────────
@@ -340,7 +653,12 @@ pub async fn pfsense_get_dns_resolver_config(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<DnsResolverConfig> {
-    state.lock().await.get_dns_resolver_config(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_dns_resolver_config(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -349,7 +667,12 @@ pub async fn pfsense_update_dns_resolver_config(
     id: String,
     config: DnsResolverConfig,
 ) -> CmdResult<DnsResolverConfig> {
-    state.lock().await.update_dns_resolver_config(&id, &config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_dns_resolver_config(&id, &config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -357,7 +680,12 @@ pub async fn pfsense_list_dns_host_overrides(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<DnsHostOverride>> {
-    state.lock().await.list_dns_host_overrides(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_dns_host_overrides(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -366,7 +694,12 @@ pub async fn pfsense_create_dns_host_override(
     id: String,
     entry: DnsHostOverride,
 ) -> CmdResult<DnsHostOverride> {
-    state.lock().await.create_dns_host_override(&id, &entry).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_dns_host_override(&id, &entry)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -375,7 +708,12 @@ pub async fn pfsense_delete_dns_host_override(
     id: String,
     override_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_dns_host_override(&id, &override_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_dns_host_override(&id, &override_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -383,7 +721,12 @@ pub async fn pfsense_list_dns_domain_overrides(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<DnsDomainOverride>> {
-    state.lock().await.list_dns_domain_overrides(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_dns_domain_overrides(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -391,7 +734,12 @@ pub async fn pfsense_flush_dns_cache(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<serde_json::Value> {
-    state.lock().await.flush_dns_cache(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .flush_dns_cache(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -399,7 +747,12 @@ pub async fn pfsense_get_dns_cache_stats(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<DnsCacheStats> {
-    state.lock().await.get_dns_cache_stats(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_dns_cache_stats(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── VPN ───────────────────────────────────────────────────────────
@@ -409,7 +762,12 @@ pub async fn pfsense_list_openvpn_servers(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<OpenVpnServer>> {
-    state.lock().await.list_openvpn_servers(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_openvpn_servers(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -418,7 +776,12 @@ pub async fn pfsense_get_openvpn_server(
     id: String,
     vpnid: u32,
 ) -> CmdResult<OpenVpnServer> {
-    state.lock().await.get_openvpn_server(&id, vpnid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_openvpn_server(&id, vpnid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -427,7 +790,12 @@ pub async fn pfsense_create_openvpn_server(
     id: String,
     server: OpenVpnServer,
 ) -> CmdResult<OpenVpnServer> {
-    state.lock().await.create_openvpn_server(&id, &server).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_openvpn_server(&id, &server)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -436,7 +804,12 @@ pub async fn pfsense_delete_openvpn_server(
     id: String,
     vpnid: u32,
 ) -> CmdResult<()> {
-    state.lock().await.delete_openvpn_server(&id, vpnid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_openvpn_server(&id, vpnid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -444,7 +817,12 @@ pub async fn pfsense_list_openvpn_clients(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<OpenVpnClient>> {
-    state.lock().await.list_openvpn_clients(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_openvpn_clients(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -452,7 +830,12 @@ pub async fn pfsense_list_ipsec_tunnels(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<IpsecTunnel>> {
-    state.lock().await.list_ipsec_tunnels(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_ipsec_tunnels(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -460,7 +843,12 @@ pub async fn pfsense_list_wireguard_tunnels(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<WireGuardTunnel>> {
-    state.lock().await.list_wireguard_tunnels(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_wireguard_tunnels(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -469,7 +857,12 @@ pub async fn pfsense_list_wireguard_peers(
     id: String,
     tunnel_id: String,
 ) -> CmdResult<Vec<WireGuardPeer>> {
-    state.lock().await.list_wireguard_peers(&id, &tunnel_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_wireguard_peers(&id, &tunnel_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Routing ───────────────────────────────────────────────────────
@@ -488,7 +881,12 @@ pub async fn pfsense_create_route(
     id: String,
     route: StaticRoute,
 ) -> CmdResult<StaticRoute> {
-    state.lock().await.create_route(&id, &route).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_route(&id, &route)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -497,7 +895,12 @@ pub async fn pfsense_delete_route(
     id: String,
     route_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_route(&id, &route_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_route(&id, &route_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -513,7 +916,12 @@ pub async fn pfsense_get_gateway_status(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<GatewayStatus>> {
-    state.lock().await.get_gateway_status(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_gateway_status(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -521,7 +929,12 @@ pub async fn pfsense_get_routing_table(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<Vec<RoutingTableEntry>> {
-    state.lock().await.get_routing_table(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_routing_table(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Services ──────────────────────────────────────────────────────
@@ -540,7 +953,12 @@ pub async fn pfsense_get_service_status(
     id: String,
     name: String,
 ) -> CmdResult<ServiceStatus> {
-    state.lock().await.get_service_status(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_service_status(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -549,7 +967,12 @@ pub async fn pfsense_start_service(
     id: String,
     name: String,
 ) -> CmdResult<serde_json::Value> {
-    state.lock().await.start_service(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .start_service(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -558,7 +981,12 @@ pub async fn pfsense_stop_service(
     id: String,
     name: String,
 ) -> CmdResult<serde_json::Value> {
-    state.lock().await.stop_service(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .stop_service(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -567,7 +995,12 @@ pub async fn pfsense_restart_service(
     id: String,
     name: String,
 ) -> CmdResult<serde_json::Value> {
-    state.lock().await.restart_service(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .restart_service(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── System ────────────────────────────────────────────────────────
@@ -577,7 +1010,12 @@ pub async fn pfsense_get_system_info(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<SystemInfo> {
-    state.lock().await.get_system_info(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_system_info(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -585,7 +1023,12 @@ pub async fn pfsense_get_system_updates(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<SystemUpdate> {
-    state.lock().await.get_system_updates(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_system_updates(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -593,7 +1036,12 @@ pub async fn pfsense_get_general_config(
     state: State<'_, PfsenseServiceState>,
     id: String,
 ) -> CmdResult<GeneralConfig> {
-    state.lock().await.get_general_config(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_general_config(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -602,7 +1050,12 @@ pub async fn pfsense_update_general_config(
     id: String,
     config: GeneralConfig,
 ) -> CmdResult<GeneralConfig> {
-    state.lock().await.update_general_config(&id, &config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_general_config(&id, &config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -645,7 +1098,12 @@ pub async fn pfsense_create_cert(
     id: String,
     req: CertificateRequest,
 ) -> CmdResult<ServerCertificate> {
-    state.lock().await.create_cert(&id, &req).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_cert(&id, &req)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -654,7 +1112,12 @@ pub async fn pfsense_delete_cert(
     id: String,
     refid: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_cert(&id, &refid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_cert(&id, &refid)
+        .await
+        .map_err(map_err)
 }
 
 // ── Users ─────────────────────────────────────────────────────────
@@ -673,7 +1136,12 @@ pub async fn pfsense_get_user(
     id: String,
     name: String,
 ) -> CmdResult<PfsenseUser> {
-    state.lock().await.get_user(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_user(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -682,7 +1150,12 @@ pub async fn pfsense_create_user(
     id: String,
     user: PfsenseUser,
 ) -> CmdResult<PfsenseUser> {
-    state.lock().await.create_user(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_user(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -691,7 +1164,12 @@ pub async fn pfsense_delete_user(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_user(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_user(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -728,7 +1206,12 @@ pub async fn pfsense_dns_lookup(
     record_type: Option<String>,
     server: Option<String>,
 ) -> CmdResult<DnsLookupResult> {
-    state.lock().await.dns_lookup(&id, &host, record_type.as_deref(), server.as_deref()).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .dns_lookup(&id, &host, record_type.as_deref(), server.as_deref())
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -739,7 +1222,12 @@ pub async fn pfsense_diag_ping(
     count: Option<u32>,
     source: Option<String>,
 ) -> CmdResult<PingResult> {
-    state.lock().await.diag_ping(&id, &host, count, source.as_deref()).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .diag_ping(&id, &host, count, source.as_deref())
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -750,7 +1238,12 @@ pub async fn pfsense_traceroute(
     max_hops: Option<u32>,
     source: Option<String>,
 ) -> CmdResult<TraceResult> {
-    state.lock().await.traceroute(&id, &host, max_hops, source.as_deref()).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .traceroute(&id, &host, max_hops, source.as_deref())
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -768,7 +1261,12 @@ pub async fn pfsense_get_system_log(
     log_name: String,
     count: Option<u32>,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.get_system_log(&id, &log_name, count).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_system_log(&id, &log_name, count)
+        .await
+        .map_err(map_err)
 }
 
 // ── Backups ───────────────────────────────────────────────────────
@@ -787,7 +1285,12 @@ pub async fn pfsense_create_backup(
     id: String,
     config: BackupConfig,
 ) -> CmdResult<BackupEntry> {
-    state.lock().await.create_backup(&id, &config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_backup(&id, &config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -796,5 +1299,10 @@ pub async fn pfsense_delete_backup(
     id: String,
     backup_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_backup(&id, &backup_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_backup(&id, &backup_id)
+        .await
+        .map_err(map_err)
 }

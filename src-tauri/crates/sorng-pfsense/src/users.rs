@@ -20,7 +20,11 @@ impl UserManager {
         Ok(resp.data)
     }
 
-    pub async fn update(client: &PfsenseClient, name: &str, user: &PfsenseUser) -> PfsenseResult<PfsenseUser> {
+    pub async fn update(
+        client: &PfsenseClient,
+        name: &str,
+        user: &PfsenseUser,
+    ) -> PfsenseResult<PfsenseUser> {
         let resp: ApiResponse<PfsenseUser> = client.api_put(&format!("user/{name}"), user).await?;
         Ok(resp.data)
     }
@@ -39,13 +43,21 @@ impl UserManager {
         Ok(resp.data)
     }
 
-    pub async fn create_group(client: &PfsenseClient, group: &PfsenseGroup) -> PfsenseResult<PfsenseGroup> {
+    pub async fn create_group(
+        client: &PfsenseClient,
+        group: &PfsenseGroup,
+    ) -> PfsenseResult<PfsenseGroup> {
         let resp: ApiResponse<PfsenseGroup> = client.api_post("user/group", group).await?;
         Ok(resp.data)
     }
 
-    pub async fn update_group(client: &PfsenseClient, name: &str, group: &PfsenseGroup) -> PfsenseResult<PfsenseGroup> {
-        let resp: ApiResponse<PfsenseGroup> = client.api_put(&format!("user/group/{name}"), group).await?;
+    pub async fn update_group(
+        client: &PfsenseClient,
+        name: &str,
+        group: &PfsenseGroup,
+    ) -> PfsenseResult<PfsenseGroup> {
+        let resp: ApiResponse<PfsenseGroup> =
+            client.api_put(&format!("user/group/{name}"), group).await?;
         Ok(resp.data)
     }
 
@@ -58,12 +70,24 @@ impl UserManager {
         Ok(resp.data)
     }
 
-    pub async fn add_privilege(client: &PfsenseClient, user: &str, priv_id: &str) -> PfsenseResult<serde_json::Value> {
+    pub async fn add_privilege(
+        client: &PfsenseClient,
+        user: &str,
+        priv_id: &str,
+    ) -> PfsenseResult<serde_json::Value> {
         let body = serde_json::json!({"priv": priv_id});
-        client.api_post(&format!("user/{user}/privilege"), &body).await
+        client
+            .api_post(&format!("user/{user}/privilege"), &body)
+            .await
     }
 
-    pub async fn remove_privilege(client: &PfsenseClient, user: &str, priv_id: &str) -> PfsenseResult<()> {
-        client.api_delete_void(&format!("user/{user}/privilege/{priv_id}")).await
+    pub async fn remove_privilege(
+        client: &PfsenseClient,
+        user: &str,
+        priv_id: &str,
+    ) -> PfsenseResult<()> {
+        client
+            .api_delete_void(&format!("user/{user}/privilege/{priv_id}"))
+            .await
     }
 }

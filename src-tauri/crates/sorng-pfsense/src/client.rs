@@ -24,22 +24,38 @@ impl PfsenseClient {
     }
 
     fn scheme(&self) -> &str {
-        if self.config.use_tls { "https" } else { "http" }
+        if self.config.use_tls {
+            "https"
+        } else {
+            "http"
+        }
     }
 
     fn base_url(&self) -> String {
-        format!("{}://{}:{}", self.scheme(), self.config.host, self.config.port)
+        format!(
+            "{}://{}:{}",
+            self.scheme(),
+            self.config.host,
+            self.config.port
+        )
     }
 
     fn api_url(&self, endpoint: &str) -> String {
-        format!("{}/api/v1/{}", self.base_url(), endpoint.trim_start_matches('/'))
+        format!(
+            "{}/api/v1/{}",
+            self.base_url(),
+            endpoint.trim_start_matches('/')
+        )
     }
 
     // ── Auth ─────────────────────────────────────────────────────
 
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if !self.config.api_key.is_empty() {
-            req.header("Authorization", format!("{} {}", self.config.api_key, self.config.api_secret))
+            req.header(
+                "Authorization",
+                format!("{} {}", self.config.api_key, self.config.api_secret),
+            )
         } else {
             req
         }

@@ -20,7 +20,10 @@ impl SystemManager {
         Ok(resp.data)
     }
 
-    pub async fn update_general_config(client: &PfsenseClient, config: &GeneralConfig) -> PfsenseResult<GeneralConfig> {
+    pub async fn update_general_config(
+        client: &PfsenseClient,
+        config: &GeneralConfig,
+    ) -> PfsenseResult<GeneralConfig> {
         let resp: ApiResponse<GeneralConfig> = client.api_put("system/config", config).await?;
         Ok(resp.data)
     }
@@ -30,13 +33,18 @@ impl SystemManager {
         Ok(resp.data)
     }
 
-    pub async fn update_advanced_config(client: &PfsenseClient, config: &AdvancedConfig) -> PfsenseResult<AdvancedConfig> {
+    pub async fn update_advanced_config(
+        client: &PfsenseClient,
+        config: &AdvancedConfig,
+    ) -> PfsenseResult<AdvancedConfig> {
         let resp: ApiResponse<AdvancedConfig> = client.api_put("system/advanced", config).await?;
         Ok(resp.data)
     }
 
     pub async fn reboot(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {
-        client.api_post("system/reboot", &serde_json::json!({})).await
+        client
+            .api_post("system/reboot", &serde_json::json!({}))
+            .await
     }
 
     pub async fn halt(client: &PfsenseClient) -> PfsenseResult<serde_json::Value> {

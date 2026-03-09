@@ -31,6 +31,12 @@ pub struct PfsenseServiceWrapper {
     connections: HashMap<String, PfsenseClient>,
 }
 
+impl Default for PfsenseServiceWrapper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PfsenseServiceWrapper {
     pub fn new() -> Self {
         Self {
@@ -82,11 +88,20 @@ impl PfsenseServiceWrapper {
         InterfaceManager::get(self.client(id)?, name).await
     }
 
-    pub async fn create_interface(&self, id: &str, iface: &InterfaceConfig) -> PfsenseResult<NetworkInterface> {
+    pub async fn create_interface(
+        &self,
+        id: &str,
+        iface: &InterfaceConfig,
+    ) -> PfsenseResult<NetworkInterface> {
         InterfaceManager::create(self.client(id)?, iface).await
     }
 
-    pub async fn update_interface(&self, id: &str, name: &str, iface: &InterfaceConfig) -> PfsenseResult<NetworkInterface> {
+    pub async fn update_interface(
+        &self,
+        id: &str,
+        name: &str,
+        iface: &InterfaceConfig,
+    ) -> PfsenseResult<NetworkInterface> {
         InterfaceManager::update(self.client(id)?, name, iface).await
     }
 
@@ -116,11 +131,20 @@ impl PfsenseServiceWrapper {
         FirewallManager::get_rule(self.client(id)?, rule_id).await
     }
 
-    pub async fn create_firewall_rule(&self, id: &str, rule: &FirewallRule) -> PfsenseResult<FirewallRule> {
+    pub async fn create_firewall_rule(
+        &self,
+        id: &str,
+        rule: &FirewallRule,
+    ) -> PfsenseResult<FirewallRule> {
         FirewallManager::create_rule(self.client(id)?, rule).await
     }
 
-    pub async fn update_firewall_rule(&self, id: &str, rule_id: &str, rule: &FirewallRule) -> PfsenseResult<FirewallRule> {
+    pub async fn update_firewall_rule(
+        &self,
+        id: &str,
+        rule_id: &str,
+        rule: &FirewallRule,
+    ) -> PfsenseResult<FirewallRule> {
         FirewallManager::update_rule(self.client(id)?, rule_id, rule).await
     }
 
@@ -140,11 +164,20 @@ impl PfsenseServiceWrapper {
         FirewallManager::get_alias(self.client(id)?, name).await
     }
 
-    pub async fn create_firewall_alias(&self, id: &str, alias: &FirewallAlias) -> PfsenseResult<FirewallAlias> {
+    pub async fn create_firewall_alias(
+        &self,
+        id: &str,
+        alias: &FirewallAlias,
+    ) -> PfsenseResult<FirewallAlias> {
         FirewallManager::create_alias(self.client(id)?, alias).await
     }
 
-    pub async fn update_firewall_alias(&self, id: &str, name: &str, alias: &FirewallAlias) -> PfsenseResult<FirewallAlias> {
+    pub async fn update_firewall_alias(
+        &self,
+        id: &str,
+        name: &str,
+        alias: &FirewallAlias,
+    ) -> PfsenseResult<FirewallAlias> {
         FirewallManager::update_alias(self.client(id)?, name, alias).await
     }
 
@@ -170,15 +203,28 @@ impl PfsenseServiceWrapper {
         NatManager::list_port_forwards(self.client(id)?).await
     }
 
-    pub async fn get_nat_port_forward(&self, id: &str, fwd_id: &str) -> PfsenseResult<NatPortForward> {
+    pub async fn get_nat_port_forward(
+        &self,
+        id: &str,
+        fwd_id: &str,
+    ) -> PfsenseResult<NatPortForward> {
         NatManager::get_port_forward(self.client(id)?, fwd_id).await
     }
 
-    pub async fn create_nat_port_forward(&self, id: &str, rule: &NatPortForward) -> PfsenseResult<NatPortForward> {
+    pub async fn create_nat_port_forward(
+        &self,
+        id: &str,
+        rule: &NatPortForward,
+    ) -> PfsenseResult<NatPortForward> {
         NatManager::create_port_forward(self.client(id)?, rule).await
     }
 
-    pub async fn update_nat_port_forward(&self, id: &str, fwd_id: &str, rule: &NatPortForward) -> PfsenseResult<NatPortForward> {
+    pub async fn update_nat_port_forward(
+        &self,
+        id: &str,
+        fwd_id: &str,
+        rule: &NatPortForward,
+    ) -> PfsenseResult<NatPortForward> {
         NatManager::update_port_forward(self.client(id)?, fwd_id, rule).await
     }
 
@@ -190,11 +236,20 @@ impl PfsenseServiceWrapper {
         NatManager::list_outbound(self.client(id)?).await
     }
 
-    pub async fn create_nat_outbound(&self, id: &str, rule: &NatOutbound) -> PfsenseResult<NatOutbound> {
+    pub async fn create_nat_outbound(
+        &self,
+        id: &str,
+        rule: &NatOutbound,
+    ) -> PfsenseResult<NatOutbound> {
         NatManager::create_outbound(self.client(id)?, rule).await
     }
 
-    pub async fn update_nat_outbound(&self, id: &str, out_id: &str, rule: &NatOutbound) -> PfsenseResult<NatOutbound> {
+    pub async fn update_nat_outbound(
+        &self,
+        id: &str,
+        out_id: &str,
+        rule: &NatOutbound,
+    ) -> PfsenseResult<NatOutbound> {
         NatManager::update_outbound(self.client(id)?, out_id, rule).await
     }
 
@@ -210,7 +265,12 @@ impl PfsenseServiceWrapper {
         NatManager::create_1to1(self.client(id)?, rule).await
     }
 
-    pub async fn update_nat_1to1(&self, id: &str, rule_id: &str, rule: &Nat1to1) -> PfsenseResult<Nat1to1> {
+    pub async fn update_nat_1to1(
+        &self,
+        id: &str,
+        rule_id: &str,
+        rule: &Nat1to1,
+    ) -> PfsenseResult<Nat1to1> {
         NatManager::update_1to1(self.client(id)?, rule_id, rule).await
     }
 
@@ -228,7 +288,12 @@ impl PfsenseServiceWrapper {
         DhcpManager::get_config(self.client(id)?, interface).await
     }
 
-    pub async fn update_dhcp_config(&self, id: &str, interface: &str, config: &DhcpConfig) -> PfsenseResult<DhcpConfig> {
+    pub async fn update_dhcp_config(
+        &self,
+        id: &str,
+        interface: &str,
+        config: &DhcpConfig,
+    ) -> PfsenseResult<DhcpConfig> {
         DhcpManager::update_config(self.client(id)?, interface, config).await
     }
 
@@ -236,19 +301,39 @@ impl PfsenseServiceWrapper {
         DhcpManager::list_leases(self.client(id)?).await
     }
 
-    pub async fn list_dhcp_static_mappings(&self, id: &str, interface: &str) -> PfsenseResult<Vec<DhcpStaticMapping>> {
+    pub async fn list_dhcp_static_mappings(
+        &self,
+        id: &str,
+        interface: &str,
+    ) -> PfsenseResult<Vec<DhcpStaticMapping>> {
         DhcpManager::list_static_mappings(self.client(id)?, interface).await
     }
 
-    pub async fn create_dhcp_static_mapping(&self, id: &str, interface: &str, mapping: &DhcpStaticMapping) -> PfsenseResult<DhcpStaticMapping> {
+    pub async fn create_dhcp_static_mapping(
+        &self,
+        id: &str,
+        interface: &str,
+        mapping: &DhcpStaticMapping,
+    ) -> PfsenseResult<DhcpStaticMapping> {
         DhcpManager::create_static_mapping(self.client(id)?, interface, mapping).await
     }
 
-    pub async fn update_dhcp_static_mapping(&self, id: &str, interface: &str, mapping_id: &str, mapping: &DhcpStaticMapping) -> PfsenseResult<DhcpStaticMapping> {
+    pub async fn update_dhcp_static_mapping(
+        &self,
+        id: &str,
+        interface: &str,
+        mapping_id: &str,
+        mapping: &DhcpStaticMapping,
+    ) -> PfsenseResult<DhcpStaticMapping> {
         DhcpManager::update_static_mapping(self.client(id)?, interface, mapping_id, mapping).await
     }
 
-    pub async fn delete_dhcp_static_mapping(&self, id: &str, interface: &str, mapping_id: &str) -> PfsenseResult<()> {
+    pub async fn delete_dhcp_static_mapping(
+        &self,
+        id: &str,
+        interface: &str,
+        mapping_id: &str,
+    ) -> PfsenseResult<()> {
         DhcpManager::delete_static_mapping(self.client(id)?, interface, mapping_id).await
     }
 
@@ -266,7 +351,11 @@ impl PfsenseServiceWrapper {
         DnsManager::get_resolver_config(self.client(id)?).await
     }
 
-    pub async fn update_dns_resolver_config(&self, id: &str, config: &DnsResolverConfig) -> PfsenseResult<DnsResolverConfig> {
+    pub async fn update_dns_resolver_config(
+        &self,
+        id: &str,
+        config: &DnsResolverConfig,
+    ) -> PfsenseResult<DnsResolverConfig> {
         DnsManager::update_resolver_config(self.client(id)?, config).await
     }
 
@@ -274,7 +363,11 @@ impl PfsenseServiceWrapper {
         DnsManager::get_forwarder_config(self.client(id)?).await
     }
 
-    pub async fn update_dns_forwarder_config(&self, id: &str, config: &DnsForwarderConfig) -> PfsenseResult<DnsForwarderConfig> {
+    pub async fn update_dns_forwarder_config(
+        &self,
+        id: &str,
+        config: &DnsForwarderConfig,
+    ) -> PfsenseResult<DnsForwarderConfig> {
         DnsManager::update_forwarder_config(self.client(id)?, config).await
     }
 
@@ -282,11 +375,20 @@ impl PfsenseServiceWrapper {
         DnsManager::list_host_overrides(self.client(id)?).await
     }
 
-    pub async fn create_dns_host_override(&self, id: &str, entry: &DnsHostOverride) -> PfsenseResult<DnsHostOverride> {
+    pub async fn create_dns_host_override(
+        &self,
+        id: &str,
+        entry: &DnsHostOverride,
+    ) -> PfsenseResult<DnsHostOverride> {
         DnsManager::create_host_override(self.client(id)?, entry).await
     }
 
-    pub async fn update_dns_host_override(&self, id: &str, override_id: &str, entry: &DnsHostOverride) -> PfsenseResult<DnsHostOverride> {
+    pub async fn update_dns_host_override(
+        &self,
+        id: &str,
+        override_id: &str,
+        entry: &DnsHostOverride,
+    ) -> PfsenseResult<DnsHostOverride> {
         DnsManager::update_host_override(self.client(id)?, override_id, entry).await
     }
 
@@ -294,19 +396,35 @@ impl PfsenseServiceWrapper {
         DnsManager::delete_host_override(self.client(id)?, override_id).await
     }
 
-    pub async fn list_dns_domain_overrides(&self, id: &str) -> PfsenseResult<Vec<DnsDomainOverride>> {
+    pub async fn list_dns_domain_overrides(
+        &self,
+        id: &str,
+    ) -> PfsenseResult<Vec<DnsDomainOverride>> {
         DnsManager::list_domain_overrides(self.client(id)?).await
     }
 
-    pub async fn create_dns_domain_override(&self, id: &str, entry: &DnsDomainOverride) -> PfsenseResult<DnsDomainOverride> {
+    pub async fn create_dns_domain_override(
+        &self,
+        id: &str,
+        entry: &DnsDomainOverride,
+    ) -> PfsenseResult<DnsDomainOverride> {
         DnsManager::create_domain_override(self.client(id)?, entry).await
     }
 
-    pub async fn update_dns_domain_override(&self, id: &str, override_id: &str, entry: &DnsDomainOverride) -> PfsenseResult<DnsDomainOverride> {
+    pub async fn update_dns_domain_override(
+        &self,
+        id: &str,
+        override_id: &str,
+        entry: &DnsDomainOverride,
+    ) -> PfsenseResult<DnsDomainOverride> {
         DnsManager::update_domain_override(self.client(id)?, override_id, entry).await
     }
 
-    pub async fn delete_dns_domain_override(&self, id: &str, override_id: &str) -> PfsenseResult<()> {
+    pub async fn delete_dns_domain_override(
+        &self,
+        id: &str,
+        override_id: &str,
+    ) -> PfsenseResult<()> {
         DnsManager::delete_domain_override(self.client(id)?, override_id).await
     }
 
@@ -328,7 +446,11 @@ impl PfsenseServiceWrapper {
         VpnManager::get_openvpn_server(self.client(id)?, vpnid).await
     }
 
-    pub async fn create_openvpn_server(&self, id: &str, server: &OpenVpnServer) -> PfsenseResult<OpenVpnServer> {
+    pub async fn create_openvpn_server(
+        &self,
+        id: &str,
+        server: &OpenVpnServer,
+    ) -> PfsenseResult<OpenVpnServer> {
         VpnManager::create_openvpn_server(self.client(id)?, server).await
     }
 
@@ -344,7 +466,11 @@ impl PfsenseServiceWrapper {
         VpnManager::get_openvpn_client(self.client(id)?, vpnid).await
     }
 
-    pub async fn create_openvpn_client(&self, id: &str, vpn_client: &OpenVpnClient) -> PfsenseResult<OpenVpnClient> {
+    pub async fn create_openvpn_client(
+        &self,
+        id: &str,
+        vpn_client: &OpenVpnClient,
+    ) -> PfsenseResult<OpenVpnClient> {
         VpnManager::create_openvpn_client(self.client(id)?, vpn_client).await
     }
 
@@ -360,7 +486,11 @@ impl PfsenseServiceWrapper {
         VpnManager::get_ipsec_tunnel(self.client(id)?, ikeid).await
     }
 
-    pub async fn create_ipsec_tunnel(&self, id: &str, tunnel: &IpsecTunnel) -> PfsenseResult<IpsecTunnel> {
+    pub async fn create_ipsec_tunnel(
+        &self,
+        id: &str,
+        tunnel: &IpsecTunnel,
+    ) -> PfsenseResult<IpsecTunnel> {
         VpnManager::create_ipsec_tunnel(self.client(id)?, tunnel).await
     }
 
@@ -372,11 +502,19 @@ impl PfsenseServiceWrapper {
         VpnManager::list_wireguard_tunnels(self.client(id)?).await
     }
 
-    pub async fn get_wireguard_tunnel(&self, id: &str, tun_id: &str) -> PfsenseResult<WireGuardTunnel> {
+    pub async fn get_wireguard_tunnel(
+        &self,
+        id: &str,
+        tun_id: &str,
+    ) -> PfsenseResult<WireGuardTunnel> {
         VpnManager::get_wireguard_tunnel(self.client(id)?, tun_id).await
     }
 
-    pub async fn create_wireguard_tunnel(&self, id: &str, tunnel: &WireGuardTunnel) -> PfsenseResult<WireGuardTunnel> {
+    pub async fn create_wireguard_tunnel(
+        &self,
+        id: &str,
+        tunnel: &WireGuardTunnel,
+    ) -> PfsenseResult<WireGuardTunnel> {
         VpnManager::create_wireguard_tunnel(self.client(id)?, tunnel).await
     }
 
@@ -384,11 +522,19 @@ impl PfsenseServiceWrapper {
         VpnManager::delete_wireguard_tunnel(self.client(id)?, tun_id).await
     }
 
-    pub async fn list_wireguard_peers(&self, id: &str, tunnel_id: &str) -> PfsenseResult<Vec<WireGuardPeer>> {
+    pub async fn list_wireguard_peers(
+        &self,
+        id: &str,
+        tunnel_id: &str,
+    ) -> PfsenseResult<Vec<WireGuardPeer>> {
         VpnManager::list_wireguard_peers(self.client(id)?, tunnel_id).await
     }
 
-    pub async fn create_wireguard_peer(&self, id: &str, peer: &WireGuardPeer) -> PfsenseResult<WireGuardPeer> {
+    pub async fn create_wireguard_peer(
+        &self,
+        id: &str,
+        peer: &WireGuardPeer,
+    ) -> PfsenseResult<WireGuardPeer> {
         VpnManager::create_wireguard_peer(self.client(id)?, peer).await
     }
 
@@ -410,7 +556,12 @@ impl PfsenseServiceWrapper {
         RoutingManager::create_route(self.client(id)?, route).await
     }
 
-    pub async fn update_route(&self, id: &str, route_id: &str, route: &StaticRoute) -> PfsenseResult<StaticRoute> {
+    pub async fn update_route(
+        &self,
+        id: &str,
+        route_id: &str,
+        route: &StaticRoute,
+    ) -> PfsenseResult<StaticRoute> {
         RoutingManager::update_route(self.client(id)?, route_id, route).await
     }
 
@@ -478,7 +629,11 @@ impl PfsenseServiceWrapper {
         SystemManager::get_general_config(self.client(id)?).await
     }
 
-    pub async fn update_general_config(&self, id: &str, config: &GeneralConfig) -> PfsenseResult<GeneralConfig> {
+    pub async fn update_general_config(
+        &self,
+        id: &str,
+        config: &GeneralConfig,
+    ) -> PfsenseResult<GeneralConfig> {
         SystemManager::update_general_config(self.client(id)?, config).await
     }
 
@@ -486,7 +641,11 @@ impl PfsenseServiceWrapper {
         SystemManager::get_advanced_config(self.client(id)?).await
     }
 
-    pub async fn update_advanced_config(&self, id: &str, config: &AdvancedConfig) -> PfsenseResult<AdvancedConfig> {
+    pub async fn update_advanced_config(
+        &self,
+        id: &str,
+        config: &AdvancedConfig,
+    ) -> PfsenseResult<AdvancedConfig> {
         SystemManager::update_advanced_config(self.client(id)?, config).await
     }
 
@@ -508,7 +667,11 @@ impl PfsenseServiceWrapper {
         CertificateManager::get_ca(self.client(id)?, refid).await
     }
 
-    pub async fn create_ca(&self, id: &str, req: &CertificateRequest) -> PfsenseResult<CaCertificate> {
+    pub async fn create_ca(
+        &self,
+        id: &str,
+        req: &CertificateRequest,
+    ) -> PfsenseResult<CaCertificate> {
         CertificateManager::create_ca(self.client(id)?, req).await
     }
 
@@ -524,7 +687,11 @@ impl PfsenseServiceWrapper {
         CertificateManager::get_cert(self.client(id)?, refid).await
     }
 
-    pub async fn create_cert(&self, id: &str, req: &CertificateRequest) -> PfsenseResult<ServerCertificate> {
+    pub async fn create_cert(
+        &self,
+        id: &str,
+        req: &CertificateRequest,
+    ) -> PfsenseResult<ServerCertificate> {
         CertificateManager::create_cert(self.client(id)?, req).await
     }
 
@@ -550,7 +717,12 @@ impl PfsenseServiceWrapper {
         UserManager::create(self.client(id)?, user).await
     }
 
-    pub async fn update_user(&self, id: &str, name: &str, user: &PfsenseUser) -> PfsenseResult<PfsenseUser> {
+    pub async fn update_user(
+        &self,
+        id: &str,
+        name: &str,
+        user: &PfsenseUser,
+    ) -> PfsenseResult<PfsenseUser> {
         UserManager::update(self.client(id)?, name, user).await
     }
 
@@ -566,7 +738,11 @@ impl PfsenseServiceWrapper {
         UserManager::get_group(self.client(id)?, name).await
     }
 
-    pub async fn create_group(&self, id: &str, group: &PfsenseGroup) -> PfsenseResult<PfsenseGroup> {
+    pub async fn create_group(
+        &self,
+        id: &str,
+        group: &PfsenseGroup,
+    ) -> PfsenseResult<PfsenseGroup> {
         UserManager::create_group(self.client(id)?, group).await
     }
 
@@ -588,15 +764,33 @@ impl PfsenseServiceWrapper {
         DiagnosticsManager::get_ndp_table(self.client(id)?).await
     }
 
-    pub async fn dns_lookup(&self, id: &str, host: &str, record_type: Option<&str>, server: Option<&str>) -> PfsenseResult<DnsLookupResult> {
+    pub async fn dns_lookup(
+        &self,
+        id: &str,
+        host: &str,
+        record_type: Option<&str>,
+        server: Option<&str>,
+    ) -> PfsenseResult<DnsLookupResult> {
         DiagnosticsManager::dns_lookup(self.client(id)?, host, record_type, server).await
     }
 
-    pub async fn diag_ping(&self, id: &str, host: &str, count: Option<u32>, source: Option<&str>) -> PfsenseResult<PingResult> {
+    pub async fn diag_ping(
+        &self,
+        id: &str,
+        host: &str,
+        count: Option<u32>,
+        source: Option<&str>,
+    ) -> PfsenseResult<PingResult> {
         DiagnosticsManager::ping(self.client(id)?, host, count, source).await
     }
 
-    pub async fn traceroute(&self, id: &str, host: &str, max_hops: Option<u32>, source: Option<&str>) -> PfsenseResult<TraceResult> {
+    pub async fn traceroute(
+        &self,
+        id: &str,
+        host: &str,
+        max_hops: Option<u32>,
+        source: Option<&str>,
+    ) -> PfsenseResult<TraceResult> {
         DiagnosticsManager::traceroute(self.client(id)?, host, max_hops, source).await
     }
 
@@ -604,7 +798,12 @@ impl PfsenseServiceWrapper {
         DiagnosticsManager::get_pfinfo(self.client(id)?).await
     }
 
-    pub async fn get_system_log(&self, id: &str, log_name: &str, count: Option<u32>) -> PfsenseResult<Vec<String>> {
+    pub async fn get_system_log(
+        &self,
+        id: &str,
+        log_name: &str,
+        count: Option<u32>,
+    ) -> PfsenseResult<Vec<String>> {
         DiagnosticsManager::get_system_log(self.client(id)?, log_name, count).await
     }
 
@@ -614,7 +813,11 @@ impl PfsenseServiceWrapper {
         BackupManager::list(self.client(id)?).await
     }
 
-    pub async fn create_backup(&self, id: &str, config: &BackupConfig) -> PfsenseResult<BackupEntry> {
+    pub async fn create_backup(
+        &self,
+        id: &str,
+        config: &BackupConfig,
+    ) -> PfsenseResult<BackupEntry> {
         BackupManager::create(self.client(id)?, config).await
     }
 
@@ -626,7 +829,12 @@ impl PfsenseServiceWrapper {
         BackupManager::delete(self.client(id)?, backup_id).await
     }
 
-    pub async fn restore_backup(&self, id: &str, config_data: &[u8], decrypt_password: Option<&str>) -> PfsenseResult<serde_json::Value> {
+    pub async fn restore_backup(
+        &self,
+        id: &str,
+        config_data: &[u8],
+        decrypt_password: Option<&str>,
+    ) -> PfsenseResult<serde_json::Value> {
         BackupManager::restore(self.client(id)?, config_data, decrypt_password).await
     }
 }
