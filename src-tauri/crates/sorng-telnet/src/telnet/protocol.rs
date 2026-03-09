@@ -49,17 +49,11 @@ pub enum TelnetFrame {
     Data(Vec<u8>),
 
     /// A negotiation command: WILL, WONT, DO, DONT followed by an option byte.
-    Negotiation {
-        command: TelnetCommand,
-        option: u8,
-    },
+    Negotiation { command: TelnetCommand, option: u8 },
 
     /// A sub-negotiation payload (everything between SB … SE, excluding the
     /// IAC SB header and IAC SE trailer). The option byte is the first byte.
-    SubNegotiation {
-        option: u8,
-        data: Vec<u8>,
-    },
+    SubNegotiation { option: u8, data: Vec<u8> },
 
     /// A simple IAC command (NOP, BRK, AYT, GA, …).
     Command(TelnetCommand),
@@ -189,9 +183,9 @@ mod tests {
         assert_eq!(frame[0], IAC);
         assert_eq!(frame[1], SB);
         assert_eq!(frame[2], 31); // NAWS
-        assert_eq!(frame[3], 0);  // cols high
+        assert_eq!(frame[3], 0); // cols high
         assert_eq!(frame[4], 80); // cols low
-        assert_eq!(frame[5], 0);  // rows high
+        assert_eq!(frame[5], 0); // rows high
         assert_eq!(frame[6], 24); // rows low
         assert_eq!(frame[7], IAC);
         assert_eq!(frame[8], SE);
@@ -200,9 +194,9 @@ mod tests {
     #[test]
     fn build_naws_large_window() {
         let frame = build_naws(300, 100);
-        assert_eq!(frame[3], 1);   // 300 >> 8 = 1
-        assert_eq!(frame[4], 44);  // 300 & 0xFF = 44
-        assert_eq!(frame[5], 0);   // 100 >> 8 = 0
+        assert_eq!(frame[3], 1); // 300 >> 8 = 1
+        assert_eq!(frame[4], 44); // 300 & 0xFF = 44
+        assert_eq!(frame[5], 0); // 100 >> 8 = 0
         assert_eq!(frame[6], 100); // 100 & 0xFF = 100
     }
 
@@ -277,8 +271,14 @@ mod tests {
 
     #[test]
     fn telnet_frame_negotiation_eq() {
-        let f1 = TelnetFrame::Negotiation { command: TelnetCommand::WILL, option: 1 };
-        let f2 = TelnetFrame::Negotiation { command: TelnetCommand::WILL, option: 1 };
+        let f1 = TelnetFrame::Negotiation {
+            command: TelnetCommand::WILL,
+            option: 1,
+        };
+        let f2 = TelnetFrame::Negotiation {
+            command: TelnetCommand::WILL,
+            option: 1,
+        };
         assert_eq!(f1, f2);
     }
 

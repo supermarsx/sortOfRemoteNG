@@ -7,12 +7,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
 use tauri::{AppHandle, Emitter, Runtime};
+use tokio::sync::RwLock;
 
-use crate::telnet::session::{
-    self, SessionCommand, SessionEvent, TelnetSessionHandle, hex_decode,
-};
+use crate::telnet::session::{self, hex_decode, SessionCommand, SessionEvent, TelnetSessionHandle};
 use crate::telnet::types::*;
 
 /// Shared telnet service state stored via `app.manage()`.
@@ -99,11 +97,7 @@ impl TelnetService {
     // ── Send ────────────────────────────────────────────────────────
 
     /// Send a command/text line to a session.
-    pub async fn send_command(
-        &self,
-        session_id: &str,
-        command: &str,
-    ) -> Result<(), String> {
+    pub async fn send_command(&self, session_id: &str, command: &str) -> Result<(), String> {
         let sessions = self.sessions.read().await;
         let handle = sessions
             .get(session_id)
@@ -116,13 +110,8 @@ impl TelnetService {
     }
 
     /// Send raw bytes to a session (hex-encoded string).
-    pub async fn send_raw(
-        &self,
-        session_id: &str,
-        hex_data: &str,
-    ) -> Result<(), String> {
-        let data = hex_decode(hex_data)
-            .ok_or_else(|| "Invalid hex string".to_string())?;
+    pub async fn send_raw(&self, session_id: &str, hex_data: &str) -> Result<(), String> {
+        let data = hex_decode(hex_data).ok_or_else(|| "Invalid hex string".to_string())?;
         let sessions = self.sessions.read().await;
         let handle = sessions
             .get(session_id)
@@ -163,12 +152,7 @@ impl TelnetService {
     // ── Resize ──────────────────────────────────────────────────────
 
     /// Resize the terminal window for a session (sends NAWS).
-    pub async fn resize(
-        &self,
-        session_id: &str,
-        cols: u16,
-        rows: u16,
-    ) -> Result<(), String> {
+    pub async fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
         let sessions = self.sessions.read().await;
         let handle = sessions
             .get(session_id)
@@ -183,10 +167,7 @@ impl TelnetService {
     // ── Query ───────────────────────────────────────────────────────
 
     /// Get session info for a specific session.
-    pub async fn get_session_info(
-        &self,
-        session_id: &str,
-    ) -> Result<TelnetSession, String> {
+    pub async fn get_session_info(&self, session_id: &str) -> Result<TelnetSession, String> {
         let sessions = self.sessions.read().await;
         let handle = sessions
             .get(session_id)
@@ -197,10 +178,7 @@ impl TelnetService {
     /// List all active sessions.
     pub async fn list_sessions(&self) -> Vec<TelnetSession> {
         let sessions = self.sessions.read().await;
-        sessions
-            .values()
-            .map(|h| h.to_session_info())
-            .collect()
+        sessions.values().map(|h| h.to_session_info()).collect()
     }
 
     /// Get the number of active sessions.
@@ -262,15 +240,16 @@ impl TelnetService {
                     );
                     break;
                 }
-                Some(SessionEvent::Negotiation { direction, command, option }) => {
+                Some(SessionEvent::Negotiation {
+                    direction,
+                    command,
+                    option,
+                }) => {
                     // If this is a "sent_raw" event, it contains hex-encoded bytes
                     // that need to be sent back to the server.
                     if direction == "sent_raw" {
                         if let Some(raw_bytes) = hex_decode(&command) {
-                            let _ = handle
-                                .cmd_tx
-                                .send(SessionCommand::SendRaw(raw_bytes))
-                                .await;
+                            let _ = handle.cmd_tx.send(SessionCommand::SendRaw(raw_bytes)).await;
                         }
                     }
 

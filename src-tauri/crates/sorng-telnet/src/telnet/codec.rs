@@ -10,9 +10,9 @@
 //!  - Sub-negotiation (IAC SB <option> … IAC SE)
 //!  - Simple commands (IAC NOP, IAC AYT, IAC BRK, etc.)
 
-use crate::telnet::protocol::{IAC, SB, SE, WILL, WONT, DO, DONT};
-use crate::telnet::types::TelnetCommand;
 use crate::telnet::protocol::TelnetFrame;
+use crate::telnet::protocol::{DO, DONT, IAC, SB, SE, WILL, WONT};
+use crate::telnet::types::TelnetCommand;
 
 /// Parser state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,8 +98,7 @@ impl TelnetCodec {
                             buf: Vec::new(),
                         };
                     } else {
-                        let command = TelnetCommand::from_byte(cmd)
-                            .unwrap_or(TelnetCommand::NOP);
+                        let command = TelnetCommand::from_byte(cmd).unwrap_or(TelnetCommand::NOP);
                         frames.push(TelnetFrame::Negotiation {
                             command,
                             option: byte,
@@ -118,10 +117,7 @@ impl TelnetCodec {
                 State::SubNegotiationIac { option, mut buf } => {
                     match byte {
                         SE => {
-                            frames.push(TelnetFrame::SubNegotiation {
-                                option,
-                                data: buf,
-                            });
+                            frames.push(TelnetFrame::SubNegotiation { option, data: buf });
                             self.state = State::Data;
                         }
                         IAC => {
@@ -132,10 +128,7 @@ impl TelnetCodec {
                         _ => {
                             // Erroneous byte after IAC inside SB – recover
                             // by treating it as the end of sub-neg.
-                            frames.push(TelnetFrame::SubNegotiation {
-                                option,
-                                data: buf,
-                            });
+                            frames.push(TelnetFrame::SubNegotiation { option, data: buf });
                             // Process this byte as an IAC-following byte.
                             match byte {
                                 WILL | WONT | DO | DONT => {
@@ -212,10 +205,13 @@ mod tests {
     #[test]
     fn decode_iac_escape() {
         let frames = decode_all(&[b'A', IAC, IAC, b'B']);
-        assert_eq!(frames, vec![
-            TelnetFrame::Data(vec![b'A']),
-            TelnetFrame::Data(vec![IAC, b'B']),
-        ]);
+        assert_eq!(
+            frames,
+            vec![
+                TelnetFrame::Data(vec![b'A']),
+                TelnetFrame::Data(vec![IAC, b'B']),
+            ]
+        );
     }
 
     // ── Negotiation ─────────────────────────────────────────────────
@@ -223,37 +219,49 @@ mod tests {
     #[test]
     fn decode_will() {
         let frames = decode_all(&[IAC, WILL, 1]);
-        assert_eq!(frames, vec![TelnetFrame::Negotiation {
-            command: TelnetCommand::WILL,
-            option: 1,
-        }]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::Negotiation {
+                command: TelnetCommand::WILL,
+                option: 1,
+            }]
+        );
     }
 
     #[test]
     fn decode_wont() {
         let frames = decode_all(&[IAC, WONT, 3]);
-        assert_eq!(frames, vec![TelnetFrame::Negotiation {
-            command: TelnetCommand::WONT,
-            option: 3,
-        }]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::Negotiation {
+                command: TelnetCommand::WONT,
+                option: 3,
+            }]
+        );
     }
 
     #[test]
     fn decode_do() {
         let frames = decode_all(&[IAC, DO, 24]);
-        assert_eq!(frames, vec![TelnetFrame::Negotiation {
-            command: TelnetCommand::DO,
-            option: 24,
-        }]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::Negotiation {
+                command: TelnetCommand::DO,
+                option: 24,
+            }]
+        );
     }
 
     #[test]
     fn decode_dont() {
         let frames = decode_all(&[IAC, DONT, 31]);
-        assert_eq!(frames, vec![TelnetFrame::Negotiation {
-            command: TelnetCommand::DONT,
-            option: 31,
-        }]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::Negotiation {
+                command: TelnetCommand::DONT,
+                option: 31,
+            }]
+        );
     }
 
     // ── Sub-negotiation ─────────────────────────────────────────────
@@ -262,29 +270,38 @@ mod tests {
     fn decode_subneg_ttype_send() {
         // IAC SB TTYPE SEND IAC SE
         let frames = decode_all(&[IAC, SB, 24, 1, IAC, SE]);
-        assert_eq!(frames, vec![TelnetFrame::SubNegotiation {
-            option: 24,
-            data: vec![1],
-        }]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::SubNegotiation {
+                option: 24,
+                data: vec![1],
+            }]
+        );
     }
 
     #[test]
     fn decode_subneg_with_escaped_iac() {
         // IAC SB 99 data(0x01 0xFF 0xFF 0x02) IAC SE
         let frames = decode_all(&[IAC, SB, 99, 1, IAC, IAC, 2, IAC, SE]);
-        assert_eq!(frames, vec![TelnetFrame::SubNegotiation {
-            option: 99,
-            data: vec![1, IAC, 2],
-        }]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::SubNegotiation {
+                option: 99,
+                data: vec![1, IAC, 2],
+            }]
+        );
     }
 
     #[test]
     fn decode_subneg_empty_payload() {
         let frames = decode_all(&[IAC, SB, 42, IAC, SE]);
-        assert_eq!(frames, vec![TelnetFrame::SubNegotiation {
-            option: 42,
-            data: vec![],
-        }]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::SubNegotiation {
+                option: 42,
+                data: vec![],
+            }]
+        );
     }
 
     // ── Simple commands ─────────────────────────────────────────────
@@ -298,7 +315,10 @@ mod tests {
     #[test]
     fn decode_ayt() {
         let frames = decode_all(&[IAC, AYT]);
-        assert_eq!(frames, vec![TelnetFrame::Command(TelnetCommand::AreYouThere)]);
+        assert_eq!(
+            frames,
+            vec![TelnetFrame::Command(TelnetCommand::AreYouThere)]
+        );
     }
 
     #[test]
@@ -312,30 +332,35 @@ mod tests {
     #[test]
     fn decode_mixed_data_and_commands() {
         let input = [
-            b'H', b'i',
-            IAC, WILL, 1,     // WILL ECHO
-            b'!',
-            IAC, DO, 3,       // DO SGA
+            b'H', b'i', IAC, WILL, 1, // WILL ECHO
+            b'!', IAC, DO, 3, // DO SGA
             b'.',
         ];
         let frames = decode_all(&input);
         assert_eq!(frames.len(), 5);
         assert_eq!(frames[0], TelnetFrame::Data(vec![b'H', b'i']));
-        assert_eq!(frames[1], TelnetFrame::Negotiation { command: TelnetCommand::WILL, option: 1 });
+        assert_eq!(
+            frames[1],
+            TelnetFrame::Negotiation {
+                command: TelnetCommand::WILL,
+                option: 1
+            }
+        );
         assert_eq!(frames[2], TelnetFrame::Data(vec![b'!']));
-        assert_eq!(frames[3], TelnetFrame::Negotiation { command: TelnetCommand::DO, option: 3 });
+        assert_eq!(
+            frames[3],
+            TelnetFrame::Negotiation {
+                command: TelnetCommand::DO,
+                option: 3
+            }
+        );
         assert_eq!(frames[4], TelnetFrame::Data(vec![b'.']));
     }
 
     #[test]
     fn decode_negotiation_burst() {
         // Multiple negotiation commands back-to-back with no data between.
-        let input = [
-            IAC, WILL, 1,
-            IAC, WILL, 3,
-            IAC, DO, 24,
-            IAC, DO, 31,
-        ];
+        let input = [IAC, WILL, 1, IAC, WILL, 3, IAC, DO, 24, IAC, DO, 31];
         let frames = decode_all(&input);
         assert_eq!(frames.len(), 4);
     }
@@ -352,7 +377,13 @@ mod tests {
         assert!(f2.is_empty());
         let f3 = codec.decode(&[1, b'X']);
         assert_eq!(f3.len(), 2);
-        assert_eq!(f3[0], TelnetFrame::Negotiation { command: TelnetCommand::WILL, option: 1 });
+        assert_eq!(
+            f3[0],
+            TelnetFrame::Negotiation {
+                command: TelnetCommand::WILL,
+                option: 1
+            }
+        );
         assert_eq!(f3[1], TelnetFrame::Data(vec![b'X']));
     }
 
@@ -364,10 +395,13 @@ mod tests {
         let f2 = codec.decode(&[1]); // SEND
         assert!(f2.is_empty());
         let f3 = codec.decode(&[IAC, SE]);
-        assert_eq!(f3, vec![TelnetFrame::SubNegotiation {
-            option: 24,
-            data: vec![1],
-        }]);
+        assert_eq!(
+            f3,
+            vec![TelnetFrame::SubNegotiation {
+                option: 24,
+                data: vec![1],
+            }]
+        );
     }
 
     // ── Reset ───────────────────────────────────────────────────────
@@ -392,7 +426,19 @@ mod tests {
         let frames = decode_all(&input);
         // Expect: SubNeg(99, [42]) then Negotiation(WILL, 1)
         assert_eq!(frames.len(), 2);
-        assert_eq!(frames[0], TelnetFrame::SubNegotiation { option: 99, data: vec![42] });
-        assert_eq!(frames[1], TelnetFrame::Negotiation { command: TelnetCommand::WILL, option: 1 });
+        assert_eq!(
+            frames[0],
+            TelnetFrame::SubNegotiation {
+                option: 99,
+                data: vec![42]
+            }
+        );
+        assert_eq!(
+            frames[1],
+            TelnetFrame::Negotiation {
+                command: TelnetCommand::WILL,
+                option: 1
+            }
+        );
     }
 }

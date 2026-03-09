@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::telnet::protocol::{self, WILL, WONT, DO, DONT, IAC};
+use crate::telnet::protocol::{self, DO, DONT, IAC, WILL, WONT};
 use crate::telnet::types::{OptionState, QState, TelnetOption};
 
 /// Which side an option pertains to.
@@ -27,6 +27,12 @@ pub struct NegotiationManager {
     accepted_remote: Vec<u8>,
     /// Options we want to enable locally.
     desired_local: Vec<u8>,
+}
+
+impl Default for NegotiationManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NegotiationManager {
@@ -59,12 +65,16 @@ impl NegotiationManager {
 
     /// Is the given option enabled locally (i.e., we are WILLing)?
     pub fn is_local_enabled(&self, option: u8) -> bool {
-        self.options.get(&option).map_or(false, |s| s.local == QState::Yes)
+        self.options
+            .get(&option)
+            .is_some_and(|s| s.local == QState::Yes)
     }
 
     /// Is the given option enabled remotely (i.e., they are WILLing / we sent DO)?
     pub fn is_remote_enabled(&self, option: u8) -> bool {
-        self.options.get(&option).map_or(false, |s| s.remote == QState::Yes)
+        self.options
+            .get(&option)
+            .is_some_and(|s| s.remote == QState::Yes)
     }
 
     /// Return a list of negotiated option descriptions for diagnostics.
@@ -223,9 +233,7 @@ impl NegotiationManager {
     pub fn receive_dont(&mut self, option: u8) -> Vec<u8> {
         let state = self.get_state(option);
         match state.local {
-            QState::No => {
-                Vec::new()
-            }
+            QState::No => Vec::new(),
             QState::Yes => {
                 state.local = QState::No;
                 protocol::build_negotiation(WONT, option)

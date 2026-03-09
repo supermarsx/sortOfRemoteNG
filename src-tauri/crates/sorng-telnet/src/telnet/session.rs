@@ -11,9 +11,7 @@ use tokio::time::timeout;
 
 use crate::telnet::codec::TelnetCodec;
 use crate::telnet::negotiation::NegotiationManager;
-use crate::telnet::protocol::{
-    self, TelnetFrame, SN_SEND, NOP,
-};
+use crate::telnet::protocol::{self, TelnetFrame, NOP, SN_SEND};
 use crate::telnet::types::*;
 
 // ── Internal messages sent from the session read-loop to the service ────
@@ -107,10 +105,7 @@ impl TelnetSessionHandle {
 /// Connect to a telnet server and spawn async read/write loops.
 ///
 /// Returns: `(TelnetSessionHandle)` on success, or a `TelnetError`.
-pub async fn connect(
-    id: String,
-    config: TelnetConfig,
-) -> Result<TelnetSessionHandle, TelnetError> {
+pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHandle, TelnetError> {
     let addr = format!("{}:{}", config.host, config.port);
     log::info!("[telnet:{}] connecting to {}", id, addr);
 
@@ -119,7 +114,12 @@ pub async fn connect(
         TcpStream::connect(&addr),
     )
     .await
-    .map_err(|_| TelnetError::timeout(format!("Connection to {} timed out after {}s", addr, config.connect_timeout_secs)))?
+    .map_err(|_| {
+        TelnetError::timeout(format!(
+            "Connection to {} timed out after {}s",
+            addr, config.connect_timeout_secs
+        ))
+    })?
     .map_err(TelnetError::from)?;
 
     log::info!("[telnet:{}] TCP connected to {}", id, addr);
@@ -240,6 +240,7 @@ pub async fn connect(
 
 // ── Read loop ───────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn read_loop(
     session_id: String,
     mut reader: tokio::net::tcp::OwnedReadHalf,
@@ -306,10 +307,7 @@ async fn read_loop(
                         .map(|o| format!("{:?}", o))
                         .unwrap_or_else(|| format!("Unknown({})", option));
 
-                    log::debug!(
-                        "[telnet:{}] recv {:?} {}",
-                        session_id, command, opt_name
-                    );
+                    log::debug!("[telnet:{}] recv {:?} {}", session_id, command, opt_name);
 
                     let _ = event_tx
                         .send(SessionEvent::Negotiation {
@@ -349,9 +347,7 @@ async fn read_loop(
                             response.len()
                         );
                         // We encode the response bytes into the event.
-                        let _ = event_tx
-                            .send(SessionEvent::Data(String::new()))
-                            .await;
+                        let _ = event_tx.send(SessionEvent::Data(String::new())).await;
                         // HACK: use the error channel to piggyback the raw bytes.
                         // TODO: Add a proper WriteBack variant to SessionEvent.
                         // For now, we'll write directly using a shared writer
@@ -430,10 +426,8 @@ fn handle_subnegotiation(
     } else if option == naws {
         // Received a NAWS query – respond with our window size.
         return protocol::build_naws(cols, rows);
-    } else if option == tspeed {
-        if data.first() == Some(&SN_SEND) {
-            return protocol::build_tspeed_is(terminal_speed);
-        }
+    } else if option == tspeed && data.first() == Some(&SN_SEND) {
+        return protocol::build_tspeed_is(terminal_speed);
     }
 
     Vec::new()
@@ -441,6 +435,7 @@ fn handle_subnegotiation(
 
 // ── Write loop ──────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn write_loop(
     session_id: String,
     mut writer: tokio::net::tcp::OwnedWriteHalf,
@@ -548,7 +543,7 @@ fn base64_encode(data: &[u8]) -> String {
 
 /// Decode hex-encoded bytes.
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len())

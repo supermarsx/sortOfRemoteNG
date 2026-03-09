@@ -97,9 +97,7 @@ pub async fn list_telnet_sessions(
 
 /// Disconnect all active telnet sessions.
 #[tauri::command]
-pub async fn disconnect_all_telnet(
-    state: State<'_, TelnetServiceState>,
-) -> Result<(), String> {
+pub async fn disconnect_all_telnet(state: State<'_, TelnetServiceState>) -> Result<(), String> {
     state.disconnect_all().await
 }
 

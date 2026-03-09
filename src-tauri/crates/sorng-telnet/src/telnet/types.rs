@@ -156,8 +156,9 @@ impl fmt::Display for TelnetOption {
 // ── Negotiation Q-method state (RFC 1143) ───────────────────────────────
 
 /// Per-option negotiation state for one side (local or remote).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum QState {
+    #[default]
     No,
     Yes,
     WantNo,
@@ -166,12 +167,6 @@ pub enum QState {
     WantNoOpposite,
     /// WantYes with a queued opposite request.
     WantYesOpposite,
-}
-
-impl Default for QState {
-    fn default() -> Self {
-        Self::No
-    }
 }
 
 // ── Option negotiation tracking ─────────────────────────────────────────
@@ -258,16 +253,36 @@ pub struct TelnetConfig {
     pub escape_char: u8,
 }
 
-fn default_telnet_port() -> u16 { 23 }
-fn default_terminal_type() -> String { "xterm-256color".to_string() }
-fn default_cols() -> u16 { 80 }
-fn default_rows() -> u16 { 24 }
-fn default_connect_timeout() -> u64 { 15 }
-fn default_true() -> bool { true }
-fn default_reconnect_delay() -> u64 { 5 }
-fn default_encoding() -> String { "utf-8".to_string() }
-fn default_terminal_speed() -> String { "38400,38400".to_string() }
-fn default_escape_char() -> u8 { 0x1d }
+fn default_telnet_port() -> u16 {
+    23
+}
+fn default_terminal_type() -> String {
+    "xterm-256color".to_string()
+}
+fn default_cols() -> u16 {
+    80
+}
+fn default_rows() -> u16 {
+    24
+}
+fn default_connect_timeout() -> u64 {
+    15
+}
+fn default_true() -> bool {
+    true
+}
+fn default_reconnect_delay() -> u64 {
+    5
+}
+fn default_encoding() -> String {
+    "utf-8".to_string()
+}
+fn default_terminal_speed() -> String {
+    "38400,38400".to_string()
+}
+fn default_escape_char() -> u8 {
+    0x1d
+}
 
 impl Default for TelnetConfig {
     fn default() -> Self {
@@ -428,11 +443,17 @@ impl std::error::Error for TelnetError {}
 
 impl TelnetError {
     pub fn new(kind: TelnetErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(TelnetErrorKind::SessionNotFound, format!("Session '{}' not found", id))
+        Self::new(
+            TelnetErrorKind::SessionNotFound,
+            format!("Session '{}' not found", id),
+        )
     }
 
     pub fn not_connected() -> Self {
@@ -458,9 +479,7 @@ impl From<std::io::Error> for TelnetError {
             std::io::ErrorKind::ConnectionRefused => {
                 Self::new(TelnetErrorKind::ConnectionRefused, e.to_string())
             }
-            std::io::ErrorKind::TimedOut => {
-                Self::new(TelnetErrorKind::Timeout, e.to_string())
-            }
+            std::io::ErrorKind::TimedOut => Self::new(TelnetErrorKind::Timeout, e.to_string()),
             _ => Self::new(TelnetErrorKind::Io, e.to_string()),
         }
     }
@@ -497,12 +516,24 @@ mod tests {
 
     #[test]
     fn option_from_byte_known() {
-        assert_eq!(TelnetOption::from_byte(0), Some(TelnetOption::BinaryTransmission));
+        assert_eq!(
+            TelnetOption::from_byte(0),
+            Some(TelnetOption::BinaryTransmission)
+        );
         assert_eq!(TelnetOption::from_byte(1), Some(TelnetOption::Echo));
-        assert_eq!(TelnetOption::from_byte(3), Some(TelnetOption::SuppressGoAhead));
-        assert_eq!(TelnetOption::from_byte(24), Some(TelnetOption::TerminalType));
+        assert_eq!(
+            TelnetOption::from_byte(3),
+            Some(TelnetOption::SuppressGoAhead)
+        );
+        assert_eq!(
+            TelnetOption::from_byte(24),
+            Some(TelnetOption::TerminalType)
+        );
         assert_eq!(TelnetOption::from_byte(31), Some(TelnetOption::NAWS));
-        assert_eq!(TelnetOption::from_byte(39), Some(TelnetOption::NewEnvironment));
+        assert_eq!(
+            TelnetOption::from_byte(39),
+            Some(TelnetOption::NewEnvironment)
+        );
         assert_eq!(TelnetOption::from_byte(201), Some(TelnetOption::GMCP));
     }
 
@@ -634,7 +665,10 @@ mod tests {
 
     #[test]
     fn output_event_serde() {
-        let ev = TelnetOutputEvent { session_id: "x".into(), data: "hello".into() };
+        let ev = TelnetOutputEvent {
+            session_id: "x".into(),
+            data: "hello".into(),
+        };
         let json = serde_json::to_string(&ev).unwrap();
         let de: TelnetOutputEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(de.session_id, "x");
@@ -643,7 +677,10 @@ mod tests {
 
     #[test]
     fn error_event_serde() {
-        let ev = TelnetErrorEvent { session_id: "x".into(), message: "boom".into() };
+        let ev = TelnetErrorEvent {
+            session_id: "x".into(),
+            message: "boom".into(),
+        };
         let json = serde_json::to_string(&ev).unwrap();
         let de: TelnetErrorEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(de.message, "boom");
