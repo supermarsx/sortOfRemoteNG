@@ -66,8 +66,8 @@ impl QuarantineManager {
                 .unwrap_or_default();
             let subject = extract_header(&headers, "Subject");
             let content_type = extract_header(&headers, "Content-Type");
-            let spam_level = extract_header(&headers, "X-Spam-Score")
-                .and_then(|s| s.parse::<f64>().ok());
+            let spam_level =
+                extract_header(&headers, "X-Spam-Score").and_then(|s| s.parse::<f64>().ok());
 
             items.push(AmavisQuarantineItem {
                 mail_id,
@@ -86,10 +86,7 @@ impl QuarantineManager {
     }
 
     /// Get a single quarantined item by mail ID.
-    pub async fn get(
-        client: &AmavisClient,
-        mail_id: &str,
-    ) -> AmavisResult<AmavisQuarantineItem> {
+    pub async fn get(client: &AmavisClient, mail_id: &str) -> AmavisResult<AmavisQuarantineItem> {
         let path = format!("{}/{}", QUARANTINE_DIR, mail_id);
         let exists = client.file_exists(&path).await.unwrap_or(false);
         if !exists {
@@ -131,8 +128,8 @@ impl QuarantineManager {
             .unwrap_or_default();
         let subject = extract_header(&headers, "Subject");
         let content_type = extract_header(&headers, "Content-Type");
-        let spam_level = extract_header(&headers, "X-Spam-Score")
-            .and_then(|s| s.parse::<f64>().ok());
+        let spam_level =
+            extract_header(&headers, "X-Spam-Score").and_then(|s| s.parse::<f64>().ok());
         let quarantine_type = classify_quarantine_type(mail_id);
 
         Ok(AmavisQuarantineItem {
@@ -183,10 +180,7 @@ impl QuarantineManager {
     }
 
     /// Release all quarantined messages of a given type.
-    pub async fn release_all(
-        client: &AmavisClient,
-        quarantine_type: &str,
-    ) -> AmavisResult<()> {
+    pub async fn release_all(client: &AmavisClient, quarantine_type: &str) -> AmavisResult<()> {
         let items = Self::list(
             client,
             &QuarantineListRequest {
@@ -205,10 +199,7 @@ impl QuarantineManager {
     }
 
     /// Delete all quarantined messages of a given type.
-    pub async fn delete_all(
-        client: &AmavisClient,
-        quarantine_type: &str,
-    ) -> AmavisResult<()> {
+    pub async fn delete_all(client: &AmavisClient, quarantine_type: &str) -> AmavisResult<()> {
         let items = Self::list(
             client,
             &QuarantineListRequest {
@@ -245,25 +236,11 @@ impl QuarantineManager {
         let size_out = client.ssh_exec(&size_cmd).await?;
         let oldest_out = client.ssh_exec(&oldest_cmd).await?;
 
-        let total_items = count_out
-            .stdout
-            .trim()
-            .parse::<u64>()
-            .unwrap_or(0);
-        let total_size_bytes = size_out
-            .stdout
-            .trim()
-            .parse::<u64>()
-            .unwrap_or(0);
-        let oldest_item_time = oldest_out
-            .stdout
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .and_then(|ts| {
-                chrono::DateTime::from_timestamp(ts as i64, 0)
-                    .map(|dt| dt.to_rfc3339())
-            });
+        let total_items = count_out.stdout.trim().parse::<u64>().unwrap_or(0);
+        let total_size_bytes = size_out.stdout.trim().parse::<u64>().unwrap_or(0);
+        let oldest_item_time = oldest_out.stdout.trim().parse::<f64>().ok().and_then(|ts| {
+            chrono::DateTime::from_timestamp(ts as i64, 0).map(|dt| dt.to_rfc3339())
+        });
 
         // Count by type using filename classification
         let ls_cmd = format!(

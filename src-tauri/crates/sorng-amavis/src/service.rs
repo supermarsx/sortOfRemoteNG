@@ -10,13 +10,13 @@ use crate::client::AmavisClient;
 use crate::error::{AmavisError, AmavisErrorKind, AmavisResult};
 use crate::types::*;
 
-use crate::config::AmavisConfigManager;
-use crate::policy_banks::PolicyBankManager;
 use crate::banned::BannedManager;
+use crate::config::AmavisConfigManager;
 use crate::lists::ListManager;
+use crate::policy_banks::PolicyBankManager;
+use crate::process::AmavisProcessManager;
 use crate::quarantine::QuarantineManager;
 use crate::stats::StatsManager;
-use crate::process::AmavisProcessManager;
 
 /// Shared Tauri state handle.
 pub type AmavisServiceState = Arc<Mutex<AmavisService>>;
@@ -24,6 +24,12 @@ pub type AmavisServiceState = Arc<Mutex<AmavisService>>;
 /// Main Amavis service managing connections.
 pub struct AmavisService {
     connections: HashMap<String, AmavisClient>,
+}
+
+impl Default for AmavisService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AmavisService {
@@ -47,13 +53,12 @@ impl AmavisService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> AmavisResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| AmavisError::new(
+        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+            AmavisError::new(
                 AmavisErrorKind::NotConnected,
                 format!("No connection '{}'", id),
-            ))
+            )
+        })
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -98,22 +103,16 @@ impl AmavisService {
         AmavisConfigManager::get_snippet(self.client(id)?, name).await
     }
 
-    pub async fn create_snippet(
-        &self,
-        id: &str,
-        name: &str,
-        content: &str,
-    ) -> AmavisResult<()> {
-        AmavisConfigManager::create_snippet(self.client(id)?, name, content).await.map(|_| ())
+    pub async fn create_snippet(&self, id: &str, name: &str, content: &str) -> AmavisResult<()> {
+        AmavisConfigManager::create_snippet(self.client(id)?, name, content)
+            .await
+            .map(|_| ())
     }
 
-    pub async fn update_snippet(
-        &self,
-        id: &str,
-        name: &str,
-        content: &str,
-    ) -> AmavisResult<()> {
-        AmavisConfigManager::update_snippet(self.client(id)?, name, content).await.map(|_| ())
+    pub async fn update_snippet(&self, id: &str, name: &str, content: &str) -> AmavisResult<()> {
+        AmavisConfigManager::update_snippet(self.client(id)?, name, content)
+            .await
+            .map(|_| ())
     }
 
     pub async fn delete_snippet(&self, id: &str, name: &str) -> AmavisResult<()> {
@@ -138,11 +137,7 @@ impl AmavisService {
         PolicyBankManager::list(self.client(id)?).await
     }
 
-    pub async fn get_policy_bank(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> AmavisResult<AmavisPolicyBank> {
+    pub async fn get_policy_bank(&self, id: &str, name: &str) -> AmavisResult<AmavisPolicyBank> {
         PolicyBankManager::get(self.client(id)?, name).await
     }
 
@@ -181,11 +176,7 @@ impl AmavisService {
         BannedManager::list_rules(self.client(id)?).await
     }
 
-    pub async fn get_banned_rule(
-        &self,
-        id: &str,
-        ban_id: &str,
-    ) -> AmavisResult<AmavisBannedRule> {
+    pub async fn get_banned_rule(&self, id: &str, ban_id: &str) -> AmavisResult<AmavisBannedRule> {
         BannedManager::get_rule(self.client(id)?, ban_id).await
     }
 
@@ -224,11 +215,7 @@ impl AmavisService {
         ListManager::list_entries(self.client(id)?, list_type).await
     }
 
-    pub async fn get_list_entry(
-        &self,
-        id: &str,
-        entry_id: &str,
-    ) -> AmavisResult<AmavisListEntry> {
+    pub async fn get_list_entry(&self, id: &str, entry_id: &str) -> AmavisResult<AmavisListEntry> {
         ListManager::get_entry(self.client(id)?, entry_id).await
     }
 
@@ -295,18 +282,11 @@ impl AmavisService {
         QuarantineManager::release_all(self.client(id)?, quarantine_type).await
     }
 
-    pub async fn delete_all_quarantine(
-        &self,
-        id: &str,
-        quarantine_type: &str,
-    ) -> AmavisResult<()> {
+    pub async fn delete_all_quarantine(&self, id: &str, quarantine_type: &str) -> AmavisResult<()> {
         QuarantineManager::delete_all(self.client(id)?, quarantine_type).await
     }
 
-    pub async fn get_quarantine_stats(
-        &self,
-        id: &str,
-    ) -> AmavisResult<AmavisQuarantineStats> {
+    pub async fn get_quarantine_stats(&self, id: &str) -> AmavisResult<AmavisQuarantineStats> {
         QuarantineManager::get_stats(self.client(id)?).await
     }
 
@@ -316,10 +296,7 @@ impl AmavisService {
         StatsManager::get_stats(self.client(id)?).await
     }
 
-    pub async fn get_child_processes(
-        &self,
-        id: &str,
-    ) -> AmavisResult<Vec<AmavisChildProcess>> {
+    pub async fn get_child_processes(&self, id: &str) -> AmavisResult<Vec<AmavisChildProcess>> {
         StatsManager::get_child_processes(self.client(id)?).await
     }
 

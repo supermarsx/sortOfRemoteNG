@@ -1,6 +1,6 @@
 // ── amavis policy bank management ────────────────────────────────────────────
 
-use crate::client::{shell_escape, AmavisClient};
+use crate::client::AmavisClient;
 use crate::error::{AmavisError, AmavisResult};
 use crate::types::*;
 
@@ -11,7 +11,10 @@ pub struct PolicyBankManager;
 impl PolicyBankManager {
     /// List all policy banks defined in the amavis config.
     pub async fn list(client: &AmavisClient) -> AmavisResult<Vec<AmavisPolicyBank>> {
-        let content = client.read_file(POLICY_BANKS_CONF).await.unwrap_or_default();
+        let content = client
+            .read_file(POLICY_BANKS_CONF)
+            .await
+            .unwrap_or_default();
         let banks = parse_policy_banks(&content);
         Ok(banks)
     }
@@ -53,7 +56,10 @@ impl PolicyBankManager {
             banned_quarantine_to: req.banned_quarantine_to.clone(),
         };
         let snippet = render_policy_bank(&bank);
-        let mut content = client.read_file(POLICY_BANKS_CONF).await.unwrap_or_default();
+        let mut content = client
+            .read_file(POLICY_BANKS_CONF)
+            .await
+            .unwrap_or_default();
         content.push_str("\n\n");
         content.push_str(&snippet);
         client.write_file(POLICY_BANKS_CONF, &content).await?;
@@ -105,7 +111,10 @@ impl PolicyBankManager {
         }
 
         // Rewrite the config: remove old bank, append updated
-        let content = client.read_file(POLICY_BANKS_CONF).await.unwrap_or_default();
+        let content = client
+            .read_file(POLICY_BANKS_CONF)
+            .await
+            .unwrap_or_default();
         let cleaned = remove_policy_bank_block(&content, name);
         let snippet = render_policy_bank(&bank);
         let new_content = format!("{}\n\n{}", cleaned.trim_end(), snippet);

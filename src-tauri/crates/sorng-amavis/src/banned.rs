@@ -11,7 +11,10 @@ pub struct BannedManager;
 impl BannedManager {
     /// List all banned file type rules.
     pub async fn list_rules(client: &AmavisClient) -> AmavisResult<Vec<AmavisBannedRule>> {
-        let content = client.read_file(BANNED_RULES_CONF).await.unwrap_or_default();
+        let content = client
+            .read_file(BANNED_RULES_CONF)
+            .await
+            .unwrap_or_default();
         let rules = parse_banned_rules(&content);
         Ok(rules)
     }
@@ -39,7 +42,10 @@ impl BannedManager {
             enabled: true,
         };
         let line = render_banned_rule(&rule);
-        let mut content = client.read_file(BANNED_RULES_CONF).await.unwrap_or_default();
+        let mut content = client
+            .read_file(BANNED_RULES_CONF)
+            .await
+            .unwrap_or_default();
 
         // Find or create the @banned_filename_re section
         if content.contains("@banned_filename_re") {
@@ -83,7 +89,10 @@ impl BannedManager {
         }
 
         // Remove old rule and re-add
-        let content = client.read_file(BANNED_RULES_CONF).await.unwrap_or_default();
+        let content = client
+            .read_file(BANNED_RULES_CONF)
+            .await
+            .unwrap_or_default();
         let cleaned = remove_banned_rule_by_id(&content, id);
         let line = render_banned_rule(&rule);
         let new_content = if cleaned.contains("@banned_filename_re") {
@@ -184,7 +193,8 @@ fn parse_banned_rules(content: &str) -> Vec<AmavisBannedRule> {
                     // Use description-based ID for stability
                     format!(
                         "banned-{:x}",
-                        desc.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
+                        desc.bytes()
+                            .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32))
                     )
                 } else {
                     rule_index += 1;
@@ -230,13 +240,7 @@ fn render_banned_rule(rule: &AmavisBannedRule) -> String {
         .map(|d| format!("  # {}", d))
         .unwrap_or_default();
     // Embed the ID in a comment for round-trip parsing
-    format!(
-        "{}qr'{}'{} # id:{}",
-        prefix,
-        rule.pattern,
-        comment,
-        rule.id
-    )
+    format!("{}qr'{}'{} # id:{}", prefix, rule.pattern, comment, rule.id)
 }
 
 fn remove_banned_rule_by_id(content: &str, id: &str) -> String {

@@ -74,10 +74,7 @@ impl ListManager {
             }
         } else {
             // Create the entire hash block
-            content.push_str(&format!(
-                "\n{} = new_RE(\n  {}\n);\n",
-                hash_marker, line
-            ));
+            content.push_str(&format!("\n{} = new_RE(\n  {}\n);\n", hash_marker, line));
         }
 
         client.write_file(LISTS_CONF, &content).await?;
@@ -120,10 +117,7 @@ impl ListManager {
                 format!("{}\n  {}\n", cleaned, line)
             }
         } else {
-            format!(
-                "{}\n{} = new_RE(\n  {}\n);\n",
-                cleaned, hash_marker, line
-            )
+            format!("{}\n{} = new_RE(\n  {}\n);\n", cleaned, hash_marker, line)
         };
 
         client.write_file(LISTS_CONF, &new_content).await?;
@@ -300,10 +294,7 @@ fn render_list_entry(entry: &AmavisListEntry) -> String {
         .as_ref()
         .map(|d| format!("  # {}", d))
         .unwrap_or_default();
-    let escaped_addr = entry
-        .address
-        .replace('.', "\\.")
-        .replace('@', "\\@");
+    let escaped_addr = entry.address.replace('.', "\\.").replace('@', "\\@");
     format!(
         "{}qr'^{}$'i => 1,{} # id:{}",
         prefix, escaped_addr, comment, entry.id

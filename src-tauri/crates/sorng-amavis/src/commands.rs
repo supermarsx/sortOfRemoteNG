@@ -20,14 +20,16 @@ pub async fn amavis_connect(
     id: String,
     config: AmavisConnectionConfig,
 ) -> CmdResult<AmavisConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn amavis_disconnect(
-    state: State<'_, AmavisServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn amavis_disconnect(state: State<'_, AmavisServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
@@ -53,7 +55,12 @@ pub async fn amavis_get_main_config(
     state: State<'_, AmavisServiceState>,
     id: String,
 ) -> CmdResult<AmavisMainConfig> {
-    state.lock().await.get_main_config(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_main_config(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -581,44 +588,29 @@ pub async fn amavis_get_throughput(
 }
 
 #[tauri::command]
-pub async fn amavis_reset_stats(
-    state: State<'_, AmavisServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn amavis_reset_stats(state: State<'_, AmavisServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reset_stats(&id).await.map_err(map_err)
 }
 
 // ── Process ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn amavis_start(
-    state: State<'_, AmavisServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn amavis_start(state: State<'_, AmavisServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.start(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn amavis_stop(
-    state: State<'_, AmavisServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn amavis_stop(state: State<'_, AmavisServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.stop(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn amavis_restart(
-    state: State<'_, AmavisServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn amavis_restart(state: State<'_, AmavisServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.restart(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn amavis_reload(
-    state: State<'_, AmavisServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn amavis_reload(state: State<'_, AmavisServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reload(&id).await.map_err(map_err)
 }
 
@@ -636,10 +628,7 @@ pub async fn amavis_process_status(
 }
 
 #[tauri::command]
-pub async fn amavis_version(
-    state: State<'_, AmavisServiceState>,
-    id: String,
-) -> CmdResult<String> {
+pub async fn amavis_version(state: State<'_, AmavisServiceState>, id: String) -> CmdResult<String> {
     state.lock().await.version(&id).await.map_err(map_err)
 }
 
@@ -662,10 +651,5 @@ pub async fn amavis_show_config(
     state: State<'_, AmavisServiceState>,
     id: String,
 ) -> CmdResult<String> {
-    state
-        .lock()
-        .await
-        .show_config(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.show_config(&id).await.map_err(map_err)
 }

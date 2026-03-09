@@ -72,10 +72,18 @@ impl AmavisProcessManager {
 
         let pid = if running {
             client
-                .ssh_exec("pgrep -x amavisd 2>/dev/null || pgrep -x amavisd-new 2>/dev/null || echo ''")
+                .ssh_exec(
+                    "pgrep -x amavisd 2>/dev/null || pgrep -x amavisd-new 2>/dev/null || echo ''",
+                )
                 .await
                 .ok()
-                .and_then(|o| o.stdout.trim().lines().next().and_then(|l| l.parse::<u32>().ok()))
+                .and_then(|o| {
+                    o.stdout
+                        .trim()
+                        .lines()
+                        .next()
+                        .and_then(|l| l.parse::<u32>().ok())
+                })
         } else {
             None
         };
@@ -89,7 +97,7 @@ impl AmavisProcessManager {
             .map(|o| o.stdout.trim().to_string());
 
         let uptime_secs = if running {
-            pid.and_then(|p| {
+            pid.and({
                 // we don't have the output yet, but structure the command
                 None::<u64> // Computed below
             });

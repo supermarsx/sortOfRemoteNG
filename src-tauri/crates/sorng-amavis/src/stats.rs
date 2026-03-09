@@ -51,7 +51,9 @@ impl StatsManager {
 
         // Estimate active vs idle based on process states
         let active_out = client
-            .ssh_exec("ps -C amavisd -o stat= 2>/dev/null || ps -C amavisd-new -o stat= 2>/dev/null")
+            .ssh_exec(
+                "ps -C amavisd -o stat= 2>/dev/null || ps -C amavisd-new -o stat= 2>/dev/null",
+            )
             .await
             .ok()
             .map(|o| o.stdout)
@@ -129,11 +131,7 @@ impl StatsManager {
             )
             .await?;
 
-        let msgs_in_window = out
-            .stdout
-            .trim()
-            .parse::<f64>()
-            .unwrap_or(0.0);
+        let msgs_in_window = out.stdout.trim().parse::<f64>().unwrap_or(0.0);
         let msgs_per_minute = msgs_in_window / 5.0;
 
         // Estimate bytes per minute from average message size
@@ -142,11 +140,7 @@ impl StatsManager {
                 "journalctl -u amavisd --since '5 min ago' --no-pager 2>/dev/null | grep -oP 'Hits: [^,]+, size: \\K[0-9]+' | awk '{s+=$1; n++} END {if(n>0) print s/n; else print 0}' || echo 0"
             )
             .await?;
-        let avg_size = avg_size_out
-            .stdout
-            .trim()
-            .parse::<f64>()
-            .unwrap_or(0.0);
+        let avg_size = avg_size_out.stdout.trim().parse::<f64>().unwrap_or(0.0);
         let bytes_per_minute = msgs_per_minute * avg_size;
 
         // Estimate latency from log timestamps
@@ -155,11 +149,7 @@ impl StatsManager {
                 "journalctl -u amavisd --since '5 min ago' --no-pager 2>/dev/null | grep -oP '\\(\\K[0-9]+\\s+ms\\)' | head -20 | awk '{s+=$1; n++} END {if(n>0) print s/n; else print 0}' || echo 0"
             )
             .await?;
-        let avg_latency_ms = latency_out
-            .stdout
-            .trim()
-            .parse::<f64>()
-            .unwrap_or(0.0);
+        let avg_latency_ms = latency_out.stdout.trim().parse::<f64>().unwrap_or(0.0);
 
         Ok(AmavisThroughput {
             msgs_per_minute,
@@ -238,7 +228,10 @@ fn parse_agent_stats(output: &str) -> (u64, u64, u64, u64, u64, u64, u64) {
         if parts.len() < 2 {
             continue;
         }
-        let value = parts.last().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        let value = parts
+            .last()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
         let key = parts[0].to_lowercase();
         if key.contains("total") {
             total = value;

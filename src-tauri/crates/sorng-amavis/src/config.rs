@@ -44,8 +44,7 @@ impl AmavisConfigManager {
                 .and_then(|v| v.parse::<u32>().ok()),
             child_timeout: extract_perl_var(&content, "$child_timeout")
                 .and_then(|v| v.parse::<u32>().ok()),
-            log_level: extract_perl_var(&content, "$log_level")
-                .and_then(|v| v.parse::<u32>().ok()),
+            log_level: extract_perl_var(&content, "$log_level").and_then(|v| v.parse::<u32>().ok()),
             syslog_facility: extract_perl_var(&content, "$syslog_facility"),
             myhostname: extract_perl_var(&content, "$myhostname"),
             mydomain: extract_perl_var(&content, "$mydomain"),
@@ -164,9 +163,10 @@ impl AmavisConfigManager {
         name: &str,
     ) -> AmavisResult<AmavisConfigSnippet> {
         let path = format!("{}/{}", SNIPPETS_DIR, name);
-        let content = client.read_file(&path).await.map_err(|_| {
-            AmavisError::not_found(format!("Snippet not found: {}", name))
-        })?;
+        let content = client
+            .read_file(&path)
+            .await
+            .map_err(|_| AmavisError::not_found(format!("Snippet not found: {}", name)))?;
         let enabled = !name.starts_with('.');
         Ok(AmavisConfigSnippet {
             name: name.to_string(),
@@ -310,7 +310,7 @@ fn extract_perl_var(content: &str, var_name: &str) -> Option<String> {
             continue;
         }
         // Check if this line sets the variable
-        let pattern = format!("{}", escaped);
+        let pattern = escaped.to_string();
         if let Some(pos) = trimmed.find(&pattern.replace("\\$", "$")) {
             let after = &trimmed[pos + var_name.len()..];
             let after = after.trim();
