@@ -5,7 +5,7 @@
 
 use crate::ftp::error::{FtpError, FtpResult};
 use crate::ftp::protocol::FtpCodec;
-use crate::ftp::tls::build_tls_connector;
+use crate::ftp::tls::upgrade_to_tls;
 use crate::ftp::types::{FtpConnectionConfig, FtpResponse, FtpSecurityMode};
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -30,12 +30,10 @@ pub async fn connect(config: &FtpConnectionConfig) -> FtpResult<(FtpCodec, FtpRe
     match config.security {
         FtpSecurityMode::Implicit => {
             // Implicit FTPS — TLS wraps the socket immediately.
-            let connector = build_tls_connector(config.accept_invalid_certs)?;
-            let tls = connector
-                .connect(&config.host, tcp)
+            let plain = FtpCodec::from_tcp(tcp);
+            let mut codec = upgrade_to_tls(plain, &config.host, config.accept_invalid_certs)
                 .await
                 .map_err(|e| FtpError::tls_failed(format!("Implicit TLS handshake: {}", e)))?;
-            let mut codec = FtpCodec::from_tls(tls);
             let banner = codec.read_response().await?;
             Ok((codec, banner))
         }

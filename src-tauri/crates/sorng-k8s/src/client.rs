@@ -204,8 +204,15 @@ impl K8sClient {
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, cert_data),
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, key_data),
                 ) {
-                    if let Ok(identity) = reqwest::Identity::from_pkcs8_pem(&cert_bytes, &key_bytes)
-                    {
+                    let mut identity_pem =
+                        Vec::with_capacity(cert_bytes.len() + key_bytes.len() + 2);
+                    identity_pem.extend_from_slice(&cert_bytes);
+                    if !identity_pem.ends_with(b"\n") {
+                        identity_pem.push(b'\n');
+                    }
+                    identity_pem.extend_from_slice(&key_bytes);
+
+                    if let Ok(identity) = reqwest::Identity::from_pem(&identity_pem) {
                         builder = builder.identity(identity);
                     }
                 }

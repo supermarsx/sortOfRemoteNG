@@ -11,6 +11,19 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::time::Duration;
 
+fn identity_from_pem_parts(
+    cert_pem: &[u8],
+    key_pem: &[u8],
+) -> Result<reqwest::Identity, reqwest::Error> {
+    let mut combined = Vec::with_capacity(cert_pem.len() + key_pem.len() + 2);
+    combined.extend_from_slice(cert_pem);
+    if !combined.ends_with(b"\n") {
+        combined.push(b'\n');
+    }
+    combined.extend_from_slice(key_pem);
+    reqwest::Identity::from_pem(&combined)
+}
+
 pub struct LxdClient {
     pub http: HttpClient,
     pub config: LxdConnectionConfig,
@@ -24,7 +37,7 @@ impl LxdClient {
 
         // mTLS identity
         if let (Some(cert_pem), Some(key_pem)) = (&config.client_cert_pem, &config.client_key_pem) {
-            let ident = reqwest::Identity::from_pkcs8_pem(cert_pem.as_bytes(), key_pem.as_bytes())
+            let ident = identity_from_pem_parts(cert_pem.as_bytes(), key_pem.as_bytes())
                 .map_err(|e| LxdError::auth(format!("invalid client cert/key: {e}")))?;
             builder = builder.identity(ident);
         }

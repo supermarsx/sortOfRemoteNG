@@ -6,6 +6,19 @@ use crate::types::*;
 use reqwest::header::CONTENT_TYPE;
 use std::time::Duration;
 
+fn identity_from_pem_parts(
+    cert_pem: &[u8],
+    key_pem: &[u8],
+) -> Result<reqwest::Identity, reqwest::Error> {
+    let mut combined = Vec::with_capacity(cert_pem.len() + key_pem.len() + 2);
+    combined.extend_from_slice(cert_pem);
+    if !combined.ends_with(b"\n") {
+        combined.push(b'\n');
+    }
+    combined.extend_from_slice(key_pem);
+    reqwest::Identity::from_pem(&combined)
+}
+
 /// Docker API client wrapping an HTTP client + base URL.
 pub struct DockerClient {
     pub http: reqwest::Client,
@@ -78,11 +91,8 @@ impl DockerClient {
 
             if let Some(ref cert_pem) = tls.client_cert_pem {
                 let key_pem = tls.client_key_pem.as_deref().unwrap_or("");
-                let identity =
-                    reqwest::Identity::from_pkcs8_pem(cert_pem.as_bytes(), key_pem.as_bytes())
-                        .map_err(|e| {
-                            DockerError::connection(&format!("Invalid client cert: {}", e))
-                        })?;
+                let identity = identity_from_pem_parts(cert_pem.as_bytes(), key_pem.as_bytes())
+                    .map_err(|e| DockerError::connection(&format!("Invalid client cert: {}", e)))?;
                 builder = builder.identity(identity);
             } else if let Some(ref cert_path) = tls.client_cert_path {
                 let key_path = tls.client_key_path.as_deref().unwrap_or(cert_path);
@@ -92,7 +102,7 @@ impl DockerClient {
                 let key_pem = std::fs::read(key_path).map_err(|e| {
                     DockerError::connection(&format!("Cannot read client key: {}", e))
                 })?;
-                let identity = reqwest::Identity::from_pkcs8_pem(&cert_pem, &key_pem)
+                let identity = identity_from_pem_parts(&cert_pem, &key_pem)
                     .map_err(|e| DockerError::connection(&format!("Invalid client cert: {}", e)))?;
                 builder = builder.identity(identity);
             }

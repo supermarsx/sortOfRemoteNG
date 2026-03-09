@@ -1,5 +1,4 @@
 use std::io;
-use std::net::TcpStream;
 use std::time::Duration;
 
 use ironrdp::session::image::DecodedImage;
@@ -9,6 +8,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::frame_store::SharedFrameStore;
 use super::stats::RdpSessionStats;
+use super::RdpTlsStream;
 use sorng_core::native_renderer;
 
 use std::sync::atomic::Ordering;
@@ -19,7 +19,7 @@ use std::sync::atomic::Ordering;
 pub(crate) fn process_outputs(
     session_id: &str,
     outputs: &[ActiveStageOutput],
-    tls_framed: &mut Framed<native_tls::TlsStream<TcpStream>>,
+    tls_framed: &mut Framed<RdpTlsStream>,
     image: &DecodedImage,
     desktop_width: u16,
     desktop_height: u16,
@@ -330,10 +330,7 @@ pub(crate) fn extract_region_rgba(
     rgba
 }
 
-pub(crate) fn set_read_timeout_on_framed(
-    framed: &Framed<native_tls::TlsStream<TcpStream>>,
-    timeout: Option<Duration>,
-) {
+pub(crate) fn set_read_timeout_on_framed(framed: &Framed<RdpTlsStream>, timeout: Option<Duration>) {
     let (tls_stream, _) = framed.get_inner();
     let tcp = tls_stream.get_ref();
     let _ = tcp.set_read_timeout(timeout);

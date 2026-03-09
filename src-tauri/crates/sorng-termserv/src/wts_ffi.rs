@@ -112,6 +112,16 @@ unsafe fn read_u16(buf: *mut u8) -> u16 {
     *(buf as *const u16)
 }
 
+/// Convert our server handle convention into the optional handle expected by
+/// the current `windows` crate bindings.
+fn server_arg(server: HANDLE) -> Option<HANDLE> {
+    if server == WTS_CURRENT_SERVER {
+        None
+    } else {
+        Some(server)
+    }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Server management
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -146,12 +156,14 @@ pub fn enumerate_sessions(server: HANDLE) -> TsResult<Vec<SessionEntry>> {
     let mut count: u32 = 0;
 
     // SAFETY: WTSEnumerateSessionsW fills info_ptr/count; we free with WTSFreeMemory.
-    unsafe { WTSEnumerateSessionsW(server, 0, 1, &mut info_ptr, &mut count) }.map_err(|e| {
-        TsError::new(
-            TsErrorKind::Win32Error(e.code().0 as u32),
-            "WTSEnumerateSessionsW",
-        )
-    })?;
+    unsafe { WTSEnumerateSessionsW(server_arg(server), 0, 1, &mut info_ptr, &mut count) }.map_err(
+        |e| {
+            TsError::new(
+                TsErrorKind::Win32Error(e.code().0 as u32),
+                "WTSEnumerateSessionsW",
+            )
+        },
+    )?;
 
     let mut sessions = Vec::with_capacity(count as usize);
     for i in 0..count as usize {
@@ -204,7 +216,13 @@ fn query_session_raw(
     let mut bytes: u32 = 0;
 
     let result = unsafe {
-        WTSQuerySessionInformationW(server, session_id, info_class, &mut buf, &mut bytes)
+        WTSQuerySessionInformationW(
+            server_arg(server),
+            session_id,
+            info_class,
+            &mut buf,
+            &mut bytes,
+        )
     };
 
     if result.is_err() || buf.is_null() {
@@ -474,12 +492,13 @@ pub fn enumerate_processes(server: HANDLE) -> TsResult<Vec<TsProcessInfo>> {
     let mut info_ptr: *mut WTS_PROCESS_INFOW = std::ptr::null_mut();
     let mut count: u32 = 0;
 
-    unsafe { WTSEnumerateProcessesW(server, 0, 1, &mut info_ptr, &mut count) }.map_err(|e| {
-        TsError::new(
-            TsErrorKind::Win32Error(e.code().0 as u32),
-            "WTSEnumerateProcessesW",
-        )
-    })?;
+    unsafe { WTSEnumerateProcessesW(server_arg(server), 0, 1, &mut info_ptr, &mut count) }
+        .map_err(|e| {
+            TsError::new(
+                TsErrorKind::Win32Error(e.code().0 as u32),
+                "WTSEnumerateProcessesW",
+            )
+        })?;
 
     let mut procs = Vec::with_capacity(count as usize);
     for i in 0..count as usize {
@@ -513,7 +532,7 @@ fn sid_to_string(psid: PSID) -> String {
     let s = unsafe { from_wide_ptr(str_ptr.0) };
     // Free with LocalFree
     unsafe {
-        let _ = LocalFree(HLOCAL(str_ptr.0 as *mut _));
+        let _ = LocalFree(Some(HLOCAL(str_ptr.0 as *mut _)));
     };
     s
 }
@@ -524,7 +543,7 @@ fn sid_to_string(psid: PSID) -> String {
 
 /// Disconnect a session (user stays logged on, session goes to Disconnected state).
 pub fn disconnect_session(server: HANDLE, session_id: u32, wait: bool) -> TsResult<()> {
-    unsafe { WTSDisconnectSession(server, session_id, wait) }.map_err(|e| {
+    unsafe { WTSDisconnectSession(server_arg(server), session_id, wait) }.map_err(|e| {
         TsError::new(
             TsErrorKind::Win32Error(e.code().0 as u32),
             format!("WTSDisconnectSession({})", session_id),
@@ -536,7 +555,7 @@ pub fn disconnect_session(server: HANDLE, session_id: u32, wait: bool) -> TsResu
 
 /// Log off a session (user's processes are terminated).
 pub fn logoff_session(server: HANDLE, session_id: u32, wait: bool) -> TsResult<()> {
-    unsafe { WTSLogoffSession(server, session_id, wait) }.map_err(|e| {
+    unsafe { WTSLogoffSession(server_arg(server), session_id, wait) }.map_err(|e| {
         TsError::new(
             TsErrorKind::Win32Error(e.code().0 as u32),
             format!("WTSLogoffSession({})", session_id),
@@ -548,7 +567,7 @@ pub fn logoff_session(server: HANDLE, session_id: u32, wait: bool) -> TsResult<(
 
 /// Terminate a process by PID.
 pub fn terminate_process(server: HANDLE, process_id: u32, exit_code: u32) -> TsResult<()> {
-    unsafe { WTSTerminateProcess(server, process_id, exit_code) }.map_err(|e| {
+    unsafe { WTSTerminateProcess(server_arg(server), process_id, exit_code) }.map_err(|e| {
         TsError::new(
             TsErrorKind::Win32Error(e.code().0 as u32),
             format!("WTSTerminateProcess({})", process_id),
@@ -601,7 +620,7 @@ pub fn send_message(
 
     unsafe {
         WTSSendMessageW(
-            server,
+            server_arg(server),
             session_id,
             PCWSTR(wide_title.as_ptr()),
             (wide_title.len() as u32) * 2, // byte count
@@ -668,7 +687,7 @@ pub fn stop_remote_control(session_id: u32) -> TsResult<()> {
 
 /// Shut down (and optionally restart) the RD Session Host server.
 pub fn shutdown_system(server: HANDLE, flags: u32) -> TsResult<()> {
-    unsafe { WTSShutdownSystem(server, flags) }.map_err(|e| {
+    unsafe { WTSShutdownSystem(server_arg(server), flags) }.map_err(|e| {
         TsError::new(
             TsErrorKind::Win32Error(e.code().0 as u32),
             "WTSShutdownSystem",
@@ -753,7 +772,9 @@ pub fn enumerate_listeners(server: HANDLE) -> TsResult<Vec<TsListenerInfo>> {
 
     // First call to get count
     let mut count: u32 = 0;
-    let _ = unsafe { WTSEnumerateListenersW(server, std::ptr::null(), 0, None, &mut count) };
+    let _ = unsafe {
+        WTSEnumerateListenersW(server_arg(server), std::ptr::null(), 0, None, &mut count)
+    };
 
     if count == 0 {
         return Ok(Vec::new());
@@ -765,7 +786,7 @@ pub fn enumerate_listeners(server: HANDLE) -> TsResult<Vec<TsListenerInfo>> {
 
     let result = unsafe {
         WTSEnumerateListenersW(
-            server,
+            server_arg(server),
             std::ptr::null(),
             0,
             Some(buf.as_mut_ptr() as *mut _),
@@ -819,12 +840,14 @@ pub const WTS_EVENT_FLUSH: u32 = 0x8000_0000;
 pub fn wait_system_event(server: HANDLE, event_mask: u32) -> TsResult<u32> {
     let mut event_flags: u32 = 0;
     // SAFETY: WTSWaitSystemEvent blocks until an event matches event_mask.
-    unsafe { WTSWaitSystemEvent(server, event_mask, &mut event_flags) }.map_err(|e| {
-        TsError::new(
-            TsErrorKind::Win32Error(e.code().0 as u32),
-            "WTSWaitSystemEvent",
-        )
-    })?;
+    unsafe { WTSWaitSystemEvent(server_arg(server), event_mask, &mut event_flags) }.map_err(
+        |e| {
+            TsError::new(
+                TsErrorKind::Win32Error(e.code().0 as u32),
+                "WTSWaitSystemEvent",
+            )
+        },
+    )?;
     Ok(event_flags)
 }
 
@@ -883,7 +906,7 @@ pub fn virtual_channel_open(
     })?;
     let handle = unsafe {
         WTSVirtualChannelOpen(
-            server,
+            server_arg(server),
             session_id,
             windows::core::PCSTR(c_name.as_ptr() as *const u8),
         )
