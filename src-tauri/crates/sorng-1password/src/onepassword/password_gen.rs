@@ -47,15 +47,14 @@ impl OnePasswordPasswordGen {
 
         // Static word list (commonly used passphrase words)
         let words = &[
-            "apple", "bright", "castle", "dance", "eagle", "forest", "garden",
-            "harbor", "island", "jungle", "kettle", "lemon", "mountain", "noble",
-            "ocean", "planet", "quartz", "river", "sunset", "tower", "umbrella",
-            "valley", "winter", "xenon", "yellow", "zenith", "anchor", "breeze",
-            "cloud", "desert", "ember", "falcon", "glacier", "horizon", "ivory",
-            "jasmine", "knight", "lantern", "meadow", "nectar", "orchid", "prism",
-            "quill", "rapids", "silver", "thunder", "uplift", "velvet", "willow",
-            "mystic", "blaze", "crystal", "dragon", "eclipse", "flame", "granite",
-            "hollow", "infernal", "jubilee", "karma", "lotus", "marble", "nimbus",
+            "apple", "bright", "castle", "dance", "eagle", "forest", "garden", "harbor", "island",
+            "jungle", "kettle", "lemon", "mountain", "noble", "ocean", "planet", "quartz", "river",
+            "sunset", "tower", "umbrella", "valley", "winter", "xenon", "yellow", "zenith",
+            "anchor", "breeze", "cloud", "desert", "ember", "falcon", "glacier", "horizon",
+            "ivory", "jasmine", "knight", "lantern", "meadow", "nectar", "orchid", "prism",
+            "quill", "rapids", "silver", "thunder", "uplift", "velvet", "willow", "mystic",
+            "blaze", "crystal", "dragon", "eclipse", "flame", "granite", "hollow", "infernal",
+            "jubilee", "karma", "lotus", "marble", "nimbus",
         ];
 
         let selected: Vec<&str> = words
@@ -106,10 +105,18 @@ impl OnePasswordPasswordGen {
         }
 
         let mut pool_size: f64 = 0.0;
-        if has_lower { pool_size += 26.0; }
-        if has_upper { pool_size += 26.0; }
-        if has_digit { pool_size += 10.0; }
-        if has_symbol { pool_size += 32.0; }
+        if has_lower {
+            pool_size += 26.0;
+        }
+        if has_upper {
+            pool_size += 26.0;
+        }
+        if has_digit {
+            pool_size += 10.0;
+        }
+        if has_symbol {
+            pool_size += 32.0;
+        }
 
         if pool_size == 0.0 {
             return 0.0;

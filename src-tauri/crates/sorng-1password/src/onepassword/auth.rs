@@ -14,9 +14,10 @@ impl OnePasswordAuth {
     ) -> Result<bool, OnePasswordError> {
         match client.list_vaults(None).await {
             Ok(_) => Ok(true),
-            Err(e) if e.kind == OnePasswordErrorKind::AuthFailed
-                || e.kind == OnePasswordErrorKind::TokenInvalid
-                || e.kind == OnePasswordErrorKind::TokenExpired =>
+            Err(e)
+                if e.kind == OnePasswordErrorKind::AuthFailed
+                    || e.kind == OnePasswordErrorKind::TokenInvalid
+                    || e.kind == OnePasswordErrorKind::TokenExpired =>
             {
                 Ok(false)
             }
@@ -32,13 +33,11 @@ impl OnePasswordAuth {
             return Err(OnePasswordError::token_invalid());
         }
 
-        let payload = base64::Engine::decode(
-            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-            parts[1],
-        )
-        .map_err(|e| {
-            OnePasswordError::parse_error(format!("Failed to decode token payload: {}", e))
-        })?;
+        let payload =
+            base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, parts[1])
+                .map_err(|e| {
+                    OnePasswordError::parse_error(format!("Failed to decode token payload: {}", e))
+                })?;
 
         serde_json::from_slice(&payload).map_err(|e| {
             OnePasswordError::parse_error(format!("Failed to parse token claims: {}", e))
@@ -93,8 +92,6 @@ impl OnePasswordAuth {
         format!("{}...{}", &token[..8], &token[token.len() - 4..])
     }
 }
-
-use base64::Engine as _;
 
 #[cfg(test)]
 mod tests {

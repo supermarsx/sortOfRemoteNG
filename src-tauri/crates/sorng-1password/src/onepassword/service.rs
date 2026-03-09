@@ -21,6 +21,12 @@ struct VaultCache {
     vaults: CacheEntry<Vec<Vault>>,
 }
 
+impl Default for OnePasswordService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnePasswordService {
     // ── Constructors ────────────────────────────────────────────────
 
@@ -70,11 +76,12 @@ impl OnePasswordService {
             let client = OnePasswordApiClient::from_config(&self.config)?;
             self.client = Some(client);
         }
-        self.client.as_ref().ok_or_else(|| {
-            OnePasswordError::connection_error("Failed to create HTTP client")
-        })
+        self.client
+            .as_ref()
+            .ok_or_else(|| OnePasswordError::connection_error("Failed to create HTTP client"))
     }
 
+    #[allow(dead_code)]
     fn get_client(&self) -> Result<&OnePasswordApiClient, OnePasswordError> {
         self.client.as_ref().ok_or_else(|| {
             OnePasswordError::connection_error("Not connected — call connect() first")
@@ -270,7 +277,10 @@ impl OnePasswordService {
         value: &str,
     ) -> Result<FullItem, OnePasswordError> {
         let client = self.ensure_client()?;
-        super::fields::OnePasswordFields::update_field_value(client, vault_id, item_id, field_id, value).await
+        super::fields::OnePasswordFields::update_field_value(
+            client, vault_id, item_id, field_id, value,
+        )
+        .await
     }
 
     pub async fn remove_field(
@@ -327,9 +337,7 @@ impl OnePasswordService {
 
     // ── Watchtower ──────────────────────────────────────────────────
 
-    pub async fn watchtower_analyze_all(
-        &mut self,
-    ) -> Result<WatchtowerSummary, OnePasswordError> {
+    pub async fn watchtower_analyze_all(&mut self) -> Result<WatchtowerSummary, OnePasswordError> {
         let client = self.ensure_client()?;
         super::watchtower::OnePasswordWatchtower::analyze_all(client).await
     }
@@ -371,9 +379,7 @@ impl OnePasswordService {
 
     // ── Favorites ───────────────────────────────────────────────────
 
-    pub async fn list_favorites(
-        &mut self,
-    ) -> Result<Vec<FavoriteItem>, OnePasswordError> {
+    pub async fn list_favorites(&mut self) -> Result<Vec<FavoriteItem>, OnePasswordError> {
         let client = self.ensure_client()?;
         super::favorites::OnePasswordFavorites::list_all(client).await
     }
@@ -412,7 +418,8 @@ impl OnePasswordService {
         json_data: &str,
     ) -> Result<ImportResult, OnePasswordError> {
         let client = self.ensure_client()?;
-        super::import_export::OnePasswordImportExport::import_json(client, vault_id, json_data).await
+        super::import_export::OnePasswordImportExport::import_json(client, vault_id, json_data)
+            .await
     }
 
     pub async fn import_csv(
@@ -426,18 +433,11 @@ impl OnePasswordService {
 
     // ── Password Generation ─────────────────────────────────────────
 
-    pub fn generate_password(
-        &self,
-        config: &PasswordGenConfig,
-    ) -> String {
+    pub fn generate_password(&self, config: &PasswordGenConfig) -> String {
         super::password_gen::OnePasswordPasswordGen::generate(config)
     }
 
-    pub fn generate_passphrase(
-        &self,
-        word_count: u32,
-        separator: &str,
-    ) -> String {
+    pub fn generate_passphrase(&self, word_count: u32, separator: &str) -> String {
         super::password_gen::OnePasswordPasswordGen::generate_passphrase(word_count, separator)
     }
 

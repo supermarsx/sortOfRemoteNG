@@ -37,11 +37,19 @@ impl OnePasswordCategories {
         match category {
             ItemCategory::LOGIN => vec![
                 Self::field("username", FieldType::STRING, Some(FieldPurpose::USERNAME)),
-                Self::field("password", FieldType::CONCEALED, Some(FieldPurpose::PASSWORD)),
+                Self::field(
+                    "password",
+                    FieldType::CONCEALED,
+                    Some(FieldPurpose::PASSWORD),
+                ),
                 Self::field("notesPlain", FieldType::STRING, Some(FieldPurpose::NOTES)),
             ],
             ItemCategory::PASSWORD => vec![
-                Self::field("password", FieldType::CONCEALED, Some(FieldPurpose::PASSWORD)),
+                Self::field(
+                    "password",
+                    FieldType::CONCEALED,
+                    Some(FieldPurpose::PASSWORD),
+                ),
                 Self::field("notesPlain", FieldType::STRING, Some(FieldPurpose::NOTES)),
             ],
             ItemCategory::API_CREDENTIAL => vec![
@@ -53,7 +61,11 @@ impl OnePasswordCategories {
             ItemCategory::SERVER => vec![
                 Self::field("url", FieldType::URL, None),
                 Self::field("username", FieldType::STRING, Some(FieldPurpose::USERNAME)),
-                Self::field("password", FieldType::CONCEALED, Some(FieldPurpose::PASSWORD)),
+                Self::field(
+                    "password",
+                    FieldType::CONCEALED,
+                    Some(FieldPurpose::PASSWORD),
+                ),
             ],
             ItemCategory::DATABASE => vec![
                 Self::field("type", FieldType::MENU, None),
@@ -61,7 +73,11 @@ impl OnePasswordCategories {
                 Self::field("port", FieldType::STRING, None),
                 Self::field("database", FieldType::STRING, None),
                 Self::field("username", FieldType::STRING, Some(FieldPurpose::USERNAME)),
-                Self::field("password", FieldType::CONCEALED, Some(FieldPurpose::PASSWORD)),
+                Self::field(
+                    "password",
+                    FieldType::CONCEALED,
+                    Some(FieldPurpose::PASSWORD),
+                ),
             ],
             ItemCategory::SSH_KEY => vec![
                 Self::field("private_key", FieldType::CONCEALED, None),
@@ -69,12 +85,16 @@ impl OnePasswordCategories {
                 Self::field("fingerprint", FieldType::STRING, None),
                 Self::field("key_type", FieldType::STRING, None),
             ],
-            ItemCategory::SECURE_NOTE => vec![
-                Self::field("notesPlain", FieldType::STRING, Some(FieldPurpose::NOTES)),
-            ],
-            _ => vec![
-                Self::field("notesPlain", FieldType::STRING, Some(FieldPurpose::NOTES)),
-            ],
+            ItemCategory::SECURE_NOTE => vec![Self::field(
+                "notesPlain",
+                FieldType::STRING,
+                Some(FieldPurpose::NOTES),
+            )],
+            _ => vec![Self::field(
+                "notesPlain",
+                FieldType::STRING,
+                Some(FieldPurpose::NOTES),
+            )],
         }
     }
 

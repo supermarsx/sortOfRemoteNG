@@ -6,9 +6,7 @@ pub struct OnePasswordHealth;
 
 impl OnePasswordHealth {
     /// Check if the Connect server is alive.
-    pub async fn heartbeat(
-        client: &OnePasswordApiClient,
-    ) -> Result<bool, OnePasswordError> {
+    pub async fn heartbeat(client: &OnePasswordApiClient) -> Result<bool, OnePasswordError> {
         client.heartbeat().await
     }
 
@@ -20,9 +18,7 @@ impl OnePasswordHealth {
     }
 
     /// Check if all dependencies are healthy.
-    pub async fn is_healthy(
-        client: &OnePasswordApiClient,
-    ) -> Result<bool, OnePasswordError> {
+    pub async fn is_healthy(client: &OnePasswordApiClient) -> Result<bool, OnePasswordError> {
         let health = client.health().await?;
         if let Some(deps) = &health.dependencies {
             Ok(deps.iter().all(|d| d.status == "ACTIVE"))
@@ -32,9 +28,7 @@ impl OnePasswordHealth {
     }
 
     /// Get the Connect server version.
-    pub async fn get_version(
-        client: &OnePasswordApiClient,
-    ) -> Result<String, OnePasswordError> {
+    pub async fn get_version(client: &OnePasswordApiClient) -> Result<String, OnePasswordError> {
         let health = client.health().await?;
         Ok(health.version)
     }

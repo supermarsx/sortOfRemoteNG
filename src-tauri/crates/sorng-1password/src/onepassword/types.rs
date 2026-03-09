@@ -61,11 +61,17 @@ impl OnePasswordError {
     }
 
     pub fn token_expired() -> Self {
-        Self::new(OnePasswordErrorKind::TokenExpired, "Bearer token has expired")
+        Self::new(
+            OnePasswordErrorKind::TokenExpired,
+            "Bearer token has expired",
+        )
     }
 
     pub fn token_invalid() -> Self {
-        Self::new(OnePasswordErrorKind::TokenInvalid, "Bearer token is invalid")
+        Self::new(
+            OnePasswordErrorKind::TokenInvalid,
+            "Bearer token is invalid",
+        )
     }
 
     pub fn forbidden(msg: impl Into<String>) -> Self {
@@ -230,6 +236,7 @@ pub struct Vault {
 
 // ─── Item Categories ─────────────────────────────────────────────────
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ItemCategory {
     LOGIN,
@@ -273,6 +280,7 @@ pub struct ItemUrl {
 
 // ─── Field ───────────────────────────────────────────────────────────
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FieldType {
     STRING,
@@ -285,6 +293,7 @@ pub enum FieldType {
     MENU,
 }
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FieldPurpose {
     #[serde(rename = "")]
@@ -436,6 +445,7 @@ pub struct PatchOperation {
 
 // ─── API Activity ────────────────────────────────────────────────────
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ApiAction {
     READ,
@@ -444,6 +454,7 @@ pub enum ApiAction {
     DELETE,
 }
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ApiResult {
     SUCCESS,

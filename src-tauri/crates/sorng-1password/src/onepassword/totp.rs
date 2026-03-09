@@ -91,9 +91,7 @@ impl OnePasswordTotp {
         let totp_field = fields
             .iter()
             .find(|f| f.field_type == FieldType::TOTP)
-            .ok_or_else(|| {
-                OnePasswordError::not_found("TOTP field", item_id)
-            })?;
+            .ok_or_else(|| OnePasswordError::not_found("TOTP field", item_id))?;
 
         let ops = vec![PatchOperation {
             op: PatchOp::Remove,

@@ -24,7 +24,9 @@ impl OnePasswordApiClient {
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout_secs))
             .build()
-            .map_err(|e| OnePasswordError::connection_error(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| {
+                OnePasswordError::connection_error(format!("Failed to create HTTP client: {}", e))
+            })?;
 
         let base = base_url.trim_end_matches('/').to_string();
 
@@ -38,12 +40,18 @@ impl OnePasswordApiClient {
 
     pub fn from_config(config: &OnePasswordConfig) -> Result<Self, OnePasswordError> {
         if config.connect_host.is_empty() {
-            return Err(OnePasswordError::config_error("Connect host URL is required"));
+            return Err(OnePasswordError::config_error(
+                "Connect host URL is required",
+            ));
         }
         if config.connect_token.is_empty() {
             return Err(OnePasswordError::config_error("Connect token is required"));
         }
-        Self::new(&config.connect_host, &config.connect_token, config.timeout_secs)
+        Self::new(
+            &config.connect_host,
+            &config.connect_token,
+            config.timeout_secs,
+        )
     }
 
     // ── URL builder ─────────────────────────────────────────────────
@@ -74,7 +82,11 @@ impl OnePasswordApiClient {
         if status.is_success() {
             let body = resp.text().await.map_err(OnePasswordError::from)?;
             serde_json::from_str::<T>(&body).map_err(|e| {
-                OnePasswordError::parse_error(format!("Failed to parse response: {} — body: {}", e, &body[..body.len().min(500)]))
+                OnePasswordError::parse_error(format!(
+                    "Failed to parse response: {} — body: {}",
+                    e,
+                    &body[..body.len().min(500)]
+                ))
             })
         } else {
             let code = status.as_u16();
@@ -87,11 +99,17 @@ impl OnePasswordApiClient {
             Err(match status {
                 StatusCode::UNAUTHORIZED => OnePasswordError::token_invalid().with_status(code),
                 StatusCode::FORBIDDEN => OnePasswordError::forbidden(msg).with_status(code),
-                StatusCode::NOT_FOUND => OnePasswordError::new(OnePasswordErrorKind::NotFound, msg).with_status(code),
+                StatusCode::NOT_FOUND => {
+                    OnePasswordError::new(OnePasswordErrorKind::NotFound, msg).with_status(code)
+                }
                 StatusCode::BAD_REQUEST => OnePasswordError::bad_request(msg).with_status(code),
-                StatusCode::CONFLICT => OnePasswordError::new(OnePasswordErrorKind::Conflict, msg).with_status(code),
+                StatusCode::CONFLICT => {
+                    OnePasswordError::new(OnePasswordErrorKind::Conflict, msg).with_status(code)
+                }
                 StatusCode::TOO_MANY_REQUESTS => OnePasswordError::rate_limited().with_status(code),
-                StatusCode::PAYLOAD_TOO_LARGE => OnePasswordError::new(OnePasswordErrorKind::FileTooLarge, msg).with_status(code),
+                StatusCode::PAYLOAD_TOO_LARGE => {
+                    OnePasswordError::new(OnePasswordErrorKind::FileTooLarge, msg).with_status(code)
+                }
                 _ => OnePasswordError::server_error(msg).with_status(code),
             })
         }
@@ -118,7 +136,9 @@ impl OnePasswordApiClient {
             Err(match status {
                 StatusCode::UNAUTHORIZED => OnePasswordError::token_invalid().with_status(code),
                 StatusCode::FORBIDDEN => OnePasswordError::forbidden(msg).with_status(code),
-                StatusCode::NOT_FOUND => OnePasswordError::new(OnePasswordErrorKind::NotFound, msg).with_status(code),
+                StatusCode::NOT_FOUND => {
+                    OnePasswordError::new(OnePasswordErrorKind::NotFound, msg).with_status(code)
+                }
                 _ => OnePasswordError::server_error(msg).with_status(code),
             })
         }
@@ -140,7 +160,10 @@ impl OnePasswordApiClient {
         } else {
             let code = status.as_u16();
             let body = resp.text().await.unwrap_or_default();
-            Err(OnePasswordError::server_error(format!("HTTP {} — {}", code, body)).with_status(code))
+            Err(
+                OnePasswordError::server_error(format!("HTTP {} — {}", code, body))
+                    .with_status(code),
+            )
         }
     }
 
@@ -170,7 +193,8 @@ impl OnePasswordApiClient {
         filter: Option<&str>,
     ) -> Result<Vec<Item>, OnePasswordError> {
         let mut req = self.auth(
-            self.client.get(self.url(&format!("/vaults/{}/items", vault_id))),
+            self.client
+                .get(self.url(&format!("/vaults/{}/items", vault_id))),
         );
         if let Some(f) = filter {
             req = req.query(&[("filter", f)]);
@@ -239,11 +263,7 @@ impl OnePasswordApiClient {
     }
 
     /// DELETE /v1/vaults/{vaultUuid}/items/{itemUuid} — Delete an item
-    pub async fn delete_item(
-        &self,
-        vault_id: &str,
-        item_id: &str,
-    ) -> Result<(), OnePasswordError> {
+    pub async fn delete_item(&self, vault_id: &str, item_id: &str) -> Result<(), OnePasswordError> {
         let req = self.auth(
             self.client
                 .delete(self.url(&format!("/vaults/{}/items/{}", vault_id, item_id))),

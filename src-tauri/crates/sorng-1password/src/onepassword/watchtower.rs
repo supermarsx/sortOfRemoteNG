@@ -23,7 +23,9 @@ impl OnePasswordWatchtower {
         for vault in &vaults {
             let items = client.list_items(&vault.id, None).await?;
             for item in items {
-                if let Ok(full) = client.get_item(&vault.id, item.id.as_deref().unwrap_or("")).await
+                if let Ok(full) = client
+                    .get_item(&vault.id, item.id.as_deref().unwrap_or(""))
+                    .await
                 {
                     all_items.push((vault.id.clone(), full));
                 }
@@ -54,9 +56,7 @@ impl OnePasswordWatchtower {
     }
 
     /// Perform the security analysis on a set of items.
-    fn analyze_items(
-        items: &[(String, FullItem)],
-    ) -> Result<WatchtowerSummary, OnePasswordError> {
+    fn analyze_items(items: &[(String, FullItem)]) -> Result<WatchtowerSummary, OnePasswordError> {
         let mut alerts = Vec::new();
         let mut weak_passwords = 0u64;
         let mut reused_passwords = 0u64;
@@ -79,7 +79,8 @@ impl OnePasswordWatchtower {
                 .find(|f| f.purpose == Some(FieldPurpose::PASSWORD))
             {
                 if let Some(value) = &pwd_field.value {
-                    let strength = super::password_gen::OnePasswordPasswordGen::rate_strength(value);
+                    let strength =
+                        super::password_gen::OnePasswordPasswordGen::rate_strength(value);
                     if strength == "Very Weak" || strength == "Weak" {
                         weak_passwords += 1;
                         alerts.push(WatchtowerAlert {
@@ -115,10 +116,7 @@ impl OnePasswordWatchtower {
                             title: title.clone(),
                             alert_type: WatchtowerAlertType::UnsecuredWebsite,
                             severity: WatchtowerSeverity::Medium,
-                            description: format!(
-                                "URL '{}' uses HTTP instead of HTTPS",
-                                url.href
-                            ),
+                            description: format!("URL '{}' uses HTTP instead of HTTPS", url.href),
                             detected_at: now.clone(),
                         });
                         break; // One alert per item
@@ -128,13 +126,15 @@ impl OnePasswordWatchtower {
 
             // Check for TOTP field availability (2FA detection)
             let has_totp = fields.iter().any(|f| f.field_type == FieldType::TOTP);
-            if item.category == ItemCategory::LOGIN {
-                if !has_totp {
-                    // Login item without TOTP — 2FA might be available
-                    two_factor_available += 1;
-                }
+            if item.category == ItemCategory::LOGIN && !has_totp {
+                // Login item without TOTP — 2FA might be available
+                two_factor_available += 1;
             }
-            if has_totp && fields.iter().any(|f| f.field_type == FieldType::TOTP && f.value.is_none()) {
+            if has_totp
+                && fields
+                    .iter()
+                    .any(|f| f.field_type == FieldType::TOTP && f.value.is_none())
+            {
                 inactive_two_factor += 1;
                 alerts.push(WatchtowerAlert {
                     item_id: item_id.clone(),
@@ -149,7 +149,7 @@ impl OnePasswordWatchtower {
         }
 
         // Detect reused passwords
-        for (_, item_ids) in &seen_passwords {
+        for item_ids in seen_passwords.values() {
             if item_ids.len() > 1 {
                 reused_passwords += item_ids.len() as u64;
                 for id in item_ids {

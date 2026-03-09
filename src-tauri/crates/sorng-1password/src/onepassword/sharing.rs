@@ -29,8 +29,9 @@ impl OnePasswordSharing {
         match client.get_vault(vault_id).await {
             Ok(_) => Ok(true),
             Err(e) if e.kind == OnePasswordErrorKind::Forbidden => Ok(false),
-            Err(e) if e.kind == OnePasswordErrorKind::NotFound
-                || e.kind == OnePasswordErrorKind::VaultNotFound =>
+            Err(e)
+                if e.kind == OnePasswordErrorKind::NotFound
+                    || e.kind == OnePasswordErrorKind::VaultNotFound =>
             {
                 Ok(false)
             }

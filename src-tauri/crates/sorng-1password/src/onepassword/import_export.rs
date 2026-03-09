@@ -95,9 +95,8 @@ impl OnePasswordImportExport {
         vault_id: &str,
         json_data: &str,
     ) -> Result<ImportResult, OnePasswordError> {
-        let items: Vec<FullItem> = serde_json::from_str(json_data).map_err(|e| {
-            OnePasswordError::parse_error(format!("Invalid JSON: {}", e))
-        })?;
+        let items: Vec<FullItem> = serde_json::from_str(json_data)
+            .map_err(|e| OnePasswordError::parse_error(format!("Invalid JSON: {}", e)))?;
 
         let total = items.len() as u64;
         let mut imported = 0u64;

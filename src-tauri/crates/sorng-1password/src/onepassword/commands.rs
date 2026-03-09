@@ -27,17 +27,13 @@ pub async fn op_set_config(
 // ─── Connection ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn op_connect(
-    state: tauri::State<'_, OnePasswordServiceState>,
-) -> Result<bool, String> {
+pub async fn op_connect(state: tauri::State<'_, OnePasswordServiceState>) -> Result<bool, String> {
     let mut svc = state.lock().await;
     svc.connect().await.map_err(|e| e.message)
 }
 
 #[tauri::command]
-pub async fn op_disconnect(
-    state: tauri::State<'_, OnePasswordServiceState>,
-) -> Result<(), String> {
+pub async fn op_disconnect(state: tauri::State<'_, OnePasswordServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect();
     Ok(())
@@ -434,9 +430,7 @@ pub async fn op_export_vault_csv(
     vault_id: String,
 ) -> Result<ExportResult, String> {
     let mut svc = state.lock().await;
-    svc.export_vault_csv(&vault_id)
-        .await
-        .map_err(|e| e.message)
+    svc.export_vault_csv(&vault_id).await.map_err(|e| e.message)
 }
 
 #[tauri::command]
