@@ -21,12 +21,30 @@ pub fn build_list_tables_args() -> Vec<String> {
 
 /// Build `nft add table` arguments.
 pub fn build_add_table_args(family: &str, name: &str) -> Vec<String> {
-    vec!["add".to_string(), "table".to_string(), family.to_string(), name.to_string()]
+    vec![
+        "add".to_string(),
+        "table".to_string(),
+        family.to_string(),
+        name.to_string(),
+    ]
 }
 
 /// Build `nft add chain` arguments.
-pub fn build_add_chain_args(family: &str, table: &str, chain: &str, chain_type: Option<&str>, hook: Option<&str>, priority: Option<i32>) -> Vec<String> {
-    let mut args = vec!["add".to_string(), "chain".to_string(), family.to_string(), table.to_string(), chain.to_string()];
+pub fn build_add_chain_args(
+    family: &str,
+    table: &str,
+    chain: &str,
+    chain_type: Option<&str>,
+    hook: Option<&str>,
+    priority: Option<i32>,
+) -> Vec<String> {
+    let mut args = vec![
+        "add".to_string(),
+        "chain".to_string(),
+        family.to_string(),
+        table.to_string(),
+        chain.to_string(),
+    ];
     if let (Some(ct), Some(h), Some(p)) = (chain_type, hook, priority) {
         args.push(format!("{{ type {} hook {} priority {}; }}", ct, h, p));
     }
@@ -36,8 +54,11 @@ pub fn build_add_chain_args(family: &str, table: &str, chain: &str, chain_type: 
 /// Build `nft add rule` arguments.
 pub fn build_add_rule_args(family: &str, table: &str, chain: &str, rule_expr: &str) -> Vec<String> {
     vec![
-        "add".to_string(), "rule".to_string(),
-        family.to_string(), table.to_string(), chain.to_string(),
+        "add".to_string(),
+        "rule".to_string(),
+        family.to_string(),
+        table.to_string(),
+        chain.to_string(),
         rule_expr.to_string(),
     ]
 }

@@ -7,7 +7,11 @@
 use crate::types::*;
 
 /// Evaluate which profile should be active based on detection rules.
-pub fn detect_profile(profiles: &[NetworkProfile], current_ssid: Option<&str>, current_subnet: Option<&str>) -> Option<String> {
+pub fn detect_profile(
+    profiles: &[NetworkProfile],
+    current_ssid: Option<&str>,
+    current_subnet: Option<&str>,
+) -> Option<String> {
     for profile in profiles {
         for rule in &profile.detect_rules {
             match rule.rule_type {

@@ -81,22 +81,22 @@
 //! - **profile** — Network profile / location management
 //! - **diagnostics** — Cross-backend health checks and rule auditing
 
-pub mod types;
-pub mod service;
-pub mod nmcli;
-pub mod firewalld;
-pub mod iptables;
-pub mod nftables;
-pub mod ufw;
-pub mod pf;
-pub mod windows_fw;
-pub mod interface;
-pub mod wifi;
-pub mod vlan;
 pub mod bond;
 pub mod bridge;
-pub mod profile;
 pub mod diagnostics;
+pub mod firewalld;
+pub mod interface;
+pub mod iptables;
+pub mod nftables;
+pub mod nmcli;
+pub mod pf;
+pub mod profile;
+pub mod service;
+pub mod types;
+pub mod ufw;
+pub mod vlan;
+pub mod wifi;
+pub mod windows_fw;
 
-pub use types::*;
 pub use service::{NetMgrService, NetMgrServiceState};
+pub use types::*;

@@ -41,12 +41,20 @@ pub fn build_deny_args(port: &str) -> Vec<String> {
 
 /// Build `ufw delete` arguments (by rule number).
 pub fn build_delete_rule_args(rule_number: u32) -> Vec<String> {
-    vec!["--force".to_string(), "delete".to_string(), rule_number.to_string()]
+    vec![
+        "--force".to_string(),
+        "delete".to_string(),
+        rule_number.to_string(),
+    ]
 }
 
 /// Build `ufw default` arguments.
 pub fn build_default_policy_args(policy: &str, direction: &str) -> Vec<String> {
-    vec!["default".to_string(), policy.to_string(), direction.to_string()]
+    vec![
+        "default".to_string(),
+        policy.to_string(),
+        direction.to_string(),
+    ]
 }
 
 /// Build `ufw app list` arguments.

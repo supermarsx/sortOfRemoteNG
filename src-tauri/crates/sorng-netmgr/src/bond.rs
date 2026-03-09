@@ -4,21 +4,25 @@
 //! Supports modes: balance-rr, active-backup, balance-xor, broadcast,
 //! 802.3ad (LACP), balance-tlb, balance-alb.
 
-use crate::types::*;
-
 /// Build `ip link add <name> type bond` arguments.
 pub fn build_create_bond_args(name: &str) -> Vec<String> {
     vec![
-        "link".to_string(), "add".to_string(),
-        name.to_string(), "type".to_string(), "bond".to_string(),
+        "link".to_string(),
+        "add".to_string(),
+        name.to_string(),
+        "type".to_string(),
+        "bond".to_string(),
     ]
 }
 
 /// Build `ip link set <slave> master <bond>` arguments.
 pub fn build_add_slave_args(slave: &str, bond: &str) -> Vec<String> {
     vec![
-        "link".to_string(), "set".to_string(),
-        slave.to_string(), "master".to_string(), bond.to_string(),
+        "link".to_string(),
+        "set".to_string(),
+        slave.to_string(),
+        "master".to_string(),
+        bond.to_string(),
     ]
 }
 

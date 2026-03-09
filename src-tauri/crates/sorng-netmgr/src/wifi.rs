@@ -8,7 +8,14 @@ use crate::types::*;
 
 /// Build `nmcli device wifi list` arguments.
 pub fn build_wifi_list_args(interface: Option<&str>) -> Vec<String> {
-    let mut args = vec!["--terse".to_string(), "--fields".to_string(), "all".to_string(), "device".to_string(), "wifi".to_string(), "list".to_string()];
+    let mut args = vec![
+        "--terse".to_string(),
+        "--fields".to_string(),
+        "all".to_string(),
+        "device".to_string(),
+        "wifi".to_string(),
+        "list".to_string(),
+    ];
     if let Some(iface) = interface {
         args.push("ifname".to_string());
         args.push(iface.to_string());
@@ -17,8 +24,17 @@ pub fn build_wifi_list_args(interface: Option<&str>) -> Vec<String> {
 }
 
 /// Build `nmcli device wifi connect` arguments.
-pub fn build_wifi_connect_args(ssid: &str, password: Option<&str>, interface: Option<&str>) -> Vec<String> {
-    let mut args = vec!["device".to_string(), "wifi".to_string(), "connect".to_string(), ssid.to_string()];
+pub fn build_wifi_connect_args(
+    ssid: &str,
+    password: Option<&str>,
+    interface: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "device".to_string(),
+        "wifi".to_string(),
+        "connect".to_string(),
+        ssid.to_string(),
+    ];
     if let Some(pw) = password {
         args.push("password".to_string());
         args.push(pw.to_string());
@@ -33,9 +49,13 @@ pub fn build_wifi_connect_args(ssid: &str, password: Option<&str>, interface: Op
 /// Build `nmcli device wifi hotspot` arguments.
 pub fn build_hotspot_args(ssid: &str, password: &str, interface: Option<&str>) -> Vec<String> {
     let mut args = vec![
-        "device".to_string(), "wifi".to_string(), "hotspot".to_string(),
-        "ssid".to_string(), ssid.to_string(),
-        "password".to_string(), password.to_string(),
+        "device".to_string(),
+        "wifi".to_string(),
+        "hotspot".to_string(),
+        "ssid".to_string(),
+        ssid.to_string(),
+        "password".to_string(),
+        password.to_string(),
     ];
     if let Some(iface) = interface {
         args.push("ifname".to_string());

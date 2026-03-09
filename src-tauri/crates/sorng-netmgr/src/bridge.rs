@@ -3,30 +3,36 @@
 //! Creates, configures, and removes bridge interfaces and
 //! manages bridge ports via `ip link` and `bridge` commands.
 
-use crate::types::*;
-
 /// Build `ip link add name <name> type bridge` arguments.
 pub fn build_create_bridge_args(name: &str) -> Vec<String> {
     vec![
-        "link".to_string(), "add".to_string(),
-        "name".to_string(), name.to_string(),
-        "type".to_string(), "bridge".to_string(),
+        "link".to_string(),
+        "add".to_string(),
+        "name".to_string(),
+        name.to_string(),
+        "type".to_string(),
+        "bridge".to_string(),
     ]
 }
 
 /// Build `ip link set <port> master <bridge>` arguments.
 pub fn build_add_port_args(port: &str, bridge: &str) -> Vec<String> {
     vec![
-        "link".to_string(), "set".to_string(),
-        port.to_string(), "master".to_string(), bridge.to_string(),
+        "link".to_string(),
+        "set".to_string(),
+        port.to_string(),
+        "master".to_string(),
+        bridge.to_string(),
     ]
 }
 
 /// Build `ip link set <port> nomaster` arguments.
 pub fn build_remove_port_args(port: &str) -> Vec<String> {
     vec![
-        "link".to_string(), "set".to_string(),
-        port.to_string(), "nomaster".to_string(),
+        "link".to_string(),
+        "set".to_string(),
+        port.to_string(),
+        "nomaster".to_string(),
     ]
 }
 

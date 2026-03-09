@@ -22,17 +22,34 @@ pub fn build_show_info_args() -> Vec<String> {
 
 /// Build `pfctl -t <table> -T show` arguments.
 pub fn build_show_table_args(table: &str) -> Vec<String> {
-    vec!["-t".to_string(), table.to_string(), "-T".to_string(), "show".to_string()]
+    vec![
+        "-t".to_string(),
+        table.to_string(),
+        "-T".to_string(),
+        "show".to_string(),
+    ]
 }
 
 /// Build `pfctl -t <table> -T add <addr>` arguments.
 pub fn build_table_add_args(table: &str, address: &str) -> Vec<String> {
-    vec!["-t".to_string(), table.to_string(), "-T".to_string(), "add".to_string(), address.to_string()]
+    vec![
+        "-t".to_string(),
+        table.to_string(),
+        "-T".to_string(),
+        "add".to_string(),
+        address.to_string(),
+    ]
 }
 
 /// Build `pfctl -t <table> -T delete <addr>` arguments.
 pub fn build_table_delete_args(table: &str, address: &str) -> Vec<String> {
-    vec!["-t".to_string(), table.to_string(), "-T".to_string(), "delete".to_string(), address.to_string()]
+    vec![
+        "-t".to_string(),
+        table.to_string(),
+        "-T".to_string(),
+        "delete".to_string(),
+        address.to_string(),
+    ]
 }
 
 /// Build `pfctl -f /etc/pf.conf` (reload) arguments.

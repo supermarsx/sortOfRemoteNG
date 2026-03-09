@@ -13,25 +13,43 @@ pub fn build_list_interfaces_args() -> Vec<String> {
 
 /// Build `ip link set <iface> up` arguments.
 pub fn build_set_up_args(interface: &str) -> Vec<String> {
-    vec!["link".to_string(), "set".to_string(), interface.to_string(), "up".to_string()]
+    vec![
+        "link".to_string(),
+        "set".to_string(),
+        interface.to_string(),
+        "up".to_string(),
+    ]
 }
 
 /// Build `ip link set <iface> down` arguments.
 pub fn build_set_down_args(interface: &str) -> Vec<String> {
-    vec!["link".to_string(), "set".to_string(), interface.to_string(), "down".to_string()]
+    vec![
+        "link".to_string(),
+        "set".to_string(),
+        interface.to_string(),
+        "down".to_string(),
+    ]
 }
 
 /// Build `ip link set <iface> mtu <mtu>` arguments.
 pub fn build_set_mtu_args(interface: &str, mtu: u32) -> Vec<String> {
     vec![
-        "link".to_string(), "set".to_string(), interface.to_string(),
-        "mtu".to_string(), mtu.to_string(),
+        "link".to_string(),
+        "set".to_string(),
+        interface.to_string(),
+        "mtu".to_string(),
+        mtu.to_string(),
     ]
 }
 
 /// Build `ip -j addr show <iface>` arguments.
 pub fn build_show_addrs_args(interface: &str) -> Vec<String> {
-    vec!["-j".to_string(), "addr".to_string(), "show".to_string(), interface.to_string()]
+    vec![
+        "-j".to_string(),
+        "addr".to_string(),
+        "show".to_string(),
+        interface.to_string(),
+    ]
 }
 
 /// Parse JSON `ip -j link show` output into `NetworkInterface` structs.

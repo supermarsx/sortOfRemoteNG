@@ -10,7 +10,13 @@ use crate::types::*;
 
 /// Build `nmcli connection show` arguments.
 pub fn build_connection_list_args(active_only: bool) -> Vec<String> {
-    let mut args = vec!["--terse".to_string(), "--fields".to_string(), "all".to_string(), "connection".to_string(), "show".to_string()];
+    let mut args = vec![
+        "--terse".to_string(),
+        "--fields".to_string(),
+        "all".to_string(),
+        "connection".to_string(),
+        "show".to_string(),
+    ];
     if active_only {
         args.push("--active".to_string());
     }
@@ -19,12 +25,23 @@ pub fn build_connection_list_args(active_only: bool) -> Vec<String> {
 
 /// Build `nmcli device status` arguments.
 pub fn build_device_status_args() -> Vec<String> {
-    vec!["--terse".to_string(), "device".to_string(), "status".to_string()]
+    vec![
+        "--terse".to_string(),
+        "device".to_string(),
+        "status".to_string(),
+    ]
 }
 
 /// Build `nmcli device wifi list` arguments.
 pub fn build_wifi_scan_args(interface: Option<&str>) -> Vec<String> {
-    let mut args = vec!["--terse".to_string(), "--fields".to_string(), "all".to_string(), "device".to_string(), "wifi".to_string(), "list".to_string()];
+    let mut args = vec![
+        "--terse".to_string(),
+        "--fields".to_string(),
+        "all".to_string(),
+        "device".to_string(),
+        "wifi".to_string(),
+        "list".to_string(),
+    ];
     if let Some(iface) = interface {
         args.push("ifname".to_string());
         args.push(iface.to_string());
@@ -34,7 +51,11 @@ pub fn build_wifi_scan_args(interface: Option<&str>) -> Vec<String> {
 
 /// Build arguments to activate a connection.
 pub fn build_connection_up_args(name_or_uuid: &str, interface: Option<&str>) -> Vec<String> {
-    let mut args = vec!["connection".to_string(), "up".to_string(), name_or_uuid.to_string()];
+    let mut args = vec![
+        "connection".to_string(),
+        "up".to_string(),
+        name_or_uuid.to_string(),
+    ];
     if let Some(iface) = interface {
         args.push("ifname".to_string());
         args.push(iface.to_string());
@@ -44,17 +65,29 @@ pub fn build_connection_up_args(name_or_uuid: &str, interface: Option<&str>) -> 
 
 /// Build arguments to deactivate a connection.
 pub fn build_connection_down_args(name_or_uuid: &str) -> Vec<String> {
-    vec!["connection".to_string(), "down".to_string(), name_or_uuid.to_string()]
+    vec![
+        "connection".to_string(),
+        "down".to_string(),
+        name_or_uuid.to_string(),
+    ]
 }
 
 /// Build arguments to delete a connection.
 pub fn build_connection_delete_args(name_or_uuid: &str) -> Vec<String> {
-    vec!["connection".to_string(), "delete".to_string(), name_or_uuid.to_string()]
+    vec![
+        "connection".to_string(),
+        "delete".to_string(),
+        name_or_uuid.to_string(),
+    ]
 }
 
 /// Build `nmcli general status` arguments.
 pub fn build_general_status_args() -> Vec<String> {
-    vec!["--terse".to_string(), "general".to_string(), "status".to_string()]
+    vec![
+        "--terse".to_string(),
+        "general".to_string(),
+        "status".to_string(),
+    ]
 }
 
 /// Parse a terse nmcli connection line into an `NmConnection`.

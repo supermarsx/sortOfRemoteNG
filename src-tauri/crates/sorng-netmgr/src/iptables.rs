@@ -19,22 +19,50 @@ pub fn binary_name(family: IpFamily) -> &'static str {
 pub fn build_list_args(table: &str, family: IpFamily) -> (String, Vec<String>) {
     (
         binary_name(family).to_string(),
-        vec!["-t".to_string(), table.to_string(), "-L".to_string(), "-n".to_string(), "-v".to_string(), "--line-numbers".to_string()],
+        vec![
+            "-t".to_string(),
+            table.to_string(),
+            "-L".to_string(),
+            "-n".to_string(),
+            "-v".to_string(),
+            "--line-numbers".to_string(),
+        ],
     )
 }
 
 /// Build args for `iptables -A` (append rule to chain).
-pub fn build_append_rule_args(table: &str, chain: &str, rule_spec: &[String], family: IpFamily) -> (String, Vec<String>) {
-    let mut args = vec!["-t".to_string(), table.to_string(), "-A".to_string(), chain.to_string()];
+pub fn build_append_rule_args(
+    table: &str,
+    chain: &str,
+    rule_spec: &[String],
+    family: IpFamily,
+) -> (String, Vec<String>) {
+    let mut args = vec![
+        "-t".to_string(),
+        table.to_string(),
+        "-A".to_string(),
+        chain.to_string(),
+    ];
     args.extend_from_slice(rule_spec);
     (binary_name(family).to_string(), args)
 }
 
 /// Build args for `iptables -D` (delete rule).
-pub fn build_delete_rule_args(table: &str, chain: &str, rule_num: u32, family: IpFamily) -> (String, Vec<String>) {
+pub fn build_delete_rule_args(
+    table: &str,
+    chain: &str,
+    rule_num: u32,
+    family: IpFamily,
+) -> (String, Vec<String>) {
     (
         binary_name(family).to_string(),
-        vec!["-t".to_string(), table.to_string(), "-D".to_string(), chain.to_string(), rule_num.to_string()],
+        vec![
+            "-t".to_string(),
+            table.to_string(),
+            "-D".to_string(),
+            chain.to_string(),
+            rule_num.to_string(),
+        ],
     )
 }
 
@@ -42,12 +70,21 @@ pub fn build_delete_rule_args(table: &str, chain: &str, rule_num: u32, family: I
 pub fn build_new_chain_args(table: &str, chain: &str, family: IpFamily) -> (String, Vec<String>) {
     (
         binary_name(family).to_string(),
-        vec!["-t".to_string(), table.to_string(), "-N".to_string(), chain.to_string()],
+        vec![
+            "-t".to_string(),
+            table.to_string(),
+            "-N".to_string(),
+            chain.to_string(),
+        ],
     )
 }
 
 /// Build args for `iptables -F` (flush chain / all).
-pub fn build_flush_args(table: &str, chain: Option<&str>, family: IpFamily) -> (String, Vec<String>) {
+pub fn build_flush_args(
+    table: &str,
+    chain: Option<&str>,
+    family: IpFamily,
+) -> (String, Vec<String>) {
     let mut args = vec!["-t".to_string(), table.to_string(), "-F".to_string()];
     if let Some(c) = chain {
         args.push(c.to_string());

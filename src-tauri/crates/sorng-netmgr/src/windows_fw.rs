@@ -7,19 +7,30 @@ use crate::types::*;
 
 /// Build `netsh advfirewall show allprofiles` arguments.
 pub fn build_show_all_profiles_args() -> Vec<String> {
-    vec!["advfirewall".to_string(), "show".to_string(), "allprofiles".to_string()]
+    vec![
+        "advfirewall".to_string(),
+        "show".to_string(),
+        "allprofiles".to_string(),
+    ]
 }
 
 /// Build `netsh advfirewall show <profile>` arguments.
 pub fn build_show_profile_args(profile: &str) -> Vec<String> {
-    vec!["advfirewall".to_string(), "show".to_string(), profile.to_string()]
+    vec![
+        "advfirewall".to_string(),
+        "show".to_string(),
+        profile.to_string(),
+    ]
 }
 
 /// Build `netsh advfirewall firewall show rule name=all` arguments.
 pub fn build_show_all_rules_args() -> Vec<String> {
     vec![
-        "advfirewall".to_string(), "firewall".to_string(),
-        "show".to_string(), "rule".to_string(), "name=all".to_string(),
+        "advfirewall".to_string(),
+        "firewall".to_string(),
+        "show".to_string(),
+        "rule".to_string(),
+        "name=all".to_string(),
     ]
 }
 
@@ -34,8 +45,10 @@ pub fn build_add_rule_args(
     program: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec![
-        "advfirewall".to_string(), "firewall".to_string(),
-        "add".to_string(), "rule".to_string(),
+        "advfirewall".to_string(),
+        "firewall".to_string(),
+        "add".to_string(),
+        "rule".to_string(),
         format!("name={}", name),
         format!("dir={}", dir),
         format!("action={}", action),
@@ -58,8 +71,10 @@ pub fn build_add_rule_args(
 /// Build `netsh advfirewall firewall delete rule` arguments.
 pub fn build_delete_rule_args(name: &str) -> Vec<String> {
     vec![
-        "advfirewall".to_string(), "firewall".to_string(),
-        "delete".to_string(), "rule".to_string(),
+        "advfirewall".to_string(),
+        "firewall".to_string(),
+        "delete".to_string(),
+        "rule".to_string(),
         format!("name={}", name),
     ]
 }
@@ -67,8 +82,11 @@ pub fn build_delete_rule_args(name: &str) -> Vec<String> {
 /// Build `netsh advfirewall set <profile> state on/off`.
 pub fn build_set_profile_state_args(profile: &str, enabled: bool) -> Vec<String> {
     vec![
-        "advfirewall".to_string(), "set".to_string(), profile.to_string(),
-        "state".to_string(), if enabled { "on" } else { "off" }.to_string(),
+        "advfirewall".to_string(),
+        "set".to_string(),
+        profile.to_string(),
+        "state".to_string(),
+        if enabled { "on" } else { "off" }.to_string(),
     ]
 }
 
@@ -96,7 +114,15 @@ mod tests {
 
     #[test]
     fn add_rule_with_port() {
-        let args = build_add_rule_args("Allow HTTP", "in", "allow", Some("tcp"), Some("80"), None, None);
+        let args = build_add_rule_args(
+            "Allow HTTP",
+            "in",
+            "allow",
+            Some("tcp"),
+            Some("80"),
+            None,
+            None,
+        );
         assert!(args.contains(&"name=Allow HTTP".to_string()));
         assert!(args.contains(&"protocol=tcp".to_string()));
         assert!(args.contains(&"localport=80".to_string()));

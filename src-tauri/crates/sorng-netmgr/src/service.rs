@@ -55,6 +55,12 @@ pub struct NetMgrService {
     event_log: Vec<NetMgrEvent>,
 }
 
+impl Default for NetMgrService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetMgrService {
     pub fn new() -> Self {
         Self {
@@ -110,14 +116,18 @@ impl NetMgrService {
         let id = rule.id.clone();
         self.firewall_rules.insert(id.clone(), rule);
         info!("Added firewall rule {}", id);
-        self.event_log.push(NetMgrEvent::FirewallRuleAdded { rule_id: id.clone() });
+        self.event_log.push(NetMgrEvent::FirewallRuleAdded {
+            rule_id: id.clone(),
+        });
         Ok(id)
     }
 
     pub fn remove_firewall_rule(&mut self, id: &str) -> bool {
         let removed = self.firewall_rules.remove(id).is_some();
         if removed {
-            self.event_log.push(NetMgrEvent::FirewallRuleRemoved { rule_id: id.to_string() });
+            self.event_log.push(NetMgrEvent::FirewallRuleRemoved {
+                rule_id: id.to_string(),
+            });
         }
         removed
     }
@@ -131,11 +141,17 @@ impl NetMgrService {
     }
 
     pub fn rules_by_backend(&self, backend: FirewallBackend) -> Vec<&FirewallRule> {
-        self.firewall_rules.values().filter(|r| r.backend == backend).collect()
+        self.firewall_rules
+            .values()
+            .filter(|r| r.backend == backend)
+            .collect()
     }
 
     pub fn rules_by_direction(&self, dir: RuleDirection) -> Vec<&FirewallRule> {
-        self.firewall_rules.values().filter(|r| r.direction == dir).collect()
+        self.firewall_rules
+            .values()
+            .filter(|r| r.direction == dir)
+            .collect()
     }
 
     // ── firewalld ──────────────────────────────────────────────
@@ -156,7 +172,10 @@ impl NetMgrService {
     }
 
     pub fn active_firewalld_zones(&self) -> Vec<&FirewalldZone> {
-        self.firewalld_zones.values().filter(|z| z.is_active).collect()
+        self.firewalld_zones
+            .values()
+            .filter(|z| z.is_active)
+            .collect()
     }
 
     pub fn default_firewalld_zone(&self) -> Option<&FirewalldZone> {
@@ -185,7 +204,10 @@ impl NetMgrService {
     }
 
     pub fn chains_by_table(&self, table: IptablesTable) -> Vec<&IptablesChain> {
-        self.iptables_chains.iter().filter(|c| c.table == table).collect()
+        self.iptables_chains
+            .iter()
+            .filter(|c| c.table == table)
+            .collect()
     }
 
     // ── nftables ───────────────────────────────────────────────
@@ -276,7 +298,10 @@ impl NetMgrService {
     }
 
     pub fn win_fw_rules_by_profile(&self, profile: WinFwProfile) -> Vec<&WinFwRule> {
-        self.win_fw_rules.iter().filter(|r| r.profiles.contains(&profile)).collect()
+        self.win_fw_rules
+            .iter()
+            .filter(|r| r.profiles.contains(&profile))
+            .collect()
     }
 
     // ── NetworkManager ─────────────────────────────────────────
@@ -356,7 +381,10 @@ impl NetMgrService {
     }
 
     pub fn up_interfaces(&self) -> Vec<&NetworkInterface> {
-        self.interfaces.values().filter(|i| i.state == InterfaceState::Up).collect()
+        self.interfaces
+            .values()
+            .filter(|i| i.state == InterfaceState::Up)
+            .collect()
     }
 
     // ── VLAN ───────────────────────────────────────────────────
@@ -435,15 +463,22 @@ impl NetMgrService {
                 current.active = false;
             }
         }
-        let profile = self.profiles.get_mut(id).ok_or_else(|| "Profile not found".to_string())?;
+        let profile = self
+            .profiles
+            .get_mut(id)
+            .ok_or_else(|| "Profile not found".to_string())?;
         profile.active = true;
         self.active_profile = Some(id.to_string());
-        self.event_log.push(NetMgrEvent::ProfileActivated { profile_id: id.to_string() });
+        self.event_log.push(NetMgrEvent::ProfileActivated {
+            profile_id: id.to_string(),
+        });
         Ok(())
     }
 
     pub fn active_profile(&self) -> Option<&NetworkProfile> {
-        self.active_profile.as_ref().and_then(|id| self.profiles.get(id))
+        self.active_profile
+            .as_ref()
+            .and_then(|id| self.profiles.get(id))
     }
 
     // ── Health ─────────────────────────────────────────────────
@@ -714,7 +749,9 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_events() {
-        let event = NetMgrEvent::FirewallRuleAdded { rule_id: "rule-42".to_string() };
+        let event = NetMgrEvent::FirewallRuleAdded {
+            rule_id: "rule-42".to_string(),
+        };
         let json = serde_json::to_string(&event).unwrap();
         let back: NetMgrEvent = serde_json::from_str(&json).unwrap();
         match back {
@@ -828,8 +865,12 @@ mod tests {
     #[test]
     fn events() {
         let mut svc = NetMgrService::new();
-        svc.push_event(NetMgrEvent::InterfaceUp { name: "eth0".to_string() });
-        svc.push_event(NetMgrEvent::InterfaceDown { name: "wlan0".to_string() });
+        svc.push_event(NetMgrEvent::InterfaceUp {
+            name: "eth0".to_string(),
+        });
+        svc.push_event(NetMgrEvent::InterfaceDown {
+            name: "wlan0".to_string(),
+        });
         assert_eq!(svc.recent_events(10).len(), 2);
         assert_eq!(svc.recent_events(1).len(), 1);
         svc.clear_events();

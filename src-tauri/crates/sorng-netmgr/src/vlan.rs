@@ -3,17 +3,22 @@
 //! Creates, configures, and removes VLAN sub-interfaces via
 //! `ip link` or `nmcli connection`.
 
-use crate::types::*;
-
 /// Build `ip link add link <parent> name <name> type vlan id <vid>` arguments.
 pub fn build_create_vlan_args(parent: &str, vlan_id: u16, name: Option<&str>) -> Vec<String> {
-    let vlan_name = name.map(|n| n.to_string()).unwrap_or_else(|| format!("{}.{}", parent, vlan_id));
+    let vlan_name = name
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| format!("{}.{}", parent, vlan_id));
     vec![
-        "link".to_string(), "add".to_string(),
-        "link".to_string(), parent.to_string(),
-        "name".to_string(), vlan_name,
-        "type".to_string(), "vlan".to_string(),
-        "id".to_string(), vlan_id.to_string(),
+        "link".to_string(),
+        "add".to_string(),
+        "link".to_string(),
+        parent.to_string(),
+        "name".to_string(),
+        vlan_name,
+        "type".to_string(),
+        "vlan".to_string(),
+        "id".to_string(),
+        vlan_id.to_string(),
     ]
 }
 
