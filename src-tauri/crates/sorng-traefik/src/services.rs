@@ -12,7 +12,9 @@ impl ServiceManager {
     }
 
     pub async fn get_http(client: &TraefikClient, name: &str) -> TraefikResult<TraefikService> {
-        client.get(&format!("/http/services/{}", encode(name))).await
+        client
+            .get(&format!("/http/services/{}", encode(name)))
+            .await
     }
 
     pub async fn list_tcp(client: &TraefikClient) -> TraefikResult<Vec<TraefikTcpService>> {

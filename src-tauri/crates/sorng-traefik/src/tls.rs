@@ -7,11 +7,16 @@ use crate::types::*;
 pub struct TlsManager;
 
 impl TlsManager {
-    pub async fn list_certificates(client: &TraefikClient) -> TraefikResult<Vec<TraefikTlsCertificate>> {
+    pub async fn list_certificates(
+        client: &TraefikClient,
+    ) -> TraefikResult<Vec<TraefikTlsCertificate>> {
         client.get("/tls/certificates").await
     }
 
-    pub async fn get_certificate(client: &TraefikClient, name: &str) -> TraefikResult<TraefikTlsCertificate> {
+    pub async fn get_certificate(
+        client: &TraefikClient,
+        name: &str,
+    ) -> TraefikResult<TraefikTlsCertificate> {
         client.get(&format!("/tls/certificates/{}", name)).await
     }
 }

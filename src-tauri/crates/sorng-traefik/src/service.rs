@@ -9,20 +9,18 @@ use tokio::sync::Mutex;
 use crate::client::TraefikClient;
 use crate::error::{TraefikError, TraefikResult};
 use crate::types::{
-    TraefikConnectionConfig, TraefikConnectionSummary,
-    TraefikRouter, TraefikTcpRouter, TraefikUdpRouter,
-    TraefikService as TraefikSvcType, TraefikTcpService, TraefikUdpService,
-    TraefikMiddleware, TraefikTcpMiddleware,
-    TraefikEntryPoint, TraefikTlsCertificate, TraefikOverview, TraefikRawConfig,
-    TraefikVersion,
+    TraefikConnectionConfig, TraefikConnectionSummary, TraefikEntryPoint, TraefikMiddleware,
+    TraefikOverview, TraefikRawConfig, TraefikRouter, TraefikService as TraefikSvcType,
+    TraefikTcpMiddleware, TraefikTcpRouter, TraefikTcpService, TraefikTlsCertificate,
+    TraefikUdpRouter, TraefikUdpService, TraefikVersion,
 };
 
+use crate::entrypoints::EntrypointManager;
+use crate::middleware::MiddlewareManager;
+use crate::overview::OverviewManager;
 use crate::routers::RouterManager;
 use crate::services::ServiceManager;
-use crate::middleware::MiddlewareManager;
-use crate::entrypoints::EntrypointManager;
 use crate::tls::TlsManager;
-use crate::overview::OverviewManager;
 
 /// Shared Tauri state handle.
 pub type TraefikServiceState = Arc<Mutex<TraefikService>>;
@@ -32,14 +30,26 @@ pub struct TraefikService {
     connections: HashMap<String, TraefikClient>,
 }
 
+impl Default for TraefikService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TraefikService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: TraefikConnectionConfig) -> TraefikResult<TraefikConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: TraefikConnectionConfig,
+    ) -> TraefikResult<TraefikConnectionSummary> {
         let client = TraefikClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
@@ -47,7 +57,8 @@ impl TraefikService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> TraefikResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| TraefikError::not_connected(format!("No connection '{}'", id)))
     }
@@ -57,7 +68,8 @@ impl TraefikService {
     }
 
     fn client(&self, id: &str) -> TraefikResult<&TraefikClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| TraefikError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -123,7 +135,11 @@ impl TraefikService {
         MiddlewareManager::list_http(self.client(id)?).await
     }
 
-    pub async fn get_http_middleware(&self, id: &str, name: &str) -> TraefikResult<TraefikMiddleware> {
+    pub async fn get_http_middleware(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> TraefikResult<TraefikMiddleware> {
         MiddlewareManager::get_http(self.client(id)?, name).await
     }
 
@@ -131,7 +147,11 @@ impl TraefikService {
         MiddlewareManager::list_tcp(self.client(id)?).await
     }
 
-    pub async fn get_tcp_middleware(&self, id: &str, name: &str) -> TraefikResult<TraefikTcpMiddleware> {
+    pub async fn get_tcp_middleware(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> TraefikResult<TraefikTcpMiddleware> {
         MiddlewareManager::get_tcp(self.client(id)?, name).await
     }
 
@@ -147,11 +167,18 @@ impl TraefikService {
 
     // ── TLS ──────────────────────────────────────────────────────
 
-    pub async fn list_tls_certificates(&self, id: &str) -> TraefikResult<Vec<TraefikTlsCertificate>> {
+    pub async fn list_tls_certificates(
+        &self,
+        id: &str,
+    ) -> TraefikResult<Vec<TraefikTlsCertificate>> {
         TlsManager::list_certificates(self.client(id)?).await
     }
 
-    pub async fn get_tls_certificate(&self, id: &str, name: &str) -> TraefikResult<TraefikTlsCertificate> {
+    pub async fn get_tls_certificate(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> TraefikResult<TraefikTlsCertificate> {
         TlsManager::get_certificate(self.client(id)?, name).await
     }
 

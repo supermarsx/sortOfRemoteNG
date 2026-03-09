@@ -12,15 +12,22 @@ impl MiddlewareManager {
     }
 
     pub async fn get_http(client: &TraefikClient, name: &str) -> TraefikResult<TraefikMiddleware> {
-        client.get(&format!("/http/middlewares/{}", encode(name))).await
+        client
+            .get(&format!("/http/middlewares/{}", encode(name)))
+            .await
     }
 
     pub async fn list_tcp(client: &TraefikClient) -> TraefikResult<Vec<TraefikTcpMiddleware>> {
         client.get("/tcp/middlewares").await
     }
 
-    pub async fn get_tcp(client: &TraefikClient, name: &str) -> TraefikResult<TraefikTcpMiddleware> {
-        client.get(&format!("/tcp/middlewares/{}", encode(name))).await
+    pub async fn get_tcp(
+        client: &TraefikClient,
+        name: &str,
+    ) -> TraefikResult<TraefikTcpMiddleware> {
+        client
+            .get(&format!("/tcp/middlewares/{}", encode(name)))
+            .await
     }
 }
 

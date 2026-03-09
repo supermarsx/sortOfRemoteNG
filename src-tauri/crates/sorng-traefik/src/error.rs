@@ -37,16 +37,25 @@ impl std::error::Error for TraefikError {}
 
 impl TraefikError {
     pub fn new(kind: TraefikErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(TraefikErrorKind::NotConnected, msg)
     }
     pub fn router_not_found(name: &str) -> Self {
-        Self::new(TraefikErrorKind::RouterNotFound, format!("Router not found: {name}"))
+        Self::new(
+            TraefikErrorKind::RouterNotFound,
+            format!("Router not found: {name}"),
+        )
     }
     pub fn service_not_found(name: &str) -> Self {
-        Self::new(TraefikErrorKind::ServiceNotFound, format!("Service not found: {name}"))
+        Self::new(
+            TraefikErrorKind::ServiceNotFound,
+            format!("Service not found: {name}"),
+        )
     }
     pub fn http(e: impl fmt::Display) -> Self {
         Self::new(TraefikErrorKind::HttpError, e.to_string())
