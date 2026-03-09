@@ -48,10 +48,8 @@ impl PipelineExecutor {
 
         let mut ctx = PipelineContext::default();
         // Seed context with the event payload.
-        ctx.variables.insert(
-            "event_payload".to_string(),
-            event.payload.clone(),
-        );
+        ctx.variables
+            .insert("event_payload".to_string(), event.payload.clone());
         ctx.variables.insert(
             "event_type".to_string(),
             serde_json::Value::String(event.event_type.to_string()),
@@ -134,7 +132,7 @@ impl PipelineExecutor {
         }
         if let Some(kv) = cond.strip_prefix("metadata:") {
             if let Some((key, value)) = kv.split_once('=') {
-                return event.metadata.get(key).map_or(false, |v| v == value);
+                return event.metadata.get(key).is_some_and(|v| v == value);
             }
         }
 
@@ -179,8 +177,7 @@ impl PipelineExecutor {
             }
 
             PipelineAction::SendNotification(target) => {
-                let target_json =
-                    serde_json::to_value(target).unwrap_or(serde_json::Value::Null);
+                let target_json = serde_json::to_value(target).unwrap_or(serde_json::Value::Null);
                 log::info!("pipeline: send_notification – {:?}", target);
                 Ok(serde_json::json!({
                     "notification_sent": true,

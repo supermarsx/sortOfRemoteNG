@@ -98,17 +98,13 @@ pub async fn hook_get_events_by_type(
 }
 
 #[tauri::command]
-pub async fn hook_get_stats(
-    state: State<'_, HookServiceState>,
-) -> Result<HookStats, String> {
+pub async fn hook_get_stats(state: State<'_, HookServiceState>) -> Result<HookStats, String> {
     let svc = state.lock().await;
     Ok(svc.get_stats())
 }
 
 #[tauri::command]
-pub async fn hook_clear_events(
-    state: State<'_, HookServiceState>,
-) -> Result<(), String> {
+pub async fn hook_clear_events(state: State<'_, HookServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.clear_events();
     Ok(())
@@ -155,9 +151,7 @@ pub async fn hook_execute_pipeline(
 // ─── Config Commands ────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn hook_get_config(
-    state: State<'_, HookServiceState>,
-) -> Result<HooksConfig, String> {
+pub async fn hook_get_config(state: State<'_, HookServiceState>) -> Result<HooksConfig, String> {
     let svc = state.lock().await;
     Ok(svc.get_config())
 }

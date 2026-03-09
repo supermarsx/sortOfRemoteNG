@@ -30,8 +30,7 @@ pub fn matches_tags(tags: &[String], event: &HookEventData) -> bool {
     match event.metadata.get("tags") {
         Some(event_tags) => {
             let event_tag_list: Vec<&str> = event_tags.split(',').map(|t| t.trim()).collect();
-            tags.iter()
-                .any(|t| event_tag_list.iter().any(|et| et == t))
+            tags.iter().any(|t| event_tag_list.iter().any(|et| et == t))
         }
         None => false,
     }
@@ -57,7 +56,7 @@ pub fn matches_hostname_pattern(pattern: &str, event: &HookEventData) -> bool {
 pub fn matches_metadata(required: &HashMap<String, String>, event: &HookEventData) -> bool {
     required
         .iter()
-        .all(|(k, v)| event.metadata.get(k).map_or(false, |mv| mv == v))
+        .all(|(k, v)| event.metadata.get(k) == Some(v))
 }
 
 // ─── Composite Filter ───────────────────────────────────────────────
@@ -149,10 +148,7 @@ impl FilterBuilder {
     }
 
     pub fn tags(mut self, tags: Vec<String>) -> Self {
-        self.filter
-            .tags
-            .get_or_insert_with(Vec::new)
-            .extend(tags);
+        self.filter.tags.get_or_insert_with(Vec::new).extend(tags);
         self
     }
 

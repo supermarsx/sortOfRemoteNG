@@ -69,11 +69,7 @@ impl SubscriberRegistry {
     }
 
     /// Replace the filter on a subscription.
-    pub fn update_filter(
-        &mut self,
-        id: &str,
-        filter: Option<HookFilter>,
-    ) -> Result<(), HookError> {
+    pub fn update_filter(&mut self, id: &str, filter: Option<HookFilter>) -> Result<(), HookError> {
         let sub = self
             .subs
             .get_mut(id)

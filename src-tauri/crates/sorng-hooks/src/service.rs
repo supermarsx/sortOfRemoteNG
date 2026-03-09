@@ -16,6 +16,7 @@ use crate::types::*;
 pub type HookServiceState = Arc<Mutex<HookService>>;
 
 /// Top-level façade combining the engine and registry.
+#[derive(Default)]
 pub struct HookService {
     pub engine: HookEngine,
     pub registry: SubscriberRegistry,
@@ -166,14 +167,5 @@ impl HookService {
     /// Update the configuration.
     pub fn update_config(&mut self, config: HooksConfig) {
         self.engine.update_config(config);
-    }
-}
-
-impl Default for HookService {
-    fn default() -> Self {
-        Self {
-            engine: HookEngine::default(),
-            registry: SubscriberRegistry::default(),
-        }
     }
 }

@@ -57,10 +57,7 @@ impl HookEngine {
         // Index the subscription under every event type it listens to.
         for evt in &sub.event_types {
             let key = evt.to_string();
-            self.callbacks
-                .entry(key)
-                .or_default()
-                .push(id.clone());
+            self.callbacks.entry(key).or_default().push(id.clone());
         }
         self.subscribers.insert(id.clone(), sub);
         self.stats.total_subscriptions = self.subscribers.len() as u64;
