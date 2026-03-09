@@ -36,5 +36,5 @@ pub mod messaging;
 #[cfg(windows)]
 pub mod listeners;
 
-pub mod service;
 pub mod commands;
+pub mod service;

@@ -178,14 +178,16 @@ impl TermServService {
 
     /// Resolve a handle_id to the native HANDLE, or use the local server.
     #[cfg(windows)]
-    fn resolve_handle(&self, handle_id: &Option<String>) -> Result<windows::Win32::Foundation::HANDLE, String> {
+    fn resolve_handle(
+        &self,
+        handle_id: &Option<String>,
+    ) -> Result<windows::Win32::Foundation::HANDLE, String> {
         match handle_id {
-            Some(id) if !id.is_empty() => {
-                self.handles
-                    .get(id)
-                    .map(|o| o.handle.0)
-                    .ok_or_else(|| format!("Handle '{}' not found", id))
-            }
+            Some(id) if !id.is_empty() => self
+                .handles
+                .get(id)
+                .map(|o| o.handle.0)
+                .ok_or_else(|| format!("Handle '{}' not found", id)),
             _ => Ok(crate::wts_ffi::WTS_CURRENT_SERVER),
         }
     }
@@ -291,11 +293,7 @@ impl TermServService {
 
     /// Log off a session.
     #[cfg(windows)]
-    pub fn logoff_session(
-        &self,
-        handle_id: Option<String>,
-        session_id: u32,
-    ) -> Result<(), String> {
+    pub fn logoff_session(&self, handle_id: Option<String>, session_id: u32) -> Result<(), String> {
         let server = self.resolve_handle(&handle_id)?;
         crate::sessions::logoff(server, session_id, self.config.wait_for_operations)
             .map_err(|e| e.to_string())
@@ -339,19 +337,13 @@ impl TermServService {
 
     /// Log off all disconnected sessions.
     #[cfg(windows)]
-    pub fn logoff_disconnected(
-        &self,
-        handle_id: Option<String>,
-    ) -> Result<u32, String> {
+    pub fn logoff_disconnected(&self, handle_id: Option<String>) -> Result<u32, String> {
         let server = self.resolve_handle(&handle_id)?;
         crate::sessions::logoff_disconnected(server).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
-    pub fn logoff_disconnected(
-        &self,
-        _handle_id: Option<String>,
-    ) -> Result<u32, String> {
+    pub fn logoff_disconnected(&self, _handle_id: Option<String>) -> Result<u32, String> {
         Err(TsError::platform().to_string())
     }
 
@@ -363,8 +355,7 @@ impl TermServService {
         user_pattern: String,
     ) -> Result<Vec<SessionDetail>, String> {
         let server = self.resolve_handle(&handle_id)?;
-        crate::sessions::find_sessions_by_user(server, &user_pattern)
-            .map_err(|e| e.to_string())
+        crate::sessions::find_sessions_by_user(server, &user_pattern).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -378,19 +369,13 @@ impl TermServService {
 
     /// Get a server summary (session counts, process count).
     #[cfg(windows)]
-    pub fn server_summary(
-        &self,
-        handle_id: Option<String>,
-    ) -> Result<TsServerSummary, String> {
+    pub fn server_summary(&self, handle_id: Option<String>) -> Result<TsServerSummary, String> {
         let server = self.resolve_handle(&handle_id)?;
         crate::sessions::server_summary(server).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
-    pub fn server_summary(
-        &self,
-        _handle_id: Option<String>,
-    ) -> Result<TsServerSummary, String> {
+    pub fn server_summary(&self, _handle_id: Option<String>) -> Result<TsServerSummary, String> {
         Err(TsError::platform().to_string())
     }
 
@@ -460,19 +445,13 @@ impl TermServService {
 
     /// List all processes on the server.
     #[cfg(windows)]
-    pub fn list_processes(
-        &self,
-        handle_id: Option<String>,
-    ) -> Result<Vec<TsProcessInfo>, String> {
+    pub fn list_processes(&self, handle_id: Option<String>) -> Result<Vec<TsProcessInfo>, String> {
         let server = self.resolve_handle(&handle_id)?;
         crate::processes::list_processes(server).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
-    pub fn list_processes(
-        &self,
-        _handle_id: Option<String>,
-    ) -> Result<Vec<TsProcessInfo>, String> {
+    pub fn list_processes(&self, _handle_id: Option<String>) -> Result<Vec<TsProcessInfo>, String> {
         Err(TsError::platform().to_string())
     }
 
@@ -484,8 +463,7 @@ impl TermServService {
         session_id: u32,
     ) -> Result<Vec<TsProcessInfo>, String> {
         let server = self.resolve_handle(&handle_id)?;
-        crate::processes::list_session_processes(server, session_id)
-            .map_err(|e| e.to_string())
+        crate::processes::list_session_processes(server, session_id).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -505,8 +483,7 @@ impl TermServService {
         name_pattern: String,
     ) -> Result<Vec<TsProcessInfo>, String> {
         let server = self.resolve_handle(&handle_id)?;
-        crate::processes::find_processes_by_name(server, &name_pattern)
-            .map_err(|e| e.to_string())
+        crate::processes::find_processes_by_name(server, &name_pattern).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -527,8 +504,7 @@ impl TermServService {
         exit_code: u32,
     ) -> Result<(), String> {
         let server = self.resolve_handle(&handle_id)?;
-        crate::processes::terminate(server, process_id, exit_code)
-            .map_err(|e| e.to_string())
+        crate::processes::terminate(server, process_id, exit_code).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -573,8 +549,7 @@ impl TermServService {
         handle_id: Option<String>,
     ) -> Result<Vec<(u32, usize)>, String> {
         let server = self.resolve_handle(&handle_id)?;
-        crate::processes::process_count_per_session(server)
-            .map_err(|e| e.to_string())
+        crate::processes::process_count_per_session(server).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -593,8 +568,7 @@ impl TermServService {
         n: usize,
     ) -> Result<Vec<(String, usize)>, String> {
         let server = self.resolve_handle(&handle_id)?;
-        crate::processes::top_process_names(server, n)
-            .map_err(|e| e.to_string())
+        crate::processes::top_process_names(server, n).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -638,8 +612,7 @@ impl TermServService {
         message: String,
     ) -> Result<MessageResponse, String> {
         let server = self.resolve_handle(&handle_id)?;
-        crate::messaging::send_info(server, session_id, &title, &message)
-            .map_err(|e| e.to_string())
+        crate::messaging::send_info(server, session_id, &title, &message).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -737,10 +710,7 @@ impl TermServService {
 
     /// List listeners on a server.
     #[cfg(windows)]
-    pub fn list_listeners(
-        &self,
-        handle_id: Option<String>,
-    ) -> Result<Vec<TsListenerInfo>, String> {
+    pub fn list_listeners(&self, handle_id: Option<String>) -> Result<Vec<TsListenerInfo>, String> {
         let server = self.resolve_handle(&handle_id)?;
         crate::server::list_listeners(server).map_err(|e| e.to_string())
     }
@@ -762,8 +732,7 @@ impl TermServService {
         server_name: &str,
         user_name: &str,
     ) -> Result<TsUserConfig, String> {
-        crate::wts_ffi::query_user_config(server_name, user_name)
-            .map_err(|e| e.to_string())
+        crate::wts_ffi::query_user_config(server_name, user_name).map_err(|e| e.to_string())
     }
 
     #[cfg(not(windows))]
@@ -839,32 +808,38 @@ impl TermServService {
         filter: SessionFilter,
     ) -> Result<Vec<SessionDetail>, String> {
         let server = self.resolve_handle(&handle_id)?;
-        let all = crate::sessions::get_all_session_details(server)
-            .map_err(|e| e.to_string())?;
-        let filtered = all.into_iter().filter(|s| {
-            if let Some(ref state) = filter.state {
-                if s.state != *state { return false; }
-            }
-            if filter.user_sessions_only && s.user_name.is_empty() {
-                return false;
-            }
-            if filter.remote_only && !s.is_remote_session {
-                return false;
-            }
-            if let Some(ref pat) = filter.user_pattern {
-                let pat_lc = pat.to_lowercase();
-                if !s.user_name.to_lowercase().contains(&pat_lc) {
+        let all = crate::sessions::get_all_session_details(server).map_err(|e| e.to_string())?;
+        let filtered = all
+            .into_iter()
+            .filter(|s| {
+                if let Some(ref state) = filter.state {
+                    if s.state != *state {
+                        return false;
+                    }
+                }
+                if filter.user_sessions_only && s.user_name.is_empty() {
                     return false;
                 }
-            }
-            if let Some(min_idle) = filter.min_idle_seconds {
-                if let Some(ref lit) = s.last_input_time {
-                    let idle_secs = (Utc::now() - *lit).num_seconds();
-                    if idle_secs < min_idle as i64 { return false; }
+                if filter.remote_only && !s.is_remote_session {
+                    return false;
                 }
-            }
-            true
-        }).collect();
+                if let Some(ref pat) = filter.user_pattern {
+                    let pat_lc = pat.to_lowercase();
+                    if !s.user_name.to_lowercase().contains(&pat_lc) {
+                        return false;
+                    }
+                }
+                if let Some(min_idle) = filter.min_idle_seconds {
+                    if let Some(ref lit) = s.last_input_time {
+                        let idle_secs = (Utc::now() - *lit).num_seconds();
+                        if idle_secs < min_idle {
+                            return false;
+                        }
+                    }
+                }
+                true
+            })
+            .collect();
         Ok(filtered)
     }
 
@@ -982,8 +957,8 @@ impl TermServService {
         event_mask: u32,
     ) -> Result<TsEventRecord, String> {
         let server = self.resolve_handle(&handle_id)?;
-        let flags = crate::wts_ffi::wait_system_event(server, event_mask)
-            .map_err(|e| e.to_string())?;
+        let flags =
+            crate::wts_ffi::wait_system_event(server, event_mask).map_err(|e| e.to_string())?;
         let events = crate::wts_ffi::decode_event_flags(flags);
         Ok(TsEventRecord {
             timestamp: Utc::now(),
@@ -1118,21 +1093,30 @@ mod tests {
         assert!(svc.list_session_processes(None, 0).is_err());
         assert!(svc.find_processes_by_name(None, "x".to_string()).is_err());
         assert!(svc.terminate_process(None, 0, 0).is_err());
-        assert!(svc.terminate_processes_by_name(None, 0, "x".to_string(), 0).is_err());
-        assert!(svc.send_message(None, SendMessageParams {
-            session_id: 0,
-            title: String::new(),
-            message: String::new(),
-            style: MessageStyle::Ok,
-            timeout_seconds: 0,
-            wait: false,
-        }).is_err());
-        assert!(svc.start_shadow(ShadowOptions {
-            target_session_id: 0,
-            hotkey_vk: 0,
-            hotkey_modifier: 0,
-            control: false,
-        }).is_err());
+        assert!(svc
+            .terminate_processes_by_name(None, 0, "x".to_string(), 0)
+            .is_err());
+        assert!(svc
+            .send_message(
+                None,
+                SendMessageParams {
+                    session_id: 0,
+                    title: String::new(),
+                    message: String::new(),
+                    style: MessageStyle::Ok,
+                    timeout_seconds: 0,
+                    wait: false,
+                }
+            )
+            .is_err());
+        assert!(svc
+            .start_shadow(ShadowOptions {
+                target_session_id: 0,
+                hotkey_vk: 0,
+                hotkey_modifier: 0,
+                control: false,
+            })
+            .is_err());
         assert!(svc.stop_shadow(0).is_err());
         assert!(svc.enumerate_domain_servers("dom".to_string()).is_err());
         assert!(svc.list_listeners(None).is_err());
@@ -1140,10 +1124,14 @@ mod tests {
         assert!(svc.set_user_config(&TsUserConfig::default()).is_err());
         assert!(svc.get_encryption_level(None, 0).is_err());
         assert!(svc.get_session_address(None, 0).is_err());
-        assert!(svc.list_sessions_filtered(None, SessionFilter::default()).is_err());
+        assert!(svc
+            .list_sessions_filtered(None, SessionFilter::default())
+            .is_err());
         assert!(svc.batch_disconnect(None, vec![1, 2]).is_err());
         assert!(svc.batch_logoff(None, vec![1, 2]).is_err());
-        assert!(svc.batch_send_message(None, vec![1], "t".into(), "m".into(), 5).is_err());
+        assert!(svc
+            .batch_send_message(None, vec![1], "t".into(), "m".into(), 5)
+            .is_err());
         assert!(svc.wait_system_event(None, 0).is_err());
     }
 

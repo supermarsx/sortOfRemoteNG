@@ -52,9 +52,7 @@ pub async fn ts_close_server(
 }
 
 #[tauri::command]
-pub async fn ts_close_all_servers(
-    state: State<'_, TermServServiceState>,
-) -> Result<usize, String> {
+pub async fn ts_close_all_servers(state: State<'_, TermServServiceState>) -> Result<usize, String> {
     let mut svc = state.lock().await;
     Ok(svc.close_all_servers())
 }

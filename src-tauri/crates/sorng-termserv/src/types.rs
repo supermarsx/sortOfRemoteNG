@@ -58,7 +58,10 @@ pub enum TsErrorKind {
 
 impl TsError {
     pub fn new(kind: TsErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
 
     pub fn platform() -> Self {
@@ -87,6 +90,7 @@ pub type TsResult<T> = Result<T, TsError>;
 /// WTS_CONNECTSTATE_CLASS – maps to the 10 possible session states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum SessionState {
     /// User is logged on and actively connected.
     Active,
@@ -109,6 +113,7 @@ pub enum SessionState {
     /// WinStation is initializing.
     Init,
     /// Unknown state not mapped from the API.
+    #[default]
     Unknown,
 }
 
@@ -127,12 +132,6 @@ impl fmt::Display for SessionState {
             Self::Init => write!(f, "Init"),
             Self::Unknown => write!(f, "Unknown"),
         }
-    }
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 
@@ -250,8 +249,10 @@ impl Default for SessionDetail {
 /// 0 = Console, 1 = legacy (ICA, not used), 2 = RDP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ClientProtocol {
     /// Physical console session.
+    #[default]
     Console,
     /// Legacy protocol (ICA / Citrix).
     Legacy,
@@ -259,12 +260,6 @@ pub enum ClientProtocol {
     Rdp,
     /// Unknown / unmapped value.
     Unknown,
-}
-
-impl Default for ClientProtocol {
-    fn default() -> Self {
-        Self::Console
-    }
 }
 
 impl ClientProtocol {
@@ -355,7 +350,7 @@ impl Default for ShadowOptions {
     fn default() -> Self {
         Self {
             target_session_id: 0,
-            hotkey_vk: 0x6A, // VK_MULTIPLY (numpad *)
+            hotkey_vk: 0x6A,    // VK_MULTIPLY (numpad *)
             hotkey_modifier: 2, // CTRL
             control: true,
         }
@@ -369,8 +364,10 @@ impl Default for ShadowOptions {
 /// Style for the message box displayed on the client desktop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum MessageStyle {
     /// OK button only.
+    #[default]
     Ok,
     /// OK + Cancel.
     OkCancel,
@@ -382,12 +379,6 @@ pub enum MessageStyle {
     AbortRetryIgnore,
     /// Retry + Cancel.
     RetryCancel,
-}
-
-impl Default for MessageStyle {
-    fn default() -> Self {
-        Self::Ok
-    }
 }
 
 impl MessageStyle {
@@ -495,12 +486,12 @@ impl ShutdownFlag {
     /// WTS_WSD_FASTREBOOT = 0x10
     pub fn to_u32(self) -> u32 {
         match self {
-            Self::LogoffAndShutdown => 0x1 | 0x2,       // LOGOFF | SHUTDOWN
-            Self::LogoffAndReboot => 0x1 | 0x4,         // LOGOFF | REBOOT
-            Self::ForceShutdown => 0x2,                  // SHUTDOWN
-            Self::ForceReboot => 0x4,                    // REBOOT
-            Self::Poweroff => 0x1 | 0x8,                 // LOGOFF | POWEROFF
-            Self::ForcePoweroff => 0x8,                  // POWEROFF
+            Self::LogoffAndShutdown => 0x1 | 0x2, // LOGOFF | SHUTDOWN
+            Self::LogoffAndReboot => 0x1 | 0x4,   // LOGOFF | REBOOT
+            Self::ForceShutdown => 0x2,           // SHUTDOWN
+            Self::ForceReboot => 0x4,             // REBOOT
+            Self::Poweroff => 0x1 | 0x8,          // LOGOFF | POWEROFF
+            Self::ForcePoweroff => 0x8,           // POWEROFF
         }
     }
 }
@@ -767,7 +758,11 @@ pub struct BatchResult {
 
 impl BatchResult {
     pub fn new() -> Self {
-        Self { succeeded: 0, failed: 0, errors: Vec::new() }
+        Self {
+            succeeded: 0,
+            failed: 0,
+            errors: Vec::new(),
+        }
     }
 
     pub fn record_success(&mut self) {
@@ -839,8 +834,8 @@ mod tests {
     #[test]
     fn shutdown_flag_values() {
         assert_eq!(ShutdownFlag::LogoffAndShutdown.to_u32(), 3); // 0x1 | 0x2
-        assert_eq!(ShutdownFlag::LogoffAndReboot.to_u32(), 5);   // 0x1 | 0x4
-        assert_eq!(ShutdownFlag::ForceReboot.to_u32(), 4);       // 0x4
+        assert_eq!(ShutdownFlag::LogoffAndReboot.to_u32(), 5); // 0x1 | 0x4
+        assert_eq!(ShutdownFlag::ForceReboot.to_u32(), 4); // 0x4
     }
 
     #[test]
@@ -1011,9 +1006,12 @@ mod tests {
     #[test]
     fn session_state_serde_all_variants() {
         let states = vec![
-            SessionState::Active, SessionState::Connected,
-            SessionState::Disconnected, SessionState::Idle,
-            SessionState::Listen, SessionState::Shadow,
+            SessionState::Active,
+            SessionState::Connected,
+            SessionState::Disconnected,
+            SessionState::Idle,
+            SessionState::Listen,
+            SessionState::Shadow,
             SessionState::Unknown,
         ];
         for s in states {
@@ -1169,7 +1167,10 @@ mod tests {
     fn encryption_level_from_u8() {
         assert_eq!(EncryptionLevel::from_u8(0), EncryptionLevel::None);
         assert_eq!(EncryptionLevel::from_u8(1), EncryptionLevel::Low);
-        assert_eq!(EncryptionLevel::from_u8(2), EncryptionLevel::ClientCompatible);
+        assert_eq!(
+            EncryptionLevel::from_u8(2),
+            EncryptionLevel::ClientCompatible
+        );
         assert_eq!(EncryptionLevel::from_u8(3), EncryptionLevel::High);
         assert_eq!(EncryptionLevel::from_u8(4), EncryptionLevel::FipsCompliant);
         assert_eq!(EncryptionLevel::from_u8(99), EncryptionLevel::Unknown);
@@ -1330,7 +1331,7 @@ mod tests {
     fn shadow_options_serde_roundtrip() {
         let so = ShadowOptions {
             target_session_id: 5,
-            hotkey_vk: 0x70, // VK_F1
+            hotkey_vk: 0x70,    // VK_F1
             hotkey_modifier: 4, // ALT
             control: false,
         };

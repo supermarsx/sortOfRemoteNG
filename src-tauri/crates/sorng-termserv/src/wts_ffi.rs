@@ -15,27 +15,21 @@ use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HANDLE, GetLastError, HLOCAL, LocalFree};
+use windows::Win32::Foundation::{GetLastError, LocalFree, HANDLE, HLOCAL};
 use windows::Win32::Security::PSID;
 use windows::Win32::System::RemoteDesktop::{
-    WTSActive, WTSConnectQuery, WTSConnected, WTSDisconnected, WTSDown,
-    WTSIdle, WTSInit, WTSListen, WTSReset, WTSShadow,
-    WTS_CONNECTSTATE_CLASS, WTS_SESSION_INFOW, WTS_PROCESS_INFOW,
-    WTSCloseServer, WTSDisconnectSession, WTSEnumerateProcessesW,
-    WTSEnumerateSessionsW, WTSFreeMemory, WTSLogoffSession,
-    WTSOpenServerW, WTSQuerySessionInformationW,
-    WTSSendMessageW, WTSShutdownSystem,
-    WTSTerminateProcess, WTSConnectSessionW,
-    WTSStartRemoteControlSessionW, WTSStopRemoteControlSession,
-    WTS_INFO_CLASS, ProcessIdToSessionId, WTSWaitSystemEvent,
-    WTSVirtualChannelOpen, WTSVirtualChannelClose,
-    WTSVirtualChannelRead, WTSVirtualChannelWrite,
-    WTSVirtualChannelPurgeInput, WTSVirtualChannelPurgeOutput,
-    WTSQueryUserConfigW, WTSSetUserConfigW,
-    WTS_CONFIG_CLASS,
+    ProcessIdToSessionId, WTSActive, WTSCloseServer, WTSConnectQuery, WTSConnectSessionW,
+    WTSConnected, WTSDisconnectSession, WTSDisconnected, WTSDown, WTSEnumerateProcessesW,
+    WTSEnumerateSessionsW, WTSFreeMemory, WTSIdle, WTSInit, WTSListen, WTSLogoffSession,
+    WTSOpenServerW, WTSQuerySessionInformationW, WTSQueryUserConfigW, WTSReset, WTSSendMessageW,
+    WTSSetUserConfigW, WTSShadow, WTSShutdownSystem, WTSStartRemoteControlSessionW,
+    WTSStopRemoteControlSession, WTSTerminateProcess, WTSVirtualChannelClose,
+    WTSVirtualChannelOpen, WTSVirtualChannelPurgeInput, WTSVirtualChannelPurgeOutput,
+    WTSVirtualChannelRead, WTSVirtualChannelWrite, WTSWaitSystemEvent, WTS_CONFIG_CLASS,
+    WTS_CONNECTSTATE_CLASS, WTS_INFO_CLASS, WTS_PROCESS_INFOW, WTS_SESSION_INFOW,
 };
 use windows::Win32::System::Threading::GetCurrentProcessId;
-use windows::Win32::UI::WindowsAndMessaging::{MESSAGEBOX_STYLE, MESSAGEBOX_RESULT};
+use windows::Win32::UI::WindowsAndMessaging::{MESSAGEBOX_RESULT, MESSAGEBOX_STYLE};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Constants
@@ -152,9 +146,12 @@ pub fn enumerate_sessions(server: HANDLE) -> TsResult<Vec<SessionEntry>> {
     let mut count: u32 = 0;
 
     // SAFETY: WTSEnumerateSessionsW fills info_ptr/count; we free with WTSFreeMemory.
-    unsafe {
-        WTSEnumerateSessionsW(server, 0, 1, &mut info_ptr, &mut count)
-    }.map_err(|e| TsError::new(TsErrorKind::Win32Error(e.code().0 as u32), "WTSEnumerateSessionsW"))?;
+    unsafe { WTSEnumerateSessionsW(server, 0, 1, &mut info_ptr, &mut count) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSEnumerateSessionsW",
+        )
+    })?;
 
     let mut sessions = Vec::with_capacity(count as usize);
     for i in 0..count as usize {
@@ -178,22 +175,22 @@ pub fn enumerate_sessions(server: HANDLE) -> TsResult<Vec<SessionEntry>> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// WTS_INFO_CLASS numeric constants.
-const WTS_INITIAL_PROGRAM: WTS_INFO_CLASS  = WTS_INFO_CLASS(0);
+const WTS_INITIAL_PROGRAM: WTS_INFO_CLASS = WTS_INFO_CLASS(0);
 const WTS_APPLICATION_NAME: WTS_INFO_CLASS = WTS_INFO_CLASS(1);
 const WTS_WORKING_DIRECTORY: WTS_INFO_CLASS = WTS_INFO_CLASS(2);
-const WTS_USER_NAME: WTS_INFO_CLASS        = WTS_INFO_CLASS(5);
-const WTS_WINSTATION_NAME: WTS_INFO_CLASS  = WTS_INFO_CLASS(6);
-const WTS_DOMAIN_NAME: WTS_INFO_CLASS      = WTS_INFO_CLASS(7);
-const WTS_CONNECT_STATE: WTS_INFO_CLASS    = WTS_INFO_CLASS(8);
+const WTS_USER_NAME: WTS_INFO_CLASS = WTS_INFO_CLASS(5);
+const WTS_WINSTATION_NAME: WTS_INFO_CLASS = WTS_INFO_CLASS(6);
+const WTS_DOMAIN_NAME: WTS_INFO_CLASS = WTS_INFO_CLASS(7);
+const WTS_CONNECT_STATE: WTS_INFO_CLASS = WTS_INFO_CLASS(8);
 const WTS_CLIENT_BUILD_NUMBER: WTS_INFO_CLASS = WTS_INFO_CLASS(9);
-const WTS_CLIENT_NAME: WTS_INFO_CLASS      = WTS_INFO_CLASS(10);
+const WTS_CLIENT_NAME: WTS_INFO_CLASS = WTS_INFO_CLASS(10);
 const WTS_CLIENT_DIRECTORY: WTS_INFO_CLASS = WTS_INFO_CLASS(11);
 const WTS_CLIENT_PRODUCT_ID: WTS_INFO_CLASS = WTS_INFO_CLASS(12);
 const WTS_CLIENT_HARDWARE_ID: WTS_INFO_CLASS = WTS_INFO_CLASS(13);
-const WTS_CLIENT_ADDRESS: WTS_INFO_CLASS   = WTS_INFO_CLASS(14);
-const WTS_CLIENT_DISPLAY: WTS_INFO_CLASS   = WTS_INFO_CLASS(15);
+const WTS_CLIENT_ADDRESS: WTS_INFO_CLASS = WTS_INFO_CLASS(14);
+const WTS_CLIENT_DISPLAY: WTS_INFO_CLASS = WTS_INFO_CLASS(15);
 const WTS_CLIENT_PROTOCOL_TYPE: WTS_INFO_CLASS = WTS_INFO_CLASS(16);
-const WTS_SESSION_INFO: WTS_INFO_CLASS     = WTS_INFO_CLASS(24);
+const WTS_SESSION_INFO: WTS_INFO_CLASS = WTS_INFO_CLASS(24);
 const WTS_IS_REMOTE_SESSION: WTS_INFO_CLASS = WTS_INFO_CLASS(29);
 
 /// Query a raw buffer from a session, returning the pointer and byte count.
@@ -207,13 +204,7 @@ fn query_session_raw(
     let mut bytes: u32 = 0;
 
     let result = unsafe {
-        WTSQuerySessionInformationW(
-            server,
-            session_id,
-            info_class,
-            &mut buf,
-            &mut bytes,
-        )
+        WTSQuerySessionInformationW(server, session_id, info_class, &mut buf, &mut bytes)
     };
 
     if result.is_err() || buf.is_null() {
@@ -224,11 +215,7 @@ fn query_session_raw(
 }
 
 /// Query a string property from a session.
-fn query_session_string(
-    server: HANDLE,
-    session_id: u32,
-    info_class: WTS_INFO_CLASS,
-) -> String {
+fn query_session_string(server: HANDLE, session_id: u32, info_class: WTS_INFO_CLASS) -> String {
     let Some((buf, _bytes)) = query_session_raw(server, session_id, info_class) else {
         return String::new();
     };
@@ -239,31 +226,31 @@ fn query_session_string(
 }
 
 /// Query a u32 property from a session.
-fn query_session_u32(
-    server: HANDLE,
-    session_id: u32,
-    info_class: WTS_INFO_CLASS,
-) -> u32 {
+fn query_session_u32(server: HANDLE, session_id: u32, info_class: WTS_INFO_CLASS) -> u32 {
     let Some((buf, bytes)) = query_session_raw(server, session_id, info_class) else {
         return 0;
     };
 
-    let val = if bytes >= 4 { unsafe { read_u32(buf) } } else { 0 };
+    let val = if bytes >= 4 {
+        unsafe { read_u32(buf) }
+    } else {
+        0
+    };
     unsafe { WTSFreeMemory(buf as *mut _) };
     val
 }
 
 /// Query a u16 property from a session.
-fn query_session_u16(
-    server: HANDLE,
-    session_id: u32,
-    info_class: WTS_INFO_CLASS,
-) -> u16 {
+fn query_session_u16(server: HANDLE, session_id: u32, info_class: WTS_INFO_CLASS) -> u16 {
     let Some((buf, bytes)) = query_session_raw(server, session_id, info_class) else {
         return 0;
     };
 
-    let val = if bytes >= 2 { unsafe { read_u16(buf) } } else { 0 };
+    let val = if bytes >= 2 {
+        unsafe { read_u16(buf) }
+    } else {
+        0
+    };
     unsafe { WTSFreeMemory(buf as *mut _) };
     val
 }
@@ -344,13 +331,8 @@ pub struct SessionInfoTimingData {
 }
 
 /// Parse the WTSINFO structure (WTSSessionInfo).
-fn parse_session_info(
-    server: HANDLE,
-    session_id: u32,
-) -> Option<SessionInfoTimingData> {
-    let Some((buf, _bytes)) = query_session_raw(server, session_id, WTS_SESSION_INFO) else {
-        return None;
-    };
+fn parse_session_info(server: HANDLE, session_id: u32) -> Option<SessionInfoTimingData> {
+    let (buf, _bytes) = query_session_raw(server, session_id, WTS_SESSION_INFO)?;
 
     // WTSINFOW layout (Unicode):
     //  0: WTS_CONNECTSTATE_CLASS State (4 bytes)
@@ -492,9 +474,12 @@ pub fn enumerate_processes(server: HANDLE) -> TsResult<Vec<TsProcessInfo>> {
     let mut info_ptr: *mut WTS_PROCESS_INFOW = std::ptr::null_mut();
     let mut count: u32 = 0;
 
-    unsafe {
-        WTSEnumerateProcessesW(server, 0, 1, &mut info_ptr, &mut count)
-    }.map_err(|e| TsError::new(TsErrorKind::Win32Error(e.code().0 as u32), "WTSEnumerateProcessesW"))?;
+    unsafe { WTSEnumerateProcessesW(server, 0, 1, &mut info_ptr, &mut count) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSEnumerateProcessesW",
+        )
+    })?;
 
     let mut procs = Vec::with_capacity(count as usize);
     for i in 0..count as usize {
@@ -521,9 +506,7 @@ fn sid_to_string(psid: PSID) -> String {
     }
     use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
     let mut str_ptr = windows::core::PWSTR::null();
-    let result = unsafe {
-        ConvertSidToStringSidW(psid, &mut str_ptr)
-    };
+    let result = unsafe { ConvertSidToStringSidW(psid, &mut str_ptr) };
     if result.is_err() || str_ptr.is_null() {
         return String::new();
     }
@@ -541,36 +524,36 @@ fn sid_to_string(psid: PSID) -> String {
 
 /// Disconnect a session (user stays logged on, session goes to Disconnected state).
 pub fn disconnect_session(server: HANDLE, session_id: u32, wait: bool) -> TsResult<()> {
-    unsafe {
-        WTSDisconnectSession(server, session_id, wait)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSDisconnectSession({})", session_id),
-    ))?;
+    unsafe { WTSDisconnectSession(server, session_id, wait) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSDisconnectSession({})", session_id),
+        )
+    })?;
     debug!("Disconnected session {}", session_id);
     Ok(())
 }
 
 /// Log off a session (user's processes are terminated).
 pub fn logoff_session(server: HANDLE, session_id: u32, wait: bool) -> TsResult<()> {
-    unsafe {
-        WTSLogoffSession(server, session_id, wait)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSLogoffSession({})", session_id),
-    ))?;
+    unsafe { WTSLogoffSession(server, session_id, wait) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSLogoffSession({})", session_id),
+        )
+    })?;
     debug!("Logged off session {}", session_id);
     Ok(())
 }
 
 /// Terminate a process by PID.
 pub fn terminate_process(server: HANDLE, process_id: u32, exit_code: u32) -> TsResult<()> {
-    unsafe {
-        WTSTerminateProcess(server, process_id, exit_code)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSTerminateProcess({})", process_id),
-    ))?;
+    unsafe { WTSTerminateProcess(server, process_id, exit_code) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSTerminateProcess({})", process_id),
+        )
+    })?;
     debug!("Terminated process {}", process_id);
     Ok(())
 }
@@ -584,13 +567,17 @@ pub fn connect_session(
     wait: bool,
 ) -> TsResult<()> {
     let wide_pass = to_wide(password);
-    unsafe {
-        WTSConnectSessionW(logon_id, target_logon_id, PCWSTR(wide_pass.as_ptr()), wait)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSConnectSession({} -> {})", logon_id, target_logon_id),
-    ))?;
-    debug!("Connected session {} to target {}", logon_id, target_logon_id);
+    unsafe { WTSConnectSessionW(logon_id, target_logon_id, PCWSTR(wide_pass.as_ptr()), wait) }
+        .map_err(|e| {
+            TsError::new(
+                TsErrorKind::Win32Error(e.code().0 as u32),
+                format!("WTSConnectSession({} -> {})", logon_id, target_logon_id),
+            )
+        })?;
+    debug!(
+        "Connected session {} to target {}",
+        logon_id, target_logon_id
+    );
     Ok(())
 }
 
@@ -625,10 +612,13 @@ pub fn send_message(
             &mut response,
             wait,
         )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSSendMessageW(session {})", session_id),
-    ))?;
+    }
+    .map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSSendMessageW(session {})", session_id),
+        )
+    })?;
 
     Ok(MessageResponse::from_u32(response.0 as u32))
 }
@@ -646,22 +636,28 @@ pub fn start_remote_control(opts: &ShadowOptions) -> TsResult<()> {
             opts.hotkey_vk,
             opts.hotkey_modifier,
         )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSStartRemoteControlSession(session {})", opts.target_session_id),
-    ))?;
+    }
+    .map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!(
+                "WTSStartRemoteControlSession(session {})",
+                opts.target_session_id
+            ),
+        )
+    })?;
     debug!("Started shadow of session {}", opts.target_session_id);
     Ok(())
 }
 
 /// Stop remote control of a session.
 pub fn stop_remote_control(session_id: u32) -> TsResult<()> {
-    unsafe {
-        WTSStopRemoteControlSession(session_id)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSStopRemoteControlSession({})", session_id),
-    ))?;
+    unsafe { WTSStopRemoteControlSession(session_id) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSStopRemoteControlSession({})", session_id),
+        )
+    })?;
     debug!("Stopped shadow of session {}", session_id);
     Ok(())
 }
@@ -672,12 +668,12 @@ pub fn stop_remote_control(session_id: u32) -> TsResult<()> {
 
 /// Shut down (and optionally restart) the RD Session Host server.
 pub fn shutdown_system(server: HANDLE, flags: u32) -> TsResult<()> {
-    unsafe {
-        WTSShutdownSystem(server, flags)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        "WTSShutdownSystem",
-    ))?;
+    unsafe { WTSShutdownSystem(server, flags) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSShutdownSystem",
+        )
+    })?;
     debug!("Shutdown initiated with flags 0x{:X}", flags);
     Ok(())
 }
@@ -689,18 +685,14 @@ pub fn shutdown_system(server: HANDLE, flags: u32) -> TsResult<()> {
 /// Get the session ID of the physical console session.
 pub fn get_console_session_id() -> u32 {
     // SAFETY: always safe, no parameters, returns DWORD.
-    unsafe {
-        windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId()
-    }
+    unsafe { windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId() }
 }
 
 /// Get the session ID of the current process.
 pub fn get_current_session_id() -> u32 {
     let pid = unsafe { GetCurrentProcessId() };
     let mut session_id: u32 = 0;
-    let result = unsafe {
-        ProcessIdToSessionId(pid, &mut session_id)
-    };
+    let result = unsafe { ProcessIdToSessionId(pid, &mut session_id) };
     if result.is_ok() {
         session_id
     } else {
@@ -716,9 +708,7 @@ pub fn get_current_session_id() -> u32 {
 /// Enumerate all RD Session Host servers in a domain.
 /// If domain is empty, uses the current domain.
 pub fn enumerate_servers(domain: &str) -> TsResult<Vec<TsServerInfo>> {
-    use windows::Win32::System::RemoteDesktop::{
-        WTSEnumerateServersW, WTS_SERVER_INFOW,
-    };
+    use windows::Win32::System::RemoteDesktop::{WTSEnumerateServersW, WTS_SERVER_INFOW};
 
     let wide_domain: Vec<u16>;
     let domain_ptr = if domain.is_empty() {
@@ -731,9 +721,7 @@ pub fn enumerate_servers(domain: &str) -> TsResult<Vec<TsServerInfo>> {
     let mut info_ptr: *mut WTS_SERVER_INFOW = std::ptr::null_mut();
     let mut count: u32 = 0;
 
-    let result = unsafe {
-        WTSEnumerateServersW(domain_ptr, 0, 1, &mut info_ptr, &mut count)
-    };
+    let result = unsafe { WTSEnumerateServersW(domain_ptr, 0, 1, &mut info_ptr, &mut count) };
 
     if result.is_err() {
         // Not an error if there are simply no servers.
@@ -765,9 +753,7 @@ pub fn enumerate_listeners(server: HANDLE) -> TsResult<Vec<TsListenerInfo>> {
 
     // First call to get count
     let mut count: u32 = 0;
-    let _ = unsafe {
-        WTSEnumerateListenersW(server, std::ptr::null(), 0, None, &mut count)
-    };
+    let _ = unsafe { WTSEnumerateListenersW(server, std::ptr::null(), 0, None, &mut count) };
 
     if count == 0 {
         return Ok(Vec::new());
@@ -812,18 +798,18 @@ pub fn enumerate_listeners(server: HANDLE) -> TsResult<Vec<TsListenerInfo>> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// WTS_EVENT flag constants.
-pub const WTS_EVENT_NONE: u32       = 0x0000_0000;
-pub const WTS_EVENT_CREATE: u32     = 0x0000_0001;
-pub const WTS_EVENT_DELETE: u32     = 0x0000_0002;
-pub const WTS_EVENT_RENAME: u32     = 0x0000_0004;
-pub const WTS_EVENT_CONNECT: u32    = 0x0000_0008;
+pub const WTS_EVENT_NONE: u32 = 0x0000_0000;
+pub const WTS_EVENT_CREATE: u32 = 0x0000_0001;
+pub const WTS_EVENT_DELETE: u32 = 0x0000_0002;
+pub const WTS_EVENT_RENAME: u32 = 0x0000_0004;
+pub const WTS_EVENT_CONNECT: u32 = 0x0000_0008;
 pub const WTS_EVENT_DISCONNECT: u32 = 0x0000_0010;
-pub const WTS_EVENT_LOGON: u32      = 0x0000_0020;
-pub const WTS_EVENT_LOGOFF: u32     = 0x0000_0040;
+pub const WTS_EVENT_LOGON: u32 = 0x0000_0020;
+pub const WTS_EVENT_LOGOFF: u32 = 0x0000_0040;
 pub const WTS_EVENT_STATECHANGE: u32 = 0x0000_0080;
-pub const WTS_EVENT_LICENSE: u32    = 0x0000_0100;
-pub const WTS_EVENT_ALL: u32        = 0x7FFF_FFFF;
-pub const WTS_EVENT_FLUSH: u32      = 0x8000_0000;
+pub const WTS_EVENT_LICENSE: u32 = 0x0000_0100;
+pub const WTS_EVENT_ALL: u32 = 0x7FFF_FFFF;
+pub const WTS_EVENT_FLUSH: u32 = 0x8000_0000;
 
 /// Wait for a Terminal Services system event (blocking).
 ///
@@ -833,27 +819,45 @@ pub const WTS_EVENT_FLUSH: u32      = 0x8000_0000;
 pub fn wait_system_event(server: HANDLE, event_mask: u32) -> TsResult<u32> {
     let mut event_flags: u32 = 0;
     // SAFETY: WTSWaitSystemEvent blocks until an event matches event_mask.
-    unsafe {
-        WTSWaitSystemEvent(server, event_mask, &mut event_flags)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        "WTSWaitSystemEvent",
-    ))?;
+    unsafe { WTSWaitSystemEvent(server, event_mask, &mut event_flags) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSWaitSystemEvent",
+        )
+    })?;
     Ok(event_flags)
 }
 
 /// Decode an event flags bitmask into a list of `TsEventMask` values.
 pub fn decode_event_flags(flags: u32) -> Vec<TsEventMask> {
     let mut events = Vec::new();
-    if flags & WTS_EVENT_CREATE != 0 { events.push(TsEventMask::Creation); }
-    if flags & WTS_EVENT_DELETE != 0 { events.push(TsEventMask::Deletion); }
-    if flags & WTS_EVENT_RENAME != 0 { events.push(TsEventMask::Rename); }
-    if flags & WTS_EVENT_CONNECT != 0 { events.push(TsEventMask::Connect); }
-    if flags & WTS_EVENT_DISCONNECT != 0 { events.push(TsEventMask::Disconnect); }
-    if flags & WTS_EVENT_LOGON != 0 { events.push(TsEventMask::Logon); }
-    if flags & WTS_EVENT_LOGOFF != 0 { events.push(TsEventMask::Logoff); }
-    if flags & WTS_EVENT_STATECHANGE != 0 { events.push(TsEventMask::StateChange); }
-    if flags & WTS_EVENT_LICENSE != 0 { events.push(TsEventMask::License); }
+    if flags & WTS_EVENT_CREATE != 0 {
+        events.push(TsEventMask::Creation);
+    }
+    if flags & WTS_EVENT_DELETE != 0 {
+        events.push(TsEventMask::Deletion);
+    }
+    if flags & WTS_EVENT_RENAME != 0 {
+        events.push(TsEventMask::Rename);
+    }
+    if flags & WTS_EVENT_CONNECT != 0 {
+        events.push(TsEventMask::Connect);
+    }
+    if flags & WTS_EVENT_DISCONNECT != 0 {
+        events.push(TsEventMask::Disconnect);
+    }
+    if flags & WTS_EVENT_LOGON != 0 {
+        events.push(TsEventMask::Logon);
+    }
+    if flags & WTS_EVENT_LOGOFF != 0 {
+        events.push(TsEventMask::Logoff);
+    }
+    if flags & WTS_EVENT_STATECHANGE != 0 {
+        events.push(TsEventMask::StateChange);
+    }
+    if flags & WTS_EVENT_LICENSE != 0 {
+        events.push(TsEventMask::License);
+    }
     events
 }
 
@@ -872,32 +876,48 @@ pub fn virtual_channel_open(
 ) -> TsResult<VirtualChannelHandle> {
     // WTSVirtualChannelOpen expects a PCSTR (8-bit). The channel name is ASCII.
     let c_name = std::ffi::CString::new(channel_name).map_err(|_| {
-        TsError::new(TsErrorKind::InvalidParameter, "Channel name contains null byte")
+        TsError::new(
+            TsErrorKind::InvalidParameter,
+            "Channel name contains null byte",
+        )
     })?;
     let handle = unsafe {
-        WTSVirtualChannelOpen(server, session_id, windows::core::PCSTR(c_name.as_ptr() as *const u8))
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSVirtualChannelOpen(session {}, channel '{}')", session_id, channel_name),
-    ))?;
+        WTSVirtualChannelOpen(
+            server,
+            session_id,
+            windows::core::PCSTR(c_name.as_ptr() as *const u8),
+        )
+    }
+    .map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!(
+                "WTSVirtualChannelOpen(session {}, channel '{}')",
+                session_id, channel_name
+            ),
+        )
+    })?;
     if handle.is_invalid() {
         return Err(TsError::win32(&format!(
             "WTSVirtualChannelOpen returned invalid handle (session {}, channel '{}')",
             session_id, channel_name
         )));
     }
-    debug!("Opened virtual channel '{}' on session {}", channel_name, session_id);
+    debug!(
+        "Opened virtual channel '{}' on session {}",
+        channel_name, session_id
+    );
     Ok(handle)
 }
 
 /// Close a virtual channel handle.
 pub fn virtual_channel_close(handle: VirtualChannelHandle) -> TsResult<()> {
-    unsafe {
-        WTSVirtualChannelClose(handle)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        "WTSVirtualChannelClose",
-    ))?;
+    unsafe { WTSVirtualChannelClose(handle) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSVirtualChannelClose",
+        )
+    })?;
     Ok(())
 }
 
@@ -910,59 +930,49 @@ pub fn virtual_channel_read(
 ) -> TsResult<Vec<u8>> {
     let mut buffer = vec![0u8; max_bytes];
     let mut bytes_read: u32 = 0;
-    unsafe {
-        WTSVirtualChannelRead(
-            handle,
-            timeout_ms,
-            &mut buffer,
-            &mut bytes_read,
-        )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        "WTSVirtualChannelRead",
-    ))?;
+    unsafe { WTSVirtualChannelRead(handle, timeout_ms, &mut buffer, &mut bytes_read) }.map_err(
+        |e| {
+            TsError::new(
+                TsErrorKind::Win32Error(e.code().0 as u32),
+                "WTSVirtualChannelRead",
+            )
+        },
+    )?;
     buffer.truncate(bytes_read as usize);
     Ok(buffer)
 }
 
 /// Write data to a virtual channel.
-pub fn virtual_channel_write(
-    handle: VirtualChannelHandle,
-    data: &[u8],
-) -> TsResult<u32> {
+pub fn virtual_channel_write(handle: VirtualChannelHandle, data: &[u8]) -> TsResult<u32> {
     let mut bytes_written: u32 = 0;
-    unsafe {
-        WTSVirtualChannelWrite(
-            handle,
-            data,
-            &mut bytes_written,
+    unsafe { WTSVirtualChannelWrite(handle, data, &mut bytes_written) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSVirtualChannelWrite",
         )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        "WTSVirtualChannelWrite",
-    ))?;
+    })?;
     Ok(bytes_written)
 }
 
 /// Purge all queued input on a virtual channel.
 pub fn virtual_channel_purge_input(handle: VirtualChannelHandle) -> TsResult<()> {
-    unsafe {
-        WTSVirtualChannelPurgeInput(handle)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        "WTSVirtualChannelPurgeInput",
-    ))?;
+    unsafe { WTSVirtualChannelPurgeInput(handle) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSVirtualChannelPurgeInput",
+        )
+    })?;
     Ok(())
 }
 
 /// Purge all queued output on a virtual channel.
 pub fn virtual_channel_purge_output(handle: VirtualChannelHandle) -> TsResult<()> {
-    unsafe {
-        WTSVirtualChannelPurgeOutput(handle)
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        "WTSVirtualChannelPurgeOutput",
-    ))?;
+    unsafe { WTSVirtualChannelPurgeOutput(handle) }.map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            "WTSVirtualChannelPurgeOutput",
+        )
+    })?;
     Ok(())
 }
 
@@ -995,11 +1005,7 @@ const WTS_CFGCLASS_TS_HOME_DIR: WTS_CONFIG_CLASS = WTS_CONFIG_CLASS(15);
 const WTS_CFGCLASS_TS_HOME_DRIVE: WTS_CONFIG_CLASS = WTS_CONFIG_CLASS(16);
 
 /// Helper to query a string user config value.
-fn query_user_config_string(
-    server: &str,
-    user: &str,
-    class: WTS_CONFIG_CLASS,
-) -> TsResult<String> {
+fn query_user_config_string(server: &str, user: &str, class: WTS_CONFIG_CLASS) -> TsResult<String> {
     let wide_server = to_wide(server);
     let wide_user = to_wide(user);
     let mut buf = windows::core::PWSTR::null();
@@ -1013,10 +1019,13 @@ fn query_user_config_string(
             &mut buf,
             &mut bytes,
         )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSQueryUserConfigW(class {:?})", class.0),
-    ))?;
+    }
+    .map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSQueryUserConfigW(class {:?})", class.0),
+        )
+    })?;
 
     let result = if buf.is_null() {
         String::new()
@@ -1029,11 +1038,7 @@ fn query_user_config_string(
 }
 
 /// Helper to query a u32 user config value.
-fn query_user_config_u32(
-    server: &str,
-    user: &str,
-    class: WTS_CONFIG_CLASS,
-) -> TsResult<u32> {
+fn query_user_config_u32(server: &str, user: &str, class: WTS_CONFIG_CLASS) -> TsResult<u32> {
     let wide_server = to_wide(server);
     let wide_user = to_wide(user);
     let mut buf = windows::core::PWSTR::null();
@@ -1047,10 +1052,13 @@ fn query_user_config_u32(
             &mut buf,
             &mut bytes,
         )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSQueryUserConfigW(class {:?})", class.0),
-    ))?;
+    }
+    .map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSQueryUserConfigW(class {:?})", class.0),
+        )
+    })?;
 
     let val = if buf.is_null() || bytes < 4 {
         0u32
@@ -1064,30 +1072,29 @@ fn query_user_config_u32(
 
 /// Query full Terminal Services user configuration.
 pub fn query_user_config(server: &str, user: &str) -> TsResult<TsUserConfig> {
-    let initial_program = query_user_config_string(server, user, WTS_CFGCLASS_INITIAL_PROGRAM)
-        .unwrap_or_default();
-    let working_directory = query_user_config_string(server, user, WTS_CFGCLASS_WORKING_DIRECTORY)
-        .unwrap_or_default();
-    let inherit_initial_program = query_user_config_u32(server, user, WTS_CFGCLASS_INHERIT_INITIAL_PROGRAM)
-        .unwrap_or(1) != 0;
-    let allow_logon = query_user_config_u32(server, user, WTS_CFGCLASS_ALLOW_LOGON)
-        .unwrap_or(1) != 0;
-    let max_disconnection_time = query_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_DISCONNECT)
-        .unwrap_or(0);
-    let max_connection_time = query_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_CONNECTION)
-        .unwrap_or(0);
-    let max_idle_time = query_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_IDLE)
-        .unwrap_or(0);
-    let broken_connection_action_reset = query_user_config_u32(server, user, WTS_CFGCLASS_BROKEN_DISCONNECT)
-        .unwrap_or(0) != 0;
-    let reconnect_same_client = query_user_config_u32(server, user, WTS_CFGCLASS_RECONNECT_SAME)
-        .unwrap_or(0) != 0;
-    let ts_profile_path = query_user_config_string(server, user, WTS_CFGCLASS_TS_PROFILE_PATH)
-        .unwrap_or_default();
-    let ts_home_dir = query_user_config_string(server, user, WTS_CFGCLASS_TS_HOME_DIR)
-        .unwrap_or_default();
-    let ts_home_drive = query_user_config_string(server, user, WTS_CFGCLASS_TS_HOME_DRIVE)
-        .unwrap_or_default();
+    let initial_program =
+        query_user_config_string(server, user, WTS_CFGCLASS_INITIAL_PROGRAM).unwrap_or_default();
+    let working_directory =
+        query_user_config_string(server, user, WTS_CFGCLASS_WORKING_DIRECTORY).unwrap_or_default();
+    let inherit_initial_program =
+        query_user_config_u32(server, user, WTS_CFGCLASS_INHERIT_INITIAL_PROGRAM).unwrap_or(1) != 0;
+    let allow_logon =
+        query_user_config_u32(server, user, WTS_CFGCLASS_ALLOW_LOGON).unwrap_or(1) != 0;
+    let max_disconnection_time =
+        query_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_DISCONNECT).unwrap_or(0);
+    let max_connection_time =
+        query_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_CONNECTION).unwrap_or(0);
+    let max_idle_time = query_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_IDLE).unwrap_or(0);
+    let broken_connection_action_reset =
+        query_user_config_u32(server, user, WTS_CFGCLASS_BROKEN_DISCONNECT).unwrap_or(0) != 0;
+    let reconnect_same_client =
+        query_user_config_u32(server, user, WTS_CFGCLASS_RECONNECT_SAME).unwrap_or(0) != 0;
+    let ts_profile_path =
+        query_user_config_string(server, user, WTS_CFGCLASS_TS_PROFILE_PATH).unwrap_or_default();
+    let ts_home_dir =
+        query_user_config_string(server, user, WTS_CFGCLASS_TS_HOME_DIR).unwrap_or_default();
+    let ts_home_drive =
+        query_user_config_string(server, user, WTS_CFGCLASS_TS_HOME_DRIVE).unwrap_or_default();
 
     Ok(TsUserConfig {
         user_name: user.to_string(),
@@ -1127,10 +1134,13 @@ fn set_user_config_string(
             PCWSTR(wide_value.as_ptr()),
             byte_len,
         )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSSetUserConfigW(class {:?})", class.0),
-    ))?;
+    }
+    .map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSSetUserConfigW(class {:?})", class.0),
+        )
+    })?;
     Ok(())
 }
 
@@ -1153,10 +1163,13 @@ fn set_user_config_u32(
             PCWSTR(bytes.as_ptr() as *const u16),
             4,
         )
-    }.map_err(|e| TsError::new(
-        TsErrorKind::Win32Error(e.code().0 as u32),
-        &format!("WTSSetUserConfigW(class {:?})", class.0),
-    ))?;
+    }
+    .map_err(|e| {
+        TsError::new(
+            TsErrorKind::Win32Error(e.code().0 as u32),
+            format!("WTSSetUserConfigW(class {:?})", class.0),
+        )
+    })?;
     Ok(())
 }
 
@@ -1167,32 +1180,87 @@ pub fn set_user_config(config: &TsUserConfig) -> TsResult<()> {
     let user = &config.user_name;
 
     if !config.initial_program.is_empty() {
-        set_user_config_string(server, user, WTS_CFGCLASS_INITIAL_PROGRAM, &config.initial_program)?;
+        set_user_config_string(
+            server,
+            user,
+            WTS_CFGCLASS_INITIAL_PROGRAM,
+            &config.initial_program,
+        )?;
     }
     if !config.working_directory.is_empty() {
-        set_user_config_string(server, user, WTS_CFGCLASS_WORKING_DIRECTORY, &config.working_directory)?;
+        set_user_config_string(
+            server,
+            user,
+            WTS_CFGCLASS_WORKING_DIRECTORY,
+            &config.working_directory,
+        )?;
     }
-    set_user_config_u32(server, user, WTS_CFGCLASS_INHERIT_INITIAL_PROGRAM, config.inherit_initial_program as u32)?;
-    set_user_config_u32(server, user, WTS_CFGCLASS_ALLOW_LOGON, config.allow_logon as u32)?;
+    set_user_config_u32(
+        server,
+        user,
+        WTS_CFGCLASS_INHERIT_INITIAL_PROGRAM,
+        config.inherit_initial_program as u32,
+    )?;
+    set_user_config_u32(
+        server,
+        user,
+        WTS_CFGCLASS_ALLOW_LOGON,
+        config.allow_logon as u32,
+    )?;
     if config.max_disconnection_time > 0 {
-        set_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_DISCONNECT, config.max_disconnection_time)?;
+        set_user_config_u32(
+            server,
+            user,
+            WTS_CFGCLASS_TIMEOUT_DISCONNECT,
+            config.max_disconnection_time,
+        )?;
     }
     if config.max_connection_time > 0 {
-        set_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_CONNECTION, config.max_connection_time)?;
+        set_user_config_u32(
+            server,
+            user,
+            WTS_CFGCLASS_TIMEOUT_CONNECTION,
+            config.max_connection_time,
+        )?;
     }
     if config.max_idle_time > 0 {
-        set_user_config_u32(server, user, WTS_CFGCLASS_TIMEOUT_IDLE, config.max_idle_time)?;
+        set_user_config_u32(
+            server,
+            user,
+            WTS_CFGCLASS_TIMEOUT_IDLE,
+            config.max_idle_time,
+        )?;
     }
-    set_user_config_u32(server, user, WTS_CFGCLASS_BROKEN_DISCONNECT, config.broken_connection_action_reset as u32)?;
-    set_user_config_u32(server, user, WTS_CFGCLASS_RECONNECT_SAME, config.reconnect_same_client as u32)?;
+    set_user_config_u32(
+        server,
+        user,
+        WTS_CFGCLASS_BROKEN_DISCONNECT,
+        config.broken_connection_action_reset as u32,
+    )?;
+    set_user_config_u32(
+        server,
+        user,
+        WTS_CFGCLASS_RECONNECT_SAME,
+        config.reconnect_same_client as u32,
+    )?;
     if !config.ts_profile_path.is_empty() {
-        set_user_config_string(server, user, WTS_CFGCLASS_TS_PROFILE_PATH, &config.ts_profile_path)?;
+        set_user_config_string(
+            server,
+            user,
+            WTS_CFGCLASS_TS_PROFILE_PATH,
+            &config.ts_profile_path,
+        )?;
     }
     if !config.ts_home_dir.is_empty() {
         set_user_config_string(server, user, WTS_CFGCLASS_TS_HOME_DIR, &config.ts_home_dir)?;
     }
     if !config.ts_home_drive.is_empty() {
-        set_user_config_string(server, user, WTS_CFGCLASS_TS_HOME_DRIVE, &config.ts_home_drive)?;
+        set_user_config_string(
+            server,
+            user,
+            WTS_CFGCLASS_TS_HOME_DRIVE,
+            &config.ts_home_drive,
+        )?;
     }
 
     debug!("Updated user config for {}\\{}", server, user);
@@ -1208,9 +1276,7 @@ const WTS_SESSION_ADDRESS_V4: WTS_INFO_CLASS = WTS_INFO_CLASS(30);
 
 /// Query the virtual IPv4 address assigned to a session, if any.
 pub fn query_session_address_v4(server: HANDLE, session_id: u32) -> Option<String> {
-    let Some((buf, bytes)) = query_session_raw(server, session_id, WTS_SESSION_ADDRESS_V4) else {
-        return None;
-    };
+    let (buf, bytes) = query_session_raw(server, session_id, WTS_SESSION_ADDRESS_V4)?;
     if bytes < 8 {
         unsafe { WTSFreeMemory(buf as *mut _) };
         return None;

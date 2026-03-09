@@ -11,10 +11,7 @@ pub fn list_processes(server: HANDLE) -> TsResult<Vec<TsProcessInfo>> {
 }
 
 /// List processes for a specific session.
-pub fn list_session_processes(
-    server: HANDLE,
-    session_id: u32,
-) -> TsResult<Vec<TsProcessInfo>> {
+pub fn list_session_processes(server: HANDLE, session_id: u32) -> TsResult<Vec<TsProcessInfo>> {
     let all = wts_ffi::enumerate_processes(server)?;
     Ok(all
         .into_iter()
@@ -23,10 +20,7 @@ pub fn list_session_processes(
 }
 
 /// Search processes by name (case-insensitive partial match).
-pub fn find_processes_by_name(
-    server: HANDLE,
-    name_pattern: &str,
-) -> TsResult<Vec<TsProcessInfo>> {
+pub fn find_processes_by_name(server: HANDLE, name_pattern: &str) -> TsResult<Vec<TsProcessInfo>> {
     let pattern = name_pattern.to_lowercase();
     let all = wts_ffi::enumerate_processes(server)?;
     Ok(all
@@ -37,7 +31,10 @@ pub fn find_processes_by_name(
 
 /// Terminate a specific process by PID.
 pub fn terminate(server: HANDLE, process_id: u32, exit_code: u32) -> TsResult<()> {
-    info!("Terminating process {} with exit code {}", process_id, exit_code);
+    info!(
+        "Terminating process {} with exit code {}",
+        process_id, exit_code
+    );
     wts_ffi::terminate_process(server, process_id, exit_code)
 }
 
@@ -54,10 +51,9 @@ pub fn terminate_by_name(
     for p in procs {
         if p.session_id == session_id
             && p.process_name.to_lowercase().contains(&pattern)
+            && wts_ffi::terminate_process(server, p.process_id, exit_code).is_ok()
         {
-            if wts_ffi::terminate_process(server, p.process_id, exit_code).is_ok() {
-                killed += 1;
-            }
+            killed += 1;
         }
     }
     info!(
@@ -68,9 +64,7 @@ pub fn terminate_by_name(
 }
 
 /// Get a count of processes per session.
-pub fn process_count_per_session(
-    server: HANDLE,
-) -> TsResult<Vec<(u32, usize)>> {
+pub fn process_count_per_session(server: HANDLE) -> TsResult<Vec<(u32, usize)>> {
     let all = wts_ffi::enumerate_processes(server)?;
     let mut map = std::collections::HashMap::<u32, usize>::new();
     for p in &all {

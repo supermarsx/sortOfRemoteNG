@@ -63,13 +63,11 @@ pub fn logoff(server: HANDLE, session_id: u32, wait: bool) -> TsResult<()> {
 }
 
 /// Connect (transfer) a disconnected session to another session.
-pub fn connect(
-    logon_id: u32,
-    target_logon_id: u32,
-    password: &str,
-    wait: bool,
-) -> TsResult<()> {
-    info!("Connecting session {} to target {}", logon_id, target_logon_id);
+pub fn connect(logon_id: u32, target_logon_id: u32, password: &str, wait: bool) -> TsResult<()> {
+    info!(
+        "Connecting session {} to target {}",
+        logon_id, target_logon_id
+    );
     wts_ffi::connect_session(logon_id, target_logon_id, password, wait)
 }
 
@@ -78,10 +76,10 @@ pub fn logoff_disconnected(server: HANDLE) -> TsResult<u32> {
     let sessions = wts_ffi::enumerate_sessions(server)?;
     let mut count = 0u32;
     for s in sessions {
-        if s.state == SessionState::Disconnected {
-            if wts_ffi::logoff_session(server, s.session_id, false).is_ok() {
-                count += 1;
-            }
+        if s.state == SessionState::Disconnected
+            && wts_ffi::logoff_session(server, s.session_id, false).is_ok()
+        {
+            count += 1;
         }
     }
     info!("Logged off {} disconnected sessions", count);
@@ -89,10 +87,7 @@ pub fn logoff_disconnected(server: HANDLE) -> TsResult<u32> {
 }
 
 /// Find sessions by user name (case-insensitive partial match).
-pub fn find_sessions_by_user(
-    server: HANDLE,
-    user_pattern: &str,
-) -> TsResult<Vec<SessionDetail>> {
+pub fn find_sessions_by_user(server: HANDLE, user_pattern: &str) -> TsResult<Vec<SessionDetail>> {
     let pattern = user_pattern.to_lowercase();
     let all = get_all_session_details(server)?;
     Ok(all
@@ -166,12 +161,20 @@ mod tests {
         // This should return a valid session ID on any Windows machine.
         let id = get_console_session_id();
         // 0 or 1 are typical for the console session.
-        assert!(id <= 65535, "Console session ID should be reasonable: {}", id);
+        assert!(
+            id <= 65535,
+            "Console session ID should be reasonable: {}",
+            id
+        );
     }
 
     #[test]
     fn current_session_id_valid() {
         let id = get_current_session_id();
-        assert!(id <= 65535, "Current session ID should be reasonable: {}", id);
+        assert!(
+            id <= 65535,
+            "Current session ID should be reasonable: {}",
+            id
+        );
     }
 }

@@ -13,10 +13,7 @@ use log::info;
 use windows::Win32::Foundation::HANDLE;
 
 /// Send a message box to a session's desktop.
-pub fn send_message(
-    server: HANDLE,
-    params: &SendMessageParams,
-) -> TsResult<MessageResponse> {
+pub fn send_message(server: HANDLE, params: &SendMessageParams) -> TsResult<MessageResponse> {
     info!(
         "Sending message to session {}: title='{}', wait={}",
         params.session_id, params.title, params.wait
