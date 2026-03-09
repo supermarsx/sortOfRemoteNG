@@ -31,6 +31,7 @@ pub struct OcspManager {
     /// Cache of OCSP responses by certificate ID.
     cache: HashMap<String, OcspCacheEntry>,
     /// How often to refresh responses (in seconds).
+    #[allow(dead_code)]
     refresh_interval_secs: u64,
     /// Whether OCSP stapling is enabled.
     enabled: bool,
@@ -141,12 +142,7 @@ impl OcspManager {
         let now = Utc::now();
         self.cache
             .iter()
-            .filter(|(_, entry)| {
-                entry
-                    .expires_at
-                    .map(|exp| exp <= now)
-                    .unwrap_or(true)
-            })
+            .filter(|(_, entry)| entry.expires_at.map(|exp| exp <= now).unwrap_or(true))
             .map(|(id, _)| id.clone())
             .collect()
     }
@@ -157,11 +153,7 @@ impl OcspManager {
         let fresh = self
             .cache
             .values()
-            .filter(|e| {
-                e.expires_at
-                    .map(|exp| exp > Utc::now())
-                    .unwrap_or(false)
-            })
+            .filter(|e| e.expires_at.map(|exp| exp > Utc::now()).unwrap_or(false))
             .count();
 
         OcspCacheStats {

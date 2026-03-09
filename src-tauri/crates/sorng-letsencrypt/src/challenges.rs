@@ -65,7 +65,10 @@ impl Http01Solver {
         let response = http01_response(token, key_thumbprint);
 
         // Store the token → response mapping
-        self.tokens.lock().await.insert(token.to_string(), response.clone());
+        self.tokens
+            .lock()
+            .await
+            .insert(token.to_string(), response.clone());
 
         // Mode-specific provisioning
         if let Some(ref webroot) = self.config.webroot_path {
@@ -78,10 +81,7 @@ impl Http01Solver {
             std::fs::write(&challenge_file, &response)
                 .map_err(|e| format!("Failed to write challenge file: {}", e))?;
 
-            log::info!(
-                "[HTTP-01] Challenge file written to {}",
-                challenge_file
-            );
+            log::info!("[HTTP-01] Challenge file written to {}", challenge_file);
         } else if self.config.standalone_server && !self.server_running {
             // Standalone mode: start the HTTP server
             self.start_standalone_server().await?;
@@ -103,14 +103,14 @@ impl Http01Solver {
 
         // Remove webroot file if applicable
         if let Some(ref webroot) = self.config.webroot_path {
-            let challenge_file = format!(
-                "{}/.well-known/acme-challenge/{}",
-                webroot, token
-            );
+            let challenge_file = format!("{}/.well-known/acme-challenge/{}", webroot, token);
             let _ = std::fs::remove_file(&challenge_file);
         }
 
-        log::info!("[HTTP-01] Challenge cleaned up for token {}", &token[..8.min(token.len())]);
+        log::info!(
+            "[HTTP-01] Challenge cleaned up for token {}",
+            &token[..8.min(token.len())]
+        );
         Ok(())
     }
 
@@ -125,11 +125,7 @@ impl Http01Solver {
         let addr = self.config.listen_addr.clone();
         let tokens = Arc::clone(&self.tokens);
 
-        log::info!(
-            "[HTTP-01] Starting standalone server on {}:{}",
-            addr,
-            port
-        );
+        log::info!("[HTTP-01] Starting standalone server on {}:{}", addr, port);
 
         // Spawn the server in a background task
         let _handle = tokio::spawn(async move {
@@ -220,11 +216,10 @@ impl Dns01Solver {
 
         let record_id = match self.config.provider {
             DnsProvider::Cloudflare => {
-                self.create_cloudflare_record(&record_name, &txt_value).await?
+                self.create_cloudflare_record(&record_name, &txt_value)
+                    .await?
             }
-            DnsProvider::Route53 => {
-                self.create_route53_record(&record_name, &txt_value).await?
-            }
+            DnsProvider::Route53 => self.create_route53_record(&record_name, &txt_value).await?,
             DnsProvider::Manual => {
                 log::info!(
                     "[DNS-01] MANUAL: Please create the following TXT record:\n\
@@ -265,6 +260,7 @@ impl Dns01Solver {
         );
 
         let start = std::time::Instant::now();
+        #[allow(clippy::never_loop)]
         loop {
             if start.elapsed().as_secs() > timeout {
                 return Err(format!(
@@ -305,7 +301,11 @@ impl Dns01Solver {
                     );
                 }
                 _ => {
-                    log::info!("[DNS-01] Cleanup for {} (provider: {:?})", domain, self.config.provider);
+                    log::info!(
+                        "[DNS-01] Cleanup for {} (provider: {:?})",
+                        domain,
+                        self.config.provider
+                    );
                 }
             }
         }
@@ -353,10 +353,7 @@ impl Dns01Solver {
     }
 
     async fn delete_cloudflare_record(&self, record_id: &str) -> Result<(), String> {
-        log::info!(
-            "[DNS-01/Cloudflare] Deleting TXT record {}",
-            record_id
-        );
+        log::info!("[DNS-01/Cloudflare] Deleting TXT record {}", record_id);
         // In production:
         // DELETE https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}
         Ok(())
@@ -415,6 +412,12 @@ pub struct TlsAlpn01Solver {
     active_certs: HashMap<String, Vec<u8>>,
 }
 
+impl Default for TlsAlpn01Solver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TlsAlpn01Solver {
     pub fn new() -> Self {
         Self {
@@ -434,8 +437,7 @@ impl TlsAlpn01Solver {
         token: &str,
         key_thumbprint: &str,
     ) -> Result<ChallengeSolveResult, String> {
-        let validation_value =
-            crate::acme::tls_alpn01_value(token, key_thumbprint);
+        let validation_value = crate::acme::tls_alpn01_value(token, key_thumbprint);
 
         log::info!(
             "[TLS-ALPN-01] Provisioning challenge certificate for {}",

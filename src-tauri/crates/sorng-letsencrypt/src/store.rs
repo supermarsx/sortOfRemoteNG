@@ -106,10 +106,7 @@ impl CertificateStore {
                 .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
         }
 
-        log::info!(
-            "[CertStore] Initialized at {}",
-            self.base_dir.display()
-        );
+        log::info!("[CertStore] Initialized at {}", self.base_dir.display());
         Ok(())
     }
 
@@ -176,11 +173,7 @@ impl CertificateStore {
     }
 
     /// Save an account private key (PEM format).
-    pub fn save_account_key(
-        &self,
-        account_id: &str,
-        key_pem: &str,
-    ) -> Result<(), String> {
+    pub fn save_account_key(&self, account_id: &str, key_pem: &str) -> Result<(), String> {
         let key_path = self
             .base_dir
             .join("accounts")
@@ -202,8 +195,7 @@ impl CertificateStore {
             .join("account.json");
         let content = std::fs::read_to_string(&meta_path)
             .map_err(|e| format!("Failed to read account: {}", e))?;
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse account: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse account: {}", e))
     }
 
     /// List all stored accounts.
@@ -294,8 +286,7 @@ impl CertificateStore {
             .join("certificates")
             .join(cert_id)
             .join("cert.pem");
-        std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read certificate: {}", e))
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read certificate: {}", e))
     }
 
     /// Load a certificate's private key PEM from disk.
@@ -305,8 +296,7 @@ impl CertificateStore {
             .join("certificates")
             .join(cert_id)
             .join("key.pem");
-        std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read key: {}", e))
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read key: {}", e))
     }
 
     /// Get certificate metadata by ID.
@@ -326,7 +316,10 @@ impl CertificateStore {
             .iter()
             .filter(|c| {
                 c.auto_renew
-                    && matches!(c.status, CertificateStatus::Active | CertificateStatus::RenewalScheduled)
+                    && matches!(
+                        c.status,
+                        CertificateStatus::Active | CertificateStatus::RenewalScheduled
+                    )
                     && c.days_until_expiry.map(|d| d <= days).unwrap_or(false)
             })
             .collect()
@@ -386,13 +379,12 @@ impl CertificateStore {
         // Copy existing files to backup
         for entry in std::fs::read_dir(&cert_dir)
             .map_err(|e| format!("Failed to read cert dir: {}", e))?
+            .flatten()
         {
-            if let Ok(entry) = entry {
-                let src = entry.path();
-                let dst = backup_dir.join(entry.file_name());
-                std::fs::copy(&src, &dst)
-                    .map_err(|e| format!("Failed to copy {}: {}", src.display(), e))?;
-            }
+            let src = entry.path();
+            let dst = backup_dir.join(entry.file_name());
+            std::fs::copy(&src, &dst)
+                .map_err(|e| format!("Failed to copy {}: {}", src.display(), e))?;
         }
 
         log::info!(
@@ -418,11 +410,7 @@ impl CertificateStore {
         let mut backup_dirs: Vec<_> = std::fs::read_dir(&backups_dir)
             .map_err(|e| format!("Failed to read backups dir: {}", e))?
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with(&prefix)
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
             .collect();
 
         backup_dirs.sort_by_key(|e| e.file_name());
@@ -440,18 +428,13 @@ impl CertificateStore {
     // ── OCSP Storage ────────────────────────────────────────────────
 
     /// Save an OCSP response for a certificate.
-    pub fn save_ocsp_response(
-        &self,
-        cert_id: &str,
-        ocsp_der: &[u8],
-    ) -> Result<(), String> {
+    pub fn save_ocsp_response(&self, cert_id: &str, ocsp_der: &[u8]) -> Result<(), String> {
         let path = self
             .base_dir
             .join("certificates")
             .join(cert_id)
             .join("ocsp.der");
-        std::fs::write(&path, ocsp_der)
-            .map_err(|e| format!("Failed to write OCSP response: {}", e))
+        std::fs::write(&path, ocsp_der).map_err(|e| format!("Failed to write OCSP response: {}", e))
     }
 
     /// Load a cached OCSP response for a certificate.
@@ -461,18 +444,13 @@ impl CertificateStore {
             .join("certificates")
             .join(cert_id)
             .join("ocsp.der");
-        std::fs::read(&path)
-            .map_err(|e| format!("Failed to read OCSP response: {}", e))
+        std::fs::read(&path).map_err(|e| format!("Failed to read OCSP response: {}", e))
     }
 
     // ── Challenge Token Storage ─────────────────────────────────────
 
     /// Store an HTTP-01 challenge response file.
-    pub fn save_challenge_token(
-        &self,
-        token: &str,
-        response: &str,
-    ) -> Result<(), String> {
+    pub fn save_challenge_token(&self, token: &str, response: &str) -> Result<(), String> {
         let path = self.base_dir.join("challenges").join(token);
         std::fs::write(&path, response)
             .map_err(|e| format!("Failed to write challenge token: {}", e))
@@ -491,10 +469,7 @@ impl CertificateStore {
     // ── Renewal Schedule ────────────────────────────────────────────
 
     /// Add or update a renewal schedule entry.
-    pub fn schedule_renewal(
-        &mut self,
-        entry: RenewalScheduleEntry,
-    ) -> Result<(), String> {
+    pub fn schedule_renewal(&mut self, entry: RenewalScheduleEntry) -> Result<(), String> {
         if let Some(existing) = self
             .state
             .renewal_schedule
@@ -597,7 +572,9 @@ mod tests {
 
         let store = CertificateStore::new(&tmp.to_string_lossy());
         store.init().unwrap();
-        store.save_challenge_token("test-token", "test-response").unwrap();
+        store
+            .save_challenge_token("test-token", "test-response")
+            .unwrap();
 
         let stored = std::fs::read_to_string(tmp.join("challenges").join("test-token")).unwrap();
         assert_eq!(stored, "test-response");

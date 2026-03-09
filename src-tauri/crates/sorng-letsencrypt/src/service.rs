@@ -50,16 +50,14 @@ pub struct LetsEncryptService {
 impl LetsEncryptService {
     /// Create a new Let's Encrypt service with the given configuration.
     pub fn new(config: LetsEncryptConfig) -> LetsEncryptServiceState {
-        let acme = AcmeClient::new(
-            config.environment,
-            config.custom_directory_url.clone(),
-        );
+        let acme = AcmeClient::new(config.environment, config.custom_directory_url.clone());
 
         let http_solver = Http01Solver::new(config.http_challenge.clone());
 
-        let dns_solver = config.dns_provider.as_ref().map(|dns_config| {
-            Dns01Solver::new(dns_config.clone())
-        });
+        let dns_solver = config
+            .dns_provider
+            .as_ref()
+            .map(|dns_config| Dns01Solver::new(dns_config.clone()));
 
         let tls_alpn_solver = TlsAlpn01Solver::new();
 
@@ -67,10 +65,7 @@ impl LetsEncryptService {
 
         let renewal = RenewalScheduler::new(config.renewal.clone());
 
-        let ocsp = OcspManager::new(
-            config.ocsp_stapling,
-            config.ocsp_refresh_interval_secs,
-        );
+        let ocsp = OcspManager::new(config.ocsp_stapling, config.ocsp_refresh_interval_secs);
 
         let monitor = CertificateMonitor::new(
             config.renewal.warning_threshold_days as i64,
@@ -179,12 +174,12 @@ impl LetsEncryptService {
         }
 
         self.config = config.clone();
-        self.acme = AcmeClient::new(
-            config.environment,
-            config.custom_directory_url.clone(),
-        );
+        self.acme = AcmeClient::new(config.environment, config.custom_directory_url.clone());
         self.http_solver = Http01Solver::new(config.http_challenge.clone());
-        self.dns_solver = config.dns_provider.as_ref().map(|c| Dns01Solver::new(c.clone()));
+        self.dns_solver = config
+            .dns_provider
+            .as_ref()
+            .map(|c| Dns01Solver::new(c.clone()));
         self.renewal.update_config(config.renewal.clone());
 
         if was_running {
@@ -295,25 +290,16 @@ impl LetsEncryptService {
                 }
                 ChallengeType::Dns01 => {
                     if let Some(ref mut dns) = self.dns_solver {
-                        dns.provision(
-                            &authz.identifier.value,
-                            &acme_challenge.token,
-                            &thumbprint,
-                        )
-                        .await?;
-                        dns.wait_for_propagation(&authz.identifier.value)
+                        dns.provision(&authz.identifier.value, &acme_challenge.token, &thumbprint)
                             .await?;
+                        dns.wait_for_propagation(&authz.identifier.value).await?;
                     } else {
                         return Err("DNS-01 selected but no DNS provider configured".to_string());
                     }
                 }
                 ChallengeType::TlsAlpn01 => {
                     self.tls_alpn_solver
-                        .provision(
-                            &authz.identifier.value,
-                            &acme_challenge.token,
-                            &thumbprint,
-                        )
+                        .provision(&authz.identifier.value, &acme_challenge.token, &thumbprint)
                         .await?;
                 }
             }
@@ -384,10 +370,7 @@ impl LetsEncryptService {
                             }
                         }
                         ChallengeType::TlsAlpn01 => {
-                            let _ = self
-                                .tls_alpn_solver
-                                .cleanup(&authz.identifier.value)
-                                .await;
+                            let _ = self.tls_alpn_solver.cleanup(&authz.identifier.value).await;
                         }
                     }
                 }
@@ -414,10 +397,7 @@ impl LetsEncryptService {
     }
 
     /// Renew an existing certificate.
-    pub async fn renew_certificate(
-        &mut self,
-        cert_id: &str,
-    ) -> Result<ManagedCertificate, String> {
+    pub async fn renew_certificate(&mut self, cert_id: &str) -> Result<ManagedCertificate, String> {
         let existing = self
             .store
             .get_certificate(cert_id)
@@ -531,7 +511,11 @@ impl LetsEncryptService {
 
     /// Find certificates by domain.
     pub fn find_certificates_by_domain(&self, domain: &str) -> Vec<ManagedCertificate> {
-        self.store.find_by_domain(domain).into_iter().cloned().collect()
+        self.store
+            .find_by_domain(domain)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Remove a certificate.
@@ -540,10 +524,7 @@ impl LetsEncryptService {
     }
 
     /// Get certificate file paths (for gateway TLS configuration).
-    pub fn get_cert_paths(
-        &self,
-        cert_id: &str,
-    ) -> Result<(String, String), String> {
+    pub fn get_cert_paths(&self, cert_id: &str) -> Result<(String, String), String> {
         let cert = self
             .store
             .get_certificate(cert_id)
@@ -553,10 +534,7 @@ impl LetsEncryptService {
             .cert_pem_path
             .as_ref()
             .ok_or("Certificate PEM path not set")?;
-        let key_path = cert
-            .key_pem_path
-            .as_ref()
-            .ok_or("Key PEM path not set")?;
+        let key_path = cert.key_pem_path.as_ref().ok_or("Key PEM path not set")?;
 
         Ok((cert_path.clone(), key_path.clone()))
     }
@@ -572,7 +550,12 @@ impl LetsEncryptService {
             .count();
         let pending = certs
             .iter()
-            .filter(|c| matches!(c.status, CertificateStatus::RenewalScheduled | CertificateStatus::Renewing))
+            .filter(|c| {
+                matches!(
+                    c.status,
+                    CertificateStatus::RenewalScheduled | CertificateStatus::Renewing
+                )
+            })
             .count();
         let expired = certs
             .iter()

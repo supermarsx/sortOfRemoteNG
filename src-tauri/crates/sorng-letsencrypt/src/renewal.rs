@@ -4,8 +4,8 @@
 //! triggers renewal before certificates expire.  Supports configurable lead
 //! time, jitter, retry back-off, and event notifications.
 
+use crate::store::CertificateStore;
 use crate::types::*;
-use crate::store::{CertificateStore, RenewalScheduleEntry};
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -80,10 +80,7 @@ impl RenewalScheduler {
     }
 
     /// Check all certificates and return those due for renewal.
-    pub fn check_renewals(
-        &self,
-        certificates: &[ManagedCertificate],
-    ) -> Vec<String> {
+    pub fn check_renewals(&self, certificates: &[ManagedCertificate]) -> Vec<String> {
         let threshold = self.config.renew_before_days as i64;
         certificates
             .iter()
@@ -93,9 +90,7 @@ impl RenewalScheduler {
                         c.status,
                         CertificateStatus::Active | CertificateStatus::RenewalScheduled
                     )
-                    && c.days_until_expiry
-                        .map(|d| d <= threshold)
-                        .unwrap_or(false)
+                    && c.days_until_expiry.map(|d| d <= threshold).unwrap_or(false)
             })
             .map(|c| c.id.clone())
             .collect()
@@ -149,12 +144,8 @@ impl RenewalScheduler {
     }
 
     /// Calculate the next retry time using exponential back-off.
-    pub fn next_retry_time(
-        &self,
-        retry_number: u32,
-    ) -> chrono::DateTime<Utc> {
-        let backoff_secs =
-            self.config.retry_backoff_secs * 2u64.pow(retry_number.min(10));
+    pub fn next_retry_time(&self, retry_number: u32) -> chrono::DateTime<Utc> {
+        let backoff_secs = self.config.retry_backoff_secs * 2u64.pow(retry_number.min(10));
         let jitter = rand::random::<u64>() % self.config.jitter_secs.max(1);
         Utc::now() + chrono::Duration::seconds((backoff_secs + jitter) as i64)
     }

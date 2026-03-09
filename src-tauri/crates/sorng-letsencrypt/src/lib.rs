@@ -50,13 +50,13 @@
 //!                   └─────────────────┘
 //! ```
 
-pub mod types;
 pub mod acme;
 pub mod challenges;
-pub mod dns_providers;
-pub mod store;
-pub mod renewal;
-pub mod ocsp;
-pub mod monitor;
-pub mod service;
 pub mod commands;
+pub mod dns_providers;
+pub mod monitor;
+pub mod ocsp;
+pub mod renewal;
+pub mod service;
+pub mod store;
+pub mod types;

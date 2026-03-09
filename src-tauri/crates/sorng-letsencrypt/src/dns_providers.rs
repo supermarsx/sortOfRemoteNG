@@ -213,10 +213,7 @@ impl DnsProviderManager {
     }
 
     /// Delete a TXT record.
-    pub async fn delete_txt_record(
-        &self,
-        record_id: &str,
-    ) -> Result<DnsOperationResult, String> {
+    pub async fn delete_txt_record(&self, record_id: &str) -> Result<DnsOperationResult, String> {
         log::info!(
             "[DNS Provider/{:?}] Deleting TXT record {}",
             self.config.provider,
@@ -264,11 +261,17 @@ impl DnsProviderManager {
     async fn cloudflare_create(
         &self,
         name: &str,
-        value: &str,
+        _value: &str,
     ) -> Result<DnsOperationResult, String> {
-        let _zone_id = self.config.zone_id.as_ref()
+        let _zone_id = self
+            .config
+            .zone_id
+            .as_ref()
             .ok_or("Cloudflare zone_id required")?;
-        let _api_token = self.config.api_token.as_ref()
+        let _api_token = self
+            .config
+            .api_token
+            .as_ref()
             .ok_or("Cloudflare api_token required")?;
 
         // In production:
@@ -283,12 +286,11 @@ impl DnsProviderManager {
         })
     }
 
-    async fn route53_create(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<DnsOperationResult, String> {
-        let _hosted_zone_id = self.config.hosted_zone_id.as_ref()
+    async fn route53_create(&self, name: &str, value: &str) -> Result<DnsOperationResult, String> {
+        let _hosted_zone_id = self
+            .config
+            .hosted_zone_id
+            .as_ref()
             .ok_or("Route 53 hosted_zone_id required")?;
 
         // In production:
@@ -307,7 +309,10 @@ impl DnsProviderManager {
         name: &str,
         value: &str,
     ) -> Result<DnsOperationResult, String> {
-        let _api_token = self.config.api_token.as_ref()
+        let _api_token = self
+            .config
+            .api_token
+            .as_ref()
             .ok_or("DigitalOcean api_token required")?;
 
         // In production:
@@ -321,12 +326,11 @@ impl DnsProviderManager {
         })
     }
 
-    async fn hetzner_create(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<DnsOperationResult, String> {
-        let _api_token = self.config.api_token.as_ref()
+    async fn hetzner_create(&self, name: &str, value: &str) -> Result<DnsOperationResult, String> {
+        let _api_token = self
+            .config
+            .api_token
+            .as_ref()
             .ok_or("Hetzner api_token required")?;
 
         let _ = value;
@@ -337,11 +341,7 @@ impl DnsProviderManager {
         })
     }
 
-    async fn gcloud_create(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<DnsOperationResult, String> {
+    async fn gcloud_create(&self, name: &str, value: &str) -> Result<DnsOperationResult, String> {
         let _ = value;
         Ok(DnsOperationResult {
             success: true,
@@ -350,11 +350,7 @@ impl DnsProviderManager {
         })
     }
 
-    async fn azure_create(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<DnsOperationResult, String> {
+    async fn azure_create(&self, name: &str, value: &str) -> Result<DnsOperationResult, String> {
         let _ = value;
         Ok(DnsOperationResult {
             success: true,
@@ -363,11 +359,7 @@ impl DnsProviderManager {
         })
     }
 
-    async fn rfc2136_create(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<DnsOperationResult, String> {
+    async fn rfc2136_create(&self, name: &str, value: &str) -> Result<DnsOperationResult, String> {
         log::info!(
             "[DNS/RFC2136] nsupdate TXT {} = \"{}\" TTL {}",
             name,
@@ -382,11 +374,7 @@ impl DnsProviderManager {
         })
     }
 
-    async fn generic_create(
-        &self,
-        name: &str,
-        value: &str,
-    ) -> Result<DnsOperationResult, String> {
+    async fn generic_create(&self, name: &str, value: &str) -> Result<DnsOperationResult, String> {
         let _ = value;
         Ok(DnsOperationResult {
             success: true,

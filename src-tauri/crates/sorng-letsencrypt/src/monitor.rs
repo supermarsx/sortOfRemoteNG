@@ -145,10 +145,7 @@ impl CertificateMonitor {
     }
 
     /// Check all certificates and generate a health summary.
-    pub fn check_all(
-        &mut self,
-        certificates: &[ManagedCertificate],
-    ) -> CertificateHealthSummary {
+    pub fn check_all(&mut self, certificates: &[ManagedCertificate]) -> CertificateHealthSummary {
         let checks: Vec<CertHealthCheck> = certificates
             .iter()
             .map(|c| self.check_certificate(c))
@@ -156,12 +153,30 @@ impl CertificateMonitor {
 
         let summary = CertificateHealthSummary {
             total: checks.len(),
-            healthy: checks.iter().filter(|c| c.status == CertHealthStatus::Healthy).count(),
-            warning: checks.iter().filter(|c| c.status == CertHealthStatus::Warning).count(),
-            critical: checks.iter().filter(|c| c.status == CertHealthStatus::Critical).count(),
-            expired: checks.iter().filter(|c| c.status == CertHealthStatus::Expired).count(),
-            revoked: checks.iter().filter(|c| c.status == CertHealthStatus::Revoked).count(),
-            error: checks.iter().filter(|c| c.status == CertHealthStatus::Error).count(),
+            healthy: checks
+                .iter()
+                .filter(|c| c.status == CertHealthStatus::Healthy)
+                .count(),
+            warning: checks
+                .iter()
+                .filter(|c| c.status == CertHealthStatus::Warning)
+                .count(),
+            critical: checks
+                .iter()
+                .filter(|c| c.status == CertHealthStatus::Critical)
+                .count(),
+            expired: checks
+                .iter()
+                .filter(|c| c.status == CertHealthStatus::Expired)
+                .count(),
+            revoked: checks
+                .iter()
+                .filter(|c| c.status == CertHealthStatus::Revoked)
+                .count(),
+            error: checks
+                .iter()
+                .filter(|c| c.status == CertHealthStatus::Error)
+                .count(),
             checks,
             generated_at: Utc::now(),
         };
@@ -189,7 +204,12 @@ impl CertificateMonitor {
             .as_ref()?
             .checks
             .iter()
-            .filter(|c| matches!(c.status, CertHealthStatus::Warning | CertHealthStatus::Critical))
+            .filter(|c| {
+                matches!(
+                    c.status,
+                    CertHealthStatus::Warning | CertHealthStatus::Critical
+                )
+            })
             .min_by_key(|c| c.days_until_expiry.unwrap_or(i64::MAX))
     }
 }

@@ -70,19 +70,13 @@ pub fn tls_alpn01_value(token: &str, key_thumbprint: &str) -> Vec<u8> {
 
 /// Base64url encode without padding (per RFC 4648 §5).
 pub fn base64_url_encode(data: &[u8]) -> String {
-    base64::Engine::encode(
-        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-        data,
-    )
+    base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, data)
 }
 
 /// Base64url decode (per RFC 4648 §5).
 pub fn base64_url_decode(s: &str) -> Result<Vec<u8>, String> {
-    base64::Engine::decode(
-        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-        s,
-    )
-    .map_err(|e| format!("base64url decode error: {}", e))
+    base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, s)
+        .map_err(|e| format!("base64url decode error: {}", e))
 }
 
 // ── ACME Client ─────────────────────────────────────────────────────
@@ -172,7 +166,9 @@ impl AcmeClient {
             revoke_cert: format!("{}/acme/revoke-cert", url.trim_end_matches("/directory")),
             key_change: format!("{}/acme/key-change", url.trim_end_matches("/directory")),
             meta: Some(AcmeDirectoryMeta {
-                terms_of_service: Some("https://letsencrypt.org/documents/LE-SA-v1.4-April-3-2024.pdf".to_string()),
+                terms_of_service: Some(
+                    "https://letsencrypt.org/documents/LE-SA-v1.4-April-3-2024.pdf".to_string(),
+                ),
                 website: Some("https://letsencrypt.org".to_string()),
                 caa_identities: Some(vec!["letsencrypt.org".to_string()]),
                 external_account_required: Some(false),
@@ -188,7 +184,9 @@ impl AcmeClient {
         if self.directory.is_none() {
             self.fetch_directory().await?;
         }
-        self.directory.as_ref().ok_or_else(|| "Directory not available".to_string())
+        self.directory
+            .as_ref()
+            .ok_or_else(|| "Directory not available".to_string())
     }
 
     // ── Nonce Management ──────────────────────────────────────────
@@ -227,10 +225,7 @@ impl AcmeClient {
             return Err("You must agree to the Terms of Service".to_string());
         }
 
-        log::info!(
-            "[ACME] Registering account with contacts: {:?}",
-            contacts
-        );
+        log::info!("[ACME] Registering account with contacts: {:?}", contacts);
 
         // In production: build JWS payload with newAccount URL, POST, parse response
         let account_url = format!(
@@ -271,21 +266,14 @@ impl AcmeClient {
     }
 
     /// Deactivate an account.
-    pub async fn deactivate_account(
-        &mut self,
-        account_url: &str,
-    ) -> Result<(), String> {
+    pub async fn deactivate_account(&mut self, account_url: &str) -> Result<(), String> {
         log::info!("[ACME] Deactivating account at {}", account_url);
         // POST to account URL with {"status": "deactivated"}
         Ok(())
     }
 
     /// Rotate the account key.
-    pub async fn key_change(
-        &mut self,
-        _old_key: &[u8],
-        _new_key: &[u8],
-    ) -> Result<(), String> {
+    pub async fn key_change(&mut self, _old_key: &[u8], _new_key: &[u8]) -> Result<(), String> {
         log::info!("[ACME] Performing account key rollover");
         // POST to keyChange URL with inner JWS containing the new key
         Ok(())
@@ -294,10 +282,7 @@ impl AcmeClient {
     // ── Order Lifecycle ───────────────────────────────────────────
 
     /// Create a new certificate order.
-    pub async fn create_order(
-        &mut self,
-        domains: &[String],
-    ) -> Result<AcmeOrder, String> {
+    pub async fn create_order(&mut self, domains: &[String]) -> Result<AcmeOrder, String> {
         if domains.is_empty() {
             return Err("At least one domain is required".to_string());
         }
@@ -430,10 +415,7 @@ impl AcmeClient {
     }
 
     /// Poll a challenge to check its current status.
-    pub async fn poll_challenge(
-        &self,
-        challenge_url: &str,
-    ) -> Result<AcmeChallenge, String> {
+    pub async fn poll_challenge(&self, challenge_url: &str) -> Result<AcmeChallenge, String> {
         for authz in self.authorizations.values() {
             for challenge in &authz.challenges {
                 if challenge.url == challenge_url {
@@ -461,14 +443,14 @@ impl AcmeClient {
             }
         }
 
-        Err(format!("Order for finalize URL not found: {}", finalize_url))
+        Err(format!(
+            "Order for finalize URL not found: {}",
+            finalize_url
+        ))
     }
 
     /// Download the issued certificate chain.
-    pub async fn download_certificate(
-        &self,
-        certificate_url: &str,
-    ) -> Result<String, String> {
+    pub async fn download_certificate(&self, certificate_url: &str) -> Result<String, String> {
         log::info!("[ACME] Downloading certificate from {}", certificate_url);
         // In production: POST-as-GET to the certificate URL, returning the PEM chain
 
@@ -491,10 +473,7 @@ impl AcmeClient {
         reason: Option<u8>,
     ) -> Result<(), String> {
         let _cert_b64 = base64_url_encode(cert_der);
-        log::info!(
-            "[ACME] Revoking certificate (reason: {:?})",
-            reason
-        );
+        log::info!("[ACME] Revoking certificate (reason: {:?})", reason);
         // In production: POST to revokeCert URL with the certificate DER
         // and optional revocation reason code
         Ok(())
@@ -504,8 +483,10 @@ impl AcmeClient {
 
     /// Record that a certificate was issued for a domain.
     pub fn record_issuance(&mut self, domain: &str) {
-        let entry = self.rate_limits.entry(domain.to_string()).or_insert_with(|| {
-            RateLimitInfo {
+        let entry = self
+            .rate_limits
+            .entry(domain.to_string())
+            .or_insert_with(|| RateLimitInfo {
                 domain: domain.to_string(),
                 certs_this_week: 0,
                 weekly_limit: 50,
@@ -516,16 +497,17 @@ impl AcmeClient {
                 weekly_reset: Some(Utc::now() + chrono::Duration::days(7)),
                 is_rate_limited: false,
                 retry_after_secs: None,
-            }
-        });
+            });
         entry.certs_this_week += 1;
         entry.is_rate_limited = entry.certs_this_week >= entry.weekly_limit;
     }
 
     /// Record a failed validation for a domain.
     pub fn record_validation_failure(&mut self, domain: &str) {
-        let entry = self.rate_limits.entry(domain.to_string()).or_insert_with(|| {
-            RateLimitInfo {
+        let entry = self
+            .rate_limits
+            .entry(domain.to_string())
+            .or_insert_with(|| RateLimitInfo {
                 domain: domain.to_string(),
                 certs_this_week: 0,
                 weekly_limit: 50,
@@ -536,8 +518,7 @@ impl AcmeClient {
                 weekly_reset: None,
                 is_rate_limited: false,
                 retry_after_secs: None,
-            }
-        });
+            });
         entry.failed_validations_this_hour += 1;
         if entry.failed_validations_this_hour >= entry.hourly_failure_limit {
             entry.is_rate_limited = true;

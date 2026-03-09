@@ -22,17 +22,13 @@ pub async fn le_get_status(
 
 /// Start the Let's Encrypt service.
 #[tauri::command]
-pub async fn le_start(
-    state: State<'_, LetsEncryptServiceState>,
-) -> CmdResult<()> {
+pub async fn le_start(state: State<'_, LetsEncryptServiceState>) -> CmdResult<()> {
     state.lock().await.start().await
 }
 
 /// Stop the Let's Encrypt service.
 #[tauri::command]
-pub async fn le_stop(
-    state: State<'_, LetsEncryptServiceState>,
-) -> CmdResult<()> {
+pub async fn le_stop(state: State<'_, LetsEncryptServiceState>) -> CmdResult<()> {
     state.lock().await.stop().await
 }
 
@@ -104,11 +100,7 @@ pub async fn le_renew_certificate(
     state: State<'_, LetsEncryptServiceState>,
     certificate_id: String,
 ) -> CmdResult<ManagedCertificate> {
-    state
-        .lock()
-        .await
-        .renew_certificate(&certificate_id)
-        .await
+    state.lock().await.renew_certificate(&certificate_id).await
 }
 
 /// Revoke a certificate.
@@ -186,9 +178,7 @@ pub async fn le_health_check(
 
 /// Check whether any certificates have critical issues.
 #[tauri::command]
-pub async fn le_has_critical_issues(
-    state: State<'_, LetsEncryptServiceState>,
-) -> CmdResult<bool> {
+pub async fn le_has_critical_issues(state: State<'_, LetsEncryptServiceState>) -> CmdResult<bool> {
     let svc = state.lock().await;
     Ok(svc.has_critical_issues())
 }
@@ -223,7 +213,11 @@ pub async fn le_recent_events(
     count: Option<usize>,
 ) -> CmdResult<Vec<LetsEncryptEvent>> {
     let svc = state.lock().await;
-    Ok(svc.recent_events(count.unwrap_or(20)).into_iter().cloned().collect())
+    Ok(svc
+        .recent_events(count.unwrap_or(20))
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 /// Drain pending events (one-shot read + clear for the frontend).

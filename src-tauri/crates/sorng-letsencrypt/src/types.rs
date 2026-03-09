@@ -34,22 +34,12 @@ impl AcmeEnvironment {
     /// Return the ACME directory URL for this environment.
     pub fn directory_url(&self) -> &str {
         match self {
-            Self::LetsEncryptProduction => {
-                "https://acme-v02.api.letsencrypt.org/directory"
-            }
-            Self::LetsEncryptStaging => {
-                "https://acme-staging-v02.api.letsencrypt.org/directory"
-            }
+            Self::LetsEncryptProduction => "https://acme-v02.api.letsencrypt.org/directory",
+            Self::LetsEncryptStaging => "https://acme-staging-v02.api.letsencrypt.org/directory",
             Self::ZeroSsl => "https://acme.zerossl.com/v2/DV90",
-            Self::BuypassGo => {
-                "https://api.buypass.com/acme/directory"
-            }
-            Self::BuypassGoStaging => {
-                "https://api.test4.buypass.no/acme/directory"
-            }
-            Self::GoogleTrustServices => {
-                "https://dv.acme-v02.api.pki.goog/directory"
-            }
+            Self::BuypassGo => "https://api.buypass.com/acme/directory",
+            Self::BuypassGoStaging => "https://api.test4.buypass.no/acme/directory",
+            Self::GoogleTrustServices => "https://dv.acme-v02.api.pki.goog/directory",
             Self::Custom => "",
         }
     }
@@ -566,7 +556,7 @@ impl Default for RenewalConfig {
             check_interval_secs: 3600, // 1 hour
             jitter_secs: 300,          // 5 minutes
             max_retries: 5,
-            retry_backoff_secs: 600,   // 10 minutes
+            retry_backoff_secs: 600, // 10 minutes
             notify_on_renewal: true,
             notify_on_failure: true,
             warning_threshold_days: 30,
@@ -814,10 +804,7 @@ pub enum LetsEncryptEvent {
     /// HTTP-01 challenge server stopped.
     ChallengeServerStopped,
     /// Rate limit warning.
-    RateLimitWarning {
-        domain: String,
-        remaining: u32,
-    },
+    RateLimitWarning { domain: String, remaining: u32 },
 }
 
 // ── Service State ───────────────────────────────────────────────────
