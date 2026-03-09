@@ -42,10 +42,7 @@ impl Default for DnsLeakPreventionConfig {
 }
 
 /// Build PostUp/PostDown scripts for DNS leak prevention.
-pub fn dns_leak_prevention_scripts(
-    dns_servers: &[String],
-    interface: &str,
-) -> DnsScripts {
+pub fn dns_leak_prevention_scripts(dns_servers: &[String], interface: &str) -> DnsScripts {
     if cfg!(target_os = "linux") {
         linux_dns_scripts(dns_servers, interface)
     } else if cfg!(target_os = "macos") {
@@ -86,8 +83,7 @@ fn macos_dns_scripts(dns_servers: &[String], _interface: &str) -> DnsScripts {
             "networksetup -setdnsservers Wi-Fi {} && dscacheutil -flushcache",
             servers
         ),
-        pre_down: "networksetup -setdnsservers Wi-Fi Empty && dscacheutil -flushcache"
-            .to_string(),
+        pre_down: "networksetup -setdnsservers Wi-Fi Empty && dscacheutil -flushcache".to_string(),
         description: "Sets DNS via networksetup — may need adaptation for ethernet".to_string(),
     }
 }
@@ -142,7 +138,10 @@ pub fn validate_dns_config(dns_servers: &[String]) -> Vec<String> {
     let has_public = dns_servers.iter().any(|s| public_dns.contains(&s.as_str()));
 
     if !has_public && !dns_servers.is_empty() {
-        issues.push("Using non-public DNS servers — ensure they are reachable through the tunnel".to_string());
+        issues.push(
+            "Using non-public DNS servers — ensure they are reachable through the tunnel"
+                .to_string(),
+        );
     }
 
     issues
@@ -163,7 +162,8 @@ pub fn audit_dns_safety(config: &WgConfig) -> DnsAuditResult {
     let mut recommendations = Vec::new();
 
     if !has_dns {
-        recommendations.push("Add DNS servers to the [Interface] section to prevent DNS leaks".to_string());
+        recommendations
+            .push("Add DNS servers to the [Interface] section to prevent DNS leaks".to_string());
     }
 
     if is_full_tunnel && !has_dns {

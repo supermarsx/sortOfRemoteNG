@@ -61,7 +61,10 @@ fn linux_route_command(action: &RouteAction) -> String {
         RouteActionType::Replace => "replace",
     };
 
-    let mut cmd = format!("ip route {} {} dev {}", verb, action.destination, action.interface);
+    let mut cmd = format!(
+        "ip route {} {} dev {}",
+        verb, action.destination, action.interface
+    );
 
     if let Some(ref gw) = action.gateway {
         cmd.push_str(&format!(" via {}", gw));
@@ -105,10 +108,7 @@ fn windows_route_command(action: &RouteAction) -> String {
     let (net, prefix_len) = parse_cidr(&action.destination);
     let mask = prefix_to_mask(prefix_len);
 
-    let gw = action
-        .gateway
-        .as_deref()
-        .unwrap_or("0.0.0.0");
+    let gw = action.gateway.as_deref().unwrap_or("0.0.0.0");
 
     let mut cmd = format!("route {} {} mask {} {}", verb, net, mask, gw);
 

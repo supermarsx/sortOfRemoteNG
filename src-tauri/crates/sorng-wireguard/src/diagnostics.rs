@@ -53,10 +53,7 @@ pub fn build_diagnostic_report(
         } else {
             HealthStatus::Degraded
         },
-        message: format!(
-            "RX: {} bytes, TX: {} bytes",
-            total_rx, total_tx
-        ),
+        message: format!("RX: {} bytes, TX: {} bytes", total_rx, total_tx),
     });
 
     // 2. Peer handshakes
@@ -174,7 +171,10 @@ fn check_transfer(peer: &WgPeerStats) -> DiagnosticCheck {
             peer.public_key.chars().take(8).collect::<String>()
         ),
         status,
-        message: format!("RX: {} bytes, TX: {} bytes", peer.transfer_rx, peer.transfer_tx),
+        message: format!(
+            "RX: {} bytes, TX: {} bytes",
+            peer.transfer_rx, peer.transfer_tx
+        ),
     }
 }
 
@@ -252,7 +252,7 @@ fn audit_config(config: &WgConfig) -> Vec<DiagnosticCheck> {
 
     // MTU check
     if let Some(mtu) = config.interface.mtu {
-        let status = if mtu >= 1280 && mtu <= 1500 {
+        let status = if (1280..=1500).contains(&mtu) {
             HealthStatus::Healthy
         } else {
             HealthStatus::Degraded
@@ -323,7 +323,10 @@ pub fn troubleshooting_commands(interface: &str) -> Vec<TroubleshootingCommand> 
             },
             TroubleshootingCommand {
                 description: "Check DNS config".to_string(),
-                command: format!("netsh interface ipv4 show dnsservers name=\"{}\"", interface),
+                command: format!(
+                    "netsh interface ipv4 show dnsservers name=\"{}\"",
+                    interface
+                ),
             },
         ]);
     }
@@ -343,9 +346,7 @@ pub struct TroubleshootingCommand {
 }
 
 /// Analyze handshake history for connection stability.
-pub fn analyze_stability(
-    handshake_samples: &[(u64, HandshakeStatus)],
-) -> StabilityReport {
+pub fn analyze_stability(handshake_samples: &[(u64, HandshakeStatus)]) -> StabilityReport {
     if handshake_samples.is_empty() {
         return StabilityReport {
             sample_count: 0,

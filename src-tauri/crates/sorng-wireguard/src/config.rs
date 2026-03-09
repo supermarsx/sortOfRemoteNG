@@ -3,7 +3,6 @@
 //! Parse, generate, validate, and serialize WireGuard INI configs.
 
 use crate::types::*;
-use serde::{Deserialize, Serialize};
 
 /// Parse a WireGuard INI config file content.
 pub fn parse_config(content: &str) -> Result<WgConfig, String> {
@@ -60,17 +59,17 @@ pub fn parse_config(content: &str) -> Result<WgConfig, String> {
             Section::Interface => match key.to_lowercase().as_str() {
                 "privatekey" => interface.private_key = value.to_string(),
                 "address" => {
-                    interface.address.extend(
-                        value.split(',').map(|s| s.trim().to_string()),
-                    );
+                    interface
+                        .address
+                        .extend(value.split(',').map(|s| s.trim().to_string()));
                 }
                 "listenport" => {
                     interface.listen_port = value.parse().ok();
                 }
                 "dns" => {
-                    interface.dns.extend(
-                        value.split(',').map(|s| s.trim().to_string()),
-                    );
+                    interface
+                        .dns
+                        .extend(value.split(',').map(|s| s.trim().to_string()));
                 }
                 "mtu" => {
                     interface.mtu = value.parse().ok();
@@ -84,8 +83,8 @@ pub fn parse_config(content: &str) -> Result<WgConfig, String> {
                     interface.save_config = Some(value.eq_ignore_ascii_case("true"));
                 }
                 "fwmark" => {
-                    interface.fwmark = if value.starts_with("0x") {
-                        u32::from_str_radix(&value[2..], 16).ok()
+                    interface.fwmark = if let Some(stripped) = value.strip_prefix("0x") {
+                        u32::from_str_radix(stripped, 16).ok()
                     } else {
                         value.parse().ok()
                     };
@@ -101,9 +100,8 @@ pub fn parse_config(content: &str) -> Result<WgConfig, String> {
                         }
                         "endpoint" => peer.endpoint = Some(value.to_string()),
                         "allowedips" => {
-                            peer.allowed_ips.extend(
-                                value.split(',').map(|s| s.trim().to_string()),
-                            );
+                            peer.allowed_ips
+                                .extend(value.split(',').map(|s| s.trim().to_string()));
                         }
                         "persistentkeepalive" => {
                             peer.persistent_keepalive = value.parse().ok();
@@ -138,7 +136,10 @@ pub fn serialize_config(config: &WgConfig) -> String {
     output.push_str(&format!("PrivateKey = {}\n", config.interface.private_key));
 
     if !config.interface.address.is_empty() {
-        output.push_str(&format!("Address = {}\n", config.interface.address.join(", ")));
+        output.push_str(&format!(
+            "Address = {}\n",
+            config.interface.address.join(", ")
+        ));
     }
 
     if let Some(port) = config.interface.listen_port {
@@ -215,7 +216,10 @@ pub fn validate_config(config: &WgConfig) -> Vec<String> {
     if config.interface.private_key.is_empty() {
         issues.push("Interface private key is required".to_string());
     } else if !is_valid_wg_key(&config.interface.private_key) {
-        issues.push("Interface private key is not a valid WireGuard key (must be 44 chars base64)".to_string());
+        issues.push(
+            "Interface private key is not a valid WireGuard key (must be 44 chars base64)"
+                .to_string(),
+        );
     }
 
     // Validate addresses
@@ -224,14 +228,20 @@ pub fn validate_config(config: &WgConfig) -> Vec<String> {
     }
     for addr in &config.interface.address {
         if !addr.contains('/') {
-            issues.push(format!("Address '{}' should include CIDR prefix (e.g., /32)", addr));
+            issues.push(format!(
+                "Address '{}' should include CIDR prefix (e.g., /32)",
+                addr
+            ));
         }
     }
 
     // Validate MTU
     if let Some(mtu) = config.interface.mtu {
-        if mtu < 1280 || mtu > 1500 {
-            issues.push(format!("MTU {} is outside recommended range (1280-1500)", mtu));
+        if !(1280..=1500).contains(&mtu) {
+            issues.push(format!(
+                "MTU {} is outside recommended range (1280-1500)",
+                mtu
+            ));
         }
     }
 
@@ -266,9 +276,16 @@ pub fn validate_config(config: &WgConfig) -> Vec<String> {
 
         if let Some(endpoint) = &peer.endpoint {
             if !endpoint.contains(':') {
-                issues.push(format!("Peer {} endpoint '{}' must include port", i, endpoint));
+                issues.push(format!(
+                    "Peer {} endpoint '{}' must include port",
+                    i, endpoint
+                ));
             }
-        } else if peer.allowed_ips.iter().any(|a| a.starts_with("0.0.0.0/0") || a.starts_with("::/0")) {
+        } else if peer
+            .allowed_ips
+            .iter()
+            .any(|a| a.starts_with("0.0.0.0/0") || a.starts_with("::/0"))
+        {
             issues.push(format!(
                 "Peer {} routes all traffic but has no endpoint — this peer must have an endpoint",
                 i
@@ -290,13 +307,19 @@ pub fn validate_config(config: &WgConfig) -> Vec<String> {
 
 /// Check if a string looks like a valid WireGuard base64 key (44 chars).
 fn is_valid_wg_key(key: &str) -> bool {
-    key.len() == 44 && key.ends_with('=') && key.chars().all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+    key.len() == 44
+        && key.ends_with('=')
+        && key
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
 }
 
 /// Check if the config routes all traffic (full tunnel).
 pub fn is_full_tunnel(config: &WgConfig) -> bool {
     config.peers.iter().any(|p| {
-        p.allowed_ips.iter().any(|a| a == "0.0.0.0/0" || a == "::/0")
+        p.allowed_ips
+            .iter()
+            .any(|a| a == "0.0.0.0/0" || a == "::/0")
     })
 }
 

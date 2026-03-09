@@ -4,7 +4,6 @@
 //! Platform-specific commands for Linux, macOS, and Windows.
 
 use crate::types::*;
-use serde::{Deserialize, Serialize};
 
 /// Interface operation to build commands for.
 #[derive(Debug, Clone, Copy)]
@@ -68,11 +67,7 @@ pub fn wg_show_dump_command(interface: &str) -> Vec<String> {
 
 /// Build `wg set` command for modifying live interface.
 pub fn wg_set_command(interface: &str, args: &[String]) -> Vec<String> {
-    let mut cmd = vec![
-        "wg".to_string(),
-        "set".to_string(),
-        interface.to_string(),
-    ];
+    let mut cmd = vec!["wg".to_string(), "set".to_string(), interface.to_string()];
     cmd.extend_from_slice(args);
     cmd
 }
@@ -219,16 +214,24 @@ pub fn generate_interface_name(base: &str, existing: &[String]) -> String {
         }
     }
 
-    format!("{}-{}", base, uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("0"))
+    format!(
+        "{}-{}",
+        base,
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("0")
+    )
 }
 
 /// List existing WireGuard interfaces command.
 pub fn list_interfaces_command() -> Vec<String> {
-    if cfg!(target_os = "windows") {
-        vec!["wg".to_string(), "show".to_string(), "interfaces".to_string()]
-    } else {
-        vec!["wg".to_string(), "show".to_string(), "interfaces".to_string()]
-    }
+    vec![
+        "wg".to_string(),
+        "show".to_string(),
+        "interfaces".to_string(),
+    ]
 }
 
 /// Parse interface list output.

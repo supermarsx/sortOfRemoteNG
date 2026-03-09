@@ -141,11 +141,14 @@ pub fn needs_attention(detail: &PeerDetail) -> Vec<String> {
     }
 
     if detail.is_full_tunnel && !detail.is_reachable {
-        issues.push("Full tunnel peer is unreachable — internet access may be affected".to_string());
+        issues
+            .push("Full tunnel peer is unreachable — internet access may be affected".to_string());
     }
 
     if detail.endpoint.is_none() && detail.persistent_keepalive.is_none() {
-        issues.push("No endpoint and no keepalive — this peer can only receive connections".to_string());
+        issues.push(
+            "No endpoint and no keepalive — this peer can only receive connections".to_string(),
+        );
     }
 
     issues
