@@ -3,9 +3,7 @@
 use chrono::Utc;
 use log::{debug, info, warn};
 
-use crate::channels::{
-    filter_releases_by_channel, get_update_url, GitHubAsset, GitHubRelease,
-};
+use crate::channels::{filter_releases_by_channel, get_update_url, GitHubAsset, GitHubRelease};
 use crate::error::UpdateError;
 use crate::types::*;
 use crate::version;
@@ -13,6 +11,12 @@ use crate::version;
 /// Checks for new releases on GitHub and performs version comparison.
 pub struct UpdateChecker {
     client: reqwest::Client,
+}
+
+impl Default for UpdateChecker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UpdateChecker {
@@ -41,7 +45,10 @@ impl UpdateChecker {
         config: &UpdateConfig,
         current_version: &str,
     ) -> Result<UpdateStatus, UpdateError> {
-        info!("checking for updates (current: {current_version}, channel: {})", config.channel);
+        info!(
+            "checking for updates (current: {current_version}, channel: {})",
+            config.channel
+        );
 
         let current = version::parse(current_version)?;
 
@@ -58,10 +65,7 @@ impl UpdateChecker {
 
         if version::is_newer(&candidate, &current) {
             let info = self.parse_release_to_update_info(&release, config)?;
-            info!(
-                "update available: {} → {}",
-                current_version, info.version
-            );
+            info!("update available: {} → {}", current_version, info.version);
             Ok(UpdateStatus::UpdateAvailable { info })
         } else {
             debug!("current version is up to date");
@@ -117,8 +121,8 @@ impl UpdateChecker {
 
         // Find the newest release by semantic version.
         let mut best: &GitHubRelease = filtered[0];
-        let mut best_ver = version::parse(&best.tag_name)
-            .unwrap_or_else(|_| version::SemVer::new(0, 0, 0));
+        let mut best_ver =
+            version::parse(&best.tag_name).unwrap_or_else(|_| version::SemVer::new(0, 0, 0));
 
         for rel in &filtered[1..] {
             if let Ok(v) = version::parse(&rel.tag_name) {
@@ -170,8 +174,7 @@ impl UpdateChecker {
 
         // Look for a .sha256 companion to fill the checksum.
         let checksum = if checksum_sha256.is_empty() {
-            find_checksum_asset(&release.assets)
-                .unwrap_or_default()
+            find_checksum_asset(&release.assets).unwrap_or_default()
         } else {
             checksum_sha256
         };
@@ -239,8 +242,8 @@ fn select_platform_asset(assets: &[GitHubAsset]) -> Option<&GitHubAsset> {
     for asset in assets {
         let name_lower = asset.name.to_lowercase();
         let matches_os = os_keywords.iter().any(|k| name_lower.contains(k));
-        let matches_arch = arch_keywords.is_empty()
-            || arch_keywords.iter().any(|k| name_lower.contains(k));
+        let matches_arch =
+            arch_keywords.is_empty() || arch_keywords.iter().any(|k| name_lower.contains(k));
         if matches_os && matches_arch {
             return Some(asset);
         }

@@ -11,6 +11,12 @@ use crate::types::RollbackInfo;
 /// Handles the actual application-update installation flow.
 pub struct UpdateInstaller;
 
+impl Default for UpdateInstaller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpdateInstaller {
     /// Create a new installer.
     pub fn new() -> Self {
@@ -37,9 +43,7 @@ impl UpdateInstaller {
 
         let meta = tokio::fs::metadata(path).await?;
         if meta.len() == 0 {
-            return Err(UpdateError::IoError(
-                "downloaded file is empty".to_string(),
-            ));
+            return Err(UpdateError::IoError("downloaded file is empty".to_string()));
         }
 
         if !expected_sha256.is_empty() {

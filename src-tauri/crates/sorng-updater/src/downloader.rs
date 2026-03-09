@@ -19,6 +19,12 @@ pub struct UpdateDownloader {
     cancelled: Arc<AtomicBool>,
 }
 
+impl Default for UpdateDownloader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpdateDownloader {
     /// Create a new downloader.
     pub fn new() -> Self {
@@ -78,11 +84,7 @@ impl UpdateDownloader {
         let total_bytes = response.content_length().unwrap_or(info.download_size);
 
         // Derive filename from URL.
-        let filename = url
-            .rsplit('/')
-            .next()
-            .unwrap_or("update.bin")
-            .to_string();
+        let filename = url.rsplit('/').next().unwrap_or("update.bin").to_string();
 
         let dest_path: PathBuf = Path::new(dest_dir).join(&filename);
 
@@ -177,10 +179,7 @@ impl UpdateDownloader {
 ///
 /// Returns `Ok(true)` on match, `Ok(false)` on mismatch, or an error
 /// if the file cannot be read.
-pub async fn verify_checksum(
-    file_path: &str,
-    expected_sha256: &str,
-) -> Result<bool, UpdateError> {
+pub async fn verify_checksum(file_path: &str, expected_sha256: &str) -> Result<bool, UpdateError> {
     if expected_sha256.is_empty() {
         debug!("no checksum provided – skipping verification");
         return Ok(true);
@@ -194,9 +193,7 @@ pub async fn verify_checksum(
 
     let matches = hex.eq_ignore_ascii_case(expected_sha256);
     if !matches {
-        warn!(
-            "checksum mismatch for {file_path}: expected {expected_sha256}, got {hex}"
-        );
+        warn!("checksum mismatch for {file_path}: expected {expected_sha256}, got {hex}");
     }
     Ok(matches)
 }

@@ -8,17 +8,15 @@ use serde::{Deserialize, Serialize};
 /// Supported update channels.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum UpdateChannel {
+    #[default]
     Stable,
     Beta,
     Nightly,
-    Custom { name: String },
-}
-
-impl Default for UpdateChannel {
-    fn default() -> Self {
-        Self::Stable
-    }
+    Custom {
+        name: String,
+    },
 }
 
 impl std::fmt::Display for UpdateChannel {

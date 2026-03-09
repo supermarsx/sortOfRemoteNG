@@ -50,10 +50,7 @@ impl ChannelManager {
     }
 
     /// Filter a set of releases to those matching the configured channel.
-    pub fn filter_releases<'a>(
-        &self,
-        releases: &'a [GitHubRelease],
-    ) -> Vec<&'a GitHubRelease> {
+    pub fn filter_releases<'a>(&self, releases: &'a [GitHubRelease]) -> Vec<&'a GitHubRelease> {
         filter_releases_by_channel(releases, &self.config.channel)
     }
 }
@@ -103,9 +100,7 @@ pub fn filter_releases_by_channel<'a>(
                     tag.contains("beta") || tag.contains("rc")
                 }
             }
-            UpdateChannel::Nightly => {
-                r.prerelease && r.tag_name.to_lowercase().contains("nightly")
-            }
+            UpdateChannel::Nightly => r.prerelease && r.tag_name.to_lowercase().contains("nightly"),
             UpdateChannel::Custom { name } => {
                 r.prerelease && r.tag_name.to_lowercase().contains(&name.to_lowercase())
             }

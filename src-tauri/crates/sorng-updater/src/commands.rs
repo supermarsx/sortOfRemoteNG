@@ -16,9 +16,7 @@ fn err_str(e: crate::error::UpdateError) -> String {
 // ─── Check ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn updater_check(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<UpdateStatus, String> {
+pub async fn updater_check(state: State<'_, UpdaterServiceState>) -> Result<UpdateStatus, String> {
     let mut svc = state.lock().await;
     svc.check_for_updates().await.map_err(err_str)
 }
@@ -26,17 +24,13 @@ pub async fn updater_check(
 // ─── Download ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn updater_download(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<String, String> {
+pub async fn updater_download(state: State<'_, UpdaterServiceState>) -> Result<String, String> {
     let mut svc = state.lock().await;
     svc.download_update().await.map_err(err_str)
 }
 
 #[tauri::command]
-pub async fn updater_cancel_download(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<(), String> {
+pub async fn updater_cancel_download(state: State<'_, UpdaterServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.cancel_download();
     Ok(())
@@ -45,17 +39,13 @@ pub async fn updater_cancel_download(
 // ─── Install ────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn updater_install(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<(), String> {
+pub async fn updater_install(state: State<'_, UpdaterServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.install_update().await.map_err(err_str)
 }
 
 #[tauri::command]
-pub async fn updater_schedule_install(
-    state: State<'_, UpdaterServiceState>,
-) -> Result<(), String> {
+pub async fn updater_schedule_install(state: State<'_, UpdaterServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.schedule_install_on_restart().await.map_err(err_str)
 }

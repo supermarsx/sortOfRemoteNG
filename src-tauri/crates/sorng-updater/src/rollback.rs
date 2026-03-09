@@ -12,6 +12,12 @@ pub struct RollbackManager {
     pub rollback_info: Option<RollbackInfo>,
 }
 
+impl Default for RollbackManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RollbackManager {
     /// Create a new, empty `RollbackManager`.
     pub fn new() -> Self {
@@ -56,11 +62,7 @@ impl RollbackManager {
     }
 
     /// Restore the application to the state captured in `info`.
-    pub async fn rollback(
-        &self,
-        info: &RollbackInfo,
-        app_dir: &str,
-    ) -> Result<(), UpdateError> {
+    pub async fn rollback(&self, info: &RollbackInfo, app_dir: &str) -> Result<(), UpdateError> {
         let backup_path = Path::new(&info.backup_path);
         if !backup_path.exists() {
             return Err(UpdateError::RollbackError(format!(
@@ -83,10 +85,7 @@ impl RollbackManager {
     }
 
     /// Delete old backups, keeping only the most recent `keep_count`.
-    pub async fn cleanup_old_backups(
-        backup_dir: &str,
-        keep_count: usize,
-    ) {
+    pub async fn cleanup_old_backups(backup_dir: &str, keep_count: usize) {
         let dir = Path::new(backup_dir);
         if !dir.exists() {
             return;
@@ -162,11 +161,9 @@ impl RollbackManager {
                 .modified()
                 .ok()
                 .map(|t| {
-                    let dur = t
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default();
+                    let dur = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
                     chrono::DateTime::from_timestamp(dur.as_secs() as i64, 0)
-                        .unwrap_or_else(|| Utc::now())
+                        .unwrap_or_else(Utc::now)
                 })
                 .unwrap_or_else(Utc::now);
 
@@ -205,10 +202,7 @@ async fn copy_dir_recursive(
 
     while let Some(entry) = read_dir.next_entry().await? {
         let entry_path = entry.path();
-        let name = entry
-            .file_name()
-            .to_string_lossy()
-            .to_string();
+        let name = entry.file_name().to_string_lossy().to_string();
 
         // Skip the backups folder when backing-up to prevent infinite recursion.
         if skip_backups && name == "backups" {
@@ -226,13 +220,15 @@ async fn copy_dir_recursive(
             tokio::fs::create_dir_all(&dest_entry).await?;
             total += Box::pin(copy_dir_recursive(&entry_path, &dest_entry, false)).await?;
         } else {
-            let bytes = tokio::fs::copy(&entry_path, &dest_entry).await.map_err(|e| {
-                UpdateError::IoError(format!(
-                    "copy {} → {}: {e}",
-                    entry_path.display(),
-                    dest_entry.display()
-                ))
-            })?;
+            let bytes = tokio::fs::copy(&entry_path, &dest_entry)
+                .await
+                .map_err(|e| {
+                    UpdateError::IoError(format!(
+                        "copy {} → {}: {e}",
+                        entry_path.display(),
+                        dest_entry.display()
+                    ))
+                })?;
             total += bytes;
         }
     }

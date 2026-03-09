@@ -136,7 +136,10 @@ impl UpdaterService {
             .to_string_lossy()
             .to_string();
 
-        let path = self.downloader.download_update(&info, &download_dir).await?;
+        let path = self
+            .downloader
+            .download_update(&info, &download_dir)
+            .await?;
         self.downloaded_path = Some(path.clone());
 
         // Verify checksum.
@@ -153,9 +156,7 @@ impl UpdaterService {
             }
         }
 
-        self.status = UpdateStatus::UpdateAvailable {
-            info: info.clone(),
-        };
+        self.status = UpdateStatus::UpdateAvailable { info: info.clone() };
         Ok(path)
     }
 
@@ -180,7 +181,10 @@ impl UpdaterService {
                 "no downloaded update to install".to_string(),
             ))?;
 
-        let info = self.latest_info.clone().ok_or(UpdateError::NoUpdateAvailable)?;
+        let info = self
+            .latest_info
+            .clone()
+            .ok_or(UpdateError::NoUpdateAvailable)?;
 
         self.status = UpdateStatus::Installing;
 
@@ -196,9 +200,7 @@ impl UpdaterService {
             .await?;
 
         // Install.
-        self.installer
-            .install_update(&path, &self.app_dir)
-            .await?;
+        self.installer.install_update(&path, &self.app_dir).await?;
 
         // Record history.
         let entry = UpdateHistory {
@@ -239,9 +241,7 @@ impl UpdaterService {
 
     /// Roll the application back to a previous version.
     pub async fn rollback(&mut self, info: &RollbackInfo) -> Result<(), UpdateError> {
-        self.rollback_mgr
-            .rollback(info, &self.app_dir)
-            .await?;
+        self.rollback_mgr.rollback(info, &self.app_dir).await?;
 
         let entry = UpdateHistory {
             id: uuid::Uuid::new_v4().to_string(),
