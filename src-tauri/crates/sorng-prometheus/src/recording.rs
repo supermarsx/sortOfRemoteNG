@@ -2,7 +2,7 @@
 //! Recording rule helpers – extracts recording rules from /api/v1/rules.
 
 use crate::client::PrometheusClient;
-use crate::error::{PrometheusError, PrometheusResult};
+use crate::error::PrometheusResult;
 use crate::rules::RuleManager;
 use crate::types::*;
 

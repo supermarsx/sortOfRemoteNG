@@ -23,8 +23,7 @@ impl RuleManager {
             .get("groups")
             .cloned()
             .unwrap_or(serde_json::Value::Array(vec![]));
-        serde_json::from_value(groups)
-            .map_err(|e| PrometheusError::parse(e.to_string()))
+        serde_json::from_value(groups).map_err(|e| PrometheusError::parse(e.to_string()))
     }
 
     /// List only alerting rule groups.
@@ -38,14 +37,10 @@ impl RuleManager {
     }
 
     /// Get a specific rule group by name.
-    pub async fn get_group(
-        client: &PrometheusClient,
-        name: &str,
-    ) -> PrometheusResult<RuleGroup> {
+    pub async fn get_group(client: &PrometheusClient, name: &str) -> PrometheusResult<RuleGroup> {
         let groups = Self::list(client, None).await?;
-        groups
-            .into_iter()
-            .find(|g| g.name == name)
-            .ok_or_else(|| PrometheusError::rule_not_found(format!("Rule group '{name}' not found")))
+        groups.into_iter().find(|g| g.name == name).ok_or_else(|| {
+            PrometheusError::rule_not_found(format!("Rule group '{name}' not found"))
+        })
     }
 }

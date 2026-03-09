@@ -30,7 +30,10 @@ impl FederationManager {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(PrometheusError::api(format!("federate HTTP {}: {body}", status.as_u16())));
+            return Err(PrometheusError::api(format!(
+                "federate HTTP {}: {body}",
+                status.as_u16()
+            )));
         }
         let metrics = resp
             .text()

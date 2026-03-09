@@ -28,6 +28,12 @@ pub struct PrometheusService {
     connections: HashMap<String, PrometheusClient>,
 }
 
+impl Default for PrometheusService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PrometheusService {
     pub fn new() -> Self {
         Self {
@@ -214,11 +220,7 @@ impl PrometheusService {
         TsdbManager::get_status(self.client(id)?).await
     }
 
-    pub async fn tsdb_snapshot(
-        &self,
-        id: &str,
-        skip_head: bool,
-    ) -> PrometheusResult<String> {
+    pub async fn tsdb_snapshot(&self, id: &str, skip_head: bool) -> PrometheusResult<String> {
         TsdbManager::snapshot(self.client(id)?, skip_head).await
     }
 
@@ -305,8 +307,15 @@ impl PrometheusService {
         created_by: &str,
         comment: &str,
     ) -> PrometheusResult<String> {
-        SilenceManager::create(self.client(id)?, matchers, starts_at, ends_at, created_by, comment)
-            .await
+        SilenceManager::create(
+            self.client(id)?,
+            matchers,
+            starts_at,
+            ends_at,
+            created_by,
+            comment,
+        )
+        .await
     }
 
     pub async fn update_silence(

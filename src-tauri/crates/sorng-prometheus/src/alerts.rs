@@ -16,8 +16,7 @@ impl AlertManager {
             .get("alerts")
             .cloned()
             .unwrap_or(serde_json::Value::Array(vec![]));
-        serde_json::from_value(alerts)
-            .map_err(|e| PrometheusError::parse(e.to_string()))
+        serde_json::from_value(alerts).map_err(|e| PrometheusError::parse(e.to_string()))
     }
 
     /// Get active and dropped Alertmanager endpoints.

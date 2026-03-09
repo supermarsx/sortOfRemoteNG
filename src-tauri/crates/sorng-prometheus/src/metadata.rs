@@ -2,7 +2,7 @@
 //! Metric metadata via /api/v1/metadata.
 
 use crate::client::PrometheusClient;
-use crate::error::{PrometheusError, PrometheusResult};
+use crate::error::PrometheusResult;
 use crate::types::*;
 use std::collections::HashMap;
 

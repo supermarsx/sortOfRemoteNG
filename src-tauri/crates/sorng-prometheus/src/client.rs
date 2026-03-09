@@ -27,7 +27,11 @@ impl PrometheusClient {
     // ── URL builders ─────────────────────────────────────────────────
 
     fn scheme(&self) -> &str {
-        if self.config.use_tls.unwrap_or(false) { "https" } else { "http" }
+        if self.config.use_tls.unwrap_or(false) {
+            "https"
+        } else {
+            "http"
+        }
     }
 
     fn base_url(&self) -> String {
@@ -56,7 +60,9 @@ impl PrometheusClient {
             401 => PrometheusError::auth(format!("Authentication failed (HTTP 401): {body}")),
             403 => PrometheusError::auth(format!("Access denied (HTTP 403): {body}")),
             404 => PrometheusError::api(format!("Not found (HTTP 404): {body}")),
-            422 => PrometheusError::invalid_query(format!("Unprocessable entity (HTTP 422): {body}")),
+            422 => {
+                PrometheusError::invalid_query(format!("Unprocessable entity (HTTP 422): {body}"))
+            }
             503 => PrometheusError::api(format!("Service unavailable (HTTP 503): {body}")),
             _ => PrometheusError::http(format!("HTTP {status}: {body}")),
         }
@@ -85,10 +91,7 @@ impl PrometheusClient {
             .json()
             .await
             .map_err(|e| PrometheusError::parse(format!("GET {url} json: {e}")))?;
-        let data = envelope
-            .get("data")
-            .cloned()
-            .unwrap_or(envelope.clone());
+        let data = envelope.get("data").cloned().unwrap_or(envelope.clone());
         serde_json::from_value(data)
             .map_err(|e| PrometheusError::parse(format!("GET {url} parse data: {e}")))
     }
@@ -308,10 +311,7 @@ impl PrometheusClient {
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        let tsdb: serde_json::Value = self
-            .api_get("status/tsdb", &[])
-            .await
-            .unwrap_or_default();
+        let tsdb: serde_json::Value = self.api_get("status/tsdb", &[]).await.unwrap_or_default();
         let series_count = tsdb
             .get("headStats")
             .and_then(|h| h.get("numSeries"))
@@ -329,7 +329,13 @@ impl PrometheusClient {
     /// Return the base URL for Alertmanager API (derived from same host, port 9093).
     pub fn alertmanager_url(&self, path: &str) -> String {
         let port = 9093;
-        format!("{}://{}:{}/api/v2/{}", self.scheme(), self.config.host, port, path)
+        format!(
+            "{}://{}:{}/api/v2/{}",
+            self.scheme(),
+            self.config.host,
+            port,
+            path
+        )
     }
 
     /// Return the base URL for federation endpoint.

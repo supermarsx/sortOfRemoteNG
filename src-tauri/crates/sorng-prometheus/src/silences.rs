@@ -2,7 +2,7 @@
 //! Alertmanager silence management via Alertmanager API v2.
 
 use crate::client::PrometheusClient;
-use crate::error::{PrometheusError, PrometheusResult};
+use crate::error::PrometheusResult;
 use crate::types::*;
 
 pub struct SilenceManager;

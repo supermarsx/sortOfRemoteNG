@@ -27,7 +27,11 @@ impl ConfigManager {
         // /-/reload is outside the /api/v1 prefix so we use post on base URL
         let url = format!(
             "{}://{}:{}/-/reload",
-            if client.config.use_tls.unwrap_or(false) { "https" } else { "http" },
+            if client.config.use_tls.unwrap_or(false) {
+                "https"
+            } else {
+                "http"
+            },
             client.config.host,
             client.config.port.unwrap_or(9090)
         );
@@ -43,9 +47,7 @@ impl ConfigManager {
 
     /// Get command-line flags the Prometheus server was started with.
     /// Endpoint: GET /api/v1/status/flags
-    pub async fn get_flags(
-        client: &PrometheusClient,
-    ) -> PrometheusResult<HashMap<String, String>> {
+    pub async fn get_flags(client: &PrometheusClient) -> PrometheusResult<HashMap<String, String>> {
         client.api_get("status/flags", &[]).await
     }
 }

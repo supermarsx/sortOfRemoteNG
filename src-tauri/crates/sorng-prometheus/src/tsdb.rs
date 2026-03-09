@@ -2,7 +2,7 @@
 //! TSDB administration: status, snapshots, series deletion, tombstone cleanup.
 
 use crate::client::PrometheusClient;
-use crate::error::{PrometheusError, PrometheusResult};
+use crate::error::PrometheusResult;
 use crate::types::*;
 
 pub struct TsdbManager;
@@ -16,13 +16,11 @@ impl TsdbManager {
 
     /// Create a snapshot of the current TSDB data.
     /// Endpoint: POST /api/v1/admin/tsdb/snapshot
-    pub async fn snapshot(
-        client: &PrometheusClient,
-        skip_head: bool,
-    ) -> PrometheusResult<String> {
+    pub async fn snapshot(client: &PrometheusClient, skip_head: bool) -> PrometheusResult<String> {
         let skip = if skip_head { "true" } else { "false" };
-        let raw: serde_json::Value =
-            client.api_post("admin/tsdb/snapshot", &[("skip_head", skip)]).await?;
+        let raw: serde_json::Value = client
+            .api_post("admin/tsdb/snapshot", &[("skip_head", skip)])
+            .await?;
         let name = raw
             .get("name")
             .and_then(|v| v.as_str())
@@ -49,12 +47,16 @@ impl TsdbManager {
         if let Some(e) = end {
             params.push(("end", e));
         }
-        client.api_post_empty("admin/tsdb/delete_series", &params).await
+        client
+            .api_post_empty("admin/tsdb/delete_series", &params)
+            .await
     }
 
     /// Remove deleted data from disk (clean tombstones).
     /// Endpoint: POST /api/v1/admin/tsdb/clean_tombstones
     pub async fn clean_tombstones(client: &PrometheusClient) -> PrometheusResult<()> {
-        client.api_post_empty("admin/tsdb/clean_tombstones", &[]).await
+        client
+            .api_post_empty("admin/tsdb/clean_tombstones", &[])
+            .await
     }
 }

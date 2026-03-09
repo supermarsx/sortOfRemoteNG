@@ -31,8 +31,8 @@ impl QueryManager {
             .unwrap_or("vector")
             .to_string();
         let result_arr = raw.get("result").cloned().unwrap_or_default();
-        let data: Vec<QuerySample> =
-            serde_json::from_value(result_arr).map_err(|e| PrometheusError::parse(e.to_string()))?;
+        let data: Vec<QuerySample> = serde_json::from_value(result_arr)
+            .map_err(|e| PrometheusError::parse(e.to_string()))?;
         Ok(QueryResult { result_type, data })
     }
 
@@ -62,8 +62,8 @@ impl QueryManager {
             .unwrap_or("matrix")
             .to_string();
         let result_arr = raw.get("result").cloned().unwrap_or_default();
-        let data: Vec<QueryRangeSample> =
-            serde_json::from_value(result_arr).map_err(|e| PrometheusError::parse(e.to_string()))?;
+        let data: Vec<QueryRangeSample> = serde_json::from_value(result_arr)
+            .map_err(|e| PrometheusError::parse(e.to_string()))?;
         Ok(RangeQueryResult { result_type, data })
     }
 

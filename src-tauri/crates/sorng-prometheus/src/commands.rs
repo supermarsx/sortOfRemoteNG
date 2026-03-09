@@ -21,7 +21,12 @@ pub async fn prometheus_connect(
     id: String,
     config: PrometheusConnectionConfig,
 ) -> CmdResult<PrometheusConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -172,7 +177,12 @@ pub async fn prometheus_list_active_targets(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<Vec<PromTarget>> {
-    state.lock().await.list_active_targets(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_active_targets(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -180,7 +190,12 @@ pub async fn prometheus_list_dropped_targets(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<Vec<PromTarget>> {
-    state.lock().await.list_dropped_targets(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_dropped_targets(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -220,7 +235,12 @@ pub async fn prometheus_list_alerting_rules(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<Vec<RuleGroup>> {
-    state.lock().await.list_alerting_rules(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_alerting_rules(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -228,7 +248,12 @@ pub async fn prometheus_list_recording_rules(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<Vec<RuleGroup>> {
-    state.lock().await.list_recording_rules(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_recording_rules(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -237,7 +262,12 @@ pub async fn prometheus_get_rule_group(
     id: String,
     name: String,
 ) -> CmdResult<RuleGroup> {
-    state.lock().await.get_rule_group(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_rule_group(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── Alerts ────────────────────────────────────────────────────────
@@ -255,7 +285,12 @@ pub async fn prometheus_get_alertmanagers(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<AlertManagerInfo> {
-    state.lock().await.get_alertmanagers(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_alertmanagers(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Config ────────────────────────────────────────────────────────
@@ -291,7 +326,12 @@ pub async fn prometheus_get_tsdb_status(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<TsdbStatus> {
-    state.lock().await.get_tsdb_status(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_tsdb_status(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -300,7 +340,12 @@ pub async fn prometheus_tsdb_snapshot(
     id: String,
     skip_head: bool,
 ) -> CmdResult<String> {
-    state.lock().await.tsdb_snapshot(&id, skip_head).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .tsdb_snapshot(&id, skip_head)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -325,7 +370,12 @@ pub async fn prometheus_tsdb_clean_tombstones(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state.lock().await.tsdb_clean_tombstones(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .tsdb_clean_tombstones(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Metadata ──────────────────────────────────────────────────────
@@ -351,7 +401,12 @@ pub async fn prometheus_get_metadata(
     id: String,
     metric: String,
 ) -> CmdResult<Vec<MetricMetadata>> {
-    state.lock().await.get_metadata(&id, &metric).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_metadata(&id, &metric)
+        .await
+        .map_err(map_err)
 }
 
 // ── Federation ────────────────────────────────────────────────────
@@ -363,7 +418,12 @@ pub async fn prometheus_federate(
     match_selectors: Vec<String>,
 ) -> CmdResult<FederationResult> {
     let refs: Vec<&str> = match_selectors.iter().map(|s| s.as_str()).collect();
-    state.lock().await.federate(&id, &refs).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .federate(&id, &refs)
+        .await
+        .map_err(map_err)
 }
 
 // ── Recording rules ───────────────────────────────────────────────
@@ -373,7 +433,12 @@ pub async fn prometheus_list_recording_rule_entries(
     state: State<'_, PrometheusServiceState>,
     id: String,
 ) -> CmdResult<Vec<RecordingRule>> {
-    state.lock().await.list_recording_rule_entries(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_recording_rule_entries(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -412,7 +477,12 @@ pub async fn prometheus_get_silence(
     id: String,
     silence_id: String,
 ) -> CmdResult<Silence> {
-    state.lock().await.get_silence(&id, &silence_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_silence(&id, &silence_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -466,7 +536,12 @@ pub async fn prometheus_expire_silence(
     id: String,
     silence_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.expire_silence(&id, &silence_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .expire_silence(&id, &silence_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -475,5 +550,10 @@ pub async fn prometheus_delete_silence(
     id: String,
     silence_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_silence(&id, &silence_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_silence(&id, &silence_id)
+        .await
+        .map_err(map_err)
 }
