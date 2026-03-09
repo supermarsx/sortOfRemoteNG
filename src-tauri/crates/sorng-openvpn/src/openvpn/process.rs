@@ -30,6 +30,12 @@ pub struct ProcessHandle {
     pub stderr_buf: RwLock<String>,
 }
 
+impl Default for ProcessHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcessHandle {
     pub fn new() -> Self {
         Self {
@@ -111,7 +117,10 @@ pub fn build_args(cfg: &OpenVpnConfig, mgmt_port: u16) -> Vec<String> {
     // TLS
     match &cfg.tls_mode {
         TlsMode::None => {}
-        TlsMode::TlsAuth { key_path, direction } => {
+        TlsMode::TlsAuth {
+            key_path,
+            direction,
+        } => {
             if !key_path.is_empty() {
                 args.push("--tls-auth".into());
                 args.push(key_path.clone());
@@ -325,10 +334,7 @@ pub async fn write_temp_config(cfg: &OpenVpnConfig) -> Result<PathBuf, OpenVpnEr
 }
 
 /// Write a temporary auth-user-pass file.
-pub async fn write_temp_auth(
-    username: &str,
-    password: &str,
-) -> Result<PathBuf, OpenVpnError> {
+pub async fn write_temp_auth(username: &str, password: &str) -> Result<PathBuf, OpenVpnError> {
     let dir = std::env::temp_dir().join("sorng-openvpn");
     tokio::fs::create_dir_all(&dir).await.map_err(|e| {
         OpenVpnError::new(OpenVpnErrorKind::IoError, "Failed to create temp dir")
@@ -439,10 +445,13 @@ pub fn find_free_mgmt_port() -> Result<u16, OpenVpnError> {
         OpenVpnError::new(OpenVpnErrorKind::IoError, "Cannot bind to ephemeral port")
             .with_detail(e.to_string())
     })?;
-    let port = listener.local_addr().map_err(|e| {
-        OpenVpnError::new(OpenVpnErrorKind::IoError, "Cannot get local addr")
-            .with_detail(e.to_string())
-    })?.port();
+    let port = listener
+        .local_addr()
+        .map_err(|e| {
+            OpenVpnError::new(OpenVpnErrorKind::IoError, "Cannot get local addr")
+                .with_detail(e.to_string())
+        })?
+        .port();
     Ok(port)
 }
 

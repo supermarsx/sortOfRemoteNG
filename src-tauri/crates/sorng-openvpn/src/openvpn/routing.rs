@@ -184,17 +184,15 @@ pub fn parse_route_table(output: &str) -> Vec<RouteTableEntry> {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
         // Try parsing as Windows route-print output
-        if parts.len() >= 5 {
-            if is_ip_like(parts[0]) && is_ip_like(parts[1]) {
-                entries.push(RouteTableEntry {
-                    destination: parts[0].to_string(),
-                    mask: parts[1].to_string(),
-                    gateway: parts[2].to_string(),
-                    interface: parts[3].to_string(),
-                    metric: parts[4].parse().unwrap_or(0),
-                });
-                continue;
-            }
+        if parts.len() >= 5 && is_ip_like(parts[0]) && is_ip_like(parts[1]) {
+            entries.push(RouteTableEntry {
+                destination: parts[0].to_string(),
+                mask: parts[1].to_string(),
+                gateway: parts[2].to_string(),
+                interface: parts[3].to_string(),
+                metric: parts[4].parse().unwrap_or(0),
+            });
+            continue;
         }
 
         // Try Linux `ip route` format: "10.0.0.0/8 via 10.8.0.1 dev tun0 metric 100"
@@ -361,10 +359,7 @@ pub async fn add_route(route: &SubnetRoute) -> Result<(), OpenVpnError> {
     if !output.status.success() {
         return Err(OpenVpnError {
             kind: OpenVpnErrorKind::RouteError,
-            message: format!(
-                "Route add failed for {}/{}",
-                route.network, route.mask
-            ),
+            message: format!("Route add failed for {}/{}", route.network, route.mask),
             detail: Some(String::from_utf8_lossy(&output.stderr).to_string()),
         });
     }
@@ -434,7 +429,12 @@ pub async fn apply_routing_policy(
             route.gateway = Some(vpn_gateway.to_string());
         }
         if let Err(e) = add_route(&route).await {
-            log::error!("Failed to add route {}/{}: {}", route.network, route.mask, e.message);
+            log::error!(
+                "Failed to add route {}/{}: {}",
+                route.network,
+                route.mask,
+                e.message
+            );
         } else {
             applied.push(route);
         }
@@ -447,7 +447,12 @@ pub async fn apply_routing_policy(
             route.gateway = Some(vpn_gateway.to_string());
         }
         if let Err(e) = add_route(&route).await {
-            log::error!("Failed to add static route {}/{}: {}", route.network, route.mask, e.message);
+            log::error!(
+                "Failed to add static route {}/{}: {}",
+                route.network,
+                route.mask,
+                e.message
+            );
         } else {
             applied.push(route);
         }
@@ -544,11 +549,7 @@ pub fn policy_to_ovpn_directives(policy: &RoutingPolicy) -> Vec<String> {
     }
 
     for s in &policy.include_subnets {
-        let mut parts = vec![
-            "route".to_string(),
-            s.network.clone(),
-            s.mask.clone(),
-        ];
+        let mut parts = vec!["route".to_string(), s.network.clone(), s.mask.clone()];
         if let Some(gw) = &s.gateway {
             parts.push(gw.clone());
         } else {
@@ -613,13 +614,21 @@ mod tests {
 
     #[test]
     fn ip_in_subnet_true() {
-        assert!(ip_in_subnet("192.168.1.100", "192.168.1.0", "255.255.255.0"));
+        assert!(ip_in_subnet(
+            "192.168.1.100",
+            "192.168.1.0",
+            "255.255.255.0"
+        ));
         assert!(ip_in_subnet("10.0.5.3", "10.0.0.0", "255.0.0.0"));
     }
 
     #[test]
     fn ip_in_subnet_false() {
-        assert!(!ip_in_subnet("192.168.2.100", "192.168.1.0", "255.255.255.0"));
+        assert!(!ip_in_subnet(
+            "192.168.2.100",
+            "192.168.1.0",
+            "255.255.255.0"
+        ));
         assert!(!ip_in_subnet("172.17.0.1", "192.168.0.0", "255.255.0.0"));
     }
 
@@ -677,9 +686,7 @@ mod tests {
 
     #[test]
     fn policy_split_tunnel() {
-        let p = RoutingPolicy::split_tunnel(vec![
-            SubnetRoute::new("10.0.0.0", "255.0.0.0"),
-        ]);
+        let p = RoutingPolicy::split_tunnel(vec![SubnetRoute::new("10.0.0.0", "255.0.0.0")]);
         assert!(!p.redirect_gateway);
         assert!(p.is_split_tunnel());
         assert_eq!(p.include_subnets.len(), 1);
@@ -698,9 +705,7 @@ mod tests {
 
     #[test]
     fn directives_split_tunnel() {
-        let p = RoutingPolicy::split_tunnel(vec![
-            SubnetRoute::new("10.0.0.0", "255.0.0.0"),
-        ]);
+        let p = RoutingPolicy::split_tunnel(vec![SubnetRoute::new("10.0.0.0", "255.0.0.0")]);
         let d = policy_to_ovpn_directives(&p);
         let joined = d.join("\n");
         assert!(joined.contains("route 10.0.0.0 255.0.0.0"));
@@ -796,7 +801,7 @@ mod tests {
     #[test]
     fn routing_policy_serde_roundtrip() {
         let p = RoutingPolicy::split_tunnel(vec![
-            SubnetRoute::new("10.0.0.0", "255.0.0.0").with_gateway("10.8.0.1"),
+            SubnetRoute::new("10.0.0.0", "255.0.0.0").with_gateway("10.8.0.1")
         ]);
         let json = serde_json::to_string(&p).unwrap();
         let back: RoutingPolicy = serde_json::from_str(&json).unwrap();

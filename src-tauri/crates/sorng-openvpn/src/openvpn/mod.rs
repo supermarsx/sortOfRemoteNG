@@ -1,17 +1,17 @@
 //! OpenVPN module root – re-exports public API surface.
 
-pub mod types;
-pub mod config;
-pub mod process;
-pub mod management;
-pub mod tunnel;
 pub mod auth;
-pub mod routing;
+pub mod commands;
+pub mod config;
 pub mod dns;
 pub mod logging;
+pub mod management;
+pub mod process;
+pub mod routing;
 pub mod service;
-pub mod commands;
+pub mod tunnel;
+pub mod types;
 
-pub use types::*;
-pub use service::{OpenVpnService, OpenVpnServiceState};
 pub use commands::*;
+pub use service::{OpenVpnService, OpenVpnServiceState};
+pub use types::*;

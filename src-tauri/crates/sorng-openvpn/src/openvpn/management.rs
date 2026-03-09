@@ -29,7 +29,10 @@ impl MgmtClient {
             .map_err(|e| {
                 OpenVpnError::new(
                     OpenVpnErrorKind::ManagementConnectFailed,
-                    format!("Cannot connect to management interface at {}:{}", addr, port),
+                    format!(
+                        "Cannot connect to management interface at {}:{}",
+                        addr, port
+                    ),
                 )
                 .with_detail(e.to_string())
             })?;
@@ -186,11 +189,7 @@ impl MgmtClient {
     }
 
     /// Proxy auth response.
-    pub async fn proxy_auth(
-        &mut self,
-        username: &str,
-        password: &str,
-    ) -> Result<(), OpenVpnError> {
+    pub async fn proxy_auth(&mut self, username: &str, password: &str) -> Result<(), OpenVpnError> {
         self.send_command(&format!("username \"HTTP Proxy\" {}", username))
             .await?;
         self.send_command(&format!("password \"HTTP Proxy\" {}", password))
@@ -244,8 +243,14 @@ fn parse_realtime_message(rest: &str) -> Option<MgmtMessage> {
                     timestamp: fields[0].parse().unwrap_or(0),
                     state_name: fields[1].to_string(),
                     description: fields.get(2).unwrap_or(&"").to_string(),
-                    local_ip: fields.get(3).filter(|s| !s.is_empty()).map(|s| s.to_string()),
-                    remote_ip: fields.get(4).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+                    local_ip: fields
+                        .get(3)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string()),
+                    remote_ip: fields
+                        .get(4)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string()),
                     local_port: fields.get(5).and_then(|s| s.parse().ok()),
                     remote_port: fields.get(6).and_then(|s| s.parse().ok()),
                 }))
@@ -425,8 +430,7 @@ mod tests {
 
     #[test]
     fn parse_password_needed() {
-        let msg =
-            parse_mgmt_line(">PASSWORD:Need 'Auth' username/password").unwrap();
+        let msg = parse_mgmt_line(">PASSWORD:Need 'Auth' username/password").unwrap();
         if let MgmtMessage::PasswordNeeded(s) = msg {
             assert!(s.contains("Auth"));
         } else {
@@ -436,8 +440,7 @@ mod tests {
 
     #[test]
     fn parse_log() {
-        let msg = parse_mgmt_line(">LOG:1234567890,I,Initialization Sequence Completed")
-            .unwrap();
+        let msg = parse_mgmt_line(">LOG:1234567890,I,Initialization Sequence Completed").unwrap();
         if let MgmtMessage::Log(entry) = msg {
             assert_eq!(entry.flags, "I");
             assert!(entry.message.contains("Initialization"));

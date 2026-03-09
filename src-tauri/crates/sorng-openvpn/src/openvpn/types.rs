@@ -12,8 +12,10 @@ use std::path::PathBuf;
 /// Top-level connection status.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ConnectionStatus {
     /// No process running.
+    #[default]
     Disconnected,
     /// Process launched, waiting for management interface.
     Initializing,
@@ -39,12 +41,6 @@ pub enum ConnectionStatus {
     Held,
     /// Process exited with an error.
     Error(String),
-}
-
-impl Default for ConnectionStatus {
-    fn default() -> Self {
-        Self::Disconnected
-    }
 }
 
 impl fmt::Display for ConnectionStatus {
@@ -74,17 +70,13 @@ impl fmt::Display for ConnectionStatus {
 /// Transport protocol for the VPN tunnel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum VpnProtocol {
+    #[default]
     Udp,
     Tcp,
     Udp6,
     Tcp6,
-}
-
-impl Default for VpnProtocol {
-    fn default() -> Self {
-        Self::Udp
-    }
 }
 
 impl fmt::Display for VpnProtocol {
@@ -113,15 +105,11 @@ impl VpnProtocol {
 /// TUN/TAP device type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum DeviceType {
+    #[default]
     Tun,
     Tap,
-}
-
-impl Default for DeviceType {
-    fn default() -> Self {
-        Self::Tun
-    }
 }
 
 impl fmt::Display for DeviceType {
@@ -138,8 +126,9 @@ impl fmt::Display for DeviceType {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Cipher algorithm.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Cipher {
+    #[default]
     Aes256Gcm,
     Aes128Gcm,
     Aes256Cbc,
@@ -147,12 +136,6 @@ pub enum Cipher {
     ChaCha20Poly1305,
     BlowfishCbc,
     Custom(String),
-}
-
-impl Default for Cipher {
-    fn default() -> Self {
-        Self::Aes256Gcm
-    }
 }
 
 impl fmt::Display for Cipher {
@@ -193,19 +176,14 @@ impl Cipher {
 }
 
 /// HMAC digest algorithm.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AuthDigest {
+    #[default]
     Sha256,
     Sha384,
     Sha512,
     Sha1,
     Custom(String),
-}
-
-impl Default for AuthDigest {
-    fn default() -> Self {
-        Self::Sha256
-    }
 }
 
 impl fmt::Display for AuthDigest {
@@ -235,7 +213,9 @@ impl AuthDigest {
 /// Compression algorithm.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Compression {
+    #[default]
     None,
     Lz4,
     Lz4V2,
@@ -243,12 +223,6 @@ pub enum Compression {
     Stub,
     StubV2,
     Migrate,
-}
-
-impl Default for Compression {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl fmt::Display for Compression {
@@ -286,21 +260,20 @@ impl Compression {
 /// TLS wrapping mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum TlsMode {
     /// No extra TLS wrapping.
+    #[default]
     None,
     /// `--tls-auth <file> <direction>`
-    TlsAuth { key_path: String, direction: Option<u8> },
+    TlsAuth {
+        key_path: String,
+        direction: Option<u8>,
+    },
     /// `--tls-crypt <file>`
     TlsCrypt { key_path: String },
     /// `--tls-crypt-v2 <file>`
     TlsCryptV2 { key_path: String },
-}
-
-impl Default for TlsMode {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -620,7 +593,11 @@ pub enum MgmtMessage {
     /// >FATAL: message
     Fatal(String),
     /// >REMOTE: host,port,proto
-    Remote { host: String, port: u16, proto: String },
+    Remote {
+        host: String,
+        port: u16,
+        proto: String,
+    },
     /// >RST: restart
     Restart,
     /// >NEED-OK: message
@@ -873,8 +850,8 @@ impl ReconnectPolicy {
             return 0;
         }
         let base = self.base_delay_secs as f64 * self.backoff_factor.powi(attempt as i32);
-        let clamped = base.min(self.max_delay_secs as f64) as u64;
-        clamped
+
+        base.min(self.max_delay_secs as f64) as u64
     }
 
     /// Whether another attempt is allowed.
@@ -910,10 +887,7 @@ mod tests {
     #[test]
     fn status_display() {
         assert_eq!(ConnectionStatus::Connected.to_string(), "Connected");
-        assert_eq!(
-            ConnectionStatus::Error("x".into()).to_string(),
-            "Error: x"
-        );
+        assert_eq!(ConnectionStatus::Error("x".into()).to_string(), "Error: x");
     }
 
     // ── VpnProtocol ──────────────────────────────────────────────
@@ -1024,7 +998,7 @@ mod tests {
         assert_eq!(p.delay_for_attempt(0), 2); // 2 * 2^0
         assert_eq!(p.delay_for_attempt(1), 4); // 2 * 2^1
         assert_eq!(p.delay_for_attempt(2), 8); // 2 * 2^2
-        // Should be clamped to max_delay_secs (300)
+                                               // Should be clamped to max_delay_secs (300)
         assert!(p.delay_for_attempt(9) <= 300);
     }
 
@@ -1089,10 +1063,7 @@ mod tests {
 
     #[test]
     fn mgmt_message_serde_roundtrip() {
-        let msg = MgmtMessage::ByteCount {
-            rx: 1234,
-            tx: 5678,
-        };
+        let msg = MgmtMessage::ByteCount { rx: 1234, tx: 5678 };
         let json = serde_json::to_string(&msg).unwrap();
         let back: MgmtMessage = serde_json::from_str(&json).unwrap();
         if let MgmtMessage::ByteCount { rx, tx } = back {

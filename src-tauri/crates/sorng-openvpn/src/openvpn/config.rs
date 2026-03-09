@@ -47,7 +47,7 @@ pub fn parse_ovpn(content: &str) -> Result<OpenVpnConfig, String> {
             }
             "remote-random" => cfg.remote_random = true,
             "resolv-retry" => {
-                if args.first().map(|a| *a) == Some("infinite") {
+                if args.first().copied() == Some("infinite") {
                     cfg.resolve_retry_infinite = true;
                 }
             }
@@ -66,7 +66,7 @@ pub fn parse_ovpn(content: &str) -> Result<OpenVpnConfig, String> {
                 }
             }
             "dev-type" => {
-                if args.first().map(|a| *a) == Some("tap") {
+                if args.first().copied() == Some("tap") {
                     cfg.device_type = DeviceType::Tap;
                 }
             }
@@ -97,7 +97,7 @@ pub fn parse_ovpn(content: &str) -> Result<OpenVpnConfig, String> {
             }
             "data-ciphers" | "ncp-ciphers" => {
                 if let Some(list) = args.first() {
-                    cfg.data_ciphers = list.split(':').map(|c| Cipher::from_str_loose(c)).collect();
+                    cfg.data_ciphers = list.split(':').map(Cipher::from_str_loose).collect();
                 }
             }
             "auth" => {
@@ -147,7 +147,7 @@ pub fn parse_ovpn(content: &str) -> Result<OpenVpnConfig, String> {
                 cfg.verify_x509_name = parts.get(1).map(|s| s.to_string());
             }
             "remote-cert-tls" => {
-                cfg.remote_cert_tls = args.first().map(|a| *a) != Some("none");
+                cfg.remote_cert_tls = args.first().copied() != Some("none");
             }
 
             // ── Network tuning ────────────────────────────────
@@ -271,8 +271,8 @@ pub fn parse_ovpn(content: &str) -> Result<OpenVpnConfig, String> {
             "fast-io" => cfg.fast_io = true,
             "allow-pull-fqdn" => cfg.allow_pull_fqdn = true,
             "client" => {} // implied
-            "pull-filter" | "setenv" | "up" | "down" | "script-security" | "user"
-            | "group" | "chroot" | "daemon" => {
+            "pull-filter" | "setenv" | "up" | "down" | "script-security" | "user" | "group"
+            | "chroot" | "daemon" => {
                 // Recognised but stored as custom
                 cfg.custom_directives.push(raw.to_string());
             }
@@ -376,7 +376,10 @@ pub fn generate_ovpn(cfg: &OpenVpnConfig) -> String {
     // TLS
     match &cfg.tls_mode {
         TlsMode::None => {}
-        TlsMode::TlsAuth { key_path, direction } => {
+        TlsMode::TlsAuth {
+            key_path,
+            direction,
+        } => {
             if key_path.is_empty() {
                 // inline
             } else if let Some(d) = direction {
@@ -730,9 +733,11 @@ pub fn builtin_templates() -> Vec<ConfigTemplate> {
             name: "Full Tunnel (Redirect Gateway)".to_string(),
             description: "Routes all traffic through VPN, blocks outside DNS".to_string(),
             config: {
-                let mut c = OpenVpnConfig::default();
-                c.redirect_gateway = true;
-                c.block_outside_dns = true;
+                let mut c = OpenVpnConfig {
+                    redirect_gateway: true,
+                    block_outside_dns: true,
+                    ..Default::default()
+                };
                 c.remotes.push(RemoteEndpoint {
                     host: "vpn.example.com".into(),
                     port: 1194,
@@ -745,9 +750,11 @@ pub fn builtin_templates() -> Vec<ConfigTemplate> {
             name: "Split Tunnel".to_string(),
             description: "Only routes specified networks through VPN".to_string(),
             config: {
-                let mut c = OpenVpnConfig::default();
-                c.route_no_pull = true;
-                c.pull_routes = false;
+                let mut c = OpenVpnConfig {
+                    route_no_pull: true,
+                    pull_routes: false,
+                    ..Default::default()
+                };
                 c.routes.push(RouteEntry {
                     network: "10.0.0.0".into(),
                     netmask: "255.0.0.0".into(),
@@ -772,13 +779,17 @@ pub fn builtin_templates() -> Vec<ConfigTemplate> {
             name: "High Security".to_string(),
             description: "TLS-crypt, SHA512 auth, TLS 1.3 minimum".to_string(),
             config: {
-                let mut c = OpenVpnConfig::default();
-                c.cipher = Cipher::Aes256Gcm;
-                c.auth_digest = AuthDigest::Sha512;
-                c.tls_version_min = Some("1.3".to_string());
-                c.tls_mode = TlsMode::TlsCrypt { key_path: "tls-crypt.key".into() };
-                c.block_outside_dns = true;
-                c.redirect_gateway = true;
+                let mut c = OpenVpnConfig {
+                    cipher: Cipher::Aes256Gcm,
+                    auth_digest: AuthDigest::Sha512,
+                    tls_version_min: Some("1.3".to_string()),
+                    tls_mode: TlsMode::TlsCrypt {
+                        key_path: "tls-crypt.key".into(),
+                    },
+                    block_outside_dns: true,
+                    redirect_gateway: true,
+                    ..Default::default()
+                };
                 c.remotes.push(RemoteEndpoint {
                     host: "vpn.example.com".into(),
                     port: 1194,
@@ -1160,7 +1171,11 @@ mod tests {
     #[test]
     fn validate_mtu_range() {
         let mut cfg = OpenVpnConfig::default();
-        cfg.remotes.push(RemoteEndpoint { host: "h".into(), port: 1, protocol: VpnProtocol::Udp });
+        cfg.remotes.push(RemoteEndpoint {
+            host: "h".into(),
+            port: 1,
+            protocol: VpnProtocol::Udp,
+        });
         cfg.mtu = Some(100);
         let result = validate_config(&cfg);
         assert!(result.warnings.iter().any(|w| w.contains("576")));

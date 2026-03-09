@@ -205,7 +205,10 @@ impl LogBuffer {
 
     /// Filter entries by source.
     pub fn filter_source(&self, source: &LogSource) -> Vec<&LogEntry> {
-        self.entries.iter().filter(|e| &e.source == source).collect()
+        self.entries
+            .iter()
+            .filter(|e| &e.source == source)
+            .collect()
     }
 
     /// Search entries by message substring.
@@ -218,11 +221,7 @@ impl LogBuffer {
     }
 
     /// Get entries in a time range.
-    pub fn range(
-        &self,
-        from: DateTime<Utc>,
-        to: DateTime<Utc>,
-    ) -> Vec<&LogEntry> {
+    pub fn range(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<&LogEntry> {
         self.entries
             .iter()
             .filter(|e| e.timestamp >= from && e.timestamp <= to)
@@ -361,11 +360,13 @@ pub async fn write_log_file(
     format: ExportFormat,
 ) -> Result<(), OpenVpnError> {
     let content = export_logs(entries, format);
-    tokio::fs::write(path, content).await.map_err(|e| OpenVpnError {
-        kind: OpenVpnErrorKind::IoError,
-        message: format!("Cannot write log file {}: {}", path.display(), e),
-        detail: None,
-    })
+    tokio::fs::write(path, content)
+        .await
+        .map_err(|e| OpenVpnError {
+            kind: OpenVpnErrorKind::IoError,
+            message: format!("Cannot write log file {}: {}", path.display(), e),
+            detail: None,
+        })
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -515,6 +516,10 @@ impl ConnectionLog {
 
     pub async fn len(&self) -> usize {
         self.buffer.read().await.len()
+    }
+
+    pub async fn is_empty(&self) -> bool {
+        self.buffer.read().await.len() == 0
     }
 
     pub async fn export(&self, format: ExportFormat) -> String {
@@ -780,7 +785,8 @@ mod tests {
     #[tokio::test]
     async fn connection_log_search() {
         let log = ConnectionLog::new("conn-1", 100);
-        log.append(LogEntry::management("connected to server")).await;
+        log.append(LogEntry::management("connected to server"))
+            .await;
         log.append(LogEntry::management("route added")).await;
         let results = log.search("server").await;
         assert_eq!(results.len(), 1);
@@ -823,7 +829,11 @@ mod tests {
 
     #[test]
     fn export_format_serde() {
-        for fmt in &[ExportFormat::PlainText, ExportFormat::Json, ExportFormat::Csv] {
+        for fmt in &[
+            ExportFormat::PlainText,
+            ExportFormat::Json,
+            ExportFormat::Csv,
+        ] {
             let json = serde_json::to_string(fmt).unwrap();
             let back: ExportFormat = serde_json::from_str(&json).unwrap();
             assert_eq!(fmt, &back);

@@ -163,7 +163,8 @@ pub async fn openvpn_validate_config(
 }
 
 #[tauri::command]
-pub async fn openvpn_get_config_templates() -> Result<Vec<crate::openvpn::config::ConfigTemplate>, String> {
+pub async fn openvpn_get_config_templates(
+) -> Result<Vec<crate::openvpn::config::ConfigTemplate>, String> {
     Ok(crate::openvpn::config::builtin_templates())
 }
 
@@ -187,7 +188,8 @@ pub async fn openvpn_get_routing_policy(
 }
 
 #[tauri::command]
-pub async fn openvpn_capture_route_table() -> Result<Vec<crate::openvpn::routing::RouteTableEntry>, String> {
+pub async fn openvpn_capture_route_table(
+) -> Result<Vec<crate::openvpn::routing::RouteTableEntry>, String> {
     crate::openvpn::routing::capture_route_table()
         .await
         .map_err(|e| e.message)

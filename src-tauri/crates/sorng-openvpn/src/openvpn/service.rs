@@ -7,9 +7,7 @@
 use crate::openvpn::auth::VpnCredentials;
 use crate::openvpn::config::{generate_ovpn, parse_ovpn, validate_config, ValidationResult};
 use crate::openvpn::dns::{self, DnsConfig, SavedDnsState};
-use crate::openvpn::logging::{
-    ConnectionLog, ExportFormat, LogEntry, LogLevel, LogRotation,
-};
+use crate::openvpn::logging::{ConnectionLog, ExportFormat, LogEntry, LogLevel, LogRotation};
 use crate::openvpn::management::MgmtClient;
 use crate::openvpn::process::{self, ProcessHandle};
 use crate::openvpn::routing::{self, AppliedRoutes, RoutingPolicy};
@@ -73,12 +71,7 @@ impl ConnectionHandle {
     }
 
     pub async fn info(&self) -> ConnectionInfo {
-        let pid = self
-            .process
-            .read()
-            .await
-            .as_ref()
-            .map(|p| p.get_pid());
+        let pid = self.process.read().await.as_ref().map(|p| p.get_pid());
 
         self.tunnel
             .to_connection_info(
@@ -92,10 +85,7 @@ impl ConnectionHandle {
     }
 
     pub async fn is_connected(&self) -> bool {
-        matches!(
-            self.tunnel.get_status().await,
-            ConnectionStatus::Connected
-        )
+        matches!(self.tunnel.get_status().await, ConnectionStatus::Connected)
     }
 }
 
@@ -178,7 +168,10 @@ impl OpenVpnService {
             .await;
         handle
             .log
-            .append(LogEntry::internal(LogLevel::Info, "Initializing connection"))
+            .append(LogEntry::internal(
+                LogLevel::Info,
+                "Initializing connection",
+            ))
             .await;
 
         // Find management port
@@ -187,8 +180,7 @@ impl OpenVpnService {
         *handle.mgmt_port.write().await = Some(mgmt_port);
 
         // Find OpenVPN binary
-        let binary = find_openvpn_binary()
-            .ok_or("OpenVPN binary not found on this system")?;
+        let binary = find_openvpn_binary().ok_or("OpenVPN binary not found on this system")?;
 
         // Spawn OpenVPN process
         let (proc, _child) = process::spawn_openvpn(&binary, &handle.config, mgmt_port)
@@ -197,10 +189,7 @@ impl OpenVpnService {
 
         *handle.process.write().await = Some(proc.clone());
 
-        handle
-            .tunnel
-            .set_status(ConnectionStatus::Connecting)
-            .await;
+        handle.tunnel.set_status(ConnectionStatus::Connecting).await;
         handle
             .log
             .append(LogEntry::internal(
@@ -386,13 +375,7 @@ impl OpenVpnService {
 
     /// Disconnect all connections.
     pub async fn disconnect_all(&self) -> Result<Vec<String>, String> {
-        let ids: Vec<String> = self
-            .connections
-            .read()
-            .await
-            .keys()
-            .cloned()
-            .collect();
+        let ids: Vec<String> = self.connections.read().await.keys().cloned().collect();
 
         let mut disconnected = Vec::new();
         for id in &ids {
@@ -432,28 +415,19 @@ impl OpenVpnService {
     }
 
     /// Get connection info.
-    pub async fn get_connection_info(
-        &self,
-        connection_id: &str,
-    ) -> Result<ConnectionInfo, String> {
+    pub async fn get_connection_info(&self, connection_id: &str) -> Result<ConnectionInfo, String> {
         let handle = self.get_connection(connection_id).await?;
         Ok(handle.info().await)
     }
 
     /// Get connection status.
-    pub async fn get_status(
-        &self,
-        connection_id: &str,
-    ) -> Result<ConnectionStatus, String> {
+    pub async fn get_status(&self, connection_id: &str) -> Result<ConnectionStatus, String> {
         let handle = self.get_connection(connection_id).await?;
         Ok(handle.tunnel.get_status().await)
     }
 
     /// Get bandwidth statistics.
-    pub async fn get_stats(
-        &self,
-        connection_id: &str,
-    ) -> Result<SessionStats, String> {
+    pub async fn get_stats(&self, connection_id: &str) -> Result<SessionStats, String> {
         let handle = self.get_connection(connection_id).await?;
         Ok(handle.tunnel.get_stats().await)
     }
@@ -468,9 +442,7 @@ impl OpenVpnService {
     ) -> Result<(), String> {
         let handle = self.get_connection(connection_id).await?;
         let mut mgmt = handle.mgmt.write().await;
-        let client = mgmt
-            .as_mut()
-            .ok_or("Management interface not connected")?;
+        let client = mgmt.as_mut().ok_or("Management interface not connected")?;
         client
             .send_auth("Auth", &credentials.username, &credentials.password)
             .await
@@ -478,21 +450,12 @@ impl OpenVpnService {
     }
 
     /// Send OTP/2FA code.
-    pub async fn send_otp(
-        &self,
-        connection_id: &str,
-        code: &str,
-    ) -> Result<(), String> {
+    pub async fn send_otp(&self, connection_id: &str, code: &str) -> Result<(), String> {
         let handle = self.get_connection(connection_id).await?;
         let mut mgmt = handle.mgmt.write().await;
-        let client = mgmt
-            .as_mut()
-            .ok_or("Management interface not connected")?;
+        let client = mgmt.as_mut().ok_or("Management interface not connected")?;
         let payload = crate::openvpn::auth::build_challenge_response(code);
-        client
-            .send_command(&payload)
-            .await
-            .map_err(|e| e.message)
+        client.send_command(&payload).await.map_err(|e| e.message)
     }
 
     // ── Config ────────────────────────────────────────────────────
@@ -508,19 +471,13 @@ impl OpenVpnService {
     }
 
     /// Export the config of a connection as .ovpn text.
-    pub async fn export_config(
-        &self,
-        connection_id: &str,
-    ) -> Result<String, String> {
+    pub async fn export_config(&self, connection_id: &str) -> Result<String, String> {
         let handle = self.get_connection(connection_id).await?;
         Ok(generate_ovpn(&handle.config))
     }
 
     /// Validate a config.
-    pub fn validate_config_text(
-        &self,
-        ovpn_content: &str,
-    ) -> ValidationResult {
+    pub fn validate_config_text(&self, ovpn_content: &str) -> ValidationResult {
         match parse_ovpn(ovpn_content) {
             Ok(config) => validate_config(&config),
             Err(e) => ValidationResult {
@@ -545,10 +502,7 @@ impl OpenVpnService {
     }
 
     /// Get routing policy for a connection.
-    pub async fn get_routing_policy(
-        &self,
-        connection_id: &str,
-    ) -> Result<RoutingPolicy, String> {
+    pub async fn get_routing_policy(&self, connection_id: &str) -> Result<RoutingPolicy, String> {
         let handle = self.get_connection(connection_id).await?;
         let policy = handle.routing_policy.read().await.clone();
         Ok(policy)
@@ -568,10 +522,7 @@ impl OpenVpnService {
     }
 
     /// Get DNS config for a connection.
-    pub async fn get_dns_config(
-        &self,
-        connection_id: &str,
-    ) -> Result<DnsConfig, String> {
+    pub async fn get_dns_config(&self, connection_id: &str) -> Result<DnsConfig, String> {
         let handle = self.get_connection(connection_id).await?;
         let config = handle.dns_config.read().await.clone();
         Ok(config)
@@ -580,10 +531,7 @@ impl OpenVpnService {
     // ── Tunnel health ─────────────────────────────────────────────
 
     /// Run a health check on a connected tunnel.
-    pub async fn check_health(
-        &self,
-        connection_id: &str,
-    ) -> Result<HealthCheck, String> {
+    pub async fn check_health(&self, connection_id: &str) -> Result<HealthCheck, String> {
         let handle = self.get_connection(connection_id).await?;
         let remote_ip = handle
             .tunnel
@@ -655,20 +603,11 @@ impl OpenVpnService {
     // ── Management interface passthrough ──────────────────────────
 
     /// Send a raw management command.
-    pub async fn mgmt_command(
-        &self,
-        connection_id: &str,
-        command: &str,
-    ) -> Result<(), String> {
+    pub async fn mgmt_command(&self, connection_id: &str, command: &str) -> Result<(), String> {
         let handle = self.get_connection(connection_id).await?;
         let mut mgmt = handle.mgmt.write().await;
-        let client = mgmt
-            .as_mut()
-            .ok_or("Management interface not connected")?;
-        client
-            .send_command(command)
-            .await
-            .map_err(|e| e.message)
+        let client = mgmt.as_mut().ok_or("Management interface not connected")?;
+        client.send_command(command).await.map_err(|e| e.message)
     }
 
     // ── Default policies ──────────────────────────────────────────
@@ -693,8 +632,7 @@ impl OpenVpnService {
 
     /// Detect the installed OpenVPN version.
     pub async fn detect_version(&self) -> Result<String, String> {
-        let binary = find_openvpn_binary()
-            .ok_or("OpenVPN binary not found on this system")?;
+        let binary = find_openvpn_binary().ok_or("OpenVPN binary not found on this system")?;
         process::get_openvpn_version(&binary)
             .await
             .map_err(|e| e.message)
@@ -707,10 +645,7 @@ impl OpenVpnService {
 
     // ── Internals ─────────────────────────────────────────────────
 
-    async fn get_connection(
-        &self,
-        id: &str,
-    ) -> Result<Arc<ConnectionHandle>, String> {
+    async fn get_connection(&self, id: &str) -> Result<Arc<ConnectionHandle>, String> {
         self.connections
             .read()
             .await
@@ -788,10 +723,7 @@ mod tests {
     async fn service_remove_connection() {
         let svc = OpenVpnService::new();
         let cfg = OpenVpnConfig::default();
-        let info = svc
-            .create_connection(cfg, None, None, None)
-            .await
-            .unwrap();
+        let info = svc.create_connection(cfg, None, None, None).await.unwrap();
         svc.remove_connection(&info.id).await.unwrap();
         assert!(svc.get_connection_info(&info.id).await.is_err());
     }
@@ -816,10 +748,7 @@ mod tests {
             port: 1194,
             protocol: VpnProtocol::Udp,
         });
-        let info = svc
-            .create_connection(cfg, None, None, None)
-            .await
-            .unwrap();
+        let info = svc.create_connection(cfg, None, None, None).await.unwrap();
         let ovpn = svc.export_config(&info.id).await.unwrap();
         assert!(ovpn.contains("remote vpn.example.com 1194 udp"));
     }
@@ -835,10 +764,7 @@ mod tests {
     async fn service_set_routing_policy() {
         let svc = OpenVpnService::new();
         let cfg = OpenVpnConfig::default();
-        let info = svc
-            .create_connection(cfg, None, None, None)
-            .await
-            .unwrap();
+        let info = svc.create_connection(cfg, None, None, None).await.unwrap();
         let policy = RoutingPolicy::full_tunnel();
         svc.set_routing_policy(&info.id, policy).await.unwrap();
         let got = svc.get_routing_policy(&info.id).await.unwrap();
@@ -849,10 +775,7 @@ mod tests {
     async fn service_set_dns_config() {
         let svc = OpenVpnService::new();
         let cfg = OpenVpnConfig::default();
-        let info = svc
-            .create_connection(cfg, None, None, None)
-            .await
-            .unwrap();
+        let info = svc.create_connection(cfg, None, None, None).await.unwrap();
         let dns = DnsConfig {
             servers: vec!["8.8.8.8".into()],
             ..Default::default()
@@ -866,10 +789,7 @@ mod tests {
     async fn service_get_logs_empty() {
         let svc = OpenVpnService::new();
         let cfg = OpenVpnConfig::default();
-        let info = svc
-            .create_connection(cfg, None, None, None)
-            .await
-            .unwrap();
+        let info = svc.create_connection(cfg, None, None, None).await.unwrap();
         let logs = svc.get_logs(&info.id, None).await.unwrap();
         assert!(logs.is_empty());
     }
@@ -883,10 +803,7 @@ mod tests {
             port: 443,
             protocol: VpnProtocol::Tcp,
         });
-        let info = svc
-            .create_connection(cfg, None, None, None)
-            .await
-            .unwrap();
+        let info = svc.create_connection(cfg, None, None, None).await.unwrap();
         assert_eq!(info.label, "vpn.test.com:443");
     }
 

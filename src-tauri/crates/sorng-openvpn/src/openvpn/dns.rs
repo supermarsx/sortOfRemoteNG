@@ -128,9 +128,7 @@ pub struct SavedDnsState {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Get current DNS servers for an interface (Windows).
-pub async fn get_interface_dns_windows(
-    interface: &str,
-) -> Result<Vec<String>, OpenVpnError> {
+pub async fn get_interface_dns_windows(interface: &str) -> Result<Vec<String>, OpenVpnError> {
     let output = tokio::process::Command::new("netsh")
         .args([
             "interface",
@@ -170,10 +168,7 @@ pub fn parse_netsh_dns_output(output: &str) -> Vec<String> {
 }
 
 /// Set DNS servers for an interface (Windows).
-pub async fn set_dns_windows(
-    interface: &str,
-    servers: &[String],
-) -> Result<(), OpenVpnError> {
+pub async fn set_dns_windows(interface: &str, servers: &[String]) -> Result<(), OpenVpnError> {
     if servers.is_empty() {
         return Ok(());
     }
@@ -221,10 +216,7 @@ pub async fn restore_dns_dhcp_windows(interface: &str) -> Result<(), OpenVpnErro
 }
 
 /// Restore DNS to specific servers (Windows).
-pub async fn restore_dns_windows(
-    interface: &str,
-    servers: &[String],
-) -> Result<(), OpenVpnError> {
+pub async fn restore_dns_windows(interface: &str, servers: &[String]) -> Result<(), OpenVpnError> {
     if servers.is_empty() {
         return restore_dns_dhcp_windows(interface).await;
     }
@@ -283,7 +275,11 @@ async fn set_dns_systemd_resolved(
     servers: &[String],
     search_domains: &[String],
 ) -> Result<(), OpenVpnError> {
-    let mut args = vec!["resolvectl".to_string(), "dns".to_string(), interface.to_string()];
+    let mut args = vec![
+        "resolvectl".to_string(),
+        "dns".to_string(),
+        interface.to_string(),
+    ];
     args.extend(servers.iter().cloned());
 
     let output = tokio::process::Command::new(&args[0])
@@ -489,10 +485,7 @@ pub fn build_block_outside_dns_rules(
 pub fn build_remove_dns_block_rules() -> Vec<Vec<String>> {
     let mut rules = Vec::new();
     // Remove all our rules by name
-    for name in &[
-        "OpenVPN_BlockDNS_Out",
-        "OpenVPN_BlockDNS_TCP_Out",
-    ] {
+    for name in &["OpenVPN_BlockDNS_Out", "OpenVPN_BlockDNS_TCP_Out"] {
         rules.push(vec![
             "netsh".into(),
             "advfirewall".into(),
@@ -601,11 +594,10 @@ pub async fn check_dns_leak(
 
 /// Parse the server address from nslookup output.
 pub fn parse_nslookup_server(output: &str) -> Option<String> {
+    let ip_re = regex::Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").ok()?;
     for line in output.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("Server:") || trimmed.starts_with("Address:") {
-            let ip_re =
-                regex::Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").ok()?;
             if let Some(cap) = ip_re.captures(trimmed) {
                 return Some(cap[1].to_string());
             }

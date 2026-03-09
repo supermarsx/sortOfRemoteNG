@@ -59,7 +59,10 @@ impl VpnCredentials {
             Some(code) => format!("{}:{}", self.password, code),
             None => self.password.clone(),
         };
-        format!("username \"Auth\" {}\npassword \"Auth\" {}", self.username, pass)
+        format!(
+            "username \"Auth\" {}\npassword \"Auth\" {}",
+            self.username, pass
+        )
     }
 
     /// Write a temp auth file with user\npass.
@@ -176,7 +179,15 @@ pub fn extract_inline_certs(ovpn: &str) -> Vec<PemBlock> {
     // Inline blocks in .ovpn are wrapped in <ca>…</ca>, <cert>…</cert>, etc.
     let mut all_pem = Vec::new();
 
-    for tag in &["ca", "cert", "key", "tls-auth", "tls-crypt", "extra-certs", "pkcs12"] {
+    for tag in &[
+        "ca",
+        "cert",
+        "key",
+        "tls-auth",
+        "tls-crypt",
+        "extra-certs",
+        "pkcs12",
+    ] {
         let open = format!("<{}>", tag);
         let close = format!("</{}>", tag);
         if let Some(start) = ovpn.find(&open) {
@@ -240,7 +251,10 @@ pub fn validate_cert_pair(cert_path: &Path, key_path: &Path) -> Result<(), OpenV
     let cert_blocks = extract_pem_blocks(&cert);
     let key_blocks = extract_pem_blocks(&key);
 
-    if !cert_blocks.iter().any(|b| b.block_type.contains("CERTIFICATE")) {
+    if !cert_blocks
+        .iter()
+        .any(|b| b.block_type.contains("CERTIFICATE"))
+    {
         return Err(OpenVpnError {
             kind: OpenVpnErrorKind::TlsError,
             message: "Cert file has no CERTIFICATE block".into(),
@@ -277,9 +291,7 @@ pub enum RequiredAuth {
 
 /// Detect the authentication methods required by a config.
 pub fn detect_required_auth(cfg: &OpenVpnConfig) -> RequiredAuth {
-    let has_user_pass = cfg.username.is_some()
-        || cfg.password.is_some()
-        || cfg.auth_user_pass;
+    let has_user_pass = cfg.username.is_some() || cfg.password.is_some() || cfg.auth_user_pass;
     let has_cert = cfg.client_cert.is_some() || cfg.inline_cert.is_some();
     let has_key = cfg.client_key.is_some() || cfg.inline_key.is_some();
     let has_pkcs12 = cfg.pkcs12.is_some();
@@ -382,10 +394,7 @@ pub fn inspect_pkcs12(path: &Path) -> Result<Pkcs12Info, OpenVpnError> {
 
 /// Verify a PKCS#12 file by attempting to open it with the given passphrase.
 /// Uses `openssl` CLI as a fallback.
-pub async fn verify_pkcs12(
-    path: &Path,
-    passphrase: &str,
-) -> Result<bool, OpenVpnError> {
+pub async fn verify_pkcs12(path: &Path, passphrase: &str) -> Result<bool, OpenVpnError> {
     let output = tokio::process::Command::new("openssl")
         .args([
             "pkcs12",
@@ -688,7 +697,10 @@ mod tests {
     #[test]
     fn tls_direction_auth() {
         let mut cfg = OpenVpnConfig::default();
-        cfg.tls_mode = TlsMode::TlsAuth { key_path: "/ta.key".into(), direction: Some(1) };
+        cfg.tls_mode = TlsMode::TlsAuth {
+            key_path: "/ta.key".into(),
+            direction: Some(1),
+        };
         assert_eq!(tls_key_direction(&cfg), Some("1"));
     }
 
@@ -702,7 +714,11 @@ mod tests {
 
     #[test]
     fn otp_method_serde() {
-        for m in &[OtpMethod::Append, OtpMethod::ChallengeResponse, OtpMethod::DedicatedField] {
+        for m in &[
+            OtpMethod::Append,
+            OtpMethod::ChallengeResponse,
+            OtpMethod::DedicatedField,
+        ] {
             let json = serde_json::to_string(m).unwrap();
             let back: OtpMethod = serde_json::from_str(&json).unwrap();
             assert_eq!(m, &back);

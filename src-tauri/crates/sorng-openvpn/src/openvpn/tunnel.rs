@@ -93,10 +93,10 @@ impl BandwidthTracker {
             .iter()
             .map(|s| s.tx_per_sec)
             .fold(0.0_f64, f64::max);
-        let avg_rx: f64 = self.samples.iter().map(|s| s.rx_per_sec).sum::<f64>()
-            / self.samples.len() as f64;
-        let avg_tx: f64 = self.samples.iter().map(|s| s.tx_per_sec).sum::<f64>()
-            / self.samples.len() as f64;
+        let avg_rx: f64 =
+            self.samples.iter().map(|s| s.rx_per_sec).sum::<f64>() / self.samples.len() as f64;
+        let avg_tx: f64 =
+            self.samples.iter().map(|s| s.tx_per_sec).sum::<f64>() / self.samples.len() as f64;
 
         SessionStats {
             total_bytes_rx: total_rx,
@@ -154,10 +154,7 @@ pub struct HealthCheck {
 }
 
 /// Perform a basic tunnel health check by pinging the remote gateway.
-pub async fn check_tunnel_health(
-    gateway_ip: &str,
-    timeout_ms: u64,
-) -> HealthCheck {
+pub async fn check_tunnel_health(gateway_ip: &str, timeout_ms: u64) -> HealthCheck {
     let now = Utc::now();
 
     // Use platform ping
@@ -568,24 +565,15 @@ mod tests {
         ts.set_connected("10.8.0.2".into(), Some("10.8.0.1".into()))
             .await;
         assert_eq!(ts.get_status().await, ConnectionStatus::Connected);
-        assert_eq!(
-            *ts.local_ip.read().await,
-            Some("10.8.0.2".to_string())
-        );
+        assert_eq!(*ts.local_ip.read().await, Some("10.8.0.2".to_string()));
     }
 
     #[tokio::test]
     async fn tunnel_state_set_disconnected_error() {
         let ts = TunnelState::new(ReconnectPolicy::default());
         ts.set_disconnected(Some("timeout".into())).await;
-        assert!(matches!(
-            ts.get_status().await,
-            ConnectionStatus::Error(_)
-        ));
-        assert_eq!(
-            *ts.last_error.read().await,
-            Some("timeout".to_string())
-        );
+        assert!(matches!(ts.get_status().await, ConnectionStatus::Error(_)));
+        assert_eq!(*ts.last_error.read().await, Some("timeout".to_string()));
     }
 
     #[tokio::test]
