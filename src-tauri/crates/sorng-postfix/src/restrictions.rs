@@ -91,10 +91,8 @@ impl RestrictionManager {
         restriction: &str,
     ) -> PostfixResult<()> {
         let current = Self::get(client, stage).await?;
-        let new_restrictions: Vec<String> = current
-            .into_iter()
-            .filter(|r| r != restriction)
-            .collect();
+        let new_restrictions: Vec<String> =
+            current.into_iter().filter(|r| r != restriction).collect();
         Self::set(client, stage, &new_restrictions).await
     }
 }

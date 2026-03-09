@@ -21,7 +21,12 @@ pub async fn postfix_connect(
     id: String,
     config: PostfixConnectionConfig,
 ) -> CmdResult<PostfixConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -40,10 +45,7 @@ pub async fn postfix_list_connections(
 }
 
 #[tauri::command]
-pub async fn postfix_ping(
-    state: State<'_, PostfixServiceState>,
-    id: String,
-) -> CmdResult<String> {
+pub async fn postfix_ping(state: State<'_, PostfixServiceState>, id: String) -> CmdResult<String> {
     state.lock().await.ping(&id).await.map_err(map_err)
 }
 
@@ -105,12 +107,7 @@ pub async fn postfix_get_master_cf(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<Vec<PostfixMasterCfEntry>> {
-    state
-        .lock()
-        .await
-        .get_master_cf(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.get_master_cf(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -132,12 +129,7 @@ pub async fn postfix_check_config(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<ConfigTestResult> {
-    state
-        .lock()
-        .await
-        .check_config(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.check_config(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -214,12 +206,7 @@ pub async fn postfix_list_domains(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<Vec<PostfixDomain>> {
-    state
-        .lock()
-        .await
-        .list_domains(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_domains(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -286,12 +273,7 @@ pub async fn postfix_list_aliases(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<Vec<PostfixAlias>> {
-    state
-        .lock()
-        .await
-        .list_aliases(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_aliases(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -470,12 +452,7 @@ pub async fn postfix_list_queues(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<Vec<PostfixQueue>> {
-    state
-        .lock()
-        .await
-        .list_queues(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_queues(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -507,10 +484,7 @@ pub async fn postfix_get_queue_entry(
 }
 
 #[tauri::command]
-pub async fn postfix_flush(
-    state: State<'_, PostfixServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn postfix_flush(state: State<'_, PostfixServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.flush(&id).await.map_err(map_err)
 }
 
@@ -588,12 +562,7 @@ pub async fn postfix_requeue_all(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state
-        .lock()
-        .await
-        .requeue_all(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.requeue_all(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -601,12 +570,7 @@ pub async fn postfix_purge_queues(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state
-        .lock()
-        .await
-        .purge_queues(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.purge_queues(&id).await.map_err(map_err)
 }
 
 // ── TLS ───────────────────────────────────────────────────────────
@@ -777,12 +741,7 @@ pub async fn postfix_list_milters(
     state: State<'_, PostfixServiceState>,
     id: String,
 ) -> CmdResult<Vec<PostfixMilter>> {
-    state
-        .lock()
-        .await
-        .list_milters(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_milters(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -831,34 +790,22 @@ pub async fn postfix_update_milter(
 // ── Process ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn postfix_start(
-    state: State<'_, PostfixServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn postfix_start(state: State<'_, PostfixServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.start(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn postfix_stop(
-    state: State<'_, PostfixServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn postfix_stop(state: State<'_, PostfixServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.stop(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn postfix_restart(
-    state: State<'_, PostfixServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn postfix_restart(state: State<'_, PostfixServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.restart(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn postfix_reload(
-    state: State<'_, PostfixServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn postfix_reload(state: State<'_, PostfixServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reload(&id).await.map_err(map_err)
 }
 

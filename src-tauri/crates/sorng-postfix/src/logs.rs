@@ -28,7 +28,7 @@ impl PostfixLogManager {
             .stdout
             .lines()
             .filter(|l| !l.is_empty())
-            .map(|l| parse_mail_log_line(l))
+            .map(parse_mail_log_line)
             .collect();
         Ok(entries)
     }
@@ -64,7 +64,6 @@ impl PostfixLogManager {
             .await?;
         let parts: Vec<u64> = out
             .stdout
-            .trim()
             .split_whitespace()
             .filter_map(|s| s.parse().ok())
             .collect();
@@ -129,21 +128,15 @@ fn parse_mail_log_line(line: &str) -> PostfixMailLog {
     };
 
     // Extract queue ID from message (typically the first token before ':')
-    let queue_id = message_part
-        .split(':')
-        .next()
-        .and_then(|token| {
-            let t = token.trim();
-            // Queue IDs are hex strings, typically 10-12 chars
-            if !t.is_empty()
-                && t.len() <= 20
-                && t.chars().all(|c| c.is_ascii_hexdigit())
-            {
-                Some(t.to_string())
-            } else {
-                None
-            }
-        });
+    let queue_id = message_part.split(':').next().and_then(|token| {
+        let t = token.trim();
+        // Queue IDs are hex strings, typically 10-12 chars
+        if !t.is_empty() && t.len() <= 20 && t.chars().all(|c| c.is_ascii_hexdigit()) {
+            Some(t.to_string())
+        } else {
+            None
+        }
+    });
 
     PostfixMailLog {
         timestamp,

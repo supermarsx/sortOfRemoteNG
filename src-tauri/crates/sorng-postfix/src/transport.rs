@@ -159,11 +159,7 @@ impl TransportManager {
                 domain
             ))
         } else {
-            Ok(format!(
-                "Transport for '{}': {}",
-                domain,
-                out.stdout.trim()
-            ))
+            Ok(format!("Transport for '{}': {}", domain, out.stdout.trim()))
         }
     }
 }

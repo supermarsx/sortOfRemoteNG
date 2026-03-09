@@ -9,9 +9,7 @@ pub struct PostfixTlsManager;
 
 impl PostfixTlsManager {
     /// Get all TLS-related main.cf parameters.
-    pub async fn get_tls_config(
-        client: &PostfixClient,
-    ) -> PostfixResult<HashMap<String, String>> {
+    pub async fn get_tls_config(client: &PostfixClient) -> PostfixResult<HashMap<String, String>> {
         let out = client.exec_ssh("postconf | grep -i tls").await?;
         let mut config = HashMap::new();
         for line in out.stdout.lines() {

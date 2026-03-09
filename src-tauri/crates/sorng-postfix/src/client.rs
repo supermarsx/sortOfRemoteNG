@@ -19,7 +19,10 @@ impl PostfixClient {
     // ── Paths ────────────────────────────────────────────────────────
 
     pub fn postfix_bin(&self) -> &str {
-        self.config.postfix_bin.as_deref().unwrap_or("/usr/sbin/postfix")
+        self.config
+            .postfix_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/postfix")
     }
 
     pub fn config_dir(&self) -> &str {
@@ -27,7 +30,10 @@ impl PostfixClient {
     }
 
     pub fn queue_dir(&self) -> &str {
-        self.config.queue_dir.as_deref().unwrap_or("/var/spool/postfix")
+        self.config
+            .queue_dir
+            .as_deref()
+            .unwrap_or("/var/spool/postfix")
     }
 
     // ── SSH command execution stub ───────────────────────────────────
@@ -44,7 +50,9 @@ impl PostfixClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> PostfixResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 
@@ -88,8 +96,8 @@ impl PostfixClient {
             .await?;
         let raw = out.stdout.trim().to_string();
         let value = raw
-            .splitn(2, '=')
-            .nth(1)
+            .split_once('=')
+            .map(|x| x.1)
             .map(|v| v.trim().to_string())
             .unwrap_or_default();
         Ok(value)
@@ -163,7 +171,9 @@ impl PostfixClient {
     }
 
     pub async fn postqueue_list(&self) -> PostfixResult<Vec<PostfixQueueEntry>> {
-        let out = self.exec_ssh("postqueue -j 2>/dev/null || postqueue -p").await?;
+        let out = self
+            .exec_ssh("postqueue -j 2>/dev/null || postqueue -p")
+            .await?;
         let mut entries = Vec::new();
         // Try JSON format first (Postfix 3.1+)
         for line in out.stdout.lines() {
@@ -233,7 +243,10 @@ impl PostfixClient {
             let mut current_reason = None;
             for line in out.stdout.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with('-') || trimmed.is_empty() || trimmed.starts_with("Mail queue") {
+                if trimmed.starts_with('-')
+                    || trimmed.is_empty()
+                    || trimmed.starts_with("Mail queue")
+                {
                     if !current_id.is_empty() {
                         entries.push(PostfixQueueEntry {
                             queue_id: current_id.clone(),
@@ -256,14 +269,21 @@ impl PostfixClient {
                 }
                 // Queue ID line: "A1B2C3D4E5*  1234 Mon Jan  1 00:00:00  sender@example.com"
                 if trimmed.len() > 10
-                    && trimmed.chars().next().map_or(false, |c| c.is_ascii_hexdigit())
+                    && trimmed
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_hexdigit())
                 {
                     let parts: Vec<&str> = trimmed.split_whitespace().collect();
                     if parts.len() >= 2 {
-                        current_id = parts[0].trim_end_matches('*').trim_end_matches('!').to_string();
+                        current_id = parts[0]
+                            .trim_end_matches('*')
+                            .trim_end_matches('!')
+                            .to_string();
                         current_size = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
                         current_sender = parts.last().unwrap_or(&"").to_string();
-                        current_time = parts.get(2..parts.len() - 1)
+                        current_time = parts
+                            .get(2..parts.len() - 1)
                             .map(|p| p.join(" "))
                             .unwrap_or_default();
                     }
@@ -387,7 +407,9 @@ impl PostfixClient {
                     .chain(o.stdout.lines())
                     .filter(|l| {
                         let lower = l.to_lowercase();
-                        lower.contains("error") || lower.contains("fatal") || lower.contains("warning")
+                        lower.contains("error")
+                            || lower.contains("fatal")
+                            || lower.contains("warning")
                     })
                     .map(String::from)
                     .collect();

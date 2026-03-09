@@ -56,10 +56,7 @@ impl QueueManager {
         let all = client.postqueue_list().await?;
         let filtered: Vec<PostfixQueueEntry> = all
             .into_iter()
-            .filter(|e| {
-                e.status.to_lowercase() == queue_name.to_lowercase()
-                    || queue_name == "all"
-            })
+            .filter(|e| e.status.to_lowercase() == queue_name.to_lowercase() || queue_name == "all")
             .collect();
         Ok(filtered)
     }

@@ -29,6 +29,12 @@ pub struct PostfixService {
     connections: HashMap<String, PostfixClient>,
 }
 
+impl Default for PostfixService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PostfixService {
     pub fn new() -> Self {
         Self {
@@ -60,13 +66,12 @@ impl PostfixService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> PostfixResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| PostfixError::new(
+        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+            PostfixError::new(
                 crate::error::PostfixErrorKind::NotConnected,
                 format!("No connection '{}'", id),
-            ))
+            )
+        })
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -321,12 +326,7 @@ impl PostfixService {
         PostfixTlsManager::get_tls_config(self.client(id)?).await
     }
 
-    pub async fn set_tls_param(
-        &self,
-        id: &str,
-        name: &str,
-        value: &str,
-    ) -> PostfixResult<()> {
+    pub async fn set_tls_param(&self, id: &str, name: &str, value: &str) -> PostfixResult<()> {
         PostfixTlsManager::set_tls_param(self.client(id)?, name, value).await
     }
 

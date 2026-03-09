@@ -18,7 +18,10 @@ impl AliasManager {
     /// List virtual aliases from virtual_alias_maps.
     pub async fn list_virtual(client: &PostfixClient) -> PostfixResult<Vec<PostfixAlias>> {
         let virtual_path = format!("{}/virtual", client.config_dir());
-        let content = client.read_remote_file(&virtual_path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file(&virtual_path)
+            .await
+            .unwrap_or_default();
         let mut aliases = Vec::new();
         for line in content.lines() {
             let trimmed = line.trim();
@@ -45,7 +48,10 @@ impl AliasManager {
     /// List local aliases from /etc/aliases or alias_maps.
     pub async fn list_local(client: &PostfixClient) -> PostfixResult<Vec<PostfixAlias>> {
         let aliases_path = "/etc/aliases".to_string();
-        let content = client.read_remote_file(&aliases_path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file(&aliases_path)
+            .await
+            .unwrap_or_default();
         let mut aliases = Vec::new();
         for line in content.lines() {
             let trimmed = line.trim();
@@ -85,7 +91,10 @@ impl AliasManager {
         match req.alias_type {
             AliasType::Virtual => {
                 let virtual_path = format!("{}/virtual", client.config_dir());
-                let existing = client.read_remote_file(&virtual_path).await.unwrap_or_default();
+                let existing = client
+                    .read_remote_file(&virtual_path)
+                    .await
+                    .unwrap_or_default();
                 // Check for duplicates
                 for line in existing.lines() {
                     let trimmed = line.trim();
@@ -101,15 +110,22 @@ impl AliasManager {
                 }
                 let recipients_str = req.recipients.join(", ");
                 let new_content = format!("{}{}\t{}\n", existing, req.address, recipients_str);
-                client.write_remote_file(&virtual_path, &new_content).await?;
+                client
+                    .write_remote_file(&virtual_path, &new_content)
+                    .await?;
                 client.postmap(&virtual_path).await?;
             }
             AliasType::Local => {
                 let aliases_path = "/etc/aliases".to_string();
-                let existing = client.read_remote_file(&aliases_path).await.unwrap_or_default();
+                let existing = client
+                    .read_remote_file(&aliases_path)
+                    .await
+                    .unwrap_or_default();
                 let recipients_str = req.recipients.join(", ");
                 let new_content = format!("{}{}:\t{}\n", existing, req.address, recipients_str);
-                client.write_remote_file(&aliases_path, &new_content).await?;
+                client
+                    .write_remote_file(&aliases_path, &new_content)
+                    .await?;
                 // Rebuild local alias database
                 let out = client.exec_ssh("sudo newaliases").await?;
                 if out.exit_code != 0 {
@@ -182,7 +198,9 @@ impl AliasManager {
                     })
                     .collect();
                 let new_content = new_lines.join("\n") + "\n";
-                client.write_remote_file(&virtual_path, &new_content).await?;
+                client
+                    .write_remote_file(&virtual_path, &new_content)
+                    .await?;
                 client.postmap(&virtual_path).await?;
             }
             AliasType::Local => {
@@ -202,7 +220,9 @@ impl AliasManager {
                     })
                     .collect();
                 let new_content = new_lines.join("\n") + "\n";
-                client.write_remote_file(&aliases_path, &new_content).await?;
+                client
+                    .write_remote_file(&aliases_path, &new_content)
+                    .await?;
                 let out = client.exec_ssh("sudo newaliases").await?;
                 if out.exit_code != 0 {
                     return Err(PostfixError::io(format!(
@@ -238,7 +258,9 @@ impl AliasManager {
                     })
                     .collect();
                 let new_content = new_lines.join("\n") + "\n";
-                client.write_remote_file(&virtual_path, &new_content).await?;
+                client
+                    .write_remote_file(&virtual_path, &new_content)
+                    .await?;
                 client.postmap(&virtual_path).await?;
             }
             AliasType::Local => {
@@ -256,7 +278,9 @@ impl AliasManager {
                     })
                     .collect();
                 let new_content = new_lines.join("\n") + "\n";
-                client.write_remote_file(&aliases_path, &new_content).await?;
+                client
+                    .write_remote_file(&aliases_path, &new_content)
+                    .await?;
                 let out = client.exec_ssh("sudo newaliases").await?;
                 if out.exit_code != 0 {
                     return Err(PostfixError::io(format!(

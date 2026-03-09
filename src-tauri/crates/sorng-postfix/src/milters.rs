@@ -21,11 +21,7 @@ impl MilterManager {
             if socket.is_empty() {
                 continue;
             }
-            let name = socket
-                .rsplit('/')
-                .next()
-                .unwrap_or(&socket)
-                .to_string();
+            let name = socket.rsplit('/').next().unwrap_or(&socket).to_string();
             // Avoid duplicates
             if milters.iter().any(|m: &PostfixMilter| m.socket == socket) {
                 continue;
@@ -43,10 +39,7 @@ impl MilterManager {
             .postconf("milter_default_action")
             .await
             .unwrap_or_default();
-        let protocol = client
-            .postconf("milter_protocol")
-            .await
-            .unwrap_or_default();
+        let protocol = client.postconf("milter_protocol").await.unwrap_or_default();
         for milter in &mut milters {
             if !flags.is_empty() {
                 milter.flags = Some(flags.clone());
@@ -60,10 +53,7 @@ impl MilterManager {
     }
 
     /// Add a new milter to smtpd_milters.
-    pub async fn add(
-        client: &PostfixClient,
-        milter: &PostfixMilter,
-    ) -> PostfixResult<()> {
+    pub async fn add(client: &PostfixClient, milter: &PostfixMilter) -> PostfixResult<()> {
         let current_raw = client.postconf("smtpd_milters").await.unwrap_or_default();
         let mut sockets: Vec<String> = current_raw
             .split(',')
@@ -102,14 +92,10 @@ impl MilterManager {
 
         // Set milter protocol and default action if provided
         if let Some(ref protocol) = milter.protocol {
-            client
-                .postconf_set("milter_protocol", protocol)
-                .await?;
+            client.postconf_set("milter_protocol", protocol).await?;
         }
         if let Some(ref flags) = milter.flags {
-            client
-                .postconf_set("milter_default_action", flags)
-                .await?;
+            client.postconf_set("milter_default_action", flags).await?;
         }
 
         Ok(())
@@ -216,14 +202,10 @@ impl MilterManager {
 
         // Update milter protocol and default action if provided
         if let Some(ref protocol) = milter.protocol {
-            client
-                .postconf_set("milter_protocol", protocol)
-                .await?;
+            client.postconf_set("milter_protocol", protocol).await?;
         }
         if let Some(ref flags) = milter.flags {
-            client
-                .postconf_set("milter_default_action", flags)
-                .await?;
+            client.postconf_set("milter_default_action", flags).await?;
         }
 
         Ok(())
