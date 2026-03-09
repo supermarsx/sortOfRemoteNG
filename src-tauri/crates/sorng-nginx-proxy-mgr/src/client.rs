@@ -60,13 +60,23 @@ impl NpmClient {
         };
         let url = self.api_url("/tokens");
         debug!("NPM POST /tokens (login)");
-        let payload = NpmTokenPayload { identity: email, secret: password };
-        let resp = self.http.post(&url).json(&payload).send().await
+        let payload = NpmTokenPayload {
+            identity: email,
+            secret: password,
+        };
+        let resp = self
+            .http
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
             .map_err(|e| NpmError::connection(format!("login: {e}")))?;
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         if !status.is_success() {
-            return Err(NpmError::auth(format!("login failed HTTP {status}: {body}")));
+            return Err(NpmError::auth(format!(
+                "login failed HTTP {status}: {body}"
+            )));
         }
         let token_resp: NpmTokenResponse = serde_json::from_str(&body)
             .map_err(|e| NpmError::parse(format!("token parse: {e}")))?;
@@ -85,8 +95,10 @@ impl NpmClient {
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> NpmResult<T> {
         let url = self.api_url(path);
         debug!("NPM GET {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| NpmError::connection(format!("GET {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -95,20 +107,32 @@ impl NpmClient {
         self.get(path).await
     }
 
-    pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> NpmResult<T> {
+    pub async fn post<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> NpmResult<T> {
         let url = self.api_url(path);
         debug!("NPM POST {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
             .map_err(|e| NpmError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
 
-    pub async fn put<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> NpmResult<T> {
+    pub async fn put<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> NpmResult<T> {
         let url = self.api_url(path);
         debug!("NPM PUT {url}");
-        let resp = self.apply_auth(self.http.put(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.put(&url).json(body))
+            .send()
+            .await
             .map_err(|e| NpmError::connection(format!("PUT {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -116,8 +140,10 @@ impl NpmClient {
     pub async fn delete(&self, path: &str) -> NpmResult<()> {
         let url = self.api_url(path);
         debug!("NPM DELETE {url}");
-        let resp = self.apply_auth(self.http.delete(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.delete(&url))
+            .send()
+            .await
             .map_err(|e| NpmError::connection(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -127,7 +153,13 @@ impl NpmClient {
         Ok(())
     }
 
-    pub async fn post_form_file(&self, path: &str, field: &str, filename: &str, data: Vec<u8>) -> NpmResult<serde_json::Value> {
+    pub async fn post_form_file(
+        &self,
+        path: &str,
+        field: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> NpmResult<serde_json::Value> {
         let url = self.api_url(path);
         debug!("NPM POST multipart {url}");
         let part = reqwest::multipart::Part::bytes(data)
@@ -135,8 +167,10 @@ impl NpmClient {
             .mime_str("application/octet-stream")
             .map_err(|e| NpmError::parse(format!("mime: {e}")))?;
         let form = reqwest::multipart::Form::new().part(field.to_string(), part);
-        let resp = self.apply_auth(self.http.post(&url).multipart(form))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url).multipart(form))
+            .send()
+            .await
             .map_err(|e| NpmError::connection(format!("POST multipart {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -158,7 +192,9 @@ impl NpmClient {
 
     async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> NpmResult<T> {
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| NpmError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
@@ -174,6 +210,9 @@ impl NpmClient {
             404 => NpmErrorKind::ProxyHostNotFound,
             _ => NpmErrorKind::HttpError,
         };
-        NpmError { kind, message: format!("HTTP {status}: {body}") }
+        NpmError {
+            kind,
+            message: format!("HTTP {status}: {body}"),
+        }
     }
 }

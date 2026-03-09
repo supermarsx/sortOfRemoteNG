@@ -8,7 +8,9 @@ pub struct DeadHostManager;
 
 impl DeadHostManager {
     pub async fn list(client: &NpmClient) -> NpmResult<Vec<NpmDeadHost>> {
-        client.get("/nginx/dead-hosts?expand=certificate,owner").await
+        client
+            .get("/nginx/dead-hosts?expand=certificate,owner")
+            .await
     }
 
     pub async fn get(client: &NpmClient, id: u64) -> NpmResult<NpmDeadHost> {
@@ -19,7 +21,11 @@ impl DeadHostManager {
         client.post("/nginx/dead-hosts", req).await
     }
 
-    pub async fn update(client: &NpmClient, id: u64, req: &CreateDeadHostRequest) -> NpmResult<NpmDeadHost> {
+    pub async fn update(
+        client: &NpmClient,
+        id: u64,
+        req: &CreateDeadHostRequest,
+    ) -> NpmResult<NpmDeadHost> {
         client.put(&format!("/nginx/dead-hosts/{}", id), req).await
     }
 

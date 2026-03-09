@@ -10,14 +10,14 @@ use crate::client::NpmClient;
 use crate::error::{NpmError, NpmResult};
 use crate::types::*;
 
+use crate::access_lists::AccessListManager;
+use crate::certificates::CertificateManager;
+use crate::dead_hosts::DeadHostManager;
 use crate::proxy_hosts::ProxyHostManager;
 use crate::redirection_hosts::RedirectionHostManager;
-use crate::dead_hosts::DeadHostManager;
-use crate::streams::StreamManager;
-use crate::certificates::CertificateManager;
-use crate::users::UserManager;
-use crate::access_lists::AccessListManager;
 use crate::settings::SettingsManager;
+use crate::streams::StreamManager;
+use crate::users::UserManager;
 
 /// Shared Tauri state handle.
 pub type NpmServiceState = Arc<Mutex<NpmService>>;
@@ -27,14 +27,26 @@ pub struct NpmService {
     connections: HashMap<String, NpmClient>,
 }
 
+impl Default for NpmService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NpmService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: NpmConnectionConfig) -> NpmResult<NpmConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: NpmConnectionConfig,
+    ) -> NpmResult<NpmConnectionSummary> {
         let client = NpmClient::new(config)?;
         client.login().await?;
         let summary = client.ping().await?;
@@ -43,7 +55,8 @@ impl NpmService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> NpmResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| NpmError::not_connected(format!("No connection '{}'", id)))
     }
@@ -53,7 +66,8 @@ impl NpmService {
     }
 
     fn client(&self, id: &str) -> NpmResult<&NpmClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| NpmError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -71,11 +85,20 @@ impl NpmService {
         ProxyHostManager::get(self.client(id)?, host_id).await
     }
 
-    pub async fn create_proxy_host(&self, id: &str, req: CreateProxyHostRequest) -> NpmResult<NpmProxyHost> {
+    pub async fn create_proxy_host(
+        &self,
+        id: &str,
+        req: CreateProxyHostRequest,
+    ) -> NpmResult<NpmProxyHost> {
         ProxyHostManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_proxy_host(&self, id: &str, host_id: u64, req: UpdateProxyHostRequest) -> NpmResult<NpmProxyHost> {
+    pub async fn update_proxy_host(
+        &self,
+        id: &str,
+        host_id: u64,
+        req: UpdateProxyHostRequest,
+    ) -> NpmResult<NpmProxyHost> {
         ProxyHostManager::update(self.client(id)?, host_id, &req).await
     }
 
@@ -97,15 +120,28 @@ impl NpmService {
         RedirectionHostManager::list(self.client(id)?).await
     }
 
-    pub async fn get_redirection_host(&self, id: &str, host_id: u64) -> NpmResult<NpmRedirectionHost> {
+    pub async fn get_redirection_host(
+        &self,
+        id: &str,
+        host_id: u64,
+    ) -> NpmResult<NpmRedirectionHost> {
         RedirectionHostManager::get(self.client(id)?, host_id).await
     }
 
-    pub async fn create_redirection_host(&self, id: &str, req: CreateRedirectionHostRequest) -> NpmResult<NpmRedirectionHost> {
+    pub async fn create_redirection_host(
+        &self,
+        id: &str,
+        req: CreateRedirectionHostRequest,
+    ) -> NpmResult<NpmRedirectionHost> {
         RedirectionHostManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_redirection_host(&self, id: &str, host_id: u64, req: CreateRedirectionHostRequest) -> NpmResult<NpmRedirectionHost> {
+    pub async fn update_redirection_host(
+        &self,
+        id: &str,
+        host_id: u64,
+        req: CreateRedirectionHostRequest,
+    ) -> NpmResult<NpmRedirectionHost> {
         RedirectionHostManager::update(self.client(id)?, host_id, &req).await
     }
 
@@ -123,11 +159,20 @@ impl NpmService {
         DeadHostManager::get(self.client(id)?, host_id).await
     }
 
-    pub async fn create_dead_host(&self, id: &str, req: CreateDeadHostRequest) -> NpmResult<NpmDeadHost> {
+    pub async fn create_dead_host(
+        &self,
+        id: &str,
+        req: CreateDeadHostRequest,
+    ) -> NpmResult<NpmDeadHost> {
         DeadHostManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_dead_host(&self, id: &str, host_id: u64, req: CreateDeadHostRequest) -> NpmResult<NpmDeadHost> {
+    pub async fn update_dead_host(
+        &self,
+        id: &str,
+        host_id: u64,
+        req: CreateDeadHostRequest,
+    ) -> NpmResult<NpmDeadHost> {
         DeadHostManager::update(self.client(id)?, host_id, &req).await
     }
 
@@ -149,7 +194,12 @@ impl NpmService {
         StreamManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_stream(&self, id: &str, stream_id: u64, req: CreateStreamRequest) -> NpmResult<NpmStream> {
+    pub async fn update_stream(
+        &self,
+        id: &str,
+        stream_id: u64,
+        req: CreateStreamRequest,
+    ) -> NpmResult<NpmStream> {
         StreamManager::update(self.client(id)?, stream_id, &req).await
     }
 
@@ -167,11 +217,19 @@ impl NpmService {
         CertificateManager::get(self.client(id)?, cert_id).await
     }
 
-    pub async fn create_letsencrypt_certificate(&self, id: &str, req: CreateLetsEncryptCertRequest) -> NpmResult<NpmCertificate> {
+    pub async fn create_letsencrypt_certificate(
+        &self,
+        id: &str,
+        req: CreateLetsEncryptCertRequest,
+    ) -> NpmResult<NpmCertificate> {
         CertificateManager::create_letsencrypt(self.client(id)?, &req).await
     }
 
-    pub async fn upload_custom_certificate(&self, id: &str, req: UploadCustomCertRequest) -> NpmResult<NpmCertificate> {
+    pub async fn upload_custom_certificate(
+        &self,
+        id: &str,
+        req: UploadCustomCertRequest,
+    ) -> NpmResult<NpmCertificate> {
         CertificateManager::upload_custom(self.client(id)?, &req).await
     }
 
@@ -183,7 +241,11 @@ impl NpmService {
         CertificateManager::renew(self.client(id)?, cert_id).await
     }
 
-    pub async fn validate_certificate(&self, id: &str, cert_id: u64) -> NpmResult<serde_json::Value> {
+    pub async fn validate_certificate(
+        &self,
+        id: &str,
+        cert_id: u64,
+    ) -> NpmResult<serde_json::Value> {
         CertificateManager::validate(self.client(id)?, cert_id).await
     }
 
@@ -201,7 +263,12 @@ impl NpmService {
         UserManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_user(&self, id: &str, user_id: u64, req: UpdateUserRequest) -> NpmResult<NpmUser> {
+    pub async fn update_user(
+        &self,
+        id: &str,
+        user_id: u64,
+        req: UpdateUserRequest,
+    ) -> NpmResult<NpmUser> {
         UserManager::update(self.client(id)?, user_id, &req).await
     }
 
@@ -209,7 +276,12 @@ impl NpmService {
         UserManager::delete(self.client(id)?, user_id).await
     }
 
-    pub async fn change_user_password(&self, id: &str, user_id: u64, req: ChangePasswordRequest) -> NpmResult<()> {
+    pub async fn change_user_password(
+        &self,
+        id: &str,
+        user_id: u64,
+        req: ChangePasswordRequest,
+    ) -> NpmResult<()> {
         UserManager::change_password(self.client(id)?, user_id, &req).await
     }
 
@@ -227,11 +299,20 @@ impl NpmService {
         AccessListManager::get(self.client(id)?, list_id).await
     }
 
-    pub async fn create_access_list(&self, id: &str, req: CreateAccessListRequest) -> NpmResult<NpmAccessList> {
+    pub async fn create_access_list(
+        &self,
+        id: &str,
+        req: CreateAccessListRequest,
+    ) -> NpmResult<NpmAccessList> {
         AccessListManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_access_list(&self, id: &str, list_id: u64, req: CreateAccessListRequest) -> NpmResult<NpmAccessList> {
+    pub async fn update_access_list(
+        &self,
+        id: &str,
+        list_id: u64,
+        req: CreateAccessListRequest,
+    ) -> NpmResult<NpmAccessList> {
         AccessListManager::update(self.client(id)?, list_id, &req).await
     }
 
@@ -249,7 +330,12 @@ impl NpmService {
         SettingsManager::get(self.client(id)?, setting_id).await
     }
 
-    pub async fn update_setting(&self, id: &str, setting_id: &str, value: serde_json::Value) -> NpmResult<NpmSetting> {
+    pub async fn update_setting(
+        &self,
+        id: &str,
+        setting_id: &str,
+        value: serde_json::Value,
+    ) -> NpmResult<NpmSetting> {
         SettingsManager::update(self.client(id)?, setting_id, &value).await
     }
 

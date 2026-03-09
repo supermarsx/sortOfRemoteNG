@@ -19,7 +19,11 @@ impl UserManager {
         client.post("/users", req).await
     }
 
-    pub async fn update(client: &NpmClient, id: u64, req: &UpdateUserRequest) -> NpmResult<NpmUser> {
+    pub async fn update(
+        client: &NpmClient,
+        id: u64,
+        req: &UpdateUserRequest,
+    ) -> NpmResult<NpmUser> {
         client.put(&format!("/users/{}", id), req).await
     }
 
@@ -27,7 +31,11 @@ impl UserManager {
         client.delete(&format!("/users/{}", id)).await
     }
 
-    pub async fn change_password(client: &NpmClient, id: u64, req: &ChangePasswordRequest) -> NpmResult<()> {
+    pub async fn change_password(
+        client: &NpmClient,
+        id: u64,
+        req: &ChangePasswordRequest,
+    ) -> NpmResult<()> {
         let _: serde_json::Value = client.put(&format!("/users/{}/auth", id), req).await?;
         Ok(())
     }

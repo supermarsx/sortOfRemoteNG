@@ -19,7 +19,11 @@ impl StreamManager {
         client.post("/nginx/streams", req).await
     }
 
-    pub async fn update(client: &NpmClient, id: u64, req: &CreateStreamRequest) -> NpmResult<NpmStream> {
+    pub async fn update(
+        client: &NpmClient,
+        id: u64,
+        req: &CreateStreamRequest,
+    ) -> NpmResult<NpmStream> {
         client.put(&format!("/nginx/streams/{}", id), req).await
     }
 

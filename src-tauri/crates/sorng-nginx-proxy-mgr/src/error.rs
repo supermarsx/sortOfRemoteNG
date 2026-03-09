@@ -40,7 +40,10 @@ impl std::error::Error for NpmError {}
 
 impl NpmError {
     pub fn new(kind: NpmErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(NpmErrorKind::NotConnected, msg)
@@ -55,10 +58,16 @@ impl NpmError {
         Self::new(NpmErrorKind::ParseError, msg)
     }
     pub fn proxy_host_not_found(id: u64) -> Self {
-        Self::new(NpmErrorKind::ProxyHostNotFound, format!("Proxy host not found: {id}"))
+        Self::new(
+            NpmErrorKind::ProxyHostNotFound,
+            format!("Proxy host not found: {id}"),
+        )
     }
     pub fn token_expired() -> Self {
-        Self::new(NpmErrorKind::TokenExpired, "Authentication token has expired")
+        Self::new(
+            NpmErrorKind::TokenExpired,
+            "Authentication token has expired",
+        )
     }
     pub fn http(e: impl fmt::Display) -> Self {
         Self::new(NpmErrorKind::HttpError, e.to_string())

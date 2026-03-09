@@ -15,8 +15,17 @@ impl SettingsManager {
         client.get(&format!("/settings/{}", id)).await
     }
 
-    pub async fn update(client: &NpmClient, id: &str, value: &serde_json::Value) -> NpmResult<NpmSetting> {
-        client.put(&format!("/settings/{}", id), &serde_json::json!({ "value": value })).await
+    pub async fn update(
+        client: &NpmClient,
+        id: &str,
+        value: &serde_json::Value,
+    ) -> NpmResult<NpmSetting> {
+        client
+            .put(
+                &format!("/settings/{}", id),
+                &serde_json::json!({ "value": value }),
+            )
+            .await
     }
 
     pub async fn get_reports(client: &NpmClient) -> NpmResult<NpmReports> {
