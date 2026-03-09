@@ -38,7 +38,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         &url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let lower = body.to_lowercase();

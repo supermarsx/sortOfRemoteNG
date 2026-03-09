@@ -49,7 +49,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
 
     cmd.arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = if body.starts_with("good") {
@@ -67,10 +70,7 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
             Some("Blocked for abuse".to_string()),
         )
     } else if body == "911" {
-        (
-            UpdateStatus::Failed,
-            Some("Server error".to_string()),
-        )
+        (UpdateStatus::Failed, Some("Server error".to_string()))
     } else {
         (
             UpdateStatus::UnexpectedResponse,

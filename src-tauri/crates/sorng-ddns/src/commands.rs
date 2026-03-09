@@ -24,6 +24,7 @@ pub async fn ddns_get_profile(
     svc.get_profile(&id)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn ddns_create_profile(
     state: State<'_, DdnsServiceState>,
@@ -53,6 +54,7 @@ pub async fn ddns_create_profile(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn ddns_update_profile(
     state: State<'_, DdnsServiceState>,
@@ -133,9 +135,7 @@ pub async fn ddns_trigger_update_all(
 // ── IP Detection ────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ddns_detect_ip(
-    state: State<'_, DdnsServiceState>,
-) -> Result<IpDetectResult, String> {
+pub async fn ddns_detect_ip(state: State<'_, DdnsServiceState>) -> Result<IpDetectResult, String> {
     let mut svc = state.lock().await;
     svc.detect_ip().await
 }
@@ -151,18 +151,14 @@ pub async fn ddns_get_current_ips(
 // ── Scheduler ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ddns_start_scheduler(
-    state: State<'_, DdnsServiceState>,
-) -> Result<(), String> {
+pub async fn ddns_start_scheduler(state: State<'_, DdnsServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.start_scheduler();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn ddns_stop_scheduler(
-    state: State<'_, DdnsServiceState>,
-) -> Result<(), String> {
+pub async fn ddns_stop_scheduler(state: State<'_, DdnsServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.stop_scheduler();
     Ok(())
@@ -246,6 +242,7 @@ pub async fn ddns_cf_list_records(
         .await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn ddns_cf_create_record(
     state: State<'_, DdnsServiceState>,
@@ -287,9 +284,7 @@ pub async fn ddns_cf_delete_record(
 // ── Configuration ───────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ddns_get_config(
-    state: State<'_, DdnsServiceState>,
-) -> Result<DdnsConfig, String> {
+pub async fn ddns_get_config(state: State<'_, DdnsServiceState>) -> Result<DdnsConfig, String> {
     let svc = state.lock().await;
     Ok(svc.get_config())
 }
@@ -324,17 +319,13 @@ pub async fn ddns_get_audit_for_profile(
 }
 
 #[tauri::command]
-pub async fn ddns_export_audit(
-    state: State<'_, DdnsServiceState>,
-) -> Result<String, String> {
+pub async fn ddns_export_audit(state: State<'_, DdnsServiceState>) -> Result<String, String> {
     let svc = state.lock().await;
     svc.export_audit()
 }
 
 #[tauri::command]
-pub async fn ddns_clear_audit(
-    state: State<'_, DdnsServiceState>,
-) -> Result<(), String> {
+pub async fn ddns_clear_audit(state: State<'_, DdnsServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.clear_audit();
     Ok(())

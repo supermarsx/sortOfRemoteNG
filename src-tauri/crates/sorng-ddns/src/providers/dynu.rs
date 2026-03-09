@@ -45,7 +45,10 @@ pub async fn update(
 
     cmd.arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = if body.starts_with("good") {
@@ -58,15 +61,9 @@ pub async fn update(
             Some("Invalid credentials".to_string()),
         )
     } else if body == "nohost" {
-        (
-            UpdateStatus::Failed,
-            Some("Hostname not found".to_string()),
-        )
+        (UpdateStatus::Failed, Some("Hostname not found".to_string()))
     } else if body == "abuse" {
-        (
-            UpdateStatus::RateLimited,
-            Some("Rate limited".to_string()),
-        )
+        (UpdateStatus::RateLimited, Some("Rate limited".to_string()))
     } else {
         (
             UpdateStatus::UnexpectedResponse,

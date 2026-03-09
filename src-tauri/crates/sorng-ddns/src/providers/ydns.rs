@@ -18,13 +18,12 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
 
     let (username, password) = match &profile.auth {
         DdnsAuthMethod::Basic { username, password } => (username.clone(), password.clone()),
-        _ => return Err("YDNS requires Basic auth (host as user, API key as password)".to_string()),
+        _ => {
+            return Err("YDNS requires Basic auth (host as user, API key as password)".to_string())
+        }
     };
 
-    let url = format!(
-        "https://ydns.io/api/v1/update/?host={}&ip={}",
-        fqdn, ip
-    );
+    let url = format!("https://ydns.io/api/v1/update/?host={}&ip={}", fqdn, ip);
 
     let mut cmd = tokio::process::Command::new("curl");
     cmd.args([
@@ -36,7 +35,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         &url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = if body == "ok" {
@@ -44,7 +46,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
     } else if body.starts_with("nochg") || body == "ok nochg" {
         (UpdateStatus::NoChange, None)
     } else if body.contains("badauth") || body.contains("401") {
-        (UpdateStatus::AuthError, Some("Invalid credentials".to_string()))
+        (
+            UpdateStatus::AuthError,
+            Some("Invalid credentials".to_string()),
+        )
     } else {
         (
             UpdateStatus::UnexpectedResponse,

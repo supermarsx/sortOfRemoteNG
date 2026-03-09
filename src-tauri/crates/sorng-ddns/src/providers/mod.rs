@@ -29,7 +29,9 @@ pub trait DdnsProviderImpl: Send + Sync {
         profile: &DdnsProfile,
         ip: &str,
         ipv6: Option<&str>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<DdnsUpdateResult, String>> + Send + '_>>;
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<DdnsUpdateResult, String>> + Send + '_>,
+    >;
 }
 
 /// Dispatch an update to the correct provider implementation.
@@ -306,8 +308,5 @@ pub fn get_capabilities(provider: &DdnsProvider) -> ProviderCapabilities {
 
 /// Get capabilities for all providers.
 pub fn get_all_capabilities() -> Vec<ProviderCapabilities> {
-    DdnsProvider::all()
-        .iter()
-        .map(|p| get_capabilities(p))
-        .collect()
+    DdnsProvider::all().iter().map(get_capabilities).collect()
 }

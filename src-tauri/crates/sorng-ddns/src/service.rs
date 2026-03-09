@@ -32,6 +32,12 @@ pub struct DdnsService {
     pub started_at: String,
 }
 
+impl Default for DdnsService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DdnsService {
     /// Create a new DDNS service.
     pub fn new() -> Self {
@@ -65,6 +71,7 @@ impl DdnsService {
     }
 
     /// Create a new profile.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_profile(
         &mut self,
         name: String,
@@ -146,6 +153,7 @@ impl DdnsService {
     }
 
     /// Update an existing profile.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_profile(
         &mut self,
         id: &str,
@@ -367,7 +375,10 @@ impl DdnsService {
     // ── Updates ─────────────────────────────────────────────────────
 
     /// Update a single profile now.
-    pub async fn update_profile_now(&mut self, profile_id: &str) -> Result<DdnsUpdateResult, String> {
+    pub async fn update_profile_now(
+        &mut self,
+        profile_id: &str,
+    ) -> Result<DdnsUpdateResult, String> {
         let profile = self.get_profile(profile_id)?;
 
         if !profile.enabled {
@@ -403,19 +414,16 @@ impl DdnsService {
             _ => None,
         };
 
-        let result = crate::providers::dispatch_update(
-            &profile,
-            &ip,
-            ipv6.as_deref(),
-        )
-        .await?;
+        let result = crate::providers::dispatch_update(&profile, &ip, ipv6.as_deref()).await?;
 
         // Update health tracking
         self.record_update_result(&result);
 
         // Update scheduler
-        let success = result.status == UpdateStatus::Success || result.status == UpdateStatus::NoChange;
-        self.scheduler.mark_completed(profile_id, success, &self.config);
+        let success =
+            result.status == UpdateStatus::Success || result.status == UpdateStatus::NoChange;
+        self.scheduler
+            .mark_completed(profile_id, success, &self.config);
 
         // Audit
         let audit_action = match result.status {
@@ -545,7 +553,11 @@ impl DdnsService {
 
     /// Get overall system status.
     pub fn get_system_status(&self) -> DdnsSystemStatus {
-        let healthy = self.profile_health.values().filter(|h| h.is_healthy).count();
+        let healthy = self
+            .profile_health
+            .values()
+            .filter(|h| h.is_healthy)
+            .count();
         let errored = self
             .profile_health
             .values()
@@ -682,6 +694,7 @@ impl DdnsService {
     }
 
     /// Create a Cloudflare DNS record.
+    #[allow(clippy::too_many_arguments)]
     pub async fn cf_create_record(
         &mut self,
         profile_id: &str,
@@ -985,7 +998,9 @@ mod tests {
         svc.create_profile(
             "A".to_string(),
             DdnsProvider::Cloudflare,
-            DdnsAuthMethod::ApiToken { token: "t".to_string() },
+            DdnsAuthMethod::ApiToken {
+                token: "t".to_string(),
+            },
             "a.com".to_string(),
             "@".to_string(),
             IpVersion::Auto,
@@ -1007,7 +1022,9 @@ mod tests {
         svc.create_profile(
             "Export Test".to_string(),
             DdnsProvider::DuckDns,
-            DdnsAuthMethod::ApiToken { token: "t".to_string() },
+            DdnsAuthMethod::ApiToken {
+                token: "t".to_string(),
+            },
             "myhost".to_string(),
             "".to_string(),
             IpVersion::Auto,
@@ -1056,7 +1073,10 @@ mod tests {
         svc.create_profile(
             "Audit Test".to_string(),
             DdnsProvider::NoIp,
-            DdnsAuthMethod::Basic { username: "u".to_string(), password: "p".to_string() },
+            DdnsAuthMethod::Basic {
+                username: "u".to_string(),
+                password: "p".to_string(),
+            },
             "test.com".to_string(),
             "www".to_string(),
             IpVersion::V4Only,

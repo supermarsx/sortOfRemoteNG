@@ -28,10 +28,7 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
                     update_hash, ip
                 )
             } else {
-                format!(
-                    "https://sync.afraid.org/u/{}/?address={}",
-                    update_hash, ip
-                )
+                format!("https://sync.afraid.org/u/{}/?address={}", update_hash, ip)
             }
         }
         DdnsAuthMethod::DirectUrl { update_url } => {
@@ -51,7 +48,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
     let mut cmd = tokio::process::Command::new("curl");
     cmd.args(["-s", "-m", "30", &url]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let lower = body.to_lowercase();

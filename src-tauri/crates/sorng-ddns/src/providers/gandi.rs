@@ -60,7 +60,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         &url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let http_code = output.status.code().unwrap_or(0);
 
@@ -75,7 +78,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         } else if msg.contains("401") || msg.contains("Unauthorized") {
             (UpdateStatus::AuthError, Some("Invalid token".to_string()))
         } else if msg.contains("404") {
-            (UpdateStatus::Failed, Some("Domain or record not found".to_string()))
+            (
+                UpdateStatus::Failed,
+                Some("Domain or record not found".to_string()),
+            )
         } else {
             (UpdateStatus::Success, None) // Gandi returns 201 on create
         }

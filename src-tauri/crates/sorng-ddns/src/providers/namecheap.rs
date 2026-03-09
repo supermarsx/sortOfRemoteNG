@@ -28,7 +28,11 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
             }
             let tld = parts[0].to_string();
             let sld = parts[1].to_string();
-            let host = if profile.hostname.is_empty() { "@".to_string() } else { profile.hostname.clone() };
+            let host = if profile.hostname.is_empty() {
+                "@".to_string()
+            } else {
+                profile.hostname.clone()
+            };
             (sld, tld, vec![host])
         }
     };
@@ -55,7 +59,11 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
     }
 
     let all_ok = results.iter().all(|(_, ok, _)| *ok);
-    let fqdn = format!("{}.{}", hosts.first().unwrap_or(&"@".to_string()), profile.domain);
+    let fqdn = format!(
+        "{}.{}",
+        hosts.first().unwrap_or(&"@".to_string()),
+        profile.domain
+    );
 
     let (status, error) = if all_ok {
         info!("Namecheap: Updated {}.{} → {}", sld, tld, ip);

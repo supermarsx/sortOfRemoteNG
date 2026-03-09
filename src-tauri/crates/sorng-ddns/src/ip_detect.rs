@@ -51,7 +51,12 @@ pub async fn detect_public_ip(
                         last_error = format!("Invalid IPv6 from {}: {}", service.label(), ip);
                         continue;
                     }
-                    info!("Detected IPv6 {} from {} in {}ms", ip, service.label(), latency);
+                    info!(
+                        "Detected IPv6 {} from {} in {}ms",
+                        ip,
+                        service.label(),
+                        latency
+                    );
                     return Ok(IpDetectResult {
                         ipv4: None,
                         ipv6: Some(ip),
@@ -69,7 +74,12 @@ pub async fn detect_public_ip(
                         last_error = format!("Invalid IPv4 from {}: {}", service.label(), ip);
                         continue;
                     }
-                    info!("Detected IPv4 {} from {} in {}ms", ip, service.label(), latency);
+                    info!(
+                        "Detected IPv4 {} from {} in {}ms",
+                        ip,
+                        service.label(),
+                        latency
+                    );
                     return Ok(IpDetectResult {
                         ipv4: Some(ip),
                         ipv6: None,

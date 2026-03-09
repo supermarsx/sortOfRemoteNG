@@ -18,7 +18,8 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
 
     let (api_key, secret_key) = match &profile.auth {
         DdnsAuthMethod::ApiKeySecret {
-            api_key, api_secret,
+            api_key,
+            api_secret,
         } => (api_key.clone(), api_secret.clone()),
         _ => return Err("Porkbun requires API Key + Secret Key".to_string()),
     };
@@ -63,11 +64,13 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         &url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    let json: serde_json::Value =
-        serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
 
     let api_status = json["status"].as_str().unwrap_or("ERROR");
 

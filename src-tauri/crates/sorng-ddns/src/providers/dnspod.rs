@@ -63,15 +63,15 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    let json: serde_json::Value =
-        serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
 
-    let status_code = json["status"]["code"]
-        .as_str()
-        .unwrap_or("-1");
+    let status_code = json["status"]["code"].as_str().unwrap_or("-1");
 
     let (status, error) = match status_code {
         "1" => (UpdateStatus::Success, None),
@@ -79,14 +79,8 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
             UpdateStatus::AuthError,
             Some("Authentication failed".to_string()),
         ),
-        "-15" => (
-            UpdateStatus::Failed,
-            Some("Domain not found".to_string()),
-        ),
-        "104" => (
-            UpdateStatus::RateLimited,
-            Some("Rate limited".to_string()),
-        ),
+        "-15" => (UpdateStatus::Failed, Some("Domain not found".to_string())),
+        "104" => (UpdateStatus::RateLimited, Some("Rate limited".to_string())),
         _ => {
             let msg = json["status"]["message"]
                 .as_str()

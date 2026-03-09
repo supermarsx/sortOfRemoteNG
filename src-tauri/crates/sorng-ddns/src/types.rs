@@ -108,7 +108,7 @@ impl std::fmt::Display for DdnsProvider {
 // ── IP Version ──────────────────────────────────────────────────────
 
 /// Which IP addresses to detect/update.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum IpVersion {
     /// IPv4 only (A record).
     V4Only,
@@ -117,13 +117,8 @@ pub enum IpVersion {
     /// Dual-stack: update both A and AAAA records.
     DualStack,
     /// Auto-detect available IP versions.
+    #[default]
     Auto,
-}
-
-impl Default for IpVersion {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 // ── Record Type ─────────────────────────────────────────────────────
@@ -178,10 +173,7 @@ pub enum DdnsAuthMethod {
         consumer_key: String,
     },
     /// DNSPod token.
-    DnsPodAuth {
-        token_id: String,
-        token: String,
-    },
+    DnsPodAuth { token_id: String, token: String },
     /// Custom HTTP headers.
     CustomHeaders { headers: HashMap<String, String> },
 }
@@ -189,17 +181,12 @@ pub enum DdnsAuthMethod {
 // ── Proxy Mode ──────────────────────────────────────────────────────
 
 /// Cloudflare proxy (orange cloud) toggle.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum CloudflareProxyMode {
     Proxied,
     DnsOnly,
+    #[default]
     Unchanged,
-}
-
-impl Default for CloudflareProxyMode {
-    fn default() -> Self {
-        Self::Unchanged
-    }
 }
 
 // ── Provider-Specific Settings ──────────────────────────────────────
@@ -333,7 +320,7 @@ pub struct CustomProviderSettings {
 }
 
 /// Union of all provider-specific settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum ProviderSettings {
     Cloudflare(CloudflareSettings),
     NoIp(NoIpSettings),
@@ -348,13 +335,8 @@ pub enum ProviderSettings {
     Porkbun(PorkbunSettings),
     Gandi(GandiSettings),
     Custom(CustomProviderSettings),
+    #[default]
     None,
-}
-
-impl Default for ProviderSettings {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 // ── DDNS Profile ────────────────────────────────────────────────────

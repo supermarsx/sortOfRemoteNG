@@ -25,19 +25,40 @@ fn parse_response(body: &str) -> (UpdateStatus, Option<String>) {
     } else if trimmed.starts_with("nochg") {
         (UpdateStatus::NoChange, None)
     } else if trimmed == "nohost" {
-        (UpdateStatus::Failed, Some("Hostname does not exist".to_string()))
+        (
+            UpdateStatus::Failed,
+            Some("Hostname does not exist".to_string()),
+        )
     } else if trimmed == "badauth" {
-        (UpdateStatus::AuthError, Some("Invalid username or password".to_string()))
+        (
+            UpdateStatus::AuthError,
+            Some("Invalid username or password".to_string()),
+        )
     } else if trimmed == "badagent" {
-        (UpdateStatus::Failed, Some("Client has been blocked (bad agent)".to_string()))
+        (
+            UpdateStatus::Failed,
+            Some("Client has been blocked (bad agent)".to_string()),
+        )
     } else if trimmed == "!donator" {
-        (UpdateStatus::Failed, Some("Feature not available for this account type".to_string()))
+        (
+            UpdateStatus::Failed,
+            Some("Feature not available for this account type".to_string()),
+        )
     } else if trimmed == "abuse" {
-        (UpdateStatus::RateLimited, Some("Hostname is blocked for abuse".to_string()))
+        (
+            UpdateStatus::RateLimited,
+            Some("Hostname is blocked for abuse".to_string()),
+        )
     } else if trimmed == "911" {
-        (UpdateStatus::Failed, Some("Server error — retry later".to_string()))
+        (
+            UpdateStatus::Failed,
+            Some("Server error — retry later".to_string()),
+        )
     } else {
-        (UpdateStatus::UnexpectedResponse, Some(format!("Unexpected: {}", trimmed)))
+        (
+            UpdateStatus::UnexpectedResponse,
+            Some(format!("Unexpected: {}", trimmed)),
+        )
     }
 }
 
@@ -81,7 +102,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         &url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = parse_response(&body);

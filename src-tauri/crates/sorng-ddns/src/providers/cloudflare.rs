@@ -41,7 +41,10 @@ pub async fn list_zones(auth: &DdnsAuthMethod) -> Result<Vec<CloudflareZone>, St
         .args(["-H", "Content-Type: application/json"])
         .arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
@@ -95,7 +98,10 @@ pub async fn list_records(
         .args(["-H", "Content-Type: application/json"])
         .arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
@@ -137,6 +143,7 @@ pub async fn list_records(
 }
 
 /// Create a DNS record.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_record(
     auth: &DdnsAuthMethod,
     zone_id: &str,
@@ -169,7 +176,10 @@ pub async fn create_record(
         .arg(payload.to_string())
         .arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
@@ -202,12 +212,7 @@ pub async fn delete_record(
     record_id: &str,
 ) -> Result<(), String> {
     let auth_args = build_auth_args(auth)?;
-    let url = format!(
-        "{}/zones/{}/dns_records/{}",
-        api_base(),
-        zone_id,
-        record_id
-    );
+    let url = format!("{}/zones/{}/dns_records/{}", api_base(), zone_id, record_id);
 
     let mut cmd = tokio::process::Command::new("curl");
     cmd.args(["-s", "-X", "DELETE"])
@@ -215,7 +220,10 @@ pub async fn delete_record(
         .args(["-H", "Content-Type: application/json"])
         .arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
@@ -244,12 +252,9 @@ pub async fn update(
 
     // Resolve zone_id and record_id
     let (zone_id, proxied, ttl, comment) = match &profile.provider_settings {
-        ProviderSettings::Cloudflare(cf) => (
-            cf.zone_id.clone(),
-            &cf.proxied,
-            cf.ttl,
-            cf.comment.clone(),
-        ),
+        ProviderSettings::Cloudflare(cf) => {
+            (cf.zone_id.clone(), &cf.proxied, cf.ttl, cf.comment.clone())
+        }
         _ => (None, &CloudflareProxyMode::Unchanged, None, None),
     };
 
@@ -329,7 +334,10 @@ pub async fn update(
             .arg(payload.to_string())
             .arg(&url);
 
-        let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| format!("curl failed: {}", e))?;
         let body = String::from_utf8_lossy(&output.stdout);
         let json: serde_json::Value =
             serde_json::from_str(&body).map_err(|_| format!("Invalid response: {}", body))?;
@@ -370,7 +378,10 @@ pub async fn update(
             latency_ms: start.elapsed().as_millis() as u64,
         })
     } else {
-        warn!("Cloudflare: No existing {} record for {}", record_type_str, fqdn);
+        warn!(
+            "Cloudflare: No existing {} record for {}",
+            record_type_str, fqdn
+        );
         Err(format!(
             "No existing {} record found for {}. Create it first.",
             record_type_str, fqdn

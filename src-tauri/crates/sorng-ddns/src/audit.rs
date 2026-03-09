@@ -34,6 +34,7 @@ impl DdnsAuditLogger {
     }
 
     /// Log a DDNS audit event.
+    #[allow(clippy::too_many_arguments)]
     pub fn log_event(
         &mut self,
         action: DdnsAuditAction,
@@ -193,9 +194,33 @@ mod tests {
     #[test]
     fn test_filter_by_profile() {
         let mut logger = DdnsAuditLogger::default_logger();
-        logger.log_event(DdnsAuditAction::UpdateSuccess, Some("a"), None, None, "A1", true, None);
-        logger.log_event(DdnsAuditAction::UpdateFailed, Some("b"), None, None, "B1", false, Some("err"));
-        logger.log_event(DdnsAuditAction::UpdateSuccess, Some("a"), None, None, "A2", true, None);
+        logger.log_event(
+            DdnsAuditAction::UpdateSuccess,
+            Some("a"),
+            None,
+            None,
+            "A1",
+            true,
+            None,
+        );
+        logger.log_event(
+            DdnsAuditAction::UpdateFailed,
+            Some("b"),
+            None,
+            None,
+            "B1",
+            false,
+            Some("err"),
+        );
+        logger.log_event(
+            DdnsAuditAction::UpdateSuccess,
+            Some("a"),
+            None,
+            None,
+            "A2",
+            true,
+            None,
+        );
         let a_entries = logger.get_entries_for_profile("a");
         assert_eq!(a_entries.len(), 2);
     }
@@ -203,9 +228,33 @@ mod tests {
     #[test]
     fn test_filter_failures() {
         let mut logger = DdnsAuditLogger::default_logger();
-        logger.log_event(DdnsAuditAction::UpdateSuccess, None, None, None, "ok", true, None);
-        logger.log_event(DdnsAuditAction::UpdateFailed, None, None, None, "fail", false, Some("err"));
-        logger.log_event(DdnsAuditAction::UpdateAuthError, None, None, None, "auth", false, Some("bad key"));
+        logger.log_event(
+            DdnsAuditAction::UpdateSuccess,
+            None,
+            None,
+            None,
+            "ok",
+            true,
+            None,
+        );
+        logger.log_event(
+            DdnsAuditAction::UpdateFailed,
+            None,
+            None,
+            None,
+            "fail",
+            false,
+            Some("err"),
+        );
+        logger.log_event(
+            DdnsAuditAction::UpdateAuthError,
+            None,
+            None,
+            None,
+            "auth",
+            false,
+            Some("bad key"),
+        );
         let failures = logger.get_failures();
         assert_eq!(failures.len(), 2);
     }
@@ -213,7 +262,15 @@ mod tests {
     #[test]
     fn test_export_and_clear() {
         let mut logger = DdnsAuditLogger::default_logger();
-        logger.log_event(DdnsAuditAction::ConfigUpdated, None, None, None, "config changed", true, None);
+        logger.log_event(
+            DdnsAuditAction::ConfigUpdated,
+            None,
+            None,
+            None,
+            "config changed",
+            true,
+            None,
+        );
         let json = logger.export_json().unwrap();
         assert!(json.contains("ConfigUpdated"));
         logger.clear();

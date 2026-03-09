@@ -18,9 +18,7 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
 
     let (username, password) = match &profile.auth {
         DdnsAuthMethod::Basic { username, password } => (username.clone(), password.clone()),
-        _ => {
-            return Err("Google Domains requires Basic auth (generated credentials)".to_string())
-        }
+        _ => return Err("Google Domains requires Basic auth (generated credentials)".to_string()),
     };
 
     let url = format!(
@@ -40,7 +38,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         &url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = if body.starts_with("good") {
@@ -58,10 +59,7 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
             Some("Hostname not configured for DDNS".to_string()),
         )
     } else if body == "notfqdn" {
-        (
-            UpdateStatus::Failed,
-            Some("Not a valid FQDN".to_string()),
-        )
+        (UpdateStatus::Failed, Some("Not a valid FQDN".to_string()))
     } else if body == "abuse" {
         (
             UpdateStatus::RateLimited,

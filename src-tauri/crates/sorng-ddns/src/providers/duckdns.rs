@@ -46,7 +46,10 @@ pub async fn update(
     let mut cmd = tokio::process::Command::new("curl");
     cmd.args(["-s", "-m", "30", &url]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = if body == "OK" {

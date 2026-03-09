@@ -18,7 +18,8 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
 
     let (api_key, api_secret) = match &profile.auth {
         DdnsAuthMethod::ApiKeySecret {
-            api_key, api_secret,
+            api_key,
+            api_secret,
         } => (api_key.clone(), api_secret.clone()),
         _ => return Err("GoDaddy requires API Key + Secret".to_string()),
     };
@@ -55,7 +56,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         .arg(payload.to_string())
         .arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let status_code = output.status.code().unwrap_or(0);
 

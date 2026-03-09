@@ -90,7 +90,10 @@ pub async fn update(
 
     cmd.arg(&url);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = if output.status.success() {
@@ -112,10 +115,7 @@ pub async fn update(
             (UpdateStatus::Success, None)
         }
     } else {
-        (
-            UpdateStatus::Failed,
-            Some(format!("HTTP error: {}", body)),
-        )
+        (UpdateStatus::Failed, Some(format!("HTTP error: {}", body)))
     };
 
     Ok(DdnsUpdateResult {

@@ -46,7 +46,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         &url,
     ]);
 
-    let output = cmd.output().await.map_err(|e| format!("curl failed: {}", e))?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("curl failed: {}", e))?;
     let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     let (status, error) = if body.starts_with("good") {
@@ -54,7 +57,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
     } else if body.starts_with("nochg") {
         (UpdateStatus::NoChange, None)
     } else if body == "badauth" {
-        (UpdateStatus::AuthError, Some("Invalid credentials".to_string()))
+        (
+            UpdateStatus::AuthError,
+            Some("Invalid credentials".to_string()),
+        )
     } else if body == "nohost" {
         (UpdateStatus::Failed, Some("Hostname not found".to_string()))
     } else {
@@ -116,7 +122,9 @@ async fn update_rest(
         hostname: profile.hostname.clone(),
         fqdn: fqdn.to_string(),
         provider_response: None,
-        error: Some("OVH REST API requires signature computation (use DynHost mode instead)".to_string()),
+        error: Some(
+            "OVH REST API requires signature computation (use DynHost mode instead)".to_string(),
+        ),
         timestamp: Utc::now().to_rfc3339(),
         latency_ms: start.elapsed().as_millis() as u64,
     })

@@ -20,6 +20,12 @@ pub struct DdnsScheduler {
     pub total_updates: u64,
 }
 
+impl Default for DdnsScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DdnsScheduler {
     /// Create a new scheduler.
     pub fn new() -> Self {
