@@ -18,7 +18,12 @@ impl<'a> UserManager<'a> {
         rf.get_users().await
     }
 
-    pub async fn create_user(&self, username: &str, password: &str, role: &str) -> LenovoResult<()> {
+    pub async fn create_user(
+        &self,
+        username: &str,
+        password: &str,
+        role: &str,
+    ) -> LenovoResult<()> {
         let rf = self.client.require_redfish()?;
         rf.create_user(username, password, role).await
     }

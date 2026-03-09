@@ -76,7 +76,9 @@ impl LenovoRedfishClient {
                             if let Some(xcc_type) =
                                 lenovo.get("@odata.type").and_then(|v| v.as_str())
                             {
-                                if xcc_type.contains("XCC2") || xcc_type.contains("XClarityController2") {
+                                if xcc_type.contains("XCC2")
+                                    || xcc_type.contains("XClarityController2")
+                                {
                                     return Ok(XccGeneration::Xcc2);
                                 }
                             }
@@ -119,25 +121,61 @@ impl LenovoRedfishClient {
             .map_err(LenovoError::from)?;
 
         Ok(BmcSystemInfo {
-            id: sys.get("Id").and_then(|v| v.as_str()).unwrap_or("1").to_string(),
-            manufacturer: sys.get("Manufacturer").and_then(|v| v.as_str()).unwrap_or("Lenovo").to_string(),
-            model: sys.get("Model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            serial_number: sys.get("SerialNumber").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            id: sys
+                .get("Id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("1")
+                .to_string(),
+            manufacturer: sys
+                .get("Manufacturer")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Lenovo")
+                .to_string(),
+            model: sys
+                .get("Model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            serial_number: sys
+                .get("SerialNumber")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             sku: sys.get("SKU").and_then(|v| v.as_str()).map(String::from),
-            bios_version: sys.get("BiosVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            hostname: sys.get("HostName").and_then(|v| v.as_str()).map(String::from),
-            power_state: sys.get("PowerState").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
-            indicator_led: sys.get("IndicatorLED").and_then(|v| v.as_str()).map(String::from),
-            asset_tag: sys.get("AssetTag").and_then(|v| v.as_str()).map(String::from),
-            memory_gib: sys.get("MemorySummary")
+            bios_version: sys
+                .get("BiosVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            hostname: sys
+                .get("HostName")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            power_state: sys
+                .get("PowerState")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            indicator_led: sys
+                .get("IndicatorLED")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            asset_tag: sys
+                .get("AssetTag")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            memory_gib: sys
+                .get("MemorySummary")
                 .and_then(|m| m.get("TotalSystemMemoryGiB"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
-            processor_count: sys.get("ProcessorSummary")
+            processor_count: sys
+                .get("ProcessorSummary")
                 .and_then(|p| p.get("Count"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0) as u32,
-            processor_model: sys.get("ProcessorSummary")
+            processor_model: sys
+                .get("ProcessorSummary")
                 .and_then(|p| p.get("Model"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
@@ -153,18 +191,25 @@ impl LenovoRedfishClient {
             .await
             .map_err(LenovoError::from)?;
 
-        let net = self.inner.get_raw("/redfish/v1/Managers/1/EthernetInterfaces/1").await;
+        let net = self
+            .inner
+            .get_raw("/redfish/v1/Managers/1/EthernetInterfaces/1")
+            .await;
         let (ip, mac) = if let Ok(resp) = net {
             let text = resp.text().await.unwrap_or_default();
             let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-            let ip = val.get("IPv4Addresses")
+            let ip = val
+                .get("IPv4Addresses")
                 .and_then(|arr| arr.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|addr| addr.get("Address"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let mac = val.get("MACAddress").and_then(|v| v.as_str()).map(String::from);
+            let mac = val
+                .get("MACAddress")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             (ip, mac)
         } else {
             (String::new(), None)
@@ -172,12 +217,25 @@ impl LenovoRedfishClient {
 
         Ok(XccInfo {
             generation: self.generation.clone(),
-            firmware_version: mgr.get("FirmwareVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            firmware_date: mgr.get("DateTime").and_then(|v| v.as_str()).map(String::from),
+            firmware_version: mgr
+                .get("FirmwareVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            firmware_date: mgr
+                .get("DateTime")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             ip_address: ip,
             mac_address: mac,
-            hostname: mgr.get("HostName").and_then(|v| v.as_str()).map(String::from),
-            serial_number: mgr.get("SerialNumber").and_then(|v| v.as_str()).map(String::from),
+            hostname: mgr
+                .get("HostName")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            serial_number: mgr
+                .get("SerialNumber")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             model: mgr.get("Model").and_then(|v| v.as_str()).map(String::from),
             uuid: mgr.get("UUID").and_then(|v| v.as_str()).map(String::from),
             fqdn: mgr.get("FQDN").and_then(|v| v.as_str()).map(String::from),
@@ -209,7 +267,11 @@ impl LenovoRedfishClient {
             .get("/redfish/v1/Systems/1")
             .await
             .map_err(LenovoError::from)?;
-        Ok(sys.get("PowerState").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string())
+        Ok(sys
+            .get("PowerState")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string())
     }
 
     /// Perform a power action via Redfish ComputerSystem.Reset.
@@ -231,13 +293,15 @@ impl LenovoRedfishClient {
             .await
             .map_err(LenovoError::from)?;
 
-        let current_watts = pwr.get("PowerControl")
+        let current_watts = pwr
+            .get("PowerControl")
             .and_then(|arr| arr.as_array())
             .and_then(|arr| arr.first())
             .and_then(|pc| pc.get("PowerConsumedWatts"))
             .and_then(|v| v.as_f64());
 
-        let cap = pwr.get("PowerControl")
+        let cap = pwr
+            .get("PowerControl")
             .and_then(|arr| arr.as_array())
             .and_then(|arr| arr.first())
             .and_then(|pc| pc.get("PowerLimit"))
@@ -248,19 +312,22 @@ impl LenovoRedfishClient {
 
         Ok(BmcPowerMetrics {
             current_watts,
-            min_watts: pwr.get("PowerControl")
+            min_watts: pwr
+                .get("PowerControl")
                 .and_then(|arr| arr.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|pc| pc.get("PowerMetrics"))
                 .and_then(|pm| pm.get("MinConsumedWatts"))
                 .and_then(|v| v.as_f64()),
-            max_watts: pwr.get("PowerControl")
+            max_watts: pwr
+                .get("PowerControl")
                 .and_then(|arr| arr.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|pc| pc.get("PowerMetrics"))
                 .and_then(|pm| pm.get("MaxConsumedWatts"))
                 .and_then(|v| v.as_f64()),
-            average_watts: pwr.get("PowerControl")
+            average_watts: pwr
+                .get("PowerControl")
                 .and_then(|arr| arr.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|pc| pc.get("PowerMetrics"))
@@ -279,40 +346,96 @@ impl LenovoRedfishClient {
             .await
             .map_err(LenovoError::from)?;
 
-        let temperatures = th.get("Temperatures")
+        let temperatures = th
+            .get("Temperatures")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|t| {
-                Some(BmcTemperatureSensor {
-                    id: t.get("MemberId").or(t.get("@odata.id")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: t.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    reading_celsius: t.get("ReadingCelsius").and_then(|v| v.as_f64()),
-                    upper_threshold_critical: t.get("UpperThresholdCritical").and_then(|v| v.as_f64()),
-                    upper_threshold_fatal: t.get("UpperThresholdFatal").and_then(|v| v.as_f64()),
-                    lower_threshold_critical: t.get("LowerThresholdCritical").and_then(|v| v.as_f64()),
-                    status: ComponentHealth {
-                        health: t.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                        state: t.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
-                    },
-                    physical_context: t.get("PhysicalContext").and_then(|v| v.as_str()).map(String::from),
-                })
-            }).collect())
+            .map(|arr| {
+                arr.iter()
+                    .map(|t| BmcTemperatureSensor {
+                        id: t
+                            .get("MemberId")
+                            .or(t.get("@odata.id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        name: t
+                            .get("Name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        reading_celsius: t.get("ReadingCelsius").and_then(|v| v.as_f64()),
+                        upper_threshold_critical: t
+                            .get("UpperThresholdCritical")
+                            .and_then(|v| v.as_f64()),
+                        upper_threshold_fatal: t
+                            .get("UpperThresholdFatal")
+                            .and_then(|v| v.as_f64()),
+                        lower_threshold_critical: t
+                            .get("LowerThresholdCritical")
+                            .and_then(|v| v.as_f64()),
+                        status: ComponentHealth {
+                            health: t
+                                .get("Status")
+                                .and_then(|s| s.get("Health"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            state: t
+                                .get("Status")
+                                .and_then(|s| s.get("State"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                        },
+                        physical_context: t
+                            .get("PhysicalContext")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let fans = th.get("Fans")
+        let fans = th
+            .get("Fans")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|f| {
-                Some(BmcFan {
-                    id: f.get("MemberId").or(f.get("@odata.id")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: f.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    reading_rpm: f.get("Reading").and_then(|v| v.as_f64()).map(|v| v as u32),
-                    reading_percent: f.get("ReadingPercent").or(f.get("Reading")).and_then(|v| v.as_f64()).map(|v| v as u32),
-                    status: ComponentHealth {
-                        health: f.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                        state: f.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
-                    },
-                    physical_context: f.get("PhysicalContext").and_then(|v| v.as_str()).map(String::from),
-                })
-            }).collect())
+            .map(|arr| {
+                arr.iter()
+                    .map(|f| BmcFan {
+                        id: f
+                            .get("MemberId")
+                            .or(f.get("@odata.id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        name: f
+                            .get("Name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        reading_rpm: f.get("Reading").and_then(|v| v.as_f64()).map(|v| v as u32),
+                        reading_percent: f
+                            .get("ReadingPercent")
+                            .or(f.get("Reading"))
+                            .and_then(|v| v.as_f64())
+                            .map(|v| v as u32),
+                        status: ComponentHealth {
+                            health: f
+                                .get("Status")
+                                .and_then(|s| s.get("Health"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            state: f
+                                .get("Status")
+                                .and_then(|s| s.get("State"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                        },
+                        physical_context: f
+                            .get("PhysicalContext")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(BmcThermalData { temperatures, fans })
@@ -331,16 +454,44 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for p in members {
                 procs.push(BmcProcessor {
-                    id: p.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    socket: p.get("Socket").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    manufacturer: p.get("Manufacturer").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    model: p.get("Model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    id: p
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    socket: p
+                        .get("Socket")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    manufacturer: p
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    model: p
+                        .get("Model")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     total_cores: p.get("TotalCores").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                    total_threads: p.get("TotalThreads").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                    max_speed_mhz: p.get("MaxSpeedMHz").and_then(|v| v.as_u64()).map(|v| v as u32),
+                    total_threads: p.get("TotalThreads").and_then(|v| v.as_u64()).unwrap_or(0)
+                        as u32,
+                    max_speed_mhz: p
+                        .get("MaxSpeedMHz")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32),
                     status: ComponentHealth {
-                        health: p.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                        state: p.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
+                        health: p
+                            .get("Status")
+                            .and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        state: p
+                            .get("Status")
+                            .and_then(|s| s.get("State"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
                     },
                 });
             }
@@ -361,20 +512,57 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for d in members {
                 // Skip absent DIMMs
-                let state = d.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).unwrap_or("");
-                if state == "Absent" { continue; }
+                let state = d
+                    .get("Status")
+                    .and_then(|s| s.get("State"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if state == "Absent" {
+                    continue;
+                }
 
                 dimms.push(BmcMemoryDimm {
-                    id: d.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: d.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    manufacturer: d.get("Manufacturer").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    id: d
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: d
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    manufacturer: d
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     capacity_mib: d.get("CapacityMiB").and_then(|v| v.as_u64()).unwrap_or(0),
-                    speed_mhz: d.get("OperatingSpeedMhz").and_then(|v| v.as_u64()).map(|v| v as u32),
-                    memory_type: d.get("MemoryDeviceType").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    device_locator: d.get("DeviceLocator").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    speed_mhz: d
+                        .get("OperatingSpeedMhz")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32),
+                    memory_type: d
+                        .get("MemoryDeviceType")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    device_locator: d
+                        .get("DeviceLocator")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     status: ComponentHealth {
-                        health: d.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                        state: d.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
+                        health: d
+                            .get("Status")
+                            .and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        state: d
+                            .get("Status")
+                            .and_then(|s| s.get("State"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
                     },
                 });
             }
@@ -398,14 +586,36 @@ impl LenovoRedfishClient {
                 if let Some(sc_arr) = sc_arr {
                     for sc in sc_arr {
                         controllers.push(BmcStorageController {
-                            id: sc.get("MemberId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            name: sc.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            manufacturer: sc.get("Manufacturer").and_then(|v| v.as_str()).map(String::from),
+                            id: sc
+                                .get("MemberId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            name: sc
+                                .get("Name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            manufacturer: sc
+                                .get("Manufacturer")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
                             model: sc.get("Model").and_then(|v| v.as_str()).map(String::from),
-                            firmware_version: sc.get("FirmwareVersion").and_then(|v| v.as_str()).map(String::from),
+                            firmware_version: sc
+                                .get("FirmwareVersion")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
                             status: ComponentHealth {
-                                health: sc.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                                state: sc.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
+                                health: sc
+                                    .get("Status")
+                                    .and_then(|s| s.get("Health"))
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
+                                state: sc
+                                    .get("Status")
+                                    .and_then(|s| s.get("State"))
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
                             },
                         });
                     }
@@ -427,21 +637,51 @@ impl LenovoRedfishClient {
         let mut vols = Vec::new();
         if let Some(members) = members {
             for s in members {
-                if let Some(vol_link) = s.get("Volumes").and_then(|v| v.get("@odata.id")).and_then(|v| v.as_str()) {
+                if let Some(vol_link) = s
+                    .get("Volumes")
+                    .and_then(|v| v.get("@odata.id"))
+                    .and_then(|v| v.as_str())
+                {
                     if let Ok(vol_coll) = self.inner.get::<serde_json::Value>(vol_link).await {
-                        if let Some(vol_members) = vol_coll.get("Members").and_then(|v| v.as_array()) {
+                        if let Some(vol_members) =
+                            vol_coll.get("Members").and_then(|v| v.as_array())
+                        {
                             for vm in vol_members {
-                                let uri = vm.get("@odata.id").and_then(|v| v.as_str()).unwrap_or("");
-                                if uri.is_empty() { continue; }
+                                let uri =
+                                    vm.get("@odata.id").and_then(|v| v.as_str()).unwrap_or("");
+                                if uri.is_empty() {
+                                    continue;
+                                }
                                 if let Ok(vol) = self.inner.get::<serde_json::Value>(uri).await {
                                     vols.push(BmcVirtualDisk {
-                                        id: vol.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                        name: vol.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                        raid_level: vol.get("RAIDType").and_then(|v| v.as_str()).map(String::from),
-                                        capacity_bytes: vol.get("CapacityBytes").and_then(|v| v.as_u64()),
+                                        id: vol
+                                            .get("Id")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        name: vol
+                                            .get("Name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        raid_level: vol
+                                            .get("RAIDType")
+                                            .and_then(|v| v.as_str())
+                                            .map(String::from),
+                                        capacity_bytes: vol
+                                            .get("CapacityBytes")
+                                            .and_then(|v| v.as_u64()),
                                         status: ComponentHealth {
-                                            health: vol.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                                            state: vol.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
+                                            health: vol
+                                                .get("Status")
+                                                .and_then(|s| s.get("Health"))
+                                                .and_then(|v| v.as_str())
+                                                .map(String::from),
+                                            state: vol
+                                                .get("Status")
+                                                .and_then(|s| s.get("State"))
+                                                .and_then(|v| v.as_str())
+                                                .map(String::from),
                                         },
                                     });
                                 }
@@ -468,21 +708,54 @@ impl LenovoRedfishClient {
             for s in members {
                 if let Some(drives) = s.get("Drives").and_then(|v| v.as_array()) {
                     for drive_ref in drives {
-                        let uri = drive_ref.get("@odata.id").and_then(|v| v.as_str()).unwrap_or("");
-                        if uri.is_empty() { continue; }
+                        let uri = drive_ref
+                            .get("@odata.id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if uri.is_empty() {
+                            continue;
+                        }
                         if let Ok(d) = self.inner.get::<serde_json::Value>(uri).await {
                             disks.push(BmcPhysicalDisk {
-                                id: d.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                name: d.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                manufacturer: d.get("Manufacturer").and_then(|v| v.as_str()).map(String::from),
+                                id: d
+                                    .get("Id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                name: d
+                                    .get("Name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                manufacturer: d
+                                    .get("Manufacturer")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
                                 model: d.get("Model").and_then(|v| v.as_str()).map(String::from),
-                                serial_number: d.get("SerialNumber").and_then(|v| v.as_str()).map(String::from),
+                                serial_number: d
+                                    .get("SerialNumber")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
                                 capacity_bytes: d.get("CapacityBytes").and_then(|v| v.as_u64()),
-                                media_type: d.get("MediaType").and_then(|v| v.as_str()).map(String::from),
-                                protocol: d.get("Protocol").and_then(|v| v.as_str()).map(String::from),
+                                media_type: d
+                                    .get("MediaType")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
+                                protocol: d
+                                    .get("Protocol")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
                                 status: ComponentHealth {
-                                    health: d.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                                    state: d.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
+                                    health: d
+                                        .get("Status")
+                                        .and_then(|s| s.get("Health"))
+                                        .and_then(|v| v.as_str())
+                                        .map(String::from),
+                                    state: d
+                                        .get("Status")
+                                        .and_then(|s| s.get("State"))
+                                        .and_then(|v| v.as_str())
+                                        .map(String::from),
                                 },
                             });
                         }
@@ -501,7 +774,11 @@ impl LenovoRedfishClient {
             .await
         {
             Ok(v) => v,
-            Err(_) => self.inner.get("/redfish/v1/Systems/1/EthernetInterfaces?$expand=*($levels=1)").await.map_err(LenovoError::from)?,
+            Err(_) => self
+                .inner
+                .get("/redfish/v1/Systems/1/EthernetInterfaces?$expand=*($levels=1)")
+                .await
+                .map_err(LenovoError::from)?,
         };
 
         let members = coll.get("Members").and_then(|v| v.as_array());
@@ -509,14 +786,36 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for n in members {
                 adapters.push(BmcNetworkAdapter {
-                    id: n.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: n.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    manufacturer: n.get("Manufacturer").and_then(|v| v.as_str()).map(String::from),
+                    id: n
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: n
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    manufacturer: n
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     model: n.get("Model").and_then(|v| v.as_str()).map(String::from),
-                    mac_address: n.get("MACAddress").and_then(|v| v.as_str()).map(String::from),
+                    mac_address: n
+                        .get("MACAddress")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     status: ComponentHealth {
-                        health: n.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                        state: n.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
+                        health: n
+                            .get("Status")
+                            .and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        state: n
+                            .get("Status")
+                            .and_then(|s| s.get("State"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
                     },
                 });
             }
@@ -545,17 +844,41 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for fw in members {
                 items.push(BmcFirmwareItem {
-                    id: fw.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: fw.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    version: fw.get("Version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    updateable: fw.get("Updateable").and_then(|v| v.as_bool()).unwrap_or(false),
-                    component_type: fw.get("SoftwareId")
+                    id: fw
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: fw
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    version: fw
+                        .get("Version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    updateable: fw
+                        .get("Updateable")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    component_type: fw
+                        .get("SoftwareId")
                         .or(fw.get("@odata.type"))
                         .and_then(|v| v.as_str())
                         .map(String::from),
                     status: ComponentHealth {
-                        health: fw.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()).map(String::from),
-                        state: fw.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).map(String::from),
+                        health: fw
+                            .get("Status")
+                            .and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        state: fw
+                            .get("Status")
+                            .and_then(|s| s.get("State"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
                     },
                 });
             }
@@ -576,15 +899,33 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for vm in members {
                 media.push(BmcVirtualMedia {
-                    id: vm.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    media_types: vm.get("MediaTypes")
+                    id: vm
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    media_types: vm
+                        .get("MediaTypes")
                         .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter().filter_map(|t| t.as_str().map(String::from)).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|t| t.as_str().map(String::from))
+                                .collect()
+                        })
                         .unwrap_or_default(),
                     image: vm.get("Image").and_then(|v| v.as_str()).map(String::from),
-                    inserted: vm.get("Inserted").and_then(|v| v.as_bool()).unwrap_or(false),
-                    write_protected: vm.get("WriteProtected").and_then(|v| v.as_bool()).unwrap_or(true),
-                    connected_via: vm.get("ConnectedVia").and_then(|v| v.as_str()).map(String::from),
+                    inserted: vm
+                        .get("Inserted")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    write_protected: vm
+                        .get("WriteProtected")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                    connected_via: vm
+                        .get("ConnectedVia")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 });
             }
         }
@@ -600,7 +941,10 @@ impl LenovoRedfishClient {
         });
         self.inner
             .post_action(
-                &format!("/redfish/v1/Managers/1/VirtualMedia/{}/Actions/VirtualMedia.InsertMedia", slot),
+                &format!(
+                    "/redfish/v1/Managers/1/VirtualMedia/{}/Actions/VirtualMedia.InsertMedia",
+                    slot
+                ),
                 &body,
             )
             .await
@@ -613,7 +957,10 @@ impl LenovoRedfishClient {
         let body = serde_json::json!({});
         self.inner
             .post_action(
-                &format!("/redfish/v1/Managers/1/VirtualMedia/{}/Actions/VirtualMedia.EjectMedia", slot),
+                &format!(
+                    "/redfish/v1/Managers/1/VirtualMedia/{}/Actions/VirtualMedia.EjectMedia",
+                    slot
+                ),
                 &body,
             )
             .await
@@ -629,7 +976,11 @@ impl LenovoRedfishClient {
             .await
         {
             Ok(v) => v,
-            Err(_) => self.inner.get("/redfish/v1/Managers/1/LogServices/ActiveLog/Entries?$expand=*($levels=1)").await.map_err(LenovoError::from)?,
+            Err(_) => self
+                .inner
+                .get("/redfish/v1/Managers/1/LogServices/ActiveLog/Entries?$expand=*($levels=1)")
+                .await
+                .map_err(LenovoError::from)?,
         };
 
         let members = coll.get("Members").and_then(|v| v.as_array());
@@ -637,12 +988,34 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for e in members.iter().take(500) {
                 entries.push(BmcEventLogEntry {
-                    id: e.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    created: e.get("Created").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    severity: e.get("Severity").and_then(|v| v.as_str()).unwrap_or("OK").to_string(),
-                    message: e.get("Message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    message_id: e.get("MessageId").and_then(|v| v.as_str()).map(String::from),
-                    entry_type: e.get("EntryType").and_then(|v| v.as_str()).map(String::from),
+                    id: e
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    created: e
+                        .get("Created")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    severity: e
+                        .get("Severity")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("OK")
+                        .to_string(),
+                    message: e
+                        .get("Message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    message_id: e
+                        .get("MessageId")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    entry_type: e
+                        .get("EntryType")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 });
             }
         }
@@ -662,11 +1035,30 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for e in members.iter().take(500) {
                 entries.push(BmcEventLogEntry {
-                    id: e.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    created: e.get("Created").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    severity: e.get("Severity").and_then(|v| v.as_str()).unwrap_or("OK").to_string(),
-                    message: e.get("Message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    message_id: e.get("MessageId").and_then(|v| v.as_str()).map(String::from),
+                    id: e
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    created: e
+                        .get("Created")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    severity: e
+                        .get("Severity")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("OK")
+                        .to_string(),
+                    message: e
+                        .get("Message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    message_id: e
+                        .get("MessageId")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     entry_type: Some("Audit".to_string()),
                 });
             }
@@ -677,7 +1069,8 @@ impl LenovoRedfishClient {
     /// Clear event log.
     pub async fn clear_event_log(&self) -> LenovoResult<()> {
         let body = serde_json::json!({});
-        let result = self.inner
+        let result = self
+            .inner
             .post_action(
                 "/redfish/v1/Systems/1/LogServices/StandardLog/Actions/LogService.ClearLog",
                 &body,
@@ -685,10 +1078,15 @@ impl LenovoRedfishClient {
             .await;
         match result {
             Ok(_) => Ok(()),
-            Err(_) => self.inner.post_action(
-                "/redfish/v1/Managers/1/LogServices/ActiveLog/Actions/LogService.ClearLog",
-                &body,
-            ).await.map(|_| ()).map_err(LenovoError::from),
+            Err(_) => self
+                .inner
+                .post_action(
+                    "/redfish/v1/Managers/1/LogServices/ActiveLog/Actions/LogService.ClearLog",
+                    &body,
+                )
+                .await
+                .map(|_| ())
+                .map_err(LenovoError::from),
         }
     }
 
@@ -705,11 +1103,21 @@ impl LenovoRedfishClient {
         if let Some(members) = members {
             for u in members {
                 let username = u.get("UserName").and_then(|v| v.as_str()).unwrap_or("");
-                if username.is_empty() { continue; }
+                if username.is_empty() {
+                    continue;
+                }
                 users.push(BmcUser {
-                    id: u.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    id: u
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     username: username.to_string(),
-                    role: u.get("RoleId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    role: u
+                        .get("RoleId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     enabled: u.get("Enabled").and_then(|v| v.as_bool()).unwrap_or(true),
                     locked: u.get("Locked").and_then(|v| v.as_bool()).unwrap_or(false),
                 });
@@ -719,7 +1127,12 @@ impl LenovoRedfishClient {
     }
 
     /// Create a new local user.
-    pub async fn create_user(&self, username: &str, password: &str, role: &str) -> LenovoResult<()> {
+    pub async fn create_user(
+        &self,
+        username: &str,
+        password: &str,
+        role: &str,
+    ) -> LenovoResult<()> {
         let body = serde_json::json!({
             "UserName": username,
             "Password": password,
@@ -737,7 +1150,10 @@ impl LenovoRedfishClient {
     pub async fn update_password(&self, user_id: &str, password: &str) -> LenovoResult<()> {
         let body = serde_json::json!({ "Password": password });
         self.inner
-            .patch_json(&format!("/redfish/v1/AccountService/Accounts/{}", user_id), &body)
+            .patch_json(
+                &format!("/redfish/v1/AccountService/Accounts/{}", user_id),
+                &body,
+            )
             .await
             .map_err(LenovoError::from)
     }
@@ -808,13 +1224,28 @@ impl LenovoRedfishClient {
         let default_boot = serde_json::json!({});
         let boot = sys.get("Boot").unwrap_or(&default_boot);
         Ok(BootConfig {
-            boot_mode: boot.get("BootSourceOverrideMode").and_then(|v| v.as_str()).unwrap_or("UEFI").to_string(),
-            boot_order: boot.get("BootOrder")
+            boot_mode: boot
+                .get("BootSourceOverrideMode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("UEFI")
+                .to_string(),
+            boot_order: boot
+                .get("BootOrder")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
-            next_boot_override: boot.get("BootSourceOverrideTarget").and_then(|v| v.as_str()).map(String::from),
-            uefi_target: boot.get("UefiTargetBootSourceOverride").and_then(|v| v.as_str()).map(String::from),
+            next_boot_override: boot
+                .get("BootSourceOverrideTarget")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            uefi_target: boot
+                .get("UefiTargetBootSourceOverride")
+                .and_then(|v| v.as_str())
+                .map(String::from),
         })
     }
 
@@ -825,7 +1256,9 @@ impl LenovoRedfishClient {
             "BootSourceOverrideEnabled": "Once",
         });
         if let Some(m) = mode {
-            boot.as_object_mut().unwrap().insert("BootSourceOverrideMode".into(), serde_json::json!(m));
+            boot.as_object_mut()
+                .unwrap()
+                .insert("BootSourceOverrideMode".into(), serde_json::json!(m));
         }
         let body = serde_json::json!({ "Boot": boot });
         self.inner
@@ -843,18 +1276,50 @@ impl LenovoRedfishClient {
             .await
         {
             Ok(v) => v,
-            Err(_) => self.inner.get("/redfish/v1/CertificateService/CertificateLocations").await.map_err(LenovoError::from)?,
+            Err(_) => self
+                .inner
+                .get("/redfish/v1/CertificateService/CertificateLocations")
+                .await
+                .map_err(LenovoError::from)?,
         };
 
         Ok(XccCertificate {
-            subject: cert.get("Subject").and_then(|s| s.get("CommonName")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            issuer: cert.get("Issuer").and_then(|s| s.get("CommonName")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            valid_from: cert.get("ValidNotBefore").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            valid_to: cert.get("ValidNotAfter").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            serial_number: cert.get("SerialNumber").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            fingerprint: cert.get("Fingerprint").and_then(|v| v.as_str()).map(String::from),
+            subject: cert
+                .get("Subject")
+                .and_then(|s| s.get("CommonName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            issuer: cert
+                .get("Issuer")
+                .and_then(|s| s.get("CommonName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            valid_from: cert
+                .get("ValidNotBefore")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            valid_to: cert
+                .get("ValidNotAfter")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            serial_number: cert
+                .get("SerialNumber")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            fingerprint: cert
+                .get("Fingerprint")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             key_usage: cert.get("KeyUsage").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", ")
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             }),
             self_signed: cert.get("Issuer") == cert.get("Subject"),
         })
@@ -873,10 +1338,17 @@ impl LenovoRedfishClient {
         });
         let resp: serde_json::Value = self
             .inner
-            .post_json("/redfish/v1/CertificateService/Actions/CertificateService.GenerateCSR", &body)
+            .post_json(
+                "/redfish/v1/CertificateService/Actions/CertificateService.GenerateCSR",
+                &body,
+            )
             .await
             .map_err(LenovoError::from)?;
-        Ok(resp.get("CSRString").and_then(|v| v.as_str()).unwrap_or("").to_string())
+        Ok(resp
+            .get("CSRString")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string())
     }
 
     /// Get license information.
@@ -888,7 +1360,11 @@ impl LenovoRedfishClient {
             .await
         {
             Ok(v) => v,
-            Err(_) => self.inner.get("/redfish/v1/Managers/1").await.map_err(LenovoError::from)?,
+            Err(_) => self
+                .inner
+                .get("/redfish/v1/Managers/1")
+                .await
+                .map_err(LenovoError::from)?,
         };
 
         let tier = if let Some(lic_type) = lic.get("LicenseType").and_then(|v| v.as_str()) {
@@ -905,16 +1381,33 @@ impl LenovoRedfishClient {
 
         Ok(XccLicense {
             tier,
-            description: lic.get("Description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            expiration: lic.get("ExpirationDate").and_then(|v| v.as_str()).map(String::from),
+            description: lic
+                .get("Description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            expiration: lic
+                .get("ExpirationDate")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             key_id: lic.get("Id").and_then(|v| v.as_str()).map(String::from),
-            features: lic.get("Oem")
+            features: lic
+                .get("Oem")
                 .and_then(|o| o.get("Lenovo"))
                 .and_then(|l| l.get("Features"))
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|f| f.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|f| f.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
-            status: lic.get("Status").and_then(|s| s.get("State")).and_then(|v| v.as_str()).unwrap_or("Enabled").to_string(),
+            status: lic
+                .get("Status")
+                .and_then(|s| s.get("State"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Enabled")
+                .to_string(),
         })
     }
 
@@ -936,9 +1429,26 @@ impl LenovoRedfishClient {
             .await
             .map_err(LenovoError::from)?;
 
-        let overall = sys.get("Status").and_then(|s| s.get("HealthRollup")).and_then(|v| v.as_str()).unwrap_or("OK").to_string();
-        let proc_health = sys.get("ProcessorSummary").and_then(|p| p.get("Status")).and_then(|s| s.get("HealthRollup")).and_then(|v| v.as_str()).unwrap_or("OK").to_string();
-        let mem_health = sys.get("MemorySummary").and_then(|m| m.get("Status")).and_then(|s| s.get("HealthRollup")).and_then(|v| v.as_str()).unwrap_or("OK").to_string();
+        let overall = sys
+            .get("Status")
+            .and_then(|s| s.get("HealthRollup"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("OK")
+            .to_string();
+        let proc_health = sys
+            .get("ProcessorSummary")
+            .and_then(|p| p.get("Status"))
+            .and_then(|s| s.get("HealthRollup"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("OK")
+            .to_string();
+        let mem_health = sys
+            .get("MemorySummary")
+            .and_then(|m| m.get("Status"))
+            .and_then(|s| s.get("HealthRollup"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("OK")
+            .to_string();
 
         Ok(BmcHealthRollup {
             overall,
@@ -960,32 +1470,54 @@ impl LenovoRedfishClient {
             .await
             .map_err(LenovoError::from)?;
 
-        let tls = np.get("HTTPS")
+        let tls = np
+            .get("HTTPS")
             .and_then(|h| h.get("Certificates"))
             .map(|_| "TLS 1.2+".to_string())
             .unwrap_or("Unknown".to_string());
 
-        let ipmi = np.get("IPMI").and_then(|i| i.get("ProtocolEnabled")).and_then(|v| v.as_bool()).unwrap_or(false);
-        let ssh = np.get("SSH").and_then(|s| s.get("ProtocolEnabled")).and_then(|v| v.as_bool()).unwrap_or(false);
-        let snmp = np.get("SNMP").and_then(|s| s.get("ProtocolEnabled")).and_then(|v| v.as_bool()).unwrap_or(false);
+        let ipmi = np
+            .get("IPMI")
+            .and_then(|i| i.get("ProtocolEnabled"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let ssh = np
+            .get("SSH")
+            .and_then(|s| s.get("ProtocolEnabled"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let snmp = np
+            .get("SNMP")
+            .and_then(|s| s.get("ProtocolEnabled"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         let mut risks = Vec::new();
         if ipmi {
             risks.push(SecurityRiskItem {
                 id: "IPMI_ENABLED".to_string(),
                 severity: "Warning".to_string(),
-                description: "IPMI over LAN is enabled — consider disabling for improved security".to_string(),
+                description: "IPMI over LAN is enabled — consider disabling for improved security"
+                    .to_string(),
                 remediation: Some("Disable IPMI over LAN in XCC network settings".to_string()),
             });
         }
 
         Ok(XccSecurityStatus {
-            overall_status: if risks.is_empty() { "Secure".to_string() } else { "Warning".to_string() },
+            overall_status: if risks.is_empty() {
+                "Secure".to_string()
+            } else {
+                "Warning".to_string()
+            },
             tls_version: tls,
             ipmi_over_lan: ipmi,
             ssh_enabled: ssh,
             snmp_enabled: snmp,
-            cim_over_https: np.get("CIM").and_then(|c| c.get("ProtocolEnabled")).and_then(|v| v.as_bool()).unwrap_or(false),
+            cim_over_https: np
+                .get("CIM")
+                .and_then(|c| c.get("ProtocolEnabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             security_risks: risks,
         })
     }
@@ -993,7 +1525,11 @@ impl LenovoRedfishClient {
     /// Get HTML5 console launch URL.
     pub async fn get_html5_console_url(&self) -> LenovoResult<String> {
         // XCC HTML5 console is typically at /ui/kvm
-        let base = format!("https://{}:{}", self.inner.config().host, self.inner.config().port);
+        let base = format!(
+            "https://{}:{}",
+            self.inner.config().host,
+            self.inner.config().port
+        );
         Ok(format!("{}/ui/kvm", base))
     }
 

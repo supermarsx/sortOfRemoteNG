@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export common BMC types so consumers only need `sorng_lenovo::types::*`
-pub use sorng_bmc_common::types::*;
 pub use sorng_bmc_common::power::PowerAction;
 pub use sorng_bmc_common::redfish::RedfishSession;
+pub use sorng_bmc_common::types::*;
 
 // ── Controller generation ───────────────────────────────────────────
 
@@ -246,7 +246,7 @@ pub struct BiosAttribute {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BootConfig {
-    pub boot_mode: String,      // UEFI or Legacy
+    pub boot_mode: String, // UEFI or Legacy
     pub boot_order: Vec<String>,
     pub next_boot_override: Option<String>,
     pub uefi_target: Option<String>,

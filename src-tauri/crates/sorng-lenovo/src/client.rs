@@ -26,10 +26,7 @@ impl LenovoClient {
             redfish: None,
             legacy_rest: None,
             ipmi: None,
-            detected_protocol: config
-                .protocol
-                .clone()
-                .unwrap_or(LenovoProtocol::Redfish),
+            detected_protocol: config.protocol.clone().unwrap_or(LenovoProtocol::Redfish),
             generation: config.generation.clone().unwrap_or(XccGeneration::Unknown),
             config: config.clone(),
         })
@@ -120,8 +117,15 @@ impl LenovoClient {
 
     /// Check if any protocol backend is connected.
     pub fn is_connected(&self) -> bool {
-        self.redfish.as_ref().map(|c| c.is_connected()).unwrap_or(false)
-            || self.legacy_rest.as_ref().map(|c| c.is_connected()).unwrap_or(false)
+        self.redfish
+            .as_ref()
+            .map(|c| c.is_connected())
+            .unwrap_or(false)
+            || self
+                .legacy_rest
+                .as_ref()
+                .map(|c| c.is_connected())
+                .unwrap_or(false)
             || self.ipmi.is_some()
     }
 
@@ -141,20 +145,26 @@ impl LenovoClient {
 
     /// Require Redfish backend or error.
     pub fn require_redfish(&self) -> LenovoResult<&LenovoRedfishClient> {
-        self.redfish.as_ref().filter(|c| c.is_connected()).ok_or_else(|| {
-            LenovoError::unsupported(
-                "This operation requires Redfish (XCC/XCC2). Not connected via Redfish.",
-            )
-        })
+        self.redfish
+            .as_ref()
+            .filter(|c| c.is_connected())
+            .ok_or_else(|| {
+                LenovoError::unsupported(
+                    "This operation requires Redfish (XCC/XCC2). Not connected via Redfish.",
+                )
+            })
     }
 
     /// Require legacy REST backend or error.
     pub fn require_legacy_rest(&self) -> LenovoResult<&LegacyRestClient> {
-        self.legacy_rest.as_ref().filter(|c| c.is_connected()).ok_or_else(|| {
-            LenovoError::unsupported(
+        self.legacy_rest
+            .as_ref()
+            .filter(|c| c.is_connected())
+            .ok_or_else(|| {
+                LenovoError::unsupported(
                 "This operation requires the IMM2 legacy REST API. Not connected via Legacy REST.",
             )
-        })
+            })
     }
 
     /// Require IPMI backend or error.

@@ -1,7 +1,7 @@
 //! Error types for the Lenovo XCC/IMM management crate.
 
-use std::fmt;
 use sorng_bmc_common::error::BmcError;
+use std::fmt;
 
 /// Categorised error kinds for Lenovo BMC operations.
 #[derive(Debug, Clone)]
@@ -67,36 +67,93 @@ pub struct LenovoError {
 
 impl LenovoError {
     pub fn new(kind: LenovoErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
-    pub fn connection(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::ConnectionError, msg) }
-    pub fn auth(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::AuthenticationError, msg) }
-    pub fn not_found(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::NotFound, msg) }
-    pub fn api(status: u16, msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::ApiError(status), msg) }
-    pub fn parse(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::ParseError, msg) }
-    pub fn timeout(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::Timeout, msg) }
-    pub fn invalid_state(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::InvalidState, msg) }
-    pub fn access_denied(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::AccessDenied, msg) }
-    pub fn unsupported(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::UnsupportedProtocol, msg) }
-    pub fn legacy_rest(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::LegacyRestError, msg) }
-    pub fn license(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::LicenseError, msg) }
-    pub fn security(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::SecurityError, msg) }
-    pub fn storage(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::StorageError, msg) }
-    pub fn console(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::ConsoleError, msg) }
-    pub fn virtual_media(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::VirtualMediaError, msg) }
-    pub fn firmware(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::FirmwareError, msg) }
-    pub fn bios(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::BiosError, msg) }
-    pub fn event_log(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::EventLogError, msg) }
-    pub fn user(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::UserError, msg) }
-    pub fn certificate(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::CertificateError, msg) }
-    pub fn onecli(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::OnecliError, msg) }
-    pub fn network(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::NetworkError, msg) }
-    pub fn power(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::PowerError, msg) }
-    pub fn thermal(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::ThermalError, msg) }
-    pub fn hardware(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::HardwareError, msg) }
-    pub fn health(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::HealthError, msg) }
-    pub fn ipmi(msg: impl Into<String>) -> Self { Self::new(LenovoErrorKind::IpmiError, msg) }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::ConnectionError, msg)
+    }
+    pub fn auth(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::AuthenticationError, msg)
+    }
+    pub fn not_found(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::NotFound, msg)
+    }
+    pub fn api(status: u16, msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::ApiError(status), msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::ParseError, msg)
+    }
+    pub fn timeout(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::Timeout, msg)
+    }
+    pub fn invalid_state(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::InvalidState, msg)
+    }
+    pub fn access_denied(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::AccessDenied, msg)
+    }
+    pub fn unsupported(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::UnsupportedProtocol, msg)
+    }
+    pub fn legacy_rest(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::LegacyRestError, msg)
+    }
+    pub fn license(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::LicenseError, msg)
+    }
+    pub fn security(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::SecurityError, msg)
+    }
+    pub fn storage(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::StorageError, msg)
+    }
+    pub fn console(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::ConsoleError, msg)
+    }
+    pub fn virtual_media(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::VirtualMediaError, msg)
+    }
+    pub fn firmware(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::FirmwareError, msg)
+    }
+    pub fn bios(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::BiosError, msg)
+    }
+    pub fn event_log(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::EventLogError, msg)
+    }
+    pub fn user(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::UserError, msg)
+    }
+    pub fn certificate(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::CertificateError, msg)
+    }
+    pub fn onecli(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::OnecliError, msg)
+    }
+    pub fn network(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::NetworkError, msg)
+    }
+    pub fn power(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::PowerError, msg)
+    }
+    pub fn thermal(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::ThermalError, msg)
+    }
+    pub fn hardware(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::HardwareError, msg)
+    }
+    pub fn health(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::HealthError, msg)
+    }
+    pub fn ipmi(msg: impl Into<String>) -> Self {
+        Self::new(LenovoErrorKind::IpmiError, msg)
+    }
 }
 
 impl fmt::Display for LenovoError {
@@ -124,7 +181,10 @@ impl From<BmcError> for LenovoError {
             BmcErrorKind::IpmiError => LenovoErrorKind::IpmiError,
             BmcErrorKind::Other => LenovoErrorKind::Other,
         };
-        Self { kind, message: e.message }
+        Self {
+            kind,
+            message: e.message,
+        }
     }
 }
 

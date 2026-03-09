@@ -76,7 +76,9 @@ impl LegacyRestClient {
             return Ok(format!("Connected to {} via IMM2 REST API", self.base_url));
         }
 
-        Err(LenovoError::auth("IMM2 authentication failed — invalid credentials"))
+        Err(LenovoError::auth(
+            "IMM2 authentication failed — invalid credentials",
+        ))
     }
 
     /// Logout from IMM2.
@@ -131,22 +133,56 @@ impl LegacyRestClient {
         Ok(BmcSystemInfo {
             id: "1".to_string(),
             manufacturer: "Lenovo".to_string(),
-            model: sys.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            serial_number: sys.get("serialNum").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            sku: sys.get("machineSn").and_then(|v| v.as_str()).map(String::from),
-            bios_version: sys.get("biosVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            hostname: sys.get("hostname").and_then(|v| v.as_str()).map(String::from),
-            power_state: sys.get("powerStatus").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+            model: sys
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            serial_number: sys
+                .get("serialNum")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            sku: sys
+                .get("machineSn")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            bios_version: sys
+                .get("biosVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            hostname: sys
+                .get("hostname")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            power_state: sys
+                .get("powerStatus")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string(),
             indicator_led: sys.get("locLED").and_then(|v| v.as_str()).map(String::from),
-            asset_tag: sys.get("assetTag").and_then(|v| v.as_str()).map(String::from),
-            memory_gib: sys.get("memoryTotal")
+            asset_tag: sys
+                .get("assetTag")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            memory_gib: sys
+                .get("memoryTotal")
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.replace(" GB", "").parse::<f64>().ok())
                 .unwrap_or(0.0),
-            processor_count: sys.get("processorCount")
-                .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            processor_count: sys
+                .get("processorCount")
+                .and_then(|v| {
+                    v.as_u64()
+                        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                })
                 .unwrap_or(0) as u32,
-            processor_model: sys.get("processorModel").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            processor_model: sys
+                .get("processorModel")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         })
     }
 
@@ -159,11 +195,28 @@ impl LegacyRestClient {
 
         Ok(XccInfo {
             generation: XccGeneration::Imm2,
-            firmware_version: imm.get("immVersion").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            firmware_date: imm.get("immDate").and_then(|v| v.as_str()).map(String::from),
-            ip_address: imm.get("ipAddr").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            mac_address: imm.get("macAddr").and_then(|v| v.as_str()).map(String::from),
-            hostname: imm.get("hostname").and_then(|v| v.as_str()).map(String::from),
+            firmware_version: imm
+                .get("immVersion")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            firmware_date: imm
+                .get("immDate")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            ip_address: imm
+                .get("ipAddr")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            mac_address: imm
+                .get("macAddr")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            hostname: imm
+                .get("hostname")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             serial_number: None,
             model: imm.get("model").and_then(|v| v.as_str()).map(String::from),
             uuid: imm.get("uuid").and_then(|v| v.as_str()).map(String::from),
@@ -201,9 +254,21 @@ impl LegacyRestClient {
             for (i, e) in items.iter().enumerate().take(500) {
                 entries.push(BmcEventLogEntry {
                     id: format!("{}", i + 1),
-                    created: e.get("date").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    severity: e.get("severity").and_then(|v| v.as_str()).unwrap_or("OK").to_string(),
-                    message: e.get("msg").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    created: e
+                        .get("date")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    severity: e
+                        .get("severity")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("OK")
+                        .to_string(),
+                    message: e
+                        .get("msg")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     message_id: None,
                     entry_type: Some("IMM2".to_string()),
                 });

@@ -21,7 +21,9 @@ impl<'a> PowerManager<'a> {
             let status = ipmi.get_chassis_status().await.map_err(LenovoError::from)?;
             return Ok(if status.power_on { "On" } else { "Off" }.to_string());
         }
-        Err(LenovoError::unsupported("Power state requires Redfish or IPMI"))
+        Err(LenovoError::unsupported(
+            "Power state requires Redfish or IPMI",
+        ))
     }
 
     pub async fn power_action(&self, action: &PowerAction) -> LenovoResult<()> {
@@ -44,7 +46,9 @@ impl<'a> PowerManager<'a> {
             };
             return lr.power_action(action_str).await;
         }
-        Err(LenovoError::unsupported("Power action requires Redfish, IPMI, or Legacy REST"))
+        Err(LenovoError::unsupported(
+            "Power action requires Redfish, IPMI, or Legacy REST",
+        ))
     }
 
     pub async fn get_power_metrics(&self) -> LenovoResult<BmcPowerMetrics> {

@@ -29,16 +29,26 @@ impl<'a> HealthManager<'a> {
         let thermal = rf.get_thermal_data().await.ok();
 
         let ambient = thermal.as_ref().and_then(|t| {
-            t.temperatures.iter()
-                .find(|s| s.physical_context.as_deref() == Some("Intake") || s.name.to_lowercase().contains("ambient"))
+            t.temperatures
+                .iter()
+                .find(|s| {
+                    s.physical_context.as_deref() == Some("Intake")
+                        || s.name.to_lowercase().contains("ambient")
+                })
                 .and_then(|s| s.reading_celsius)
         });
 
         let cpu_temp = thermal.as_ref().and_then(|t| {
-            t.temperatures.iter()
-                .filter(|s| s.physical_context.as_deref() == Some("CPU") || s.name.to_lowercase().contains("cpu"))
+            t.temperatures
+                .iter()
+                .filter(|s| {
+                    s.physical_context.as_deref() == Some("CPU")
+                        || s.name.to_lowercase().contains("cpu")
+                })
                 .filter_map(|s| s.reading_celsius)
-                .fold(None, |max: Option<f64>, r| Some(max.map_or(r, |m: f64| m.max(r))))
+                .fold(None, |max: Option<f64>, r| {
+                    Some(max.map_or(r, |m: f64| m.max(r)))
+                })
         });
 
         let fan_count = thermal.as_ref().map(|t| t.fans.len() as u32);
