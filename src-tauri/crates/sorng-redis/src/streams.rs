@@ -32,7 +32,10 @@ pub async fn xadd(
 }
 
 /// XLEN key → number of entries
-pub async fn xlen(client: &mut RedisClient, key: &str) -> Result<u64, RedisError> {
+pub async fn xlen(
+    client: &mut RedisClient,
+    key: &str,
+) -> Result<u64, RedisError> {
     let v: u64 = redis::cmd("XLEN")
         .arg(key)
         .query_async(client.con())
@@ -129,7 +132,10 @@ pub async fn xinfo_stream(
         .await?;
     let map = crate::client::redis_value_to_map(&raw);
     Ok(RedisStreamInfo {
-        length: map.get("length").and_then(|v| v.parse().ok()).unwrap_or(0),
+        length: map
+            .get("length")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
         radix_tree_keys: map
             .get("radix-tree-keys")
             .and_then(|v| v.parse().ok())
@@ -138,7 +144,10 @@ pub async fn xinfo_stream(
             .get("radix-tree-nodes")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0),
-        groups: map.get("groups").and_then(|v| v.parse().ok()).unwrap_or(0),
+        groups: map
+            .get("groups")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
         last_generated_id: map.get("last-generated-id").cloned(),
         first_entry: None,
         last_entry: None,
@@ -290,8 +299,14 @@ pub async fn xinfo_groups(
                 .get("consumers")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0),
-            pending: map.get("pending").and_then(|v| v.parse().ok()).unwrap_or(0),
-            last_delivered_id: map.get("last-delivered-id").cloned().unwrap_or_default(),
+            pending: map
+                .get("pending")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            last_delivered_id: map
+                .get("last-delivered-id")
+                .cloned()
+                .unwrap_or_default(),
         });
     }
     Ok(groups)
@@ -314,8 +329,14 @@ pub async fn xinfo_consumers(
         let map = crate::client::redis_value_to_map(item);
         consumers.push(RedisStreamConsumer {
             name: map.get("name").cloned().unwrap_or_default(),
-            pending: map.get("pending").and_then(|v| v.parse().ok()).unwrap_or(0),
-            idle: map.get("idle").and_then(|v| v.parse().ok()).unwrap_or(0),
+            pending: map
+                .get("pending")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            idle: map
+                .get("idle")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
         });
     }
     Ok(consumers)
