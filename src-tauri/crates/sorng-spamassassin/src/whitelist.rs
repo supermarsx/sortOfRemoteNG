@@ -8,9 +8,7 @@ pub struct WhitelistManager;
 
 impl WhitelistManager {
     /// List all whitelist/blacklist entries from local.cf.
-    pub async fn list(
-        client: &SpamAssassinClient,
-    ) -> SpamAssassinResult<Vec<SpamWhitelistEntry>> {
+    pub async fn list(client: &SpamAssassinClient) -> SpamAssassinResult<Vec<SpamWhitelistEntry>> {
         let content = client
             .read_remote_file(client.local_cf_path())
             .await
@@ -33,8 +31,8 @@ impl WhitelistManager {
             }
 
             for entry_type in &entry_types {
-                if trimmed.starts_with(entry_type) {
-                    let rest = trimmed[entry_type.len()..].trim();
+                if let Some(stripped) = trimmed.strip_prefix(*entry_type) {
+                    let rest = stripped.trim();
                     let (pattern, comment) = if let Some(idx) = rest.find('#') {
                         (
                             rest[..idx].trim().to_string(),
@@ -133,8 +131,8 @@ impl WhitelistManager {
 
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with(entry_type) {
-                let rest = trimmed[entry_type.len()..].trim();
+            if let Some(stripped) = trimmed.strip_prefix(entry_type) {
+                let rest = stripped.trim();
                 let existing_pattern = rest.split('#').next().unwrap_or("").trim();
                 if existing_pattern == pattern {
                     found = true;
@@ -258,8 +256,7 @@ impl WhitelistManager {
                 if nets.contains(&network) {
                     found = true;
                     // Rebuild line without this network
-                    let remaining: Vec<&str> =
-                        nets.into_iter().filter(|n| *n != network).collect();
+                    let remaining: Vec<&str> = nets.into_iter().filter(|n| *n != network).collect();
                     if !remaining.is_empty() {
                         let keyword = if trimmed.starts_with("trusted_networks") {
                             "trusted_networks"

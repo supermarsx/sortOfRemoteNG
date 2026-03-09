@@ -13,11 +13,7 @@ impl ScanManager {
         message: &str,
     ) -> SpamAssassinResult<SpamCheckResult> {
         let escaped = message.replace('\'', "'\\''");
-        let cmd = format!(
-            "echo '{}' | {} -R",
-            escaped,
-            client.spamc_bin()
-        );
+        let cmd = format!("echo '{}' | {} -R", escaped, client.spamc_bin());
         let out = client.exec_ssh(&cmd).await?;
         parse_spam_report(&out.stdout)
     }
@@ -27,26 +23,15 @@ impl ScanManager {
         client: &SpamAssassinClient,
         path: &str,
     ) -> SpamAssassinResult<SpamCheckResult> {
-        let cmd = format!(
-            "{} -R < {}",
-            client.spamc_bin(),
-            shell_escape(path)
-        );
+        let cmd = format!("{} -R < {}", client.spamc_bin(), shell_escape(path));
         let out = client.exec_ssh(&cmd).await?;
         parse_spam_report(&out.stdout)
     }
 
     /// Report a message as spam to collaborative networks (Razor, Pyzor, DCC).
-    pub async fn report(
-        client: &SpamAssassinClient,
-        message: &str,
-    ) -> SpamAssassinResult<String> {
+    pub async fn report(client: &SpamAssassinClient, message: &str) -> SpamAssassinResult<String> {
         let escaped = message.replace('\'', "'\\''");
-        let cmd = format!(
-            "echo '{}' | {} -r",
-            escaped,
-            client.spamc_bin()
-        );
+        let cmd = format!("echo '{}' | {} -r", escaped, client.spamc_bin());
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
             return Err(SpamAssassinError::process(format!(
@@ -58,16 +43,9 @@ impl ScanManager {
     }
 
     /// Revoke a previous spam report (tell collaborative networks this is ham).
-    pub async fn revoke(
-        client: &SpamAssassinClient,
-        message: &str,
-    ) -> SpamAssassinResult<String> {
+    pub async fn revoke(client: &SpamAssassinClient, message: &str) -> SpamAssassinResult<String> {
         let escaped = message.replace('\'', "'\\''");
-        let cmd = format!(
-            "echo '{}' | {} -k",
-            escaped,
-            client.spamc_bin()
-        );
+        let cmd = format!("echo '{}' | {} -k", escaped, client.spamc_bin());
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
             return Err(SpamAssassinError::process(format!(

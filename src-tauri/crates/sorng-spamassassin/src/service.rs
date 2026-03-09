@@ -28,6 +28,12 @@ pub struct SpamAssassinService {
     connections: HashMap<String, SpamAssassinClient>,
 }
 
+impl Default for SpamAssassinService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpamAssassinService {
     pub fn new() -> Self {
         Self {
@@ -55,12 +61,8 @@ impl SpamAssassinService {
 
         // Try to get bayes status
         let bayes = BayesManager::status(&client).await.ok();
-        let bayes_status = bayes.map(|b| {
-            format!(
-                "spam={}, ham={}, tokens={}",
-                b.nspam, b.nham, b.ntokens
-            )
-        });
+        let bayes_status =
+            bayes.map(|b| format!("spam={}, ham={}, tokens={}", b.nspam, b.nham, b.ntokens));
 
         let summary = SpamAssassinConnectionSummary {
             host: client.config.host.clone(),
@@ -77,7 +79,7 @@ impl SpamAssassinService {
         self.connections
             .remove(id)
             .map(|_| ())
-            .ok_or_else(|| SpamAssassinError::not_connected())
+            .ok_or_else(SpamAssassinError::not_connected)
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -87,7 +89,7 @@ impl SpamAssassinService {
     fn client(&self, id: &str) -> SpamAssassinResult<&SpamAssassinClient> {
         self.connections
             .get(id)
-            .ok_or_else(|| SpamAssassinError::not_connected())
+            .ok_or_else(SpamAssassinError::not_connected)
     }
 
     pub async fn ping(&self, id: &str) -> SpamAssassinResult<bool> {
@@ -110,12 +112,7 @@ impl SpamAssassinService {
         RuleManager::list_scores(self.client(id)?).await
     }
 
-    pub async fn set_score(
-        &self,
-        id: &str,
-        name: &str,
-        score: f64,
-    ) -> SpamAssassinResult<()> {
+    pub async fn set_score(&self, id: &str, name: &str, score: f64) -> SpamAssassinResult<()> {
         RuleManager::set_score(self.client(id)?, name, score).await
     }
 
@@ -127,11 +124,7 @@ impl SpamAssassinService {
         RuleManager::create_custom(self.client(id)?, &req).await
     }
 
-    pub async fn delete_custom_rule(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn delete_custom_rule(&self, id: &str, name: &str) -> SpamAssassinResult<()> {
         RuleManager::delete_custom(self.client(id)?, name).await
     }
 
@@ -147,11 +140,7 @@ impl SpamAssassinService {
         RuleManager::list_custom(self.client(id)?).await
     }
 
-    pub async fn get_rule_description(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> SpamAssassinResult<String> {
+    pub async fn get_rule_description(&self, id: &str, name: &str) -> SpamAssassinResult<String> {
         RuleManager::get_rule_description(self.client(id)?, name).await
     }
 
@@ -169,11 +158,7 @@ impl SpamAssassinService {
         BayesManager::learn_spam(self.client(id)?, message).await
     }
 
-    pub async fn learn_ham(
-        &self,
-        id: &str,
-        message: &str,
-    ) -> SpamAssassinResult<BayesLearnResult> {
+    pub async fn learn_ham(&self, id: &str, message: &str) -> SpamAssassinResult<BayesLearnResult> {
         BayesManager::learn_ham(self.client(id)?, message).await
     }
 
@@ -240,12 +225,7 @@ impl SpamAssassinService {
         ChannelManager::update(self.client(id)?, channel_name).await
     }
 
-    pub async fn add_channel(
-        &self,
-        id: &str,
-        name: &str,
-        url: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn add_channel(&self, id: &str, name: &str, url: &str) -> SpamAssassinResult<()> {
         ChannelManager::add(self.client(id)?, name, url).await
     }
 
@@ -263,10 +243,7 @@ impl SpamAssassinService {
 
     // ── Whitelist ────────────────────────────────────────────────
 
-    pub async fn list_whitelist(
-        &self,
-        id: &str,
-    ) -> SpamAssassinResult<Vec<SpamWhitelistEntry>> {
+    pub async fn list_whitelist(&self, id: &str) -> SpamAssassinResult<Vec<SpamWhitelistEntry>> {
         WhitelistManager::list(self.client(id)?).await
     }
 
@@ -294,19 +271,11 @@ impl SpamAssassinService {
         WhitelistManager::list_trusted_networks(self.client(id)?).await
     }
 
-    pub async fn add_trusted_network(
-        &self,
-        id: &str,
-        network: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn add_trusted_network(&self, id: &str, network: &str) -> SpamAssassinResult<()> {
         WhitelistManager::add_trusted_network(self.client(id)?, network).await
     }
 
-    pub async fn remove_trusted_network(
-        &self,
-        id: &str,
-        network: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn remove_trusted_network(&self, id: &str, network: &str) -> SpamAssassinResult<()> {
         WhitelistManager::remove_trusted_network(self.client(id)?, network).await
     }
 
@@ -360,12 +329,7 @@ impl SpamAssassinService {
         SpamAssassinConfigManager::get_param(self.client(id)?, key).await
     }
 
-    pub async fn set_param(
-        &self,
-        id: &str,
-        key: &str,
-        value: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn set_param(&self, id: &str, key: &str, value: &str) -> SpamAssassinResult<()> {
         SpamAssassinConfigManager::set_param(self.client(id)?, key, value).await
     }
 
@@ -377,11 +341,7 @@ impl SpamAssassinService {
         SpamAssassinConfigManager::get_spamd_config(self.client(id)?).await
     }
 
-    pub async fn set_spamd_config(
-        &self,
-        id: &str,
-        config: SpamdConfig,
-    ) -> SpamAssassinResult<()> {
+    pub async fn set_spamd_config(&self, id: &str, config: SpamdConfig) -> SpamAssassinResult<()> {
         SpamAssassinConfigManager::set_spamd_config(self.client(id)?, &config).await
     }
 
@@ -399,11 +359,7 @@ impl SpamAssassinService {
         ScanManager::check_message(self.client(id)?, message).await
     }
 
-    pub async fn check_file(
-        &self,
-        id: &str,
-        path: &str,
-    ) -> SpamAssassinResult<SpamCheckResult> {
+    pub async fn check_file(&self, id: &str, path: &str) -> SpamAssassinResult<SpamCheckResult> {
         ScanManager::check_file(self.client(id)?, path).await
     }
 

@@ -9,9 +9,7 @@ pub struct SpamAssassinProcessManager;
 impl SpamAssassinProcessManager {
     /// Start spamd service via systemctl.
     pub async fn start(client: &SpamAssassinClient) -> SpamAssassinResult<()> {
-        let out = client
-            .exec_ssh("sudo systemctl start spamassassin")
-            .await?;
+        let out = client.exec_ssh("sudo systemctl start spamassassin").await?;
         if out.exit_code != 0 {
             return Err(SpamAssassinError::process(format!(
                 "start failed: {}",
@@ -23,9 +21,7 @@ impl SpamAssassinProcessManager {
 
     /// Stop spamd service via systemctl.
     pub async fn stop(client: &SpamAssassinClient) -> SpamAssassinResult<()> {
-        let out = client
-            .exec_ssh("sudo systemctl stop spamassassin")
-            .await?;
+        let out = client.exec_ssh("sudo systemctl stop spamassassin").await?;
         if out.exit_code != 0 {
             return Err(SpamAssassinError::process(format!(
                 "stop failed: {}",
@@ -71,17 +67,13 @@ impl SpamAssassinProcessManager {
 
         if running {
             // Get PID
-            let pid_out = client
-                .exec_ssh("pgrep -f spamd | head -1")
-                .await;
+            let pid_out = client.exec_ssh("pgrep -f spamd | head -1").await;
             if let Ok(ref o) = pid_out {
                 pid = o.stdout.trim().parse::<u32>().ok();
             }
 
             // Get child count
-            let children_out = client
-                .exec_ssh("pgrep -f 'spamd child' | wc -l")
-                .await;
+            let children_out = client.exec_ssh("pgrep -f 'spamd child' | wc -l").await;
             if let Ok(ref o) = children_out {
                 children = o.stdout.trim().parse().unwrap_or(0);
             }
@@ -101,9 +93,7 @@ impl SpamAssassinProcessManager {
                 if !ts.is_empty() {
                     // Try to compute seconds since start
                     let now_out = client.exec_ssh("date +%s").await;
-                    let start_out = client
-                        .exec_ssh(&format!("date -d '{}' +%s", ts))
-                        .await;
+                    let start_out = client.exec_ssh(&format!("date -d '{}' +%s", ts)).await;
                     if let (Ok(now), Ok(start)) = (now_out, start_out) {
                         if let (Ok(n), Ok(s)) = (
                             now.stdout.trim().parse::<u64>(),
@@ -142,7 +132,10 @@ impl SpamAssassinProcessManager {
 
     /// Get detailed SpamAssassin server information.
     pub async fn info(client: &SpamAssassinClient) -> SpamAssassinResult<SpamAssassinInfo> {
-        let version = client.version().await.unwrap_or_else(|_| "unknown".to_string());
+        let version = client
+            .version()
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
 
         // Get rules version
         let rules_out = client
@@ -162,9 +155,7 @@ impl SpamAssassinProcessManager {
             if line.is_empty() {
                 None
             } else {
-                line.split_whitespace()
-                    .last()
-                    .map(|s| s.to_string())
+                line.split_whitespace().last().map(|s| s.to_string())
             }
         });
 
@@ -179,9 +170,7 @@ impl SpamAssassinProcessManager {
 
     /// Lint/check SpamAssassin configuration via `spamassassin --lint`.
     pub async fn lint(client: &SpamAssassinClient) -> SpamAssassinResult<ConfigTestResult> {
-        let out = client
-            .exec_ssh("sudo spamassassin --lint 2>&1")
-            .await?;
+        let out = client.exec_ssh("sudo spamassassin --lint 2>&1").await?;
 
         let mut errors = Vec::new();
         let combined = format!("{}\n{}", out.stdout, out.stderr);
@@ -193,7 +182,10 @@ impl SpamAssassinProcessManager {
             }
             // SpamAssassin lint output categorizes issues with prefixes:
             // "warn:", "error:", "config: ..."
-            if trimmed.starts_with("warn:") || trimmed.starts_with("error:") || trimmed.starts_with("config:") {
+            if trimmed.starts_with("warn:")
+                || trimmed.starts_with("error:")
+                || trimmed.starts_with("config:")
+            {
                 errors.push(trimmed.to_string());
             }
         }

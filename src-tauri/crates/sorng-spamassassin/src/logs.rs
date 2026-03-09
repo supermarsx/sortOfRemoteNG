@@ -49,7 +49,11 @@ impl SpamAssassinLogManager {
                 continue;
             }
 
-            let mut cmd = format!("sudo grep -i spamassassin {} | tail -n {}", shell_escape(path), limit);
+            let mut cmd = format!(
+                "sudo grep -i spamassassin {} | tail -n {}",
+                shell_escape(path),
+                limit
+            );
             if let Some(f) = filter {
                 cmd.push_str(&format!(" | grep -i {}", shell_escape(f)));
             }
@@ -66,9 +70,7 @@ impl SpamAssassinLogManager {
     }
 
     /// List available log files that contain SpamAssassin entries.
-    pub async fn list_log_files(
-        client: &SpamAssassinClient,
-    ) -> SpamAssassinResult<Vec<String>> {
+    pub async fn list_log_files(client: &SpamAssassinClient) -> SpamAssassinResult<Vec<String>> {
         let mut files = Vec::new();
 
         let common_paths = [
@@ -104,9 +106,7 @@ impl SpamAssassinLogManager {
     }
 
     /// Get aggregate spam scanning statistics by parsing recent log entries.
-    pub async fn get_statistics(
-        client: &SpamAssassinClient,
-    ) -> SpamAssassinResult<SpamStatistics> {
+    pub async fn get_statistics(client: &SpamAssassinClient) -> SpamAssassinResult<SpamStatistics> {
         // Parse recent spamd log entries for statistics
         let cmd =
             "journalctl -u spamassassin --no-pager -n 10000 2>/dev/null | grep -i 'result\\|clean\\|identified spam'";
@@ -119,10 +119,7 @@ impl SpamAssassinLogManager {
         let mut total_time = 0.0f64;
         let mut timed_entries = 0u64;
 
-        let log_text = out
-            .as_ref()
-            .map(|o| o.stdout.as_str())
-            .unwrap_or("");
+        let log_text = out.as_ref().map(|o| o.stdout.as_str()).unwrap_or("");
 
         for line in log_text.lines() {
             let trimmed = line.trim().to_lowercase();
@@ -154,9 +151,7 @@ impl SpamAssassinLogManager {
         // Fallback: if no journal entries, try the log file approach
         if total_scanned == 0 {
             let fallback = client
-                .exec_ssh(
-                    "sudo grep -c 'spamd:' /var/log/mail.log 2>/dev/null || echo 0",
-                )
+                .exec_ssh("sudo grep -c 'spamd:' /var/log/mail.log 2>/dev/null || echo 0")
                 .await;
             if let Ok(ref o) = fallback {
                 total_scanned = o.stdout.trim().parse().unwrap_or(0);
@@ -251,13 +246,9 @@ fn parse_log_entry(line: &str) -> SpamLog {
     let (score, threshold) = extract_score_threshold(message_part);
 
     // Extract result (Y=spam, .=ham)
-    let result = if message_part.contains("result: Y")
-        || message_part.contains("identified spam")
-    {
+    let result = if message_part.contains("result: Y") || message_part.contains("identified spam") {
         Some("spam".to_string())
-    } else if message_part.contains("result: .")
-        || message_part.contains("clean message")
-    {
+    } else if message_part.contains("result: .") || message_part.contains("clean message") {
         Some("ham".to_string())
     } else {
         None
@@ -334,7 +325,10 @@ fn extract_rules_from_log(s: &str) -> Vec<String> {
             .next()
             .unwrap_or("");
         if !rules_part.is_empty() && rules_part.contains(',') {
-            return rules_part.split(',').map(|r| r.trim().to_string()).collect();
+            return rules_part
+                .split(',')
+                .map(|r| r.trim().to_string())
+                .collect();
         }
         if !rules_part.is_empty()
             && rules_part

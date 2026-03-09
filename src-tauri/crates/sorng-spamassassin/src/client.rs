@@ -11,6 +11,7 @@ use std::time::Duration;
 /// SpamAssassin management client – connects via SSH to manage SpamAssassin remotely.
 pub struct SpamAssassinClient {
     pub config: SpamAssassinConnectionConfig,
+    #[allow(dead_code)]
     http: HttpClient,
 }
 
@@ -19,9 +20,7 @@ impl SpamAssassinClient {
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
             .build()
-            .map_err(|e| {
-                SpamAssassinError::connection_failed(format!("http client build: {e}"))
-            })?;
+            .map_err(|e| SpamAssassinError::connection_failed(format!("http client build: {e}")))?;
         Ok(Self { config, http })
     }
 
@@ -32,7 +31,10 @@ impl SpamAssassinClient {
     }
 
     pub fn spamd_bin(&self) -> &str {
-        self.config.spamd_bin.as_deref().unwrap_or("/usr/sbin/spamd")
+        self.config
+            .spamd_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/spamd")
     }
 
     pub fn sa_update_bin(&self) -> &str {

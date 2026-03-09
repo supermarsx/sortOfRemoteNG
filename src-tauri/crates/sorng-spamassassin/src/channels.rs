@@ -45,9 +45,7 @@ impl ChannelManager {
         }
 
         // Try to get last-update timestamps via sa-update
-        let list_out = client
-            .sa_update("--list 2>&1")
-            .await;
+        let list_out = client.sa_update("--list 2>&1").await;
         if let Ok(ref o) = list_out {
             for line in o.stdout.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -55,10 +53,8 @@ impl ChannelManager {
                     let channel_name = parts[0];
                     if let Some(ch) = channels.iter_mut().find(|c| c.name == channel_name) {
                         ch.last_update = parts.get(1).map(|s| s.to_string());
-                        ch.update_available = parts
-                            .get(2)
-                            .map(|s| s.contains("update"))
-                            .unwrap_or(false);
+                        ch.update_available =
+                            parts.get(2).map(|s| s.contains("update")).unwrap_or(false);
                     }
                 }
             }
@@ -133,11 +129,7 @@ impl ChannelManager {
     }
 
     /// Add a custom update channel.
-    pub async fn add(
-        client: &SpamAssassinClient,
-        name: &str,
-        url: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn add(client: &SpamAssassinClient, name: &str, url: &str) -> SpamAssassinResult<()> {
         let channels_file = format!("{}/sa-update-channels.txt", client.config_dir());
         let existing = client
             .read_remote_file(&channels_file)
@@ -167,10 +159,7 @@ impl ChannelManager {
     }
 
     /// Remove a custom update channel.
-    pub async fn remove(
-        client: &SpamAssassinClient,
-        name: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn remove(client: &SpamAssassinClient, name: &str) -> SpamAssassinResult<()> {
         let channels_file = format!("{}/sa-update-channels.txt", client.config_dir());
         let existing = client
             .read_remote_file(&channels_file)
@@ -225,9 +214,7 @@ impl ChannelManager {
 
         // Also check the GPG keyring for sa-update keys
         let gpg_out = client
-            .exec_ssh(
-                "sudo gpg --homedir /etc/spamassassin/sa-update-keys --list-keys 2>/dev/null",
-            )
+            .exec_ssh("sudo gpg --homedir /etc/spamassassin/sa-update-keys --list-keys 2>/dev/null")
             .await;
         if let Ok(ref o) = gpg_out {
             for line in o.stdout.lines() {
@@ -242,10 +229,7 @@ impl ChannelManager {
     }
 
     /// Import a GPG key for a sa-update channel.
-    pub async fn import_key(
-        client: &SpamAssassinClient,
-        key: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn import_key(client: &SpamAssassinClient, key: &str) -> SpamAssassinResult<()> {
         let out = client
             .sa_update(&format!("--import {}", shell_escape(key)))
             .await?;

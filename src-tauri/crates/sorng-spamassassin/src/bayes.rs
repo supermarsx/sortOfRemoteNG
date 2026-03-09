@@ -185,10 +185,7 @@ impl BayesManager {
     }
 
     /// Restore a Bayes database from previously backed-up text data.
-    pub async fn restore(
-        client: &SpamAssassinClient,
-        data: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn restore(client: &SpamAssassinClient, data: &str) -> SpamAssassinResult<()> {
         let escaped = data.replace('\'', "'\\''");
         let cmd = format!(
             "echo '{}' | sudo {} --restore",
@@ -214,9 +211,10 @@ fn extract_magic_value(line: &str) -> Option<u64> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     // The count is typically the third numeric field
     if parts.len() >= 4 {
-        parts[2].parse::<u64>().ok().or_else(|| {
-            parts[1].parse::<u64>().ok()
-        })
+        parts[2]
+            .parse::<u64>()
+            .ok()
+            .or_else(|| parts[1].parse::<u64>().ok())
     } else {
         None
     }

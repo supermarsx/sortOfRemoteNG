@@ -26,10 +26,7 @@ impl SpamAssassinConfigManager {
     }
 
     /// Get a specific parameter from local.cf by key name.
-    pub async fn get_param(
-        client: &SpamAssassinClient,
-        key: &str,
-    ) -> SpamAssassinResult<String> {
+    pub async fn get_param(client: &SpamAssassinClient, key: &str) -> SpamAssassinResult<String> {
         let content = client
             .read_remote_file(client.local_cf_path())
             .await
@@ -90,10 +87,7 @@ impl SpamAssassinConfigManager {
     }
 
     /// Delete a configuration parameter from local.cf.
-    pub async fn delete_param(
-        client: &SpamAssassinClient,
-        key: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn delete_param(client: &SpamAssassinClient, key: &str) -> SpamAssassinResult<()> {
         let content = client
             .read_remote_file(client.local_cf_path())
             .await
@@ -126,9 +120,7 @@ impl SpamAssassinConfigManager {
     }
 
     /// Read spamd configuration from /etc/default/spamassassin or systemd unit.
-    pub async fn get_spamd_config(
-        client: &SpamAssassinClient,
-    ) -> SpamAssassinResult<SpamdConfig> {
+    pub async fn get_spamd_config(client: &SpamAssassinClient) -> SpamAssassinResult<SpamdConfig> {
         // Try reading /etc/default/spamassassin first (Debian/Ubuntu)
         let defaults = client
             .read_remote_file("/etc/default/spamassassin")
@@ -318,17 +310,16 @@ impl SpamAssassinConfigManager {
     }
 
     /// Test SpamAssassin configuration using `spamassassin --lint`.
-    pub async fn test_config(
-        client: &SpamAssassinClient,
-    ) -> SpamAssassinResult<ConfigTestResult> {
-        let out = client
-            .exec_ssh("sudo spamassassin --lint 2>&1")
-            .await?;
+    pub async fn test_config(client: &SpamAssassinClient) -> SpamAssassinResult<ConfigTestResult> {
+        let out = client.exec_ssh("sudo spamassassin --lint 2>&1").await?;
 
         let mut errors = Vec::new();
         for line in out.stdout.lines().chain(out.stderr.lines()) {
             let trimmed = line.trim();
-            if trimmed.contains("error") || trimmed.contains("warn") || trimmed.starts_with("config:") {
+            if trimmed.contains("error")
+                || trimmed.contains("warn")
+                || trimmed.starts_with("config:")
+            {
                 errors.push(trimmed.to_string());
             }
         }

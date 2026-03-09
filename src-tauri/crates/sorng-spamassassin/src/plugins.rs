@@ -30,7 +30,9 @@ impl PluginManager {
                 // or commented out: "# loadplugin Mail::SpamAssassin::Plugin::DCC"
                 let (is_enabled, plugin_line) = if trimmed.starts_with("loadplugin ") {
                     (true, trimmed)
-                } else if trimmed.starts_with("# loadplugin ") || trimmed.starts_with("#loadplugin ") {
+                } else if trimmed.starts_with("# loadplugin ")
+                    || trimmed.starts_with("#loadplugin ")
+                {
                     (false, trimmed.trim_start_matches('#').trim())
                 } else {
                     continue;
@@ -69,17 +71,12 @@ impl PluginManager {
     }
 
     /// Get details for a specific plugin by name.
-    pub async fn get(
-        client: &SpamAssassinClient,
-        name: &str,
-    ) -> SpamAssassinResult<SpamPlugin> {
+    pub async fn get(client: &SpamAssassinClient, name: &str) -> SpamAssassinResult<SpamPlugin> {
         let plugins = Self::list(client).await?;
         plugins
             .into_iter()
             .find(|p| p.name == name || p.name.ends_with(name))
-            .ok_or_else(|| {
-                SpamAssassinError::internal(format!("Plugin '{}' not found", name))
-            })
+            .ok_or_else(|| SpamAssassinError::internal(format!("Plugin '{}' not found", name)))
     }
 
     /// Enable a plugin by uncommenting its loadplugin line in the .pre file.
@@ -104,10 +101,7 @@ impl PluginManager {
                 if (trimmed.starts_with("# loadplugin ") || trimmed.starts_with("#loadplugin "))
                     && trimmed.contains(name)
                 {
-                    let uncommented = trimmed
-                        .trim_start_matches('#')
-                        .trim()
-                        .to_string();
+                    let uncommented = trimmed.trim_start_matches('#').trim().to_string();
                     new_lines.push(uncommented);
                     modified = true;
                 } else {

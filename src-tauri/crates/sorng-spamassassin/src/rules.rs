@@ -174,10 +174,7 @@ impl RuleManager {
     }
 
     /// Delete a custom rule from local.cf.
-    pub async fn delete_custom(
-        client: &SpamAssassinClient,
-        name: &str,
-    ) -> SpamAssassinResult<()> {
+    pub async fn delete_custom(client: &SpamAssassinClient, name: &str) -> SpamAssassinResult<()> {
         let local_cf = client
             .read_remote_file(client.local_cf_path())
             .await
@@ -266,9 +263,7 @@ impl RuleManager {
     }
 
     /// List only custom rules (those defined in local.cf).
-    pub async fn list_custom(
-        client: &SpamAssassinClient,
-    ) -> SpamAssassinResult<Vec<SpamRule>> {
+    pub async fn list_custom(client: &SpamAssassinClient) -> SpamAssassinResult<Vec<SpamRule>> {
         let content = client
             .read_remote_file(client.local_cf_path())
             .await
@@ -320,9 +315,7 @@ impl RuleManager {
 // ─── Parse helpers ───────────────────────────────────────────────────────────
 
 fn parse_rules_from_cf(content: &str, is_custom: bool) -> Vec<SpamRule> {
-    let test_keywords = [
-        "header", "body", "rawbody", "full", "uri", "meta", "eval",
-    ];
+    let test_keywords = ["header", "body", "rawbody", "full", "uri", "meta", "eval"];
     let mut rules: Vec<SpamRule> = Vec::new();
     let mut descriptions: Vec<(String, String)> = Vec::new();
     let mut scores: Vec<(String, f64)> = Vec::new();
@@ -335,10 +328,10 @@ fn parse_rules_from_cf(content: &str, is_custom: bool) -> Vec<SpamRule> {
 
         // Parse rule definitions: <type> <NAME> <pattern>
         for keyword in &test_keywords {
-            if trimmed.starts_with(keyword) {
-                let rest = trimmed[keyword.len()..].trim();
+            if let Some(stripped) = trimmed.strip_prefix(*keyword) {
+                let rest = stripped.trim();
                 let parts: Vec<&str> = rest.splitn(2, char::is_whitespace).collect();
-                if parts.len() >= 1 && !parts[0].is_empty() {
+                if !parts.is_empty() && !parts[0].is_empty() {
                     let name = parts[0].to_string();
                     // Avoid duplicate entries
                     if !rules.iter().any(|r| r.name == name) {

@@ -45,10 +45,7 @@ pub async fn spam_list_connections(
 }
 
 #[tauri::command]
-pub async fn spam_ping(
-    state: State<'_, SpamAssassinServiceState>,
-    id: String,
-) -> CmdResult<bool> {
+pub async fn spam_ping(state: State<'_, SpamAssassinServiceState>, id: String) -> CmdResult<bool> {
     state.lock().await.ping(&id).await.map_err(map_err)
 }
 
@@ -189,12 +186,7 @@ pub async fn spam_bayes_status(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<BayesStatus> {
-    state
-        .lock()
-        .await
-        .bayes_status(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.bayes_status(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -274,12 +266,7 @@ pub async fn spam_bayes_clear(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state
-        .lock()
-        .await
-        .bayes_clear(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.bayes_clear(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -287,12 +274,7 @@ pub async fn spam_bayes_sync(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state
-        .lock()
-        .await
-        .bayes_sync(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.bayes_sync(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -300,12 +282,7 @@ pub async fn spam_bayes_backup(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<String> {
-    state
-        .lock()
-        .await
-        .bayes_backup(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.bayes_backup(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -329,12 +306,7 @@ pub async fn spam_list_channels(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<Vec<SpamChannel>> {
-    state
-        .lock()
-        .await
-        .list_channels(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_channels(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -512,12 +484,7 @@ pub async fn spam_list_plugins(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<Vec<SpamPlugin>> {
-    state
-        .lock()
-        .await
-        .list_plugins(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_plugins(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -599,12 +566,7 @@ pub async fn spam_get_local_cf(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<String> {
-    state
-        .lock()
-        .await
-        .get_local_cf(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.get_local_cf(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -696,12 +658,7 @@ pub async fn spam_test_config(
     state: State<'_, SpamAssassinServiceState>,
     id: String,
 ) -> CmdResult<ConfigTestResult> {
-    state
-        .lock()
-        .await
-        .test_config(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.test_config(&id).await.map_err(map_err)
 }
 
 // ── Scanning ──────────────────────────────────────────────────────
@@ -765,34 +722,22 @@ pub async fn spam_revoke_message(
 // ── Process ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn spam_start(
-    state: State<'_, SpamAssassinServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn spam_start(state: State<'_, SpamAssassinServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.start(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn spam_stop(
-    state: State<'_, SpamAssassinServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn spam_stop(state: State<'_, SpamAssassinServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.stop(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn spam_restart(
-    state: State<'_, SpamAssassinServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn spam_restart(state: State<'_, SpamAssassinServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.restart(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn spam_reload(
-    state: State<'_, SpamAssassinServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn spam_reload(state: State<'_, SpamAssassinServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reload(&id).await.map_err(map_err)
 }
 
