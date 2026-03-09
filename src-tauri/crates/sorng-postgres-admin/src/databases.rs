@@ -32,7 +32,11 @@ impl DatabaseManager {
                     encoding: cols[2].to_string(),
                     collation: cols[3].to_string(),
                     ctype: cols[4].to_string(),
-                    access_privileges: if cols[5].is_empty() { None } else { Some(cols[5].to_string()) },
+                    access_privileges: if cols[5].is_empty() {
+                        None
+                    } else {
+                        Some(cols[5].to_string())
+                    },
                     size_bytes: cols[6].trim().parse().unwrap_or(0),
                     tablespace: cols[7].to_string(),
                     connection_limit: cols[8].trim().parse().unwrap_or(-1),
@@ -62,33 +66,46 @@ impl DatabaseManager {
         tablespace: Option<&str>,
     ) -> PgResult<()> {
         let mut sql = format!("CREATE DATABASE \"{}\"", name);
-        if let Some(o) = owner { sql.push_str(&format!(" OWNER \"{}\"", o)); }
-        if let Some(e) = encoding { sql.push_str(&format!(" ENCODING '{}'", e)); }
-        if let Some(t) = template { sql.push_str(&format!(" TEMPLATE \"{}\"", t)); }
-        if let Some(ts) = tablespace { sql.push_str(&format!(" TABLESPACE \"{}\"", ts)); }
+        if let Some(o) = owner {
+            sql.push_str(&format!(" OWNER \"{}\"", o));
+        }
+        if let Some(e) = encoding {
+            sql.push_str(&format!(" ENCODING '{}'", e));
+        }
+        if let Some(t) = template {
+            sql.push_str(&format!(" TEMPLATE \"{}\"", t));
+        }
+        if let Some(ts) = tablespace {
+            sql.push_str(&format!(" TABLESPACE \"{}\"", ts));
+        }
         client.exec_sql(&sql).await?;
         Ok(())
     }
 
     /// Drop a database.
     pub async fn drop(client: &PgClient, name: &str) -> PgResult<()> {
-        client.exec_sql(&format!("DROP DATABASE \"{}\"", name)).await?;
+        client
+            .exec_sql(&format!("DROP DATABASE \"{}\"", name))
+            .await?;
         Ok(())
     }
 
     /// Rename a database.
     pub async fn rename(client: &PgClient, old_name: &str, new_name: &str) -> PgResult<()> {
-        client.exec_sql(&format!(
-            "ALTER DATABASE \"{}\" RENAME TO \"{}\"", old_name, new_name
-        )).await?;
+        client
+            .exec_sql(&format!(
+                "ALTER DATABASE \"{}\" RENAME TO \"{}\"",
+                old_name, new_name
+            ))
+            .await?;
         Ok(())
     }
 
     /// Change database owner.
     pub async fn alter_owner(client: &PgClient, db: &str, owner: &str) -> PgResult<()> {
-        client.exec_sql(&format!(
-            "ALTER DATABASE \"{}\" OWNER TO \"{}\"", db, owner
-        )).await?;
+        client
+            .exec_sql(&format!("ALTER DATABASE \"{}\" OWNER TO \"{}\"", db, owner))
+            .await?;
         Ok(())
     }
 
@@ -143,8 +160,16 @@ impl DatabaseManager {
                 schemas.push(PgSchema {
                     name: cols[0].to_string(),
                     owner: cols[1].to_string(),
-                    access_privileges: if cols[2].is_empty() { None } else { Some(cols[2].to_string()) },
-                    description: if cols[3].is_empty() { None } else { Some(cols[3].to_string()) },
+                    access_privileges: if cols[2].is_empty() {
+                        None
+                    } else {
+                        Some(cols[2].to_string())
+                    },
+                    description: if cols[3].is_empty() {
+                        None
+                    } else {
+                        Some(cols[3].to_string())
+                    },
                 });
             }
         }

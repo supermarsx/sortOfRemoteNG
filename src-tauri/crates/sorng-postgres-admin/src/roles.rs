@@ -41,9 +41,21 @@ impl RoleManager {
                     replication: cols[5] == "t",
                     inherit: cols[6] == "t",
                     connection_limit: cols[7].parse().unwrap_or(-1),
-                    password_valid_until: if cols[8].is_empty() { None } else { Some(cols[8].to_string()) },
-                    member_of: cols[9].split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect(),
-                    config: cols[10].split('|').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect(),
+                    password_valid_until: if cols[8].is_empty() {
+                        None
+                    } else {
+                        Some(cols[8].to_string())
+                    },
+                    member_of: cols[9]
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect(),
+                    config: cols[10]
+                        .split('|')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect(),
                 });
             }
         }
@@ -53,12 +65,14 @@ impl RoleManager {
     /// Get a single role by name.
     pub async fn get(client: &PgClient, name: &str) -> PgResult<PgRole> {
         let roles = Self::list(client).await?;
-        roles.into_iter()
+        roles
+            .into_iter()
             .find(|r| r.name == name)
             .ok_or_else(|| crate::error::PgError::role_not_found(name))
     }
 
     /// Create a new role.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create(
         client: &PgClient,
         name: &str,
@@ -71,11 +85,31 @@ impl RoleManager {
         connection_limit: Option<i32>,
     ) -> PgResult<()> {
         let mut opts = Vec::new();
-        if superuser { opts.push("SUPERUSER"); } else { opts.push("NOSUPERUSER"); }
-        if createdb { opts.push("CREATEDB"); } else { opts.push("NOCREATEDB"); }
-        if createrole { opts.push("CREATEROLE"); } else { opts.push("NOCREATEROLE"); }
-        if login { opts.push("LOGIN"); } else { opts.push("NOLOGIN"); }
-        if replication { opts.push("REPLICATION"); } else { opts.push("NOREPLICATION"); }
+        if superuser {
+            opts.push("SUPERUSER");
+        } else {
+            opts.push("NOSUPERUSER");
+        }
+        if createdb {
+            opts.push("CREATEDB");
+        } else {
+            opts.push("NOCREATEDB");
+        }
+        if createrole {
+            opts.push("CREATEROLE");
+        } else {
+            opts.push("NOCREATEROLE");
+        }
+        if login {
+            opts.push("LOGIN");
+        } else {
+            opts.push("NOLOGIN");
+        }
+        if replication {
+            opts.push("REPLICATION");
+        } else {
+            opts.push("NOREPLICATION");
+        }
         let mut sql = format!("CREATE ROLE \"{}\" {}", name, opts.join(" "));
         if let Some(pw) = password {
             sql.push_str(&format!(" PASSWORD '{}'", pw.replace('\'', "''")));
@@ -88,6 +122,7 @@ impl RoleManager {
     }
 
     /// Alter role attributes.
+    #[allow(clippy::too_many_arguments)]
     pub async fn alter(
         client: &PgClient,
         name: &str,
@@ -99,11 +134,21 @@ impl RoleManager {
         connection_limit: Option<i32>,
     ) -> PgResult<()> {
         let mut opts = Vec::new();
-        if let Some(v) = superuser { opts.push(if v { "SUPERUSER" } else { "NOSUPERUSER" }); }
-        if let Some(v) = createdb { opts.push(if v { "CREATEDB" } else { "NOCREATEDB" }); }
-        if let Some(v) = createrole { opts.push(if v { "CREATEROLE" } else { "NOCREATEROLE" }); }
-        if let Some(v) = login { opts.push(if v { "LOGIN" } else { "NOLOGIN" }); }
-        if let Some(v) = replication { opts.push(if v { "REPLICATION" } else { "NOREPLICATION" }); }
+        if let Some(v) = superuser {
+            opts.push(if v { "SUPERUSER" } else { "NOSUPERUSER" });
+        }
+        if let Some(v) = createdb {
+            opts.push(if v { "CREATEDB" } else { "NOCREATEDB" });
+        }
+        if let Some(v) = createrole {
+            opts.push(if v { "CREATEROLE" } else { "NOCREATEROLE" });
+        }
+        if let Some(v) = login {
+            opts.push(if v { "LOGIN" } else { "NOLOGIN" });
+        }
+        if let Some(v) = replication {
+            opts.push(if v { "REPLICATION" } else { "NOREPLICATION" });
+        }
         if let Some(limit) = connection_limit {
             let fragment = format!("CONNECTION LIMIT {}", limit);
             let sql = format!("ALTER ROLE \"{}\" {} {}", name, opts.join(" "), fragment);
@@ -123,19 +168,28 @@ impl RoleManager {
 
     /// Rename a role.
     pub async fn rename(client: &PgClient, old_name: &str, new_name: &str) -> PgResult<()> {
-        client.exec_sql(&format!("ALTER ROLE \"{}\" RENAME TO \"{}\"", old_name, new_name)).await?;
+        client
+            .exec_sql(&format!(
+                "ALTER ROLE \"{}\" RENAME TO \"{}\"",
+                old_name, new_name
+            ))
+            .await?;
         Ok(())
     }
 
     /// Grant a role to a member.
     pub async fn grant_role(client: &PgClient, role: &str, member: &str) -> PgResult<()> {
-        client.exec_sql(&format!("GRANT \"{}\" TO \"{}\"", role, member)).await?;
+        client
+            .exec_sql(&format!("GRANT \"{}\" TO \"{}\"", role, member))
+            .await?;
         Ok(())
     }
 
     /// Revoke a role from a member.
     pub async fn revoke_role(client: &PgClient, role: &str, member: &str) -> PgResult<()> {
-        client.exec_sql(&format!("REVOKE \"{}\" FROM \"{}\"", role, member)).await?;
+        client
+            .exec_sql(&format!("REVOKE \"{}\" FROM \"{}\"", role, member))
+            .await?;
         Ok(())
     }
 
@@ -168,6 +222,10 @@ impl RoleManager {
             name.replace('\'', "''")
         );
         let out = client.exec_sql(&sql).await?;
-        Ok(out.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+        Ok(out
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
     }
 }

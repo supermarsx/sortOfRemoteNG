@@ -44,7 +44,10 @@ impl std::error::Error for PgError {}
 
 impl PgError {
     pub fn new(kind: PgErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(PgErrorKind::NotConnected, msg)
@@ -56,16 +59,28 @@ impl PgError {
         Self::new(PgErrorKind::RoleNotFound, format!("Role not found: {name}"))
     }
     pub fn database_not_found(name: &str) -> Self {
-        Self::new(PgErrorKind::DatabaseNotFound, format!("Database not found: {name}"))
+        Self::new(
+            PgErrorKind::DatabaseNotFound,
+            format!("Database not found: {name}"),
+        )
     }
     pub fn schema_not_found(name: &str) -> Self {
-        Self::new(PgErrorKind::SchemaNotFound, format!("Schema not found: {name}"))
+        Self::new(
+            PgErrorKind::SchemaNotFound,
+            format!("Schema not found: {name}"),
+        )
     }
     pub fn tablespace_not_found(name: &str) -> Self {
-        Self::new(PgErrorKind::TablespaceNotFound, format!("Tablespace not found: {name}"))
+        Self::new(
+            PgErrorKind::TablespaceNotFound,
+            format!("Tablespace not found: {name}"),
+        )
     }
     pub fn extension_not_found(name: &str) -> Self {
-        Self::new(PgErrorKind::ExtensionNotFound, format!("Extension not found: {name}"))
+        Self::new(
+            PgErrorKind::ExtensionNotFound,
+            format!("Extension not found: {name}"),
+        )
     }
     pub fn replication(msg: impl Into<String>) -> Self {
         Self::new(PgErrorKind::ReplicationError, msg)

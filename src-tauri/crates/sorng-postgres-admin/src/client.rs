@@ -52,12 +52,18 @@ impl PgClient {
         self.config.pg_database.as_deref().unwrap_or("postgres")
     }
 
-    fn data_dir(&self) -> &str {
-        self.config.data_dir.as_deref().unwrap_or("/var/lib/postgresql")
+    fn _data_dir(&self) -> &str {
+        self.config
+            .data_dir
+            .as_deref()
+            .unwrap_or("/var/lib/postgresql")
     }
 
-    fn config_dir(&self) -> &str {
-        self.config.config_dir.as_deref().unwrap_or("/etc/postgresql")
+    fn _config_dir(&self) -> &str {
+        self.config
+            .config_dir
+            .as_deref()
+            .unwrap_or("/etc/postgresql")
     }
 
     // ── Command builders ─────────────────────────────────────────
@@ -129,7 +135,9 @@ impl PgClient {
     // ── File operations ──────────────────────────────────────────
 
     pub async fn read_remote_file(&self, path: &str) -> PgResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 

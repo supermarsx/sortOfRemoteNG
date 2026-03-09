@@ -29,11 +29,19 @@ impl WalManager {
                 current_timeline: cols[1].to_string(),
                 wal_level: cols[2].to_string(),
                 archive_mode: cols[3].to_string(),
-                archive_command: if cols[4].is_empty() { None } else { Some(cols[4].to_string()) },
+                archive_command: if cols[4].is_empty() {
+                    None
+                } else {
+                    Some(cols[4].to_string())
+                },
                 wal_segment_size: cols[5].to_string(),
                 min_wal_size: cols[6].to_string(),
                 max_wal_size: cols[7].to_string(),
-                wal_keep_size: if cols[8].is_empty() { None } else { Some(cols[8].to_string()) },
+                wal_keep_size: if cols[8].is_empty() {
+                    None
+                } else {
+                    Some(cols[8].to_string())
+                },
             })
         } else {
             Err(crate::error::PgError::parse("Failed to parse WAL info"))
@@ -67,17 +75,35 @@ impl WalManager {
 
     /// List WAL files in pg_wal directory.
     pub async fn list_wal_files(client: &PgClient) -> PgResult<Vec<String>> {
-        let data_dir = client.config.data_dir.as_deref().unwrap_or("/var/lib/postgresql");
-        let cmd = format!("ls -1 {}/pg_wal/ 2>/dev/null | grep -E '^[0-9A-F]{{24}}$' || true",
-            shell_escape(data_dir));
+        let data_dir = client
+            .config
+            .data_dir
+            .as_deref()
+            .unwrap_or("/var/lib/postgresql");
+        let cmd = format!(
+            "ls -1 {}/pg_wal/ 2>/dev/null | grep -E '^[0-9A-F]{{24}}$' || true",
+            shell_escape(data_dir)
+        );
         let out = client.exec_ssh(&cmd).await?;
-        Ok(out.stdout.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+        Ok(out
+            .stdout
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
     }
 
     /// Get total WAL directory size in bytes.
     pub async fn get_wal_size(client: &PgClient) -> PgResult<u64> {
-        let data_dir = client.config.data_dir.as_deref().unwrap_or("/var/lib/postgresql");
-        let cmd = format!("du -sb {}/pg_wal/ 2>/dev/null | cut -f1", shell_escape(data_dir));
+        let data_dir = client
+            .config
+            .data_dir
+            .as_deref()
+            .unwrap_or("/var/lib/postgresql");
+        let cmd = format!(
+            "du -sb {}/pg_wal/ 2>/dev/null | cut -f1",
+            shell_escape(data_dir)
+        );
         let out = client.exec_ssh(&cmd).await?;
         Ok(out.stdout.trim().parse().unwrap_or(0))
     }

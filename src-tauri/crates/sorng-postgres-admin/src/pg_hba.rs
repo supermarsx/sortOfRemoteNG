@@ -2,7 +2,7 @@
 //! PostgreSQL pg_hba.conf management – read, parse, edit, and reload.
 
 use crate::client::{shell_escape, PgClient};
-use crate::error::{PgError, PgResult};
+use crate::error::PgResult;
 use crate::types::PgHbaEntry;
 
 pub struct HbaManager;
@@ -13,7 +13,14 @@ impl HbaManager {
         let out = client.exec_sql("SHOW hba_file").await?;
         let path = out.trim().to_string();
         if path.is_empty() {
-            Ok(format!("{}/pg_hba.conf", client.config.config_dir.as_deref().unwrap_or("/etc/postgresql")))
+            Ok(format!(
+                "{}/pg_hba.conf",
+                client
+                    .config
+                    .config_dir
+                    .as_deref()
+                    .unwrap_or("/etc/postgresql")
+            ))
         } else {
             Ok(path)
         }
@@ -76,7 +83,11 @@ impl HbaManager {
             line.push_str(&format!(" {}", opts));
         }
         let path = Self::hba_path(client).await?;
-        let cmd = format!("echo {} | sudo tee -a {} > /dev/null", shell_escape(&line), shell_escape(&path));
+        let cmd = format!(
+            "echo {} | sudo tee -a {} > /dev/null",
+            shell_escape(&line),
+            shell_escape(&path)
+        );
         client.exec_ssh(&cmd).await?;
         Ok(())
     }
@@ -84,11 +95,7 @@ impl HbaManager {
     /// Remove a line from pg_hba.conf by line number (1-based).
     pub async fn remove(client: &PgClient, line_number: u32) -> PgResult<()> {
         let path = Self::hba_path(client).await?;
-        let cmd = format!(
-            "sudo sed -i '{}d' {}",
-            line_number,
-            shell_escape(&path)
-        );
+        let cmd = format!("sudo sed -i '{}d' {}", line_number, shell_escape(&path));
         client.exec_ssh(&cmd).await?;
         Ok(())
     }
@@ -107,7 +114,9 @@ impl HbaManager {
         let escaped_line = line.replace('/', "\\/").replace('\'', "'\\''");
         let cmd = format!(
             "sudo sed -i '{}s/.*/{}/g' {}",
-            line_number, escaped_line, shell_escape(&path)
+            line_number,
+            escaped_line,
+            shell_escape(&path)
         );
         client.exec_ssh(&cmd).await?;
         Ok(())

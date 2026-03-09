@@ -27,7 +27,8 @@ impl SchemaManager {
     /// Get a single schema by name.
     pub async fn get(client: &PgClient, db: &str, name: &str) -> PgResult<PgSchema> {
         let schemas = Self::list(client, db).await?;
-        schemas.into_iter()
+        schemas
+            .into_iter()
             .find(|s| s.name == name)
             .ok_or_else(|| crate::error::PgError::schema_not_found(name))
     }
@@ -48,31 +49,39 @@ impl SchemaManager {
     }
 
     /// Drop a schema.
-    pub async fn drop(
-        client: &PgClient,
-        db: &str,
-        name: &str,
-        cascade: bool,
-    ) -> PgResult<()> {
+    pub async fn drop(client: &PgClient, db: &str, name: &str, cascade: bool) -> PgResult<()> {
         let mut sql = format!("DROP SCHEMA \"{}\"", name);
-        if cascade { sql.push_str(" CASCADE"); }
+        if cascade {
+            sql.push_str(" CASCADE");
+        }
         client.exec_sql_db(db, &sql).await?;
         Ok(())
     }
 
     /// Rename a schema.
-    pub async fn rename(client: &PgClient, db: &str, old_name: &str, new_name: &str) -> PgResult<()> {
-        client.exec_sql_db(db, &format!(
-            "ALTER SCHEMA \"{}\" RENAME TO \"{}\"", old_name, new_name
-        )).await?;
+    pub async fn rename(
+        client: &PgClient,
+        db: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> PgResult<()> {
+        client
+            .exec_sql_db(
+                db,
+                &format!("ALTER SCHEMA \"{}\" RENAME TO \"{}\"", old_name, new_name),
+            )
+            .await?;
         Ok(())
     }
 
     /// Change schema owner.
     pub async fn alter_owner(client: &PgClient, db: &str, name: &str, owner: &str) -> PgResult<()> {
-        client.exec_sql_db(db, &format!(
-            "ALTER SCHEMA \"{}\" OWNER TO \"{}\"", name, owner
-        )).await?;
+        client
+            .exec_sql_db(
+                db,
+                &format!("ALTER SCHEMA \"{}\" OWNER TO \"{}\"", name, owner),
+            )
+            .await?;
         Ok(())
     }
 
@@ -115,7 +124,11 @@ impl SchemaManager {
             schema.replace('\'', "''")
         );
         let out = client.exec_sql_db(db, &sql).await?;
-        Ok(out.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+        Ok(out
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
     }
 
     /// List views in a schema.
@@ -125,18 +138,30 @@ impl SchemaManager {
             schema.replace('\'', "''")
         );
         let out = client.exec_sql_db(db, &sql).await?;
-        Ok(out.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+        Ok(out
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
     }
 
     /// List functions in a schema.
-    pub async fn list_functions(client: &PgClient, db: &str, schema: &str) -> PgResult<Vec<String>> {
+    pub async fn list_functions(
+        client: &PgClient,
+        db: &str,
+        schema: &str,
+    ) -> PgResult<Vec<String>> {
         let sql = format!(
             "SELECT routine_name FROM information_schema.routines \
              WHERE routine_schema = '{}' ORDER BY routine_name",
             schema.replace('\'', "''")
         );
         let out = client.exec_sql_db(db, &sql).await?;
-        Ok(out.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+        Ok(out
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
     }
 }
 
@@ -148,8 +173,16 @@ fn parse_schemas(output: &str) -> PgResult<Vec<PgSchema>> {
             schemas.push(PgSchema {
                 name: cols[0].to_string(),
                 owner: cols[1].to_string(),
-                access_privileges: if cols[2].is_empty() { None } else { Some(cols[2].to_string()) },
-                description: if cols[3].is_empty() { None } else { Some(cols[3].to_string()) },
+                access_privileges: if cols[2].is_empty() {
+                    None
+                } else {
+                    Some(cols[2].to_string())
+                },
+                description: if cols[3].is_empty() {
+                    None
+                } else {
+                    Some(cols[3].to_string())
+                },
             });
         }
     }

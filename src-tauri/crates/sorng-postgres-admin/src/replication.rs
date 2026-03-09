@@ -34,15 +34,47 @@ impl ReplicationManager {
                     pid: cols[0].trim().parse().unwrap_or(0),
                     usename: cols[1].to_string(),
                     application_name: cols[2].to_string(),
-                    client_addr: if cols[3].is_empty() { None } else { Some(cols[3].to_string()) },
+                    client_addr: if cols[3].is_empty() {
+                        None
+                    } else {
+                        Some(cols[3].to_string())
+                    },
                     state: cols[4].to_string(),
-                    sent_lsn: if cols[5].is_empty() { None } else { Some(cols[5].to_string()) },
-                    write_lsn: if cols[6].is_empty() { None } else { Some(cols[6].to_string()) },
-                    flush_lsn: if cols[7].is_empty() { None } else { Some(cols[7].to_string()) },
-                    replay_lsn: if cols[8].is_empty() { None } else { Some(cols[8].to_string()) },
-                    write_lag: if cols[9].is_empty() { None } else { Some(cols[9].to_string()) },
-                    flush_lag: if cols[10].is_empty() { None } else { Some(cols[10].to_string()) },
-                    replay_lag: if cols[11].is_empty() { None } else { Some(cols[11].to_string()) },
+                    sent_lsn: if cols[5].is_empty() {
+                        None
+                    } else {
+                        Some(cols[5].to_string())
+                    },
+                    write_lsn: if cols[6].is_empty() {
+                        None
+                    } else {
+                        Some(cols[6].to_string())
+                    },
+                    flush_lsn: if cols[7].is_empty() {
+                        None
+                    } else {
+                        Some(cols[7].to_string())
+                    },
+                    replay_lsn: if cols[8].is_empty() {
+                        None
+                    } else {
+                        Some(cols[8].to_string())
+                    },
+                    write_lag: if cols[9].is_empty() {
+                        None
+                    } else {
+                        Some(cols[9].to_string())
+                    },
+                    flush_lag: if cols[10].is_empty() {
+                        None
+                    } else {
+                        Some(cols[10].to_string())
+                    },
+                    replay_lag: if cols[11].is_empty() {
+                        None
+                    } else {
+                        Some(cols[11].to_string())
+                    },
                     sync_state: cols[12].to_string(),
                 });
             }
@@ -71,17 +103,45 @@ impl ReplicationManager {
             if cols.len() >= 12 {
                 slots.push(PgReplicationSlot {
                     slot_name: cols[0].to_string(),
-                    plugin: if cols[1].is_empty() { None } else { Some(cols[1].to_string()) },
+                    plugin: if cols[1].is_empty() {
+                        None
+                    } else {
+                        Some(cols[1].to_string())
+                    },
                     slot_type: cols[2].to_string(),
-                    datoid: if cols[3].is_empty() { None } else { Some(cols[3].to_string()) },
-                    database: if cols[4].is_empty() { None } else { Some(cols[4].to_string()) },
+                    datoid: if cols[3].is_empty() {
+                        None
+                    } else {
+                        Some(cols[3].to_string())
+                    },
+                    database: if cols[4].is_empty() {
+                        None
+                    } else {
+                        Some(cols[4].to_string())
+                    },
                     temporary: cols[5] == "t",
                     active: cols[6] == "t",
                     active_pid: cols[7].trim().parse().ok(),
-                    xmin: if cols[8].is_empty() { None } else { Some(cols[8].to_string()) },
-                    catalog_xmin: if cols[9].is_empty() { None } else { Some(cols[9].to_string()) },
-                    restart_lsn: if cols[10].is_empty() { None } else { Some(cols[10].to_string()) },
-                    confirmed_flush_lsn: if cols[11].is_empty() { None } else { Some(cols[11].to_string()) },
+                    xmin: if cols[8].is_empty() {
+                        None
+                    } else {
+                        Some(cols[8].to_string())
+                    },
+                    catalog_xmin: if cols[9].is_empty() {
+                        None
+                    } else {
+                        Some(cols[9].to_string())
+                    },
+                    restart_lsn: if cols[10].is_empty() {
+                        None
+                    } else {
+                        Some(cols[10].to_string())
+                    },
+                    confirmed_flush_lsn: if cols[11].is_empty() {
+                        None
+                    } else {
+                        Some(cols[11].to_string())
+                    },
                 });
             }
         }

@@ -56,14 +56,11 @@ impl ExtensionManager {
     }
 
     /// Uninstall an extension from a database.
-    pub async fn uninstall(
-        client: &PgClient,
-        db: &str,
-        name: &str,
-        cascade: bool,
-    ) -> PgResult<()> {
+    pub async fn uninstall(client: &PgClient, db: &str, name: &str, cascade: bool) -> PgResult<()> {
         let mut sql = format!("DROP EXTENSION IF EXISTS \"{}\"", name);
-        if cascade { sql.push_str(" CASCADE"); }
+        if cascade {
+            sql.push_str(" CASCADE");
+        }
         client.exec_sql_db(db, &sql).await?;
         Ok(())
     }
@@ -86,7 +83,8 @@ impl ExtensionManager {
     /// Get details of a specific extension in a database.
     pub async fn get(client: &PgClient, db: &str, name: &str) -> PgResult<PgExtension> {
         let installed = Self::list_installed(client, db).await?;
-        installed.into_iter()
+        installed
+            .into_iter()
             .find(|e| e.name == name)
             .ok_or_else(|| crate::error::PgError::extension_not_found(name))
     }
@@ -99,11 +97,27 @@ fn parse_extensions(output: &str) -> PgResult<Vec<PgExtension>> {
         if cols.len() >= 6 {
             exts.push(PgExtension {
                 name: cols[0].to_string(),
-                default_version: if cols[1].is_empty() { None } else { Some(cols[1].to_string()) },
-                installed_version: if cols[2].is_empty() { None } else { Some(cols[2].to_string()) },
-                schema: if cols[3].is_empty() { None } else { Some(cols[3].to_string()) },
+                default_version: if cols[1].is_empty() {
+                    None
+                } else {
+                    Some(cols[1].to_string())
+                },
+                installed_version: if cols[2].is_empty() {
+                    None
+                } else {
+                    Some(cols[2].to_string())
+                },
+                schema: if cols[3].is_empty() {
+                    None
+                } else {
+                    Some(cols[3].to_string())
+                },
                 relocatable: cols[4] == "t",
-                comment: if cols[5].is_empty() { None } else { Some(cols[5].to_string()) },
+                comment: if cols[5].is_empty() {
+                    None
+                } else {
+                    Some(cols[5].to_string())
+                },
             });
         }
     }

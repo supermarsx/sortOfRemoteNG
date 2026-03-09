@@ -44,7 +44,11 @@ impl StatsManager {
                     deadlocks: cols[14].trim().parse().unwrap_or(0),
                     blk_read_time: cols[15].trim().parse().unwrap_or(0.0),
                     blk_write_time: cols[16].trim().parse().unwrap_or(0.0),
-                    stats_reset: if cols[17].is_empty() { None } else { Some(cols[17].to_string()) },
+                    stats_reset: if cols[17].is_empty() {
+                        None
+                    } else {
+                        Some(cols[17].to_string())
+                    },
                 });
             }
         }
@@ -91,8 +95,16 @@ impl StatsManager {
                     n_tup_hot_upd: cols[9].trim().parse().unwrap_or(0),
                     n_live_tup: cols[10].trim().parse().unwrap_or(0),
                     n_dead_tup: cols[11].trim().parse().unwrap_or(0),
-                    last_vacuum: if cols[12].is_empty() { None } else { Some(cols[12].to_string()) },
-                    last_autovacuum: if cols[13].is_empty() { None } else { Some(cols[13].to_string()) },
+                    last_vacuum: if cols[12].is_empty() {
+                        None
+                    } else {
+                        Some(cols[12].to_string())
+                    },
+                    last_autovacuum: if cols[13].is_empty() {
+                        None
+                    } else {
+                        Some(cols[13].to_string())
+                    },
                 });
             }
         }
@@ -164,14 +176,26 @@ impl StatsManager {
             if cols.len() >= 9 {
                 locks.push(PgLock {
                     locktype: cols[0].to_string(),
-                    database: if cols[1].is_empty() { None } else { Some(cols[1].to_string()) },
-                    relation: if cols[2].is_empty() { None } else { Some(cols[2].to_string()) },
+                    database: if cols[1].is_empty() {
+                        None
+                    } else {
+                        Some(cols[1].to_string())
+                    },
+                    relation: if cols[2].is_empty() {
+                        None
+                    } else {
+                        Some(cols[2].to_string())
+                    },
                     page: cols[3].trim().parse().ok(),
                     tuple: cols[4].trim().parse().ok(),
                     pid: cols[5].trim().parse().unwrap_or(0),
                     mode: cols[6].to_string(),
                     granted: cols[7] == "t",
-                    waitstart: if cols[8].is_empty() { None } else { Some(cols[8].to_string()) },
+                    waitstart: if cols[8].is_empty() {
+                        None
+                    } else {
+                        Some(cols[8].to_string())
+                    },
                 });
             }
         }
@@ -200,16 +224,52 @@ impl StatsManager {
             if cols.len() >= 11 {
                 activity.push(PgActivity {
                     pid: cols[0].trim().parse().unwrap_or(0),
-                    datname: if cols[1].is_empty() { None } else { Some(cols[1].to_string()) },
-                    usename: if cols[2].is_empty() { None } else { Some(cols[2].to_string()) },
+                    datname: if cols[1].is_empty() {
+                        None
+                    } else {
+                        Some(cols[1].to_string())
+                    },
+                    usename: if cols[2].is_empty() {
+                        None
+                    } else {
+                        Some(cols[2].to_string())
+                    },
                     application_name: cols[3].to_string(),
-                    client_addr: if cols[4].is_empty() { None } else { Some(cols[4].to_string()) },
-                    state: if cols[5].is_empty() { None } else { Some(cols[5].to_string()) },
-                    query: if cols[6].is_empty() { None } else { Some(cols[6].to_string()) },
-                    backend_start: if cols[7].is_empty() { None } else { Some(cols[7].to_string()) },
-                    query_start: if cols[8].is_empty() { None } else { Some(cols[8].to_string()) },
-                    wait_event_type: if cols[9].is_empty() { None } else { Some(cols[9].to_string()) },
-                    wait_event: if cols[10].is_empty() { None } else { Some(cols[10].to_string()) },
+                    client_addr: if cols[4].is_empty() {
+                        None
+                    } else {
+                        Some(cols[4].to_string())
+                    },
+                    state: if cols[5].is_empty() {
+                        None
+                    } else {
+                        Some(cols[5].to_string())
+                    },
+                    query: if cols[6].is_empty() {
+                        None
+                    } else {
+                        Some(cols[6].to_string())
+                    },
+                    backend_start: if cols[7].is_empty() {
+                        None
+                    } else {
+                        Some(cols[7].to_string())
+                    },
+                    query_start: if cols[8].is_empty() {
+                        None
+                    } else {
+                        Some(cols[8].to_string())
+                    },
+                    wait_event_type: if cols[9].is_empty() {
+                        None
+                    } else {
+                        Some(cols[9].to_string())
+                    },
+                    wait_event: if cols[10].is_empty() {
+                        None
+                    } else {
+                        Some(cols[10].to_string())
+                    },
                 });
             }
         }
@@ -243,8 +303,9 @@ impl StatsManager {
         );
         let out = client.exec_sql(&sql).await?;
         let settings = parse_settings(&out)?;
-        settings.into_iter().next()
-            .ok_or_else(|| crate::error::PgError::command_failed(format!("Setting not found: {}", name)))
+        settings.into_iter().next().ok_or_else(|| {
+            crate::error::PgError::command_failed(format!("Setting not found: {}", name))
+        })
     }
 
     /// Set a configuration parameter via ALTER SYSTEM.
@@ -266,11 +327,10 @@ impl StatsManager {
 
     /// Reset statistics for a database.
     pub async fn reset_stats(client: &PgClient, db: &str) -> PgResult<()> {
-        let sql = format!(
-            "SELECT pg_stat_reset_single_table_counters(c.oid) \
+        let sql = "SELECT pg_stat_reset_single_table_counters(c.oid) \
              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
              WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')"
-        );
+            .to_string();
         client.exec_sql_db(db, &sql).await?;
         Ok(())
     }
@@ -284,13 +344,25 @@ fn parse_settings(output: &str) -> PgResult<Vec<PgSetting>> {
             settings.push(PgSetting {
                 name: cols[0].to_string(),
                 setting: cols[1].to_string(),
-                unit: if cols[2].is_empty() { None } else { Some(cols[2].to_string()) },
+                unit: if cols[2].is_empty() {
+                    None
+                } else {
+                    Some(cols[2].to_string())
+                },
                 category: cols[3].to_string(),
                 short_desc: cols[4].to_string(),
                 context: cols[5].to_string(),
                 source: cols[6].to_string(),
-                boot_val: if cols[7].is_empty() { None } else { Some(cols[7].to_string()) },
-                reset_val: if cols[8].is_empty() { None } else { Some(cols[8].to_string()) },
+                boot_val: if cols[7].is_empty() {
+                    None
+                } else {
+                    Some(cols[7].to_string())
+                },
+                reset_val: if cols[8].is_empty() {
+                    None
+                } else {
+                    Some(cols[8].to_string())
+                },
                 pending_restart: cols[9] == "t",
             });
         }

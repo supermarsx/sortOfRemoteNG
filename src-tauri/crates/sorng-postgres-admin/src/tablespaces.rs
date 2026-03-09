@@ -29,7 +29,11 @@ impl TablespaceManager {
                     owner: cols[1].to_string(),
                     location: cols[2].to_string(),
                     size_bytes: cols[3].trim().parse().unwrap_or(0),
-                    options: if cols[4].is_empty() { None } else { Some(cols[4].to_string()) },
+                    options: if cols[4].is_empty() {
+                        None
+                    } else {
+                        Some(cols[4].to_string())
+                    },
                 });
             }
         }
@@ -51,9 +55,18 @@ impl TablespaceManager {
         location: &str,
         owner: Option<&str>,
     ) -> PgResult<()> {
-        let mut sql = format!("CREATE TABLESPACE \"{}\" LOCATION '{}'", name, location.replace('\'', "''"));
+        let mut sql = format!(
+            "CREATE TABLESPACE \"{}\" LOCATION '{}'",
+            name,
+            location.replace('\'', "''")
+        );
         if let Some(o) = owner {
-            sql = format!("CREATE TABLESPACE \"{}\" OWNER \"{}\" LOCATION '{}'", name, o, location.replace('\'', "''"));
+            sql = format!(
+                "CREATE TABLESPACE \"{}\" OWNER \"{}\" LOCATION '{}'",
+                name,
+                o,
+                location.replace('\'', "''")
+            );
         }
         client.exec_sql(&sql).await?;
         Ok(())
@@ -61,23 +74,31 @@ impl TablespaceManager {
 
     /// Drop a tablespace.
     pub async fn drop(client: &PgClient, name: &str) -> PgResult<()> {
-        client.exec_sql(&format!("DROP TABLESPACE \"{}\"", name)).await?;
+        client
+            .exec_sql(&format!("DROP TABLESPACE \"{}\"", name))
+            .await?;
         Ok(())
     }
 
     /// Rename a tablespace.
     pub async fn rename(client: &PgClient, old_name: &str, new_name: &str) -> PgResult<()> {
-        client.exec_sql(&format!(
-            "ALTER TABLESPACE \"{}\" RENAME TO \"{}\"", old_name, new_name
-        )).await?;
+        client
+            .exec_sql(&format!(
+                "ALTER TABLESPACE \"{}\" RENAME TO \"{}\"",
+                old_name, new_name
+            ))
+            .await?;
         Ok(())
     }
 
     /// Change tablespace owner.
     pub async fn alter_owner(client: &PgClient, name: &str, owner: &str) -> PgResult<()> {
-        client.exec_sql(&format!(
-            "ALTER TABLESPACE \"{}\" OWNER TO \"{}\"", name, owner
-        )).await?;
+        client
+            .exec_sql(&format!(
+                "ALTER TABLESPACE \"{}\" OWNER TO \"{}\"",
+                name, owner
+            ))
+            .await?;
         Ok(())
     }
 
@@ -102,6 +123,10 @@ impl TablespaceManager {
             name.replace('\'', "''")
         );
         let out = client.exec_sql(&sql).await?;
-        Ok(out.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+        Ok(out
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
     }
 }
