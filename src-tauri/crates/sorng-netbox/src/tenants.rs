@@ -21,10 +21,7 @@ impl TenantManager {
         client.api_get(&format!("tenancy/tenants/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Tenant> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Tenant> {
         client.api_post("tenancy/tenants", data).await
     }
 
@@ -41,7 +38,9 @@ impl TenantManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<Tenant> {
-        client.api_patch(&format!("tenancy/tenants/{id}"), data).await
+        client
+            .api_patch(&format!("tenancy/tenants/{id}"), data)
+            .await
     }
 
     pub async fn delete(client: &NetboxClient, id: i64) -> NetboxResult<()> {
@@ -72,10 +71,14 @@ impl TenantManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<TenantGroup> {
-        client.api_put(&format!("tenancy/tenant-groups/{id}"), data).await
+        client
+            .api_put(&format!("tenancy/tenant-groups/{id}"), data)
+            .await
     }
 
     pub async fn delete_group(client: &NetboxClient, id: i64) -> NetboxResult<()> {
-        client.api_delete(&format!("tenancy/tenant-groups/{id}")).await
+        client
+            .api_delete(&format!("tenancy/tenant-groups/{id}"))
+            .await
     }
 }

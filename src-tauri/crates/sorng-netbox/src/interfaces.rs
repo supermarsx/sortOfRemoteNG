@@ -15,7 +15,9 @@ impl InterfaceManager {
         match device_id {
             Some(did) => {
                 let did_s = did.to_string();
-                client.api_get_paginated("dcim/interfaces", &[("device_id", &did_s)]).await
+                client
+                    .api_get_paginated("dcim/interfaces", &[("device_id", &did_s)])
+                    .await
             }
             None => client.api_get_paginated("dcim/interfaces", &[]).await,
         }
@@ -45,7 +47,9 @@ impl InterfaceManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<Interface> {
-        client.api_patch(&format!("dcim/interfaces/{id}"), data).await
+        client
+            .api_patch(&format!("dcim/interfaces/{id}"), data)
+            .await
     }
 
     pub async fn delete(client: &NetboxClient, id: i64) -> NetboxResult<()> {
@@ -57,12 +61,16 @@ impl InterfaceManager {
         device_id: i64,
     ) -> NetboxResult<PaginatedResponse<Interface>> {
         let did = device_id.to_string();
-        client.api_get_paginated("dcim/interfaces", &[("device_id", &did)]).await
+        client
+            .api_get_paginated("dcim/interfaces", &[("device_id", &did)])
+            .await
     }
 
     pub async fn list_connections(
         client: &NetboxClient,
     ) -> NetboxResult<PaginatedResponse<InterfaceConnection>> {
-        client.api_get_paginated("dcim/interface-connections", &[]).await
+        client
+            .api_get_paginated("dcim/interface-connections", &[])
+            .await
     }
 }

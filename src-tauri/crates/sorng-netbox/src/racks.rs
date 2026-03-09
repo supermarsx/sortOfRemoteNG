@@ -15,7 +15,9 @@ impl RackManager {
         match site_id {
             Some(sid) => {
                 let sid_s = sid.to_string();
-                client.api_get_paginated("dcim/racks", &[("site_id", &sid_s)]).await
+                client
+                    .api_get_paginated("dcim/racks", &[("site_id", &sid_s)])
+                    .await
             }
             None => client.api_get_paginated("dcim/racks", &[]).await,
         }
@@ -25,10 +27,7 @@ impl RackManager {
         client.api_get(&format!("dcim/racks/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Rack> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Rack> {
         client.api_post("dcim/racks", data).await
     }
 
@@ -52,10 +51,7 @@ impl RackManager {
         client.api_delete(&format!("dcim/racks/{id}")).await
     }
 
-    pub async fn get_elevation(
-        client: &NetboxClient,
-        id: i64,
-    ) -> NetboxResult<Vec<RackUnit>> {
+    pub async fn get_elevation(client: &NetboxClient, id: i64) -> NetboxResult<Vec<RackUnit>> {
         client.api_get(&format!("dcim/racks/{id}/elevation")).await
     }
 
@@ -64,6 +60,8 @@ impl RackManager {
         rack_id: i64,
     ) -> NetboxResult<PaginatedResponse<RackReservation>> {
         let rid = rack_id.to_string();
-        client.api_get_paginated("dcim/rack-reservations", &[("rack_id", &rid)]).await
+        client
+            .api_get_paginated("dcim/rack-reservations", &[("rack_id", &rid)])
+            .await
     }
 }

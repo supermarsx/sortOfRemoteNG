@@ -21,10 +21,7 @@ impl ContactManager {
         client.api_get(&format!("tenancy/contacts/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Contact> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Contact> {
         client.api_post("tenancy/contacts", data).await
     }
 
@@ -33,7 +30,9 @@ impl ContactManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<Contact> {
-        client.api_put(&format!("tenancy/contacts/{id}"), data).await
+        client
+            .api_put(&format!("tenancy/contacts/{id}"), data)
+            .await
     }
 
     pub async fn partial_update(
@@ -41,7 +40,9 @@ impl ContactManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<Contact> {
-        client.api_patch(&format!("tenancy/contacts/{id}"), data).await
+        client
+            .api_patch(&format!("tenancy/contacts/{id}"), data)
+            .await
     }
 
     pub async fn delete(client: &NetboxClient, id: i64) -> NetboxResult<()> {
@@ -53,11 +54,15 @@ impl ContactManager {
     pub async fn list_groups(
         client: &NetboxClient,
     ) -> NetboxResult<PaginatedResponse<ContactGroup>> {
-        client.api_get_paginated("tenancy/contact-groups", &[]).await
+        client
+            .api_get_paginated("tenancy/contact-groups", &[])
+            .await
     }
 
     pub async fn get_group(client: &NetboxClient, id: i64) -> NetboxResult<ContactGroup> {
-        client.api_get(&format!("tenancy/contact-groups/{id}")).await
+        client
+            .api_get(&format!("tenancy/contact-groups/{id}"))
+            .await
     }
 
     pub async fn create_group(
@@ -72,18 +77,20 @@ impl ContactManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<ContactGroup> {
-        client.api_put(&format!("tenancy/contact-groups/{id}"), data).await
+        client
+            .api_put(&format!("tenancy/contact-groups/{id}"), data)
+            .await
     }
 
     pub async fn delete_group(client: &NetboxClient, id: i64) -> NetboxResult<()> {
-        client.api_delete(&format!("tenancy/contact-groups/{id}")).await
+        client
+            .api_delete(&format!("tenancy/contact-groups/{id}"))
+            .await
     }
 
     // ── Contact Roles ────────────────────────────────────────────────
 
-    pub async fn list_roles(
-        client: &NetboxClient,
-    ) -> NetboxResult<PaginatedResponse<ContactRole>> {
+    pub async fn list_roles(client: &NetboxClient) -> NetboxResult<PaginatedResponse<ContactRole>> {
         client.api_get_paginated("tenancy/contact-roles", &[]).await
     }
 
@@ -92,6 +99,8 @@ impl ContactManager {
     pub async fn list_assignments(
         client: &NetboxClient,
     ) -> NetboxResult<PaginatedResponse<ContactAssignment>> {
-        client.api_get_paginated("tenancy/contact-assignments", &[]).await
+        client
+            .api_get_paginated("tenancy/contact-assignments", &[])
+            .await
     }
 }

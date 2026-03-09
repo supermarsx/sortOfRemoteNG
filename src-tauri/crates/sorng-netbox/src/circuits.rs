@@ -21,10 +21,7 @@ impl CircuitManager {
         client.api_get(&format!("circuits/circuits/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Circuit> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Circuit> {
         client.api_post("circuits/circuits", data).await
     }
 
@@ -33,7 +30,9 @@ impl CircuitManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<Circuit> {
-        client.api_put(&format!("circuits/circuits/{id}"), data).await
+        client
+            .api_put(&format!("circuits/circuits/{id}"), data)
+            .await
     }
 
     pub async fn delete(client: &NetboxClient, id: i64) -> NetboxResult<()> {
@@ -64,7 +63,9 @@ impl CircuitManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<CircuitProvider> {
-        client.api_put(&format!("circuits/providers/{id}"), data).await
+        client
+            .api_put(&format!("circuits/providers/{id}"), data)
+            .await
     }
 
     pub async fn delete_provider(client: &NetboxClient, id: i64) -> NetboxResult<()> {
@@ -76,14 +77,15 @@ impl CircuitManager {
     pub async fn list_circuit_types(
         client: &NetboxClient,
     ) -> NetboxResult<PaginatedResponse<CircuitType>> {
-        client.api_get_paginated("circuits/circuit-types", &[]).await
+        client
+            .api_get_paginated("circuits/circuit-types", &[])
+            .await
     }
 
-    pub async fn get_circuit_type(
-        client: &NetboxClient,
-        id: i64,
-    ) -> NetboxResult<CircuitType> {
-        client.api_get(&format!("circuits/circuit-types/{id}")).await
+    pub async fn get_circuit_type(client: &NetboxClient, id: i64) -> NetboxResult<CircuitType> {
+        client
+            .api_get(&format!("circuits/circuit-types/{id}"))
+            .await
     }
 
     // ── Terminations ─────────────────────────────────────────────────
@@ -93,6 +95,8 @@ impl CircuitManager {
         circuit_id: i64,
     ) -> NetboxResult<PaginatedResponse<CircuitTermination>> {
         let cid = circuit_id.to_string();
-        client.api_get_paginated("circuits/circuit-terminations", &[("circuit_id", &cid)]).await
+        client
+            .api_get_paginated("circuits/circuit-terminations", &[("circuit_id", &cid)])
+            .await
     }
 }

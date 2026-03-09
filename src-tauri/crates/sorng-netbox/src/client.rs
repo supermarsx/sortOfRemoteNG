@@ -27,11 +27,22 @@ impl NetboxClient {
     // ── URL builders ─────────────────────────────────────────────────
 
     fn scheme(&self) -> &str {
-        if self.config.use_tls.unwrap_or(true) { "https" } else { "http" }
+        if self.config.use_tls.unwrap_or(true) {
+            "https"
+        } else {
+            "http"
+        }
     }
 
     fn base_url(&self) -> String {
-        let port = self.config.port.unwrap_or(if self.config.use_tls.unwrap_or(true) { 443 } else { 80 });
+        let port = self
+            .config
+            .port
+            .unwrap_or(if self.config.use_tls.unwrap_or(true) {
+                443
+            } else {
+                80
+            });
         let host = &self.config.host;
         if (self.config.use_tls.unwrap_or(true) && port == 443)
             || (!self.config.use_tls.unwrap_or(true) && port == 80)
@@ -76,7 +87,8 @@ impl NetboxClient {
     pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> NetboxResult<T> {
         let url = self.api_url(path);
         debug!("NETBOX GET {url}");
-        let resp = self.apply_auth(self.http.get(&url))
+        let resp = self
+            .apply_auth(self.http.get(&url))
             .send()
             .await
             .map_err(|e| NetboxError::http(format!("GET {url}: {e}")))?;
@@ -97,7 +109,8 @@ impl NetboxClient {
     ) -> NetboxResult<T> {
         let url = self.api_url(path);
         debug!("NETBOX GET {url} params={params:?}");
-        let resp = self.apply_auth(self.http.get(&url).query(params))
+        let resp = self
+            .apply_auth(self.http.get(&url).query(params))
             .send()
             .await
             .map_err(|e| NetboxError::http(format!("GET {url}: {e}")))?;
@@ -126,7 +139,8 @@ impl NetboxClient {
     ) -> NetboxResult<T> {
         let url = self.api_url(path);
         debug!("NETBOX POST {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
             .map_err(|e| NetboxError::http(format!("POST {url}: {e}")))?;
@@ -147,7 +161,8 @@ impl NetboxClient {
     ) -> NetboxResult<T> {
         let url = self.api_url(path);
         debug!("NETBOX PUT {url}");
-        let resp = self.apply_auth(self.http.put(&url).json(body))
+        let resp = self
+            .apply_auth(self.http.put(&url).json(body))
             .send()
             .await
             .map_err(|e| NetboxError::http(format!("PUT {url}: {e}")))?;
@@ -168,7 +183,8 @@ impl NetboxClient {
     ) -> NetboxResult<T> {
         let url = self.api_url(path);
         debug!("NETBOX PATCH {url}");
-        let resp = self.apply_auth(self.http.patch(&url).json(body))
+        let resp = self
+            .apply_auth(self.http.patch(&url).json(body))
             .send()
             .await
             .map_err(|e| NetboxError::http(format!("PATCH {url}: {e}")))?;
@@ -185,7 +201,8 @@ impl NetboxClient {
     pub async fn api_delete(&self, path: &str) -> NetboxResult<()> {
         let url = self.api_url(path);
         debug!("NETBOX DELETE {url}");
-        let resp = self.apply_auth(self.http.delete(&url))
+        let resp = self
+            .apply_auth(self.http.delete(&url))
             .send()
             .await
             .map_err(|e| NetboxError::http(format!("DELETE {url}: {e}")))?;
@@ -206,12 +223,15 @@ impl NetboxClient {
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        let sites: PaginatedResponse<serde_json::Value> =
-            self.api_get_paginated("dcim/sites", &[("limit", "1")]).await?;
-        let devices: PaginatedResponse<serde_json::Value> =
-            self.api_get_paginated("dcim/devices", &[("limit", "1")]).await?;
-        let prefixes: PaginatedResponse<serde_json::Value> =
-            self.api_get_paginated("ipam/prefixes", &[("limit", "1")]).await?;
+        let sites: PaginatedResponse<serde_json::Value> = self
+            .api_get_paginated("dcim/sites", &[("limit", "1")])
+            .await?;
+        let devices: PaginatedResponse<serde_json::Value> = self
+            .api_get_paginated("dcim/devices", &[("limit", "1")])
+            .await?;
+        let prefixes: PaginatedResponse<serde_json::Value> = self
+            .api_get_paginated("ipam/prefixes", &[("limit", "1")])
+            .await?;
 
         Ok(NetboxConnectionSummary {
             host: self.config.host.clone(),

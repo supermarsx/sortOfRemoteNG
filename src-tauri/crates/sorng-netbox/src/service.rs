@@ -18,8 +18,8 @@ use crate::ipam::IpamManager;
 use crate::racks::RackManager;
 use crate::sites::SiteManager;
 use crate::tenants::TenantManager;
-use crate::vlans::VlanManager;
 use crate::virtualization::VirtualizationManager;
+use crate::vlans::VlanManager;
 
 /// Shared Tauri state handle.
 pub type NetboxServiceState = Arc<Mutex<NetboxService>>;
@@ -27,6 +27,12 @@ pub type NetboxServiceState = Arc<Mutex<NetboxService>>;
 /// Main NetBox service managing connections.
 pub struct NetboxService {
     connections: HashMap<String, NetboxClient>,
+}
+
+impl Default for NetboxService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NetboxService {
@@ -38,7 +44,11 @@ impl NetboxService {
 
     // ── Connection lifecycle ─────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: NetboxConnectionConfig) -> NetboxResult<String> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: NetboxConnectionConfig,
+    ) -> NetboxResult<String> {
         let client = NetboxClient::new(config)?;
         let _summary = client.ping().await?;
         self.connections.insert(id.clone(), client);
@@ -68,7 +78,11 @@ impl NetboxService {
 
     // ── Sites ────────────────────────────────────────────────────
 
-    pub async fn list_sites(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Site>> {
+    pub async fn list_sites(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Site>> {
         SiteManager::list(self.client(id)?, params).await
     }
 
@@ -80,11 +94,21 @@ impl NetboxService {
         SiteManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_site(&self, id: &str, site_id: i64, data: &serde_json::Value) -> NetboxResult<Site> {
+    pub async fn update_site(
+        &self,
+        id: &str,
+        site_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Site> {
         SiteManager::update(self.client(id)?, site_id, data).await
     }
 
-    pub async fn partial_update_site(&self, id: &str, site_id: i64, data: &serde_json::Value) -> NetboxResult<Site> {
+    pub async fn partial_update_site(
+        &self,
+        id: &str,
+        site_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Site> {
         SiteManager::partial_update(self.client(id)?, site_id, data).await
     }
 
@@ -92,17 +116,29 @@ impl NetboxService {
         SiteManager::delete(self.client(id)?, site_id).await
     }
 
-    pub async fn list_sites_by_region(&self, id: &str, region: &str) -> NetboxResult<PaginatedResponse<Site>> {
+    pub async fn list_sites_by_region(
+        &self,
+        id: &str,
+        region: &str,
+    ) -> NetboxResult<PaginatedResponse<Site>> {
         SiteManager::list_by_region(self.client(id)?, region).await
     }
 
-    pub async fn list_sites_by_group(&self, id: &str, group: &str) -> NetboxResult<PaginatedResponse<Site>> {
+    pub async fn list_sites_by_group(
+        &self,
+        id: &str,
+        group: &str,
+    ) -> NetboxResult<PaginatedResponse<Site>> {
         SiteManager::list_by_group(self.client(id)?, group).await
     }
 
     // ── Racks ────────────────────────────────────────────────────
 
-    pub async fn list_racks(&self, id: &str, site_id: Option<i64>) -> NetboxResult<PaginatedResponse<Rack>> {
+    pub async fn list_racks(
+        &self,
+        id: &str,
+        site_id: Option<i64>,
+    ) -> NetboxResult<PaginatedResponse<Rack>> {
         RackManager::list(self.client(id)?, site_id).await
     }
 
@@ -114,11 +150,21 @@ impl NetboxService {
         RackManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_rack(&self, id: &str, rack_id: i64, data: &serde_json::Value) -> NetboxResult<Rack> {
+    pub async fn update_rack(
+        &self,
+        id: &str,
+        rack_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Rack> {
         RackManager::update(self.client(id)?, rack_id, data).await
     }
 
-    pub async fn partial_update_rack(&self, id: &str, rack_id: i64, data: &serde_json::Value) -> NetboxResult<Rack> {
+    pub async fn partial_update_rack(
+        &self,
+        id: &str,
+        rack_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Rack> {
         RackManager::partial_update(self.client(id)?, rack_id, data).await
     }
 
@@ -130,13 +176,21 @@ impl NetboxService {
         RackManager::get_elevation(self.client(id)?, rack_id).await
     }
 
-    pub async fn list_rack_reservations(&self, id: &str, rack_id: i64) -> NetboxResult<PaginatedResponse<RackReservation>> {
+    pub async fn list_rack_reservations(
+        &self,
+        id: &str,
+        rack_id: i64,
+    ) -> NetboxResult<PaginatedResponse<RackReservation>> {
         RackManager::list_reservations(self.client(id)?, rack_id).await
     }
 
     // ── Devices ──────────────────────────────────────────────────
 
-    pub async fn list_devices(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Device>> {
+    pub async fn list_devices(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Device>> {
         DeviceManager::list(self.client(id)?, params).await
     }
 
@@ -148,11 +202,21 @@ impl NetboxService {
         DeviceManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_device(&self, id: &str, device_id: i64, data: &serde_json::Value) -> NetboxResult<Device> {
+    pub async fn update_device(
+        &self,
+        id: &str,
+        device_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Device> {
         DeviceManager::update(self.client(id)?, device_id, data).await
     }
 
-    pub async fn partial_update_device(&self, id: &str, device_id: i64, data: &serde_json::Value) -> NetboxResult<Device> {
+    pub async fn partial_update_device(
+        &self,
+        id: &str,
+        device_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Device> {
         DeviceManager::partial_update(self.client(id)?, device_id, data).await
     }
 
@@ -160,11 +224,19 @@ impl NetboxService {
         DeviceManager::delete(self.client(id)?, device_id).await
     }
 
-    pub async fn list_devices_by_site(&self, id: &str, site_id: i64) -> NetboxResult<PaginatedResponse<Device>> {
+    pub async fn list_devices_by_site(
+        &self,
+        id: &str,
+        site_id: i64,
+    ) -> NetboxResult<PaginatedResponse<Device>> {
         DeviceManager::list_by_site(self.client(id)?, site_id).await
     }
 
-    pub async fn list_devices_by_rack(&self, id: &str, rack_id: i64) -> NetboxResult<PaginatedResponse<Device>> {
+    pub async fn list_devices_by_rack(
+        &self,
+        id: &str,
+        rack_id: i64,
+    ) -> NetboxResult<PaginatedResponse<Device>> {
         DeviceManager::list_by_rack(self.client(id)?, rack_id).await
     }
 
@@ -176,7 +248,10 @@ impl NetboxService {
         DeviceManager::get_device_type(self.client(id)?, type_id).await
     }
 
-    pub async fn list_manufacturers(&self, id: &str) -> NetboxResult<PaginatedResponse<Manufacturer>> {
+    pub async fn list_manufacturers(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<Manufacturer>> {
         DeviceManager::list_manufacturers(self.client(id)?).await
     }
 
@@ -200,13 +275,21 @@ impl NetboxService {
         DeviceManager::get_device_role(self.client(id)?, role_id).await
     }
 
-    pub async fn render_device_config(&self, id: &str, device_id: i64) -> NetboxResult<serde_json::Value> {
+    pub async fn render_device_config(
+        &self,
+        id: &str,
+        device_id: i64,
+    ) -> NetboxResult<serde_json::Value> {
         DeviceManager::render_config(self.client(id)?, device_id).await
     }
 
     // ── Interfaces ───────────────────────────────────────────────
 
-    pub async fn list_interfaces(&self, id: &str, device_id: Option<i64>) -> NetboxResult<PaginatedResponse<Interface>> {
+    pub async fn list_interfaces(
+        &self,
+        id: &str,
+        device_id: Option<i64>,
+    ) -> NetboxResult<PaginatedResponse<Interface>> {
         InterfaceManager::list(self.client(id)?, device_id).await
     }
 
@@ -214,15 +297,29 @@ impl NetboxService {
         InterfaceManager::get(self.client(id)?, iface_id).await
     }
 
-    pub async fn create_interface(&self, id: &str, data: &serde_json::Value) -> NetboxResult<Interface> {
+    pub async fn create_interface(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Interface> {
         InterfaceManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_interface(&self, id: &str, iface_id: i64, data: &serde_json::Value) -> NetboxResult<Interface> {
+    pub async fn update_interface(
+        &self,
+        id: &str,
+        iface_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Interface> {
         InterfaceManager::update(self.client(id)?, iface_id, data).await
     }
 
-    pub async fn partial_update_interface(&self, id: &str, iface_id: i64, data: &serde_json::Value) -> NetboxResult<Interface> {
+    pub async fn partial_update_interface(
+        &self,
+        id: &str,
+        iface_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Interface> {
         InterfaceManager::partial_update(self.client(id)?, iface_id, data).await
     }
 
@@ -230,13 +327,20 @@ impl NetboxService {
         InterfaceManager::delete(self.client(id)?, iface_id).await
     }
 
-    pub async fn list_interface_connections(&self, id: &str) -> NetboxResult<PaginatedResponse<InterfaceConnection>> {
+    pub async fn list_interface_connections(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<InterfaceConnection>> {
         InterfaceManager::list_connections(self.client(id)?).await
     }
 
     // ── IPAM ─────────────────────────────────────────────────────
 
-    pub async fn list_ip_addresses(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<IpAddress>> {
+    pub async fn list_ip_addresses(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<IpAddress>> {
         IpamManager::list_addresses(self.client(id)?, params).await
     }
 
@@ -244,11 +348,20 @@ impl NetboxService {
         IpamManager::get_address(self.client(id)?, addr_id).await
     }
 
-    pub async fn create_ip_address(&self, id: &str, data: &serde_json::Value) -> NetboxResult<IpAddress> {
+    pub async fn create_ip_address(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<IpAddress> {
         IpamManager::create_address(self.client(id)?, data).await
     }
 
-    pub async fn update_ip_address(&self, id: &str, addr_id: i64, data: &serde_json::Value) -> NetboxResult<IpAddress> {
+    pub async fn update_ip_address(
+        &self,
+        id: &str,
+        addr_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<IpAddress> {
         IpamManager::update_address(self.client(id)?, addr_id, data).await
     }
 
@@ -256,7 +369,11 @@ impl NetboxService {
         IpamManager::delete_address(self.client(id)?, addr_id).await
     }
 
-    pub async fn list_prefixes(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Prefix>> {
+    pub async fn list_prefixes(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Prefix>> {
         IpamManager::list_prefixes(self.client(id)?, params).await
     }
 
@@ -268,7 +385,12 @@ impl NetboxService {
         IpamManager::create_prefix(self.client(id)?, data).await
     }
 
-    pub async fn update_prefix(&self, id: &str, prefix_id: i64, data: &serde_json::Value) -> NetboxResult<Prefix> {
+    pub async fn update_prefix(
+        &self,
+        id: &str,
+        prefix_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Prefix> {
         IpamManager::update_prefix(self.client(id)?, prefix_id, data).await
     }
 
@@ -276,15 +398,28 @@ impl NetboxService {
         IpamManager::delete_prefix(self.client(id)?, prefix_id).await
     }
 
-    pub async fn get_available_ips(&self, id: &str, prefix_id: i64) -> NetboxResult<Vec<IpAddress>> {
+    pub async fn get_available_ips(
+        &self,
+        id: &str,
+        prefix_id: i64,
+    ) -> NetboxResult<Vec<IpAddress>> {
         IpamManager::get_available_ips(self.client(id)?, prefix_id).await
     }
 
-    pub async fn create_available_ip(&self, id: &str, prefix_id: i64, data: &serde_json::Value) -> NetboxResult<IpAddress> {
+    pub async fn create_available_ip(
+        &self,
+        id: &str,
+        prefix_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<IpAddress> {
         IpamManager::create_available_ip(self.client(id)?, prefix_id, data).await
     }
 
-    pub async fn get_available_prefixes(&self, id: &str, prefix_id: i64) -> NetboxResult<Vec<Prefix>> {
+    pub async fn get_available_prefixes(
+        &self,
+        id: &str,
+        prefix_id: i64,
+    ) -> NetboxResult<Vec<Prefix>> {
         IpamManager::get_available_prefixes(self.client(id)?, prefix_id).await
     }
 
@@ -300,7 +435,12 @@ impl NetboxService {
         IpamManager::create_vrf(self.client(id)?, data).await
     }
 
-    pub async fn update_vrf(&self, id: &str, vrf_id: i64, data: &serde_json::Value) -> NetboxResult<Vrf> {
+    pub async fn update_vrf(
+        &self,
+        id: &str,
+        vrf_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Vrf> {
         IpamManager::update_vrf(self.client(id)?, vrf_id, data).await
     }
 
@@ -332,13 +472,21 @@ impl NetboxService {
         IpamManager::get_role(self.client(id)?, role_id).await
     }
 
-    pub async fn list_services(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Service>> {
+    pub async fn list_services(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Service>> {
         IpamManager::list_services(self.client(id)?, params).await
     }
 
     // ── VLANs ────────────────────────────────────────────────────
 
-    pub async fn list_vlans(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Vlan>> {
+    pub async fn list_vlans(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Vlan>> {
         VlanManager::list(self.client(id)?, params).await
     }
 
@@ -350,11 +498,21 @@ impl NetboxService {
         VlanManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_vlan(&self, id: &str, vlan_id: i64, data: &serde_json::Value) -> NetboxResult<Vlan> {
+    pub async fn update_vlan(
+        &self,
+        id: &str,
+        vlan_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Vlan> {
         VlanManager::update(self.client(id)?, vlan_id, data).await
     }
 
-    pub async fn partial_update_vlan(&self, id: &str, vlan_id: i64, data: &serde_json::Value) -> NetboxResult<Vlan> {
+    pub async fn partial_update_vlan(
+        &self,
+        id: &str,
+        vlan_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Vlan> {
         VlanManager::partial_update(self.client(id)?, vlan_id, data).await
     }
 
@@ -362,11 +520,19 @@ impl NetboxService {
         VlanManager::delete(self.client(id)?, vlan_id).await
     }
 
-    pub async fn list_vlans_by_site(&self, id: &str, site_id: i64) -> NetboxResult<PaginatedResponse<Vlan>> {
+    pub async fn list_vlans_by_site(
+        &self,
+        id: &str,
+        site_id: i64,
+    ) -> NetboxResult<PaginatedResponse<Vlan>> {
         VlanManager::list_by_site(self.client(id)?, site_id).await
     }
 
-    pub async fn list_vlans_by_group(&self, id: &str, group_id: i64) -> NetboxResult<PaginatedResponse<Vlan>> {
+    pub async fn list_vlans_by_group(
+        &self,
+        id: &str,
+        group_id: i64,
+    ) -> NetboxResult<PaginatedResponse<Vlan>> {
         VlanManager::list_by_group(self.client(id)?, group_id).await
     }
 
@@ -378,11 +544,20 @@ impl NetboxService {
         VlanManager::get_group(self.client(id)?, group_id).await
     }
 
-    pub async fn create_vlan_group(&self, id: &str, data: &serde_json::Value) -> NetboxResult<VlanGroup> {
+    pub async fn create_vlan_group(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<VlanGroup> {
         VlanManager::create_group(self.client(id)?, data).await
     }
 
-    pub async fn update_vlan_group(&self, id: &str, group_id: i64, data: &serde_json::Value) -> NetboxResult<VlanGroup> {
+    pub async fn update_vlan_group(
+        &self,
+        id: &str,
+        group_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<VlanGroup> {
         VlanManager::update_group(self.client(id)?, group_id, data).await
     }
 
@@ -392,7 +567,11 @@ impl NetboxService {
 
     // ── Circuits ─────────────────────────────────────────────────
 
-    pub async fn list_circuits(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Circuit>> {
+    pub async fn list_circuits(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Circuit>> {
         CircuitManager::list(self.client(id)?, params).await
     }
 
@@ -400,11 +579,20 @@ impl NetboxService {
         CircuitManager::get(self.client(id)?, circuit_id).await
     }
 
-    pub async fn create_circuit(&self, id: &str, data: &serde_json::Value) -> NetboxResult<Circuit> {
+    pub async fn create_circuit(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Circuit> {
         CircuitManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_circuit(&self, id: &str, circuit_id: i64, data: &serde_json::Value) -> NetboxResult<Circuit> {
+    pub async fn update_circuit(
+        &self,
+        id: &str,
+        circuit_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Circuit> {
         CircuitManager::update(self.client(id)?, circuit_id, data).await
     }
 
@@ -412,19 +600,35 @@ impl NetboxService {
         CircuitManager::delete(self.client(id)?, circuit_id).await
     }
 
-    pub async fn list_circuit_providers(&self, id: &str) -> NetboxResult<PaginatedResponse<CircuitProvider>> {
+    pub async fn list_circuit_providers(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<CircuitProvider>> {
         CircuitManager::list_providers(self.client(id)?).await
     }
 
-    pub async fn get_circuit_provider(&self, id: &str, provider_id: i64) -> NetboxResult<CircuitProvider> {
+    pub async fn get_circuit_provider(
+        &self,
+        id: &str,
+        provider_id: i64,
+    ) -> NetboxResult<CircuitProvider> {
         CircuitManager::get_provider(self.client(id)?, provider_id).await
     }
 
-    pub async fn create_circuit_provider(&self, id: &str, data: &serde_json::Value) -> NetboxResult<CircuitProvider> {
+    pub async fn create_circuit_provider(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<CircuitProvider> {
         CircuitManager::create_provider(self.client(id)?, data).await
     }
 
-    pub async fn update_circuit_provider(&self, id: &str, provider_id: i64, data: &serde_json::Value) -> NetboxResult<CircuitProvider> {
+    pub async fn update_circuit_provider(
+        &self,
+        id: &str,
+        provider_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<CircuitProvider> {
         CircuitManager::update_provider(self.client(id)?, provider_id, data).await
     }
 
@@ -432,7 +636,10 @@ impl NetboxService {
         CircuitManager::delete_provider(self.client(id)?, provider_id).await
     }
 
-    pub async fn list_circuit_types(&self, id: &str) -> NetboxResult<PaginatedResponse<CircuitType>> {
+    pub async fn list_circuit_types(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<CircuitType>> {
         CircuitManager::list_circuit_types(self.client(id)?).await
     }
 
@@ -440,13 +647,21 @@ impl NetboxService {
         CircuitManager::get_circuit_type(self.client(id)?, type_id).await
     }
 
-    pub async fn list_circuit_terminations(&self, id: &str, circuit_id: i64) -> NetboxResult<PaginatedResponse<CircuitTermination>> {
+    pub async fn list_circuit_terminations(
+        &self,
+        id: &str,
+        circuit_id: i64,
+    ) -> NetboxResult<PaginatedResponse<CircuitTermination>> {
         CircuitManager::list_terminations(self.client(id)?, circuit_id).await
     }
 
     // ── Cables ───────────────────────────────────────────────────
 
-    pub async fn list_cables(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Cable>> {
+    pub async fn list_cables(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Cable>> {
         CableManager::list(self.client(id)?, params).await
     }
 
@@ -458,7 +673,12 @@ impl NetboxService {
         CableManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_cable(&self, id: &str, cable_id: i64, data: &serde_json::Value) -> NetboxResult<Cable> {
+    pub async fn update_cable(
+        &self,
+        id: &str,
+        cable_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Cable> {
         CableManager::update(self.client(id)?, cable_id, data).await
     }
 
@@ -472,7 +692,11 @@ impl NetboxService {
 
     // ── Tenants ──────────────────────────────────────────────────
 
-    pub async fn list_tenants(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Tenant>> {
+    pub async fn list_tenants(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Tenant>> {
         TenantManager::list(self.client(id)?, params).await
     }
 
@@ -484,11 +708,21 @@ impl NetboxService {
         TenantManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_tenant(&self, id: &str, tenant_id: i64, data: &serde_json::Value) -> NetboxResult<Tenant> {
+    pub async fn update_tenant(
+        &self,
+        id: &str,
+        tenant_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Tenant> {
         TenantManager::update(self.client(id)?, tenant_id, data).await
     }
 
-    pub async fn partial_update_tenant(&self, id: &str, tenant_id: i64, data: &serde_json::Value) -> NetboxResult<Tenant> {
+    pub async fn partial_update_tenant(
+        &self,
+        id: &str,
+        tenant_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Tenant> {
         TenantManager::partial_update(self.client(id)?, tenant_id, data).await
     }
 
@@ -496,7 +730,10 @@ impl NetboxService {
         TenantManager::delete(self.client(id)?, tenant_id).await
     }
 
-    pub async fn list_tenant_groups(&self, id: &str) -> NetboxResult<PaginatedResponse<TenantGroup>> {
+    pub async fn list_tenant_groups(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<TenantGroup>> {
         TenantManager::list_groups(self.client(id)?).await
     }
 
@@ -504,11 +741,20 @@ impl NetboxService {
         TenantManager::get_group(self.client(id)?, group_id).await
     }
 
-    pub async fn create_tenant_group(&self, id: &str, data: &serde_json::Value) -> NetboxResult<TenantGroup> {
+    pub async fn create_tenant_group(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<TenantGroup> {
         TenantManager::create_group(self.client(id)?, data).await
     }
 
-    pub async fn update_tenant_group(&self, id: &str, group_id: i64, data: &serde_json::Value) -> NetboxResult<TenantGroup> {
+    pub async fn update_tenant_group(
+        &self,
+        id: &str,
+        group_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<TenantGroup> {
         TenantManager::update_group(self.client(id)?, group_id, data).await
     }
 
@@ -518,7 +764,11 @@ impl NetboxService {
 
     // ── Contacts ─────────────────────────────────────────────────
 
-    pub async fn list_contacts(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<Contact>> {
+    pub async fn list_contacts(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<Contact>> {
         ContactManager::list(self.client(id)?, params).await
     }
 
@@ -526,15 +776,29 @@ impl NetboxService {
         ContactManager::get(self.client(id)?, contact_id).await
     }
 
-    pub async fn create_contact(&self, id: &str, data: &serde_json::Value) -> NetboxResult<Contact> {
+    pub async fn create_contact(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Contact> {
         ContactManager::create(self.client(id)?, data).await
     }
 
-    pub async fn update_contact(&self, id: &str, contact_id: i64, data: &serde_json::Value) -> NetboxResult<Contact> {
+    pub async fn update_contact(
+        &self,
+        id: &str,
+        contact_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Contact> {
         ContactManager::update(self.client(id)?, contact_id, data).await
     }
 
-    pub async fn partial_update_contact(&self, id: &str, contact_id: i64, data: &serde_json::Value) -> NetboxResult<Contact> {
+    pub async fn partial_update_contact(
+        &self,
+        id: &str,
+        contact_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Contact> {
         ContactManager::partial_update(self.client(id)?, contact_id, data).await
     }
 
@@ -542,7 +806,10 @@ impl NetboxService {
         ContactManager::delete(self.client(id)?, contact_id).await
     }
 
-    pub async fn list_contact_groups(&self, id: &str) -> NetboxResult<PaginatedResponse<ContactGroup>> {
+    pub async fn list_contact_groups(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<ContactGroup>> {
         ContactManager::list_groups(self.client(id)?).await
     }
 
@@ -550,11 +817,20 @@ impl NetboxService {
         ContactManager::get_group(self.client(id)?, group_id).await
     }
 
-    pub async fn create_contact_group(&self, id: &str, data: &serde_json::Value) -> NetboxResult<ContactGroup> {
+    pub async fn create_contact_group(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<ContactGroup> {
         ContactManager::create_group(self.client(id)?, data).await
     }
 
-    pub async fn update_contact_group(&self, id: &str, group_id: i64, data: &serde_json::Value) -> NetboxResult<ContactGroup> {
+    pub async fn update_contact_group(
+        &self,
+        id: &str,
+        group_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<ContactGroup> {
         ContactManager::update_group(self.client(id)?, group_id, data).await
     }
 
@@ -562,17 +838,27 @@ impl NetboxService {
         ContactManager::delete_group(self.client(id)?, group_id).await
     }
 
-    pub async fn list_contact_roles(&self, id: &str) -> NetboxResult<PaginatedResponse<ContactRole>> {
+    pub async fn list_contact_roles(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<ContactRole>> {
         ContactManager::list_roles(self.client(id)?).await
     }
 
-    pub async fn list_contact_assignments(&self, id: &str) -> NetboxResult<PaginatedResponse<ContactAssignment>> {
+    pub async fn list_contact_assignments(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<ContactAssignment>> {
         ContactManager::list_assignments(self.client(id)?).await
     }
 
     // ── Virtualization ───────────────────────────────────────────
 
-    pub async fn list_vms(&self, id: &str, params: &[(&str, &str)]) -> NetboxResult<PaginatedResponse<VirtualMachine>> {
+    pub async fn list_vms(
+        &self,
+        id: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<VirtualMachine>> {
         VirtualizationManager::list_vms(self.client(id)?, params).await
     }
 
@@ -580,11 +866,20 @@ impl NetboxService {
         VirtualizationManager::get_vm(self.client(id)?, vm_id).await
     }
 
-    pub async fn create_vm(&self, id: &str, data: &serde_json::Value) -> NetboxResult<VirtualMachine> {
+    pub async fn create_vm(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<VirtualMachine> {
         VirtualizationManager::create_vm(self.client(id)?, data).await
     }
 
-    pub async fn update_vm(&self, id: &str, vm_id: i64, data: &serde_json::Value) -> NetboxResult<VirtualMachine> {
+    pub async fn update_vm(
+        &self,
+        id: &str,
+        vm_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<VirtualMachine> {
         VirtualizationManager::update_vm(self.client(id)?, vm_id, data).await
     }
 
@@ -592,15 +887,28 @@ impl NetboxService {
         VirtualizationManager::delete_vm(self.client(id)?, vm_id).await
     }
 
-    pub async fn list_vm_interfaces(&self, id: &str, vm_id: i64) -> NetboxResult<PaginatedResponse<VmInterface>> {
+    pub async fn list_vm_interfaces(
+        &self,
+        id: &str,
+        vm_id: i64,
+    ) -> NetboxResult<PaginatedResponse<VmInterface>> {
         VirtualizationManager::list_vm_interfaces(self.client(id)?, vm_id).await
     }
 
-    pub async fn create_vm_interface(&self, id: &str, data: &serde_json::Value) -> NetboxResult<VmInterface> {
+    pub async fn create_vm_interface(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<VmInterface> {
         VirtualizationManager::create_vm_interface(self.client(id)?, data).await
     }
 
-    pub async fn update_vm_interface(&self, id: &str, iface_id: i64, data: &serde_json::Value) -> NetboxResult<VmInterface> {
+    pub async fn update_vm_interface(
+        &self,
+        id: &str,
+        iface_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<VmInterface> {
         VirtualizationManager::update_vm_interface(self.client(id)?, iface_id, data).await
     }
 
@@ -616,11 +924,20 @@ impl NetboxService {
         VirtualizationManager::get_cluster(self.client(id)?, cluster_id).await
     }
 
-    pub async fn create_cluster(&self, id: &str, data: &serde_json::Value) -> NetboxResult<Cluster> {
+    pub async fn create_cluster(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Cluster> {
         VirtualizationManager::create_cluster(self.client(id)?, data).await
     }
 
-    pub async fn update_cluster(&self, id: &str, cluster_id: i64, data: &serde_json::Value) -> NetboxResult<Cluster> {
+    pub async fn update_cluster(
+        &self,
+        id: &str,
+        cluster_id: i64,
+        data: &serde_json::Value,
+    ) -> NetboxResult<Cluster> {
         VirtualizationManager::update_cluster(self.client(id)?, cluster_id, data).await
     }
 
@@ -628,7 +945,10 @@ impl NetboxService {
         VirtualizationManager::delete_cluster(self.client(id)?, cluster_id).await
     }
 
-    pub async fn list_cluster_types(&self, id: &str) -> NetboxResult<PaginatedResponse<ClusterType>> {
+    pub async fn list_cluster_types(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<ClusterType>> {
         VirtualizationManager::list_cluster_types(self.client(id)?).await
     }
 
@@ -636,11 +956,18 @@ impl NetboxService {
         VirtualizationManager::get_cluster_type(self.client(id)?, type_id).await
     }
 
-    pub async fn create_cluster_type(&self, id: &str, data: &serde_json::Value) -> NetboxResult<ClusterType> {
+    pub async fn create_cluster_type(
+        &self,
+        id: &str,
+        data: &serde_json::Value,
+    ) -> NetboxResult<ClusterType> {
         VirtualizationManager::create_cluster_type(self.client(id)?, data).await
     }
 
-    pub async fn list_cluster_groups(&self, id: &str) -> NetboxResult<PaginatedResponse<ClusterGroup>> {
+    pub async fn list_cluster_groups(
+        &self,
+        id: &str,
+    ) -> NetboxResult<PaginatedResponse<ClusterGroup>> {
         VirtualizationManager::list_cluster_groups(self.client(id)?).await
     }
 }

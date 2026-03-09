@@ -21,10 +21,7 @@ impl VlanManager {
         client.api_get(&format!("ipam/vlans/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Vlan> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Vlan> {
         client.api_post("ipam/vlans", data).await
     }
 
@@ -53,7 +50,9 @@ impl VlanManager {
         site_id: i64,
     ) -> NetboxResult<PaginatedResponse<Vlan>> {
         let sid = site_id.to_string();
-        client.api_get_paginated("ipam/vlans", &[("site_id", &sid)]).await
+        client
+            .api_get_paginated("ipam/vlans", &[("site_id", &sid)])
+            .await
     }
 
     pub async fn list_by_group(
@@ -61,14 +60,14 @@ impl VlanManager {
         group_id: i64,
     ) -> NetboxResult<PaginatedResponse<Vlan>> {
         let gid = group_id.to_string();
-        client.api_get_paginated("ipam/vlans", &[("group_id", &gid)]).await
+        client
+            .api_get_paginated("ipam/vlans", &[("group_id", &gid)])
+            .await
     }
 
     // ── VLAN Groups ──────────────────────────────────────────────────
 
-    pub async fn list_groups(
-        client: &NetboxClient,
-    ) -> NetboxResult<PaginatedResponse<VlanGroup>> {
+    pub async fn list_groups(client: &NetboxClient) -> NetboxResult<PaginatedResponse<VlanGroup>> {
         client.api_get_paginated("ipam/vlan-groups", &[]).await
     }
 
@@ -88,7 +87,9 @@ impl VlanManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<VlanGroup> {
-        client.api_put(&format!("ipam/vlan-groups/{id}"), data).await
+        client
+            .api_put(&format!("ipam/vlan-groups/{id}"), data)
+            .await
     }
 
     pub async fn delete_group(client: &NetboxClient, id: i64) -> NetboxResult<()> {

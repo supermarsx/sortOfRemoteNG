@@ -19,10 +19,7 @@ impl DeviceManager {
         client.api_get(&format!("dcim/devices/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Device> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Device> {
         client.api_post("dcim/devices", data).await
     }
 
@@ -51,7 +48,9 @@ impl DeviceManager {
         site_id: i64,
     ) -> NetboxResult<PaginatedResponse<Device>> {
         let sid = site_id.to_string();
-        client.api_get_paginated("dcim/devices", &[("site_id", &sid)]).await
+        client
+            .api_get_paginated("dcim/devices", &[("site_id", &sid)])
+            .await
     }
 
     pub async fn list_by_rack(
@@ -59,7 +58,9 @@ impl DeviceManager {
         rack_id: i64,
     ) -> NetboxResult<PaginatedResponse<Device>> {
         let rid = rack_id.to_string();
-        client.api_get_paginated("dcim/devices", &[("rack_id", &rid)]).await
+        client
+            .api_get_paginated("dcim/devices", &[("rack_id", &rid)])
+            .await
     }
 
     pub async fn list_device_types(
@@ -68,10 +69,7 @@ impl DeviceManager {
         client.api_get_paginated("dcim/device-types", &[]).await
     }
 
-    pub async fn get_device_type(
-        client: &NetboxClient,
-        id: i64,
-    ) -> NetboxResult<DeviceType> {
+    pub async fn get_device_type(client: &NetboxClient, id: i64) -> NetboxResult<DeviceType> {
         client.api_get(&format!("dcim/device-types/{id}")).await
     }
 
@@ -81,10 +79,7 @@ impl DeviceManager {
         client.api_get_paginated("dcim/manufacturers", &[]).await
     }
 
-    pub async fn get_manufacturer(
-        client: &NetboxClient,
-        id: i64,
-    ) -> NetboxResult<Manufacturer> {
+    pub async fn get_manufacturer(client: &NetboxClient, id: i64) -> NetboxResult<Manufacturer> {
         client.api_get(&format!("dcim/manufacturers/{id}")).await
     }
 
@@ -94,10 +89,7 @@ impl DeviceManager {
         client.api_get_paginated("dcim/platforms", &[]).await
     }
 
-    pub async fn get_platform(
-        client: &NetboxClient,
-        id: i64,
-    ) -> NetboxResult<Platform> {
+    pub async fn get_platform(client: &NetboxClient, id: i64) -> NetboxResult<Platform> {
         client.api_get(&format!("dcim/platforms/{id}")).await
     }
 
@@ -107,17 +99,16 @@ impl DeviceManager {
         client.api_get_paginated("dcim/device-roles", &[]).await
     }
 
-    pub async fn get_device_role(
-        client: &NetboxClient,
-        id: i64,
-    ) -> NetboxResult<DeviceRole> {
+    pub async fn get_device_role(client: &NetboxClient, id: i64) -> NetboxResult<DeviceRole> {
         client.api_get(&format!("dcim/device-roles/{id}")).await
     }
 
-    pub async fn render_config(
-        client: &NetboxClient,
-        id: i64,
-    ) -> NetboxResult<serde_json::Value> {
-        client.api_post(&format!("dcim/devices/{id}/render-config"), &serde_json::json!({})).await
+    pub async fn render_config(client: &NetboxClient, id: i64) -> NetboxResult<serde_json::Value> {
+        client
+            .api_post(
+                &format!("dcim/devices/{id}/render-config"),
+                &serde_json::json!({}),
+            )
+            .await
     }
 }

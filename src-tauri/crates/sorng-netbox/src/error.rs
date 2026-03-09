@@ -49,7 +49,10 @@ impl std::error::Error for NetboxError {}
 
 impl NetboxError {
     pub fn new(kind: NetboxErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(NetboxErrorKind::NotConnected, msg)

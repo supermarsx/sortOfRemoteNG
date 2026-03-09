@@ -33,7 +33,9 @@ impl IpamManager {
         id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<IpAddress> {
-        client.api_put(&format!("ipam/ip-addresses/{id}"), data).await
+        client
+            .api_put(&format!("ipam/ip-addresses/{id}"), data)
+            .await
     }
 
     pub async fn delete_address(client: &NetboxClient, id: i64) -> NetboxResult<()> {
@@ -76,7 +78,9 @@ impl IpamManager {
         client: &NetboxClient,
         prefix_id: i64,
     ) -> NetboxResult<Vec<IpAddress>> {
-        client.api_get(&format!("ipam/prefixes/{prefix_id}/available-ips")).await
+        client
+            .api_get(&format!("ipam/prefixes/{prefix_id}/available-ips"))
+            .await
     }
 
     pub async fn create_available_ip(
@@ -84,21 +88,23 @@ impl IpamManager {
         prefix_id: i64,
         data: &serde_json::Value,
     ) -> NetboxResult<IpAddress> {
-        client.api_post(&format!("ipam/prefixes/{prefix_id}/available-ips"), data).await
+        client
+            .api_post(&format!("ipam/prefixes/{prefix_id}/available-ips"), data)
+            .await
     }
 
     pub async fn get_available_prefixes(
         client: &NetboxClient,
         prefix_id: i64,
     ) -> NetboxResult<Vec<Prefix>> {
-        client.api_get(&format!("ipam/prefixes/{prefix_id}/available-prefixes")).await
+        client
+            .api_get(&format!("ipam/prefixes/{prefix_id}/available-prefixes"))
+            .await
     }
 
     // ── VRFs ─────────────────────────────────────────────────────────
 
-    pub async fn list_vrfs(
-        client: &NetboxClient,
-    ) -> NetboxResult<PaginatedResponse<Vrf>> {
+    pub async fn list_vrfs(client: &NetboxClient) -> NetboxResult<PaginatedResponse<Vrf>> {
         client.api_get_paginated("ipam/vrfs", &[]).await
     }
 
@@ -106,10 +112,7 @@ impl IpamManager {
         client.api_get(&format!("ipam/vrfs/{id}")).await
     }
 
-    pub async fn create_vrf(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Vrf> {
+    pub async fn create_vrf(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Vrf> {
         client.api_post("ipam/vrfs", data).await
     }
 
@@ -139,9 +142,7 @@ impl IpamManager {
 
     // ── RIRs ─────────────────────────────────────────────────────────
 
-    pub async fn list_rirs(
-        client: &NetboxClient,
-    ) -> NetboxResult<PaginatedResponse<Rir>> {
+    pub async fn list_rirs(client: &NetboxClient) -> NetboxResult<PaginatedResponse<Rir>> {
         client.api_get_paginated("ipam/rirs", &[]).await
     }
 
@@ -151,9 +152,7 @@ impl IpamManager {
 
     // ── Roles ────────────────────────────────────────────────────────
 
-    pub async fn list_roles(
-        client: &NetboxClient,
-    ) -> NetboxResult<PaginatedResponse<IpamRole>> {
+    pub async fn list_roles(client: &NetboxClient) -> NetboxResult<PaginatedResponse<IpamRole>> {
         client.api_get_paginated("ipam/roles", &[]).await
     }
 

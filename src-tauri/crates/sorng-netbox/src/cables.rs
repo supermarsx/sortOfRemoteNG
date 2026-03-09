@@ -19,10 +19,7 @@ impl CableManager {
         client.api_get(&format!("dcim/cables/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Cable> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Cable> {
         client.api_post("dcim/cables", data).await
     }
 
@@ -38,10 +35,9 @@ impl CableManager {
         client.api_delete(&format!("dcim/cables/{id}")).await
     }
 
-    pub async fn trace(
-        client: &NetboxClient,
-        cable_id: i64,
-    ) -> NetboxResult<Vec<CableTrace>> {
-        client.api_get(&format!("dcim/cables/{cable_id}/trace")).await
+    pub async fn trace(client: &NetboxClient, cable_id: i64) -> NetboxResult<Vec<CableTrace>> {
+        client
+            .api_get(&format!("dcim/cables/{cable_id}/trace"))
+            .await
     }
 }

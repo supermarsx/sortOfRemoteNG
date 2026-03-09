@@ -19,10 +19,7 @@ impl SiteManager {
         client.api_get(&format!("dcim/sites/{id}")).await
     }
 
-    pub async fn create(
-        client: &NetboxClient,
-        data: &serde_json::Value,
-    ) -> NetboxResult<Site> {
+    pub async fn create(client: &NetboxClient, data: &serde_json::Value) -> NetboxResult<Site> {
         client.api_post("dcim/sites", data).await
     }
 
@@ -50,13 +47,17 @@ impl SiteManager {
         client: &NetboxClient,
         region: &str,
     ) -> NetboxResult<PaginatedResponse<Site>> {
-        client.api_get_paginated("dcim/sites", &[("region", region)]).await
+        client
+            .api_get_paginated("dcim/sites", &[("region", region)])
+            .await
     }
 
     pub async fn list_by_group(
         client: &NetboxClient,
         group: &str,
     ) -> NetboxResult<PaginatedResponse<Site>> {
-        client.api_get_paginated("dcim/sites", &[("group", group)]).await
+        client
+            .api_get_paginated("dcim/sites", &[("group", group)])
+            .await
     }
 }
