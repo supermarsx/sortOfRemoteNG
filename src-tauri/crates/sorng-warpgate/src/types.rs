@@ -592,9 +592,15 @@ pub struct CreateLdapServerRequest {
     pub uuid_attribute: Option<String>,
 }
 
-fn default_ldap_port() -> i32 { 389 }
-fn default_user_filter() -> String { "(objectClass=person)".to_string() }
-fn default_true() -> bool { true }
+fn default_ldap_port() -> i32 {
+    389
+}
+fn default_user_filter() -> String {
+    "(objectClass=person)".to_string()
+}
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

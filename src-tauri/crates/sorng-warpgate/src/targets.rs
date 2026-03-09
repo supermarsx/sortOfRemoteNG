@@ -9,10 +9,18 @@ pub struct TargetManager;
 
 impl TargetManager {
     /// GET /targets?search=&group_id=
-    pub async fn list(client: &WarpgateClient, search: Option<&str>, group_id: Option<&str>) -> WarpgateResult<Vec<WarpgateTarget>> {
+    pub async fn list(
+        client: &WarpgateClient,
+        search: Option<&str>,
+        group_id: Option<&str>,
+    ) -> WarpgateResult<Vec<WarpgateTarget>> {
         let mut params = Vec::new();
-        if let Some(s) = search { params.push(("search", s)); }
-        if let Some(g) = group_id { params.push(("group_id", g)); }
+        if let Some(s) = search {
+            params.push(("search", s));
+        }
+        if let Some(g) = group_id {
+            params.push(("group_id", g));
+        }
         let resp = if params.is_empty() {
             client.get("/targets").await?
         } else {
@@ -23,7 +31,10 @@ impl TargetManager {
     }
 
     /// POST /targets
-    pub async fn create(client: &WarpgateClient, req: &TargetDataRequest) -> WarpgateResult<WarpgateTarget> {
+    pub async fn create(
+        client: &WarpgateClient,
+        req: &TargetDataRequest,
+    ) -> WarpgateResult<WarpgateTarget> {
         let body = serde_json::to_value(req)?;
         let resp = client.post("/targets", &body).await?;
         let target: WarpgateTarget = serde_json::from_value(resp)?;
@@ -38,9 +49,15 @@ impl TargetManager {
     }
 
     /// PUT /targets/:id
-    pub async fn update(client: &WarpgateClient, target_id: &str, req: &TargetDataRequest) -> WarpgateResult<WarpgateTarget> {
+    pub async fn update(
+        client: &WarpgateClient,
+        target_id: &str,
+        req: &TargetDataRequest,
+    ) -> WarpgateResult<WarpgateTarget> {
         let body = serde_json::to_value(req)?;
-        let resp = client.put(&format!("/targets/{}", target_id), &body).await?;
+        let resp = client
+            .put(&format!("/targets/{}", target_id), &body)
+            .await?;
         let target: WarpgateTarget = serde_json::from_value(resp)?;
         Ok(target)
     }
@@ -52,28 +69,48 @@ impl TargetManager {
     }
 
     /// GET /targets/:id/known-ssh-host-keys
-    pub async fn get_known_ssh_host_keys(client: &WarpgateClient, target_id: &str) -> WarpgateResult<Vec<WarpgateKnownHost>> {
-        let resp = client.get(&format!("/targets/{}/known-ssh-host-keys", target_id)).await?;
+    pub async fn get_known_ssh_host_keys(
+        client: &WarpgateClient,
+        target_id: &str,
+    ) -> WarpgateResult<Vec<WarpgateKnownHost>> {
+        let resp = client
+            .get(&format!("/targets/{}/known-ssh-host-keys", target_id))
+            .await?;
         let hosts: Vec<WarpgateKnownHost> = serde_json::from_value(resp)?;
         Ok(hosts)
     }
 
     /// GET /targets/:id/roles
-    pub async fn get_roles(client: &WarpgateClient, target_id: &str) -> WarpgateResult<Vec<WarpgateRole>> {
+    pub async fn get_roles(
+        client: &WarpgateClient,
+        target_id: &str,
+    ) -> WarpgateResult<Vec<WarpgateRole>> {
         let resp = client.get(&format!("/targets/{}/roles", target_id)).await?;
         let roles: Vec<WarpgateRole> = serde_json::from_value(resp)?;
         Ok(roles)
     }
 
     /// POST /targets/:id/roles/:role_id
-    pub async fn add_role(client: &WarpgateClient, target_id: &str, role_id: &str) -> WarpgateResult<()> {
-        client.post_empty(&format!("/targets/{}/roles/{}", target_id, role_id)).await?;
+    pub async fn add_role(
+        client: &WarpgateClient,
+        target_id: &str,
+        role_id: &str,
+    ) -> WarpgateResult<()> {
+        client
+            .post_empty(&format!("/targets/{}/roles/{}", target_id, role_id))
+            .await?;
         Ok(())
     }
 
     /// DELETE /targets/:id/roles/:role_id
-    pub async fn remove_role(client: &WarpgateClient, target_id: &str, role_id: &str) -> WarpgateResult<()> {
-        client.delete(&format!("/targets/{}/roles/{}", target_id, role_id)).await?;
+    pub async fn remove_role(
+        client: &WarpgateClient,
+        target_id: &str,
+        role_id: &str,
+    ) -> WarpgateResult<()> {
+        client
+            .delete(&format!("/targets/{}/roles/{}", target_id, role_id))
+            .await?;
         Ok(())
     }
 }

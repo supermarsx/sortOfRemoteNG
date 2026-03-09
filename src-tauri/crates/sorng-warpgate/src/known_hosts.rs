@@ -16,7 +16,10 @@ impl KnownHostManager {
     }
 
     /// POST /ssh/known-hosts
-    pub async fn add(client: &WarpgateClient, req: &AddKnownHostRequest) -> WarpgateResult<WarpgateKnownHost> {
+    pub async fn add(
+        client: &WarpgateClient,
+        req: &AddKnownHostRequest,
+    ) -> WarpgateResult<WarpgateKnownHost> {
         let body = serde_json::to_value(req)?;
         let resp = client.post("/ssh/known-hosts", &body).await?;
         let host: WarpgateKnownHost = serde_json::from_value(resp)?;
@@ -25,7 +28,9 @@ impl KnownHostManager {
 
     /// DELETE /ssh/known-hosts/:id
     pub async fn delete(client: &WarpgateClient, host_id: &str) -> WarpgateResult<()> {
-        client.delete(&format!("/ssh/known-hosts/{}", host_id)).await?;
+        client
+            .delete(&format!("/ssh/known-hosts/{}", host_id))
+            .await?;
         Ok(())
     }
 }

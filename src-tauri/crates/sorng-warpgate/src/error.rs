@@ -29,24 +29,58 @@ pub struct WarpgateError {
 
 impl WarpgateError {
     pub fn new(kind: WarpgateErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: None }
+        Self {
+            kind,
+            message: message.into(),
+            details: None,
+        }
     }
 
-    pub fn with_details(kind: WarpgateErrorKind, message: impl Into<String>, details: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: Some(details.into()) }
+    pub fn with_details(
+        kind: WarpgateErrorKind,
+        message: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            details: Some(details.into()),
+        }
     }
 
-    pub fn connection(msg: &str) -> Self { Self::new(WarpgateErrorKind::ConnectionFailed, msg) }
-    pub fn auth(msg: &str) -> Self { Self::new(WarpgateErrorKind::AuthError, msg) }
-    pub fn not_found(msg: &str) -> Self { Self::new(WarpgateErrorKind::NotFound, msg) }
-    pub fn conflict(msg: &str) -> Self { Self::new(WarpgateErrorKind::Conflict, msg) }
-    pub fn forbidden(msg: &str) -> Self { Self::new(WarpgateErrorKind::Forbidden, msg) }
-    pub fn timeout(msg: &str) -> Self { Self::new(WarpgateErrorKind::Timeout, msg) }
-    pub fn parse(msg: &str) -> Self { Self::new(WarpgateErrorKind::ParseError, msg) }
-    pub fn validation(msg: &str) -> Self { Self::new(WarpgateErrorKind::ValidationError, msg) }
-    pub fn rate_limited(msg: &str) -> Self { Self::new(WarpgateErrorKind::RateLimited, msg) }
-    pub fn session(msg: &str) -> Self { Self::new(WarpgateErrorKind::SessionError, msg) }
-    pub fn other(msg: &str) -> Self { Self::new(WarpgateErrorKind::Other, msg) }
+    pub fn connection(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::ConnectionFailed, msg)
+    }
+    pub fn auth(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::AuthError, msg)
+    }
+    pub fn not_found(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::NotFound, msg)
+    }
+    pub fn conflict(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::Conflict, msg)
+    }
+    pub fn forbidden(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::Forbidden, msg)
+    }
+    pub fn timeout(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::Timeout, msg)
+    }
+    pub fn parse(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::ParseError, msg)
+    }
+    pub fn validation(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::ValidationError, msg)
+    }
+    pub fn rate_limited(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::RateLimited, msg)
+    }
+    pub fn session(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::SessionError, msg)
+    }
+    pub fn other(msg: &str) -> Self {
+        Self::new(WarpgateErrorKind::Other, msg)
+    }
 
     pub fn api(status: u16, msg: &str) -> Self {
         Self::new(WarpgateErrorKind::ApiError(status), msg)

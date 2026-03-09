@@ -16,7 +16,10 @@ impl ParameterManager {
     }
 
     /// PUT /parameters
-    pub async fn update(client: &WarpgateClient, req: &UpdateParametersRequest) -> WarpgateResult<()> {
+    pub async fn update(
+        client: &WarpgateClient,
+        req: &UpdateParametersRequest,
+    ) -> WarpgateResult<()> {
         let body = serde_json::to_value(req)?;
         client.put("/parameters", &body).await?;
         Ok(())

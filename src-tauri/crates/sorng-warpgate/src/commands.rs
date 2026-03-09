@@ -1,13 +1,15 @@
 // ── sorng-warpgate/src/commands.rs ──────────────────────────────────────────
 //! Tauri commands – thin wrappers around `WarpgateService`.
 
-use tauri::State;
 use crate::service::WarpgateServiceState;
 use crate::types::*;
+use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 
-fn map_err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
+fn map_err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 // ── Connection ────────────────────────────────────────────────────
 
@@ -17,7 +19,12 @@ pub async fn warpgate_connect(
     id: String,
     config: WarpgateConnectionConfig,
 ) -> CmdResult<WarpgateConnectionStatus> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -52,7 +59,12 @@ pub async fn warpgate_list_targets(
     search: Option<String>,
     group_id: Option<String>,
 ) -> CmdResult<Vec<WarpgateTarget>> {
-    state.lock().await.list_targets(&id, search, group_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_targets(&id, search, group_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -61,7 +73,12 @@ pub async fn warpgate_create_target(
     id: String,
     request: TargetDataRequest,
 ) -> CmdResult<WarpgateTarget> {
-    state.lock().await.create_target(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_target(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -70,7 +87,12 @@ pub async fn warpgate_get_target(
     id: String,
     target_id: String,
 ) -> CmdResult<WarpgateTarget> {
-    state.lock().await.get_target(&id, &target_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_target(&id, &target_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -80,7 +102,12 @@ pub async fn warpgate_update_target(
     target_id: String,
     request: TargetDataRequest,
 ) -> CmdResult<WarpgateTarget> {
-    state.lock().await.update_target(&id, &target_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_target(&id, &target_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -89,7 +116,12 @@ pub async fn warpgate_delete_target(
     id: String,
     target_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_target(&id, &target_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_target(&id, &target_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -98,7 +130,12 @@ pub async fn warpgate_get_target_ssh_host_keys(
     id: String,
     target_id: String,
 ) -> CmdResult<Vec<WarpgateKnownHost>> {
-    state.lock().await.get_target_ssh_host_keys(&id, &target_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_target_ssh_host_keys(&id, &target_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -107,7 +144,12 @@ pub async fn warpgate_get_target_roles(
     id: String,
     target_id: String,
 ) -> CmdResult<Vec<WarpgateRole>> {
-    state.lock().await.get_target_roles(&id, &target_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_target_roles(&id, &target_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -117,7 +159,12 @@ pub async fn warpgate_add_target_role(
     target_id: String,
     role_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.add_target_role(&id, &target_id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .add_target_role(&id, &target_id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -127,7 +174,12 @@ pub async fn warpgate_remove_target_role(
     target_id: String,
     role_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.remove_target_role(&id, &target_id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .remove_target_role(&id, &target_id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Target Groups ────────────────────────────────────────────────
@@ -137,7 +189,12 @@ pub async fn warpgate_list_target_groups(
     state: State<'_, WarpgateServiceState>,
     id: String,
 ) -> CmdResult<Vec<WarpgateTargetGroup>> {
-    state.lock().await.list_target_groups(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_target_groups(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -146,7 +203,12 @@ pub async fn warpgate_create_target_group(
     id: String,
     request: TargetGroupDataRequest,
 ) -> CmdResult<WarpgateTargetGroup> {
-    state.lock().await.create_target_group(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_target_group(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -155,7 +217,12 @@ pub async fn warpgate_get_target_group(
     id: String,
     group_id: String,
 ) -> CmdResult<WarpgateTargetGroup> {
-    state.lock().await.get_target_group(&id, &group_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_target_group(&id, &group_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -165,7 +232,12 @@ pub async fn warpgate_update_target_group(
     group_id: String,
     request: TargetGroupDataRequest,
 ) -> CmdResult<WarpgateTargetGroup> {
-    state.lock().await.update_target_group(&id, &group_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_target_group(&id, &group_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -174,7 +246,12 @@ pub async fn warpgate_delete_target_group(
     id: String,
     group_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_target_group(&id, &group_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_target_group(&id, &group_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Users ────────────────────────────────────────────────────────
@@ -185,7 +262,12 @@ pub async fn warpgate_list_users(
     id: String,
     search: Option<String>,
 ) -> CmdResult<Vec<WarpgateUser>> {
-    state.lock().await.list_users(&id, search).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_users(&id, search)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -194,7 +276,12 @@ pub async fn warpgate_create_user(
     id: String,
     request: CreateUserRequest,
 ) -> CmdResult<WarpgateUser> {
-    state.lock().await.create_user(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_user(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -203,7 +290,12 @@ pub async fn warpgate_get_user(
     id: String,
     user_id: String,
 ) -> CmdResult<WarpgateUser> {
-    state.lock().await.get_user(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_user(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -213,7 +305,12 @@ pub async fn warpgate_update_user(
     user_id: String,
     request: UpdateUserRequest,
 ) -> CmdResult<WarpgateUser> {
-    state.lock().await.update_user(&id, &user_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_user(&id, &user_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -222,7 +319,12 @@ pub async fn warpgate_delete_user(
     id: String,
     user_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_user(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_user(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -231,7 +333,12 @@ pub async fn warpgate_get_user_roles(
     id: String,
     user_id: String,
 ) -> CmdResult<Vec<WarpgateRole>> {
-    state.lock().await.get_user_roles(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_user_roles(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -241,7 +348,12 @@ pub async fn warpgate_add_user_role(
     user_id: String,
     role_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.add_user_role(&id, &user_id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .add_user_role(&id, &user_id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -251,7 +363,12 @@ pub async fn warpgate_remove_user_role(
     user_id: String,
     role_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.remove_user_role(&id, &user_id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .remove_user_role(&id, &user_id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -260,7 +377,12 @@ pub async fn warpgate_unlink_user_ldap(
     id: String,
     user_id: String,
 ) -> CmdResult<WarpgateUser> {
-    state.lock().await.unlink_user_ldap(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .unlink_user_ldap(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -269,7 +391,12 @@ pub async fn warpgate_auto_link_user_ldap(
     id: String,
     user_id: String,
 ) -> CmdResult<WarpgateUser> {
-    state.lock().await.auto_link_user_ldap(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .auto_link_user_ldap(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Roles ────────────────────────────────────────────────────────
@@ -280,7 +407,12 @@ pub async fn warpgate_list_roles(
     id: String,
     search: Option<String>,
 ) -> CmdResult<Vec<WarpgateRole>> {
-    state.lock().await.list_roles(&id, search).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_roles(&id, search)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -289,7 +421,12 @@ pub async fn warpgate_create_role(
     id: String,
     request: RoleDataRequest,
 ) -> CmdResult<WarpgateRole> {
-    state.lock().await.create_role(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_role(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -298,7 +435,12 @@ pub async fn warpgate_get_role(
     id: String,
     role_id: String,
 ) -> CmdResult<WarpgateRole> {
-    state.lock().await.get_role(&id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_role(&id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -308,7 +450,12 @@ pub async fn warpgate_update_role(
     role_id: String,
     request: RoleDataRequest,
 ) -> CmdResult<WarpgateRole> {
-    state.lock().await.update_role(&id, &role_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_role(&id, &role_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -317,7 +464,12 @@ pub async fn warpgate_delete_role(
     id: String,
     role_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_role(&id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_role(&id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -326,7 +478,12 @@ pub async fn warpgate_get_role_targets(
     id: String,
     role_id: String,
 ) -> CmdResult<Vec<WarpgateTarget>> {
-    state.lock().await.get_role_targets(&id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_role_targets(&id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -335,7 +492,12 @@ pub async fn warpgate_get_role_users(
     id: String,
     role_id: String,
 ) -> CmdResult<Vec<WarpgateUser>> {
-    state.lock().await.get_role_users(&id, &role_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_role_users(&id, &role_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Sessions ─────────────────────────────────────────────────────
@@ -349,7 +511,12 @@ pub async fn warpgate_list_sessions(
     active_only: Option<bool>,
     logged_in_only: Option<bool>,
 ) -> CmdResult<SessionListResponse> {
-    state.lock().await.list_sessions(&id, offset, limit, active_only, logged_in_only).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_sessions(&id, offset, limit, active_only, logged_in_only)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -358,7 +525,12 @@ pub async fn warpgate_get_session(
     id: String,
     session_id: String,
 ) -> CmdResult<WarpgateSession> {
-    state.lock().await.get_session(&id, &session_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_session(&id, &session_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -367,7 +539,12 @@ pub async fn warpgate_close_session(
     id: String,
     session_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.close_session(&id, &session_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .close_session(&id, &session_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -375,7 +552,12 @@ pub async fn warpgate_close_all_sessions(
     state: State<'_, WarpgateServiceState>,
     id: String,
 ) -> CmdResult<()> {
-    state.lock().await.close_all_sessions(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .close_all_sessions(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -384,7 +566,12 @@ pub async fn warpgate_get_session_recordings(
     id: String,
     session_id: String,
 ) -> CmdResult<Vec<WarpgateRecording>> {
-    state.lock().await.get_session_recordings(&id, &session_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_session_recordings(&id, &session_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Recordings ───────────────────────────────────────────────────
@@ -395,7 +582,12 @@ pub async fn warpgate_get_recording(
     id: String,
     recording_id: String,
 ) -> CmdResult<WarpgateRecording> {
-    state.lock().await.get_recording(&id, &recording_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_recording(&id, &recording_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -404,7 +596,12 @@ pub async fn warpgate_get_recording_cast(
     id: String,
     recording_id: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_recording_cast(&id, &recording_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_recording_cast(&id, &recording_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -413,7 +610,12 @@ pub async fn warpgate_get_recording_tcpdump(
     id: String,
     recording_id: String,
 ) -> CmdResult<Vec<u8>> {
-    state.lock().await.get_recording_tcpdump(&id, &recording_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_recording_tcpdump(&id, &recording_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -422,7 +624,12 @@ pub async fn warpgate_get_recording_kubernetes(
     id: String,
     recording_id: String,
 ) -> CmdResult<serde_json::Value> {
-    state.lock().await.get_recording_kubernetes(&id, &recording_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_recording_kubernetes(&id, &recording_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Tickets ──────────────────────────────────────────────────────
@@ -441,7 +648,12 @@ pub async fn warpgate_create_ticket(
     id: String,
     request: CreateTicketRequest,
 ) -> CmdResult<TicketAndSecret> {
-    state.lock().await.create_ticket(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_ticket(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -450,7 +662,12 @@ pub async fn warpgate_delete_ticket(
     id: String,
     ticket_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_ticket(&id, &ticket_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_ticket(&id, &ticket_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Password Credentials ────────────────────────────────────────
@@ -461,7 +678,12 @@ pub async fn warpgate_list_password_credentials(
     id: String,
     user_id: String,
 ) -> CmdResult<Vec<PasswordCredential>> {
-    state.lock().await.list_password_credentials(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_password_credentials(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -471,7 +693,12 @@ pub async fn warpgate_create_password_credential(
     user_id: String,
     request: NewPasswordCredential,
 ) -> CmdResult<PasswordCredential> {
-    state.lock().await.create_password_credential(&id, &user_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_password_credential(&id, &user_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -481,7 +708,12 @@ pub async fn warpgate_delete_password_credential(
     user_id: String,
     cred_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_password_credential(&id, &user_id, &cred_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_password_credential(&id, &user_id, &cred_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Public Key Credentials ──────────────────────────────────────
@@ -492,7 +724,12 @@ pub async fn warpgate_list_public_key_credentials(
     id: String,
     user_id: String,
 ) -> CmdResult<Vec<PublicKeyCredential>> {
-    state.lock().await.list_public_key_credentials(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_public_key_credentials(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -502,7 +739,12 @@ pub async fn warpgate_create_public_key_credential(
     user_id: String,
     request: NewPublicKeyCredential,
 ) -> CmdResult<PublicKeyCredential> {
-    state.lock().await.create_public_key_credential(&id, &user_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_public_key_credential(&id, &user_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -513,7 +755,12 @@ pub async fn warpgate_update_public_key_credential(
     cred_id: String,
     request: NewPublicKeyCredential,
 ) -> CmdResult<PublicKeyCredential> {
-    state.lock().await.update_public_key_credential(&id, &user_id, &cred_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_public_key_credential(&id, &user_id, &cred_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -523,7 +770,12 @@ pub async fn warpgate_delete_public_key_credential(
     user_id: String,
     cred_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_public_key_credential(&id, &user_id, &cred_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_public_key_credential(&id, &user_id, &cred_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── SSO Credentials ─────────────────────────────────────────────
@@ -534,7 +786,12 @@ pub async fn warpgate_list_sso_credentials(
     id: String,
     user_id: String,
 ) -> CmdResult<Vec<SsoCredential>> {
-    state.lock().await.list_sso_credentials(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_sso_credentials(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -544,7 +801,12 @@ pub async fn warpgate_create_sso_credential(
     user_id: String,
     request: NewSsoCredential,
 ) -> CmdResult<SsoCredential> {
-    state.lock().await.create_sso_credential(&id, &user_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_sso_credential(&id, &user_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -555,7 +817,12 @@ pub async fn warpgate_update_sso_credential(
     cred_id: String,
     request: NewSsoCredential,
 ) -> CmdResult<SsoCredential> {
-    state.lock().await.update_sso_credential(&id, &user_id, &cred_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_sso_credential(&id, &user_id, &cred_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -565,7 +832,12 @@ pub async fn warpgate_delete_sso_credential(
     user_id: String,
     cred_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_sso_credential(&id, &user_id, &cred_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_sso_credential(&id, &user_id, &cred_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── OTP Credentials ─────────────────────────────────────────────
@@ -576,7 +848,12 @@ pub async fn warpgate_list_otp_credentials(
     id: String,
     user_id: String,
 ) -> CmdResult<Vec<OtpCredential>> {
-    state.lock().await.list_otp_credentials(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_otp_credentials(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -586,7 +863,12 @@ pub async fn warpgate_create_otp_credential(
     user_id: String,
     request: NewOtpCredential,
 ) -> CmdResult<OtpCredential> {
-    state.lock().await.create_otp_credential(&id, &user_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_otp_credential(&id, &user_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -596,7 +878,12 @@ pub async fn warpgate_delete_otp_credential(
     user_id: String,
     cred_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_otp_credential(&id, &user_id, &cred_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_otp_credential(&id, &user_id, &cred_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Certificate Credentials ─────────────────────────────────────
@@ -607,7 +894,12 @@ pub async fn warpgate_list_certificate_credentials(
     id: String,
     user_id: String,
 ) -> CmdResult<Vec<CertificateCredential>> {
-    state.lock().await.list_certificate_credentials(&id, &user_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_certificate_credentials(&id, &user_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -617,7 +909,12 @@ pub async fn warpgate_issue_certificate_credential(
     user_id: String,
     request: IssueCertificateRequest,
 ) -> CmdResult<IssuedCertificate> {
-    state.lock().await.issue_certificate_credential(&id, &user_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .issue_certificate_credential(&id, &user_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -628,7 +925,12 @@ pub async fn warpgate_update_certificate_credential(
     cred_id: String,
     request: UpdateCertificateLabel,
 ) -> CmdResult<CertificateCredential> {
-    state.lock().await.update_certificate_credential(&id, &user_id, &cred_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_certificate_credential(&id, &user_id, &cred_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -638,7 +940,12 @@ pub async fn warpgate_revoke_certificate_credential(
     user_id: String,
     cred_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.revoke_certificate_credential(&id, &user_id, &cred_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .revoke_certificate_credential(&id, &user_id, &cred_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── SSH Keys ─────────────────────────────────────────────────────
@@ -648,7 +955,12 @@ pub async fn warpgate_get_ssh_own_keys(
     state: State<'_, WarpgateServiceState>,
     id: String,
 ) -> CmdResult<Vec<WarpgateSshKey>> {
-    state.lock().await.get_ssh_own_keys(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_ssh_own_keys(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Known Hosts ──────────────────────────────────────────────────
@@ -658,7 +970,12 @@ pub async fn warpgate_list_known_hosts(
     state: State<'_, WarpgateServiceState>,
     id: String,
 ) -> CmdResult<Vec<WarpgateKnownHost>> {
-    state.lock().await.list_known_hosts(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_known_hosts(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -667,7 +984,12 @@ pub async fn warpgate_add_known_host(
     id: String,
     request: AddKnownHostRequest,
 ) -> CmdResult<WarpgateKnownHost> {
-    state.lock().await.add_known_host(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .add_known_host(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -676,7 +998,12 @@ pub async fn warpgate_delete_known_host(
     id: String,
     host_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_known_host(&id, &host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_known_host(&id, &host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── SSH Connection Test ──────────────────────────────────────────
@@ -687,7 +1014,12 @@ pub async fn warpgate_check_ssh_host_key(
     id: String,
     request: CheckSshHostKeyRequest,
 ) -> CmdResult<CheckSshHostKeyResponse> {
-    state.lock().await.check_ssh_host_key(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .check_ssh_host_key(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 // ── LDAP Servers ─────────────────────────────────────────────────
@@ -698,7 +1030,12 @@ pub async fn warpgate_list_ldap_servers(
     id: String,
     search: Option<String>,
 ) -> CmdResult<Vec<WarpgateLdapServer>> {
-    state.lock().await.list_ldap_servers(&id, search).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_ldap_servers(&id, search)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -707,7 +1044,12 @@ pub async fn warpgate_create_ldap_server(
     id: String,
     request: CreateLdapServerRequest,
 ) -> CmdResult<WarpgateLdapServer> {
-    state.lock().await.create_ldap_server(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_ldap_server(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -716,7 +1058,12 @@ pub async fn warpgate_get_ldap_server(
     id: String,
     server_id: String,
 ) -> CmdResult<WarpgateLdapServer> {
-    state.lock().await.get_ldap_server(&id, &server_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_ldap_server(&id, &server_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -726,7 +1073,12 @@ pub async fn warpgate_update_ldap_server(
     server_id: String,
     request: UpdateLdapServerRequest,
 ) -> CmdResult<WarpgateLdapServer> {
-    state.lock().await.update_ldap_server(&id, &server_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_ldap_server(&id, &server_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -735,7 +1087,12 @@ pub async fn warpgate_delete_ldap_server(
     id: String,
     server_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_ldap_server(&id, &server_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_ldap_server(&id, &server_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -744,7 +1101,12 @@ pub async fn warpgate_test_ldap_connection(
     id: String,
     request: TestLdapServerRequest,
 ) -> CmdResult<TestLdapServerResponse> {
-    state.lock().await.test_ldap_connection(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .test_ldap_connection(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -753,7 +1115,12 @@ pub async fn warpgate_get_ldap_users(
     id: String,
     server_id: String,
 ) -> CmdResult<Vec<LdapUser>> {
-    state.lock().await.get_ldap_users(&id, &server_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_ldap_users(&id, &server_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -763,7 +1130,12 @@ pub async fn warpgate_import_ldap_users(
     server_id: String,
     request: ImportLdapUsersRequest,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.import_ldap_users(&id, &server_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .import_ldap_users(&id, &server_id, request)
+        .await
+        .map_err(map_err)
 }
 
 // ── Logs ─────────────────────────────────────────────────────────
@@ -774,7 +1146,12 @@ pub async fn warpgate_query_logs(
     id: String,
     request: GetLogsRequest,
 ) -> CmdResult<Vec<WarpgateLogEntry>> {
-    state.lock().await.query_logs(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .query_logs(&id, request)
+        .await
+        .map_err(map_err)
 }
 
 // ── Parameters ───────────────────────────────────────────────────
@@ -784,7 +1161,12 @@ pub async fn warpgate_get_parameters(
     state: State<'_, WarpgateServiceState>,
     id: String,
 ) -> CmdResult<WarpgateParameters> {
-    state.lock().await.get_parameters(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_parameters(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -793,5 +1175,10 @@ pub async fn warpgate_update_parameters(
     id: String,
     request: UpdateParametersRequest,
 ) -> CmdResult<()> {
-    state.lock().await.update_parameters(&id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_parameters(&id, request)
+        .await
+        .map_err(map_err)
 }

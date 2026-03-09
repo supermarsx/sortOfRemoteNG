@@ -27,7 +27,9 @@ impl WarpgateClient {
             builder = builder.danger_accept_invalid_certs(true);
         }
 
-        let http = builder.build().map_err(|e| WarpgateError::connection(&e.to_string()))?;
+        let http = builder
+            .build()
+            .map_err(|e| WarpgateError::connection(&e.to_string()))?;
         let base_url = config.host.trim_end_matches('/').to_string();
 
         Ok(Self {
@@ -46,7 +48,9 @@ impl WarpgateClient {
             "username": self.username,
             "password": self.password,
         });
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .header(CONTENT_TYPE, "application/json")
             .json(&body)
             .send()
@@ -58,7 +62,10 @@ impl WarpgateClient {
         }
         if status >= 300 {
             let body_text = resp.text().await.unwrap_or_default();
-            return Err(WarpgateError::api(status, &format!("Login failed: {body_text}")));
+            return Err(WarpgateError::api(
+                status,
+                &format!("Login failed: {body_text}"),
+            ));
         }
 
         // Extract session cookie from response
@@ -90,16 +97,24 @@ impl WarpgateClient {
 
     pub async fn get(&self, path: &str) -> WarpgateResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .headers(self.default_headers())
             .send()
             .await?;
         self.handle_response(resp).await
     }
 
-    pub async fn get_with_params(&self, path: &str, params: &[(&str, &str)]) -> WarpgateResult<serde_json::Value> {
+    pub async fn get_with_params(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+    ) -> WarpgateResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .headers(self.default_headers())
             .query(params)
             .send()
@@ -109,12 +124,14 @@ impl WarpgateClient {
 
     pub async fn get_text(&self, path: &str) -> WarpgateResult<String> {
         let url = self.url(path);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .headers(self.default_headers())
             .send()
             .await?;
         let status = resp.status().as_u16();
-        if status >= 200 && status < 300 {
+        if (200..300).contains(&status) {
             Ok(resp.text().await.unwrap_or_default())
         } else {
             let body = resp.text().await.unwrap_or_default();
@@ -124,12 +141,14 @@ impl WarpgateClient {
 
     pub async fn get_bytes(&self, path: &str) -> WarpgateResult<Vec<u8>> {
         let url = self.url(path);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .headers(self.default_headers())
             .send()
             .await?;
         let status = resp.status().as_u16();
-        if status >= 200 && status < 300 {
+        if (200..300).contains(&status) {
             Ok(resp.bytes().await.map(|b| b.to_vec()).unwrap_or_default())
         } else {
             let body = resp.text().await.unwrap_or_default();
@@ -139,9 +158,15 @@ impl WarpgateClient {
 
     // ── POST ─────────────────────────────────────────────────────────
 
-    pub async fn post(&self, path: &str, body: &serde_json::Value) -> WarpgateResult<serde_json::Value> {
+    pub async fn post(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> WarpgateResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .headers(self.default_headers())
             .json(body)
             .send()
@@ -151,7 +176,9 @@ impl WarpgateClient {
 
     pub async fn post_empty(&self, path: &str) -> WarpgateResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .headers(self.default_headers())
             .send()
             .await?;
@@ -160,9 +187,15 @@ impl WarpgateClient {
 
     // ── PUT ──────────────────────────────────────────────────────────
 
-    pub async fn put(&self, path: &str, body: &serde_json::Value) -> WarpgateResult<serde_json::Value> {
+    pub async fn put(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> WarpgateResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.put(&url)
+        let resp = self
+            .http
+            .put(&url)
             .headers(self.default_headers())
             .json(body)
             .send()
@@ -172,9 +205,15 @@ impl WarpgateClient {
 
     // ── PATCH ────────────────────────────────────────────────────────
 
-    pub async fn patch(&self, path: &str, body: &serde_json::Value) -> WarpgateResult<serde_json::Value> {
+    pub async fn patch(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> WarpgateResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.patch(&url)
+        let resp = self
+            .http
+            .patch(&url)
             .headers(self.default_headers())
             .json(body)
             .send()
@@ -186,7 +225,9 @@ impl WarpgateClient {
 
     pub async fn delete(&self, path: &str) -> WarpgateResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.delete(&url)
+        let resp = self
+            .http
+            .delete(&url)
             .headers(self.default_headers())
             .send()
             .await?;
@@ -197,12 +238,13 @@ impl WarpgateClient {
 
     async fn handle_response(&self, resp: reqwest::Response) -> WarpgateResult<serde_json::Value> {
         let status = resp.status().as_u16();
-        if status >= 200 && status < 300 {
+        if (200..300).contains(&status) {
             let text = resp.text().await.unwrap_or_default();
             if text.is_empty() {
                 return Ok(serde_json::Value::Null);
             }
-            serde_json::from_str(&text).map_err(|e| WarpgateError::parse(&format!("Invalid JSON response: {e}")))
+            serde_json::from_str(&text)
+                .map_err(|e| WarpgateError::parse(&format!("Invalid JSON response: {e}")))
         } else {
             let body = resp.text().await.unwrap_or_default();
             Err(self.map_error(status, &body))

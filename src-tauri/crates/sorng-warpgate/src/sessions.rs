@@ -17,12 +17,23 @@ impl SessionManager {
         logged_in_only: Option<bool>,
     ) -> WarpgateResult<SessionListResponse> {
         let mut params = Vec::new();
-        if let Some(o) = offset { params.push(("offset".to_string(), o.to_string())); }
-        if let Some(l) = limit { params.push(("limit".to_string(), l.to_string())); }
-        if let Some(a) = active_only { params.push(("active_only".to_string(), a.to_string())); }
-        if let Some(li) = logged_in_only { params.push(("logged_in_only".to_string(), li.to_string())); }
+        if let Some(o) = offset {
+            params.push(("offset".to_string(), o.to_string()));
+        }
+        if let Some(l) = limit {
+            params.push(("limit".to_string(), l.to_string()));
+        }
+        if let Some(a) = active_only {
+            params.push(("active_only".to_string(), a.to_string()));
+        }
+        if let Some(li) = logged_in_only {
+            params.push(("logged_in_only".to_string(), li.to_string()));
+        }
 
-        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let param_refs: Vec<(&str, &str)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         let resp = if param_refs.is_empty() {
             client.get("/sessions").await?
         } else {
@@ -41,7 +52,9 @@ impl SessionManager {
 
     /// POST /sessions/:id/close
     pub async fn close(client: &WarpgateClient, session_id: &str) -> WarpgateResult<()> {
-        client.post_empty(&format!("/sessions/{}/close", session_id)).await?;
+        client
+            .post_empty(&format!("/sessions/{}/close", session_id))
+            .await?;
         Ok(())
     }
 
@@ -52,8 +65,13 @@ impl SessionManager {
     }
 
     /// GET /sessions/:id/recordings
-    pub async fn get_recordings(client: &WarpgateClient, session_id: &str) -> WarpgateResult<Vec<WarpgateRecording>> {
-        let resp = client.get(&format!("/sessions/{}/recordings", session_id)).await?;
+    pub async fn get_recordings(
+        client: &WarpgateClient,
+        session_id: &str,
+    ) -> WarpgateResult<Vec<WarpgateRecording>> {
+        let resp = client
+            .get(&format!("/sessions/{}/recordings", session_id))
+            .await?;
         let recordings: Vec<WarpgateRecording> = serde_json::from_value(resp)?;
         Ok(recordings)
     }

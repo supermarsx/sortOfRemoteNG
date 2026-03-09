@@ -16,7 +16,10 @@ impl TargetGroupManager {
     }
 
     /// POST /target-groups
-    pub async fn create(client: &WarpgateClient, req: &TargetGroupDataRequest) -> WarpgateResult<WarpgateTargetGroup> {
+    pub async fn create(
+        client: &WarpgateClient,
+        req: &TargetGroupDataRequest,
+    ) -> WarpgateResult<WarpgateTargetGroup> {
         let body = serde_json::to_value(req)?;
         let resp = client.post("/target-groups", &body).await?;
         let group: WarpgateTargetGroup = serde_json::from_value(resp)?;
@@ -24,23 +27,34 @@ impl TargetGroupManager {
     }
 
     /// GET /target-groups/:id
-    pub async fn get(client: &WarpgateClient, group_id: &str) -> WarpgateResult<WarpgateTargetGroup> {
+    pub async fn get(
+        client: &WarpgateClient,
+        group_id: &str,
+    ) -> WarpgateResult<WarpgateTargetGroup> {
         let resp = client.get(&format!("/target-groups/{}", group_id)).await?;
         let group: WarpgateTargetGroup = serde_json::from_value(resp)?;
         Ok(group)
     }
 
     /// PUT /target-groups/:id
-    pub async fn update(client: &WarpgateClient, group_id: &str, req: &TargetGroupDataRequest) -> WarpgateResult<WarpgateTargetGroup> {
+    pub async fn update(
+        client: &WarpgateClient,
+        group_id: &str,
+        req: &TargetGroupDataRequest,
+    ) -> WarpgateResult<WarpgateTargetGroup> {
         let body = serde_json::to_value(req)?;
-        let resp = client.put(&format!("/target-groups/{}", group_id), &body).await?;
+        let resp = client
+            .put(&format!("/target-groups/{}", group_id), &body)
+            .await?;
         let group: WarpgateTargetGroup = serde_json::from_value(resp)?;
         Ok(group)
     }
 
     /// DELETE /target-groups/:id
     pub async fn delete(client: &WarpgateClient, group_id: &str) -> WarpgateResult<()> {
-        client.delete(&format!("/target-groups/{}", group_id)).await?;
+        client
+            .delete(&format!("/target-groups/{}", group_id))
+            .await?;
         Ok(())
     }
 }

@@ -16,7 +16,10 @@ impl TicketManager {
     }
 
     /// POST /tickets
-    pub async fn create(client: &WarpgateClient, req: &CreateTicketRequest) -> WarpgateResult<TicketAndSecret> {
+    pub async fn create(
+        client: &WarpgateClient,
+        req: &CreateTicketRequest,
+    ) -> WarpgateResult<TicketAndSecret> {
         let body = serde_json::to_value(req)?;
         let resp = client.post("/tickets", &body).await?;
         let ticket: TicketAndSecret = serde_json::from_value(resp)?;
