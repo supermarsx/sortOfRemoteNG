@@ -18,11 +18,7 @@ impl DatabaseManager {
             if line.is_empty() {
                 continue;
             }
-            let name = line
-                .rsplit('/')
-                .next()
-                .unwrap_or(line)
-                .to_string();
+            let name = line.rsplit('/').next().unwrap_or(line).to_string();
             // Query sigtool for database info
             let info_out = client
                 .exec_ssh(&format!("sigtool --info {} 2>&1", shell_escape(line)))
@@ -154,12 +150,7 @@ fn parse_sigtool_info(output: &str) -> (Option<String>, Option<u64>, Option<Stri
     for line in output.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("Version:") {
-            version = Some(
-                trimmed
-                    .trim_start_matches("Version:")
-                    .trim()
-                    .to_string(),
-            );
+            version = Some(trimmed.trim_start_matches("Version:").trim().to_string());
         } else if trimmed.starts_with("Signatures:") {
             signatures = trimmed
                 .trim_start_matches("Signatures:")
@@ -167,12 +158,7 @@ fn parse_sigtool_info(output: &str) -> (Option<String>, Option<u64>, Option<Stri
                 .parse()
                 .ok();
         } else if trimmed.starts_with("Build time:") {
-            build_time = Some(
-                trimmed
-                    .trim_start_matches("Build time:")
-                    .trim()
-                    .to_string(),
-            );
+            build_time = Some(trimmed.trim_start_matches("Build time:").trim().to_string());
         }
     }
 

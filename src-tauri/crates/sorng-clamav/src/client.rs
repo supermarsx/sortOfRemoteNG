@@ -3,8 +3,8 @@
 //! Handles config file reading/writing, scanning, and process management.
 
 use crate::error::{ClamavError, ClamavResult};
-use crate::types::SshOutput;
 use crate::types::ClamavConnectionConfig;
+use crate::types::SshOutput;
 use log::debug;
 use reqwest::Client as HttpClient;
 use std::time::Duration;
@@ -28,31 +28,52 @@ impl ClamavClient {
     // ── Path helpers ─────────────────────────────────────────────────
 
     pub fn clamscan_bin(&self) -> &str {
-        self.config.clamscan_bin.as_deref().unwrap_or("/usr/bin/clamscan")
+        self.config
+            .clamscan_bin
+            .as_deref()
+            .unwrap_or("/usr/bin/clamscan")
     }
 
     pub fn clamdscan_bin(&self) -> &str {
-        self.config.clamdscan_bin.as_deref().unwrap_or("/usr/bin/clamdscan")
+        self.config
+            .clamdscan_bin
+            .as_deref()
+            .unwrap_or("/usr/bin/clamdscan")
     }
 
     pub fn clamd_bin(&self) -> &str {
-        self.config.clamd_bin.as_deref().unwrap_or("/usr/sbin/clamd")
+        self.config
+            .clamd_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/clamd")
     }
 
     pub fn freshclam_bin(&self) -> &str {
-        self.config.freshclam_bin.as_deref().unwrap_or("/usr/bin/freshclam")
+        self.config
+            .freshclam_bin
+            .as_deref()
+            .unwrap_or("/usr/bin/freshclam")
     }
 
     pub fn clamd_conf(&self) -> &str {
-        self.config.clamd_conf.as_deref().unwrap_or("/etc/clamav/clamd.conf")
+        self.config
+            .clamd_conf
+            .as_deref()
+            .unwrap_or("/etc/clamav/clamd.conf")
     }
 
     pub fn freshclam_conf(&self) -> &str {
-        self.config.freshclam_conf.as_deref().unwrap_or("/etc/clamav/freshclam.conf")
+        self.config
+            .freshclam_conf
+            .as_deref()
+            .unwrap_or("/etc/clamav/freshclam.conf")
     }
 
     pub fn clamd_socket(&self) -> &str {
-        self.config.clamd_socket.as_deref().unwrap_or("/var/run/clamav/clamd.ctl")
+        self.config
+            .clamd_socket
+            .as_deref()
+            .unwrap_or("/var/run/clamav/clamd.ctl")
     }
 
     // ── SSH command execution stub ───────────────────────────────────
@@ -70,7 +91,9 @@ impl ClamavClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> ClamavResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 

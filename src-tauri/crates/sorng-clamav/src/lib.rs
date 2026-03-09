@@ -1,16 +1,16 @@
 // ── sorng-clamav – ClamAV antivirus management ──────────────────────────────
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod scanning;
-pub mod database;
-pub mod quarantine;
 pub mod clamd_config;
-pub mod freshclam_config;
-pub mod on_access;
-pub mod milter;
-pub mod scheduled;
-pub mod process;
-pub mod service;
+pub mod client;
 pub mod commands;
+pub mod database;
+pub mod error;
+pub mod freshclam_config;
+pub mod milter;
+pub mod on_access;
+pub mod process;
+pub mod quarantine;
+pub mod scanning;
+pub mod scheduled;
+pub mod service;
+pub mod types;

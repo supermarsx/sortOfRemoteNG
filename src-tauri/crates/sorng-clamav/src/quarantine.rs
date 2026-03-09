@@ -14,7 +14,10 @@ impl QuarantineManager {
     pub async fn list(client: &ClamavClient) -> ClamavResult<Vec<QuarantineEntry>> {
         // Ensure quarantine dir exists
         client
-            .exec_ssh(&format!("sudo mkdir -p {} {}", QUARANTINE_DIR, QUARANTINE_META))
+            .exec_ssh(&format!(
+                "sudo mkdir -p {} {}",
+                QUARANTINE_DIR, QUARANTINE_META
+            ))
             .await?;
 
         let out = client
@@ -118,9 +121,10 @@ impl QuarantineManager {
 
     async fn read_entry(client: &ClamavClient, id: &str) -> ClamavResult<QuarantineEntry> {
         let meta_path = format!("{}/{}", QUARANTINE_META, id);
-        let meta_content = client.read_remote_file(&meta_path).await.map_err(|_| {
-            ClamavError::internal(format!("Quarantine entry not found: {}", id))
-        })?;
+        let meta_content = client
+            .read_remote_file(&meta_path)
+            .await
+            .map_err(|_| ClamavError::internal(format!("Quarantine entry not found: {}", id)))?;
 
         let mut original_path = String::new();
         let mut virus_name = String::new();

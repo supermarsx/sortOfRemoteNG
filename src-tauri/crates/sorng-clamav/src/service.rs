@@ -28,6 +28,12 @@ pub struct ClamavService {
     connections: HashMap<String, ClamavClient>,
 }
 
+impl Default for ClamavService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClamavService {
     pub fn new() -> Self {
         Self {
@@ -60,13 +66,12 @@ impl ClamavService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> ClamavResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| ClamavError::new(
+        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+            ClamavError::new(
                 crate::error::ClamavErrorKind::NotConnected,
                 format!("No connection '{}'", id),
-            ))
+            )
+        })
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -197,12 +202,7 @@ impl ClamavService {
         ClamdConfigManager::get_param(self.client(id)?, key).await
     }
 
-    pub async fn set_clamd_param(
-        &self,
-        id: &str,
-        key: &str,
-        value: &str,
-    ) -> ClamavResult<()> {
+    pub async fn set_clamd_param(&self, id: &str, key: &str, value: &str) -> ClamavResult<()> {
         ClamdConfigManager::set_param(self.client(id)?, key, value).await
     }
 
@@ -228,20 +228,11 @@ impl ClamavService {
         FreshclamConfigManager::get_all(self.client(id)?).await
     }
 
-    pub async fn get_freshclam_param(
-        &self,
-        id: &str,
-        key: &str,
-    ) -> ClamavResult<FreshclamConfig> {
+    pub async fn get_freshclam_param(&self, id: &str, key: &str) -> ClamavResult<FreshclamConfig> {
         FreshclamConfigManager::get_param(self.client(id)?, key).await
     }
 
-    pub async fn set_freshclam_param(
-        &self,
-        id: &str,
-        key: &str,
-        value: &str,
-    ) -> ClamavResult<()> {
+    pub async fn set_freshclam_param(&self, id: &str, key: &str, value: &str) -> ClamavResult<()> {
         FreshclamConfigManager::set_param(self.client(id)?, key, value).await
     }
 
@@ -263,11 +254,7 @@ impl ClamavService {
         OnAccessManager::get_config(self.client(id)?).await
     }
 
-    pub async fn set_on_access_config(
-        &self,
-        id: &str,
-        config: OnAccessConfig,
-    ) -> ClamavResult<()> {
+    pub async fn set_on_access_config(&self, id: &str, config: OnAccessConfig) -> ClamavResult<()> {
         OnAccessManager::set_config(self.client(id)?, &config).await
     }
 
@@ -311,11 +298,7 @@ impl ClamavService {
         ScheduledScanManager::list(self.client(id)?).await
     }
 
-    pub async fn get_scheduled_scan(
-        &self,
-        id: &str,
-        scan_id: &str,
-    ) -> ClamavResult<ScheduledScan> {
+    pub async fn get_scheduled_scan(&self, id: &str, scan_id: &str) -> ClamavResult<ScheduledScan> {
         ScheduledScanManager::get(self.client(id)?, scan_id).await
     }
 
@@ -348,11 +331,7 @@ impl ClamavService {
         ScheduledScanManager::disable(self.client(id)?, scan_id).await
     }
 
-    pub async fn run_scheduled_scan(
-        &self,
-        id: &str,
-        scan_id: &str,
-    ) -> ClamavResult<ScanSummary> {
+    pub async fn run_scheduled_scan(&self, id: &str, scan_id: &str) -> ClamavResult<ScanSummary> {
         ScheduledScanManager::run_now(self.client(id)?, scan_id).await
     }
 

@@ -92,8 +92,7 @@ fn parse_on_access_config(content: &str) -> OnAccessConfig {
                     max_file_size_mb = num_str.parse().ok();
                 }
                 "ScanOnAccess" => {
-                    enabled =
-                        value.to_lowercase() == "yes" || value.to_lowercase() == "true";
+                    enabled = value.to_lowercase() == "yes" || value.to_lowercase() == "true";
                 }
                 _ => {}
             }

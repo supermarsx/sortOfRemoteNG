@@ -185,18 +185,21 @@ fn parse_clamd_stats(output: &str) -> ClamavResult<ClamdStats> {
                 .parse()
                 .unwrap_or(1);
         } else if trimmed.starts_with("STATE:") {
-            state = trimmed
-                .trim_start_matches("STATE:")
-                .trim()
-                .to_string();
+            state = trimmed.trim_start_matches("STATE:").trim().to_string();
         } else if trimmed.starts_with("THREADS:") {
             // THREADS: live N idle N max N
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             for (i, p) in parts.iter().enumerate() {
                 match *p {
-                    "live" => threads_live = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0),
-                    "idle" => threads_idle = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0),
-                    "max" => threads_max = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0),
+                    "live" => {
+                        threads_live = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0)
+                    }
+                    "idle" => {
+                        threads_idle = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0)
+                    }
+                    "max" => {
+                        threads_max = parts.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0)
+                    }
                     _ => {}
                 }
             }
@@ -208,19 +211,31 @@ fn parse_clamd_stats(output: &str) -> ClamavResult<ClamdStats> {
                 .unwrap_or(0);
         } else if trimmed.contains("MEMUSED:") || trimmed.contains("memory") {
             // Try to extract memory used
-            if let Some(num_str) = trimmed.split_whitespace().find(|s| s.parse::<u64>().is_ok()) {
+            if let Some(num_str) = trimmed
+                .split_whitespace()
+                .find(|s| s.parse::<u64>().is_ok())
+            {
                 memory_used = num_str.parse().unwrap_or(0);
             }
         } else if trimmed.contains("malware") {
-            if let Some(num_str) = trimmed.split_whitespace().find(|s| s.parse::<u64>().is_ok()) {
+            if let Some(num_str) = trimmed
+                .split_whitespace()
+                .find(|s| s.parse::<u64>().is_ok())
+            {
                 malware_detected = num_str.parse().unwrap_or(0);
             }
         } else if trimmed.contains("bytes scanned") || trimmed.contains("SCANNED:") {
-            if let Some(num_str) = trimmed.split_whitespace().find(|s| s.parse::<u64>().is_ok()) {
+            if let Some(num_str) = trimmed
+                .split_whitespace()
+                .find(|s| s.parse::<u64>().is_ok())
+            {
                 bytes_scanned = num_str.parse().unwrap_or(0);
             }
         } else if trimmed.contains("uptime") || trimmed.contains("UPTIME:") {
-            if let Some(num_str) = trimmed.split_whitespace().find(|s| s.parse::<u64>().is_ok()) {
+            if let Some(num_str) = trimmed
+                .split_whitespace()
+                .find(|s| s.parse::<u64>().is_ok())
+            {
                 uptime_secs = num_str.parse().unwrap_or(0);
             }
         }

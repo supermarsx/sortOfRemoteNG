@@ -40,15 +40,24 @@ impl std::error::Error for ClamavError {}
 
 impl ClamavError {
     pub fn new(kind: ClamavErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected() -> Self {
-        Self::new(ClamavErrorKind::NotConnected, "Not connected to ClamAV host")
+        Self::new(
+            ClamavErrorKind::NotConnected,
+            "Not connected to ClamAV host",
+        )
     }
 
     pub fn already_connected(id: &str) -> Self {
-        Self::new(ClamavErrorKind::AlreadyConnected, format!("Connection '{}' already exists", id))
+        Self::new(
+            ClamavErrorKind::AlreadyConnected,
+            format!("Connection '{}' already exists", id),
+        )
     }
 
     pub fn connection_failed(msg: impl fmt::Display) -> Self {
@@ -64,7 +73,10 @@ impl ClamavError {
     }
 
     pub fn virus_found(name: &str, path: &str) -> Self {
-        Self::new(ClamavErrorKind::VirusFound, format!("Virus '{}' found in {}", name, path))
+        Self::new(
+            ClamavErrorKind::VirusFound,
+            format!("Virus '{}' found in {}", name, path),
+        )
     }
 
     pub fn database_error(msg: impl fmt::Display) -> Self {
@@ -76,7 +88,10 @@ impl ClamavError {
     }
 
     pub fn config_not_found(path: &str) -> Self {
-        Self::new(ClamavErrorKind::ConfigNotFound, format!("Config file not found: {}", path))
+        Self::new(
+            ClamavErrorKind::ConfigNotFound,
+            format!("Config file not found: {}", path),
+        )
     }
 
     pub fn socket_error(msg: impl fmt::Display) -> Self {

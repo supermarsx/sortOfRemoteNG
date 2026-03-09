@@ -40,9 +40,10 @@ impl ScheduledScanManager {
     /// Get a specific scheduled scan by ID.
     pub async fn get(client: &ClamavClient, id: &str) -> ClamavResult<ScheduledScan> {
         let path = format!("{}/{}.json", SCHEDULES_DIR, id);
-        let content = client.read_remote_file(&path).await.map_err(|_| {
-            ClamavError::internal(format!("Scheduled scan not found: {}", id))
-        })?;
+        let content = client
+            .read_remote_file(&path)
+            .await
+            .map_err(|_| ClamavError::internal(format!("Scheduled scan not found: {}", id)))?;
         serde_json::from_str(&content)
             .map_err(|e| ClamavError::parse(format!("Failed to parse schedule: {}", e)))
     }

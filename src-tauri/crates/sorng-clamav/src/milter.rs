@@ -97,12 +97,7 @@ fn parse_milter_config(content: &str) -> MilterConfig {
 }
 
 fn apply_milter_config(content: &str, config: &MilterConfig) -> String {
-    let milter_keys = [
-        "MilterSocket",
-        "OnInfected",
-        "AddHeader",
-        "VirusAction",
-    ];
+    let milter_keys = ["MilterSocket", "OnInfected", "AddHeader", "VirusAction"];
 
     let mut lines: Vec<String> = content
         .lines()
