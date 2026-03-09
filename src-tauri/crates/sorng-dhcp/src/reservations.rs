@@ -3,15 +3,26 @@ use crate::types::*;
 use std::collections::HashMap;
 
 pub fn create_reservation(hostname: &str, mac: &str, ip: &str) -> DhcpReservation {
-    DhcpReservation { hostname: hostname.into(), mac_address: mac.into(), ip_address: ip.into(), options: HashMap::new() }
+    DhcpReservation {
+        hostname: hostname.into(),
+        mac_address: mac.into(),
+        ip_address: ip.into(),
+        options: HashMap::new(),
+    }
 }
 
 pub fn reservation_to_dhcpd(r: &DhcpReservation) -> String {
-    format!("host {} {{\n  hardware ethernet {};\n  fixed-address {};\n}}", r.hostname, r.mac_address, r.ip_address)
+    format!(
+        "host {} {{\n  hardware ethernet {};\n  fixed-address {};\n}}",
+        r.hostname, r.mac_address, r.ip_address
+    )
 }
 
 pub fn reservation_to_dnsmasq(r: &DhcpReservation) -> String {
-    format!("dhcp-host={},{},{}", r.mac_address, r.ip_address, r.hostname)
+    format!(
+        "dhcp-host={},{},{}",
+        r.mac_address, r.ip_address, r.hostname
+    )
 }
 
 #[cfg(test)]

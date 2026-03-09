@@ -2,13 +2,13 @@
 //!
 //! ISC dhcpd, dnsmasq, and Kea DHCP configuration, leases, subnets, reservations.
 
-pub mod types;
-pub mod error;
 pub mod client;
-pub mod service;
-pub mod isc_dhcpd;
 pub mod dnsmasq;
+pub mod error;
+pub mod isc_dhcpd;
 pub mod kea;
 pub mod leases;
-pub mod subnets;
 pub mod reservations;
+pub mod service;
+pub mod subnets;
+pub mod types;

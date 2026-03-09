@@ -5,16 +5,43 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SshConfig { pub host: String, pub port: u16, pub username: String, pub auth: SshAuth, pub timeout_secs: u64 }
+pub struct SshConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: SshAuth,
+    pub timeout_secs: u64,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum SshAuth { Password { password: String }, PrivateKey { key_path: String, passphrase: Option<String> }, Agent }
+pub enum SshAuth {
+    Password {
+        password: String,
+    },
+    PrivateKey {
+        key_path: String,
+        passphrase: Option<String>,
+    },
+    Agent,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DhcpHost { pub id: String, pub name: String, pub ssh: Option<SshConfig>, pub use_sudo: bool, pub backend: DhcpBackend, pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc> }
+pub struct DhcpHost {
+    pub id: String,
+    pub name: String,
+    pub ssh: Option<SshConfig>,
+    pub use_sudo: bool,
+    pub backend: DhcpBackend,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DhcpBackend { IscDhcpd, Dnsmasq, Kea }
+pub enum DhcpBackend {
+    IscDhcpd,
+    Dnsmasq,
+    Kea,
+}
 
 // ─── Subnet ─────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +80,13 @@ pub struct DhcpLease {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum LeaseState { Active, Free, Expired, Backup, Abandoned }
+pub enum LeaseState {
+    Active,
+    Free,
+    Expired,
+    Backup,
+    Abandoned,
+}
 
 // ─── ISC dhcpd ──────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,7 +99,10 @@ pub struct IscDhcpdConfig {
     pub ddns_update_style: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SharedNetwork { pub name: String, pub subnets: Vec<DhcpSubnet> }
+pub struct SharedNetwork {
+    pub name: String,
+    pub subnets: Vec<DhcpSubnet>,
+}
 
 // ─── dnsmasq ────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,7 +118,13 @@ pub struct DnsmasqConfig {
     pub all_settings: HashMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DnsmasqRange { pub tag: Option<String>, pub start: String, pub end: String, pub lease_time: String, pub netmask: Option<String> }
+pub struct DnsmasqRange {
+    pub tag: Option<String>,
+    pub start: String,
+    pub end: String,
+    pub lease_time: String,
+    pub netmask: Option<String>,
+}
 
 // ─── Kea ────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,7 +138,12 @@ pub struct KeaDhcp4Config {
     pub rebind_timer: Option<u32>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeaLeaseDb { pub db_type: String, pub name: Option<String>, pub host: Option<String>, pub port: Option<u16> }
+pub struct KeaLeaseDb {
+    pub db_type: String,
+    pub name: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+}
 
 // ─── Health ─────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
