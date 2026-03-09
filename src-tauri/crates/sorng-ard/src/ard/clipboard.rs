@@ -3,6 +3,7 @@
 //! Handles both standard RFB `ClientCutText`/`ServerCutText` and the
 //! Apple-specific clipboard extension (pseudo-encoding `0x574D5601`)
 //! which supports multiple pasteboard types (plain text, RTF, HTML, file URLs).
+#![allow(dead_code)]
 
 use super::errors::ArdError;
 use super::rfb::{self, RfbConnection};

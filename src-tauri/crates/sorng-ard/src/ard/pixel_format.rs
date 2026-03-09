@@ -2,6 +2,7 @@
 //!
 //! The PixelFormat describes how pixel data is encoded on the wire in
 //! the RFB / VNC protocol (and by extension ARD).
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
@@ -67,7 +68,7 @@ impl PixelFormat {
 
     /// Bytes per pixel derived from bits_per_pixel.
     pub fn bytes_per_pixel(&self) -> usize {
-        (self.bits_per_pixel as usize + 7) / 8
+        (self.bits_per_pixel as usize).div_ceil(8)
     }
 
     /// Human-readable label.
@@ -120,12 +121,11 @@ impl PixelFormat {
         if !self.true_colour {
             return [0, 0, 0, 255];
         }
-        let r = ((raw >> self.red_shift) & self.red_max as u32) * 255
-            / self.red_max.max(1) as u32;
+        let r = ((raw >> self.red_shift) & self.red_max as u32) * 255 / self.red_max.max(1) as u32;
         let g = ((raw >> self.green_shift) & self.green_max as u32) * 255
             / self.green_max.max(1) as u32;
-        let b = ((raw >> self.blue_shift) & self.blue_max as u32) * 255
-            / self.blue_max.max(1) as u32;
+        let b =
+            ((raw >> self.blue_shift) & self.blue_max as u32) * 255 / self.blue_max.max(1) as u32;
         [r as u8, g as u8, b as u8, 255]
     }
 
@@ -232,8 +232,8 @@ mod tests {
         let rgba = pf.convert_to_rgba(&raw, 1);
         assert_eq!(rgba.len(), 4);
         assert_eq!(rgba[0], 255); // R
-        assert_eq!(rgba[1], 0);   // G
-        assert_eq!(rgba[2], 0);   // B
+        assert_eq!(rgba[1], 0); // G
+        assert_eq!(rgba[2], 0); // B
     }
 
     #[test]

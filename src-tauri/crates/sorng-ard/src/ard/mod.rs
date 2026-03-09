@@ -24,7 +24,7 @@ pub use commands::*;
 pub use diagnostics::*;
 pub use types::{
     ArdActiveConnection, ArdCapabilities, ArdCommand, ArdInputAction, ArdLogEntry, ArdService,
-    ArdSession, ArdSessionStats, ArdStatusEvent, ArdStatsEvent,
+    ArdSession, ArdSessionStats, ArdStatsEvent, ArdStatusEvent,
 };
 
 /// Global ARD service state, managed by Tauri.

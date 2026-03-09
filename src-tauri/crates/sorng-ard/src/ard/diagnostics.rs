@@ -63,8 +63,7 @@ fn run_diagnostics(host: &str, port: u16, username: &str, password: &str) -> Dia
     };
 
     // ── Step 2: TCP Connect ──────────────────────────────────────────
-    let tcp_stream = match diagnostics::probe_tcp(socket_addr, DIAG_TCP_TIMEOUT, true, &mut steps)
-    {
+    let tcp_stream = match diagnostics::probe_tcp(socket_addr, DIAG_TCP_TIMEOUT, true, &mut steps) {
         Some(s) => s,
         None => {
             return diagnostics::finish_report(host, port, "ard", resolved_ip, steps, run_start);
@@ -88,7 +87,7 @@ fn run_diagnostics(host: &str, port: u16, username: &str, password: &str) -> Dia
             steps.push(DiagnosticStep {
                 name: "RFB Version Handshake".into(),
                 status: "fail".into(),
-                message: format!("{e}"),
+                message: e.to_string(),
                 duration_ms: t.elapsed().as_millis() as u64,
                 detail: None,
             });
@@ -137,7 +136,7 @@ fn run_diagnostics(host: &str, port: u16, username: &str, password: &str) -> Dia
             steps.push(DiagnosticStep {
                 name: "Security Type Negotiation".into(),
                 status: "fail".into(),
-                message: format!("{e}"),
+                message: e.to_string(),
                 duration_ms: t.elapsed().as_millis() as u64,
                 detail: None,
             });
@@ -163,7 +162,7 @@ fn run_diagnostics(host: &str, port: u16, username: &str, password: &str) -> Dia
                 steps.push(DiagnosticStep {
                     name: "ARD Authentication".into(),
                     status: "fail".into(),
-                    message: format!("{e}"),
+                    message: e.to_string(),
                     duration_ms: t.elapsed().as_millis() as u64,
                     detail: None,
                 });
@@ -369,7 +368,10 @@ pub fn diagnostics_summary(report: &DiagnosticReport) -> String {
     let failed = total - passed;
 
     if failed == 0 {
-        format!("All {total} diagnostic steps passed ({}ms total)", report.total_duration_ms)
+        format!(
+            "All {total} diagnostic steps passed ({}ms total)",
+            report.total_duration_ms
+        )
     } else {
         let failed_names: Vec<&str> = report
             .steps

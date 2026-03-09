@@ -39,11 +39,7 @@ pub fn auth_vnc(conn: &mut RfbConnection, password: &str) -> Result<(), ArdError
 }
 
 /// ARD Diffie-Hellman + AES-128-CBC authentication (security type 30).
-pub fn auth_ard(
-    conn: &mut RfbConnection,
-    username: &str,
-    password: &str,
-) -> Result<(), ArdError> {
+pub fn auth_ard(conn: &mut RfbConnection, username: &str, password: &str) -> Result<(), ArdError> {
     // 1) Read DH parameters from server.
     let mut gen_buf = [0u8; 2];
     conn.read_exact(&mut gen_buf)?;
@@ -81,7 +77,8 @@ pub fn auth_ard(
     let mut credentials = [0u8; 128];
     let user_bytes = username.as_bytes();
     let pass_bytes = password.as_bytes();
-    credentials[..user_bytes.len().min(64)].copy_from_slice(&user_bytes[..user_bytes.len().min(64)]);
+    credentials[..user_bytes.len().min(64)]
+        .copy_from_slice(&user_bytes[..user_bytes.len().min(64)]);
     credentials[64..64 + pass_bytes.len().min(64)]
         .copy_from_slice(&pass_bytes[..pass_bytes.len().min(64)]);
 
@@ -103,7 +100,7 @@ fn aes_cbc_encrypt(key: &[u8; 16], iv: &[u8; 16], data: &[u8]) -> Result<Vec<u8>
     type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 
     // Data must be a multiple of 16 bytes.
-    let padded_len = ((data.len() + 15) / 16) * 16;
+    let padded_len = data.len().div_ceil(16) * 16;
     let mut buf = vec![0u8; padded_len];
     buf[..data.len()].copy_from_slice(data);
 
@@ -139,16 +136,14 @@ fn des_encrypt_block(key: &[u8; 8], block: &[u8]) -> [u8; 8] {
 fn des_key_schedule(key: &[u8; 8]) -> [[u8; 6]; 16] {
     // PC-1 permutation: 56 bits from 64-bit key
     const PC1: [u8; 56] = [
-        57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2,
-        59, 51, 43, 35, 27, 19, 11, 3, 60, 52, 44, 36, 63, 55, 47, 39,
-        31, 23, 15, 7, 62, 54, 46, 38, 30, 22, 14, 6, 61, 53, 45, 37,
-        29, 21, 13, 5, 28, 20, 12, 4,
+        57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59, 51, 43, 35, 27, 19, 11, 3,
+        60, 52, 44, 36, 63, 55, 47, 39, 31, 23, 15, 7, 62, 54, 46, 38, 30, 22, 14, 6, 61, 53, 45,
+        37, 29, 21, 13, 5, 28, 20, 12, 4,
     ];
     // PC-2 permutation: 48 bits from 56 bits
     const PC2: [u8; 48] = [
-        14, 17, 11, 24, 1, 5, 3, 28, 15, 6, 21, 10, 23, 19, 12, 4,
-        26, 8, 16, 7, 27, 20, 13, 2, 41, 52, 31, 37, 47, 55, 30, 40,
-        51, 45, 33, 48, 44, 49, 39, 56, 34, 53, 46, 42, 50, 36, 29, 32,
+        14, 17, 11, 24, 1, 5, 3, 28, 15, 6, 21, 10, 23, 19, 12, 4, 26, 8, 16, 7, 27, 20, 13, 2, 41,
+        52, 31, 37, 47, 55, 30, 40, 51, 45, 33, 48, 44, 49, 39, 56, 34, 53, 46, 42, 50, 36, 29, 32,
     ];
     const LEFT_SHIFTS: [u8; 16] = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1];
 
@@ -188,25 +183,22 @@ fn des_key_schedule(key: &[u8; 8]) -> [[u8; 6]; 16] {
 
 fn des_encrypt_with_subkeys(block: &[u8; 8], subkeys: &[[u8; 6]; 16]) -> [u8; 8] {
     const IP: [u8; 64] = [
-        58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4,
-        62, 54, 46, 38, 30, 22, 14, 6, 64, 56, 48, 40, 32, 24, 16, 8,
-        57, 49, 41, 33, 25, 17, 9, 1, 59, 51, 43, 35, 27, 19, 11, 3,
-        61, 53, 45, 37, 29, 21, 13, 5, 63, 55, 47, 39, 31, 23, 15, 7,
+        58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4, 62, 54, 46, 38, 30, 22, 14,
+        6, 64, 56, 48, 40, 32, 24, 16, 8, 57, 49, 41, 33, 25, 17, 9, 1, 59, 51, 43, 35, 27, 19, 11,
+        3, 61, 53, 45, 37, 29, 21, 13, 5, 63, 55, 47, 39, 31, 23, 15, 7,
     ];
     const FP: [u8; 64] = [
-        40, 8, 48, 16, 56, 24, 64, 32, 39, 7, 47, 15, 55, 23, 63, 31,
-        38, 6, 46, 14, 54, 22, 62, 30, 37, 5, 45, 13, 53, 21, 61, 29,
-        36, 4, 44, 12, 52, 20, 60, 28, 35, 3, 43, 11, 51, 19, 59, 27,
-        34, 2, 42, 10, 50, 18, 58, 26, 33, 1, 41, 9, 49, 17, 57, 25,
+        40, 8, 48, 16, 56, 24, 64, 32, 39, 7, 47, 15, 55, 23, 63, 31, 38, 6, 46, 14, 54, 22, 62,
+        30, 37, 5, 45, 13, 53, 21, 61, 29, 36, 4, 44, 12, 52, 20, 60, 28, 35, 3, 43, 11, 51, 19,
+        59, 27, 34, 2, 42, 10, 50, 18, 58, 26, 33, 1, 41, 9, 49, 17, 57, 25,
     ];
     const E: [u8; 48] = [
-        32, 1, 2, 3, 4, 5, 4, 5, 6, 7, 8, 9, 8, 9, 10, 11,
-        12, 13, 12, 13, 14, 15, 16, 17, 16, 17, 18, 19, 20, 21, 20, 21,
-        22, 23, 24, 25, 24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1,
+        32, 1, 2, 3, 4, 5, 4, 5, 6, 7, 8, 9, 8, 9, 10, 11, 12, 13, 12, 13, 14, 15, 16, 17, 16, 17,
+        18, 19, 20, 21, 20, 21, 22, 23, 24, 25, 24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1,
     ];
     const P: [u8; 32] = [
-        16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10,
-        2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25,
+        16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10, 2, 8, 24, 14, 32, 27, 3, 9,
+        19, 13, 30, 6, 22, 11, 4, 25,
     ];
     const SBOXES: [[[u8; 16]; 4]; 8] = [
         [
@@ -269,14 +261,14 @@ fn des_encrypt_with_subkeys(block: &[u8; 8], subkeys: &[[u8; 6]; 16]) -> [u8; 8]
     l.copy_from_slice(&permuted[..32]);
     r.copy_from_slice(&permuted[32..]);
 
-    for round in 0..16 {
+    for subkey in subkeys.iter().take(16) {
         let mut expanded = [0u8; 48];
         for (i, &p) in E.iter().enumerate() {
             expanded[i] = r[(p - 1) as usize];
         }
 
         // XOR with subkey
-        let sk_bits = bytes6_to_bits(&subkeys[round]);
+        let sk_bits = bytes6_to_bits(subkey);
         for i in 0..48 {
             expanded[i] ^= sk_bits[i];
         }
@@ -343,11 +335,11 @@ fn bits_to_bytes(bits: &[u8]) -> [u8; 8] {
 
 fn bits_to_6bytes(bits: &[u8]) -> [u8; 6] {
     let mut bytes = [0u8; 6];
-    for i in 0..6 {
+    for (i, byte) in bytes.iter_mut().enumerate() {
         for j in 0..8 {
             let idx = i * 8 + j;
             if idx < bits.len() {
-                bytes[i] |= bits[idx] << (7 - j);
+                *byte |= bits[idx] << (7 - j);
             }
         }
     }
@@ -370,7 +362,7 @@ pub(crate) struct BigUint {
 impl BigUint {
     pub fn from_bytes_be(bytes: &[u8]) -> Self {
         // Pad to 4-byte alignment.
-        let padded_len = ((bytes.len() + 3) / 4) * 4;
+        let padded_len = bytes.len().div_ceil(4) * 4;
         let mut padded = vec![0u8; padded_len];
         padded[padded_len - bytes.len()..].copy_from_slice(bytes);
 
@@ -411,7 +403,7 @@ impl BigUint {
     }
 
     fn is_odd(&self) -> bool {
-        self.limbs.last().map_or(false, |&l| l & 1 != 0)
+        self.limbs.last().is_some_and(|&l| l & 1 != 0)
     }
 
     /// Right-shift by 1 bit.

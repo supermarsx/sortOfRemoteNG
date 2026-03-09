@@ -168,19 +168,10 @@ pub struct ArdLogEntry {
 }
 
 /// The global ARD service holding all active sessions.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ArdService {
     pub connections: HashMap<String, ArdActiveConnection>,
     pub log_buffer: Vec<ArdLogEntry>,
-}
-
-impl Default for ArdService {
-    fn default() -> Self {
-        Self {
-            connections: HashMap::new(),
-            log_buffer: Vec::new(),
-        }
-    }
 }
 
 impl ArdService {

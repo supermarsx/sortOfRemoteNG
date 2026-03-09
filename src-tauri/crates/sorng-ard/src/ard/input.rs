@@ -1,26 +1,18 @@
 //! Keyboard and pointer input handling for ARD/VNC sessions.
 //!
 //! Translates high-level input actions into RFB wire events.
+#![allow(dead_code)]
 
 use super::errors::ArdError;
 use super::rfb::RfbConnection;
 use super::types::ArdInputAction;
 
 /// Tracking state for the pointer (mouse cursor).
+#[derive(Default)]
 pub struct PointerState {
     pub x: u16,
     pub y: u16,
     pub button_mask: u8,
-}
-
-impl Default for PointerState {
-    fn default() -> Self {
-        Self {
-            x: 0,
-            y: 0,
-            button_mask: 0,
-        }
-    }
 }
 
 /// VNC button mask constants.

@@ -2,6 +2,7 @@
 //!
 //! Handles version negotiation, server-init, pixel format setup,
 //! encoding requests, and the raw message I/O on an RFB connection.
+#![allow(dead_code)]
 
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
@@ -192,12 +193,7 @@ impl RfbConnection {
     }
 
     /// PointerEvent (message type 5).
-    pub fn send_pointer_event(
-        &mut self,
-        button_mask: u8,
-        x: u16,
-        y: u16,
-    ) -> Result<(), ArdError> {
+    pub fn send_pointer_event(&mut self, button_mask: u8, x: u16, y: u16) -> Result<(), ArdError> {
         let mut msg = [0u8; 6];
         msg[0] = client_msg::POINTER_EVENT;
         msg[1] = button_mask;
@@ -272,8 +268,8 @@ pub mod encoding {
     pub const ZRLE: i32 = 16;
 
     // Pseudo-encodings
-    pub const CURSOR: i32 = -239;         // 0xFFFFFF11
-    pub const DESKTOP_SIZE: i32 = -223;   // 0xFFFFFF21
+    pub const CURSOR: i32 = -239; // 0xFFFFFF11
+    pub const DESKTOP_SIZE: i32 = -223; // 0xFFFFFF21
 
     // Apple pseudo-encodings
     pub const APPLE_JPEG: i32 = 0x574D5600_u32 as i32;

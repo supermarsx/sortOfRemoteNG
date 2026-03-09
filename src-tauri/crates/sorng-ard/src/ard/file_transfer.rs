@@ -3,6 +3,7 @@
 //! Uses the Apple file-transfer pseudo-encoding (`0x574D5602`) to transfer
 //! files and browse remote directories. Messages are tunnelled inside
 //! `ClientCutText` (type 6) with a `0xFE, 0xFE, 0xFE` marker in the padding.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 
@@ -78,11 +79,7 @@ pub enum TransferState {
 // ── Outbound protocol messages ───────────────────────────────────────────
 
 /// Build and send a file-transfer sub-command message.
-fn send_ft_message(
-    conn: &mut RfbConnection,
-    subcmd: u8,
-    payload: &[u8],
-) -> Result<(), ArdError> {
+fn send_ft_message(conn: &mut RfbConnection, subcmd: u8, payload: &[u8]) -> Result<(), ArdError> {
     // Total inner payload: 1 byte subcmd + payload
     let inner_len = 1 + payload.len();
 

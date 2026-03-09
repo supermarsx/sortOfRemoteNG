@@ -2,6 +2,7 @@
 //!
 //! Supports the standard encodings (Raw, CopyRect, RRE, Hextile, ZRLE)
 //! plus Apple-specific JPEG encoding used by ARD servers.
+#![allow(dead_code)]
 
 use flate2::read::ZlibDecoder;
 use std::io::Read;
@@ -348,7 +349,7 @@ impl EncodingDecoder {
                             }
                         }
                     }
-                } else if subencoding >= 2 && subencoding <= 16 {
+                } else if (2..=16).contains(&subencoding) {
                     let palette_size = subencoding as usize;
                     let mut palette = Vec::with_capacity(palette_size);
                     for _ in 0..palette_size {
@@ -430,10 +431,7 @@ impl EncodingDecoder {
                         let pal_idx_byte = read_u8_from(&mut decoder)?;
                         let run = pal_idx_byte & 0x80 != 0;
                         let pal_idx = (pal_idx_byte & 0x7F) as usize;
-                        let color = palette
-                            .get(pal_idx)
-                            .cloned()
-                            .unwrap_or([0, 0, 0, 255]);
+                        let color = palette.get(pal_idx).cloned().unwrap_or([0, 0, 0, 255]);
 
                         let run_len = if run {
                             read_rle_length(&mut decoder)? + 1
@@ -564,7 +562,7 @@ impl EncodingDecoder {
         let mut cursor_data = vec![0u8; pixel_count * bpp];
         conn.read_exact(&mut cursor_data)?;
 
-        let mask_row_bytes = (w + 7) / 8;
+        let mask_row_bytes = w.div_ceil(8);
         let mut mask = vec![0u8; mask_row_bytes * h];
         conn.read_exact(&mut mask)?;
 
@@ -624,11 +622,7 @@ fn read_u8_from<R: Read>(r: &mut R) -> Result<u8, ArdError> {
     Ok(buf[0])
 }
 
-fn read_cpixel<R: Read>(
-    r: &mut R,
-    cpix_len: usize,
-    pf: &PixelFormat,
-) -> Result<[u8; 4], ArdError> {
+fn read_cpixel<R: Read>(r: &mut R, cpix_len: usize, pf: &PixelFormat) -> Result<[u8; 4], ArdError> {
     let mut buf = [0u8; 4];
     r.read_exact(&mut buf[..cpix_len])
         .map_err(|e| ArdError::Decoding(format!("CPIXEL read: {e}")))?;

@@ -2,6 +2,7 @@
 //!
 //! Manages the lifecycle of a single ARD connection: handshake, authentication,
 //! framebuffer update loop, input dispatch, and reconnection.
+#![allow(dead_code)]
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -20,8 +21,7 @@ use super::input::{self, PointerState};
 use super::pixel_format::PixelFormat;
 use super::rfb::{self, RfbConnection, RfbVersion, ServerInit};
 use super::types::{
-    ArdCapabilities, ArdCommand, ArdInputAction, ArdSession, ArdSessionStats,
-    ArdStatusEvent,
+    ArdCapabilities, ArdCommand, ArdInputAction, ArdSession, ArdSessionStats, ArdStatusEvent,
 };
 
 /// Default Remote Desktop port used by ARD / macOS Screen Sharing.
@@ -120,7 +120,7 @@ pub fn launch_session(config: SessionConfig) -> SessionHandle {
         session_id,
         command_tx: cmd_tx,
         event_rx: evt_rx,
-        frame_rx: frame_rx,
+        frame_rx,
         stats,
         join_handle,
     }
@@ -142,10 +142,7 @@ async fn session_task(
             .send(ArdStatusEvent {
                 session_id: session_id.clone(),
                 status: "connecting".into(),
-                message: Some(format!(
-                    "Connecting to {}:{}",
-                    config.host, config.port
-                )),
+                message: Some(format!("Connecting to {}:{}", config.host, config.port)),
                 timestamp: Utc::now().to_rfc3339(),
             })
             .await;
@@ -234,9 +231,7 @@ async fn run_session(
     .map_err(ArdError::Io)?;
 
     let std_stream = stream.into_std().map_err(ArdError::Io)?;
-    std_stream
-        .set_nonblocking(false)
-        .map_err(ArdError::Io)?;
+    std_stream.set_nonblocking(false).map_err(ArdError::Io)?;
     std_stream
         .set_read_timeout(Some(Duration::from_secs(30)))
         .ok();
@@ -280,9 +275,7 @@ async fn run_session(
         let result = conn.read_u32()?;
         if result != 0 {
             let reason = read_failure_reason(&mut conn);
-            return Err(ArdError::Auth(format!(
-                "Authentication failed: {reason}"
-            )));
+            return Err(ArdError::Auth(format!("Authentication failed: {reason}")));
         }
     }
 
@@ -309,10 +302,7 @@ async fn run_session(
     );
 
     // ── Set pixel format ─────────────────────────────────────────────
-    let pf = config
-        .pixel_format
-        .clone()
-        .unwrap_or(PixelFormat::ARGB8888);
+    let pf = config.pixel_format.clone().unwrap_or(PixelFormat::ARGB8888);
     conn.send_set_pixel_format(&pf)?;
 
     // ── Set encodings ────────────────────────────────────────────────
@@ -347,10 +337,7 @@ async fn run_session(
 }
 
 /// Negotiate security type with the server.
-fn negotiate_security(
-    conn: &mut RfbConnection,
-    version: &RfbVersion,
-) -> Result<u8, ArdError> {
+fn negotiate_security(conn: &mut RfbConnection, version: &RfbVersion) -> Result<u8, ArdError> {
     match version {
         RfbVersion::V3_3 => {
             // Server selects security type.
@@ -406,6 +393,7 @@ fn read_failure_reason(conn: &mut RfbConnection) -> String {
 
 /// The inner message loop: request framebuffer updates, process server
 /// messages, and handle commands from the UI.
+#[allow(clippy::too_many_arguments)]
 async fn message_loop(
     session_id: &str,
     _config: &SessionConfig,
@@ -547,6 +535,7 @@ async fn message_loop(
 }
 
 /// Process server messages from the RFB connection.
+#[allow(clippy::too_many_arguments)]
 async fn process_server_messages(
     session_id: &str,
     conn: &mut RfbConnection,
@@ -768,16 +757,15 @@ async fn handle_download(
     file_transfer::request_download(conn, remote_path)?;
 
     let mut file_data = Vec::new();
-    loop {
-        match file_transfer::read_download_chunk(conn)? {
-            file_transfer::DownloadChunk::Data { total_size: _, data } => {
-                stats
-                    .bytes_received
-                    .fetch_add(data.len() as u64, Ordering::Relaxed);
-                file_data.extend_from_slice(&data);
-            }
-            file_transfer::DownloadChunk::Complete => break,
-        }
+    while let file_transfer::DownloadChunk::Data {
+        total_size: _,
+        data,
+    } = file_transfer::read_download_chunk(conn)?
+    {
+        stats
+            .bytes_received
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
+        file_data.extend_from_slice(&data);
     }
 
     tokio::fs::write(local_path, &file_data)

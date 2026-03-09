@@ -21,6 +21,7 @@ use super::ArdServiceState;
 ///
 /// Returns the unique session ID.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn connect_ard(
     state: tauri::State<'_, ArdServiceState>,
     _app_handle: AppHandle,
@@ -139,10 +140,7 @@ pub async fn send_ard_input(
     let service = state.lock().await;
     let id = resolve_session_id(&service, session_id.as_deref(), connection_id.as_deref())
         .ok_or("No matching ARD session found")?;
-    let conn = service
-        .connections
-        .get(&id)
-        .ok_or("Session not found")?;
+    let conn = service.connections.get(&id).ok_or("Session not found")?;
 
     conn.command_tx
         .send(ArdCommand::Input(action))
@@ -366,13 +364,7 @@ pub async fn get_ard_logs(
 ) -> Result<Vec<ArdLogEntry>, String> {
     let service = state.lock().await;
     let max = limit.unwrap_or(200);
-    let entries: Vec<ArdLogEntry> = service
-        .log_buffer
-        .iter()
-        .rev()
-        .take(max)
-        .cloned()
-        .collect();
+    let entries: Vec<ArdLogEntry> = service.log_buffer.iter().rev().take(max).cloned().collect();
     Ok(entries)
 }
 
