@@ -58,9 +58,7 @@ pub fn probe_dns(
                     status: "fail".into(),
                     message: format!("DNS returned no addresses for {host}"),
                     duration_ms: t.elapsed().as_millis() as u64,
-                    detail: Some(
-                        "Verify the hostname is correct and DNS is configured".into(),
-                    ),
+                    detail: Some("Verify the hostname is correct and DNS is configured".into()),
                 });
                 return (None, None, Vec::new());
             }
@@ -75,7 +73,12 @@ pub fn probe_dns(
             steps.push(DiagnosticStep {
                 name: "DNS Resolution".into(),
                 status: "pass".into(),
-                message: format!("{host} → {} ({} address{})", ip_str, all_ips.len(), if all_ips.len() > 1 { "es" } else { "" }),
+                message: format!(
+                    "{host} → {} ({} address{})",
+                    ip_str,
+                    all_ips.len(),
+                    if all_ips.len() > 1 { "es" } else { "" }
+                ),
                 duration_ms: t.elapsed().as_millis() as u64,
                 detail,
             });
@@ -111,7 +114,10 @@ pub fn probe_tcp(
             steps.push(DiagnosticStep {
                 name: "TCP Connect".into(),
                 status: "pass".into(),
-                message: format!("Connected to {socket_addr} in {}ms", t.elapsed().as_millis()),
+                message: format!(
+                    "Connected to {socket_addr} in {}ms",
+                    t.elapsed().as_millis()
+                ),
                 duration_ms: t.elapsed().as_millis() as u64,
                 detail: None,
             });
@@ -182,7 +188,9 @@ pub fn probe_banner(
                 steps.push(DiagnosticStep {
                     name: step_name.into(),
                     status: "info".into(),
-                    message: "No banner received within timeout (server waits for client to speak first)".into(),
+                    message:
+                        "No banner received within timeout (server waits for client to speak first)"
+                            .into(),
                     duration_ms: t.elapsed().as_millis() as u64,
                     detail: None,
                 });
@@ -211,13 +219,14 @@ pub fn finish_report(
     steps: Vec<DiagnosticStep>,
     start: Instant,
 ) -> DiagnosticReport {
-    let all_pass = steps.iter().all(|s| s.status == "pass" || s.status == "info");
+    let all_pass = steps
+        .iter()
+        .all(|s| s.status == "pass" || s.status == "info");
     let first_fail = steps.iter().find(|s| s.status == "fail");
     let any_warn = steps.iter().any(|s| s.status == "warn");
     let root_cause = steps
         .iter()
-        .filter(|s| s.name == "Root Cause Analysis")
-        .last()
+        .rfind(|s| s.name == "Root Cause Analysis")
         .and_then(|s| s.detail.clone());
 
     let summary = if all_pass {
@@ -285,14 +294,19 @@ pub fn probe_ports_parallel(
                 })
             })
             .collect();
-        handles
-            .into_iter()
-            .filter_map(|h| h.join().ok())
-            .collect()
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
     });
 
-    let open: Vec<u16> = results.iter().filter(|(_, o)| *o).map(|(p, _)| *p).collect();
-    let closed: Vec<u16> = results.iter().filter(|(_, o)| !*o).map(|(p, _)| *p).collect();
+    let open: Vec<u16> = results
+        .iter()
+        .filter(|(_, o)| *o)
+        .map(|(p, _)| *p)
+        .collect();
+    let closed: Vec<u16> = results
+        .iter()
+        .filter(|(_, o)| !*o)
+        .map(|(p, _)| *p)
+        .collect();
 
     steps.push(DiagnosticStep {
         name: "Port Scan".into(),
@@ -304,12 +318,19 @@ pub fn probe_ports_parallel(
             if open.is_empty() {
                 "none".to_string()
             } else {
-                open.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+                open.iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             },
             if closed.is_empty() {
                 "none".to_string()
             } else {
-                closed.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+                closed
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             },
         ),
         duration_ms: t.elapsed().as_millis() as u64,
@@ -455,10 +476,29 @@ mod tests {
     #[test]
     fn finish_report_all_pass() {
         let steps = vec![
-            DiagnosticStep { name: "A".into(), status: "pass".into(), message: "ok".into(), duration_ms: 1, detail: None },
-            DiagnosticStep { name: "B".into(), status: "info".into(), message: "ok".into(), duration_ms: 2, detail: None },
+            DiagnosticStep {
+                name: "A".into(),
+                status: "pass".into(),
+                message: "ok".into(),
+                duration_ms: 1,
+                detail: None,
+            },
+            DiagnosticStep {
+                name: "B".into(),
+                status: "info".into(),
+                message: "ok".into(),
+                duration_ms: 2,
+                detail: None,
+            },
         ];
-        let report = finish_report("host", 22, "SSH", Some("1.2.3.4".into()), steps, Instant::now());
+        let report = finish_report(
+            "host",
+            22,
+            "SSH",
+            Some("1.2.3.4".into()),
+            steps,
+            Instant::now(),
+        );
         assert!(report.summary.contains("All diagnostic probes passed"));
         assert!(report.root_cause_hint.is_none());
         assert_eq!(report.host, "host");
@@ -470,8 +510,20 @@ mod tests {
     #[test]
     fn finish_report_with_failure() {
         let steps = vec![
-            DiagnosticStep { name: "DNS".into(), status: "pass".into(), message: "ok".into(), duration_ms: 1, detail: None },
-            DiagnosticStep { name: "TCP".into(), status: "fail".into(), message: "refused".into(), duration_ms: 2, detail: None },
+            DiagnosticStep {
+                name: "DNS".into(),
+                status: "pass".into(),
+                message: "ok".into(),
+                duration_ms: 1,
+                detail: None,
+            },
+            DiagnosticStep {
+                name: "TCP".into(),
+                status: "fail".into(),
+                message: "refused".into(),
+                duration_ms: 2,
+                detail: None,
+            },
         ];
         let report = finish_report("host", 22, "SSH", None, steps, Instant::now());
         assert!(report.summary.contains("TCP"));
@@ -480,9 +532,13 @@ mod tests {
 
     #[test]
     fn finish_report_with_warning_only() {
-        let steps = vec![
-            DiagnosticStep { name: "Banner".into(), status: "warn".into(), message: "no banner".into(), duration_ms: 1, detail: None },
-        ];
+        let steps = vec![DiagnosticStep {
+            name: "Banner".into(),
+            status: "warn".into(),
+            message: "no banner".into(),
+            duration_ms: 1,
+            detail: None,
+        }];
         let report = finish_report("host", 80, "HTTP", None, steps, Instant::now());
         assert!(report.summary.contains("warnings"));
     }
@@ -490,11 +546,26 @@ mod tests {
     #[test]
     fn finish_report_extracts_root_cause() {
         let steps = vec![
-            DiagnosticStep { name: "DNS".into(), status: "pass".into(), message: "ok".into(), duration_ms: 1, detail: None },
-            DiagnosticStep { name: "Root Cause Analysis".into(), status: "info".into(), message: "hint".into(), duration_ms: 1, detail: Some("firewall is blocking".into()) },
+            DiagnosticStep {
+                name: "DNS".into(),
+                status: "pass".into(),
+                message: "ok".into(),
+                duration_ms: 1,
+                detail: None,
+            },
+            DiagnosticStep {
+                name: "Root Cause Analysis".into(),
+                status: "info".into(),
+                message: "hint".into(),
+                duration_ms: 1,
+                detail: Some("firewall is blocking".into()),
+            },
         ];
         let report = finish_report("host", 22, "SSH", None, steps, Instant::now());
-        assert_eq!(report.root_cause_hint.as_deref(), Some("firewall is blocking"));
+        assert_eq!(
+            report.root_cause_hint.as_deref(),
+            Some("firewall is blocking")
+        );
     }
 
     #[test]
@@ -532,7 +603,12 @@ mod tests {
     #[test]
     fn probe_ports_parallel_invalid_host() {
         let mut steps = Vec::new();
-        probe_ports_parallel("this.host.does.not.exist.invalid", &[80, 443], Duration::from_millis(100), &mut steps);
+        probe_ports_parallel(
+            "this.host.does.not.exist.invalid",
+            &[80, 443],
+            Duration::from_millis(100),
+            &mut steps,
+        );
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].status, "fail");
         assert!(steps[0].message.contains("Cannot resolve"));
@@ -541,7 +617,12 @@ mod tests {
     #[test]
     fn probe_ports_parallel_multiple_ports() {
         let mut steps = Vec::new();
-        probe_ports_parallel("127.0.0.1", &[1, 2, 3], Duration::from_millis(200), &mut steps);
+        probe_ports_parallel(
+            "127.0.0.1",
+            &[1, 2, 3],
+            Duration::from_millis(200),
+            &mut steps,
+        );
         assert_eq!(steps.len(), 1);
         assert!(steps[0].message.contains("3 ports"));
     }

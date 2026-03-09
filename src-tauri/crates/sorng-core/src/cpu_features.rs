@@ -109,11 +109,21 @@ impl CpuCapabilities {
     /// Summarise which performance tiers are available.
     pub fn tier_summary(&self) -> String {
         let mut parts = Vec::new();
-        if self.tier_aes_gcm      { parts.push("AES-GCM(hw)"); }
-        if self.tier_sha_accel    { parts.push("SHA(hw)"); }
-        if self.tier_avx2_full    { parts.push("AVX2+BMI2"); }
-        if self.tier_wide_crypto  { parts.push("WideCrypto(AVX-512)"); }
-        if self.tier_hw_rng       { parts.push("HW-RNG"); }
+        if self.tier_aes_gcm {
+            parts.push("AES-GCM(hw)");
+        }
+        if self.tier_sha_accel {
+            parts.push("SHA(hw)");
+        }
+        if self.tier_avx2_full {
+            parts.push("AVX2+BMI2");
+        }
+        if self.tier_wide_crypto {
+            parts.push("WideCrypto(AVX-512)");
+        }
+        if self.tier_hw_rng {
+            parts.push("HW-RNG");
+        }
         if parts.is_empty() {
             "baseline (no hardware acceleration beyond SSE2)".to_string()
         } else {
@@ -153,74 +163,104 @@ pub fn detect() -> CpuCapabilities {
 #[cfg(target_arch = "x86_64")]
 fn detect_x86_64() -> CpuCapabilities {
     // ── Individual feature probes ────────────────────────────────────
-    let has_sse2      = is_x86_feature_detected!("sse2");
-    let has_sse3      = is_x86_feature_detected!("sse3");
-    let has_ssse3     = is_x86_feature_detected!("ssse3");
-    let has_sse41     = is_x86_feature_detected!("sse4.1");
-    let has_sse42     = is_x86_feature_detected!("sse4.2");
-    let has_avx       = is_x86_feature_detected!("avx");
-    let has_avx2      = is_x86_feature_detected!("avx2");
-    let has_fma       = is_x86_feature_detected!("fma");
-    let has_f16c      = is_x86_feature_detected!("f16c");
-    let has_avx512f   = is_x86_feature_detected!("avx512f");
-    let has_avx512bw  = is_x86_feature_detected!("avx512bw");
-    let has_avx512cd  = is_x86_feature_detected!("avx512cd");
-    let has_avx512dq  = is_x86_feature_detected!("avx512dq");
-    let has_avx512vl  = is_x86_feature_detected!("avx512vl");
-    let has_avx512vnni  = is_x86_feature_detected!("avx512vnni");
-    let has_avx512vbmi  = is_x86_feature_detected!("avx512vbmi");
+    let has_sse2 = is_x86_feature_detected!("sse2");
+    let has_sse3 = is_x86_feature_detected!("sse3");
+    let has_ssse3 = is_x86_feature_detected!("ssse3");
+    let has_sse41 = is_x86_feature_detected!("sse4.1");
+    let has_sse42 = is_x86_feature_detected!("sse4.2");
+    let has_avx = is_x86_feature_detected!("avx");
+    let has_avx2 = is_x86_feature_detected!("avx2");
+    let has_fma = is_x86_feature_detected!("fma");
+    let has_f16c = is_x86_feature_detected!("f16c");
+    let has_avx512f = is_x86_feature_detected!("avx512f");
+    let has_avx512bw = is_x86_feature_detected!("avx512bw");
+    let has_avx512cd = is_x86_feature_detected!("avx512cd");
+    let has_avx512dq = is_x86_feature_detected!("avx512dq");
+    let has_avx512vl = is_x86_feature_detected!("avx512vl");
+    let has_avx512vnni = is_x86_feature_detected!("avx512vnni");
+    let has_avx512vbmi = is_x86_feature_detected!("avx512vbmi");
     let has_avx512vbmi2 = is_x86_feature_detected!("avx512vbmi2");
     let has_avx512bitalg = is_x86_feature_detected!("avx512bitalg");
-    let has_avx512ifma  = is_x86_feature_detected!("avx512ifma");
+    let has_avx512ifma = is_x86_feature_detected!("avx512ifma");
     let has_avx512vpopcntdq = is_x86_feature_detected!("avx512vpopcntdq");
-    let has_aes_ni    = is_x86_feature_detected!("aes");
-    let has_vaes      = is_x86_feature_detected!("vaes");
+    let has_aes_ni = is_x86_feature_detected!("aes");
+    let has_vaes = is_x86_feature_detected!("vaes");
     let has_pclmulqdq = is_x86_feature_detected!("pclmulqdq");
     let has_vpclmulqdq = is_x86_feature_detected!("vpclmulqdq");
-    let has_sha_ni    = is_x86_feature_detected!("sha");
-    let has_gfni      = is_x86_feature_detected!("gfni");
-    let has_bmi1      = is_x86_feature_detected!("bmi1");
-    let has_bmi2      = is_x86_feature_detected!("bmi2");
-    let has_adx       = is_x86_feature_detected!("adx");
-    let has_popcnt    = is_x86_feature_detected!("popcnt");
-    let has_lzcnt     = is_x86_feature_detected!("lzcnt");
-    let has_avxvnni   = is_x86_feature_detected!("avxvnni");
-    let has_rdrand    = is_x86_feature_detected!("rdrand");
-    let has_rdseed    = is_x86_feature_detected!("rdseed");
+    let has_sha_ni = is_x86_feature_detected!("sha");
+    let has_gfni = is_x86_feature_detected!("gfni");
+    let has_bmi1 = is_x86_feature_detected!("bmi1");
+    let has_bmi2 = is_x86_feature_detected!("bmi2");
+    let has_adx = is_x86_feature_detected!("adx");
+    let has_popcnt = is_x86_feature_detected!("popcnt");
+    let has_lzcnt = is_x86_feature_detected!("lzcnt");
+    let has_avxvnni = is_x86_feature_detected!("avxvnni");
+    let has_rdrand = is_x86_feature_detected!("rdrand");
+    let has_rdseed = is_x86_feature_detected!("rdseed");
 
     // ── Derived tiers ────────────────────────────────────────────────
-    let tier_aes_gcm     = has_aes_ni && has_pclmulqdq;
-    let tier_sha_accel   = has_sha_ni;
-    let tier_avx2_full   = has_avx2 && has_bmi2;
+    let tier_aes_gcm = has_aes_ni && has_pclmulqdq;
+    let tier_sha_accel = has_sha_ni;
+    let tier_avx2_full = has_avx2 && has_bmi2;
     let tier_wide_crypto = has_vaes && has_vpclmulqdq && has_avx512f;
-    let tier_hw_rng      = has_rdrand && has_rdseed;
+    let tier_hw_rng = has_rdrand && has_rdseed;
 
     // ── x86-64 micro-architecture level (psABI v1.0) ────────────────
     // v1: baseline (SSE2)
     // v2: SSE4.2 + POPCNT + CMPXCHG16B + LAHF
     // v3: AVX2 + BMI1 + BMI2 + FMA + F16C + LZCNT + MOVBE
     // v4: AVX-512F + AVX-512BW + AVX-512CD + AVX-512DQ + AVX-512VL
-    let x86_64_level = if has_avx512f && has_avx512bw && has_avx512cd
-                           && has_avx512dq && has_avx512vl {
-        4
-    } else if has_avx2 && has_bmi1 && has_bmi2 && has_fma && has_f16c && has_lzcnt {
-        3
-    } else if has_sse42 && has_popcnt {
-        2
-    } else {
-        1
-    };
+    let x86_64_level =
+        if has_avx512f && has_avx512bw && has_avx512cd && has_avx512dq && has_avx512vl {
+            4
+        } else if has_avx2 && has_bmi1 && has_bmi2 && has_fma && has_f16c && has_lzcnt {
+            3
+        } else if has_sse42 && has_popcnt {
+            2
+        } else {
+            1
+        };
 
     CpuCapabilities {
-        has_sse2, has_sse3, has_ssse3, has_sse41, has_sse42,
-        has_avx, has_avx2, has_fma, has_f16c,
-        has_avx512f, has_avx512bw, has_avx512cd, has_avx512dq, has_avx512vl,
-        has_avx512vnni, has_avx512vbmi, has_avx512vbmi2,
-        has_avx512bitalg, has_avx512ifma, has_avx512vpopcntdq,
-        has_aes_ni, has_vaes, has_pclmulqdq, has_vpclmulqdq, has_sha_ni, has_gfni,
-        has_bmi1, has_bmi2, has_adx, has_popcnt, has_lzcnt, has_avxvnni,
-        has_rdrand, has_rdseed,
-        tier_aes_gcm, tier_sha_accel, tier_avx2_full, tier_wide_crypto, tier_hw_rng,
+        has_sse2,
+        has_sse3,
+        has_ssse3,
+        has_sse41,
+        has_sse42,
+        has_avx,
+        has_avx2,
+        has_fma,
+        has_f16c,
+        has_avx512f,
+        has_avx512bw,
+        has_avx512cd,
+        has_avx512dq,
+        has_avx512vl,
+        has_avx512vnni,
+        has_avx512vbmi,
+        has_avx512vbmi2,
+        has_avx512bitalg,
+        has_avx512ifma,
+        has_avx512vpopcntdq,
+        has_aes_ni,
+        has_vaes,
+        has_pclmulqdq,
+        has_vpclmulqdq,
+        has_sha_ni,
+        has_gfni,
+        has_bmi1,
+        has_bmi2,
+        has_adx,
+        has_popcnt,
+        has_lzcnt,
+        has_avxvnni,
+        has_rdrand,
+        has_rdseed,
+        tier_aes_gcm,
+        tier_sha_accel,
+        tier_avx2_full,
+        tier_wide_crypto,
+        tier_hw_rng,
         x86_64_level,
     }
 }
@@ -229,20 +269,45 @@ fn detect_x86_64() -> CpuCapabilities {
 fn detect_fallback() -> CpuCapabilities {
     // On non-x86_64 (ARM, etc.) everything reports false.
     CpuCapabilities {
-        has_sse2: false, has_sse3: false, has_ssse3: false,
-        has_sse41: false, has_sse42: false,
-        has_avx: false, has_avx2: false, has_fma: false, has_f16c: false,
-        has_avx512f: false, has_avx512bw: false, has_avx512cd: false,
-        has_avx512dq: false, has_avx512vl: false,
-        has_avx512vnni: false, has_avx512vbmi: false, has_avx512vbmi2: false,
-        has_avx512bitalg: false, has_avx512ifma: false, has_avx512vpopcntdq: false,
-        has_aes_ni: false, has_vaes: false, has_pclmulqdq: false,
-        has_vpclmulqdq: false, has_sha_ni: false, has_gfni: false,
-        has_bmi1: false, has_bmi2: false, has_adx: false,
-        has_popcnt: false, has_lzcnt: false, has_avxvnni: false,
-        has_rdrand: false, has_rdseed: false,
-        tier_aes_gcm: false, tier_sha_accel: false,
-        tier_avx2_full: false, tier_wide_crypto: false, tier_hw_rng: false,
+        has_sse2: false,
+        has_sse3: false,
+        has_ssse3: false,
+        has_sse41: false,
+        has_sse42: false,
+        has_avx: false,
+        has_avx2: false,
+        has_fma: false,
+        has_f16c: false,
+        has_avx512f: false,
+        has_avx512bw: false,
+        has_avx512cd: false,
+        has_avx512dq: false,
+        has_avx512vl: false,
+        has_avx512vnni: false,
+        has_avx512vbmi: false,
+        has_avx512vbmi2: false,
+        has_avx512bitalg: false,
+        has_avx512ifma: false,
+        has_avx512vpopcntdq: false,
+        has_aes_ni: false,
+        has_vaes: false,
+        has_pclmulqdq: false,
+        has_vpclmulqdq: false,
+        has_sha_ni: false,
+        has_gfni: false,
+        has_bmi1: false,
+        has_bmi2: false,
+        has_adx: false,
+        has_popcnt: false,
+        has_lzcnt: false,
+        has_avxvnni: false,
+        has_rdrand: false,
+        has_rdseed: false,
+        tier_aes_gcm: false,
+        tier_sha_accel: false,
+        tier_avx2_full: false,
+        tier_wide_crypto: false,
+        tier_hw_rng: false,
         x86_64_level: 0,
     }
 }
@@ -266,57 +331,72 @@ pub fn log_all_features() {
     log::info!("Performance tiers: {}", caps.tier_summary());
 
     // ── Detailed per-category logging ────────────────────────────────
-    log_category("Baseline SIMD", &[
-        ("SSE2",   caps.has_sse2),
-        ("SSE3",   caps.has_sse3),
-        ("SSSE3",  caps.has_ssse3),
-        ("SSE4.1", caps.has_sse41),
-        ("SSE4.2", caps.has_sse42),
-    ]);
+    log_category(
+        "Baseline SIMD",
+        &[
+            ("SSE2", caps.has_sse2),
+            ("SSE3", caps.has_sse3),
+            ("SSSE3", caps.has_ssse3),
+            ("SSE4.1", caps.has_sse41),
+            ("SSE4.2", caps.has_sse42),
+        ],
+    );
 
-    log_category("Advanced SIMD", &[
-        ("AVX",  caps.has_avx),
-        ("AVX2", caps.has_avx2),
-        ("FMA",  caps.has_fma),
-        ("F16C", caps.has_f16c),
-    ]);
+    log_category(
+        "Advanced SIMD",
+        &[
+            ("AVX", caps.has_avx),
+            ("AVX2", caps.has_avx2),
+            ("FMA", caps.has_fma),
+            ("F16C", caps.has_f16c),
+        ],
+    );
 
-    log_category("AVX-512", &[
-        ("AVX-512F",         caps.has_avx512f),
-        ("AVX-512BW",        caps.has_avx512bw),
-        ("AVX-512CD",        caps.has_avx512cd),
-        ("AVX-512DQ",        caps.has_avx512dq),
-        ("AVX-512VL",        caps.has_avx512vl),
-        ("AVX-512VNNI",      caps.has_avx512vnni),
-        ("AVX-512VBMI",      caps.has_avx512vbmi),
-        ("AVX-512VBMI2",     caps.has_avx512vbmi2),
-        ("AVX-512BITALG",    caps.has_avx512bitalg),
-        ("AVX-512IFMA",      caps.has_avx512ifma),
-        ("AVX-512VPOPCNTDQ", caps.has_avx512vpopcntdq),
-    ]);
+    log_category(
+        "AVX-512",
+        &[
+            ("AVX-512F", caps.has_avx512f),
+            ("AVX-512BW", caps.has_avx512bw),
+            ("AVX-512CD", caps.has_avx512cd),
+            ("AVX-512DQ", caps.has_avx512dq),
+            ("AVX-512VL", caps.has_avx512vl),
+            ("AVX-512VNNI", caps.has_avx512vnni),
+            ("AVX-512VBMI", caps.has_avx512vbmi),
+            ("AVX-512VBMI2", caps.has_avx512vbmi2),
+            ("AVX-512BITALG", caps.has_avx512bitalg),
+            ("AVX-512IFMA", caps.has_avx512ifma),
+            ("AVX-512VPOPCNTDQ", caps.has_avx512vpopcntdq),
+        ],
+    );
 
-    log_category("Cryptography", &[
-        ("AES-NI",      caps.has_aes_ni),
-        ("VAES",        caps.has_vaes),
-        ("PCLMULQDQ",   caps.has_pclmulqdq),
-        ("VPCLMULQDQ",  caps.has_vpclmulqdq),
-        ("SHA-NI",       caps.has_sha_ni),
-        ("GFNI",         caps.has_gfni),
-    ]);
+    log_category(
+        "Cryptography",
+        &[
+            ("AES-NI", caps.has_aes_ni),
+            ("VAES", caps.has_vaes),
+            ("PCLMULQDQ", caps.has_pclmulqdq),
+            ("VPCLMULQDQ", caps.has_vpclmulqdq),
+            ("SHA-NI", caps.has_sha_ni),
+            ("GFNI", caps.has_gfni),
+        ],
+    );
 
-    log_category("Bit manipulation & integer", &[
-        ("BMI1",    caps.has_bmi1),
-        ("BMI2",    caps.has_bmi2),
-        ("ADX",     caps.has_adx),
-        ("POPCNT",  caps.has_popcnt),
-        ("LZCNT",   caps.has_lzcnt),
-        ("AVXVNNI", caps.has_avxvnni),
-    ]);
+    log_category(
+        "Bit manipulation & integer",
+        &[
+            ("BMI1", caps.has_bmi1),
+            ("BMI2", caps.has_bmi2),
+            ("ADX", caps.has_adx),
+            ("POPCNT", caps.has_popcnt),
+            ("LZCNT", caps.has_lzcnt),
+            ("AVXVNNI", caps.has_avxvnni),
+        ],
+    );
 
-    log_category("Hardware entropy", &[
-        ("RDRAND", caps.has_rdrand),
-        ("RDSEED", caps.has_rdseed),
-    ]);
+    log_category(
+        "Hardware entropy",
+        &[("RDRAND", caps.has_rdrand), ("RDSEED", caps.has_rdseed)],
+    );
 
     // ── Impact notes ─────────────────────────────────────────────────
     if caps.tier_aes_gcm {
@@ -390,10 +470,23 @@ fn log_compile_time_features() {
     }
 
     check_ct!(
-        "sse2", "sse3", "ssse3", "sse4.1", "sse4.2",
-        "avx", "avx2", "fma", "f16c",
-        "aes", "sha", "pclmulqdq",
-        "bmi1", "bmi2", "adx", "popcnt", "lzcnt",
+        "sse2",
+        "sse3",
+        "ssse3",
+        "sse4.1",
+        "sse4.2",
+        "avx",
+        "avx2",
+        "fma",
+        "f16c",
+        "aes",
+        "sha",
+        "pclmulqdq",
+        "bmi1",
+        "bmi2",
+        "adx",
+        "popcnt",
+        "lzcnt",
     );
 
     if !enabled.is_empty() {
@@ -439,11 +532,13 @@ fn log_compile_time_features() {
 
 /// Helper: log a named category of features, showing present/absent.
 fn log_category(category: &str, features: &[(&str, bool)]) {
-    let present: Vec<&str> = features.iter()
+    let present: Vec<&str> = features
+        .iter()
         .filter(|(_, ok)| *ok)
         .map(|(name, _)| *name)
         .collect();
-    let absent: Vec<&str> = features.iter()
+    let absent: Vec<&str> = features
+        .iter()
         .filter(|(_, ok)| !*ok)
         .map(|(name, _)| *name)
         .collect();

@@ -30,6 +30,7 @@ pub enum RenderBackend {
 }
 
 impl RenderBackend {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "softbuffer" => Self::Softbuffer,
@@ -38,7 +39,6 @@ impl RenderBackend {
             _ => Self::Webview,
         }
     }
-
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Webview => "webview",
@@ -79,15 +79,7 @@ pub struct CompositorFrame {
 pub trait FrameCompositor: Send {
     /// Copy a dirty rectangle from the IronRDP decoded image into
     /// the compositor's internal buffer.
-    fn update_region(
-        &mut self,
-        image_data: &[u8],
-        fb_width: u16,
-        x: u16,
-        y: u16,
-        w: u16,
-        h: u16,
-    );
+    fn update_region(&mut self, image_data: &[u8], fb_width: u16, x: u16, y: u16, w: u16, h: u16);
 
     /// The remote desktop was resized — reallocate internal buffers.
     fn resize_desktop(&mut self, width: u16, height: u16);
@@ -144,15 +136,7 @@ impl SoftbufferCompositor {
 }
 
 impl FrameCompositor for SoftbufferCompositor {
-    fn update_region(
-        &mut self,
-        image_data: &[u8],
-        fb_width: u16,
-        x: u16,
-        y: u16,
-        w: u16,
-        h: u16,
-    ) {
+    fn update_region(&mut self, image_data: &[u8], fb_width: u16, x: u16, y: u16, w: u16, h: u16) {
         if w == 0 || h == 0 {
             return;
         }
@@ -237,7 +221,8 @@ impl FrameCompositor for SoftbufferCompositor {
         for row in 0..h as usize {
             let src_y = y as usize + row;
             let start = src_y * stride + x as usize * bpp;
-            self.flush_buffer.extend_from_slice(&self.shadow[start..start + row_bytes]);
+            self.flush_buffer
+                .extend_from_slice(&self.shadow[start..start + row_bytes]);
         }
 
         // Move the buffer out.  Channel::send() takes ownership, so the
@@ -281,17 +266,8 @@ impl WgpuCompositor {
 }
 
 impl FrameCompositor for WgpuCompositor {
-    fn update_region(
-        &mut self,
-        image_data: &[u8],
-        fb_width: u16,
-        x: u16,
-        y: u16,
-        w: u16,
-        h: u16,
-    ) {
-        self.inner
-            .update_region(image_data, fb_width, x, y, w, h);
+    fn update_region(&mut self, image_data: &[u8], fb_width: u16, x: u16, y: u16, w: u16, h: u16) {
+        self.inner.update_region(image_data, fb_width, x, y, w, h);
     }
 
     fn resize_desktop(&mut self, width: u16, height: u16) {
