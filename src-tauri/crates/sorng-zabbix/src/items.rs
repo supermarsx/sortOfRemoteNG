@@ -29,34 +29,22 @@ pub enum ValueType {
 
 impl ItemManager {
     /// Retrieve items.  method: item.get
-    pub async fn get(
-        client: &ZabbixClient,
-        params: Value,
-    ) -> Result<Vec<ZabbixItem>, ZabbixError> {
+    pub async fn get(client: &ZabbixClient, params: Value) -> Result<Vec<ZabbixItem>, ZabbixError> {
         client.request_typed("item.get", params).await
     }
 
     /// Create an item.  method: item.create
-    pub async fn create(
-        client: &ZabbixClient,
-        item: &ZabbixItem,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create(client: &ZabbixClient, item: &ZabbixItem) -> Result<Value, ZabbixError> {
         client.request("item.create", item).await
     }
 
     /// Update an item.  method: item.update
-    pub async fn update(
-        client: &ZabbixClient,
-        item: &ZabbixItem,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn update(client: &ZabbixClient, item: &ZabbixItem) -> Result<Value, ZabbixError> {
         client.request("item.update", item).await
     }
 
     /// Delete items by IDs.  method: item.delete
-    pub async fn delete(
-        client: &ZabbixClient,
-        itemids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete(client: &ZabbixClient, itemids: Vec<String>) -> Result<Value, ZabbixError> {
         client.request("item.delete", itemids).await
     }
 }

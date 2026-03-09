@@ -18,26 +18,17 @@ impl ProxyManager {
     }
 
     /// Create a proxy.  method: proxy.create
-    pub async fn create(
-        client: &ZabbixClient,
-        proxy: &ZabbixProxy,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create(client: &ZabbixClient, proxy: &ZabbixProxy) -> Result<Value, ZabbixError> {
         client.request("proxy.create", proxy).await
     }
 
     /// Update a proxy.  method: proxy.update
-    pub async fn update(
-        client: &ZabbixClient,
-        proxy: &ZabbixProxy,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn update(client: &ZabbixClient, proxy: &ZabbixProxy) -> Result<Value, ZabbixError> {
         client.request("proxy.update", proxy).await
     }
 
     /// Delete proxies by IDs.  method: proxy.delete
-    pub async fn delete(
-        client: &ZabbixClient,
-        ids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete(client: &ZabbixClient, ids: Vec<String>) -> Result<Value, ZabbixError> {
         client.request("proxy.delete", ids).await
     }
 }

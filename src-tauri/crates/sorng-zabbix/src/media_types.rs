@@ -34,10 +34,7 @@ impl MediaTypeManager {
     }
 
     /// Delete media types by IDs.  method: mediatype.delete
-    pub async fn delete(
-        client: &ZabbixClient,
-        ids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete(client: &ZabbixClient, ids: Vec<String>) -> Result<Value, ZabbixError> {
         client.request("mediatype.delete", ids).await
     }
 }

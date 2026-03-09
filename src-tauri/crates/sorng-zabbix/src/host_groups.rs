@@ -34,10 +34,7 @@ impl HostGroupManager {
     }
 
     /// Delete host groups by IDs.  method: hostgroup.delete
-    pub async fn delete(
-        client: &ZabbixClient,
-        ids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete(client: &ZabbixClient, ids: Vec<String>) -> Result<Value, ZabbixError> {
         client.request("hostgroup.delete", ids).await
     }
 

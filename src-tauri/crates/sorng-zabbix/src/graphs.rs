@@ -18,18 +18,12 @@ impl GraphManager {
     }
 
     /// Create a graph.  method: graph.create
-    pub async fn create(
-        client: &ZabbixClient,
-        graph: &ZabbixGraph,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create(client: &ZabbixClient, graph: &ZabbixGraph) -> Result<Value, ZabbixError> {
         client.request("graph.create", graph).await
     }
 
     /// Update a graph.  method: graph.update
-    pub async fn update(
-        client: &ZabbixClient,
-        graph: &ZabbixGraph,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn update(client: &ZabbixClient, graph: &ZabbixGraph) -> Result<Value, ZabbixError> {
         client.request("graph.update", graph).await
     }
 

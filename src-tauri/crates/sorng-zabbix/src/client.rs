@@ -109,12 +109,7 @@ impl ZabbixClient {
         let method_name = body["method"].as_str().unwrap_or("unknown");
         debug!("ZABBIX RPC {method_name} -> {url}");
 
-        let resp = self
-            .http
-            .post(&url)
-            .json(&body)
-            .send()
-            .await?;
+        let resp = self.http.post(&url).json(&body).send().await?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -127,10 +122,7 @@ impl ZabbixClient {
         let envelope: Value = resp.json().await?;
 
         if let Some(err) = envelope.get("error") {
-            let code = err
-                .get("code")
-                .and_then(|c| c.as_i64())
-                .unwrap_or(-1) as i32;
+            let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(-1) as i32;
             let message = err
                 .get("message")
                 .and_then(|m| m.as_str())
@@ -160,9 +152,7 @@ impl ZabbixClient {
     pub fn version(&self) -> &str {
         self.auth_token
             .as_deref()
-            .map(|_| {
-                self.api_version.as_deref().unwrap_or("unknown")
-            })
+            .map(|_| self.api_version.as_deref().unwrap_or("unknown"))
             .unwrap_or("unknown")
     }
 
@@ -187,7 +177,8 @@ impl ZabbixClient {
             .request_typed("host.get", json!({"countOutput": true}))
             .await
             .unwrap_or_default();
-        let host_count = hosts.first()
+        let host_count = hosts
+            .first()
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<u64>().ok())
             .or_else(|| hosts.first().and_then(|v| v.as_u64()))
@@ -205,17 +196,18 @@ impl ZabbixClient {
         };
 
         let template_count = count_or(
-            self.request("template.get", json!({"countOutput": true})).await,
+            self.request("template.get", json!({"countOutput": true}))
+                .await,
         );
         let trigger_count = count_or(
-            self.request("trigger.get", json!({"countOutput": true})).await,
+            self.request("trigger.get", json!({"countOutput": true}))
+                .await,
         );
         let active_problems = count_or(
-            self.request("problem.get", json!({"countOutput": true})).await,
+            self.request("problem.get", json!({"countOutput": true}))
+                .await,
         );
-        let total_items = count_or(
-            self.request("item.get", json!({"countOutput": true})).await,
-        );
+        let total_items = count_or(self.request("item.get", json!({"countOutput": true})).await);
         let monitored_hosts = count_or(
             self.request(
                 "host.get",

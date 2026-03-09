@@ -69,10 +69,7 @@ impl ZabbixService {
             .ok_or_else(|| ZabbixError::ConnectionFailed(format!("no connection '{id}'")))
     }
 
-    pub async fn get_dashboard(
-        &self,
-        id: &str,
-    ) -> Result<ZabbixDashboard, ZabbixError> {
+    pub async fn get_dashboard(&self, id: &str) -> Result<ZabbixDashboard, ZabbixError> {
         self.client(id)?.get_dashboard().await
     }
 
@@ -86,11 +83,7 @@ impl ZabbixService {
         hosts::HostManager::get(self.client(id)?, params).await
     }
 
-    pub async fn get_host(
-        &self,
-        id: &str,
-        hostid: &str,
-    ) -> Result<ZabbixHost, ZabbixError> {
+    pub async fn get_host(&self, id: &str, hostid: &str) -> Result<ZabbixHost, ZabbixError> {
         let results: Vec<ZabbixHost> = hosts::HostManager::get(
             self.client(id)?,
             json!({"hostids": [hostid], "selectGroups": "extend", "selectInterfaces": "extend"}),
@@ -102,27 +95,15 @@ impl ZabbixService {
             .ok_or_else(|| ZabbixError::HostNotFound(hostid.to_string()))
     }
 
-    pub async fn create_host(
-        &self,
-        id: &str,
-        host: ZabbixHost,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create_host(&self, id: &str, host: ZabbixHost) -> Result<Value, ZabbixError> {
         hosts::HostManager::create(self.client(id)?, &host).await
     }
 
-    pub async fn update_host(
-        &self,
-        id: &str,
-        host: ZabbixHost,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn update_host(&self, id: &str, host: ZabbixHost) -> Result<Value, ZabbixError> {
         hosts::HostManager::update(self.client(id)?, &host).await
     }
 
-    pub async fn delete_hosts(
-        &self,
-        id: &str,
-        hostids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete_hosts(&self, id: &str, hostids: Vec<String>) -> Result<Value, ZabbixError> {
         hosts::HostManager::delete(self.client(id)?, hostids).await
     }
 
@@ -141,11 +122,9 @@ impl ZabbixService {
         id: &str,
         templateid: &str,
     ) -> Result<ZabbixTemplate, ZabbixError> {
-        let results: Vec<ZabbixTemplate> = templates::TemplateManager::get(
-            self.client(id)?,
-            json!({"templateids": [templateid]}),
-        )
-        .await?;
+        let results: Vec<ZabbixTemplate> =
+            templates::TemplateManager::get(self.client(id)?, json!({"templateids": [templateid]}))
+                .await?;
         results
             .into_iter()
             .next()
@@ -178,35 +157,20 @@ impl ZabbixService {
         items::ItemManager::get(self.client(id)?, params).await
     }
 
-    pub async fn get_item(
-        &self,
-        id: &str,
-        itemid: &str,
-    ) -> Result<ZabbixItem, ZabbixError> {
-        let results: Vec<ZabbixItem> = items::ItemManager::get(
-            self.client(id)?,
-            json!({"itemids": [itemid]}),
-        )
-        .await?;
+    pub async fn get_item(&self, id: &str, itemid: &str) -> Result<ZabbixItem, ZabbixError> {
+        let results: Vec<ZabbixItem> =
+            items::ItemManager::get(self.client(id)?, json!({"itemids": [itemid]})).await?;
         results
             .into_iter()
             .next()
             .ok_or_else(|| ZabbixError::ItemError(format!("item not found: {itemid}")))
     }
 
-    pub async fn create_item(
-        &self,
-        id: &str,
-        item: ZabbixItem,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create_item(&self, id: &str, item: ZabbixItem) -> Result<Value, ZabbixError> {
         items::ItemManager::create(self.client(id)?, &item).await
     }
 
-    pub async fn delete_items(
-        &self,
-        id: &str,
-        itemids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete_items(&self, id: &str, itemids: Vec<String>) -> Result<Value, ZabbixError> {
         items::ItemManager::delete(self.client(id)?, itemids).await
     }
 
@@ -262,11 +226,7 @@ impl ZabbixService {
         actions::ActionManager::get(self.client(id)?, params).await
     }
 
-    pub async fn get_action(
-        &self,
-        id: &str,
-        actionid: &str,
-    ) -> Result<ZabbixAction, ZabbixError> {
+    pub async fn get_action(&self, id: &str, actionid: &str) -> Result<ZabbixAction, ZabbixError> {
         let results: Vec<ZabbixAction> = actions::ActionManager::get(
             self.client(id)?,
             json!({"actionids": [actionid], "selectOperations": "extend"}),
@@ -317,11 +277,7 @@ impl ZabbixService {
         graphs::GraphManager::get(self.client(id)?, params).await
     }
 
-    pub async fn create_graph(
-        &self,
-        id: &str,
-        graph: ZabbixGraph,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create_graph(&self, id: &str, graph: ZabbixGraph) -> Result<Value, ZabbixError> {
         graphs::GraphManager::create(self.client(id)?, &graph).await
     }
 
@@ -403,16 +359,9 @@ impl ZabbixService {
         users::UserManager::get(self.client(id)?, params).await
     }
 
-    pub async fn get_user(
-        &self,
-        id: &str,
-        userid: &str,
-    ) -> Result<ZabbixUser, ZabbixError> {
-        let results: Vec<ZabbixUser> = users::UserManager::get(
-            self.client(id)?,
-            json!({"userids": [userid]}),
-        )
-        .await?;
+    pub async fn get_user(&self, id: &str, userid: &str) -> Result<ZabbixUser, ZabbixError> {
+        let results: Vec<ZabbixUser> =
+            users::UserManager::get(self.client(id)?, json!({"userids": [userid]})).await?;
         results
             .into_iter()
             .next()
@@ -422,27 +371,15 @@ impl ZabbixService {
             })
     }
 
-    pub async fn create_user(
-        &self,
-        id: &str,
-        user: ZabbixUser,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create_user(&self, id: &str, user: ZabbixUser) -> Result<Value, ZabbixError> {
         users::UserManager::create(self.client(id)?, &user).await
     }
 
-    pub async fn update_user(
-        &self,
-        id: &str,
-        user: ZabbixUser,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn update_user(&self, id: &str, user: ZabbixUser) -> Result<Value, ZabbixError> {
         users::UserManager::update(self.client(id)?, &user).await
     }
 
-    pub async fn delete_users(
-        &self,
-        id: &str,
-        userids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete_users(&self, id: &str, userids: Vec<String>) -> Result<Value, ZabbixError> {
         users::UserManager::delete(self.client(id)?, userids).await
     }
 
@@ -508,16 +445,9 @@ impl ZabbixService {
         proxies::ProxyManager::get(self.client(id)?, params).await
     }
 
-    pub async fn get_proxy(
-        &self,
-        id: &str,
-        proxyid: &str,
-    ) -> Result<ZabbixProxy, ZabbixError> {
-        let results: Vec<ZabbixProxy> = proxies::ProxyManager::get(
-            self.client(id)?,
-            json!({"proxyids": [proxyid]}),
-        )
-        .await?;
+    pub async fn get_proxy(&self, id: &str, proxyid: &str) -> Result<ZabbixProxy, ZabbixError> {
+        let results: Vec<ZabbixProxy> =
+            proxies::ProxyManager::get(self.client(id)?, json!({"proxyids": [proxyid]})).await?;
         results
             .into_iter()
             .next()
@@ -527,19 +457,11 @@ impl ZabbixService {
             })
     }
 
-    pub async fn create_proxy(
-        &self,
-        id: &str,
-        proxy: ZabbixProxy,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create_proxy(&self, id: &str, proxy: ZabbixProxy) -> Result<Value, ZabbixError> {
         proxies::ProxyManager::create(self.client(id)?, &proxy).await
     }
 
-    pub async fn delete_proxies(
-        &self,
-        id: &str,
-        ids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete_proxies(&self, id: &str, ids: Vec<String>) -> Result<Value, ZabbixError> {
         proxies::ProxyManager::delete(self.client(id)?, ids).await
     }
 
@@ -550,9 +472,7 @@ impl ZabbixService {
         id: &str,
         params: Value,
     ) -> Result<Vec<ZabbixProblem>, ZabbixError> {
-        self.client(id)?
-            .request_typed("problem.get", params)
-            .await
+        self.client(id)?.request_typed("problem.get", params).await
     }
 
     pub async fn acknowledge_problem(

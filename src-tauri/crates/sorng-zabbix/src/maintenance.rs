@@ -34,10 +34,7 @@ impl MaintenanceManager {
     }
 
     /// Delete maintenance windows by IDs.  method: maintenance.delete
-    pub async fn delete(
-        client: &ZabbixClient,
-        ids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete(client: &ZabbixClient, ids: Vec<String>) -> Result<Value, ZabbixError> {
         client.request("maintenance.delete", ids).await
     }
 }

@@ -7,14 +7,21 @@ pub enum ZabbixError {
     ConnectionFailed(String),
     AuthenticationFailed(String),
     SessionExpired,
-    NotFound { resource: String, id: String },
+    NotFound {
+        resource: String,
+        id: String,
+    },
     HostNotFound(String),
     TemplateNotFound(String),
     ItemError(String),
     TriggerError(String),
     DiscoveryError(String),
     MaintenanceError(String),
-    ApiError { code: i32, message: String, data: Option<String> },
+    ApiError {
+        code: i32,
+        message: String,
+        data: Option<String>,
+    },
     PermissionDenied(String),
     ParseError(String),
     Timeout(String),
@@ -34,7 +41,11 @@ impl fmt::Display for ZabbixError {
             Self::TriggerError(m) => write!(f, "trigger error: {m}"),
             Self::DiscoveryError(m) => write!(f, "discovery error: {m}"),
             Self::MaintenanceError(m) => write!(f, "maintenance error: {m}"),
-            Self::ApiError { code, message, data } => {
+            Self::ApiError {
+                code,
+                message,
+                data,
+            } => {
                 write!(f, "API error {code}: {message}")?;
                 if let Some(d) = data {
                     write!(f, " ({d})")?;

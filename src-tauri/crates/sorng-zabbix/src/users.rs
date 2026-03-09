@@ -10,34 +10,22 @@ pub struct UserManager;
 
 impl UserManager {
     /// Retrieve users.  method: user.get
-    pub async fn get(
-        client: &ZabbixClient,
-        params: Value,
-    ) -> Result<Vec<ZabbixUser>, ZabbixError> {
+    pub async fn get(client: &ZabbixClient, params: Value) -> Result<Vec<ZabbixUser>, ZabbixError> {
         client.request_typed("user.get", params).await
     }
 
     /// Create a user.  method: user.create
-    pub async fn create(
-        client: &ZabbixClient,
-        user: &ZabbixUser,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create(client: &ZabbixClient, user: &ZabbixUser) -> Result<Value, ZabbixError> {
         client.request("user.create", user).await
     }
 
     /// Update a user.  method: user.update
-    pub async fn update(
-        client: &ZabbixClient,
-        user: &ZabbixUser,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn update(client: &ZabbixClient, user: &ZabbixUser) -> Result<Value, ZabbixError> {
         client.request("user.update", user).await
     }
 
     /// Delete users by IDs.  method: user.delete
-    pub async fn delete(
-        client: &ZabbixClient,
-        userids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete(client: &ZabbixClient, userids: Vec<String>) -> Result<Value, ZabbixError> {
         client.request("user.delete", userids).await
     }
 
@@ -48,7 +36,10 @@ impl UserManager {
         password: &str,
     ) -> Result<String, ZabbixError> {
         let result = client
-            .request("user.login", json!({"username": username, "password": password}))
+            .request(
+                "user.login",
+                json!({"username": username, "password": password}),
+            )
             .await?;
         result
             .as_str()

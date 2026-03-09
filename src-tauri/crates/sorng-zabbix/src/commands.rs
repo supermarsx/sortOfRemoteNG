@@ -21,14 +21,16 @@ pub async fn zabbix_connect(
     id: String,
     config: ZabbixConnectionConfig,
 ) -> CmdResult<ZabbixConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn zabbix_disconnect(
-    state: State<'_, ZabbixServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn zabbix_disconnect(state: State<'_, ZabbixServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
@@ -69,7 +71,12 @@ pub async fn zabbix_get_host(
     id: String,
     hostid: String,
 ) -> CmdResult<ZabbixHost> {
-    state.lock().await.get_host(&id, &hostid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_host(&id, &hostid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -78,7 +85,12 @@ pub async fn zabbix_create_host(
     id: String,
     host: ZabbixHost,
 ) -> CmdResult<Value> {
-    state.lock().await.create_host(&id, host).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_host(&id, host)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -87,7 +99,12 @@ pub async fn zabbix_update_host(
     id: String,
     host: ZabbixHost,
 ) -> CmdResult<Value> {
-    state.lock().await.update_host(&id, host).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_host(&id, host)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -96,7 +113,12 @@ pub async fn zabbix_delete_hosts(
     id: String,
     hostids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_hosts(&id, hostids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_hosts(&id, hostids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Templates ─────────────────────────────────────────────────────
@@ -121,7 +143,12 @@ pub async fn zabbix_get_template(
     id: String,
     templateid: String,
 ) -> CmdResult<ZabbixTemplate> {
-    state.lock().await.get_template(&id, &templateid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_template(&id, &templateid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -130,7 +157,12 @@ pub async fn zabbix_create_template(
     id: String,
     template: ZabbixTemplate,
 ) -> CmdResult<Value> {
-    state.lock().await.create_template(&id, template).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_template(&id, template)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -139,7 +171,12 @@ pub async fn zabbix_delete_templates(
     id: String,
     templateids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_templates(&id, templateids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_templates(&id, templateids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Items ─────────────────────────────────────────────────────────
@@ -164,7 +201,12 @@ pub async fn zabbix_get_item(
     id: String,
     itemid: String,
 ) -> CmdResult<ZabbixItem> {
-    state.lock().await.get_item(&id, &itemid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_item(&id, &itemid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -173,7 +215,12 @@ pub async fn zabbix_create_item(
     id: String,
     item: ZabbixItem,
 ) -> CmdResult<Value> {
-    state.lock().await.create_item(&id, item).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_item(&id, item)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -182,7 +229,12 @@ pub async fn zabbix_delete_items(
     id: String,
     itemids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_items(&id, itemids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_items(&id, itemids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Triggers ──────────────────────────────────────────────────────
@@ -207,7 +259,12 @@ pub async fn zabbix_get_trigger(
     id: String,
     triggerid: String,
 ) -> CmdResult<ZabbixTrigger> {
-    state.lock().await.get_trigger(&id, &triggerid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_trigger(&id, &triggerid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -216,7 +273,12 @@ pub async fn zabbix_create_trigger(
     id: String,
     trigger: ZabbixTrigger,
 ) -> CmdResult<Value> {
-    state.lock().await.create_trigger(&id, trigger).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_trigger(&id, trigger)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -225,7 +287,12 @@ pub async fn zabbix_delete_triggers(
     id: String,
     triggerids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_triggers(&id, triggerids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_triggers(&id, triggerids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Actions ───────────────────────────────────────────────────────
@@ -250,7 +317,12 @@ pub async fn zabbix_get_action(
     id: String,
     actionid: String,
 ) -> CmdResult<ZabbixAction> {
-    state.lock().await.get_action(&id, &actionid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_action(&id, &actionid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -259,7 +331,12 @@ pub async fn zabbix_create_action(
     id: String,
     action: ZabbixAction,
 ) -> CmdResult<Value> {
-    state.lock().await.create_action(&id, action).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_action(&id, action)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -268,7 +345,12 @@ pub async fn zabbix_delete_actions(
     id: String,
     actionids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_actions(&id, actionids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_actions(&id, actionids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Alerts ────────────────────────────────────────────────────────
@@ -309,7 +391,12 @@ pub async fn zabbix_create_graph(
     id: String,
     graph: ZabbixGraph,
 ) -> CmdResult<Value> {
-    state.lock().await.create_graph(&id, graph).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_graph(&id, graph)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -318,7 +405,12 @@ pub async fn zabbix_delete_graphs(
     id: String,
     graphids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_graphs(&id, graphids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_graphs(&id, graphids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Discovery ─────────────────────────────────────────────────────
@@ -343,7 +435,12 @@ pub async fn zabbix_create_discovery_rule(
     id: String,
     rule: ZabbixDiscoveryRule,
 ) -> CmdResult<Value> {
-    state.lock().await.create_discovery_rule(&id, rule).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_discovery_rule(&id, rule)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -352,7 +449,12 @@ pub async fn zabbix_delete_discovery_rules(
     id: String,
     ids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_discovery_rules(&id, ids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_discovery_rules(&id, ids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Maintenance ───────────────────────────────────────────────────
@@ -377,7 +479,12 @@ pub async fn zabbix_create_maintenance(
     id: String,
     maintenance: ZabbixMaintenance,
 ) -> CmdResult<Value> {
-    state.lock().await.create_maintenance(&id, maintenance).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_maintenance(&id, maintenance)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -386,7 +493,12 @@ pub async fn zabbix_update_maintenance(
     id: String,
     maintenance: ZabbixMaintenance,
 ) -> CmdResult<Value> {
-    state.lock().await.update_maintenance(&id, maintenance).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_maintenance(&id, maintenance)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -395,7 +507,12 @@ pub async fn zabbix_delete_maintenance(
     id: String,
     ids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_maintenance(&id, ids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_maintenance(&id, ids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Users ─────────────────────────────────────────────────────────
@@ -420,7 +537,12 @@ pub async fn zabbix_get_user(
     id: String,
     userid: String,
 ) -> CmdResult<ZabbixUser> {
-    state.lock().await.get_user(&id, &userid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_user(&id, &userid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -429,7 +551,12 @@ pub async fn zabbix_create_user(
     id: String,
     user: ZabbixUser,
 ) -> CmdResult<Value> {
-    state.lock().await.create_user(&id, user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_user(&id, user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -438,7 +565,12 @@ pub async fn zabbix_update_user(
     id: String,
     user: ZabbixUser,
 ) -> CmdResult<Value> {
-    state.lock().await.update_user(&id, user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_user(&id, user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -447,7 +579,12 @@ pub async fn zabbix_delete_users(
     id: String,
     userids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_users(&id, userids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_users(&id, userids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Media Types ───────────────────────────────────────────────────
@@ -472,7 +609,12 @@ pub async fn zabbix_create_media_type(
     id: String,
     media_type: ZabbixMediaType,
 ) -> CmdResult<Value> {
-    state.lock().await.create_media_type(&id, media_type).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_media_type(&id, media_type)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -481,7 +623,12 @@ pub async fn zabbix_delete_media_types(
     id: String,
     ids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_media_types(&id, ids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_media_types(&id, ids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Host Groups ───────────────────────────────────────────────────
@@ -506,7 +653,12 @@ pub async fn zabbix_create_host_group(
     id: String,
     group: ZabbixHostGroup,
 ) -> CmdResult<Value> {
-    state.lock().await.create_host_group(&id, group).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_host_group(&id, group)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -515,7 +667,12 @@ pub async fn zabbix_delete_host_groups(
     id: String,
     ids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_host_groups(&id, ids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_host_groups(&id, ids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Proxies ───────────────────────────────────────────────────────
@@ -540,7 +697,12 @@ pub async fn zabbix_get_proxy(
     id: String,
     proxyid: String,
 ) -> CmdResult<ZabbixProxy> {
-    state.lock().await.get_proxy(&id, &proxyid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_proxy(&id, &proxyid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -549,7 +711,12 @@ pub async fn zabbix_create_proxy(
     id: String,
     proxy: ZabbixProxy,
 ) -> CmdResult<Value> {
-    state.lock().await.create_proxy(&id, proxy).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_proxy(&id, proxy)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -558,7 +725,12 @@ pub async fn zabbix_delete_proxies(
     id: String,
     ids: Vec<String>,
 ) -> CmdResult<Value> {
-    state.lock().await.delete_proxies(&id, ids).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_proxies(&id, ids)
+        .await
+        .map_err(map_err)
 }
 
 // ── Problems ──────────────────────────────────────────────────────

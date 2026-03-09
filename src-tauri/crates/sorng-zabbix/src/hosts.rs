@@ -10,34 +10,22 @@ pub struct HostManager;
 
 impl HostManager {
     /// Retrieve hosts.  method: host.get
-    pub async fn get(
-        client: &ZabbixClient,
-        params: Value,
-    ) -> Result<Vec<ZabbixHost>, ZabbixError> {
+    pub async fn get(client: &ZabbixClient, params: Value) -> Result<Vec<ZabbixHost>, ZabbixError> {
         client.request_typed("host.get", params).await
     }
 
     /// Create a host.  method: host.create
-    pub async fn create(
-        client: &ZabbixClient,
-        host: &ZabbixHost,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn create(client: &ZabbixClient, host: &ZabbixHost) -> Result<Value, ZabbixError> {
         client.request("host.create", host).await
     }
 
     /// Update a host.  method: host.update
-    pub async fn update(
-        client: &ZabbixClient,
-        host: &ZabbixHost,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn update(client: &ZabbixClient, host: &ZabbixHost) -> Result<Value, ZabbixError> {
         client.request("host.update", host).await
     }
 
     /// Delete hosts by IDs.  method: host.delete
-    pub async fn delete(
-        client: &ZabbixClient,
-        hostids: Vec<String>,
-    ) -> Result<Value, ZabbixError> {
+    pub async fn delete(client: &ZabbixClient, hostids: Vec<String>) -> Result<Value, ZabbixError> {
         client.request("host.delete", hostids).await
     }
 
