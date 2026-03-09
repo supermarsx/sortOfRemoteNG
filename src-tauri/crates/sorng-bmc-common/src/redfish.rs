@@ -81,9 +81,10 @@ impl RedfishClient {
     /// Authenticate via session-based or Basic auth.
     pub async fn login(&mut self, use_session: bool) -> BmcResult<String> {
         let root_url = format!("{}/redfish/v1", self.base_url);
-        let (username, password) = self.basic_auth.clone().ok_or_else(|| {
-            BmcError::auth("No credentials configured")
-        })?;
+        let (username, password) = self
+            .basic_auth
+            .clone()
+            .ok_or_else(|| BmcError::auth("No credentials configured"))?;
 
         if use_session {
             match self.create_session(&username, &password).await {
@@ -122,11 +123,7 @@ impl RedfishClient {
         Ok(username)
     }
 
-    async fn create_session(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> BmcResult<RedfishSession> {
+    async fn create_session(&self, username: &str, password: &str) -> BmcResult<RedfishSession> {
         let url = format!("{}/redfish/v1/SessionService/Sessions", self.base_url);
         let body = serde_json::json!({
             "UserName": username,
@@ -256,7 +253,10 @@ impl RedfishClient {
 
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        Err(BmcError::api(status.as_u16(), format!("POST action {path} failed: {body}")))
+        Err(BmcError::api(
+            status.as_u16(),
+            format!("POST action {path} failed: {body}"),
+        ))
     }
 
     /// POST with JSON body, parsed response.
@@ -277,11 +277,7 @@ impl RedfishClient {
     }
 
     /// PATCH with JSON body (for config updates).
-    pub async fn patch_json<B: serde::Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> BmcResult<()> {
+    pub async fn patch_json<B: serde::Serialize>(&self, path: &str, body: &B) -> BmcResult<()> {
         let url = self.full_url(path);
         let builder = self.client.patch(&url).json(body);
         let builder = self.auth_request(builder)?;
@@ -363,9 +359,13 @@ impl RedfishClient {
         let body = resp.text().await.unwrap_or_default();
 
         match status {
-            StatusCode::UNAUTHORIZED => Err(BmcError::auth(format!("Session expired or invalid: {body}"))),
+            StatusCode::UNAUTHORIZED => Err(BmcError::auth(format!(
+                "Session expired or invalid: {body}"
+            ))),
             StatusCode::FORBIDDEN => Err(BmcError::access_denied(format!("Access denied: {body}"))),
-            StatusCode::NOT_FOUND => Err(BmcError::not_found(format!("Resource not found: {body}"))),
+            StatusCode::NOT_FOUND => {
+                Err(BmcError::not_found(format!("Resource not found: {body}")))
+            }
             _ => Err(BmcError::api(code, format!("API error {code}: {body}"))),
         }
     }
@@ -377,9 +377,8 @@ impl RedfishClient {
             .map_err(|e| BmcError::parse(format!("Failed to read response body: {e}")))?;
 
         if text.is_empty() {
-            return serde_json::from_str("null").map_err(|e| {
-                BmcError::parse(format!("Cannot deserialise empty response: {e}"))
-            });
+            return serde_json::from_str("null")
+                .map_err(|e| BmcError::parse(format!("Cannot deserialise empty response: {e}")));
         }
 
         serde_json::from_str(&text).map_err(|e| {

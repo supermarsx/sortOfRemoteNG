@@ -27,5 +27,8 @@ pub fn rollup_health(statuses: &[&ComponentHealth]) -> String {
 /// Check whether a component is enabled and healthy.
 pub fn is_healthy(health: &ComponentHealth) -> bool {
     matches!(health.health.as_deref(), Some("OK") | None)
-        && matches!(health.state.as_deref(), Some("Enabled") | Some("StandbyOffline") | None)
+        && matches!(
+            health.state.as_deref(),
+            Some("Enabled") | Some("StandbyOffline") | None
+        )
 }

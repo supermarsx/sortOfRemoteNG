@@ -12,9 +12,9 @@
 //! - **power**    — Standardised power-action enum (On, Off, Restart …)
 //! - **health**   — Component health / status rollup types
 
-pub mod types;
 pub mod error;
-pub mod redfish;
+pub mod health;
 pub mod ipmi;
 pub mod power;
-pub mod health;
+pub mod redfish;
+pub mod types;

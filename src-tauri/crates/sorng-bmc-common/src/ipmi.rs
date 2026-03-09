@@ -48,14 +48,22 @@ pub mod cmd {
 pub struct IpmiClient {
     host: String,
     port: u16,
+    #[allow(dead_code)]
     username: String,
+    #[allow(dead_code)]
     password: String,
     timeout: Duration,
 }
 
 impl IpmiClient {
     /// Create a new IPMI client.
-    pub fn new(host: &str, port: Option<u16>, username: &str, password: &str, timeout_secs: u64) -> Self {
+    pub fn new(
+        host: &str,
+        port: Option<u16>,
+        username: &str,
+        password: &str,
+        timeout_secs: u64,
+    ) -> Self {
         Self {
             host: host.to_string(),
             port: port.unwrap_or(IPMI_PORT),
@@ -67,7 +75,10 @@ impl IpmiClient {
 
     /// Check if the BMC is reachable via IPMI.
     pub async fn check_connection(&self) -> BmcResult<bool> {
-        match self.send_ipmi_command(netfn::APP, cmd::GET_AUTH_CAPABILITIES, &[0x0E, 0x04]).await {
+        match self
+            .send_ipmi_command(netfn::APP, cmd::GET_AUTH_CAPABILITIES, &[0x0E, 0x04])
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -109,19 +120,32 @@ impl IpmiClient {
 
     /// Send chassis control command.
     pub async fn chassis_control(&self, action: u8) -> BmcResult<()> {
-        self.send_ipmi_command(netfn::CHASSIS, cmd::CHASSIS_CONTROL, &[action]).await?;
+        self.send_ipmi_command(netfn::CHASSIS, cmd::CHASSIS_CONTROL, &[action])
+            .await?;
         Ok(())
     }
 
-    pub async fn power_on(&self) -> BmcResult<()> { self.chassis_control(0x01).await }
-    pub async fn power_off(&self) -> BmcResult<()> { self.chassis_control(0x00).await }
-    pub async fn power_cycle(&self) -> BmcResult<()> { self.chassis_control(0x02).await }
-    pub async fn power_reset(&self) -> BmcResult<()> { self.chassis_control(0x03).await }
-    pub async fn soft_shutdown(&self) -> BmcResult<()> { self.chassis_control(0x05).await }
+    pub async fn power_on(&self) -> BmcResult<()> {
+        self.chassis_control(0x01).await
+    }
+    pub async fn power_off(&self) -> BmcResult<()> {
+        self.chassis_control(0x00).await
+    }
+    pub async fn power_cycle(&self) -> BmcResult<()> {
+        self.chassis_control(0x02).await
+    }
+    pub async fn power_reset(&self) -> BmcResult<()> {
+        self.chassis_control(0x03).await
+    }
+    pub async fn soft_shutdown(&self) -> BmcResult<()> {
+        self.chassis_control(0x05).await
+    }
 
     /// Get basic device ID (BMC info).
     pub async fn get_device_id(&self) -> BmcResult<serde_json::Value> {
-        let data = self.send_ipmi_command(netfn::APP, cmd::GET_DEVICE_ID, &[]).await?;
+        let data = self
+            .send_ipmi_command(netfn::APP, cmd::GET_DEVICE_ID, &[])
+            .await?;
 
         if data.len() < 6 {
             return Err(BmcError::ipmi("Device ID response too short"));
@@ -171,7 +195,9 @@ impl IpmiClient {
                 )
                 .await?;
 
-            if data.is_empty() { break; }
+            if data.is_empty() {
+                break;
+            }
             let count = data[0] as usize;
             if data.len() > 1 {
                 fru_data.extend_from_slice(&data[1..1 + count.min(data.len() - 1)]);
@@ -195,7 +221,9 @@ impl IpmiClient {
 
     /// Get SEL info.
     pub async fn get_sel_info(&self) -> BmcResult<serde_json::Value> {
-        let data = self.send_ipmi_command(netfn::STORAGE, cmd::GET_SEL_INFO, &[]).await?;
+        let data = self
+            .send_ipmi_command(netfn::STORAGE, cmd::GET_SEL_INFO, &[])
+            .await?;
         if data.len() < 14 {
             return Err(BmcError::ipmi("SEL info response too short"));
         }
@@ -223,7 +251,8 @@ impl IpmiClient {
             netfn::STORAGE,
             cmd::CLEAR_SEL,
             &[0x00, 0x00, 0x43, 0x4C, 0x52, 0xAA],
-        ).await?;
+        )
+        .await?;
         Ok(())
     }
 
@@ -246,22 +275,24 @@ impl IpmiClient {
         tokio::task::spawn_blocking(move || {
             let socket = UdpSocket::bind("0.0.0.0:0")
                 .map_err(|e| BmcError::ipmi(format!("Failed to bind UDP socket: {e}")))?;
-            socket.set_read_timeout(Some(timeout))
+            socket
+                .set_read_timeout(Some(timeout))
                 .map_err(|e| BmcError::ipmi(format!("Failed to set timeout: {e}")))?;
 
             let addr = format!("{host}:{port}");
-            socket.connect(&addr)
+            socket
+                .connect(&addr)
                 .map_err(|e| BmcError::ipmi(format!("Failed to connect to {addr}: {e}")))?;
 
             // Build RMCP + IPMI session-less request
-            let mut packet = Vec::new();
-            packet.push(0x06); // RMCP version
-            packet.push(0x00); // reserved
-            packet.push(0xFF); // sequence number
-            packet.push(0x07); // IPMI message class
-
-            // IPMI Session header (session-less)
-            packet.push(0x00); // auth type = none
+            let mut packet = vec![
+                0x06, // RMCP version
+                0x00, // reserved
+                0xFF, // sequence number
+                0x07, // IPMI message class
+                // IPMI Session header (session-less)
+                0x00, // auth type = none
+            ];
             packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // session seq
             packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // session id
 
@@ -277,7 +308,9 @@ impl IpmiClient {
             packet.push(rs_addr);
             let netfn_lun = (netfn << 2) | rs_lun;
             packet.push(netfn_lun);
-            let cksum1 = (0u16.wrapping_sub(rs_addr as u16).wrapping_sub(netfn_lun as u16)) as u8;
+            let cksum1 = (0u16
+                .wrapping_sub(rs_addr as u16)
+                .wrapping_sub(netfn_lun as u16)) as u8;
             packet.push(cksum1);
 
             packet.push(rq_addr);
@@ -290,15 +323,19 @@ impl IpmiClient {
             cksum2 = cksum2.wrapping_add(rq_addr);
             cksum2 = cksum2.wrapping_add(rq_seq_lun);
             cksum2 = cksum2.wrapping_add(cmd_byte);
-            for b in &payload { cksum2 = cksum2.wrapping_add(*b); }
+            for b in &payload {
+                cksum2 = cksum2.wrapping_add(*b);
+            }
             cksum2 = 0u8.wrapping_sub(cksum2);
             packet.push(cksum2);
 
-            socket.send(&packet)
+            socket
+                .send(&packet)
                 .map_err(|e| BmcError::ipmi(format!("Failed to send IPMI packet: {e}")))?;
 
             let mut buf = [0u8; 1024];
-            let len = socket.recv(&mut buf)
+            let len = socket
+                .recv(&mut buf)
                 .map_err(|e| BmcError::ipmi(format!("No response from BMC (timeout?): {e}")))?;
 
             if len < 20 {
