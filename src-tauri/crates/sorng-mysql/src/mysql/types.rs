@@ -52,17 +52,38 @@ pub struct MysqlError {
 
 impl MysqlError {
     pub fn new(kind: MysqlErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
-    pub fn connection(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::Connection, msg) }
-    pub fn auth(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::Authentication, msg) }
-    pub fn query(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::Query, msg) }
-    pub fn schema(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::Schema, msg) }
-    pub fn export(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::Export, msg) }
-    pub fn import(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::Import, msg) }
-    pub fn tunnel(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::Tunnel, msg) }
-    pub fn not_connected() -> Self { Self::new(MysqlErrorKind::NotConnected, "No active MySQL connection") }
-    pub fn invalid(msg: impl Into<String>) -> Self { Self::new(MysqlErrorKind::InvalidInput, msg) }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Connection, msg)
+    }
+    pub fn auth(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Authentication, msg)
+    }
+    pub fn query(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Query, msg)
+    }
+    pub fn schema(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Schema, msg)
+    }
+    pub fn export(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Export, msg)
+    }
+    pub fn import(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Import, msg)
+    }
+    pub fn tunnel(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::Tunnel, msg)
+    }
+    pub fn not_connected() -> Self {
+        Self::new(MysqlErrorKind::NotConnected, "No active MySQL connection")
+    }
+    pub fn invalid(msg: impl Into<String>) -> Self {
+        Self::new(MysqlErrorKind::InvalidInput, msg)
+    }
 }
 
 impl std::fmt::Display for MysqlError {
@@ -86,19 +107,13 @@ pub struct SshTunnelConfig {
 }
 
 /// TLS/SSL configuration for the MySQL connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TlsConfig {
     pub enabled: bool,
     pub ca_cert: Option<String>,
     pub client_cert: Option<String>,
     pub client_key: Option<String>,
     pub skip_verify: bool,
-}
-
-impl Default for TlsConfig {
-    fn default() -> Self {
-        Self { enabled: false, ca_cert: None, client_cert: None, client_key: None, skip_verify: false }
-    }
 }
 
 /// Full connection configuration for a MySQL/MariaDB server.
@@ -151,7 +166,10 @@ impl MysqlConnectionConfig {
         let h = override_host.unwrap_or(&self.host);
         let p = override_port.unwrap_or(self.port);
         let db = self.database.as_deref().unwrap_or("");
-        let mut url = format!("mysql://{}:{}@{}:{}/{}", self.username, self.password, h, p, db);
+        let mut url = format!(
+            "mysql://{}:{}@{}:{}/{}",
+            self.username, self.password, h, p, db
+        );
 
         let mut params = Vec::new();
         if let Some(ref cs) = self.charset {
@@ -474,8 +492,8 @@ mod tests {
 
     #[test]
     fn config_to_url_basic() {
-        let cfg = MysqlConnectionConfig::new("db.example.com", 3306, "user", "pw")
-            .with_database("mydb");
+        let cfg =
+            MysqlConnectionConfig::new("db.example.com", 3306, "user", "pw").with_database("mydb");
         let url = cfg.to_url(None, None);
         assert!(url.starts_with("mysql://user:pw@db.example.com:3306/mydb"));
         assert!(url.contains("charset=utf8mb4"));
@@ -500,14 +518,20 @@ mod tests {
     fn connection_status_display() {
         assert_eq!(ConnectionStatus::Connected.to_string(), "connected");
         assert_eq!(ConnectionStatus::Disconnected.to_string(), "disconnected");
-        assert_eq!(ConnectionStatus::Error("fail".into()).to_string(), "error: fail");
+        assert_eq!(
+            ConnectionStatus::Error("fail".into()).to_string(),
+            "error: fail"
+        );
     }
 
     #[test]
     fn export_format_from_str() {
         assert_eq!(ExportFormat::from_str_loose("csv"), Some(ExportFormat::Csv));
         assert_eq!(ExportFormat::from_str_loose("SQL"), Some(ExportFormat::Sql));
-        assert_eq!(ExportFormat::from_str_loose("JSON"), Some(ExportFormat::Json));
+        assert_eq!(
+            ExportFormat::from_str_loose("JSON"),
+            Some(ExportFormat::Json)
+        );
         assert_eq!(ExportFormat::from_str_loose("tsv"), Some(ExportFormat::Tsv));
         assert_eq!(ExportFormat::from_str_loose("xml"), None);
     }
@@ -553,7 +577,12 @@ mod tests {
 
     #[test]
     fn database_info_clone() {
-        let db = DatabaseInfo { name: "test".into(), character_set: Some("utf8mb4".into()), collation: None, table_count: Some(5) };
+        let db = DatabaseInfo {
+            name: "test".into(),
+            character_set: Some("utf8mb4".into()),
+            collation: None,
+            table_count: Some(5),
+        };
         let db2 = db.clone();
         assert_eq!(db.name, db2.name);
         assert_eq!(db.table_count, db2.table_count);
@@ -646,19 +675,37 @@ mod tests {
 
     #[test]
     fn routine_info_types() {
-        let r = RoutineInfo { name: "my_proc".into(), routine_type: "PROCEDURE".into(), definer: "root@localhost".into(), created: None, modified: None, body: Some("BEGIN END".into()) };
+        let r = RoutineInfo {
+            name: "my_proc".into(),
+            routine_type: "PROCEDURE".into(),
+            definer: "root@localhost".into(),
+            created: None,
+            modified: None,
+            body: Some("BEGIN END".into()),
+        };
         assert_eq!(r.routine_type, "PROCEDURE");
     }
 
     #[test]
     fn trigger_info() {
-        let t = TriggerInfo { name: "before_insert".into(), event: "INSERT".into(), table: "users".into(), timing: "BEFORE".into(), statement: "SET NEW.created = NOW()".into() };
+        let t = TriggerInfo {
+            name: "before_insert".into(),
+            event: "INSERT".into(),
+            table: "users".into(),
+            timing: "BEFORE".into(),
+            statement: "SET NEW.created = NOW()".into(),
+        };
         assert_eq!(t.timing, "BEFORE");
     }
 
     #[test]
     fn view_info() {
-        let v = ViewInfo { name: "active_users".into(), definition: Some("SELECT * FROM users WHERE active = 1".into()), definer: "root@localhost".into(), is_updatable: true };
+        let v = ViewInfo {
+            name: "active_users".into(),
+            definition: Some("SELECT * FROM users WHERE active = 1".into()),
+            definer: "root@localhost".into(),
+            is_updatable: true,
+        };
         assert!(v.is_updatable);
     }
 }

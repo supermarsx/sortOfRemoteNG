@@ -67,7 +67,9 @@ pub async fn mysql_execute_query(
     sql: String,
 ) -> Result<QueryResult, String> {
     let mut svc = state.lock().await;
-    svc.execute_query(&session_id, &sql).await.map_err(|e| e.message)
+    svc.execute_query(&session_id, &sql)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -77,7 +79,9 @@ pub async fn mysql_execute_statement(
     sql: String,
 ) -> Result<QueryResult, String> {
     let mut svc = state.lock().await;
-    svc.execute_statement(&session_id, &sql).await.map_err(|e| e.message)
+    svc.execute_statement(&session_id, &sql)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -87,7 +91,9 @@ pub async fn mysql_explain_query(
     sql: String,
 ) -> Result<Vec<ExplainRow>, String> {
     let mut svc = state.lock().await;
-    svc.explain_query(&session_id, &sql).await.map_err(|e| e.message)
+    svc.explain_query(&session_id, &sql)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Schema ──────────────────────────────────────────────────────────
@@ -108,7 +114,9 @@ pub async fn mysql_list_tables(
     database: String,
 ) -> Result<Vec<TableInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_tables(&session_id, &database).await.map_err(|e| e.message)
+    svc.list_tables(&session_id, &database)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -119,7 +127,9 @@ pub async fn mysql_describe_table(
     table: String,
 ) -> Result<Vec<ColumnDef>, String> {
     let mut svc = state.lock().await;
-    svc.describe_table(&session_id, &database, &table).await.map_err(|e| e.message)
+    svc.describe_table(&session_id, &database, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -130,7 +140,9 @@ pub async fn mysql_list_indexes(
     table: String,
 ) -> Result<Vec<IndexInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_indexes(&session_id, &database, &table).await.map_err(|e| e.message)
+    svc.list_indexes(&session_id, &database, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -141,7 +153,9 @@ pub async fn mysql_list_foreign_keys(
     table: String,
 ) -> Result<Vec<ForeignKeyInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_foreign_keys(&session_id, &database, &table).await.map_err(|e| e.message)
+    svc.list_foreign_keys(&session_id, &database, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -151,7 +165,9 @@ pub async fn mysql_list_views(
     database: String,
 ) -> Result<Vec<ViewInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_views(&session_id, &database).await.map_err(|e| e.message)
+    svc.list_views(&session_id, &database)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -161,7 +177,9 @@ pub async fn mysql_list_routines(
     database: String,
 ) -> Result<Vec<RoutineInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_routines(&session_id, &database).await.map_err(|e| e.message)
+    svc.list_routines(&session_id, &database)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -171,7 +189,9 @@ pub async fn mysql_list_triggers(
     database: String,
 ) -> Result<Vec<TriggerInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_triggers(&session_id, &database).await.map_err(|e| e.message)
+    svc.list_triggers(&session_id, &database)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── DDL ─────────────────────────────────────────────────────────────
@@ -184,7 +204,9 @@ pub async fn mysql_create_database(
     charset: Option<String>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.create_database(&session_id, &name, charset.as_deref()).await.map_err(|e| e.message)
+    svc.create_database(&session_id, &name, charset.as_deref())
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -194,7 +216,9 @@ pub async fn mysql_drop_database(
     name: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.drop_database(&session_id, &name).await.map_err(|e| e.message)
+    svc.drop_database(&session_id, &name)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -205,7 +229,9 @@ pub async fn mysql_drop_table(
     table: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.drop_table(&session_id, &database, &table).await.map_err(|e| e.message)
+    svc.drop_table(&session_id, &database, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -216,7 +242,9 @@ pub async fn mysql_truncate_table(
     table: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.truncate_table(&session_id, &database, &table).await.map_err(|e| e.message)
+    svc.truncate_table(&session_id, &database, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Data CRUD ───────────────────────────────────────────────────────
@@ -231,7 +259,9 @@ pub async fn mysql_get_table_data(
     offset: Option<u32>,
 ) -> Result<QueryResult, String> {
     let mut svc = state.lock().await;
-    svc.get_table_data(&session_id, &database, &table, limit, offset).await.map_err(|e| e.message)
+    svc.get_table_data(&session_id, &database, &table, limit, offset)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -244,7 +274,9 @@ pub async fn mysql_insert_row(
     values: Vec<String>,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.insert_row(&session_id, &database, &table, &columns, &values).await.map_err(|e| e.message)
+    svc.insert_row(&session_id, &database, &table, &columns, &values)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -258,7 +290,16 @@ pub async fn mysql_update_rows(
     where_clause: String,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.update_rows(&session_id, &database, &table, &columns, &values, &where_clause).await.map_err(|e| e.message)
+    svc.update_rows(
+        &session_id,
+        &database,
+        &table,
+        &columns,
+        &values,
+        &where_clause,
+    )
+    .await
+    .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -270,7 +311,9 @@ pub async fn mysql_delete_rows(
     where_clause: String,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.delete_rows(&session_id, &database, &table, &where_clause).await.map_err(|e| e.message)
+    svc.delete_rows(&session_id, &database, &table, &where_clause)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Export / Import ─────────────────────────────────────────────────
@@ -284,7 +327,9 @@ pub async fn mysql_export_table(
     options: ExportOptions,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    svc.export_table(&session_id, &database, &table, &options).await.map_err(|e| e.message)
+    svc.export_table(&session_id, &database, &table, &options)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -295,7 +340,9 @@ pub async fn mysql_export_database(
     options: ExportOptions,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    svc.export_database(&session_id, &database, &options).await.map_err(|e| e.message)
+    svc.export_database(&session_id, &database, &options)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -305,7 +352,9 @@ pub async fn mysql_import_sql(
     sql_content: String,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.import_sql(&session_id, &sql_content).await.map_err(|e| e.message)
+    svc.import_sql(&session_id, &sql_content)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -318,7 +367,9 @@ pub async fn mysql_import_csv(
     has_header: bool,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.import_csv(&session_id, &database, &table, &csv_content, has_header).await.map_err(|e| e.message)
+    svc.import_csv(&session_id, &database, &table, &csv_content, has_header)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Administration ──────────────────────────────────────────────────
@@ -330,7 +381,9 @@ pub async fn mysql_show_variables(
     filter: Option<String>,
 ) -> Result<Vec<ServerVariable>, String> {
     let mut svc = state.lock().await;
-    svc.show_variables(&session_id, filter.as_deref()).await.map_err(|e| e.message)
+    svc.show_variables(&session_id, filter.as_deref())
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -339,7 +392,9 @@ pub async fn mysql_show_processlist(
     session_id: String,
 ) -> Result<Vec<ProcessInfo>, String> {
     let mut svc = state.lock().await;
-    svc.show_processlist(&session_id).await.map_err(|e| e.message)
+    svc.show_processlist(&session_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -349,7 +404,9 @@ pub async fn mysql_kill_process(
     process_id: u64,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.kill_process(&session_id, process_id).await.map_err(|e| e.message)
+    svc.kill_process(&session_id, process_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -369,7 +426,9 @@ pub async fn mysql_show_grants(
     host: String,
 ) -> Result<Vec<String>, String> {
     let mut svc = state.lock().await;
-    svc.show_grants(&session_id, &user, &host).await.map_err(|e| e.message)
+    svc.show_grants(&session_id, &user, &host)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]

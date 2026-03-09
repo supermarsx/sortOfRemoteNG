@@ -18,6 +18,7 @@ pub struct MysqlService {
 
 struct MysqlSession {
     pool: MySqlPool,
+    #[allow(dead_code)]
     config: MysqlConnectionConfig,
     info: SessionInfo,
     ssh_session: Option<ssh2::Session>,
@@ -26,6 +27,12 @@ struct MysqlSession {
 
 pub fn new_state() -> MysqlServiceState {
     Arc::new(Mutex::new(MysqlService::new()))
+}
+
+impl Default for MysqlService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MysqlService {
@@ -56,13 +63,14 @@ impl MysqlService {
         self.sessions
             .get(session_id)
             .map(|s| &s.pool)
-            .ok_or_else(|| MysqlError::not_connected())
+            .ok_or_else(MysqlError::not_connected)
     }
 
+    #[allow(dead_code)]
     fn session_mut(&mut self, id: &str) -> Result<&mut MysqlSession, MysqlError> {
         self.sessions
             .get_mut(id)
-            .ok_or_else(|| MysqlError::not_connected())
+            .ok_or_else(MysqlError::not_connected)
     }
 
     fn count_queries(&mut self, id: &str) {
@@ -92,7 +100,10 @@ impl MysqlService {
             };
 
         let url = config.to_url(Some(&effective_host), Some(effective_port));
-        debug!("mysql connect url (host masked): mysql://…@{}:{}/…", effective_host, effective_port);
+        debug!(
+            "mysql connect url (host masked): mysql://…@{}:{}/…",
+            effective_host, effective_port
+        );
 
         let pool = MySqlPoolOptions::new()
             .max_connections(config.max_connections.unwrap_or(5))
@@ -127,12 +138,15 @@ impl MysqlService {
             server_charset: None,
             connected_at: Some(now),
             via_ssh_tunnel: ssh_sess.is_some(),
-            tls_enabled: config.tls.as_ref().map_or(false, |t| t.enabled),
+            tls_enabled: config.tls.as_ref().is_some_and(|t| t.enabled),
             queries_executed: 0,
             total_rows_fetched: 0,
         };
 
-        info!("MySQL session {} connected to {}:{}", id, config.host, config.port);
+        info!(
+            "MySQL session {} connected to {}:{}",
+            id, config.host, config.port
+        );
 
         self.sessions.insert(
             id.clone(),
@@ -179,9 +193,8 @@ impl MysqlService {
         db_port: u16,
     ) -> Result<(ssh2::Session, u16), MysqlError> {
         let local_port = Self::find_available_port()?;
-        let tcp =
-            std::net::TcpStream::connect(format!("{}:{}", tun.ssh_host, tun.ssh_port))
-                .map_err(|e| MysqlError::tunnel(format!("SSH connect failed: {}", e)))?;
+        let tcp = std::net::TcpStream::connect(format!("{}:{}", tun.ssh_host, tun.ssh_port))
+            .map_err(|e| MysqlError::tunnel(format!("SSH connect failed: {}", e)))?;
 
         let mut sess =
             ssh2::Session::new().map_err(|e| MysqlError::tunnel(format!("SSH session: {}", e)))?;
@@ -235,7 +248,7 @@ impl MysqlService {
         self.sessions
             .get(id)
             .map(|s| s.info.clone())
-            .ok_or_else(|| MysqlError::not_connected())
+            .ok_or_else(MysqlError::not_connected)
     }
 
     // ── Query execution ─────────────────────────────────────────────
@@ -673,11 +686,7 @@ impl MysqlService {
         Ok(())
     }
 
-    pub async fn drop_database(
-        &mut self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), MysqlError> {
+    pub async fn drop_database(&mut self, session_id: &str, name: &str) -> Result<(), MysqlError> {
         let sql = format!("DROP DATABASE `{}`", name);
         self.execute_statement(session_id, &sql).await?;
         Ok(())
@@ -891,7 +900,11 @@ impl MysqlService {
         user: &str,
         host: &str,
     ) -> Result<Vec<String>, MysqlError> {
-        let sql = format!("SHOW GRANTS FOR '{}'@'{}'", user.replace('\'', "''"), host.replace('\'', "''"));
+        let sql = format!(
+            "SHOW GRANTS FOR '{}'@'{}'",
+            user.replace('\'', "''"),
+            host.replace('\'', "''")
+        );
         let pool = self.pool_for(session_id)?.clone();
         let rows = sqlx::query(&sql)
             .fetch_all(&pool)
@@ -904,10 +917,7 @@ impl MysqlService {
             .collect())
     }
 
-    pub async fn list_users(
-        &mut self,
-        session_id: &str,
-    ) -> Result<Vec<UserInfo>, MysqlError> {
+    pub async fn list_users(&mut self, session_id: &str) -> Result<Vec<UserInfo>, MysqlError> {
         let pool = self.pool_for(session_id)?.clone();
         let rows = sqlx::query("SELECT User, Host FROM mysql.user ORDER BY User, Host")
             .fetch_all(&pool)
@@ -935,13 +945,16 @@ impl MysqlService {
     ) -> Result<String, MysqlError> {
         match opts.format {
             ExportFormat::Csv | ExportFormat::Tsv => {
-                self.export_table_delimited(session_id, database, table, opts).await
+                self.export_table_delimited(session_id, database, table, opts)
+                    .await
             }
             ExportFormat::Sql => {
-                self.export_table_sql(session_id, database, table, opts).await
+                self.export_table_sql(session_id, database, table, opts)
+                    .await
             }
             ExportFormat::Json => {
-                self.export_table_json(session_id, database, table, opts).await
+                self.export_table_json(session_id, database, table, opts)
+                    .await
             }
         }
     }
@@ -953,7 +966,11 @@ impl MysqlService {
         table: &str,
         opts: &ExportOptions,
     ) -> Result<String, MysqlError> {
-        let sep = if opts.format == ExportFormat::Tsv { "\t" } else { "," };
+        let sep = if opts.format == ExportFormat::Tsv {
+            "\t"
+        } else {
+            ","
+        };
         let cols = self.describe_table(session_id, database, table).await?;
         let mut out = String::new();
 
@@ -975,7 +992,13 @@ impl MysqlService {
                 break;
             }
             let data = self
-                .get_table_data(session_id, database, table, Some(opts.chunk_size), Some(offset))
+                .get_table_data(
+                    session_id,
+                    database,
+                    table,
+                    Some(opts.chunk_size),
+                    Some(offset),
+                )
                 .await?;
             if data.rows.is_empty() {
                 break;
@@ -1053,7 +1076,13 @@ impl MysqlService {
                     break;
                 }
                 let data = self
-                    .get_table_data(session_id, database, table, Some(opts.chunk_size), Some(offset))
+                    .get_table_data(
+                        session_id,
+                        database,
+                        table,
+                        Some(opts.chunk_size),
+                        Some(offset),
+                    )
                     .await?;
                 if data.rows.is_empty() {
                     break;
@@ -1104,7 +1133,13 @@ impl MysqlService {
                 break;
             }
             let data = self
-                .get_table_data(session_id, database, table, Some(opts.chunk_size), Some(offset))
+                .get_table_data(
+                    session_id,
+                    database,
+                    table,
+                    Some(opts.chunk_size),
+                    Some(offset),
+                )
                 .await?;
             if data.rows.is_empty() {
                 break;
@@ -1151,7 +1186,9 @@ impl MysqlService {
                     continue;
                 }
             }
-            let table_export = self.export_table(session_id, database, &tbl.name, opts).await?;
+            let table_export = self
+                .export_table(session_id, database, &tbl.name, opts)
+                .await?;
             out.push_str(&table_export);
             out.push_str("\n\n");
         }
@@ -1238,13 +1275,8 @@ impl MysqlService {
     }
 
     /// Get server uptime in seconds.
-    pub async fn server_uptime(
-        &mut self,
-        session_id: &str,
-    ) -> Result<u64, MysqlError> {
-        let vars = self
-            .show_variables(session_id, Some("Uptime"))
-            .await?;
+    pub async fn server_uptime(&mut self, session_id: &str) -> Result<u64, MysqlError> {
+        let vars = self.show_variables(session_id, Some("Uptime")).await?;
         vars.first()
             .and_then(|v| v.value.parse::<u64>().ok())
             .ok_or_else(|| MysqlError::query("Cannot read Uptime variable"))
