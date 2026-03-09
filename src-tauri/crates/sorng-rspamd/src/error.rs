@@ -37,7 +37,10 @@ impl std::error::Error for RspamdError {}
 
 impl RspamdError {
     pub fn new(kind: RspamdErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected(msg: impl Into<String>) -> Self {

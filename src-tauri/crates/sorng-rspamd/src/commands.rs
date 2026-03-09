@@ -1,13 +1,15 @@
 // ── sorng-rspamd/src/commands.rs ──────────────────────────────────────────────
 //! Tauri commands – thin wrappers around `RspamdService`.
 
-use tauri::State;
 use crate::service::RspamdServiceState;
 use crate::types::*;
+use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 
-fn map_err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
+fn map_err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 // ── Connection ────────────────────────────────────────────────────
 
@@ -17,14 +19,16 @@ pub async fn rspamd_connect(
     id: String,
     config: RspamdConnectionConfig,
 ) -> CmdResult<RspamdConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn rspamd_disconnect(
-    state: State<'_, RspamdServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn rspamd_disconnect(state: State<'_, RspamdServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
@@ -51,7 +55,12 @@ pub async fn rspamd_check_message(
     id: String,
     message: String,
 ) -> CmdResult<RspamdScanResult> {
-    state.lock().await.check_message(&id, &message).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .check_message(&id, &message)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -60,7 +69,12 @@ pub async fn rspamd_check_file(
     id: String,
     path: String,
 ) -> CmdResult<RspamdScanResult> {
-    state.lock().await.check_file(&id, &path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .check_file(&id, &path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -69,7 +83,12 @@ pub async fn rspamd_learn_spam(
     id: String,
     message: String,
 ) -> CmdResult<RspamdBayesLearnResult> {
-    state.lock().await.learn_spam(&id, &message).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .learn_spam(&id, &message)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -78,7 +97,12 @@ pub async fn rspamd_learn_ham(
     id: String,
     message: String,
 ) -> CmdResult<RspamdBayesLearnResult> {
-    state.lock().await.learn_ham(&id, &message).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .learn_ham(&id, &message)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -89,7 +113,12 @@ pub async fn rspamd_fuzzy_add(
     flag: u32,
     weight: f64,
 ) -> CmdResult<()> {
-    state.lock().await.fuzzy_add(&id, &message, flag, weight).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .fuzzy_add(&id, &message, flag, weight)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -99,7 +128,12 @@ pub async fn rspamd_fuzzy_delete(
     message: String,
     flag: u32,
 ) -> CmdResult<()> {
-    state.lock().await.fuzzy_delete(&id, &message, flag).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .fuzzy_delete(&id, &message, flag)
+        .await
+        .map_err(map_err)
 }
 
 // ── Statistics ────────────────────────────────────────────────────
@@ -118,7 +152,12 @@ pub async fn rspamd_get_graph(
     id: String,
     graph_type: String,
 ) -> CmdResult<Vec<RspamdGraphData>> {
-    state.lock().await.get_graph(&id, &graph_type).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_graph(&id, &graph_type)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -126,14 +165,16 @@ pub async fn rspamd_get_throughput(
     state: State<'_, RspamdServiceState>,
     id: String,
 ) -> CmdResult<Vec<RspamdGraphData>> {
-    state.lock().await.get_throughput(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_throughput(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn rspamd_reset_stats(
-    state: State<'_, RspamdServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn rspamd_reset_stats(state: State<'_, RspamdServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reset_stats(&id).await.map_err(map_err)
 }
 
@@ -161,7 +202,12 @@ pub async fn rspamd_get_symbol(
     id: String,
     name: String,
 ) -> CmdResult<RspamdSymbol> {
-    state.lock().await.get_symbol(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_symbol(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -169,7 +215,12 @@ pub async fn rspamd_list_symbol_groups(
     state: State<'_, RspamdServiceState>,
     id: String,
 ) -> CmdResult<Vec<RspamdSymbolGroup>> {
-    state.lock().await.list_symbol_groups(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_symbol_groups(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -178,7 +229,12 @@ pub async fn rspamd_get_symbol_group(
     id: String,
     name: String,
 ) -> CmdResult<RspamdSymbolGroup> {
-    state.lock().await.get_symbol_group(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_symbol_group(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── Actions ───────────────────────────────────────────────────────
@@ -197,7 +253,12 @@ pub async fn rspamd_get_action(
     id: String,
     name: String,
 ) -> CmdResult<RspamdAction> {
-    state.lock().await.get_action(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_action(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -207,7 +268,12 @@ pub async fn rspamd_set_action(
     name: String,
     threshold: f64,
 ) -> CmdResult<()> {
-    state.lock().await.set_action(&id, &name, threshold).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .set_action(&id, &name, threshold)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -216,7 +282,12 @@ pub async fn rspamd_enable_action(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_action(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_action(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -225,7 +296,12 @@ pub async fn rspamd_disable_action(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_action(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_action(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── Maps ──────────────────────────────────────────────────────────
@@ -244,7 +320,12 @@ pub async fn rspamd_get_map(
     id: String,
     map_id: u64,
 ) -> CmdResult<RspamdMap> {
-    state.lock().await.get_map(&id, map_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_map(&id, map_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -253,7 +334,12 @@ pub async fn rspamd_get_map_entries(
     id: String,
     map_id: u64,
 ) -> CmdResult<Vec<RspamdMapEntry>> {
-    state.lock().await.get_map_entries(&id, map_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_map_entries(&id, map_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -263,7 +349,12 @@ pub async fn rspamd_save_map_entries(
     map_id: u64,
     content: String,
 ) -> CmdResult<()> {
-    state.lock().await.save_map_entries(&id, map_id, &content).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .save_map_entries(&id, map_id, &content)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -274,7 +365,12 @@ pub async fn rspamd_add_map_entry(
     key: String,
     value: Option<String>,
 ) -> CmdResult<()> {
-    state.lock().await.add_map_entry(&id, map_id, &key, value.as_deref()).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .add_map_entry(&id, map_id, &key, value.as_deref())
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -284,7 +380,12 @@ pub async fn rspamd_remove_map_entry(
     map_id: u64,
     key: String,
 ) -> CmdResult<()> {
-    state.lock().await.remove_map_entry(&id, map_id, &key).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .remove_map_entry(&id, map_id, &key)
+        .await
+        .map_err(map_err)
 }
 
 // ── History ───────────────────────────────────────────────────────
@@ -296,7 +397,12 @@ pub async fn rspamd_get_history(
     limit: Option<u64>,
     offset: Option<u64>,
 ) -> CmdResult<RspamdHistory> {
-    state.lock().await.get_history(&id, limit, offset).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_history(&id, limit, offset)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -305,7 +411,12 @@ pub async fn rspamd_get_history_entry(
     id: String,
     entry_id: String,
 ) -> CmdResult<RspamdHistoryEntry> {
-    state.lock().await.get_history_entry(&id, &entry_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_history_entry(&id, &entry_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -332,7 +443,12 @@ pub async fn rspamd_get_worker(
     id: String,
     worker_id: String,
 ) -> CmdResult<RspamdWorker> {
-    state.lock().await.get_worker(&id, &worker_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_worker(&id, &worker_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -340,7 +456,12 @@ pub async fn rspamd_list_neighbours(
     state: State<'_, RspamdServiceState>,
     id: String,
 ) -> CmdResult<Vec<RspamdNeighbour>> {
-    state.lock().await.list_neighbours(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_neighbours(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Fuzzy ─────────────────────────────────────────────────────────
@@ -359,7 +480,12 @@ pub async fn rspamd_fuzzy_check(
     id: String,
     message: String,
 ) -> CmdResult<Vec<RspamdSymbolResult>> {
-    state.lock().await.fuzzy_check(&id, &message).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .fuzzy_check(&id, &message)
+        .await
+        .map_err(map_err)
 }
 
 // ── Config ────────────────────────────────────────────────────────
@@ -369,7 +495,12 @@ pub async fn rspamd_get_actions_config(
     state: State<'_, RspamdServiceState>,
     id: String,
 ) -> CmdResult<Vec<RspamdAction>> {
-    state.lock().await.get_actions_config(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_actions_config(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -386,7 +517,12 @@ pub async fn rspamd_enable_plugin(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_plugin(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_plugin(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -395,7 +531,12 @@ pub async fn rspamd_disable_plugin(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_plugin(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_plugin(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -412,5 +553,10 @@ pub async fn rspamd_save_actions_config(
     id: String,
     actions: Vec<RspamdAction>,
 ) -> CmdResult<()> {
-    state.lock().await.save_actions_config(&id, actions).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .save_actions_config(&id, actions)
+        .await
+        .map_err(map_err)
 }

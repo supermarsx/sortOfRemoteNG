@@ -19,12 +19,9 @@ impl MapManager {
     pub async fn get(client: &RspamdClient, id: u64) -> RspamdResult<RspamdMap> {
         debug!("RSPAMD get_map: {id}");
         let maps = Self::list(client).await?;
-        maps.into_iter()
-            .find(|m| m.id == id)
-            .ok_or_else(|| RspamdError::new(
-                RspamdErrorKind::MapNotFound,
-                format!("Map not found: {id}"),
-            ))
+        maps.into_iter().find(|m| m.id == id).ok_or_else(|| {
+            RspamdError::new(RspamdErrorKind::MapNotFound, format!("Map not found: {id}"))
+        })
     }
 
     /// GET /getmap — get raw map content and parse entries
@@ -38,7 +35,7 @@ impl MapManager {
     /// POST /savemap — save raw content to a map
     pub async fn save_entries(client: &RspamdClient, id: u64, content: &str) -> RspamdResult<()> {
         debug!("RSPAMD save_map_entries: {id}");
-        let path = format!("/savemap");
+        let path = "/savemap".to_string();
         let body = serde_json::json!({
             "map": id,
             "content": content,
@@ -48,7 +45,12 @@ impl MapManager {
     }
 
     /// Add a single entry to a map (reads current, appends, saves)
-    pub async fn add_entry(client: &RspamdClient, id: u64, key: &str, value: Option<&str>) -> RspamdResult<()> {
+    pub async fn add_entry(
+        client: &RspamdClient,
+        id: u64,
+        key: &str,
+        value: Option<&str>,
+    ) -> RspamdResult<()> {
         debug!("RSPAMD add_map_entry: map={id} key={key}");
         let path = format!("/getmap?map={}", id);
         let current = client.get_raw(&path).await?;
@@ -78,7 +80,8 @@ impl MapManager {
         let path = format!("/getmap?map={}", id);
         let current = client.get_raw(&path).await?;
 
-        let updated: Vec<&str> = current.lines()
+        let updated: Vec<&str> = current
+            .lines()
             .filter(|line| {
                 let trimmed = line.trim();
                 if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -105,14 +108,25 @@ impl MapManager {
             for item in arr {
                 maps.push(RspamdMap {
                     id: item.get("map").and_then(|v| v.as_u64()).unwrap_or(0),
-                    uri: item.get("uri").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    description: item.get("description").and_then(|v| v.as_str()).map(String::from),
+                    uri: item
+                        .get("uri")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    description: item
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     map_type: item.get("type").and_then(|v| v.as_str()).map(String::from),
-                    entries_count: item.get("editable")
+                    entries_count: item
+                        .get("editable")
                         .and_then(|_| item.get("nelts"))
                         .and_then(|v| v.as_u64()),
                     hits: item.get("hits").and_then(|v| v.as_u64()),
-                    last_reload: item.get("last_reload").and_then(|v| v.as_str()).map(String::from),
+                    last_reload: item
+                        .get("last_reload")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 });
             }
         }

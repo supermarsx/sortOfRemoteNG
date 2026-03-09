@@ -53,7 +53,8 @@ impl RspamdConfigManager {
     /// POST /saveactions — save a complete set of actions
     pub async fn save_actions(client: &RspamdClient, actions: &[RspamdAction]) -> RspamdResult<()> {
         debug!("RSPAMD save_actions");
-        let thresholds: Vec<serde_json::Value> = actions.iter()
+        let thresholds: Vec<serde_json::Value> = actions
+            .iter()
             .filter(|a| a.enabled)
             .filter_map(|a| {
                 a.threshold.map(|t| {
@@ -74,18 +75,25 @@ impl RspamdConfigManager {
         let mut actions = Vec::new();
         if let Some(arr) = raw.as_array() {
             for item in arr {
-                let name = item.get("action")
+                let name = item
+                    .get("action")
                     .or_else(|| item.get("name"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let threshold = item.get("value")
+                let threshold = item
+                    .get("value")
                     .or_else(|| item.get("threshold"))
                     .and_then(|v| v.as_f64());
-                let enabled = item.get("enabled")
+                let enabled = item
+                    .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
-                actions.push(RspamdAction { name, threshold, enabled });
+                actions.push(RspamdAction {
+                    name,
+                    threshold,
+                    enabled,
+                });
             }
         } else if let Some(obj) = raw.as_object() {
             for (name, info) in obj {
@@ -96,10 +104,15 @@ impl RspamdConfigManager {
                         .or_else(|| info.get("threshold"))
                         .and_then(|v| v.as_f64())
                 };
-                let enabled = info.get("enabled")
+                let enabled = info
+                    .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
-                actions.push(RspamdAction { name: name.clone(), threshold, enabled });
+                actions.push(RspamdAction {
+                    name: name.clone(),
+                    threshold,
+                    enabled,
+                });
             }
         }
         Ok(actions)
@@ -110,17 +123,33 @@ impl RspamdConfigManager {
         if let Some(arr) = raw.as_array() {
             for item in arr {
                 plugins.push(RspamdPlugin {
-                    name: item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    enabled: item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                    description: item.get("description").and_then(|v| v.as_str()).map(String::from),
+                    name: item
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    enabled: item
+                        .get("enabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                    description: item
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 });
             }
         } else if let Some(obj) = raw.as_object() {
             for (name, info) in obj {
                 plugins.push(RspamdPlugin {
                     name: name.clone(),
-                    enabled: info.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                    description: info.get("description").and_then(|v| v.as_str()).map(String::from),
+                    enabled: info
+                        .get("enabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                    description: info
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 });
             }
         }

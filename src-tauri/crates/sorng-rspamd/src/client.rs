@@ -49,8 +49,10 @@ impl RspamdClient {
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> RspamdResult<T> {
         let url = self.url(path);
         debug!("RSPAMD GET {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("GET {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -58,22 +60,32 @@ impl RspamdClient {
     pub async fn get_raw(&self, path: &str) -> RspamdResult<String> {
         let url = self.url(path);
         debug!("RSPAMD GET (raw) {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(self.map_status_error(status.as_u16(), &body));
         }
-        resp.text().await.map_err(|e| RspamdError::parse(format!("body: {e}")))
+        resp.text()
+            .await
+            .map_err(|e| RspamdError::parse(format!("body: {e}")))
     }
 
-    pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> RspamdResult<T> {
+    pub async fn post<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> RspamdResult<T> {
         let url = self.url(path);
         debug!("RSPAMD POST {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -81,26 +93,38 @@ impl RspamdClient {
     pub async fn post_raw(&self, path: &str, body: &str) -> RspamdResult<String> {
         let url = self.url(path);
         debug!("RSPAMD POST (raw) {url}");
-        let resp = self.apply_auth(self.http.post(&url)
-            .header("Content-Type", "text/plain")
-            .body(body.to_string()))
-            .send().await
+        let resp = self
+            .apply_auth(
+                self.http
+                    .post(&url)
+                    .header("Content-Type", "text/plain")
+                    .body(body.to_string()),
+            )
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(self.map_status_error(status.as_u16(), &body));
         }
-        resp.text().await.map_err(|e| RspamdError::parse(format!("body: {e}")))
+        resp.text()
+            .await
+            .map_err(|e| RspamdError::parse(format!("body: {e}")))
     }
 
     pub async fn post_body<T: DeserializeOwned>(&self, path: &str, body: &str) -> RspamdResult<T> {
         let url = self.url(path);
         debug!("RSPAMD POST (body) {url}");
-        let resp = self.apply_auth(self.http.post(&url)
-            .header("Content-Type", "text/plain")
-            .body(body.to_string()))
-            .send().await
+        let resp = self
+            .apply_auth(
+                self.http
+                    .post(&url)
+                    .header("Content-Type", "text/plain")
+                    .body(body.to_string()),
+            )
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -108,8 +132,10 @@ impl RspamdClient {
     pub async fn post_no_body(&self, path: &str) -> RspamdResult<()> {
         let url = self.url(path);
         debug!("RSPAMD POST (no body) {url}");
-        let resp = self.apply_auth(self.http.post(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url))
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -122,8 +148,10 @@ impl RspamdClient {
     pub async fn delete(&self, path: &str) -> RspamdResult<()> {
         let url = self.url(path);
         debug!("RSPAMD DELETE {url}");
-        let resp = self.apply_auth(self.http.delete(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.delete(&url))
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -139,11 +167,15 @@ impl RspamdClient {
     pub async fn ping(&self) -> RspamdResult<RspamdConnectionSummary> {
         let url = self.url("/stat");
         debug!("RSPAMD GET /stat (ping)");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| RspamdError::connection(format!("GET /stat: {e}")))?;
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| RspamdError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
@@ -152,8 +184,14 @@ impl RspamdClient {
             .map_err(|e| RspamdError::parse(format!("json: {e}")))?;
         Ok(RspamdConnectionSummary {
             host: self.config.base_url.clone(),
-            version: raw.get("version").and_then(|v| v.as_str()).map(String::from),
-            config_id: raw.get("config_id").and_then(|v| v.as_str()).map(String::from),
+            version: raw
+                .get("version")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            config_id: raw
+                .get("config_id")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             uptime_secs: raw.get("uptime").and_then(|v| v.as_u64()),
             scanned: raw.get("scanned").and_then(|v| v.as_u64()),
         })
@@ -161,9 +199,14 @@ impl RspamdClient {
 
     // ── Response handling ────────────────────────────────────────────
 
-    async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> RspamdResult<T> {
+    async fn handle_response<T: DeserializeOwned>(
+        &self,
+        resp: reqwest::Response,
+    ) -> RspamdResult<T> {
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| RspamdError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
@@ -181,6 +224,9 @@ impl RspamdClient {
             408 => RspamdErrorKind::Timeout,
             _ => RspamdErrorKind::ApiError,
         };
-        RspamdError { kind, message: format!("HTTP {status}: {body}") }
+        RspamdError {
+            kind,
+            message: format!("HTTP {status}: {body}"),
+        }
     }
 }

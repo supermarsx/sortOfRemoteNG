@@ -28,14 +28,26 @@ pub struct RspamdService {
     connections: HashMap<String, RspamdClient>,
 }
 
+impl Default for RspamdService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RspamdService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: RspamdConnectionConfig) -> RspamdResult<RspamdConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: RspamdConnectionConfig,
+    ) -> RspamdResult<RspamdConnectionSummary> {
         let client = RspamdClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
@@ -43,7 +55,8 @@ impl RspamdService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> RspamdResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| RspamdError::not_connected(format!("No connection '{}'", id)))
     }
@@ -53,7 +66,8 @@ impl RspamdService {
     }
 
     fn client(&self, id: &str) -> RspamdResult<&RspamdClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| RspamdError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -71,7 +85,11 @@ impl RspamdService {
         ScanManager::check_file(self.client(id)?, path).await
     }
 
-    pub async fn learn_spam(&self, id: &str, message: &str) -> RspamdResult<RspamdBayesLearnResult> {
+    pub async fn learn_spam(
+        &self,
+        id: &str,
+        message: &str,
+    ) -> RspamdResult<RspamdBayesLearnResult> {
         ScanManager::learn_spam(self.client(id)?, message).await
     }
 
@@ -79,7 +97,13 @@ impl RspamdService {
         ScanManager::learn_ham(self.client(id)?, message).await
     }
 
-    pub async fn fuzzy_add(&self, id: &str, message: &str, flag: u32, weight: f64) -> RspamdResult<()> {
+    pub async fn fuzzy_add(
+        &self,
+        id: &str,
+        message: &str,
+        flag: u32,
+        weight: f64,
+    ) -> RspamdResult<()> {
         ScanManager::fuzzy_add(self.client(id)?, message, flag, weight).await
     }
 
@@ -93,7 +117,11 @@ impl RspamdService {
         StatsManager::get_stats(self.client(id)?).await
     }
 
-    pub async fn get_graph(&self, id: &str, graph_type: &str) -> RspamdResult<Vec<RspamdGraphData>> {
+    pub async fn get_graph(
+        &self,
+        id: &str,
+        graph_type: &str,
+    ) -> RspamdResult<Vec<RspamdGraphData>> {
         StatsManager::get_graph(self.client(id)?, graph_type).await
     }
 
@@ -159,7 +187,11 @@ impl RspamdService {
         MapManager::get(self.client(id)?, map_id).await
     }
 
-    pub async fn get_map_entries(&self, id: &str, map_id: u64) -> RspamdResult<Vec<RspamdMapEntry>> {
+    pub async fn get_map_entries(
+        &self,
+        id: &str,
+        map_id: u64,
+    ) -> RspamdResult<Vec<RspamdMapEntry>> {
         MapManager::get_entries(self.client(id)?, map_id).await
     }
 
@@ -167,7 +199,13 @@ impl RspamdService {
         MapManager::save_entries(self.client(id)?, map_id, content).await
     }
 
-    pub async fn add_map_entry(&self, id: &str, map_id: u64, key: &str, value: Option<&str>) -> RspamdResult<()> {
+    pub async fn add_map_entry(
+        &self,
+        id: &str,
+        map_id: u64,
+        key: &str,
+        value: Option<&str>,
+    ) -> RspamdResult<()> {
         MapManager::add_entry(self.client(id)?, map_id, key, value).await
     }
 
@@ -177,11 +215,20 @@ impl RspamdService {
 
     // ── History ──────────────────────────────────────────────────
 
-    pub async fn get_history(&self, id: &str, limit: Option<u64>, offset: Option<u64>) -> RspamdResult<RspamdHistory> {
+    pub async fn get_history(
+        &self,
+        id: &str,
+        limit: Option<u64>,
+        offset: Option<u64>,
+    ) -> RspamdResult<RspamdHistory> {
         HistoryManager::get(self.client(id)?, limit, offset).await
     }
 
-    pub async fn get_history_entry(&self, id: &str, entry_id: &str) -> RspamdResult<RspamdHistoryEntry> {
+    pub async fn get_history_entry(
+        &self,
+        id: &str,
+        entry_id: &str,
+    ) -> RspamdResult<RspamdHistoryEntry> {
         HistoryManager::get_by_id(self.client(id)?, entry_id).await
     }
 
@@ -209,7 +256,11 @@ impl RspamdService {
         FuzzyManager::status(self.client(id)?).await
     }
 
-    pub async fn fuzzy_check(&self, id: &str, message: &str) -> RspamdResult<Vec<RspamdSymbolResult>> {
+    pub async fn fuzzy_check(
+        &self,
+        id: &str,
+        message: &str,
+    ) -> RspamdResult<Vec<RspamdSymbolResult>> {
         FuzzyManager::check(self.client(id)?, message).await
     }
 
@@ -235,7 +286,11 @@ impl RspamdService {
         RspamdConfigManager::reload(self.client(id)?).await
     }
 
-    pub async fn save_actions_config(&self, id: &str, actions: Vec<RspamdAction>) -> RspamdResult<()> {
+    pub async fn save_actions_config(
+        &self,
+        id: &str,
+        actions: Vec<RspamdAction>,
+    ) -> RspamdResult<()> {
         RspamdConfigManager::save_actions(self.client(id)?, &actions).await
     }
 }

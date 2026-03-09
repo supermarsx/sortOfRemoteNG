@@ -19,7 +19,8 @@ impl ActionManager {
     pub async fn get(client: &RspamdClient, name: &str) -> RspamdResult<RspamdAction> {
         debug!("RSPAMD get_action: {name}");
         let actions = Self::list(client).await?;
-        actions.into_iter()
+        actions
+            .into_iter()
             .find(|a| a.name == name)
             .ok_or_else(|| RspamdError::not_found(format!("Action not found: {name}")))
     }
@@ -39,7 +40,8 @@ impl ActionManager {
             }
         }
         // Build the thresholds array in rspamd format
-        let thresholds: Vec<serde_json::Value> = actions.iter()
+        let thresholds: Vec<serde_json::Value> = actions
+            .iter()
             .filter_map(|a| {
                 a.threshold.map(|t| {
                     serde_json::json!({
@@ -66,7 +68,8 @@ impl ActionManager {
                 return Err(RspamdError::not_found(format!("Action not found: {name}")));
             }
         }
-        let thresholds: Vec<serde_json::Value> = actions.iter()
+        let thresholds: Vec<serde_json::Value> = actions
+            .iter()
             .filter(|a| a.enabled)
             .filter_map(|a| {
                 a.threshold.map(|t| {
@@ -94,7 +97,8 @@ impl ActionManager {
                 return Err(RspamdError::not_found(format!("Action not found: {name}")));
             }
         }
-        let thresholds: Vec<serde_json::Value> = actions.iter()
+        let thresholds: Vec<serde_json::Value> = actions
+            .iter()
             .filter(|a| a.enabled)
             .filter_map(|a| {
                 a.threshold.map(|t| {
@@ -115,18 +119,25 @@ impl ActionManager {
         let mut actions = Vec::new();
         if let Some(arr) = raw.as_array() {
             for item in arr {
-                let name = item.get("action")
+                let name = item
+                    .get("action")
                     .or_else(|| item.get("name"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let threshold = item.get("value")
+                let threshold = item
+                    .get("value")
                     .or_else(|| item.get("threshold"))
                     .and_then(|v| v.as_f64());
-                let enabled = item.get("enabled")
+                let enabled = item
+                    .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
-                actions.push(RspamdAction { name, threshold, enabled });
+                actions.push(RspamdAction {
+                    name,
+                    threshold,
+                    enabled,
+                });
             }
         } else if let Some(obj) = raw.as_object() {
             for (name, info) in obj {
@@ -137,10 +148,15 @@ impl ActionManager {
                         .or_else(|| info.get("threshold"))
                         .and_then(|v| v.as_f64())
                 };
-                let enabled = info.get("enabled")
+                let enabled = info
+                    .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
-                actions.push(RspamdAction { name: name.clone(), threshold, enabled });
+                actions.push(RspamdAction {
+                    name: name.clone(),
+                    threshold,
+                    enabled,
+                });
             }
         }
         Ok(actions)

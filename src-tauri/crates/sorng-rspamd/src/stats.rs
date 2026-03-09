@@ -17,7 +17,10 @@ impl StatsManager {
     }
 
     /// GET /graph?type=<graph_type> — retrieve graph data
-    pub async fn get_graph(client: &RspamdClient, graph_type: &str) -> RspamdResult<Vec<RspamdGraphData>> {
+    pub async fn get_graph(
+        client: &RspamdClient,
+        graph_type: &str,
+    ) -> RspamdResult<Vec<RspamdGraphData>> {
         debug!("RSPAMD get_graph type={graph_type}");
         let path = format!("/graph?type={}", graph_type);
         let raw: serde_json::Value = client.get(&path).await?;
@@ -41,15 +44,16 @@ impl StatsManager {
         debug!("RSPAMD get_errors");
         let raw: serde_json::Value = client.get("/errors").await?;
         let errors = match raw {
-            serde_json::Value::Array(arr) => {
-                arr.iter().map(|v| {
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .map(|v| {
                     if let Some(s) = v.as_str() {
                         s.to_string()
                     } else {
                         v.to_string()
                     }
-                }).collect()
-            }
+                })
+                .collect(),
             serde_json::Value::String(s) => vec![s],
             other => vec![other.to_string()],
         };
@@ -64,39 +68,67 @@ impl StatsManager {
         let spam_count = raw.get("spam_count").and_then(|v| v.as_u64()).unwrap_or(0);
         let ham_count = raw.get("ham_count").and_then(|v| v.as_u64()).unwrap_or(0);
         let connections = raw.get("connections").and_then(|v| v.as_u64()).unwrap_or(0);
-        let control_connections = raw.get("control_connections").and_then(|v| v.as_u64()).unwrap_or(0);
-        let pools_allocated = raw.get("pools_allocated").and_then(|v| v.as_u64()).unwrap_or(0);
+        let control_connections = raw
+            .get("control_connections")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let pools_allocated = raw
+            .get("pools_allocated")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         let pools_freed = raw.get("pools_freed").and_then(|v| v.as_u64()).unwrap_or(0);
-        let bytes_allocated = raw.get("bytes_allocated").and_then(|v| v.as_u64()).unwrap_or(0);
-        let chunks_allocated = raw.get("chunks_allocated").and_then(|v| v.as_u64()).unwrap_or(0);
-        let shared_chunks_allocated = raw.get("shared_chunks_allocated").and_then(|v| v.as_u64()).unwrap_or(0);
-        let chunks_oversized = raw.get("chunks_oversized").and_then(|v| v.as_u64()).unwrap_or(0);
+        let bytes_allocated = raw
+            .get("bytes_allocated")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let chunks_allocated = raw
+            .get("chunks_allocated")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let shared_chunks_allocated = raw
+            .get("shared_chunks_allocated")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let chunks_oversized = raw
+            .get("chunks_oversized")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
         // Parse fuzzy hashes
         let mut fuzzy_hashes = HashMap::new();
         if let Some(fh_obj) = raw.get("fuzzy_hashes").and_then(|v| v.as_object()) {
             for (name, info) in fh_obj {
-                fuzzy_hashes.insert(name.clone(), RspamdFuzzyHash {
-                    version: info.get("version").and_then(|v| v.as_u64()),
-                    size: info.get("size").and_then(|v| v.as_u64()),
-                    buckets: info.get("buckets").and_then(|v| v.as_u64()),
-                });
+                fuzzy_hashes.insert(
+                    name.clone(),
+                    RspamdFuzzyHash {
+                        version: info.get("version").and_then(|v| v.as_u64()),
+                        size: info.get("size").and_then(|v| v.as_u64()),
+                        buckets: info.get("buckets").and_then(|v| v.as_u64()),
+                    },
+                );
             }
         }
 
         // Parse statfiles
-        let statfiles = raw.get("statfiles")
+        let statfiles = raw
+            .get("statfiles")
             .and_then(|v| v.as_array())
             .map(|arr| {
-                arr.iter().map(|sf| RspamdStatfile {
-                    symbol: sf.get("symbol").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    type_name: sf.get("type").and_then(|v| v.as_str()).map(String::from),
-                    size: sf.get("size").and_then(|v| v.as_u64()),
-                    used: sf.get("used").and_then(|v| v.as_u64()),
-                    total: sf.get("total").and_then(|v| v.as_u64()),
-                    languages: sf.get("languages").and_then(|v| v.as_u64()),
-                    users: sf.get("users").and_then(|v| v.as_u64()),
-                }).collect()
+                arr.iter()
+                    .map(|sf| RspamdStatfile {
+                        symbol: sf
+                            .get("symbol")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        type_name: sf.get("type").and_then(|v| v.as_str()).map(String::from),
+                        size: sf.get("size").and_then(|v| v.as_u64()),
+                        used: sf.get("used").and_then(|v| v.as_u64()),
+                        total: sf.get("total").and_then(|v| v.as_u64()),
+                        languages: sf.get("languages").and_then(|v| v.as_u64()),
+                        users: sf.get("users").and_then(|v| v.as_u64()),
+                    })
+                    .collect()
             })
             .unwrap_or_default();
 
@@ -123,20 +155,25 @@ impl StatsManager {
             serde_json::Value::Array(arr) => {
                 let mut result = Vec::new();
                 for item in arr {
-                    let label = item.get("label")
+                    let label = item
+                        .get("label")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let data = item.get("data")
+                    let data = item
+                        .get("data")
                         .and_then(|v| v.as_array())
                         .map(|points| {
-                            points.iter().map(|p| {
-                                if let Some(arr) = p.as_array() {
-                                    arr.iter().filter_map(|v| v.as_f64()).collect()
-                                } else {
-                                    vec![]
-                                }
-                            }).collect()
+                            points
+                                .iter()
+                                .map(|p| {
+                                    if let Some(arr) = p.as_array() {
+                                        arr.iter().filter_map(|v| v.as_f64()).collect()
+                                    } else {
+                                        vec![]
+                                    }
+                                })
+                                .collect()
                         })
                         .unwrap_or_default();
                     result.push(RspamdGraphData { label, data });
@@ -146,18 +183,25 @@ impl StatsManager {
             serde_json::Value::Object(obj) => {
                 let mut result = Vec::new();
                 for (label, data_val) in obj {
-                    let data = data_val.as_array()
+                    let data = data_val
+                        .as_array()
                         .map(|points| {
-                            points.iter().map(|p| {
-                                if let Some(arr) = p.as_array() {
-                                    arr.iter().filter_map(|v| v.as_f64()).collect()
-                                } else {
-                                    vec![]
-                                }
-                            }).collect()
+                            points
+                                .iter()
+                                .map(|p| {
+                                    if let Some(arr) = p.as_array() {
+                                        arr.iter().filter_map(|v| v.as_f64()).collect()
+                                    } else {
+                                        vec![]
+                                    }
+                                })
+                                .collect()
                         })
                         .unwrap_or_default();
-                    result.push(RspamdGraphData { label: label.clone(), data });
+                    result.push(RspamdGraphData {
+                        label: label.clone(),
+                        data,
+                    });
                 }
                 Ok(result)
             }
