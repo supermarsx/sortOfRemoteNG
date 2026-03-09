@@ -50,7 +50,8 @@ impl LegacyWebClient {
         let url = format!("{}/cgi/login.cgi", self.base_url);
         let form = [("name", username), ("pwd", password)];
 
-        let resp = self.http
+        let resp = self
+            .http
             .post(&url)
             .form(&form)
             .send()
@@ -66,9 +67,10 @@ impl LegacyWebClient {
 
         // Extract session cookie from response
         if let Some(cookie) = resp.headers().get("set-cookie") {
-            self.session_cookie = cookie.to_str().ok().map(|s| {
-                s.split(';').next().unwrap_or(s).to_string()
-            });
+            self.session_cookie = cookie
+                .to_str()
+                .ok()
+                .map(|s| s.split(';').next().unwrap_or(s).to_string());
         }
 
         // Some BMCs return CSRF token in the body or headers
@@ -84,7 +86,9 @@ impl LegacyWebClient {
         }
 
         if self.session_cookie.is_none() {
-            return Err(SmcError::legacy_web("No session cookie received after login"));
+            return Err(SmcError::legacy_web(
+                "No session cookie received after login",
+            ));
         }
 
         Ok(())
@@ -115,7 +119,9 @@ impl LegacyWebClient {
             req = req.header("X-CSRF-Token", token);
         }
 
-        let resp = req.send().await
+        let resp = req
+            .send()
+            .await
             .map_err(|e| SmcError::legacy_web(format!("GET {} failed: {e}", url)))?;
 
         if !resp.status().is_success() {
@@ -126,7 +132,8 @@ impl LegacyWebClient {
             )));
         }
 
-        resp.text().await
+        resp.text()
+            .await
             .map_err(|e| SmcError::legacy_web(format!("Failed to read response body: {e}")))
     }
 
@@ -150,7 +157,9 @@ impl LegacyWebClient {
             req = req.header("X-CSRF-Token", token);
         }
 
-        let resp = req.send().await
+        let resp = req
+            .send()
+            .await
             .map_err(|e| SmcError::legacy_web(format!("POST {} failed: {e}", url)))?;
 
         if !resp.status().is_success() {
@@ -161,7 +170,8 @@ impl LegacyWebClient {
             )));
         }
 
-        resp.text().await
+        resp.text()
+            .await
             .map_err(|e| SmcError::legacy_web(format!("Failed to read POST response: {e}")))
     }
 
@@ -173,20 +183,35 @@ impl LegacyWebClient {
 
         Ok(SystemInfo {
             manufacturer: Some("Supermicro".into())
-                .or_else(|| data.get("Manufacturer").and_then(|v| v.as_str()).map(String::from))
+                .or_else(|| {
+                    data.get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                })
                 .unwrap_or_else(|| "Supermicro".into()),
-            model: data.get("ProductName")
+            model: data
+                .get("ProductName")
                 .or_else(|| data.get("Model"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
                 .to_string(),
-            serial_number: data.get("SerialNumber").and_then(|v| v.as_str()).map(String::from),
-            sku: None,
-            bios_version: data.get("BiosVersion").and_then(|v| v.as_str()).map(String::from),
-            hostname: None,
-            power_state: data.get("PowerStatus")
+            serial_number: data
+                .get("SerialNumber")
                 .and_then(|v| v.as_str())
-                .map(|s| if s == "1" { "On".into() } else { "Off".into() }),
+                .map(String::from),
+            sku: None,
+            bios_version: data
+                .get("BiosVersion")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            hostname: None,
+            power_state: data.get("PowerStatus").and_then(|v| v.as_str()).map(|s| {
+                if s == "1" {
+                    "On".into()
+                } else {
+                    "Off".into()
+                }
+            }),
             indicator_led: None,
             asset_tag: None,
             uuid: data.get("UUID").and_then(|v| v.as_str()).map(String::from),
@@ -205,18 +230,27 @@ impl LegacyWebClient {
 
         Ok(SmcBmcInfo {
             platform: SmcPlatform::Unknown,
-            firmware_version: data.get("FirmwareVersion")
+            firmware_version: data
+                .get("FirmwareVersion")
                 .or_else(|| data.get("BMCVersion"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
                 .to_string(),
-            firmware_build_date: data.get("BuildDate").and_then(|v| v.as_str()).map(String::from),
-            bmc_mac_address: data.get("MACAddress")
+            firmware_build_date: data
+                .get("BuildDate")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            bmc_mac_address: data
+                .get("MACAddress")
                 .or_else(|| data.get("BMC_MAC"))
                 .and_then(|v| v.as_str())
                 .map(String::from),
-            ipmi_version: data.get("IPMIVersion").and_then(|v| v.as_str()).map(String::from),
-            bmc_model: data.get("BMCModel")
+            ipmi_version: data
+                .get("IPMIVersion")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            bmc_model: data
+                .get("BMCModel")
                 .or_else(|| data.get("ControllerModel"))
                 .and_then(|v| v.as_str())
                 .map(String::from),
@@ -247,37 +281,50 @@ impl LegacyWebClient {
 
     /// Get System Event Log entries via CGI API.
     pub async fn get_event_log(&self) -> SmcResult<Vec<EventLogEntry>> {
-        let data = self.get_json("/cgi/ipmi.cgi?op=SYSLOG&start=0&count=100").await?;
+        let data = self
+            .get_json("/cgi/ipmi.cgi?op=SYSLOG&start=0&count=100")
+            .await?;
 
         let mut entries = Vec::new();
-        if let Some(events) = data.get("Events")
+        if let Some(events) = data
+            .get("Events")
             .or_else(|| data.get("SEL"))
             .and_then(|v| v.as_array())
         {
             for (i, event) in events.iter().enumerate() {
                 entries.push(EventLogEntry {
-                    id: event.get("Id")
+                    id: event
+                        .get("Id")
                         .and_then(|v| v.as_str())
                         .map(String::from)
                         .unwrap_or_else(|| format!("{}", i + 1)),
-                    timestamp: event.get("Timestamp")
+                    timestamp: event
+                        .get("Timestamp")
                         .or_else(|| event.get("Date"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("Unknown")
                         .to_string(),
-                    severity: event.get("Severity")
+                    severity: event
+                        .get("Severity")
                         .or_else(|| event.get("Type"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("Unknown")
                         .to_string(),
-                    message: event.get("Message")
+                    message: event
+                        .get("Message")
                         .or_else(|| event.get("Description"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("No message")
                         .to_string(),
                     message_id: None,
-                    source: event.get("SensorType").and_then(|v| v.as_str()).map(String::from),
-                    category: event.get("EventType").and_then(|v| v.as_str()).map(String::from),
+                    source: event
+                        .get("SensorType")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    category: event
+                        .get("EventType")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                 });
             }
         }
@@ -287,7 +334,8 @@ impl LegacyWebClient {
 
     /// Clear the System Event Log.
     pub async fn clear_event_log(&self) -> SmcResult<()> {
-        self.post_form("/cgi/ipmi.cgi", &[("op", "CLEAR_SEL")]).await?;
+        self.post_form("/cgi/ipmi.cgi", &[("op", "CLEAR_SEL")])
+            .await?;
         Ok(())
     }
 

@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export common BMC types so consumers only need `sorng_supermicro::types::*`
-pub use sorng_bmc_common::types::*;
 pub use sorng_bmc_common::power::PowerAction;
 pub use sorng_bmc_common::redfish::RedfishSession;
+pub use sorng_bmc_common::types::*;
 
 // ── Platform generation ─────────────────────────────────────────────
 
@@ -47,12 +47,18 @@ impl SmcPlatform {
 
     /// Whether this platform supports Redfish (DMTF standard).
     pub fn supports_redfish(&self) -> bool {
-        matches!(self, Self::X13 | Self::H13 | Self::X12 | Self::H12 | Self::X11)
+        matches!(
+            self,
+            Self::X13 | Self::H13 | Self::X12 | Self::H12 | Self::X11
+        )
     }
 
     /// Whether this platform supports the legacy ATEN CGI web API.
     pub fn supports_legacy_web(&self) -> bool {
-        matches!(self, Self::X12 | Self::H12 | Self::X11 | Self::X10 | Self::X9)
+        matches!(
+            self,
+            Self::X12 | Self::H12 | Self::X11 | Self::X10 | Self::X9
+        )
     }
 
     /// Whether this platform supports IPMI-over-LAN.
@@ -63,7 +69,10 @@ impl SmcPlatform {
 
     /// Whether this platform supports HTML5 iKVM console.
     pub fn supports_html5_ikvm(&self) -> bool {
-        matches!(self, Self::X13 | Self::H13 | Self::X12 | Self::H12 | Self::X11)
+        matches!(
+            self,
+            Self::X13 | Self::H13 | Self::X12 | Self::H12 | Self::X11
+        )
     }
 
     /// Whether this platform supports Java-based KVM console.

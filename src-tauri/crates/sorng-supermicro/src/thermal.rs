@@ -17,33 +17,57 @@ impl ThermalManager {
             let sensors = web.get_sensor_data().await?;
             return parse_sensor_thermal(&sensors);
         }
-        Err(crate::error::SmcError::thermal("No protocol available for thermal data"))
+        Err(crate::error::SmcError::thermal(
+            "No protocol available for thermal data",
+        ))
     }
 
     /// Get aggregated thermal summary.
     pub async fn get_thermal_summary(client: &SmcClient) -> SmcResult<ThermalSummary> {
         let thermal = Self::get_thermal_data(client).await?;
 
-        let ambient = thermal.temperatures.iter()
-            .find(|t| t.name.contains("Ambient") || t.name.contains("Inlet") || t.name.contains("System"))
+        let ambient = thermal
+            .temperatures
+            .iter()
+            .find(|t| {
+                t.name.contains("Ambient") || t.name.contains("Inlet") || t.name.contains("System")
+            })
             .and_then(|t| t.reading_celsius);
 
-        let cpu_max = thermal.temperatures.iter()
+        let cpu_max = thermal
+            .temperatures
+            .iter()
             .filter(|t| t.name.contains("CPU") || t.name.contains("Processor"))
             .filter_map(|t| t.reading_celsius)
-            .fold(None, |acc: Option<f64>, val| Some(acc.map_or(val, |a| a.max(val))));
+            .fold(None, |acc: Option<f64>, val| {
+                Some(acc.map_or(val, |a| a.max(val)))
+            });
 
-        let dimm_max = thermal.temperatures.iter()
+        let dimm_max = thermal
+            .temperatures
+            .iter()
             .filter(|t| t.name.contains("DIMM") || t.name.contains("Memory"))
             .filter_map(|t| t.reading_celsius)
-            .fold(None, |acc: Option<f64>, val| Some(acc.map_or(val, |a| a.max(val))));
+            .fold(None, |acc: Option<f64>, val| {
+                Some(acc.map_or(val, |a| a.max(val)))
+            });
 
         let fan_count = thermal.fans.len() as u32;
         let fans_ok = thermal.fans.iter().filter(|f| f.status == "OK").count() as u32;
-        let fans_warning = thermal.fans.iter().filter(|f| f.status == "Warning").count() as u32;
-        let fans_critical = thermal.fans.iter().filter(|f| f.status == "Critical").count() as u32;
+        let fans_warning = thermal
+            .fans
+            .iter()
+            .filter(|f| f.status == "Warning")
+            .count() as u32;
+        let fans_critical = thermal
+            .fans
+            .iter()
+            .filter(|f| f.status == "Critical")
+            .count() as u32;
 
-        let overall_status = if fans_critical > 0 || thermal.temperatures.iter().any(|t| t.status == "Critical") {
+        let overall_status = if fans_critical > 0
+            || thermal.temperatures.iter().any(|t| t.status == "Critical")
+        {
             "Critical"
         } else if fans_warning > 0 || thermal.temperatures.iter().any(|t| t.status == "Warning") {
             "Warning"
@@ -69,24 +93,29 @@ fn parse_sensor_thermal(sensors: &serde_json::Value) -> SmcResult<ThermalData> {
     let mut temperatures = Vec::new();
     let mut fans = Vec::new();
 
-    if let Some(arr) = sensors.get("Sensors")
+    if let Some(arr) = sensors
+        .get("Sensors")
         .or_else(|| sensors.get("sensors"))
         .and_then(|v| v.as_array())
     {
         for sensor in arr {
-            let name = sensor.get("Name")
+            let name = sensor
+                .get("Name")
                 .or_else(|| sensor.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
                 .to_string();
-            let reading = sensor.get("Reading")
+            let reading = sensor
+                .get("Reading")
                 .or_else(|| sensor.get("reading"))
                 .and_then(|v| v.as_f64());
-            let sensor_type = sensor.get("Type")
+            let sensor_type = sensor
+                .get("Type")
                 .or_else(|| sensor.get("type"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let status = sensor.get("Status")
+            let status = sensor
+                .get("Status")
                 .or_else(|| sensor.get("status"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")

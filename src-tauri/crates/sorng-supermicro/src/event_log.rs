@@ -15,7 +15,9 @@ impl EventLogManager {
         if let Some(ref web) = client.legacy_web {
             return web.get_event_log().await;
         }
-        Err(crate::error::SmcError::event_log("No protocol available for event log"))
+        Err(crate::error::SmcError::event_log(
+            "No protocol available for event log",
+        ))
     }
 
     /// Get audit log entries (Redfish only).
@@ -32,6 +34,8 @@ impl EventLogManager {
         if let Some(ref web) = client.legacy_web {
             return web.clear_event_log().await;
         }
-        Err(crate::error::SmcError::event_log("No protocol available to clear event log"))
+        Err(crate::error::SmcError::event_log(
+            "No protocol available to clear event log",
+        ))
     }
 }

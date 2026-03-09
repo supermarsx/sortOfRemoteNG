@@ -43,17 +43,13 @@ pub async fn smc_get_config(state: State<'_, SmcServiceState>) -> Result<SmcConf
 // ── System ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn smc_get_system_info(
-    state: State<'_, SmcServiceState>,
-) -> Result<SystemInfo, String> {
+pub async fn smc_get_system_info(state: State<'_, SmcServiceState>) -> Result<SystemInfo, String> {
     let svc = state.lock().await;
     svc.get_system_info().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn smc_get_bmc_info(
-    state: State<'_, SmcServiceState>,
-) -> Result<SmcBmcInfo, String> {
+pub async fn smc_get_bmc_info(state: State<'_, SmcServiceState>) -> Result<SmcBmcInfo, String> {
     let svc = state.lock().await;
     svc.get_bmc_info().await.map_err(|e| e.to_string())
 }
@@ -73,7 +69,9 @@ pub async fn smc_set_indicator_led(
     led_state: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_indicator_led(&led_state).await.map_err(|e| e.to_string())
+    svc.set_indicator_led(&led_state)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Power ───────────────────────────────────────────────────────────
@@ -88,9 +86,7 @@ pub async fn smc_power_action(
 }
 
 #[tauri::command]
-pub async fn smc_get_power_state(
-    state: State<'_, SmcServiceState>,
-) -> Result<String, String> {
+pub async fn smc_get_power_state(state: State<'_, SmcServiceState>) -> Result<String, String> {
     let svc = state.lock().await;
     svc.get_power_state().await.map_err(|e| e.to_string())
 }
@@ -132,9 +128,7 @@ pub async fn smc_get_processors(
 }
 
 #[tauri::command]
-pub async fn smc_get_memory(
-    state: State<'_, SmcServiceState>,
-) -> Result<Vec<MemoryInfo>, String> {
+pub async fn smc_get_memory(state: State<'_, SmcServiceState>) -> Result<Vec<MemoryInfo>, String> {
     let svc = state.lock().await;
     svc.get_memory().await.map_err(|e| e.to_string())
 }
@@ -146,7 +140,9 @@ pub async fn smc_get_storage_controllers(
     state: State<'_, SmcServiceState>,
 ) -> Result<Vec<StorageController>, String> {
     let svc = state.lock().await;
-    svc.get_storage_controllers().await.map_err(|e| e.to_string())
+    svc.get_storage_controllers()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -190,7 +186,9 @@ pub async fn smc_get_firmware_inventory(
     state: State<'_, SmcServiceState>,
 ) -> Result<Vec<FirmwareInfo>, String> {
     let svc = state.lock().await;
-    svc.get_firmware_inventory().await.map_err(|e| e.to_string())
+    svc.get_firmware_inventory()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Virtual media ───────────────────────────────────────────────────
@@ -200,7 +198,9 @@ pub async fn smc_get_virtual_media_status(
     state: State<'_, SmcServiceState>,
 ) -> Result<Vec<VirtualMediaStatus>, String> {
     let svc = state.lock().await;
-    svc.get_virtual_media_status().await.map_err(|e| e.to_string())
+    svc.get_virtual_media_status()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -210,7 +210,9 @@ pub async fn smc_insert_virtual_media(
     image_url: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.insert_virtual_media(&slot, &image_url).await.map_err(|e| e.to_string())
+    svc.insert_virtual_media(&slot, &image_url)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -219,7 +221,9 @@ pub async fn smc_eject_virtual_media(
     slot: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.eject_virtual_media(&slot).await.map_err(|e| e.to_string())
+    svc.eject_virtual_media(&slot)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Console / iKVM ──────────────────────────────────────────────────
@@ -233,9 +237,7 @@ pub async fn smc_get_console_info(
 }
 
 #[tauri::command]
-pub async fn smc_get_html5_ikvm_url(
-    state: State<'_, SmcServiceState>,
-) -> Result<String, String> {
+pub async fn smc_get_html5_ikvm_url(state: State<'_, SmcServiceState>) -> Result<String, String> {
     let svc = state.lock().await;
     svc.get_html5_ikvm_url().await.map_err(|e| e.to_string())
 }
@@ -267,9 +269,7 @@ pub async fn smc_clear_event_log(state: State<'_, SmcServiceState>) -> Result<()
 // ── Users ───────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn smc_get_users(
-    state: State<'_, SmcServiceState>,
-) -> Result<Vec<UserAccount>, String> {
+pub async fn smc_get_users(state: State<'_, SmcServiceState>) -> Result<Vec<UserAccount>, String> {
     let svc = state.lock().await;
     svc.get_users().await.map_err(|e| e.to_string())
 }
@@ -282,7 +282,9 @@ pub async fn smc_create_user(
     role: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.create_user(&username, &password, &role).await.map_err(|e| e.to_string())
+    svc.create_user(&username, &password, &role)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -292,7 +294,9 @@ pub async fn smc_update_password(
     new_password: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.update_password(&user_id, &new_password).await.map_err(|e| e.to_string())
+    svc.update_password(&user_id, &new_password)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -320,13 +324,13 @@ pub async fn smc_set_bios_attributes(
     attributes: serde_json::Value,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_bios_attributes(&attributes).await.map_err(|e| e.to_string())
+    svc.set_bios_attributes(&attributes)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn smc_get_boot_config(
-    state: State<'_, SmcServiceState>,
-) -> Result<BootConfig, String> {
+pub async fn smc_get_boot_config(state: State<'_, SmcServiceState>) -> Result<BootConfig, String> {
     let svc = state.lock().await;
     svc.get_boot_config().await.map_err(|e| e.to_string())
 }
@@ -338,7 +342,9 @@ pub async fn smc_set_boot_override(
     mode: Option<String>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_boot_override(&target, mode.as_deref()).await.map_err(|e| e.to_string())
+    svc.set_boot_override(&target, mode.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Certificates ────────────────────────────────────────────────────
@@ -366,7 +372,9 @@ pub async fn smc_import_certificate(
     cert_pem: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.import_certificate(&cert_pem).await.map_err(|e| e.to_string())
+    svc.import_certificate(&cert_pem)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Health ──────────────────────────────────────────────────────────
@@ -380,9 +388,7 @@ pub async fn smc_get_health_rollup(
 }
 
 #[tauri::command]
-pub async fn smc_get_dashboard(
-    state: State<'_, SmcServiceState>,
-) -> Result<SmcDashboard, String> {
+pub async fn smc_get_dashboard(state: State<'_, SmcServiceState>) -> Result<SmcDashboard, String> {
     let svc = state.lock().await;
     svc.get_dashboard().await.map_err(|e| e.to_string())
 }
@@ -413,7 +419,9 @@ pub async fn smc_activate_license(
     product_key: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.activate_license(&product_key).await.map_err(|e| e.to_string())
+    svc.activate_license(&product_key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Node Manager ────────────────────────────────────────────────────
@@ -423,7 +431,9 @@ pub async fn smc_get_node_manager_policies(
     state: State<'_, SmcServiceState>,
 ) -> Result<Vec<NodeManagerPolicy>, String> {
     let svc = state.lock().await;
-    svc.get_node_manager_policies().await.map_err(|e| e.to_string())
+    svc.get_node_manager_policies()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -432,7 +442,9 @@ pub async fn smc_get_node_manager_stats(
     domain: NodeManagerDomain,
 ) -> Result<NodeManagerStats, String> {
     let svc = state.lock().await;
-    svc.get_node_manager_stats(&domain).await.map_err(|e| e.to_string())
+    svc.get_node_manager_stats(&domain)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── BMC reset ───────────────────────────────────────────────────────

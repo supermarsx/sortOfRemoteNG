@@ -64,10 +64,15 @@ impl SmcClient {
         }
 
         // Try legacy CGI web API (X9–X12)
-        if self.config.platform.supports_legacy_web() || self.config.platform == SmcPlatform::Unknown {
+        if self.config.platform.supports_legacy_web()
+            || self.config.platform == SmcPlatform::Unknown
+        {
             match LegacyWebClient::new(&self.config.host, self.config.port, self.config.use_ssl) {
                 Ok(mut web) => {
-                    match web.login(&self.config.username, &self.config.password).await {
+                    match web
+                        .login(&self.config.username, &self.config.password)
+                        .await
+                    {
                         Ok(()) => {
                             log::info!("Connected to Supermicro BMC via legacy CGI web API");
                             self.legacy_web = Some(web);
@@ -121,8 +126,8 @@ impl SmcClient {
 
     /// Whether we have an active connection.
     pub fn is_connected(&self) -> bool {
-        self.redfish.as_ref().map_or(false, |r| r.is_connected())
-            || self.legacy_web.as_ref().map_or(false, |w| w.is_connected())
+        self.redfish.as_ref().is_some_and(|r| r.is_connected())
+            || self.legacy_web.as_ref().is_some_and(|w| w.is_connected())
             || self.ipmi.is_some()
     }
 
@@ -144,17 +149,22 @@ impl SmcClient {
     pub(crate) fn require_redfish(&self) -> SmcResult<&SmcRedfishClient> {
         self.redfish.as_ref().ok_or_else(|| {
             SmcError::new(
-                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
+                crate::error::SmcErrorKind::Bmc(
+                    sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol,
+                ),
                 "Redfish not available — platform may not support it or not connected",
             )
         })
     }
 
     /// Require legacy web client or return error.
+    #[allow(dead_code)]
     pub(crate) fn require_legacy_web(&self) -> SmcResult<&LegacyWebClient> {
         self.legacy_web.as_ref().ok_or_else(|| {
             SmcError::new(
-                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
+                crate::error::SmcErrorKind::Bmc(
+                    sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol,
+                ),
                 "Legacy web API not available — platform may not support it or not connected",
             )
         })
@@ -165,7 +175,9 @@ impl SmcClient {
     pub(crate) fn require_ipmi(&self) -> SmcResult<&IpmiClient> {
         self.ipmi.as_ref().ok_or_else(|| {
             SmcError::new(
-                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
+                crate::error::SmcErrorKind::Bmc(
+                    sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol,
+                ),
                 "IPMI not available — not connected via IPMI",
             )
         })

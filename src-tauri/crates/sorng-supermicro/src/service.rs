@@ -18,6 +18,12 @@ pub struct SmcService {
     client: SmcClient,
 }
 
+impl Default for SmcService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SmcService {
     pub fn new() -> Self {
         Self {
