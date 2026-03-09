@@ -53,7 +53,9 @@ impl NetworkManager {
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::to_value(&subnet)
             .map_err(|e| crate::error::HetznerError::parse(e.to_string()))?;
-        client.post_action(&format!("/networks/{id}/actions/add_subnet"), &body).await
+        client
+            .post_action(&format!("/networks/{id}/actions/add_subnet"), &body)
+            .await
     }
 
     pub async fn delete_subnet(
@@ -62,7 +64,9 @@ impl NetworkManager {
         ip_range: String,
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::json!({ "ip_range": ip_range });
-        client.post_action(&format!("/networks/{id}/actions/delete_subnet"), &body).await
+        client
+            .post_action(&format!("/networks/{id}/actions/delete_subnet"), &body)
+            .await
     }
 
     pub async fn add_route(
@@ -72,7 +76,9 @@ impl NetworkManager {
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::to_value(&route)
             .map_err(|e| crate::error::HetznerError::parse(e.to_string()))?;
-        client.post_action(&format!("/networks/{id}/actions/add_route"), &body).await
+        client
+            .post_action(&format!("/networks/{id}/actions/add_route"), &body)
+            .await
     }
 
     pub async fn delete_route(
@@ -82,7 +88,9 @@ impl NetworkManager {
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::to_value(&route)
             .map_err(|e| crate::error::HetznerError::parse(e.to_string()))?;
-        client.post_action(&format!("/networks/{id}/actions/delete_route"), &body).await
+        client
+            .post_action(&format!("/networks/{id}/actions/delete_route"), &body)
+            .await
     }
 
     pub async fn change_ip_range(
@@ -91,6 +99,8 @@ impl NetworkManager {
         ip_range: String,
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::json!({ "ip_range": ip_range });
-        client.post_action(&format!("/networks/{id}/actions/change_ip_range"), &body).await
+        client
+            .post_action(&format!("/networks/{id}/actions/change_ip_range"), &body)
+            .await
     }
 }

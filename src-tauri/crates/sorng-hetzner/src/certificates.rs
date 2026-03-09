@@ -43,8 +43,7 @@ impl CertificateManager {
         if let Some(l) = labels {
             body["labels"] = l;
         }
-        let resp: CertificateResponse =
-            client.put(&format!("/certificates/{id}"), &body).await?;
+        let resp: CertificateResponse = client.put(&format!("/certificates/{id}"), &body).await?;
         Ok(resp.certificate)
     }
 

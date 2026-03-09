@@ -25,16 +25,20 @@ impl HetznerClient {
             builder = builder.danger_accept_invalid_certs(true);
         }
 
-        let http = builder
-            .build()
-            .map_err(|e| HetznerError::connection_failed(format!("Failed to create HTTP client: {e}")))?;
+        let http = builder.build().map_err(|e| {
+            HetznerError::connection_failed(format!("Failed to create HTTP client: {e}"))
+        })?;
 
         let base_url = config
             .base_url
             .clone()
             .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
 
-        Ok(Self { config, http, base_url })
+        Ok(Self {
+            config,
+            http,
+            base_url,
+        })
     }
 
     /// Build the full URL for an API endpoint path.
@@ -69,12 +73,18 @@ impl HetznerClient {
         } else {
             let body = response.text().await.unwrap_or_default();
             match status {
-                401 => Err(HetznerError::auth_failed(format!("Authentication failed: {body}"))),
+                401 => Err(HetznerError::auth_failed(format!(
+                    "Authentication failed: {body}"
+                ))),
                 403 => Err(HetznerError::auth_failed(format!("Forbidden: {body}"))),
-                404 => Err(HetznerError::not_found(format!("Resource not found: {body}"))),
+                404 => Err(HetznerError::not_found(format!(
+                    "Resource not found: {body}"
+                ))),
                 409 => Err(HetznerError::conflict(format!("Conflict: {body}"))),
                 429 => Err(HetznerError::rate_limited(format!("Rate limited: {body}"))),
-                500..=599 => Err(HetznerError::server_error(format!("Server error ({status}): {body}"))),
+                500..=599 => Err(HetznerError::server_error(format!(
+                    "Server error ({status}): {body}"
+                ))),
                 _ => Err(HetznerError::http(format!("HTTP {status}: {body}"))),
             }
         }
@@ -163,8 +173,12 @@ impl HetznerClient {
         } else {
             let body = response.text().await.unwrap_or_default();
             match status {
-                401 => Err(HetznerError::auth_failed(format!("Authentication failed: {body}"))),
-                404 => Err(HetznerError::not_found(format!("Resource not found: {body}"))),
+                401 => Err(HetznerError::auth_failed(format!(
+                    "Authentication failed: {body}"
+                ))),
+                404 => Err(HetznerError::not_found(format!(
+                    "Resource not found: {body}"
+                ))),
                 409 => Err(HetznerError::conflict(format!("Conflict: {body}"))),
                 429 => Err(HetznerError::rate_limited(format!("Rate limited: {body}"))),
                 _ => Err(HetznerError::http(format!("HTTP {status}: {body}"))),

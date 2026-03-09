@@ -29,9 +29,9 @@ impl HetznerService {
     }
 
     fn client(&self, connection_id: &str) -> HetznerResult<&HetznerClient> {
-        self.connections
-            .get(connection_id)
-            .ok_or_else(|| HetznerError::not_connected(format!("Connection '{connection_id}' not found")))
+        self.connections.get(connection_id).ok_or_else(|| {
+            HetznerError::not_connected(format!("Connection '{connection_id}' not found"))
+        })
     }
 
     // ── Connection management ───────────────────────────────────────
@@ -55,9 +55,9 @@ impl HetznerService {
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> HetznerResult<()> {
-        self.connections
-            .remove(connection_id)
-            .ok_or_else(|| HetznerError::not_connected(format!("Connection '{connection_id}' not found")))?;
+        self.connections.remove(connection_id).ok_or_else(|| {
+            HetznerError::not_connected(format!("Connection '{connection_id}' not found"))
+        })?;
         Ok(())
     }
 
@@ -83,8 +83,14 @@ impl HetznerService {
         let ssh_keys = SshKeyManager::list_ssh_keys(client).await?;
         let actions = ActionManager::list_actions(client).await?;
 
-        let running = servers.iter().filter(|s| matches!(s.status, ServerStatus::Running)).count() as u64;
-        let stopped = servers.iter().filter(|s| matches!(s.status, ServerStatus::Off)).count() as u64;
+        let running = servers
+            .iter()
+            .filter(|s| matches!(s.status, ServerStatus::Running))
+            .count() as u64;
+        let stopped = servers
+            .iter()
+            .filter(|s| matches!(s.status, ServerStatus::Off))
+            .count() as u64;
 
         Ok(HetznerDashboard {
             total_servers: servers.len() as u64,
@@ -131,7 +137,11 @@ impl HetznerService {
         ServerManager::stop_server(self.client(connection_id)?, id).await
     }
 
-    pub async fn reboot_server(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerAction> {
+    pub async fn reboot_server(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerAction> {
         ServerManager::reboot_server(self.client(connection_id)?, id).await
     }
 
@@ -168,7 +178,11 @@ impl HetznerService {
         ServerManager::enable_rescue(self.client(connection_id)?, id, rescue_type, ssh_keys).await
     }
 
-    pub async fn disable_rescue(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerAction> {
+    pub async fn disable_rescue(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerAction> {
         ServerManager::disable_rescue(self.client(connection_id)?, id).await
     }
 
@@ -180,14 +194,29 @@ impl HetznerService {
         image_type: Option<String>,
         labels: Option<serde_json::Value>,
     ) -> HetznerResult<HetznerAction> {
-        ServerManager::create_image(self.client(connection_id)?, id, description, image_type, labels).await
+        ServerManager::create_image(
+            self.client(connection_id)?,
+            id,
+            description,
+            image_type,
+            labels,
+        )
+        .await
     }
 
-    pub async fn enable_backup(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerAction> {
+    pub async fn enable_backup(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerAction> {
         ServerManager::enable_backup(self.client(connection_id)?, id).await
     }
 
-    pub async fn disable_backup(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerAction> {
+    pub async fn disable_backup(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerAction> {
         ServerManager::disable_backup(self.client(connection_id)?, id).await
     }
 
@@ -276,7 +305,11 @@ impl HetznerService {
         FirewallManager::list_firewalls(self.client(connection_id)?).await
     }
 
-    pub async fn get_firewall(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerFirewall> {
+    pub async fn get_firewall(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerFirewall> {
         FirewallManager::get_firewall(self.client(connection_id)?, id).await
     }
 
@@ -331,11 +364,18 @@ impl HetznerService {
 
     // ── Floating IPs ────────────────────────────────────────────────
 
-    pub async fn list_floating_ips(&self, connection_id: &str) -> HetznerResult<Vec<HetznerFloatingIp>> {
+    pub async fn list_floating_ips(
+        &self,
+        connection_id: &str,
+    ) -> HetznerResult<Vec<HetznerFloatingIp>> {
         FloatingIpManager::list_floating_ips(self.client(connection_id)?).await
     }
 
-    pub async fn get_floating_ip(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerFloatingIp> {
+    pub async fn get_floating_ip(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerFloatingIp> {
         FloatingIpManager::get_floating_ip(self.client(connection_id)?, id).await
     }
 
@@ -360,7 +400,11 @@ impl HetznerService {
         FloatingIpManager::assign(self.client(connection_id)?, id, server).await
     }
 
-    pub async fn unassign_floating_ip(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerAction> {
+    pub async fn unassign_floating_ip(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerAction> {
         FloatingIpManager::unassign(self.client(connection_id)?, id).await
     }
 
@@ -396,7 +440,11 @@ impl HetznerService {
         VolumeManager::attach(self.client(connection_id)?, id, server, automount).await
     }
 
-    pub async fn detach_volume(&self, connection_id: &str, id: u64) -> HetznerResult<HetznerAction> {
+    pub async fn detach_volume(
+        &self,
+        connection_id: &str,
+        id: u64,
+    ) -> HetznerResult<HetznerAction> {
         VolumeManager::detach(self.client(connection_id)?, id).await
     }
 

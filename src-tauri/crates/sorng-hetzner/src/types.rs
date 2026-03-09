@@ -727,7 +727,10 @@ mod tests {
 
     #[test]
     fn test_protection_roundtrip() {
-        let prot = HetznerProtection { delete: true, rebuild: false };
+        let prot = HetznerProtection {
+            delete: true,
+            rebuild: false,
+        };
         let json = serde_json::to_string(&prot).unwrap();
         let parsed: HetznerProtection = serde_json::from_str(&json).unwrap();
         assert!(parsed.delete);
@@ -788,7 +791,9 @@ mod tests {
 
     #[test]
     fn test_lb_algorithm_type_field() {
-        let algo = HetznerLbAlgorithm { type_field: "round_robin".to_string() };
+        let algo = HetznerLbAlgorithm {
+            type_field: "round_robin".to_string(),
+        };
         let json = serde_json::to_string(&algo).unwrap();
         assert!(json.contains("\"type\":\"round_robin\""));
     }

@@ -65,7 +65,10 @@ impl FirewallManager {
     ) -> HetznerResult<Vec<HetznerAction>> {
         let body = serde_json::json!({ "apply_to": apply_to });
         let resp: ActionsResponse = client
-            .post(&format!("/firewalls/{id}/actions/apply_to_resources"), &body)
+            .post(
+                &format!("/firewalls/{id}/actions/apply_to_resources"),
+                &body,
+            )
             .await?;
         Ok(resp.actions)
     }
@@ -77,7 +80,10 @@ impl FirewallManager {
     ) -> HetznerResult<Vec<HetznerAction>> {
         let body = serde_json::json!({ "remove_from": remove_from });
         let resp: ActionsResponse = client
-            .post(&format!("/firewalls/{id}/actions/remove_from_resources"), &body)
+            .post(
+                &format!("/firewalls/{id}/actions/remove_from_resources"),
+                &body,
+            )
             .await?;
         Ok(resp.actions)
     }

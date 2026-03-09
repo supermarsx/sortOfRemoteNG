@@ -30,15 +30,21 @@ impl ServerManager {
     }
 
     pub async fn start_server(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/poweron")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/poweron"))
+            .await
     }
 
     pub async fn stop_server(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/poweroff")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/poweroff"))
+            .await
     }
 
     pub async fn reboot_server(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/reboot")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/reboot"))
+            .await
     }
 
     pub async fn rebuild_server(
@@ -47,11 +53,15 @@ impl ServerManager {
         image: String,
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::json!({ "image": image });
-        client.post_action(&format!("/servers/{id}/actions/rebuild"), &body).await
+        client
+            .post_action(&format!("/servers/{id}/actions/rebuild"), &body)
+            .await
     }
 
     pub async fn reset_server(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/reset")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/reset"))
+            .await
     }
 
     pub async fn change_type(
@@ -64,7 +74,9 @@ impl ServerManager {
             "server_type": server_type,
             "upgrade_disk": upgrade_disk,
         });
-        client.post_action(&format!("/servers/{id}/actions/change_type"), &body).await
+        client
+            .post_action(&format!("/servers/{id}/actions/change_type"), &body)
+            .await
     }
 
     pub async fn enable_rescue(
@@ -78,14 +90,18 @@ impl ServerManager {
             body["type"] = serde_json::Value::String(t);
         }
         if let Some(keys) = ssh_keys {
-            body["ssh_keys"] = serde_json::to_value(keys)
-                .unwrap_or(serde_json::Value::Array(vec![]));
+            body["ssh_keys"] =
+                serde_json::to_value(keys).unwrap_or(serde_json::Value::Array(vec![]));
         }
-        client.post_action(&format!("/servers/{id}/actions/enable_rescue"), &body).await
+        client
+            .post_action(&format!("/servers/{id}/actions/enable_rescue"), &body)
+            .await
     }
 
     pub async fn disable_rescue(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/disable_rescue")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/disable_rescue"))
+            .await
     }
 
     pub async fn attach_iso(
@@ -94,11 +110,15 @@ impl ServerManager {
         iso: String,
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::json!({ "iso": iso });
-        client.post_action(&format!("/servers/{id}/actions/attach_iso"), &body).await
+        client
+            .post_action(&format!("/servers/{id}/actions/attach_iso"), &body)
+            .await
     }
 
     pub async fn detach_iso(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/detach_iso")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/detach_iso"))
+            .await
     }
 
     pub async fn change_dns_ptr(
@@ -108,7 +128,9 @@ impl ServerManager {
         dns_ptr: Option<String>,
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::json!({ "ip": ip, "dns_ptr": dns_ptr });
-        client.post_action(&format!("/servers/{id}/actions/change_dns_ptr"), &body).await
+        client
+            .post_action(&format!("/servers/{id}/actions/change_dns_ptr"), &body)
+            .await
     }
 
     pub async fn create_image(
@@ -128,15 +150,21 @@ impl ServerManager {
         if let Some(l) = labels {
             body["labels"] = l;
         }
-        client.post_action(&format!("/servers/{id}/actions/create_image"), &body).await
+        client
+            .post_action(&format!("/servers/{id}/actions/create_image"), &body)
+            .await
     }
 
     pub async fn enable_backup(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/enable_backup")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/enable_backup"))
+            .await
     }
 
     pub async fn disable_backup(client: &HetznerClient, id: u64) -> HetznerResult<HetznerAction> {
-        client.post_action_empty(&format!("/servers/{id}/actions/disable_backup")).await
+        client
+            .post_action_empty(&format!("/servers/{id}/actions/disable_backup"))
+            .await
     }
 
     pub async fn get_metrics(

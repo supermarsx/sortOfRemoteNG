@@ -52,7 +52,10 @@ impl LoadBalancerManager {
         let body = serde_json::to_value(&service)
             .map_err(|e| crate::error::HetznerError::parse(e.to_string()))?;
         client
-            .post_action(&format!("/load_balancers/{id}/actions/update_service"), &body)
+            .post_action(
+                &format!("/load_balancers/{id}/actions/update_service"),
+                &body,
+            )
             .await
     }
 
@@ -63,7 +66,10 @@ impl LoadBalancerManager {
     ) -> HetznerResult<HetznerAction> {
         let body = serde_json::json!({ "listen_port": listen_port });
         client
-            .post_action(&format!("/load_balancers/{id}/actions/delete_service"), &body)
+            .post_action(
+                &format!("/load_balancers/{id}/actions/delete_service"),
+                &body,
+            )
             .await
     }
 
@@ -87,7 +93,10 @@ impl LoadBalancerManager {
         let body = serde_json::to_value(&target)
             .map_err(|e| crate::error::HetznerError::parse(e.to_string()))?;
         client
-            .post_action(&format!("/load_balancers/{id}/actions/remove_target"), &body)
+            .post_action(
+                &format!("/load_balancers/{id}/actions/remove_target"),
+                &body,
+            )
             .await
     }
 
