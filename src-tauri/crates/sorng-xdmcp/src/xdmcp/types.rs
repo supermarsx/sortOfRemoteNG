@@ -366,13 +366,19 @@ impl std::error::Error for XdmcpError {}
 
 impl From<std::io::Error> for XdmcpError {
     fn from(e: std::io::Error) -> Self {
-        Self { kind: XdmcpErrorKind::IoError, message: e.to_string() }
+        Self {
+            kind: XdmcpErrorKind::IoError,
+            message: e.to_string(),
+        }
     }
 }
 
 impl XdmcpError {
     pub fn new(kind: XdmcpErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
 
     pub fn connection_failed(msg: impl Into<String>) -> Self {
@@ -392,7 +398,10 @@ impl XdmcpError {
     }
 
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(XdmcpErrorKind::SessionNotFound, format!("session not found: {}", id))
+        Self::new(
+            XdmcpErrorKind::SessionNotFound,
+            format!("session not found: {}", id),
+        )
     }
 
     pub fn protocol(msg: impl Into<String>) -> Self {
@@ -457,13 +466,17 @@ mod tests {
     #[test]
     fn session_from_config() {
         let config = XdmcpConfig::default();
-        let session = XdmcpSession::from_config(&config, "test".into(), XdmcpSessionState::Discovering);
+        let session =
+            XdmcpSession::from_config(&config, "test".into(), XdmcpSessionState::Discovering);
         assert_eq!(session.state, XdmcpSessionState::Discovering);
     }
 
     #[test]
     fn auth_type_wire_name() {
         assert_eq!(XdmcpAuthType::None.wire_name(), "");
-        assert_eq!(XdmcpAuthType::MitMagicCookie.wire_name(), "MIT-MAGIC-COOKIE-1");
+        assert_eq!(
+            XdmcpAuthType::MitMagicCookie.wire_name(),
+            "MIT-MAGIC-COOKIE-1"
+        );
     }
 }

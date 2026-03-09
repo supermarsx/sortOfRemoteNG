@@ -15,10 +15,10 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
-bytes = "1"
+bytes = { workspace = true }
 byteorder = "1"
 which = "6.0"
 
 [dev-dependencies]
-tokio-test = "0.4"
-tempfile = "3.0"
+tokio-test = { workspace = true }
+tempfile = { workspace = true }

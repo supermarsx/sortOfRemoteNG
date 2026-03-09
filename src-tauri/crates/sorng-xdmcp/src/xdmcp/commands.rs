@@ -12,9 +12,7 @@ pub async fn connect_xdmcp(
     config: XdmcpConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.connect(session_id, config)
-        .await
-        .map_err(|e| e.message)
+    svc.connect(session_id, config).await.map_err(|e| e.message)
 }
 
 #[tauri::command]

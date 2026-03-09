@@ -27,13 +27,19 @@ pub struct XServerInfo {
 }
 
 /// Locate an X server binary.
-pub fn find_x_server(server_type: &XServerType, custom_path: Option<&str>) -> Result<PathBuf, XdmcpError> {
+pub fn find_x_server(
+    server_type: &XServerType,
+    custom_path: Option<&str>,
+) -> Result<PathBuf, XdmcpError> {
     if let Some(p) = custom_path {
         let path = PathBuf::from(p);
         if path.exists() {
             return Ok(path);
         }
-        return Err(XdmcpError::x_server(format!("X server not found at: {}", p)));
+        return Err(XdmcpError::x_server(format!(
+            "X server not found at: {}",
+            p
+        )));
     }
 
     let binary_name = match server_type {
@@ -70,10 +76,14 @@ pub fn find_x_server(server_type: &XServerType, custom_path: Option<&str>) -> Re
         return Ok(path);
     }
 
-    Err(XdmcpError::x_server(format!("{} not found in PATH", binary_name)))
+    Err(XdmcpError::x_server(format!(
+        "{} not found in PATH",
+        binary_name
+    )))
 }
 
 /// Build the command-line arguments for launching an X server.
+#[allow(clippy::too_many_arguments)]
 pub fn build_x_server_args(
     server_type: &XServerType,
     display_number: u32,
@@ -128,8 +138,7 @@ pub fn find_available_display(start: u32) -> u32 {
     for n in start..start + 100 {
         let lock_file = format!("/tmp/.X{}-lock", n);
         let socket_dir = format!("/tmp/.X11-unix/X{}", n);
-        if !std::path::Path::new(&lock_file).exists()
-            && !std::path::Path::new(&socket_dir).exists()
+        if !std::path::Path::new(&lock_file).exists() && !std::path::Path::new(&socket_dir).exists()
         {
             return n;
         }
@@ -161,32 +170,15 @@ mod tests {
 
     #[test]
     fn xvfb_args() {
-        let args = build_x_server_args(
-            &XServerType::Xvfb,
-            20,
-            1920,
-            1080,
-            24,
-            "10.0.0.1",
-            177,
-            &[],
-        );
+        let args =
+            build_x_server_args(&XServerType::Xvfb, 20, 1920, 1080, 24, "10.0.0.1", 177, &[]);
         assert!(args.contains(&":20".to_string()));
         assert!(args.contains(&"1920x1080x24".to_string()));
     }
 
     #[test]
     fn custom_port() {
-        let args = build_x_server_args(
-            &XServerType::Xephyr,
-            10,
-            1024,
-            768,
-            24,
-            "host",
-            1177,
-            &[],
-        );
+        let args = build_x_server_args(&XServerType::Xephyr, 10, 1024, 768, 24, "host", 1177, &[]);
         assert!(args.contains(&"-port".to_string()));
         assert!(args.contains(&"1177".to_string()));
     }

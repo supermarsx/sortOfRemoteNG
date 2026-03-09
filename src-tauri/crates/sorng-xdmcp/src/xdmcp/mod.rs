@@ -1,11 +1,11 @@
-pub mod types;
-pub mod protocol;
-pub mod discovery;
-pub mod xserver;
-pub mod session;
-pub mod service;
 pub mod commands;
+pub mod discovery;
+pub mod protocol;
+pub mod service;
+pub mod session;
+pub mod types;
+pub mod xserver;
 
-pub use types::*;
-pub use service::{XdmcpService, XdmcpServiceState};
 pub use commands::*;
+pub use service::{XdmcpService, XdmcpServiceState};
+pub use types::*;

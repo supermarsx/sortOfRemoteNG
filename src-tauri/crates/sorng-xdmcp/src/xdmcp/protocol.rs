@@ -37,12 +37,18 @@ impl XdmcpHeader {
     }
 
     pub fn decode(data: &[u8]) -> Option<Self> {
-        if data.len() < 6 { return None; }
+        if data.len() < 6 {
+            return None;
+        }
         let version = u16::from_be_bytes([data[0], data[1]]);
         let opcode_raw = u16::from_be_bytes([data[2], data[3]]);
         let length = u16::from_be_bytes([data[4], data[5]]);
         let opcode = XdmcpOpcode::from_u16(opcode_raw)?;
-        Some(Self { version, opcode, length })
+        Some(Self {
+            version,
+            opcode,
+            length,
+        })
     }
 }
 
@@ -54,9 +60,13 @@ pub fn encode_string(buf: &mut BytesMut, s: &str) {
 
 /// Decode a length-prefixed string from a byte slice, returning (string, bytes_consumed).
 pub fn decode_string(data: &[u8]) -> Option<(String, usize)> {
-    if data.len() < 2 { return None; }
+    if data.len() < 2 {
+        return None;
+    }
     let len = u16::from_be_bytes([data[0], data[1]]) as usize;
-    if data.len() < 2 + len { return None; }
+    if data.len() < 2 + len {
+        return None;
+    }
     let s = String::from_utf8_lossy(&data[2..2 + len]).to_string();
     Some((s, 2 + len))
 }
@@ -71,7 +81,9 @@ pub fn encode_string_list(buf: &mut BytesMut, strings: &[&str]) {
 
 /// Decode a list of strings.
 pub fn decode_string_list(data: &[u8]) -> Option<(Vec<String>, usize)> {
-    if data.len() < 2 { return None; }
+    if data.len() < 2 {
+        return None;
+    }
     let count = u16::from_be_bytes([data[0], data[1]]) as usize;
     let mut offset = 2;
     let mut strings = Vec::with_capacity(count);
@@ -191,7 +203,11 @@ pub fn parse_willing(payload: &[u8]) -> Option<WillingResponse> {
     let (auth_name, consumed1) = decode_string(payload)?;
     let (hostname, consumed2) = decode_string(&payload[consumed1..])?;
     let (status, _) = decode_string(&payload[consumed1 + consumed2..])?;
-    Some(WillingResponse { auth_name, hostname, status })
+    Some(WillingResponse {
+        auth_name,
+        hostname,
+        status,
+    })
 }
 
 /// Parsed Accept response.
@@ -204,15 +220,25 @@ pub struct AcceptResponse {
 
 /// Parse an Accept response payload.
 pub fn parse_accept(payload: &[u8]) -> Option<AcceptResponse> {
-    if payload.len() < 4 { return None; }
+    if payload.len() < 4 {
+        return None;
+    }
     let session_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
     let offset = 4;
     let (auth_name, consumed) = decode_string(&payload[offset..])?;
     let data_offset = offset + consumed;
-    if payload.len() < data_offset + 2 { return None; }
+    if payload.len() < data_offset + 2 {
+        return None;
+    }
     let data_len = u16::from_be_bytes([payload[data_offset], payload[data_offset + 1]]) as usize;
-    let data = payload.get(data_offset + 2..data_offset + 2 + data_len)?.to_vec();
-    Some(AcceptResponse { session_id, auth_name, auth_data: data })
+    let data = payload
+        .get(data_offset + 2..data_offset + 2 + data_len)?
+        .to_vec();
+    Some(AcceptResponse {
+        session_id,
+        auth_name,
+        auth_data: data,
+    })
 }
 
 /// Parsed Decline response.
@@ -228,10 +254,18 @@ pub fn parse_decline(payload: &[u8]) -> Option<DeclineResponse> {
     let (status, consumed1) = decode_string(payload)?;
     let (auth_name, consumed2) = decode_string(&payload[consumed1..])?;
     let data_offset = consumed1 + consumed2;
-    if payload.len() < data_offset + 2 { return None; }
+    if payload.len() < data_offset + 2 {
+        return None;
+    }
     let data_len = u16::from_be_bytes([payload[data_offset], payload[data_offset + 1]]) as usize;
-    let data = payload.get(data_offset + 2..data_offset + 2 + data_len)?.to_vec();
-    Some(DeclineResponse { status, auth_name, auth_data: data })
+    let data = payload
+        .get(data_offset + 2..data_offset + 2 + data_len)?
+        .to_vec();
+    Some(DeclineResponse {
+        status,
+        auth_name,
+        auth_data: data,
+    })
 }
 
 #[cfg(test)]

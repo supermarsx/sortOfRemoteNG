@@ -70,13 +70,14 @@ impl XdmcpService {
         let socket = UdpSocket::bind("0.0.0.0:0")
             .await
             .map_err(XdmcpError::from)?;
-        socket
-            .set_broadcast(true)
-            .map_err(XdmcpError::from)?;
+        socket.set_broadcast(true).map_err(XdmcpError::from)?;
 
         let target = format!("{}:{}", broadcast_address, XDMCP_PORT);
         let query = crate::xdmcp::protocol::build_broadcast_query(&[]);
-        socket.send_to(&query, &target).await.map_err(XdmcpError::from)?;
+        socket
+            .send_to(&query, &target)
+            .await
+            .map_err(XdmcpError::from)?;
 
         let mut hosts = Vec::new();
         let deadline = Duration::from_millis(timeout_ms);
@@ -84,7 +85,9 @@ impl XdmcpService {
 
         let start = tokio::time::Instant::now();
         loop {
-            let remaining = deadline.checked_sub(start.elapsed()).unwrap_or(Duration::ZERO);
+            let remaining = deadline
+                .checked_sub(start.elapsed())
+                .unwrap_or(Duration::ZERO);
             if remaining.is_zero() {
                 break;
             }
@@ -205,7 +208,10 @@ impl XdmcpService {
 
         for (id, handle) in &self.sessions {
             let st = handle.state.lock().await;
-            if matches!(st.state, XdmcpSessionState::Ended | XdmcpSessionState::Failed) {
+            if matches!(
+                st.state,
+                XdmcpSessionState::Ended | XdmcpSessionState::Failed
+            ) {
                 to_remove.push(id.clone());
             }
         }

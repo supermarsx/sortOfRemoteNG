@@ -138,7 +138,10 @@ async fn session_task(
 
     // 2. Send Query
     let query = crate::xdmcp::protocol::build_query(&[]);
-    socket.send_to(&query, &target).await.map_err(XdmcpError::from)?;
+    socket
+        .send_to(&query, &target)
+        .await
+        .map_err(XdmcpError::from)?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += query.len() as u64;
@@ -167,7 +170,10 @@ async fn session_task(
     }
 
     if header.opcode != XdmcpOpcode::Willing {
-        return Err(XdmcpError::protocol(format!("expected Willing, got {:?}", header.opcode)));
+        return Err(XdmcpError::protocol(format!(
+            "expected Willing, got {:?}",
+            header.opcode
+        )));
     }
 
     let willing = crate::xdmcp::protocol::parse_willing(&buf[6..n])
@@ -187,9 +193,9 @@ async fn session_task(
     }
 
     // 4. Send Request
-    let display_num = config.display_number.unwrap_or(
-        crate::xdmcp::xserver::find_available_display(10)
-    ) as u16;
+    let display_num = config
+        .display_number
+        .unwrap_or(crate::xdmcp::xserver::find_available_display(10)) as u16;
 
     let local_addr = socket.local_addr().map_err(XdmcpError::from)?;
     let ip_bytes: Vec<u8> = match local_addr.ip() {
@@ -205,7 +211,10 @@ async fn session_task(
         &[],
         "sorng-xdmcp",
     );
-    socket.send_to(&request, &target).await.map_err(XdmcpError::from)?;
+    socket
+        .send_to(&request, &target)
+        .await
+        .map_err(XdmcpError::from)?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += request.len() as u64;
@@ -229,12 +238,17 @@ async fn session_task(
 
     if resp_header.opcode == XdmcpOpcode::Decline {
         let decline = crate::xdmcp::protocol::parse_decline(&buf[6..n]);
-        let reason = decline.map(|d| d.status).unwrap_or_else(|| "declined".into());
+        let reason = decline
+            .map(|d| d.status)
+            .unwrap_or_else(|| "declined".into());
         return Err(XdmcpError::declined(reason));
     }
 
     if resp_header.opcode != XdmcpOpcode::Accept {
-        return Err(XdmcpError::protocol(format!("expected Accept, got {:?}", resp_header.opcode)));
+        return Err(XdmcpError::protocol(format!(
+            "expected Accept, got {:?}",
+            resp_header.opcode
+        )));
     }
 
     let accept = crate::xdmcp::protocol::parse_accept(&buf[6..n])
@@ -248,16 +262,18 @@ async fn session_task(
     }
 
     let _ = event_tx
-        .send(SessionEvent::Accepted { session_id: accept.session_id })
+        .send(SessionEvent::Accepted {
+            session_id: accept.session_id,
+        })
         .await;
 
     // 6. Send Manage
-    let manage = crate::xdmcp::protocol::build_manage(
-        accept.session_id,
-        display_num,
-        "MIT-unspecified",
-    );
-    socket.send_to(&manage, &target).await.map_err(XdmcpError::from)?;
+    let manage =
+        crate::xdmcp::protocol::build_manage(accept.session_id, display_num, "MIT-unspecified");
+    socket
+        .send_to(&manage, &target)
+        .await
+        .map_err(XdmcpError::from)?;
 
     // 7. Mark running
     {
@@ -338,7 +354,10 @@ mod tests {
     #[test]
     fn session_command_variants() {
         let _ = SessionCommand::Disconnect;
-        let _ = SessionCommand::Resize { width: 1920, height: 1080 };
+        let _ = SessionCommand::Resize {
+            width: 1920,
+            height: 1080,
+        };
     }
 
     #[test]

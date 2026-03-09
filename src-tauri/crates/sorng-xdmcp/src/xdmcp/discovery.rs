@@ -60,26 +60,32 @@ impl DiscoveryManager {
 
     /// Process a Willing response.
     pub fn handle_willing(&mut self, addr: IpAddr, response: &protocol::WillingResponse) {
-        self.hosts.insert(addr, DiscoveredHost {
-            address: addr,
-            hostname: response.hostname.clone(),
-            status: response.status.clone(),
-            auth_name: response.auth_name.clone(),
-            discovered_at: chrono::Utc::now().to_rfc3339(),
-            willing: true,
-        });
+        self.hosts.insert(
+            addr,
+            DiscoveredHost {
+                address: addr,
+                hostname: response.hostname.clone(),
+                status: response.status.clone(),
+                auth_name: response.auth_name.clone(),
+                discovered_at: chrono::Utc::now().to_rfc3339(),
+                willing: true,
+            },
+        );
     }
 
     /// Process an Unwilling response.
     pub fn handle_unwilling(&mut self, addr: IpAddr, hostname: &str, status: &str) {
-        self.hosts.insert(addr, DiscoveredHost {
-            address: addr,
-            hostname: hostname.to_string(),
-            status: status.to_string(),
-            auth_name: String::new(),
-            discovered_at: chrono::Utc::now().to_rfc3339(),
-            willing: false,
-        });
+        self.hosts.insert(
+            addr,
+            DiscoveredHost {
+                address: addr,
+                hostname: hostname.to_string(),
+                status: status.to_string(),
+                auth_name: String::new(),
+                discovered_at: chrono::Utc::now().to_rfc3339(),
+                willing: false,
+            },
+        );
     }
 
     /// List all discovered hosts.
@@ -110,11 +116,10 @@ impl DiscoveryManager {
     /// Target address for the query.
     pub fn target_address(&self) -> String {
         match self.query_type {
-            QueryType::Broadcast => {
-                self.broadcast_address
-                    .clone()
-                    .unwrap_or_else(|| "255.255.255.255".to_string())
-            }
+            QueryType::Broadcast => self
+                .broadcast_address
+                .clone()
+                .unwrap_or_else(|| "255.255.255.255".to_string()),
             _ => "0.0.0.0".to_string(), // Direct/Indirect use the config host
         }
     }
