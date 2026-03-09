@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::process::Command;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde_json;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tauri;
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type ZeroTierServiceState = Arc<Mutex<ZeroTierService>>;
 
@@ -55,7 +55,11 @@ impl ZeroTierService {
         }))
     }
 
-    pub async fn create_connection(&mut self, name: String, config: ZeroTierConfig) -> Result<String, String> {
+    pub async fn create_connection(
+        &mut self,
+        name: String,
+        config: ZeroTierConfig,
+    ) -> Result<String, String> {
         let id = Uuid::new_v4().to_string();
         let connection = ZeroTierConnection {
             id: id.clone(),
@@ -96,7 +100,7 @@ impl ZeroTierService {
 
         // Join the ZeroTier network
         let output = Command::new("zerotier-cli")
-            .args(&["join", &network_id])
+            .args(["join", &network_id])
             .output()
             .await
             .map_err(|e| format!("Failed to execute zerotier-cli: {}", e))?;
@@ -120,7 +124,9 @@ impl ZeroTierService {
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "ZeroTier connection not found".to_string())?;
 
         if let ZeroTierStatus::Disconnected = connection.status {
@@ -132,7 +138,7 @@ impl ZeroTierService {
         if let Some(network_id) = &connection.network_id {
             // Leave the ZeroTier network
             let output = Command::new("zerotier-cli")
-                .args(&["leave", network_id])
+                .args(["leave", network_id])
                 .output()
                 .await
                 .map_err(|e| format!("Failed to execute zerotier-cli: {}", e))?;
@@ -153,7 +159,8 @@ impl ZeroTierService {
     }
 
     pub async fn get_connection(&self, connection_id: &str) -> Result<ZeroTierConnection, String> {
-        self.connections.get(connection_id)
+        self.connections
+            .get(connection_id)
             .cloned()
             .ok_or_else(|| "ZeroTier connection not found".to_string())
     }
@@ -175,7 +182,7 @@ impl ZeroTierService {
 
     async fn get_network_info(&self, network_id: &str) -> Result<NetworkInfo, String> {
         let output = Command::new("zerotier-cli")
-            .args(&["listnetworks", "-j"])
+            .args(["listnetworks", "-j"])
             .output()
             .await
             .map_err(|e| format!("Failed to get network info: {}", e))?;
@@ -191,14 +198,17 @@ impl ZeroTierService {
         for network in networks {
             if let Some(nwid) = network.get("nwid").and_then(|v| v.as_str()) {
                 if nwid == network_id {
-                    let assigned_ips = network.get("assignedAddresses")
+                    let assigned_ips = network
+                        .get("assignedAddresses")
                         .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter().filter_map(|ip| ip.as_str().map(|s| s.to_string())).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|ip| ip.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
                         .unwrap_or_default();
 
-                    return Ok(NetworkInfo {
-                        assigned_ips,
-                    });
+                    return Ok(NetworkInfo { assigned_ips });
                 }
             }
         }

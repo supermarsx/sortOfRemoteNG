@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::process::Command;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tauri;
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 pub type TailscaleServiceState = Arc<Mutex<TailscaleService>>;
 
@@ -58,7 +58,11 @@ impl TailscaleService {
         }))
     }
 
-    pub async fn create_connection(&mut self, name: String, config: TailscaleConfig) -> Result<String, String> {
+    pub async fn create_connection(
+        &mut self,
+        name: String,
+        config: TailscaleConfig,
+    ) -> Result<String, String> {
         let id = Uuid::new_v4().to_string();
         let connection = TailscaleConnection {
             id: id.clone(),
@@ -77,7 +81,9 @@ impl TailscaleService {
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "Tailscale connection not found".to_string())?;
 
         if let TailscaleStatus::Connected = connection.status {
@@ -189,7 +195,9 @@ impl TailscaleService {
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "Tailscale connection not found".to_string())?;
 
         if let TailscaleStatus::Disconnected = connection.status {
@@ -220,7 +228,8 @@ impl TailscaleService {
     }
 
     pub async fn get_connection(&self, connection_id: &str) -> Result<TailscaleConnection, String> {
-        self.connections.get(connection_id)
+        self.connections
+            .get(connection_id)
             .cloned()
             .ok_or_else(|| "Tailscale connection not found".to_string())
     }
@@ -242,7 +251,7 @@ impl TailscaleService {
 
     async fn get_status_info(&self) -> Result<StatusInfo, String> {
         let output = Command::new("tailscale")
-            .args(&["status", "--json"])
+            .args(["status", "--json"])
             .output()
             .await
             .map_err(|e| format!("Failed to get status: {}", e))?;
@@ -252,16 +261,18 @@ impl TailscaleService {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let status: serde_json::Value = serde_json::from_str(&stdout)
-            .map_err(|e| format!("Failed to parse status: {}", e))?;
+        let status: serde_json::Value =
+            serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse status: {}", e))?;
 
-        let tailnet_ip = status.get("TailscaleIPs")
+        let tailnet_ip = status
+            .get("TailscaleIPs")
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
             .and_then(|ip| ip.as_str())
             .map(|s| s.to_string());
 
-        let hostname = status.get("User")
+        let hostname = status
+            .get("User")
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
             .and_then(|u| u.get("LoginName"))

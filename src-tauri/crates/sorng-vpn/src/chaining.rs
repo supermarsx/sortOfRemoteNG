@@ -1,15 +1,15 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tauri;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
-use crate::proxy::ProxyServiceState;
 use crate::openvpn::OpenVPNServiceState;
+use crate::proxy::ProxyServiceState;
+use crate::tailscale::TailscaleServiceState;
 use crate::wireguard::WireGuardServiceState;
 use crate::zerotier::ZeroTierServiceState;
-use crate::tailscale::TailscaleServiceState;
 
 pub type ChainingServiceState = Arc<Mutex<ChainingService>>;
 
@@ -96,7 +96,12 @@ impl ChainingService {
         }))
     }
 
-    pub async fn create_chain(&mut self, name: String, description: Option<String>, layers: Vec<ChainLayer>) -> Result<String, String> {
+    pub async fn create_chain(
+        &mut self,
+        name: String,
+        description: Option<String>,
+        layers: Vec<ChainLayer>,
+    ) -> Result<String, String> {
         let id = Uuid::new_v4().to_string();
 
         // Validate layers
@@ -141,13 +146,25 @@ impl ChainingService {
             if let ChainStatus::Connected = chain.status {
                 return Ok(());
             }
-            chain.layers.iter().map(|l| (l.connection_type.clone(), l.connection_id.clone(), l.position as u32)).collect()
+            chain
+                .layers
+                .iter()
+                .map(|l| {
+                    (
+                        l.connection_type.clone(),
+                        l.connection_id.clone(),
+                        l.position as u32,
+                    )
+                })
+                .collect()
         };
 
         // Connect layers in order and collect results
         let mut layer_results = Vec::new();
         for (connection_type, connection_id, position) in layer_infos {
-            let result = self.connect_layer_by_info(&connection_type, &connection_id).await;
+            let result = self
+                .connect_layer_by_info(&connection_type, &connection_id)
+                .await;
             layer_results.push((connection_type, connection_id, position, result));
         }
 
@@ -158,7 +175,11 @@ impl ChainingService {
 
         // Update each layer status
         for (connection_type, connection_id, position, result) in layer_results {
-            let layer = chain.layers.iter_mut().find(|l| l.connection_type == connection_type && l.connection_id == connection_id).unwrap();
+            let layer = chain
+                .layers
+                .iter_mut()
+                .find(|l| l.connection_type == connection_type && l.connection_id == connection_id)
+                .unwrap();
             match result {
                 Ok(local_port) => {
                     layer.status = ChainLayerStatus::Connected;
@@ -197,13 +218,26 @@ impl ChainingService {
             if let ChainStatus::Disconnected = chain.status {
                 return Ok(());
             }
-            chain.layers.iter().rev().map(|l| (l.connection_type.clone(), l.connection_id.clone(), l.position as u32)).collect()
+            chain
+                .layers
+                .iter()
+                .rev()
+                .map(|l| {
+                    (
+                        l.connection_type.clone(),
+                        l.connection_id.clone(),
+                        l.position as u32,
+                    )
+                })
+                .collect()
         };
 
         // Disconnect layers in reverse order and collect results
         let mut layer_results = Vec::new();
         for (connection_type, connection_id, position) in layer_infos {
-            let result = self.disconnect_layer_by_info(&connection_type, &connection_id).await;
+            let result = self
+                .disconnect_layer_by_info(&connection_type, &connection_id)
+                .await;
             layer_results.push((connection_type, connection_id, position, result));
         }
 
@@ -213,7 +247,11 @@ impl ChainingService {
 
         // Update each layer status
         for (connection_type, connection_id, position, result) in layer_results {
-            let layer = chain.layers.iter_mut().find(|l| l.connection_type == connection_type && l.connection_id == connection_id).unwrap();
+            let layer = chain
+                .layers
+                .iter_mut()
+                .find(|l| l.connection_type == connection_type && l.connection_id == connection_id)
+                .unwrap();
             match result {
                 Ok(()) => {
                     layer.status = ChainLayerStatus::Disconnected;
@@ -223,8 +261,12 @@ impl ChainingService {
                 Err(e) => {
                     layer.status = ChainLayerStatus::Error(e.clone());
                     layer.error = Some(e.clone());
-                    chain.status = ChainStatus::Error(format!("Layer {} disconnect failed: {}", position, e));
-                    return Err(format!("Failed to disconnect chain layer {}: {}", position, e));
+                    chain.status =
+                        ChainStatus::Error(format!("Layer {} disconnect failed: {}", position, e));
+                    return Err(format!(
+                        "Failed to disconnect chain layer {}: {}",
+                        position, e
+                    ));
                 }
             }
         }
@@ -237,7 +279,8 @@ impl ChainingService {
     }
 
     pub async fn get_chain(&self, chain_id: &str) -> Result<ConnectionChain, String> {
-        self.chains.get(chain_id)
+        self.chains
+            .get(chain_id)
             .cloned()
             .ok_or_else(|| "Chain not found".to_string())
     }
@@ -257,8 +300,14 @@ impl ChainingService {
         Ok(())
     }
 
-    pub async fn update_chain_layers(&mut self, chain_id: &str, layers: Vec<ChainLayer>) -> Result<(), String> {
-        let chain = self.chains.get_mut(chain_id)
+    pub async fn update_chain_layers(
+        &mut self,
+        chain_id: &str,
+        layers: Vec<ChainLayer>,
+    ) -> Result<(), String> {
+        let chain = self
+            .chains
+            .get_mut(chain_id)
             .ok_or_else(|| "Chain not found".to_string())?;
 
         // Can only update layers if chain is disconnected
@@ -341,7 +390,11 @@ impl ChainingService {
         }
     }
 
-    async fn connect_layer_by_info(&self, connection_type: &ConnectionType, connection_id: &str) -> Result<u16, String> {
+    async fn connect_layer_by_info(
+        &self,
+        connection_type: &ConnectionType,
+        connection_id: &str,
+    ) -> Result<u16, String> {
         match connection_type {
             ConnectionType::Proxy => {
                 // For proxy, we need to connect via proxy service
@@ -441,7 +494,11 @@ impl ChainingService {
         }
     }
 
-    async fn disconnect_layer_by_info(&self, connection_type: &ConnectionType, connection_id: &str) -> Result<(), String> {
+    async fn disconnect_layer_by_info(
+        &self,
+        connection_type: &ConnectionType,
+        connection_id: &str,
+    ) -> Result<(), String> {
         match connection_type {
             ConnectionType::Proxy => {
                 let mut proxy_service = self.proxy_service.lock().await;
@@ -555,12 +612,10 @@ pub async fn update_connection_chain_layers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
 
     // For testing, we'll create a minimal chaining service
     // Note: In a real scenario, you'd want proper dependency injection or mocking
-    
+
     fn create_test_layer(connection_type: ConnectionType, position: usize) -> ChainLayer {
         ChainLayer {
             id: format!("layer_{}", position),
@@ -580,7 +635,7 @@ mod tests {
         assert_eq!(ConnectionType::WireGuard, ConnectionType::WireGuard);
         assert_eq!(ConnectionType::ZeroTier, ConnectionType::ZeroTier);
         assert_eq!(ConnectionType::Tailscale, ConnectionType::Tailscale);
-        
+
         assert_ne!(ConnectionType::Proxy, ConnectionType::OpenVPN);
         assert_ne!(ConnectionType::WireGuard, ConnectionType::ZeroTier);
     }
@@ -596,16 +651,19 @@ mod tests {
             local_port: None,
             error: None,
         };
-        
+
         // Test serialization
         let json = serde_json::to_string(&layer).unwrap();
         let deserialized: ChainLayer = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.id, layer.id);
         assert_eq!(deserialized.connection_type, layer.connection_type);
         assert_eq!(deserialized.connection_id, layer.connection_id);
         assert_eq!(deserialized.position, layer.position);
-        assert!(matches!(deserialized.status, ChainLayerStatus::Disconnected));
+        assert!(matches!(
+            deserialized.status,
+            ChainLayerStatus::Disconnected
+        ));
         assert!(deserialized.local_port.is_none());
         assert!(deserialized.error.is_none());
     }
@@ -616,7 +674,7 @@ mod tests {
             create_test_layer(ConnectionType::Proxy, 0),
             create_test_layer(ConnectionType::OpenVPN, 1),
         ];
-        
+
         let chain = ConnectionChain {
             id: "test_chain".to_string(),
             name: "Test Chain".to_string(),
@@ -628,11 +686,11 @@ mod tests {
             final_local_port: None,
             error: None,
         };
-        
+
         // Test serialization
         let json = serde_json::to_string(&chain).unwrap();
         let deserialized: ConnectionChain = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.id, chain.id);
         assert_eq!(deserialized.name, chain.name);
         assert_eq!(deserialized.description, chain.description);
@@ -646,20 +704,20 @@ mod tests {
     #[test]
     fn test_chain_layer_status_transitions() {
         let mut layer = create_test_layer(ConnectionType::Proxy, 0);
-        
+
         // Initially disconnected
         assert!(matches!(layer.status, ChainLayerStatus::Disconnected));
-        
+
         // Simulate connecting
         layer.status = ChainLayerStatus::Connecting;
         assert!(matches!(layer.status, ChainLayerStatus::Connecting));
-        
+
         // Simulate successful connection
         layer.status = ChainLayerStatus::Connected;
         layer.local_port = Some(8080);
         assert!(matches!(layer.status, ChainLayerStatus::Connected));
         assert_eq!(layer.local_port, Some(8080));
-        
+
         // Simulate error
         layer.status = ChainLayerStatus::Error("Connection failed".to_string());
         layer.error = Some("Connection failed".to_string());
@@ -684,14 +742,14 @@ mod tests {
             final_local_port: None,
             error: None,
         };
-        
+
         // Initially disconnected
         assert!(matches!(chain.status, ChainStatus::Disconnected));
-        
+
         // Simulate connecting
         chain.status = ChainStatus::Connecting;
         assert!(matches!(chain.status, ChainStatus::Connecting));
-        
+
         // Simulate successful connection
         chain.status = ChainStatus::Connected;
         chain.connected_at = Some(Utc::now());
@@ -699,7 +757,7 @@ mod tests {
         assert!(matches!(chain.status, ChainStatus::Connected));
         assert!(chain.connected_at.is_some());
         assert_eq!(chain.final_local_port, Some(8080));
-        
+
         // Simulate error
         chain.status = ChainStatus::Error("Chain failed".to_string());
         chain.error = Some("Chain failed".to_string());

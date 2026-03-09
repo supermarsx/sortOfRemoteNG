@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::process::Command;
-use std::collections::HashMap;
-use tokio::fs;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tauri;
+use tokio::fs;
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use uuid::Uuid;
 
 #[tauri::command]
 pub async fn create_wireguard_connection(
@@ -114,7 +114,11 @@ impl WireGuardService {
         }))
     }
 
-    pub async fn create_connection(&mut self, name: String, config: WireGuardConfig) -> Result<String, String> {
+    pub async fn create_connection(
+        &mut self,
+        name: String,
+        config: WireGuardConfig,
+    ) -> Result<String, String> {
         let id = Uuid::new_v4().to_string();
         let connection = WireGuardConnection {
             id: id.clone(),
@@ -141,7 +145,9 @@ impl WireGuardService {
 
         // Get the config before borrowing mutably
         let config = self.connections[connection_id].config.clone();
-        let interface_name = config.interface_name.clone()
+        let interface_name = config
+            .interface_name
+            .clone()
             .unwrap_or_else(|| format!("wg_{}", &connection_id[..8]));
 
         // Generate config content before borrowing mutably
@@ -149,7 +155,8 @@ impl WireGuardService {
 
         // Bring up WireGuard interface before borrowing mutably
         let config_path = format!("/tmp/wg_{}.conf", connection_id);
-        fs::write(&config_path, config_content).await
+        fs::write(&config_path, config_content)
+            .await
             .map_err(|e| format!("Failed to write config file: {}", e))?;
 
         let output = Command::new("wg-quick")
@@ -195,7 +202,9 @@ impl WireGuardService {
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "WireGuard connection not found".to_string())?;
 
         if let WireGuardStatus::Disconnected = connection.status {
@@ -232,7 +241,8 @@ impl WireGuardService {
     }
 
     pub async fn get_connection(&self, connection_id: &str) -> Result<WireGuardConnection, String> {
-        self.connections.get(connection_id)
+        self.connections
+            .get(connection_id)
             .cloned()
             .ok_or_else(|| "WireGuard connection not found".to_string())
     }
@@ -252,10 +262,14 @@ impl WireGuardService {
         Ok(())
     }
 
-    fn generate_config(&self, config: &WireGuardConfig, _interface_name: &str) -> Result<String, String> {
+    fn generate_config(
+        &self,
+        config: &WireGuardConfig,
+        _interface_name: &str,
+    ) -> Result<String, String> {
         let mut lines = Vec::new();
 
-        lines.push(format!("[Interface]"));
+        lines.push("[Interface]".to_string());
         if let Some(private_key) = &config.private_key {
             lines.push(format!("PrivateKey = {}", private_key));
         }
@@ -275,8 +289,8 @@ impl WireGuardService {
             lines.push(format!("FwMark = {}", fwmark));
         }
 
-        lines.push(format!(""));
-        lines.push(format!("[Peer]"));
+        lines.push(String::new());
+        lines.push("[Peer]".to_string());
         if let Some(public_key) = &config.public_key {
             lines.push(format!("PublicKey = {}", public_key));
         }
@@ -298,7 +312,7 @@ impl WireGuardService {
 
     async fn get_interface_info(&self, interface_name: &str) -> Result<InterfaceInfo, String> {
         let output = Command::new("ip")
-            .args(&["addr", "show", interface_name])
+            .args(["addr", "show", interface_name])
             .output()
             .await
             .map_err(|e| format!("Failed to get interface info: {}", e))?;
@@ -312,7 +326,7 @@ impl WireGuardService {
 
         // Get peer information from wg show
         let wg_output = Command::new("wg")
-            .args(&["show", interface_name])
+            .args(["show", interface_name])
             .output()
             .await
             .map_err(|e| format!("Failed to get wg info: {}", e))?;
@@ -437,7 +451,10 @@ mod tests {
     async fn create_connection_returns_uuid() {
         let state = WireGuardService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test WG".to_string(), default_wg_config()).await.unwrap();
+        let id = svc
+            .create_connection("Test WG".to_string(), default_wg_config())
+            .await
+            .unwrap();
         assert_eq!(id.len(), 36);
     }
 
@@ -445,7 +462,10 @@ mod tests {
     async fn create_connection_default_status() {
         let state = WireGuardService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_wg_config()).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_wg_config())
+            .await
+            .unwrap();
         let conn = svc.get_connection(&id).await.unwrap();
         assert!(matches!(conn.status, WireGuardStatus::Disconnected));
         assert!(conn.connected_at.is_none());
@@ -462,8 +482,12 @@ mod tests {
     async fn list_connections_after_create() {
         let state = WireGuardService::new();
         let mut svc = state.lock().await;
-        svc.create_connection("WG1".to_string(), default_wg_config()).await.unwrap();
-        svc.create_connection("WG2".to_string(), default_wg_config()).await.unwrap();
+        svc.create_connection("WG1".to_string(), default_wg_config())
+            .await
+            .unwrap();
+        svc.create_connection("WG2".to_string(), default_wg_config())
+            .await
+            .unwrap();
         assert_eq!(svc.list_connections().await.len(), 2);
     }
 
@@ -478,7 +502,10 @@ mod tests {
     async fn delete_connection_removes_it() {
         let state = WireGuardService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_wg_config()).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_wg_config())
+            .await
+            .unwrap();
         svc.delete_connection(&id).await.unwrap();
         assert!(svc.get_connection(&id).await.is_err());
     }
@@ -607,7 +634,8 @@ mod tests {
     async fn extract_peer_ip_from_wg_valid() {
         let state = WireGuardService::new();
         let svc = state.lock().await;
-        let output = "interface: wg0\n  public key: abc=\n  peer: xyz=\n    endpoint: 1.2.3.4:51820\n";
+        let output =
+            "interface: wg0\n  public key: abc=\n  peer: xyz=\n    endpoint: 1.2.3.4:51820\n";
         let peer = svc.extract_peer_ip_from_wg(output);
         assert!(peer.is_some());
     }

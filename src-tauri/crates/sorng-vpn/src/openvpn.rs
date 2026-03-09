@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::process::Command;
-use std::process::Stdio;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::path::Path;
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::process::Command;
+use tokio::sync::Mutex;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 pub type OpenVPNServiceState = Arc<Mutex<OpenVPNService>>;
 
@@ -89,7 +89,11 @@ impl OpenVPNService {
         }))
     }
 
-    pub async fn create_connection(&mut self, name: String, config: OpenVPNConfig) -> Result<String, String> {
+    pub async fn create_connection(
+        &mut self,
+        name: String,
+        config: OpenVPNConfig,
+    ) -> Result<String, String> {
         let id = Uuid::new_v4().to_string();
         let connection = OpenVPNConnection {
             id: id.clone(),
@@ -108,7 +112,9 @@ impl OpenVPNService {
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "OpenVPN connection not found".to_string())?;
 
         if let OpenVPNStatus::Connected = connection.status {
@@ -118,7 +124,11 @@ impl OpenVPNService {
         connection.status = OpenVPNStatus::Connecting;
 
         // Build OpenVPN command arguments
-        let mut args = vec!["--client".to_string(), "--dev".to_string(), "tun".to_string()];
+        let mut args = vec![
+            "--client".to_string(),
+            "--dev".to_string(),
+            "tun".to_string(),
+        ];
 
         // Add configuration file if provided
         if let Some(config_file) = &connection.config.config_file {
@@ -261,15 +271,14 @@ impl OpenVPNService {
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "OpenVPN connection not found".to_string())?;
 
         if let Some(pid) = connection.process_id {
             // Kill the OpenVPN process
-            let _ = Command::new("kill")
-                .arg(pid.to_string())
-                .status()
-                .await;
+            let _ = Command::new("kill").arg(pid.to_string()).status().await;
         }
 
         connection.status = OpenVPNStatus::Disconnected;
@@ -282,7 +291,8 @@ impl OpenVPNService {
     }
 
     pub async fn get_connection(&self, connection_id: &str) -> Result<OpenVPNConnection, String> {
-        self.connections.get(connection_id)
+        self.connections
+            .get(connection_id)
             .cloned()
             .ok_or_else(|| "OpenVPN connection not found".to_string())
     }
@@ -303,7 +313,9 @@ impl OpenVPNService {
     }
 
     pub async fn get_status(&self, connection_id: &str) -> Result<OpenVPNStatus, String> {
-        let connection = self.connections.get(connection_id)
+        let connection = self
+            .connections
+            .get(connection_id)
             .ok_or_else(|| "OpenVPN connection not found".to_string())?;
         Ok(connection.status.clone())
     }
@@ -489,8 +501,7 @@ impl OpenVPNService {
                 }
                 // In a real implementation, you'd save this to a temp file
                 config.ca_cert = Some("inline_ca_cert".to_string());
-            }
-            else if line == "<cert>" {
+            } else if line == "<cert>" {
                 let mut cert_content = String::new();
                 i += 1;
                 while i < lines.len() && lines[i].trim() != "</cert>" {
@@ -499,8 +510,7 @@ impl OpenVPNService {
                     i += 1;
                 }
                 config.client_cert = Some("inline_client_cert".to_string());
-            }
-            else if line == "<key>" {
+            } else if line == "<key>" {
                 let mut key_content = String::new();
                 i += 1;
                 while i < lines.len() && lines[i].trim() != "</key>" {
@@ -509,8 +519,7 @@ impl OpenVPNService {
                     i += 1;
                 }
                 config.client_key = Some("inline_client_key".to_string());
-            }
-            else if line == "<tls-auth>" {
+            } else if line == "<tls-auth>" {
                 let mut tls_auth_content = String::new();
                 i += 1;
                 while i < lines.len() && lines[i].trim() != "</tls-auth>" {
@@ -519,8 +528,7 @@ impl OpenVPNService {
                     i += 1;
                 }
                 config.tls_auth = Some(true);
-            }
-            else if line == "<tls-crypt>" {
+            } else if line == "<tls-crypt>" {
                 let mut tls_crypt_content = String::new();
                 i += 1;
                 while i < lines.len() && lines[i].trim() != "</tls-crypt>" {
@@ -541,13 +549,24 @@ impl OpenVPNService {
         Ok(config)
     }
 
-    pub async fn create_connection_from_ovpn(&mut self, name: String, ovpn_content: String) -> Result<String, String> {
+    pub async fn create_connection_from_ovpn(
+        &mut self,
+        name: String,
+        ovpn_content: String,
+    ) -> Result<String, String> {
         let config = self.parse_ovpn_file(&ovpn_content).await?;
         self.create_connection(name, config).await
     }
 
-    pub async fn update_connection_auth(&mut self, connection_id: &str, username: Option<String>, password: Option<String>) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+    pub async fn update_connection_auth(
+        &mut self,
+        connection_id: &str,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Result<(), String> {
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "OpenVPN connection not found".to_string())?;
 
         connection.config.username = username;
@@ -555,8 +574,17 @@ impl OpenVPNService {
         Ok(())
     }
 
-    pub async fn set_connection_key_files(&mut self, connection_id: &str, ca_cert: Option<String>, client_cert: Option<String>, client_key: Option<String>, tls_auth: Option<String>) -> Result<(), String> {
-        let connection = self.connections.get_mut(connection_id)
+    pub async fn set_connection_key_files(
+        &mut self,
+        connection_id: &str,
+        ca_cert: Option<String>,
+        client_cert: Option<String>,
+        client_key: Option<String>,
+        tls_auth: Option<String>,
+    ) -> Result<(), String> {
+        let connection = self
+            .connections
+            .get_mut(connection_id)
             .ok_or_else(|| "OpenVPN connection not found".to_string())?;
 
         connection.config.ca_cert = ca_cert;
@@ -597,7 +625,15 @@ impl OpenVPNService {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2 {
                     let cipher = parts[1];
-                    if !["AES-256-GCM", "AES-128-GCM", "AES-256-CBC", "AES-128-CBC", "BF-CBC"].contains(&cipher) {
+                    if ![
+                        "AES-256-GCM",
+                        "AES-128-GCM",
+                        "AES-256-CBC",
+                        "AES-128-CBC",
+                        "BF-CBC",
+                    ]
+                    .contains(&cipher)
+                    {
                         warnings.push(format!("Potentially unsupported cipher: {}", cipher));
                     }
                 }
@@ -613,7 +649,10 @@ impl OpenVPNService {
         }
 
         if !has_cert && !has_key {
-            warnings.push("No client certificate or key specified - will use password authentication only".to_string());
+            warnings.push(
+                "No client certificate or key specified - will use password authentication only"
+                    .to_string(),
+            );
         }
 
         if !errors.is_empty() {
@@ -694,7 +733,9 @@ pub async fn create_openvpn_connection_from_ovpn(
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<String, String> {
     let mut service = state.lock().await;
-    service.create_connection_from_ovpn(name, ovpn_content).await
+    service
+        .create_connection_from_ovpn(name, ovpn_content)
+        .await
 }
 
 #[tauri::command]
@@ -705,7 +746,9 @@ pub async fn update_openvpn_connection_auth(
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_connection_auth(&connection_id, username, password).await
+    service
+        .update_connection_auth(&connection_id, username, password)
+        .await
 }
 
 #[tauri::command]
@@ -718,7 +761,9 @@ pub async fn set_openvpn_connection_key_files(
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.set_connection_key_files(&connection_id, ca_cert, client_cert, client_key, tls_auth).await
+    service
+        .set_connection_key_files(&connection_id, ca_cert, client_cert, client_key, tls_auth)
+        .await
 }
 
 #[tauri::command]
@@ -815,7 +860,10 @@ mod tests {
     async fn create_connection_returns_uuid() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
         assert!(!id.is_empty());
         // UUID format check
         assert_eq!(id.len(), 36);
@@ -825,7 +873,10 @@ mod tests {
     async fn create_connection_initial_status_disconnected() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
         let conn = svc.get_connection(&id).await.unwrap();
         assert!(matches!(conn.status, OpenVPNStatus::Disconnected));
     }
@@ -841,8 +892,12 @@ mod tests {
     async fn list_connections_after_create() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        svc.create_connection("VPN1".to_string(), default_config()).await.unwrap();
-        svc.create_connection("VPN2".to_string(), default_config()).await.unwrap();
+        svc.create_connection("VPN1".to_string(), default_config())
+            .await
+            .unwrap();
+        svc.create_connection("VPN2".to_string(), default_config())
+            .await
+            .unwrap();
         assert_eq!(svc.list_connections().await.len(), 2);
     }
 
@@ -858,7 +913,10 @@ mod tests {
     async fn delete_connection_removes_it() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
         svc.delete_connection(&id).await.unwrap();
         assert!(svc.get_connection(&id).await.is_err());
     }
@@ -867,7 +925,10 @@ mod tests {
     async fn is_connection_active_false_when_disconnected() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
         assert!(!svc.is_connection_active(&id).await);
     }
 
@@ -891,8 +952,13 @@ mod tests {
     async fn update_connection_auth() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
-        svc.update_connection_auth(&id, Some("user".to_string()), Some("pass".to_string())).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        svc.update_connection_auth(&id, Some("user".to_string()), Some("pass".to_string()))
+            .await
+            .unwrap();
         let conn = svc.get_connection(&id).await.unwrap();
         assert_eq!(conn.config.username, Some("user".to_string()));
         assert_eq!(conn.config.password, Some("pass".to_string()));
@@ -910,8 +976,19 @@ mod tests {
     async fn set_connection_key_files() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
-        svc.set_connection_key_files(&id, Some("ca.pem".into()), Some("cert.pem".into()), Some("key.pem".into()), Some("ta.key".into())).await.unwrap();
+        let id = svc
+            .create_connection("Test".to_string(), default_config())
+            .await
+            .unwrap();
+        svc.set_connection_key_files(
+            &id,
+            Some("ca.pem".into()),
+            Some("cert.pem".into()),
+            Some("key.pem".into()),
+            Some("ta.key".into()),
+        )
+        .await
+        .unwrap();
         let conn = svc.get_connection(&id).await.unwrap();
         assert_eq!(conn.config.ca_cert, Some("ca.pem".to_string()));
         assert_eq!(conn.config.tls_auth, Some(true));
@@ -1019,7 +1096,11 @@ mod tests {
     async fn validate_ovpn_with_remote_ok() {
         let state = OpenVPNService::new();
         let svc = state.lock().await;
-        let result = svc.validate_ovpn_config("remote vpn.example.com 1194\n<ca>\n</ca>\n<cert>\n</cert>\n<key>\n</key>\n").await;
+        let result = svc
+            .validate_ovpn_config(
+                "remote vpn.example.com 1194\n<ca>\n</ca>\n<cert>\n</cert>\n<key>\n</key>\n",
+            )
+            .await;
         assert!(result.is_ok());
     }
 
@@ -1027,7 +1108,10 @@ mod tests {
     async fn validate_ovpn_unsupported_cipher_warns() {
         let state = OpenVPNService::new();
         let svc = state.lock().await;
-        let result = svc.validate_ovpn_config("remote host 1194\ncipher CHACHA20\n").await.unwrap();
+        let result = svc
+            .validate_ovpn_config("remote host 1194\ncipher CHACHA20\n")
+            .await
+            .unwrap();
         assert!(result.iter().any(|w| w.contains("unsupported cipher")));
     }
 
@@ -1035,8 +1119,14 @@ mod tests {
     async fn validate_ovpn_no_certs_warns() {
         let state = OpenVPNService::new();
         let svc = state.lock().await;
-        let warnings = svc.validate_ovpn_config("remote host 1194\n").await.unwrap();
-        assert!(!warnings.is_empty(), "Should produce warnings about missing certs");
+        let warnings = svc
+            .validate_ovpn_config("remote host 1194\n")
+            .await
+            .unwrap();
+        assert!(
+            !warnings.is_empty(),
+            "Should produce warnings about missing certs"
+        );
     }
 
     // ── create_connection_from_ovpn ─────────────────────────────────────
@@ -1046,7 +1136,10 @@ mod tests {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
         let ovpn = "remote myserver.com 443\nproto tcp\ncipher AES-256-GCM\n";
-        let id = svc.create_connection_from_ovpn("MyVPN".to_string(), ovpn.to_string()).await.unwrap();
+        let id = svc
+            .create_connection_from_ovpn("MyVPN".to_string(), ovpn.to_string())
+            .await
+            .unwrap();
         let conn = svc.get_connection(&id).await.unwrap();
         assert_eq!(conn.name, "MyVPN");
         assert_eq!(conn.config.remote_host, Some("myserver.com".to_string()));
