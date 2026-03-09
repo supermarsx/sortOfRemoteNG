@@ -4,7 +4,10 @@ use tokio::sync::Mutex;
 use crate::dashlane::api_client::DashlaneApiClient;
 use crate::dashlane::types::*;
 use crate::dashlane::vault::{parse_vault_transactions, VaultData};
-use crate::dashlane::{auth, items, notes, identities, secrets, devices, sharing, dark_web, password_health, password_gen, import_export};
+use crate::dashlane::{
+    auth, dark_web, devices, identities, import_export, items, notes, password_gen,
+    password_health, secrets, sharing,
+};
 
 pub type DashlaneServiceState = Arc<Mutex<DashlaneService>>;
 
@@ -19,6 +22,12 @@ pub struct DashlaneService {
     secrets_list: Vec<DashlaneSecret>,
     sharing_groups: Vec<SharingGroup>,
     dark_web_alerts: Vec<DarkWebAlert>,
+}
+
+impl Default for DashlaneService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DashlaneService {
@@ -63,7 +72,9 @@ impl DashlaneService {
         let client = self.client.as_mut().ok_or(DashlaneError::NotConfigured)?;
 
         // Complete device registration with token
-        client.complete_device_registration(&config.email, token).await?;
+        client
+            .complete_device_registration(&config.email, token)
+            .await?;
 
         // Now authenticate
         let session = auth::login(client, &config, master_password, Some(token)).await?;
@@ -131,7 +142,10 @@ impl DashlaneService {
             .ok_or_else(|| DashlaneError::NotFound(format!("Credential {}", id)))
     }
 
-    pub async fn search_credentials(&mut self, query: &str) -> Result<Vec<DashlaneCredential>, DashlaneError> {
+    pub async fn search_credentials(
+        &mut self,
+        query: &str,
+    ) -> Result<Vec<DashlaneCredential>, DashlaneError> {
         let filter = CredentialFilter {
             query: Some(query.to_string()),
             ..Default::default()
@@ -139,7 +153,10 @@ impl DashlaneService {
         self.list_credentials(Some(filter)).await
     }
 
-    pub async fn search_by_url(&mut self, url: &str) -> Result<Vec<DashlaneCredential>, DashlaneError> {
+    pub async fn search_by_url(
+        &mut self,
+        url: &str,
+    ) -> Result<Vec<DashlaneCredential>, DashlaneError> {
         self.ensure_vault().await?;
         let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
         Ok(items::find_by_url(&data.credentials, url))
@@ -181,7 +198,9 @@ impl DashlaneService {
         Ok(())
     }
 
-    pub async fn find_duplicate_passwords(&mut self) -> Result<Vec<Vec<DashlaneCredential>>, DashlaneError> {
+    pub async fn find_duplicate_passwords(
+        &mut self,
+    ) -> Result<Vec<Vec<DashlaneCredential>>, DashlaneError> {
         self.ensure_vault().await?;
         let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
         Ok(items::find_duplicates(&data.credentials))
@@ -362,13 +381,20 @@ impl DashlaneService {
         import_export::export_json(&data.credentials)
     }
 
-    pub fn import_csv(&mut self, csv_content: &str, source: ImportSource) -> Result<ImportResult, DashlaneError> {
+    pub fn import_csv(
+        &mut self,
+        csv_content: &str,
+        source: ImportSource,
+    ) -> Result<ImportResult, DashlaneError> {
         match source {
             ImportSource::DashlaneCsv => import_export::import_dashlane_csv(csv_content),
             ImportSource::LastPassCsv => import_export::import_lastpass_csv(csv_content),
             ImportSource::OnePasswordCsv => import_export::import_1password_csv(csv_content),
             ImportSource::ChromeCsv => import_export::import_chrome_csv(csv_content),
-            _ => Err(DashlaneError::InvalidConfig(format!("Unsupported import source: {:?}", source))),
+            _ => Err(DashlaneError::InvalidConfig(format!(
+                "Unsupported import source: {:?}",
+                source
+            ))),
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::dashlane::types::{DashlaneError, DarkWebAlert, AlertSeverity, AlertStatus};
+use crate::dashlane::types::{AlertSeverity, AlertStatus, DarkWebAlert};
 
 /// Filter alerts by status.
 pub fn filter_by_status(alerts: &[DarkWebAlert], status: AlertStatus) -> Vec<DarkWebAlert> {
@@ -47,8 +47,16 @@ pub fn search_alerts(alerts: &[DarkWebAlert], query: &str) -> Vec<DarkWebAlert> 
         .iter()
         .filter(|a| {
             a.email.to_lowercase().contains(&lower)
-                || a.domain.as_deref().unwrap_or("").to_lowercase().contains(&lower)
-                || a.breach_name.as_deref().unwrap_or("").to_lowercase().contains(&lower)
+                || a.domain
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&lower)
+                || a.breach_name
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&lower)
         })
         .cloned()
         .collect()

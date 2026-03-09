@@ -1,5 +1,5 @@
 use crate::dashlane::types::{
-    DashlaneCredential, DashlaneError, ImportSource, ImportResult, ExportFormat, ExportResult,
+    DashlaneCredential, DashlaneError, ExportFormat, ExportResult, ImportResult, ImportSource,
     SecureNote,
 };
 
@@ -71,13 +71,13 @@ pub fn import_dashlane_csv(csv_content: &str) -> Result<ImportResult, DashlaneEr
                     title: fields.first().cloned().unwrap_or_default(),
                     url: fields.get(1).cloned().unwrap_or_default(),
                     login: fields.get(2).cloned().unwrap_or_default(),
-                    secondary_login: fields.get(3).map(|s| s.clone()).filter(|s| !s.is_empty()),
+                    secondary_login: fields.get(3).cloned().filter(|s| !s.is_empty()),
                     password: fields.get(4).cloned().unwrap_or_default(),
-                    notes: fields.get(5).map(|s| s.clone()).filter(|s| !s.is_empty()),
-                    category: fields.get(6).map(|s| s.clone()).filter(|s| !s.is_empty()),
+                    notes: fields.get(5).cloned().filter(|s| !s.is_empty()),
+                    category: fields.get(6).cloned().filter(|s| !s.is_empty()),
                     auto_login: false,
                     auto_protect: false,
-                    otp_secret: fields.get(7).map(|s| s.clone()).filter(|s| !s.is_empty()),
+                    otp_secret: fields.get(7).cloned().filter(|s| !s.is_empty()),
                     otp_url: None,
                     linked_services: Vec::new(),
                     created_at: Some(now.clone()),
@@ -108,17 +108,29 @@ pub fn import_dashlane_csv(csv_content: &str) -> Result<ImportResult, DashlaneEr
 
 /// Import from 1Password CSV.
 pub fn import_1password_csv(csv_content: &str) -> Result<ImportResult, DashlaneError> {
-    import_generic_csv(csv_content, ImportSource::OnePasswordCsv, &["Title", "Url", "Username", "Password", "Notes"])
+    import_generic_csv(
+        csv_content,
+        ImportSource::OnePasswordCsv,
+        &["Title", "Url", "Username", "Password", "Notes"],
+    )
 }
 
 /// Import from LastPass CSV.
 pub fn import_lastpass_csv(csv_content: &str) -> Result<ImportResult, DashlaneError> {
-    import_generic_csv(csv_content, ImportSource::LastPassCsv, &["name", "url", "username", "password", "extra"])
+    import_generic_csv(
+        csv_content,
+        ImportSource::LastPassCsv,
+        &["name", "url", "username", "password", "extra"],
+    )
 }
 
 /// Import from Chrome CSV.
 pub fn import_chrome_csv(csv_content: &str) -> Result<ImportResult, DashlaneError> {
-    import_generic_csv(csv_content, ImportSource::ChromeCsv, &["name", "url", "username", "password", "note"])
+    import_generic_csv(
+        csv_content,
+        ImportSource::ChromeCsv,
+        &["name", "url", "username", "password", "note"],
+    )
 }
 
 /// Generic CSV import with column mapping.
@@ -155,7 +167,7 @@ fn import_generic_csv(
                     login: fields.get(2).cloned().unwrap_or_default(),
                     secondary_login: None,
                     password: fields.get(3).cloned().unwrap_or_default(),
-                    notes: fields.get(4).map(|s| s.clone()).filter(|s| !s.is_empty()),
+                    notes: fields.get(4).cloned().filter(|s| !s.is_empty()),
                     category: None,
                     auto_login: false,
                     auto_protect: false,

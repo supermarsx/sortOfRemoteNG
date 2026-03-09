@@ -1,4 +1,4 @@
-use crate::dashlane::types::{DashlaneError, SecureNote, NoteColor};
+use crate::dashlane::types::{NoteColor, SecureNote};
 
 /// Filter secure notes by query string.
 pub fn search_notes(notes: &[SecureNote], query: &str) -> Vec<SecureNote> {
@@ -6,8 +6,7 @@ pub fn search_notes(notes: &[SecureNote], query: &str) -> Vec<SecureNote> {
     notes
         .iter()
         .filter(|n| {
-            n.title.to_lowercase().contains(&lower)
-                || n.content.to_lowercase().contains(&lower)
+            n.title.to_lowercase().contains(&lower) || n.content.to_lowercase().contains(&lower)
         })
         .cloned()
         .collect()

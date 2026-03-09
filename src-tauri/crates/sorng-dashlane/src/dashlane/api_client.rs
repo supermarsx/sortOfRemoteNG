@@ -18,7 +18,9 @@ impl DashlaneApiClient {
             .timeout(Duration::from_secs(config.timeout_secs))
             .user_agent("sortOfRemoteNG/1.0 (Dashlane Integration)")
             .build()
-            .map_err(|e| DashlaneError::connection_error(format!("Failed to build HTTP client: {}", e)))?;
+            .map_err(|e| {
+                DashlaneError::connection_error(format!("Failed to build HTTP client: {}", e))
+            })?;
 
         Ok(Self {
             client,
@@ -63,7 +65,8 @@ impl DashlaneApiClient {
                 "HTTP {} — {}",
                 status.as_u16(),
                 body
-            )).with_status(status.as_u16()));
+            ))
+            .with_status(status.as_u16()));
         }
         response
             .text()
@@ -71,7 +74,10 @@ impl DashlaneApiClient {
             .map_err(|e| DashlaneError::server_error(format!("Failed to read response: {}", e)))
     }
 
-    async fn handle_json<T: DeserializeOwned>(&self, response: Response) -> Result<T, DashlaneError> {
+    async fn handle_json<T: DeserializeOwned>(
+        &self,
+        response: Response,
+    ) -> Result<T, DashlaneError> {
         let text = self.handle_response(response).await?;
         serde_json::from_str(&text)
             .map_err(|e| DashlaneError::parse_error(format!("JSON parse error: {}", e)))
@@ -167,9 +173,7 @@ impl DashlaneApiClient {
     pub async fn get_latest_content(&self) -> Result<VaultContentResponse, DashlaneError> {
         let headers = self.auth_headers()?;
 
-        let mut req = self
-            .client
-            .post(self.url("/v1/sync/GetLatestContent"));
+        let mut req = self.client.post(self.url("/v1/sync/GetLatestContent"));
         for (k, v) in &headers {
             req = req.header(k, v);
         }
@@ -194,9 +198,7 @@ impl DashlaneApiClient {
             "transactions": transactions,
         });
 
-        let mut req = self
-            .client
-            .post(self.url("/v1/sync/UploadContent"));
+        let mut req = self.client.post(self.url("/v1/sync/UploadContent"));
         for (k, v) in &headers {
             req = req.header(k, v);
         }
@@ -209,9 +211,7 @@ impl DashlaneApiClient {
     pub async fn list_devices(&self) -> Result<Vec<DeviceInfo>, DashlaneError> {
         let headers = self.auth_headers()?;
 
-        let mut req = self
-            .client
-            .post(self.url("/v1/authentication/ListDevices"));
+        let mut req = self.client.post(self.url("/v1/authentication/ListDevices"));
         for (k, v) in &headers {
             req = req.header(k, v);
         }
@@ -223,10 +223,7 @@ impl DashlaneApiClient {
     }
 
     /// Deregister (remove) a device.
-    pub async fn deregister_device(
-        &self,
-        device_access_key: &str,
-    ) -> Result<(), DashlaneError> {
+    pub async fn deregister_device(&self, device_access_key: &str) -> Result<(), DashlaneError> {
         let headers = self.auth_headers()?;
 
         let body = serde_json::json!({

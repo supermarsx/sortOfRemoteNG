@@ -1,11 +1,7 @@
-use crate::dashlane::types::{DashlaneError, DashlaneSecret};
+use crate::dashlane::types::DashlaneSecret;
 
 /// Create a new secret.
-pub fn create_secret(
-    title: String,
-    content: String,
-    category: Option<String>,
-) -> DashlaneSecret {
+pub fn create_secret(title: String, content: String, category: Option<String>) -> DashlaneSecret {
     let now = chrono::Utc::now().to_rfc3339();
     DashlaneSecret {
         id: uuid::Uuid::new_v4().to_string(),
@@ -32,8 +28,7 @@ pub fn search_secrets(secrets: &[DashlaneSecret], query: &str) -> Vec<DashlaneSe
     secrets
         .iter()
         .filter(|s| {
-            s.title.to_lowercase().contains(&lower)
-                || s.content.to_lowercase().contains(&lower)
+            s.title.to_lowercase().contains(&lower) || s.content.to_lowercase().contains(&lower)
         })
         .cloned()
         .collect()

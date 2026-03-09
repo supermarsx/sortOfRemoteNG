@@ -1,8 +1,10 @@
-use crate::dashlane::types::{DashlaneError, RegisteredDevice};
 use crate::dashlane::api_client::DashlaneApiClient;
+use crate::dashlane::types::{DashlaneError, RegisteredDevice};
 
 /// List all registered devices.
-pub async fn list_devices(client: &DashlaneApiClient) -> Result<Vec<RegisteredDevice>, DashlaneError> {
+pub async fn list_devices(
+    client: &DashlaneApiClient,
+) -> Result<Vec<RegisteredDevice>, DashlaneError> {
     let infos = client.list_devices().await?;
     let devices = infos
         .into_iter()
@@ -27,10 +29,7 @@ pub async fn deregister_device(
 }
 
 /// Find the current device by device access key.
-pub fn identify_current_device(
-    devices: &mut [RegisteredDevice],
-    current_device_id: &str,
-) {
+pub fn identify_current_device(devices: &mut [RegisteredDevice], current_device_id: &str) {
     for device in devices.iter_mut() {
         device.is_current = device.id == current_device_id;
     }

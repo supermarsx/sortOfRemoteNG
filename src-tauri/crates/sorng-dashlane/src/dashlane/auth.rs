@@ -31,7 +31,9 @@ pub async fn login(
     email_token: Option<&str>,
 ) -> Result<DashlaneSession, DashlaneError> {
     // Step 1: Register device
-    let reg = client.register_device(&config.email, &config.device_name).await?;
+    let reg = client
+        .register_device(&config.email, &config.device_name)
+        .await?;
 
     if reg.requires_verification {
         // Need email token verification
@@ -83,7 +85,9 @@ pub async fn login(
             logged_in_at: chrono::Utc::now().to_rfc3339(),
         })
     } else {
-        Err(DashlaneError::auth_failed("Device registration failed — no keys received"))
+        Err(DashlaneError::auth_failed(
+            "Device registration failed — no keys received",
+        ))
     }
 }
 
@@ -94,7 +98,9 @@ pub async fn logout(client: &mut DashlaneApiClient) -> Result<(), DashlaneError>
 }
 
 /// Validate that we have an active session.
-pub fn validate_session(session: &Option<DashlaneSession>) -> Result<&DashlaneSession, DashlaneError> {
+pub fn validate_session(
+    session: &Option<DashlaneSession>,
+) -> Result<&DashlaneSession, DashlaneError> {
     session
         .as_ref()
         .ok_or_else(|| DashlaneError::auth_failed("Not logged in to Dashlane"))

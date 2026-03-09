@@ -4,7 +4,7 @@ use crate::dashlane::types::{DashlaneError, PasswordGenConfig};
 pub fn generate_password(config: &PasswordGenConfig) -> Result<String, DashlaneError> {
     use rand::Rng;
 
-    let length = config.length.unwrap_or(16).max(4).min(128) as usize;
+    let length = config.length.unwrap_or(16).clamp(4, 128) as usize;
     let use_lowercase = config.lowercase.unwrap_or(true);
     let use_uppercase = config.uppercase.unwrap_or(true);
     let use_digits = config.digits.unwrap_or(true);
@@ -134,18 +134,17 @@ pub fn generate_passphrase(
     use rand::Rng;
 
     let words = vec![
-        "apple", "brave", "coral", "delta", "eagle", "flame", "grape", "honey",
-        "ivory", "joker", "karma", "lemon", "maple", "noble", "ocean", "pearl",
-        "quest", "river", "stone", "tiger", "unity", "vivid", "whale", "xenon",
-        "yacht", "zebra", "amber", "blaze", "cloud", "dream", "ember", "frost",
-        "globe", "haste", "index", "jewel", "knack", "lodge", "myth", "nexus",
-        "orbit", "prism", "quilt", "ridge", "solar", "trust", "ultra", "valor",
-        "width", "youth", "arena", "bench", "crane", "diver", "epoch", "forge",
-        "glyph", "haven", "icicle", "jumbo", "kiosk", "lyric", "moose", "ninja",
+        "apple", "brave", "coral", "delta", "eagle", "flame", "grape", "honey", "ivory", "joker",
+        "karma", "lemon", "maple", "noble", "ocean", "pearl", "quest", "river", "stone", "tiger",
+        "unity", "vivid", "whale", "xenon", "yacht", "zebra", "amber", "blaze", "cloud", "dream",
+        "ember", "frost", "globe", "haste", "index", "jewel", "knack", "lodge", "myth", "nexus",
+        "orbit", "prism", "quilt", "ridge", "solar", "trust", "ultra", "valor", "width", "youth",
+        "arena", "bench", "crane", "diver", "epoch", "forge", "glyph", "haven", "icicle", "jumbo",
+        "kiosk", "lyric", "moose", "ninja",
     ];
 
     let mut rng = rand::thread_rng();
-    let count = word_count.max(3).min(12);
+    let count = word_count.clamp(3, 12);
 
     let selected: Vec<String> = (0..count)
         .map(|_| {

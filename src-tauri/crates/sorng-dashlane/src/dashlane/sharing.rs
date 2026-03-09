@@ -1,6 +1,5 @@
 use crate::dashlane::types::{
-    DashlaneError, SharingGroup, SharingMember, SharingPermission, SharingStatus,
-    DashlaneCredential,
+    DashlaneCredential, SharingGroup, SharingMember, SharingPermission, SharingStatus,
 };
 
 /// Check if a credential is in any sharing group.
@@ -9,10 +8,7 @@ pub fn is_shared(credential: &DashlaneCredential, groups: &[SharingGroup]) -> bo
 }
 
 /// Get sharing groups that contain a specific credential.
-pub fn get_sharing_groups_for_item(
-    item_id: &str,
-    groups: &[SharingGroup],
-) -> Vec<SharingGroup> {
+pub fn get_sharing_groups_for_item(item_id: &str, groups: &[SharingGroup]) -> Vec<SharingGroup> {
     groups
         .iter()
         .filter(|g| g.item_ids.contains(&item_id.to_string()))
@@ -86,11 +82,7 @@ pub fn get_pending_members(group: &SharingGroup) -> Vec<&SharingMember> {
 }
 
 /// Create a new sharing group.
-pub fn create_sharing_group(
-    name: String,
-    owner_id: String,
-    owner_name: String,
-) -> SharingGroup {
+pub fn create_sharing_group(name: String, owner_id: String, owner_name: String) -> SharingGroup {
     SharingGroup {
         id: uuid::Uuid::new_v4().to_string(),
         name,

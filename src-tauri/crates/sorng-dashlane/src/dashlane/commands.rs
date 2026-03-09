@@ -55,7 +55,9 @@ pub async fn dl_list_credentials(
     filter: Option<CredentialFilter>,
 ) -> Result<Vec<DashlaneCredential>, String> {
     let mut svc = state.lock().await;
-    svc.list_credentials(filter).await.map_err(|e| e.to_string())
+    svc.list_credentials(filter)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -73,7 +75,9 @@ pub async fn dl_search_credentials(
     query: String,
 ) -> Result<Vec<DashlaneCredential>, String> {
     let mut svc = state.lock().await;
-    svc.search_credentials(&query).await.map_err(|e| e.to_string())
+    svc.search_credentials(&query)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -101,7 +105,9 @@ pub async fn dl_update_credential(
     req: UpdateCredentialRequest,
 ) -> Result<DashlaneCredential, String> {
     let mut svc = state.lock().await;
-    svc.update_credential(&id, req).await.map_err(|e| e.to_string())
+    svc.update_credential(&id, req)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -118,7 +124,9 @@ pub async fn dl_find_duplicate_passwords(
     state: State<'_, DashlaneServiceState>,
 ) -> Result<Vec<Vec<DashlaneCredential>>, String> {
     let mut svc = state.lock().await;
-    svc.find_duplicate_passwords().await.map_err(|e| e.to_string())
+    svc.find_duplicate_passwords()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -243,7 +251,9 @@ pub async fn dl_deregister_device(
     device_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.deregister_device(&device_id).await.map_err(|e| e.to_string())
+    svc.deregister_device(&device_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // --- Sharing ---
@@ -284,7 +294,9 @@ pub async fn dl_get_active_dark_web_alerts(
     state: State<'_, DashlaneServiceState>,
 ) -> Result<Vec<DarkWebAlert>, String> {
     let svc = state.lock().await;
-    svc.get_active_dark_web_alerts().await.map_err(|e| e.to_string())
+    svc.get_active_dark_web_alerts()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -293,7 +305,9 @@ pub async fn dl_dismiss_dark_web_alert(
     id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.dismiss_dark_web_alert(&id).await.map_err(|e| e.to_string())
+    svc.dismiss_dark_web_alert(&id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // --- Password Health ---
@@ -341,9 +355,7 @@ pub async fn dl_check_password_strength(
 // --- Import/Export ---
 
 #[tauri::command]
-pub async fn dl_export_csv(
-    state: State<'_, DashlaneServiceState>,
-) -> Result<ExportResult, String> {
+pub async fn dl_export_csv(state: State<'_, DashlaneServiceState>) -> Result<ExportResult, String> {
     let mut svc = state.lock().await;
     svc.export_csv().await.map_err(|e| e.to_string())
 }
@@ -363,15 +375,14 @@ pub async fn dl_import_csv(
     source: ImportSource,
 ) -> Result<ImportResult, String> {
     let mut svc = state.lock().await;
-    svc.import_csv(&csv_content, source).map_err(|e| e.to_string())
+    svc.import_csv(&csv_content, source)
+        .map_err(|e| e.to_string())
 }
 
 // --- Stats ---
 
 #[tauri::command]
-pub async fn dl_get_stats(
-    state: State<'_, DashlaneServiceState>,
-) -> Result<VaultStats, String> {
+pub async fn dl_get_stats(state: State<'_, DashlaneServiceState>) -> Result<VaultStats, String> {
     let mut svc = state.lock().await;
     svc.get_stats().await.map_err(|e| e.to_string())
 }

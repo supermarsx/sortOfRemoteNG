@@ -1,4 +1,4 @@
-use crate::dashlane::types::{DashlaneError, DashlaneIdentity, DashlaneAddress};
+use crate::dashlane::types::{DashlaneAddress, DashlaneIdentity};
 
 /// Search identities by query.
 pub fn search_identities(identities: &[DashlaneIdentity], query: &str) -> Vec<DashlaneIdentity> {
@@ -8,7 +8,11 @@ pub fn search_identities(identities: &[DashlaneIdentity], query: &str) -> Vec<Da
         .filter(|i| {
             i.first_name.to_lowercase().contains(&lower)
                 || i.last_name.to_lowercase().contains(&lower)
-                || i.email.as_deref().unwrap_or("").to_lowercase().contains(&lower)
+                || i.email
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&lower)
         })
         .cloned()
         .collect()

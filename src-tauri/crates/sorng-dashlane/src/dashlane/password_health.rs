@@ -1,6 +1,4 @@
-use crate::dashlane::types::{
-    DashlaneCredential, DashlaneError, PasswordHealthScore, PasswordHealthDetail,
-};
+use crate::dashlane::types::{DashlaneCredential, PasswordHealthDetail, PasswordHealthScore};
 
 /// Analyze password health across all credentials.
 pub fn analyze_password_health(credentials: &[DashlaneCredential]) -> PasswordHealthScore {
@@ -18,7 +16,7 @@ pub fn analyze_password_health(credentials: &[DashlaneCredential]) -> PasswordHe
         };
     }
 
-    let mut details = Vec::new();
+    let mut details: Vec<PasswordHealthDetail> = Vec::new();
     let mut strong = 0u32;
     let mut medium = 0u32;
     let mut weak = 0u32;
@@ -58,7 +56,7 @@ pub fn analyze_password_health(credentials: &[DashlaneCredential]) -> PasswordHe
         }
 
         // Check if password is old (> 180 days)
-        let is_old = cred.modified_at.as_ref().map_or(false, |date| {
+        let is_old = cred.modified_at.as_ref().is_some_and(|date| {
             chrono::DateTime::parse_from_rfc3339(date)
                 .map(|d| (now - d.with_timezone(&chrono::Utc)).num_days() > 180)
                 .unwrap_or(false)
@@ -102,11 +100,9 @@ pub fn analyze_password_health(credentials: &[DashlaneCredential]) -> PasswordHe
     let penalty_compromised = (compromised as f64 / total as f64) * 20.0;
     let penalty_old = (old as f64 / total as f64) * 10.0;
     let overall =
-        (100.0 - penalty_weak - penalty_reused - penalty_compromised - penalty_old).max(0.0)
-            as u32;
+        (100.0 - penalty_weak - penalty_reused - penalty_compromised - penalty_old).max(0.0) as u32;
 
     // Sort details by strength (worst first)
-    let mut details = details;
     details.sort_by(|a, b| a.strength.cmp(&b.strength));
 
     PasswordHealthScore {
@@ -172,12 +168,7 @@ pub fn assess_password_strength(password: &str) -> u32 {
     // Penalty for common patterns
     let lower = password.to_lowercase();
     let common = [
-        "password",
-        "123456",
-        "qwerty",
-        "admin",
-        "letmein",
-        "welcome",
+        "password", "123456", "qwerty", "admin", "letmein", "welcome",
     ];
     if common.iter().any(|p| lower.contains(p)) {
         score = score.saturating_sub(30);
@@ -218,7 +209,11 @@ pub fn get_improvement_suggestions(health: &PasswordHealthScore) -> Vec<String> 
         suggestions.push(format!(
             "Immediately change {} compromised password{}",
             health.compromised_count,
-            if health.compromised_count == 1 { "" } else { "s" }
+            if health.compromised_count == 1 {
+                ""
+            } else {
+                "s"
+            }
         ));
     }
 

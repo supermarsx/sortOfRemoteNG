@@ -1,4 +1,4 @@
-use crate::dashlane::types::{DashlaneCredential, DashlaneError, VaultStats};
+use crate::dashlane::types::{DashlaneCredential, DashlaneError};
 
 /// Parse vault transactions (JSON) into credentials.
 pub fn parse_vault_transactions(
@@ -8,10 +8,7 @@ pub fn parse_vault_transactions(
     let mut data = VaultData::default();
 
     for tx in transactions {
-        let tx_type = tx
-            .get("type")
-            .and_then(|t| t.as_str())
-            .unwrap_or("unknown");
+        let tx_type = tx.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
 
         match tx_type {
             "AUTHENTIFIANT" => {
@@ -83,7 +80,9 @@ fn parse_credential(tx: &serde_json::Value) -> Result<DashlaneCredential, Dashla
     })
 }
 
-fn parse_secure_note(tx: &serde_json::Value) -> Result<crate::dashlane::types::SecureNote, DashlaneError> {
+fn parse_secure_note(
+    tx: &serde_json::Value,
+) -> Result<crate::dashlane::types::SecureNote, DashlaneError> {
     let content = tx.get("content").unwrap_or(tx);
 
     Ok(crate::dashlane::types::SecureNote {
@@ -102,7 +101,10 @@ fn parse_secure_note(tx: &serde_json::Value) -> Result<crate::dashlane::types::S
 }
 
 fn get_str(value: &serde_json::Value, key: &str) -> Option<String> {
-    value.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    value
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 #[derive(Debug, Clone, Default)]

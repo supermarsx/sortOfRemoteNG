@@ -1,5 +1,5 @@
 use crate::dashlane::types::{
-    CredentialFilter, DashlaneCredential, DashlaneError, CreateCredentialRequest,
+    CreateCredentialRequest, CredentialFilter, DashlaneCredential, DashlaneError,
     UpdateCredentialRequest,
 };
 
@@ -95,7 +95,10 @@ pub fn find_duplicates(credentials: &[DashlaneCredential]) -> Vec<Vec<DashlaneCr
 
     for cred in credentials {
         if !cred.password.is_empty() {
-            password_map.entry(cred.password.as_str()).or_default().push(cred);
+            password_map
+                .entry(cred.password.as_str())
+                .or_default()
+                .push(cred);
         }
     }
 
@@ -179,7 +182,10 @@ pub fn count_by_category(credentials: &[DashlaneCredential]) -> Vec<(String, usi
     use std::collections::HashMap;
     let mut map: HashMap<String, usize> = HashMap::new();
     for cred in credentials {
-        let cat = cred.category.clone().unwrap_or_else(|| "Uncategorized".into());
+        let cat = cred
+            .category
+            .clone()
+            .unwrap_or_else(|| "Uncategorized".into());
         *map.entry(cat).or_default() += 1;
     }
     let mut result: Vec<_> = map.into_iter().collect();
