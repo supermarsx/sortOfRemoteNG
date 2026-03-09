@@ -30,7 +30,11 @@ pub fn kube_login_command(kube_cluster: &str) -> Vec<String> {
 
 /// Build `tsh kube sessions` command.
 pub fn kube_sessions_command(format_json: bool) -> Vec<String> {
-    let mut cmd = vec!["tsh".to_string(), "kube".to_string(), "sessions".to_string()];
+    let mut cmd = vec![
+        "tsh".to_string(),
+        "kube".to_string(),
+        "sessions".to_string(),
+    ];
     if format_json {
         cmd.push("--format=json".to_string());
     }
@@ -78,8 +82,14 @@ pub struct KubeSummary {
 pub fn summarize_kube(clusters: &[&TeleportKubeCluster]) -> KubeSummary {
     KubeSummary {
         total: clusters.len() as u32,
-        online: clusters.iter().filter(|c| c.status == ResourceStatus::Online).count() as u32,
-        offline: clusters.iter().filter(|c| c.status == ResourceStatus::Offline).count() as u32,
+        online: clusters
+            .iter()
+            .filter(|c| c.status == ResourceStatus::Online)
+            .count() as u32,
+        offline: clusters
+            .iter()
+            .filter(|c| c.status == ResourceStatus::Offline)
+            .count() as u32,
     }
 }
 

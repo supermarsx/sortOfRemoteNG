@@ -10,11 +10,7 @@ use std::collections::HashMap;
 
 /// Build `tsh mfa ls` command.
 pub fn list_mfa_devices_command(format_json: bool) -> Vec<String> {
-    let mut cmd = vec![
-        "tsh".to_string(),
-        "mfa".to_string(),
-        "ls".to_string(),
-    ];
+    let mut cmd = vec!["tsh".to_string(), "mfa".to_string(), "ls".to_string()];
     if format_json {
         cmd.push("--format=json".to_string());
     }
@@ -48,9 +44,7 @@ pub fn remove_mfa_device_command(name: &str) -> Vec<String> {
 }
 
 /// Group MFA devices by type.
-pub fn group_by_type<'a>(
-    devices: &[&'a MfaDevice],
-) -> HashMap<String, Vec<&'a MfaDevice>> {
+pub fn group_by_type<'a>(devices: &[&'a MfaDevice]) -> HashMap<String, Vec<&'a MfaDevice>> {
     let mut map: HashMap<String, Vec<&'a MfaDevice>> = HashMap::new();
     for d in devices {
         map.entry(format!("{:?}", d.device_type))
@@ -69,9 +63,8 @@ pub fn recently_used<'a>(
     devices
         .iter()
         .filter(|d| {
-            d.last_used.map_or(false, |lu| {
-                (now - lu).num_seconds() < threshold_secs
-            })
+            d.last_used
+                .is_some_and(|lu| (now - lu).num_seconds() < threshold_secs)
         })
         .copied()
         .collect()
@@ -90,12 +83,18 @@ pub struct MfaSummary {
 pub fn summarize_mfa(devices: &[&MfaDevice]) -> MfaSummary {
     MfaSummary {
         total: devices.len() as u32,
-        totp: devices.iter().filter(|d| d.device_type == MfaDeviceType::Totp).count() as u32,
+        totp: devices
+            .iter()
+            .filter(|d| d.device_type == MfaDeviceType::Totp)
+            .count() as u32,
         webauthn: devices
             .iter()
             .filter(|d| d.device_type == MfaDeviceType::WebAuthn)
             .count() as u32,
-        sso: devices.iter().filter(|d| d.device_type == MfaDeviceType::Sso).count() as u32,
+        sso: devices
+            .iter()
+            .filter(|d| d.device_type == MfaDeviceType::Sso)
+            .count() as u32,
         never_used: devices.iter().filter(|d| d.last_used.is_none()).count() as u32,
     }
 }

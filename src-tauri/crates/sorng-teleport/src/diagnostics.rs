@@ -92,10 +92,7 @@ pub struct DiagCheck {
 }
 
 /// Build a connectivity report from a health check.
-pub fn connectivity_report(
-    cluster_name: &str,
-    health: &ClusterHealthCheck,
-) -> ConnectivityReport {
+pub fn connectivity_report(cluster_name: &str, health: &ClusterHealthCheck) -> ConnectivityReport {
     let issues = evaluate_health(health);
     let mut checks = Vec::new();
 

@@ -21,7 +21,10 @@ pub fn login_command(config: &TeleportConfig) -> Vec<String> {
         cmd.push(format!("--ttl={}", ttl));
     }
     if !config.request_roles.is_empty() {
-        cmd.push(format!("--request-roles={}", config.request_roles.join(",")));
+        cmd.push(format!(
+            "--request-roles={}",
+            config.request_roles.join(",")
+        ));
     }
     if config.insecure {
         cmd.push("--insecure".to_string());

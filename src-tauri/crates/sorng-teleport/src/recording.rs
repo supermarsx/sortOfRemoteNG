@@ -92,9 +92,7 @@ pub fn summarize_recordings(recordings: &[&SessionRecording]) -> RecordingSummar
     let mut total_duration = 0u64;
     let mut total_size = 0u64;
     for r in recordings {
-        *by_type
-            .entry(format!("{:?}", r.session_type))
-            .or_insert(0) += 1;
+        *by_type.entry(format!("{:?}", r.session_type)).or_insert(0) += 1;
         total_duration += r.duration_ms / 1000;
         total_size += r.size_bytes;
     }

@@ -74,8 +74,14 @@ pub fn summarize_desktops(desktops: &[&TeleportDesktop]) -> DesktopSummary {
     let domains = group_desktops_by_domain(desktops);
     DesktopSummary {
         total: desktops.len() as u32,
-        online: desktops.iter().filter(|d| d.status == ResourceStatus::Online).count() as u32,
-        offline: desktops.iter().filter(|d| d.status == ResourceStatus::Offline).count() as u32,
+        online: desktops
+            .iter()
+            .filter(|d| d.status == ResourceStatus::Online)
+            .count() as u32,
+        offline: desktops
+            .iter()
+            .filter(|d| d.status == ResourceStatus::Offline)
+            .count() as u32,
         ad_joined: desktops.iter().filter(|d| !d.non_ad).count() as u32,
         non_ad: desktops.iter().filter(|d| d.non_ad).count() as u32,
         domains: domains.len() as u32,

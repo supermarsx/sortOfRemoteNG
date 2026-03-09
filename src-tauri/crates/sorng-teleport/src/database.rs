@@ -87,7 +87,9 @@ pub fn db_logout_command(db_name: &str) -> Vec<String> {
 }
 
 /// Group databases by protocol.
-pub fn group_by_protocol<'a>(dbs: &[&'a TeleportDatabase]) -> HashMap<String, Vec<&'a TeleportDatabase>> {
+pub fn group_by_protocol<'a>(
+    dbs: &[&'a TeleportDatabase],
+) -> HashMap<String, Vec<&'a TeleportDatabase>> {
     let mut map: HashMap<String, Vec<&TeleportDatabase>> = HashMap::new();
     for db in dbs {
         let key = format!("{:?}", db.protocol);
@@ -112,8 +114,14 @@ pub fn summarize_databases(dbs: &[&TeleportDatabase]) -> DatabaseSummary {
     }
     DatabaseSummary {
         total: dbs.len() as u32,
-        online: dbs.iter().filter(|d| d.status == ResourceStatus::Online).count() as u32,
-        offline: dbs.iter().filter(|d| d.status == ResourceStatus::Offline).count() as u32,
+        online: dbs
+            .iter()
+            .filter(|d| d.status == ResourceStatus::Online)
+            .count() as u32,
+        offline: dbs
+            .iter()
+            .filter(|d| d.status == ResourceStatus::Offline)
+            .count() as u32,
         protocols,
     }
 }

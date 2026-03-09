@@ -41,7 +41,7 @@ pub enum TeleportStatus {
 }
 
 /// Configuration for connecting to a Teleport cluster.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TeleportConfig {
     /// Proxy address, e.g. `teleport.example.com:443`.
     pub proxy: String,
@@ -71,27 +71,6 @@ pub struct TeleportConfig {
     pub enable_tracing: bool,
     /// Insecure mode (skip TLS verification) — for dev only.
     pub insecure: bool,
-}
-
-impl Default for TeleportConfig {
-    fn default() -> Self {
-        Self {
-            proxy: String::new(),
-            auth_connector: None,
-            user: None,
-            request_roles: Vec::new(),
-            ttl: None,
-            mfa_mode: None,
-            kube_cluster: None,
-            db_service: None,
-            app: None,
-            hardware_key_policy: None,
-            tsh_path: None,
-            env: HashMap::new(),
-            enable_tracing: false,
-            insecure: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,7 +270,7 @@ pub struct RoleSpec {
     pub options: RoleOptions,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoleConditions {
     pub logins: Vec<String>,
     pub node_labels: HashMap<String, Vec<String>>,
@@ -306,26 +285,6 @@ pub struct RoleConditions {
     pub rules: Vec<AccessRule>,
     pub request: Option<AccessRequestConditions>,
     pub require_session_join: Vec<SessionJoinRequirement>,
-}
-
-impl Default for RoleConditions {
-    fn default() -> Self {
-        Self {
-            logins: Vec::new(),
-            node_labels: HashMap::new(),
-            kube_groups: Vec::new(),
-            kube_users: Vec::new(),
-            db_labels: HashMap::new(),
-            db_names: Vec::new(),
-            db_users: Vec::new(),
-            app_labels: HashMap::new(),
-            desktop_labels: HashMap::new(),
-            desktop_logins: Vec::new(),
-            rules: Vec::new(),
-            request: None,
-            require_session_join: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -716,15 +675,38 @@ pub struct ServerHealth {
 /// Events emitted by the Teleport integration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TeleportEvent {
-    LoggedIn { cluster: String, user: String },
-    LoggedOut { cluster: String },
-    CertExpiring { cluster: String, expires_at: DateTime<Utc> },
-    SessionStarted { session_id: String, session_type: SessionType },
-    SessionEnded { session_id: String },
-    AccessRequestCreated { request_id: String },
-    AccessRequestResolved { request_id: String, state: AccessRequestState },
-    ClusterHealthChanged { cluster: String, status: HealthStatus },
-    MfaChallenge { cluster: String },
+    LoggedIn {
+        cluster: String,
+        user: String,
+    },
+    LoggedOut {
+        cluster: String,
+    },
+    CertExpiring {
+        cluster: String,
+        expires_at: DateTime<Utc>,
+    },
+    SessionStarted {
+        session_id: String,
+        session_type: SessionType,
+    },
+    SessionEnded {
+        session_id: String,
+    },
+    AccessRequestCreated {
+        request_id: String,
+    },
+    AccessRequestResolved {
+        request_id: String,
+        state: AccessRequestState,
+    },
+    ClusterHealthChanged {
+        cluster: String,
+        status: HealthStatus,
+    },
+    MfaChallenge {
+        cluster: String,
+    },
 }
 
 // ── Service State Alias ─────────────────────────────────────────

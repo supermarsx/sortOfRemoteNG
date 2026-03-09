@@ -9,10 +9,7 @@ use std::collections::HashMap;
 
 /// Build `tsh clusters` command.
 pub fn list_clusters_command(format_json: bool) -> Vec<String> {
-    let mut cmd = vec![
-        "tsh".to_string(),
-        "clusters".to_string(),
-    ];
+    let mut cmd = vec!["tsh".to_string(), "clusters".to_string()];
     if format_json {
         cmd.push("--format=json".to_string());
     }
@@ -100,9 +97,7 @@ pub fn group_clusters_by_status<'a>(
 ) -> HashMap<String, Vec<&'a TrustedCluster>> {
     let mut map: HashMap<String, Vec<&'a TrustedCluster>> = HashMap::new();
     for c in clusters {
-        map.entry(format!("{:?}", c.status))
-            .or_default()
-            .push(c);
+        map.entry(format!("{:?}", c.status)).or_default().push(c);
     }
     map
 }

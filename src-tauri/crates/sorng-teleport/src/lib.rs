@@ -31,23 +31,23 @@
 //! - **daemon** — tsh/teleport daemon lifecycle
 //! - **diagnostics** — Health checks, connectivity tests, version info
 
-pub mod types;
-pub mod service;
-pub mod auth;
-pub mod node;
-pub mod kube;
-pub mod database;
 pub mod app;
-pub mod desktop;
-pub mod session;
-pub mod recording;
-pub mod rbac;
 pub mod audit;
-pub mod cluster;
+pub mod auth;
 pub mod cert;
-pub mod mfa;
+pub mod cluster;
 pub mod daemon;
+pub mod database;
+pub mod desktop;
 pub mod diagnostics;
+pub mod kube;
+pub mod mfa;
+pub mod node;
+pub mod rbac;
+pub mod recording;
+pub mod service;
+pub mod session;
+pub mod types;
 
-pub use types::*;
 pub use service::{TeleportService, TeleportServiceState};
+pub use types::*;

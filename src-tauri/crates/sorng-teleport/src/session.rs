@@ -68,11 +68,26 @@ pub struct SessionSummary {
 pub fn summarize_sessions(sessions: &[&TeleportSession]) -> SessionSummary {
     SessionSummary {
         total: sessions.len() as u32,
-        ssh: sessions.iter().filter(|s| s.session_type == SessionType::Ssh).count() as u32,
-        kube: sessions.iter().filter(|s| s.session_type == SessionType::Kubernetes).count() as u32,
-        db: sessions.iter().filter(|s| s.session_type == SessionType::Database).count() as u32,
-        app: sessions.iter().filter(|s| s.session_type == SessionType::App).count() as u32,
-        desktop: sessions.iter().filter(|s| s.session_type == SessionType::Desktop).count() as u32,
+        ssh: sessions
+            .iter()
+            .filter(|s| s.session_type == SessionType::Ssh)
+            .count() as u32,
+        kube: sessions
+            .iter()
+            .filter(|s| s.session_type == SessionType::Kubernetes)
+            .count() as u32,
+        db: sessions
+            .iter()
+            .filter(|s| s.session_type == SessionType::Database)
+            .count() as u32,
+        app: sessions
+            .iter()
+            .filter(|s| s.session_type == SessionType::App)
+            .count() as u32,
+        desktop: sessions
+            .iter()
+            .filter(|s| s.session_type == SessionType::Desktop)
+            .count() as u32,
         interactive: sessions.iter().filter(|s| s.interactive).count() as u32,
         with_enhanced_recording: sessions.iter().filter(|s| s.enhanced_recording).count() as u32,
     }

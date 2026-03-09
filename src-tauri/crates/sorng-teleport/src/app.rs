@@ -80,8 +80,14 @@ pub fn summarize_apps(apps: &[&TeleportApp]) -> AppSummary {
         http: apps.iter().filter(|a| a.app_type == AppType::Http).count() as u32,
         tcp: apps.iter().filter(|a| a.app_type == AppType::Tcp).count() as u32,
         aws_console: apps.iter().filter(|a| a.aws_console).count() as u32,
-        online: apps.iter().filter(|a| a.status == ResourceStatus::Online).count() as u32,
-        offline: apps.iter().filter(|a| a.status == ResourceStatus::Offline).count() as u32,
+        online: apps
+            .iter()
+            .filter(|a| a.status == ResourceStatus::Online)
+            .count() as u32,
+        offline: apps
+            .iter()
+            .filter(|a| a.status == ResourceStatus::Offline)
+            .count() as u32,
     }
 }
 

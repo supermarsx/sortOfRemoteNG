@@ -60,7 +60,11 @@ impl TeleportService {
 
     // ── Connection Management ──────────────────────────────────
 
-    pub fn create_connection(&mut self, name: &str, config: TeleportConfig) -> Result<String, String> {
+    pub fn create_connection(
+        &mut self,
+        name: &str,
+        config: TeleportConfig,
+    ) -> Result<String, String> {
         if config.proxy.is_empty() {
             return Err("Proxy address is required".to_string());
         }

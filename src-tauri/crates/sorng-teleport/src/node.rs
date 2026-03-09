@@ -7,7 +7,11 @@ use crate::types::*;
 use std::collections::HashMap;
 
 /// Build `tsh ls` command to list nodes.
-pub fn list_nodes_command(cluster: Option<&str>, labels: Option<&str>, format_json: bool) -> Vec<String> {
+pub fn list_nodes_command(
+    cluster: Option<&str>,
+    labels: Option<&str>,
+    format_json: bool,
+) -> Vec<String> {
     let mut cmd = vec!["tsh".to_string(), "ls".to_string()];
     if let Some(c) = cluster {
         cmd.push(format!("--cluster={}", c));
@@ -79,9 +83,9 @@ pub fn filter_nodes_by_labels<'a>(
     nodes
         .iter()
         .filter(|n| {
-            labels.iter().all(|(k, v)| {
-                n.labels.get(k).map(|nv| nv == v).unwrap_or(false)
-            })
+            labels
+                .iter()
+                .all(|(k, v)| n.labels.get(k).map(|nv| nv == v).unwrap_or(false))
         })
         .copied()
         .collect()
@@ -105,7 +109,11 @@ pub fn group_nodes_by_label<'a>(
 ) -> HashMap<String, Vec<&'a TeleportNode>> {
     let mut map: HashMap<String, Vec<&'a TeleportNode>> = HashMap::new();
     for node in nodes {
-        let key = node.labels.get(label_key).cloned().unwrap_or_else(|| "(unlabeled)".to_string());
+        let key = node
+            .labels
+            .get(label_key)
+            .cloned()
+            .unwrap_or_else(|| "(unlabeled)".to_string());
         map.entry(key).or_default().push(node);
     }
     map

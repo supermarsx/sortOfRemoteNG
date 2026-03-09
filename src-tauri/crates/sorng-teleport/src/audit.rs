@@ -30,8 +30,12 @@ pub fn classify_event(event_type: &str) -> EventCategory {
         t if t.starts_with("access_request.") => EventCategory::AccessRequest,
         "node.join" | "node.leave" | "kube.create" | "db.create" | "app.create"
         | "desktop.create" => EventCategory::Resource,
-        "role.create" | "role.update" | "role.delete" | "cluster.config.update"
-        | "trusted_cluster.create" | "trusted_cluster.delete" => EventCategory::Configuration,
+        "role.create"
+        | "role.update"
+        | "role.delete"
+        | "cluster.config.update"
+        | "trusted_cluster.create"
+        | "trusted_cluster.delete" => EventCategory::Configuration,
         "lock.create" | "lock.delete" | "cert.create" => EventCategory::Security,
         _ => EventCategory::Unknown,
     }
@@ -107,9 +111,7 @@ pub fn summarize_audit(events: &[&AuditEvent]) -> AuditSummary {
 
     for e in events {
         let cat = classify_event(&e.event_type);
-        *by_category
-            .entry(format!("{:?}", cat))
-            .or_insert(0) += 1;
+        *by_category.entry(format!("{:?}", cat)).or_insert(0) += 1;
         if let Some(ref u) = e.user {
             users.insert(u.as_str());
         }

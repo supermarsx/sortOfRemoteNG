@@ -67,7 +67,11 @@ pub fn is_cert_expired(cert: &UserCertificate, now: DateTime<Utc>) -> bool {
 /// Check how many seconds until expiry. Returns `None` if already expired.
 pub fn cert_ttl_secs(cert: &UserCertificate, now: DateTime<Utc>) -> Option<i64> {
     let diff = cert.valid_before.signed_duration_since(now).num_seconds();
-    if diff > 0 { Some(diff) } else { None }
+    if diff > 0 {
+        Some(diff)
+    } else {
+        None
+    }
 }
 
 /// True if the cert expires within the given threshold seconds.
@@ -79,9 +83,19 @@ pub fn cert_expiring_soon(cert: &UserCertificate, now: DateTime<Utc>, threshold_
 }
 
 /// Group certificates by type.
-pub fn group_certs_by_type<'a>(certs: &[&'a UserCertificate]) -> (Vec<&'a UserCertificate>, Vec<&'a UserCertificate>) {
-    let user: Vec<_> = certs.iter().filter(|c| c.cert_type == CertType::User).copied().collect();
-    let host: Vec<_> = certs.iter().filter(|c| c.cert_type == CertType::Host).copied().collect();
+pub fn group_certs_by_type<'a>(
+    certs: &[&'a UserCertificate],
+) -> (Vec<&'a UserCertificate>, Vec<&'a UserCertificate>) {
+    let user: Vec<_> = certs
+        .iter()
+        .filter(|c| c.cert_type == CertType::User)
+        .copied()
+        .collect();
+    let host: Vec<_> = certs
+        .iter()
+        .filter(|c| c.cert_type == CertType::Host)
+        .copied()
+        .collect();
     (user, host)
 }
 
@@ -95,7 +109,11 @@ pub struct CertSummary {
     pub expiring_soon: u32,
 }
 
-pub fn summarize_certs(certs: &[&UserCertificate], now: DateTime<Utc>, threshold_secs: i64) -> CertSummary {
+pub fn summarize_certs(
+    certs: &[&UserCertificate],
+    now: DateTime<Utc>,
+    threshold_secs: i64,
+) -> CertSummary {
     let (user, host) = group_certs_by_type(certs);
     let expired = certs.iter().filter(|c| is_cert_expired(c, now)).count() as u32;
     let expiring = certs

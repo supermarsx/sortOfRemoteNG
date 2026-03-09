@@ -23,22 +23,23 @@ pub fn validate_role(role: &TeleportRole) -> Vec<String> {
         && allow.rules.is_empty()
         && allow.logins.is_empty()
     {
-        issues.push("Allow section has no labels, logins, or rules — role grants no access".to_string());
+        issues.push(
+            "Allow section has no labels, logins, or rules — role grants no access".to_string(),
+        );
     }
 
     // Warn on wildcard
     for (key, vals) in &allow.node_labels {
         if key == "*" || vals.iter().any(|v| v == "*") {
-            issues.push("Allow section has wildcard node_labels — grants access to all nodes".to_string());
+            issues.push(
+                "Allow section has wildcard node_labels — grants access to all nodes".to_string(),
+            );
             break;
         }
     }
 
     let deny = &role.spec.deny;
-    if !deny.node_labels.is_empty()
-        && allow.node_labels.is_empty()
-        && allow.logins.is_empty()
-    {
+    if !deny.node_labels.is_empty() && allow.node_labels.is_empty() && allow.logins.is_empty() {
         issues.push("Role has deny labels but empty allow section".to_string());
     }
 
