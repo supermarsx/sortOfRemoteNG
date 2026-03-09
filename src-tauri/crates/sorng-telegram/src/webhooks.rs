@@ -93,16 +93,9 @@ pub fn extract_commands(updates: &[TgUpdate]) -> Vec<(&TgMessage, String, Vec<St
             let trimmed = text.trim();
             if trimmed.starts_with('/') {
                 let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
-                let command = parts[0]
-                    .split('@')
-                    .next()
-                    .unwrap_or(parts[0])
-                    .to_string();
+                let command = parts[0].split('@').next().unwrap_or(parts[0]).to_string();
                 let args: Vec<String> = if parts.len() > 1 {
-                    parts[1]
-                        .split_whitespace()
-                        .map(|s| s.to_string())
-                        .collect()
+                    parts[1].split_whitespace().map(|s| s.to_string()).collect()
                 } else {
                     Vec::new()
                 };
@@ -113,7 +106,7 @@ pub fn extract_commands(updates: &[TgUpdate]) -> Vec<(&TgMessage, String, Vec<St
     cmds
 }
 
-/// Validate a webhook secret token. 
+/// Validate a webhook secret token.
 /// Secret tokens must be 1–256 characters, containing A–Z, a–z, 0–9, _, -.
 pub fn validate_secret_token(token: &str) -> Result<(), String> {
     if token.is_empty() || token.len() > 256 {
@@ -195,11 +188,7 @@ mod tests {
 
     #[test]
     fn next_offset_computes() {
-        let updates = vec![
-            make_update(10),
-            make_update(12),
-            make_update(11),
-        ];
+        let updates = vec![make_update(10), make_update(12), make_update(11)];
         assert_eq!(next_offset(&updates), Some(13));
     }
 

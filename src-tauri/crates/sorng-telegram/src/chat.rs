@@ -36,10 +36,7 @@ pub fn build_set_chat_title(chat_id: &ChatId, title: &str) -> serde_json::Value 
 }
 
 /// Build the JSON body for `setChatDescription`.
-pub fn build_set_chat_description(
-    chat_id: &ChatId,
-    description: &str,
-) -> serde_json::Value {
+pub fn build_set_chat_description(chat_id: &ChatId, description: &str) -> serde_json::Value {
     json!({
         "chat_id": chat_id_value(chat_id),
         "description": description,
@@ -169,10 +166,7 @@ pub fn build_create_invite_link(
 }
 
 /// Build the JSON body for `revokeChatInviteLink`.
-pub fn build_revoke_invite_link(
-    chat_id: &ChatId,
-    invite_link: &str,
-) -> serde_json::Value {
+pub fn build_revoke_invite_link(chat_id: &ChatId, invite_link: &str) -> serde_json::Value {
     json!({
         "chat_id": chat_id_value(chat_id),
         "invite_link": invite_link,
@@ -337,15 +331,13 @@ mod tests {
 
     #[test]
     fn build_revoke_invite() {
-        let body =
-            build_revoke_invite_link(&ChatId::Numeric(1), "https://t.me/+abc123");
+        let body = build_revoke_invite_link(&ChatId::Numeric(1), "https://t.me/+abc123");
         assert_eq!(body["invite_link"], "https://t.me/+abc123");
     }
 
     #[test]
     fn build_admin_title() {
-        let body =
-            build_set_admin_custom_title(&ChatId::Numeric(1), 42, "Supreme Leader");
+        let body = build_set_admin_custom_title(&ChatId::Numeric(1), 42, "Supreme Leader");
         assert_eq!(body["custom_title"], "Supreme Leader");
     }
 

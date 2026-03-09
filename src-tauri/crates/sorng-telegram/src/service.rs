@@ -93,7 +93,13 @@ impl TelegramService {
         let body = messaging::build_send_message(req);
         let client = self.bots.client(bot_name)?;
         let result: Result<TgMessage, String> = client.call("sendMessage", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, &req.text, &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            &req.text,
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -105,7 +111,13 @@ impl TelegramService {
         let body = messaging::build_send_photo(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendPhoto", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[photo]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[photo]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -117,7 +129,13 @@ impl TelegramService {
         let body = messaging::build_send_document(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendDocument", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[document]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[document]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -129,7 +147,13 @@ impl TelegramService {
         let body = messaging::build_send_video(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendVideo", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[video]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[video]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -141,7 +165,13 @@ impl TelegramService {
         let body = messaging::build_send_audio(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendAudio", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[audio]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[audio]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -153,7 +183,13 @@ impl TelegramService {
         let body = messaging::build_send_voice(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendVoice", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[voice]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[voice]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -165,7 +201,13 @@ impl TelegramService {
         let body = messaging::build_send_location(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendLocation", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[location]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[location]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -177,7 +219,13 @@ impl TelegramService {
         let body = messaging::build_send_contact(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendContact", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[contact]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[contact]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -189,7 +237,13 @@ impl TelegramService {
         let body = messaging::build_send_poll(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendPoll", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[poll]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[poll]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -201,7 +255,13 @@ impl TelegramService {
         let body = messaging::build_send_dice(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendDice", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[dice]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[dice]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -213,7 +273,13 @@ impl TelegramService {
         let body = messaging::build_send_sticker(req);
         let client = self.bots.client(bot_name)?;
         let result = client.call("sendSticker", &body).await;
-        self.log_message_result(bot_name, &req.chat_id, "[sticker]", &result, MessageSource::Manual);
+        self.log_message_result(
+            bot_name,
+            &req.chat_id,
+            "[sticker]",
+            &result,
+            MessageSource::Manual,
+        );
         result
     }
 
@@ -336,11 +402,7 @@ impl TelegramService {
 
     // ── Chat management ─────────────────────────────────────────────
 
-    pub async fn get_chat(
-        &self,
-        bot_name: &str,
-        chat_id: &ChatId,
-    ) -> Result<TgChat, String> {
+    pub async fn get_chat(&self, bot_name: &str, chat_id: &ChatId) -> Result<TgChat, String> {
         let body = chat::build_get_chat(chat_id);
         let client = self.bots.client(bot_name)?;
         client.call("getChat", &body).await
@@ -441,11 +503,7 @@ impl TelegramService {
         client.call("promoteChatMember", &body).await
     }
 
-    pub async fn leave_chat(
-        &mut self,
-        bot_name: &str,
-        chat_id: &ChatId,
-    ) -> Result<bool, String> {
+    pub async fn leave_chat(&mut self, bot_name: &str, chat_id: &ChatId) -> Result<bool, String> {
         let body = chat::build_leave_chat(chat_id);
         let client = self.bots.client(bot_name)?;
         client.call("leaveChat", &body).await
@@ -470,8 +528,13 @@ impl TelegramService {
         member_limit: Option<i64>,
         creates_join_request: bool,
     ) -> Result<ChatInviteLink, String> {
-        let body =
-            chat::build_create_invite_link(chat_id, name, expire_date, member_limit, creates_join_request);
+        let body = chat::build_create_invite_link(
+            chat_id,
+            name,
+            expire_date,
+            member_limit,
+            creates_join_request,
+        );
         let client = self.bots.client(bot_name)?;
         client.call("createChatInviteLink", &body).await
     }
@@ -484,11 +547,7 @@ impl TelegramService {
         client.call("getFile", &body).await
     }
 
-    pub async fn download_file(
-        &self,
-        bot_name: &str,
-        file_path: &str,
-    ) -> Result<Vec<u8>, String> {
+    pub async fn download_file(&self, bot_name: &str, file_path: &str) -> Result<Vec<u8>, String> {
         let client = self.bots.client(bot_name)?;
         client.download_file(file_path).await
     }
@@ -539,11 +598,7 @@ impl TelegramService {
         client.call("setWebhook", &body).await
     }
 
-    pub async fn delete_webhook(
-        &self,
-        bot_name: &str,
-        drop_pending: bool,
-    ) -> Result<bool, String> {
+    pub async fn delete_webhook(&self, bot_name: &str, drop_pending: bool) -> Result<bool, String> {
         let body = webhooks::build_delete_webhook(drop_pending);
         let client = self.bots.client(bot_name)?;
         client.call("deleteWebhook", &body).await
@@ -577,9 +632,19 @@ impl TelegramService {
     ) -> Vec<NotificationResult> {
         let to_fire = self.notifications.process_event(event);
         // Collect into a Vec to release the immutable borrow on self.notifications
-        let to_fire: Vec<_> = to_fire.into_iter().map(|(r, m)| {
-            (r.id.clone(), r.name.clone(), r.bot_name.clone(), r.chat_id.clone(), r.parse_mode.clone(), m)
-        }).collect();
+        let to_fire: Vec<_> = to_fire
+            .into_iter()
+            .map(|(r, m)| {
+                (
+                    r.id.clone(),
+                    r.name.clone(),
+                    r.bot_name.clone(),
+                    r.chat_id.clone(),
+                    r.parse_mode.clone(),
+                    m,
+                )
+            })
+            .collect();
         let mut results = Vec::new();
 
         for (rule_id, rule_name, bot_name, chat_id, parse_mode, message) in to_fire {
@@ -678,7 +743,10 @@ impl TelegramService {
                 .monitoring
                 .list_checks()
                 .iter()
-                .find(|c| c.consecutive_failures >= c.failure_threshold || alert_type == MonitoringAlertType::Recovery)
+                .find(|c| {
+                    c.consecutive_failures >= c.failure_threshold
+                        || alert_type == MonitoringAlertType::Recovery
+                })
                 .map(|c| (c.bot_name.clone(), c.chat_id.clone(), c.parse_mode.clone()));
 
             if let Some((bot_name, chat_id, parse_mode)) = check_info {
@@ -750,10 +818,7 @@ impl TelegramService {
         self.templates.list()
     }
 
-    pub async fn send_template(
-        &mut self,
-        req: &SendTemplateRequest,
-    ) -> Result<TgMessage, String> {
+    pub async fn send_template(&mut self, req: &SendTemplateRequest) -> Result<TgMessage, String> {
         let rendered = self.templates.render(&req.template_id, &req.variables)?;
         let template = self
             .templates
@@ -799,7 +864,10 @@ impl TelegramService {
         self.scheduled_messages
             .retain(|m| m.id != msg_id || m.delivered);
         if self.scheduled_messages.len() == initial {
-            return Err(format!("Scheduled message '{}' not found or already delivered", msg_id));
+            return Err(format!(
+                "Scheduled message '{}' not found or already delivered",
+                msg_id
+            ));
         }
         Ok(())
     }
@@ -888,10 +956,7 @@ impl TelegramService {
 
     // ── Broadcast ───────────────────────────────────────────────────
 
-    pub async fn broadcast(
-        &mut self,
-        req: &BroadcastRequest,
-    ) -> Result<BroadcastResult, String> {
+    pub async fn broadcast(&mut self, req: &BroadcastRequest) -> Result<BroadcastResult, String> {
         let mut item_results = Vec::new();
         let total = req.chat_ids.len();
 

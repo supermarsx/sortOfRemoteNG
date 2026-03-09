@@ -159,15 +159,13 @@ impl BotManager {
     /// Record a successful message send.
     pub fn record_success(&mut self, name: &str) {
         *self.sent_counts.entry(name.to_string()).or_insert(0) += 1;
-        self.last_activity
-            .insert(name.to_string(), Utc::now());
+        self.last_activity.insert(name.to_string(), Utc::now());
     }
 
     /// Record a failed message send.
     pub fn record_failure(&mut self, name: &str) {
         *self.failed_counts.entry(name.to_string()).or_insert(0) += 1;
-        self.last_activity
-            .insert(name.to_string(), Utc::now());
+        self.last_activity.insert(name.to_string(), Utc::now());
     }
 
     /// Get sent count for a bot.

@@ -30,8 +30,7 @@ pub fn build_upload_form(
     disable_notification: bool,
     reply_to_message_id: Option<i64>,
 ) -> Result<reqwest::multipart::Form, String> {
-    let mut form = reqwest::multipart::Form::new()
-        .text("chat_id", chat_id.to_string());
+    let mut form = reqwest::multipart::Form::new().text("chat_id", chat_id.to_string());
 
     let part = reqwest::multipart::Part::bytes(upload.data.clone())
         .file_name(upload.file_name.clone())
@@ -78,11 +77,7 @@ pub fn upload_method_for_field(field_name: &str) -> &str {
 
 /// Guess MIME type from file extension.
 pub fn guess_mime_type(file_name: &str) -> &str {
-    let ext = file_name
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_lowercase();
+    let ext = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
     match ext.as_str() {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
@@ -195,7 +190,10 @@ mod tests {
         assert_eq!(guess_mime_type("archive.zip"), "application/zip");
         assert_eq!(guess_mime_type("data.csv"), "text/csv");
         assert_eq!(guess_mime_type("unknown"), "application/octet-stream");
-        assert_eq!(guess_mime_type("file.docx"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        assert_eq!(
+            guess_mime_type("file.docx"),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
     }
 
     #[test]

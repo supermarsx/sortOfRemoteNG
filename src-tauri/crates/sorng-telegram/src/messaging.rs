@@ -732,7 +732,10 @@ mod tests {
     #[test]
     fn chat_id_display() {
         assert_eq!(format!("{}", ChatId::Numeric(123)), "123");
-        assert_eq!(format!("{}", ChatId::Username("@test".to_string())), "@test");
+        assert_eq!(
+            format!("{}", ChatId::Username("@test".to_string())),
+            "@test"
+        );
     }
 
     #[test]

@@ -101,10 +101,7 @@ impl MonitoringManager {
             .map(|c| c.status == MonitoringStatus::Healthy)
             .unwrap_or(false);
 
-        let check = self
-            .checks
-            .iter_mut()
-            .find(|c| c.id == check_id)?;
+        let check = self.checks.iter_mut().find(|c| c.id == check_id)?;
 
         check.last_check = Some(result.timestamp);
 
@@ -294,18 +291,9 @@ fn render_check_template(
         "{{latency_ms}}",
         &result.latency_ms.unwrap_or(0).to_string(),
     );
-    out = out.replace(
-        "{{message}}",
-        result.message.as_deref().unwrap_or(""),
-    );
-    out = out.replace(
-        "{{failures}}",
-        &check.consecutive_failures.to_string(),
-    );
-    out = out.replace(
-        "{{threshold}}",
-        &check.failure_threshold.to_string(),
-    );
+    out = out.replace("{{message}}", result.message.as_deref().unwrap_or(""));
+    out = out.replace("{{failures}}", &check.consecutive_failures.to_string());
+    out = out.replace("{{threshold}}", &check.failure_threshold.to_string());
     out = out.replace("{{timestamp}}", &result.timestamp.to_rfc3339());
     out
 }

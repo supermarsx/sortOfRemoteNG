@@ -128,11 +128,7 @@ impl NotificationManager {
     }
 
     /// Render a notification message from an event and rule template.
-    pub fn render_message(
-        &self,
-        event: &ConnectionEvent,
-        rule: &NotificationRule,
-    ) -> String {
+    pub fn render_message(&self, event: &ConnectionEvent, rule: &NotificationRule) -> String {
         let template = rule.template.as_deref().unwrap_or(DEFAULT_TEMPLATE);
         render_template(template, event)
     }
@@ -167,10 +163,7 @@ impl NotificationManager {
 
     /// Process an event: find matching rules, check throttling,
     /// return the list of (rule, rendered_message) pairs that should fire.
-    pub fn process_event(
-        &self,
-        event: &ConnectionEvent,
-    ) -> Vec<(&NotificationRule, String)> {
+    pub fn process_event(&self, event: &ConnectionEvent) -> Vec<(&NotificationRule, String)> {
         let matched = self.match_rules(event);
         let mut to_fire = Vec::new();
 
@@ -187,7 +180,10 @@ impl NotificationManager {
         }
 
         if to_fire.is_empty() {
-            debug!("No rules matched event {:?} on {}", event.event_type, event.host);
+            debug!(
+                "No rules matched event {:?} on {}",
+                event.event_type, event.host
+            );
         } else {
             info!(
                 "{} rules matched event {:?} on {}",
@@ -222,10 +218,7 @@ pub fn render_template(template: &str, event: &ConnectionEvent) -> String {
         "{{session_id}}",
         event.session_id.as_deref().unwrap_or("N/A"),
     );
-    result = result.replace(
-        "{{username}}",
-        event.username.as_deref().unwrap_or("N/A"),
-    );
+    result = result.replace("{{username}}", event.username.as_deref().unwrap_or("N/A"));
     result = result.replace("{{timestamp}}", &event.timestamp.to_rfc3339());
 
     // Replace any detail variables.
@@ -287,10 +280,7 @@ mod tests {
         }
     }
 
-    fn test_rule(
-        id: &str,
-        event_types: Vec<ConnectionEventType>,
-    ) -> NotificationRule {
+    fn test_rule(id: &str, event_types: Vec<ConnectionEventType>) -> NotificationRule {
         NotificationRule {
             id: id.to_string(),
             name: format!("Rule {}", id),
@@ -485,9 +475,18 @@ mod tests {
 
     #[test]
     fn severity_ordering() {
-        assert!(severity_level(&NotificationSeverity::Info) < severity_level(&NotificationSeverity::Warning));
-        assert!(severity_level(&NotificationSeverity::Warning) < severity_level(&NotificationSeverity::Error));
-        assert!(severity_level(&NotificationSeverity::Error) < severity_level(&NotificationSeverity::Critical));
+        assert!(
+            severity_level(&NotificationSeverity::Info)
+                < severity_level(&NotificationSeverity::Warning)
+        );
+        assert!(
+            severity_level(&NotificationSeverity::Warning)
+                < severity_level(&NotificationSeverity::Error)
+        );
+        assert!(
+            severity_level(&NotificationSeverity::Error)
+                < severity_level(&NotificationSeverity::Critical)
+        );
     }
 
     #[test]

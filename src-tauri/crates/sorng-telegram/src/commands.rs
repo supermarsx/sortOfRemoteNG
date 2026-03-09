@@ -266,8 +266,13 @@ pub async fn telegram_pin_message(
     disable_notification: Option<bool>,
 ) -> Result<bool, String> {
     let mut svc = state.lock().await;
-    svc.pin_message(&bot_name, &chat_id, message_id, disable_notification.unwrap_or(false))
-        .await
+    svc.pin_message(
+        &bot_name,
+        &chat_id,
+        message_id,
+        disable_notification.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -704,9 +709,7 @@ pub async fn telegram_render_template(
 }
 
 #[tauri::command]
-pub async fn telegram_validate_template_body(
-    body: String,
-) -> Result<Vec<String>, String> {
+pub async fn telegram_validate_template_body(body: String) -> Result<Vec<String>, String> {
     templates::validate_template_body(&body)
 }
 

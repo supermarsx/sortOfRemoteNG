@@ -36,12 +36,14 @@ impl TelegramClient {
             .connect_timeout(Duration::from_secs(10));
 
         if let Some(ref proxy_url) = config.proxy_url {
-            let proxy = reqwest::Proxy::all(proxy_url)
-                .map_err(|e| format!("Invalid proxy URL: {e}"))?;
+            let proxy =
+                reqwest::Proxy::all(proxy_url).map_err(|e| format!("Invalid proxy URL: {e}"))?;
             builder = builder.proxy(proxy);
         }
 
-        let http = builder.build().map_err(|e| format!("HTTP client build error: {e}"))?;
+        let http = builder
+            .build()
+            .map_err(|e| format!("HTTP client build error: {e}"))?;
 
         Ok(Self {
             http,
@@ -177,10 +179,7 @@ impl TelegramClient {
     }
 
     /// Call a Bot API method with no parameters.
-    pub async fn call_no_params<R: DeserializeOwned>(
-        &self,
-        method: &str,
-    ) -> Result<R, String> {
+    pub async fn call_no_params<R: DeserializeOwned>(&self, method: &str) -> Result<R, String> {
         let empty: serde_json::Value = serde_json::json!({});
         self.call(method, &empty).await
     }
@@ -236,7 +235,11 @@ impl TelegramClient {
     /// Get the token (masked for logging).
     pub fn masked_token(&self) -> String {
         if self.token.len() > 10 {
-            format!("{}...{}", &self.token[..5], &self.token[self.token.len() - 4..])
+            format!(
+                "{}...{}",
+                &self.token[..5],
+                &self.token[self.token.len() - 4..]
+            )
         } else {
             "***".to_string()
         }

@@ -19,18 +19,18 @@
 //! - **Templates** – reusable message templates with variable substitution
 //! - **Scheduled Messages** – queue messages for future delivery
 
-pub mod types;
-pub mod client;
 pub mod bot;
-pub mod messaging;
 pub mod chat;
-pub mod files;
-pub mod webhooks;
-pub mod notifications;
-pub mod monitoring;
-pub mod templates;
-pub mod service;
+pub mod client;
 pub mod commands;
+pub mod files;
+pub mod messaging;
+pub mod monitoring;
+pub mod notifications;
+pub mod service;
+pub mod templates;
+pub mod types;
+pub mod webhooks;
 
 // Re-export for use in the main app crate.
 pub use service::TelegramServiceState;
