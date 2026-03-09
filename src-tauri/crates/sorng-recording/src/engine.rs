@@ -110,6 +110,7 @@ pub(crate) struct LiveDbQueryRecording {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) struct LiveMacroRecording {
     pub recording_id: String,
     pub session_id: String,
@@ -139,6 +140,7 @@ pub struct RecordingEngine {
 
     // ── macro library (in memory until persisted) ────────────────────
     pub(crate) macro_library: Vec<MacroRecording>,
+    #[allow(dead_code)]
     pub(crate) macro_replay_status: HashMap<String, MacroReplayStatus>,
 
     // ── background jobs ──────────────────────────────────────────────
@@ -149,6 +151,12 @@ pub struct RecordingEngine {
 
     // ── library (persisted envelopes loaded on init) ─────────────────
     pub(crate) library: Vec<SavedRecordingEnvelope>,
+}
+
+impl Default for RecordingEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RecordingEngine {
@@ -173,6 +181,7 @@ impl RecordingEngine {
     //  Terminal recording (SSH, Telnet-as-terminal, Rlogin…)
     // ──────────────────────────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     pub fn start_terminal_recording(
         &mut self,
         session_id: String,
@@ -315,6 +324,7 @@ impl RecordingEngine {
     //  Screen recording (RDP, VNC)
     // ──────────────────────────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     pub fn start_screen_recording(
         &mut self,
         session_id: String,
@@ -374,10 +384,7 @@ impl RecordingEngine {
         }
     }
 
-    pub fn stop_screen_recording(
-        &mut self,
-        session_id: &str,
-    ) -> RecordingResult<RdpRecording> {
+    pub fn stop_screen_recording(&mut self, session_id: &str) -> RecordingResult<RdpRecording> {
         let rec = self
             .screen_recordings
             .remove(session_id)
@@ -412,10 +419,7 @@ impl RecordingEngine {
         Ok(recording)
     }
 
-    pub fn get_screen_recording_status(
-        &self,
-        session_id: &str,
-    ) -> Option<RdpRecordingMetadata> {
+    pub fn get_screen_recording_status(&self, session_id: &str) -> Option<RdpRecordingMetadata> {
         self.screen_recordings.get(session_id).map(|rec| {
             let duration_ms = rec.start_instant.elapsed().as_millis() as u64;
             let total_size: u64 = rec.frames.iter().map(|f| f.data_b64.len() as u64).sum();
@@ -483,10 +487,7 @@ impl RecordingEngine {
         }
     }
 
-    pub fn stop_http_recording(
-        &mut self,
-        session_id: &str,
-    ) -> RecordingResult<HttpRecording> {
+    pub fn stop_http_recording(&mut self, session_id: &str) -> RecordingResult<HttpRecording> {
         let rec = self
             .http_recordings
             .remove(session_id)
@@ -522,10 +523,7 @@ impl RecordingEngine {
         Ok(recording)
     }
 
-    pub fn get_http_recording_status(
-        &self,
-        session_id: &str,
-    ) -> Option<HttpRecordingMetadata> {
+    pub fn get_http_recording_status(&self, session_id: &str) -> Option<HttpRecordingMetadata> {
         self.http_recordings.get(session_id).map(|rec| {
             let duration_ms = rec.start_instant.elapsed().as_millis() as u64;
             let total_bytes: u64 = rec
@@ -592,10 +590,7 @@ impl RecordingEngine {
         }
     }
 
-    pub fn stop_telnet_recording(
-        &mut self,
-        session_id: &str,
-    ) -> RecordingResult<TelnetRecording> {
+    pub fn stop_telnet_recording(&mut self, session_id: &str) -> RecordingResult<TelnetRecording> {
         let rec = self
             .telnet_recordings
             .remove(session_id)
@@ -624,10 +619,7 @@ impl RecordingEngine {
         Ok(recording)
     }
 
-    pub fn get_telnet_recording_status(
-        &self,
-        session_id: &str,
-    ) -> Option<TelnetRecordingMetadata> {
+    pub fn get_telnet_recording_status(&self, session_id: &str) -> Option<TelnetRecordingMetadata> {
         self.telnet_recordings.get(session_id).map(|rec| {
             let duration_ms = rec.start_instant.elapsed().as_millis() as u64;
             TelnetRecordingMetadata {
@@ -689,10 +681,7 @@ impl RecordingEngine {
         }
     }
 
-    pub fn stop_serial_recording(
-        &mut self,
-        session_id: &str,
-    ) -> RecordingResult<SerialRecording> {
+    pub fn stop_serial_recording(&mut self, session_id: &str) -> RecordingResult<SerialRecording> {
         let rec = self
             .serial_recordings
             .remove(session_id)
@@ -722,10 +711,7 @@ impl RecordingEngine {
         Ok(recording)
     }
 
-    pub fn get_serial_recording_status(
-        &self,
-        session_id: &str,
-    ) -> Option<SerialRecordingMetadata> {
+    pub fn get_serial_recording_status(&self, session_id: &str) -> Option<SerialRecordingMetadata> {
         self.serial_recordings.get(session_id).map(|rec| {
             let duration_ms = rec.start_instant.elapsed().as_millis() as u64;
             SerialRecordingMetadata {
@@ -788,10 +774,7 @@ impl RecordingEngine {
         }
     }
 
-    pub fn stop_db_recording(
-        &mut self,
-        session_id: &str,
-    ) -> RecordingResult<DbQueryRecording> {
+    pub fn stop_db_recording(&mut self, session_id: &str) -> RecordingResult<DbQueryRecording> {
         let rec = self
             .db_recordings
             .remove(session_id)
@@ -821,10 +804,7 @@ impl RecordingEngine {
         Ok(recording)
     }
 
-    pub fn get_db_recording_status(
-        &self,
-        session_id: &str,
-    ) -> Option<DbQueryRecordingMetadata> {
+    pub fn get_db_recording_status(&self, session_id: &str) -> Option<DbQueryRecordingMetadata> {
         self.db_recordings.get(session_id).map(|rec| {
             let duration_ms = rec.start_instant.elapsed().as_millis() as u64;
             DbQueryRecordingMetadata {
@@ -955,10 +935,7 @@ impl RecordingEngine {
         Ok(macro_rec)
     }
 
-    pub fn get_macro_recording_status(
-        &self,
-        session_id: &str,
-    ) -> Option<(String, usize, String)> {
+    pub fn get_macro_recording_status(&self, session_id: &str) -> Option<(String, usize, String)> {
         self.macro_recordings.get(session_id).map(|rec| {
             (
                 rec.recording_id.clone(),
@@ -1130,7 +1107,10 @@ impl RecordingEngine {
     }
 
     pub fn get_macro(&self, macro_id: &str) -> Option<MacroRecording> {
-        self.macro_library.iter().find(|m| m.id == macro_id).cloned()
+        self.macro_library
+            .iter()
+            .find(|m| m.id == macro_id)
+            .cloned()
     }
 
     pub fn update_macro(&mut self, updated: MacroRecording) -> RecordingResult<()> {
@@ -1285,8 +1265,8 @@ impl RecordingEngine {
         if !self.config.auto_cleanup_enabled {
             return 0;
         }
-        let cutoff = Utc::now()
-            - chrono::Duration::days(self.config.auto_cleanup_older_than_days as i64);
+        let cutoff =
+            Utc::now() - chrono::Duration::days(self.config.auto_cleanup_older_than_days as i64);
         let before = self.library.len();
         self.library.retain(|e| e.saved_at >= cutoff);
         before - self.library.len()
@@ -1315,12 +1295,21 @@ impl RecordingEngine {
         id
     }
 
-    pub fn update_job_status(&mut self, job_id: &str, status: JobStatus, progress: f64, msg: Option<String>) {
+    pub fn update_job_status(
+        &mut self,
+        job_id: &str,
+        status: JobStatus,
+        progress: f64,
+        msg: Option<String>,
+    ) {
         if let Some(job) = self.jobs.get_mut(job_id) {
             if job.started_at.is_none() && matches!(status, JobStatus::Running) {
                 job.started_at = Some(Utc::now());
             }
-            if matches!(status, JobStatus::Completed | JobStatus::Failed(_) | JobStatus::Cancelled) {
+            if matches!(
+                status,
+                JobStatus::Completed | JobStatus::Failed(_) | JobStatus::Cancelled
+            ) {
                 job.completed_at = Some(Utc::now());
             }
             job.status = status;
@@ -1339,7 +1328,12 @@ impl RecordingEngine {
 
     pub fn clear_completed_jobs(&mut self) -> usize {
         let before = self.jobs.len();
-        self.jobs.retain(|_, j| !matches!(j.status, JobStatus::Completed | JobStatus::Failed(_) | JobStatus::Cancelled));
+        self.jobs.retain(|_, j| {
+            !matches!(
+                j.status,
+                JobStatus::Completed | JobStatus::Failed(_) | JobStatus::Cancelled
+            )
+        });
         before - self.jobs.len()
     }
 }

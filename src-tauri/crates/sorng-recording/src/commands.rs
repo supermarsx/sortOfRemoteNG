@@ -33,6 +33,7 @@ pub async fn rec_update_config(
 // ═══════════════════════════════════════════════════════════════════════
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn rec_start_terminal(
     state: tauri::State<'_, RecordingServiceState>,
     session_id: String,
@@ -127,6 +128,7 @@ pub async fn rec_append_terminal_resize(
 // ═══════════════════════════════════════════════════════════════════════
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn rec_start_screen(
     state: tauri::State<'_, RecordingServiceState>,
     session_id: String,
@@ -489,9 +491,15 @@ pub async fn rec_stop_macro(
     tags: Option<Vec<String>>,
 ) -> Result<MacroRecording, String> {
     let svc = state.lock().await;
-    svc.stop_macro_recording(&session_id, name, description, category, tags.unwrap_or_default())
-        .await
-        .map_err(|e| e.to_string())
+    svc.stop_macro_recording(
+        &session_id,
+        name,
+        description,
+        category,
+        tags.unwrap_or_default(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -672,6 +680,7 @@ pub async fn rec_decompress(
 // ═══════════════════════════════════════════════════════════════════════
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn rec_save_terminal(
     state: tauri::State<'_, RecordingServiceState>,
     recording: TerminalRecording,
@@ -697,6 +706,7 @@ pub async fn rec_save_terminal(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn rec_save_http(
     state: tauri::State<'_, RecordingServiceState>,
     recording: HttpRecording,
@@ -722,6 +732,7 @@ pub async fn rec_save_http(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn rec_save_screen(
     state: tauri::State<'_, RecordingServiceState>,
     recording: RdpRecording,

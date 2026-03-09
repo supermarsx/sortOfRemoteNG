@@ -101,6 +101,7 @@ impl RecordingService {
     //  Terminal recording  (SSH, Telnet, etc.)
     // ──────────────────────────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_terminal_recording(
         &self,
         session_id: String,
@@ -113,7 +114,16 @@ impl RecordingService {
         tags: Vec<String>,
     ) -> RecordingResult<String> {
         let mut eng = self.engine.lock().await;
-        eng.start_terminal_recording(session_id, protocol, host, username, cols, rows, record_input, tags)
+        eng.start_terminal_recording(
+            session_id,
+            protocol,
+            host,
+            username,
+            cols,
+            rows,
+            record_input,
+            tags,
+        )
     }
 
     pub async fn append_terminal_output(&self, session_id: &str, data: &str) {
@@ -143,7 +153,10 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> Option<TerminalRecordingMetadata> {
-        self.engine.lock().await.get_terminal_recording_status(session_id)
+        self.engine
+            .lock()
+            .await
+            .get_terminal_recording_status(session_id)
     }
 
     pub async fn is_terminal_recording(&self, session_id: &str) -> bool {
@@ -154,6 +167,7 @@ impl RecordingService {
     //  Screen recording (RDP, VNC)
     // ──────────────────────────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_screen_recording(
         &self,
         session_id: String,
@@ -166,7 +180,16 @@ impl RecordingService {
         tags: Vec<String>,
     ) -> RecordingResult<String> {
         let mut eng = self.engine.lock().await;
-        eng.start_screen_recording(session_id, protocol, host, connection_name, width, height, fps, tags)
+        eng.start_screen_recording(
+            session_id,
+            protocol,
+            host,
+            connection_name,
+            width,
+            height,
+            fps,
+            tags,
+        )
     }
 
     pub async fn append_screen_frame(
@@ -180,10 +203,7 @@ impl RecordingService {
         eng.append_screen_frame(session_id, width, height, data_b64);
     }
 
-    pub async fn stop_screen_recording(
-        &self,
-        session_id: &str,
-    ) -> RecordingResult<RdpRecording> {
+    pub async fn stop_screen_recording(&self, session_id: &str) -> RecordingResult<RdpRecording> {
         let mut eng = self.engine.lock().await;
         eng.stop_screen_recording(session_id)
     }
@@ -192,7 +212,10 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> Option<RdpRecordingMetadata> {
-        self.engine.lock().await.get_screen_recording_status(session_id)
+        self.engine
+            .lock()
+            .await
+            .get_screen_recording_status(session_id)
     }
 
     pub async fn is_screen_recording(&self, session_id: &str) -> bool {
@@ -220,10 +243,7 @@ impl RecordingService {
         eng.append_http_entry(session_id, entry);
     }
 
-    pub async fn stop_http_recording(
-        &self,
-        session_id: &str,
-    ) -> RecordingResult<HttpRecording> {
+    pub async fn stop_http_recording(&self, session_id: &str) -> RecordingResult<HttpRecording> {
         let mut eng = self.engine.lock().await;
         eng.stop_http_recording(session_id)
     }
@@ -232,7 +252,10 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> Option<HttpRecordingMetadata> {
-        self.engine.lock().await.get_http_recording_status(session_id)
+        self.engine
+            .lock()
+            .await
+            .get_http_recording_status(session_id)
     }
 
     pub async fn is_http_recording(&self, session_id: &str) -> bool {
@@ -271,7 +294,10 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> Option<TelnetRecordingMetadata> {
-        self.engine.lock().await.get_telnet_recording_status(session_id)
+        self.engine
+            .lock()
+            .await
+            .get_telnet_recording_status(session_id)
     }
 
     pub async fn is_telnet_recording(&self, session_id: &str) -> bool {
@@ -310,7 +336,10 @@ impl RecordingService {
         &self,
         session_id: &str,
     ) -> Option<SerialRecordingMetadata> {
-        self.engine.lock().await.get_serial_recording_status(session_id)
+        self.engine
+            .lock()
+            .await
+            .get_serial_recording_status(session_id)
     }
 
     pub async fn is_serial_recording(&self, session_id: &str) -> bool {
@@ -338,10 +367,7 @@ impl RecordingService {
         eng.append_db_entry(session_id, entry);
     }
 
-    pub async fn stop_db_recording(
-        &self,
-        session_id: &str,
-    ) -> RecordingResult<DbQueryRecording> {
+    pub async fn stop_db_recording(&self, session_id: &str) -> RecordingResult<DbQueryRecording> {
         let mut eng = self.engine.lock().await;
         eng.stop_db_recording(session_id)
     }
@@ -469,28 +495,19 @@ impl RecordingService {
             .map_err(|e| RecordingError::Internal(e.to_string()))?
     }
 
-    pub async fn encode_http_har(
-        &self,
-        recording: HttpRecording,
-    ) -> RecordingResult<String> {
+    pub async fn encode_http_har(&self, recording: HttpRecording) -> RecordingResult<String> {
         tokio::task::spawn_blocking(move || encoders::encode_har(&recording))
             .await
             .map_err(|e| RecordingError::Internal(e.to_string()))?
     }
 
-    pub async fn encode_db_csv(
-        &self,
-        recording: DbQueryRecording,
-    ) -> RecordingResult<String> {
+    pub async fn encode_db_csv(&self, recording: DbQueryRecording) -> RecordingResult<String> {
         tokio::task::spawn_blocking(move || encoders::encode_db_queries_csv(&recording))
             .await
             .map_err(|e| RecordingError::Internal(e.to_string()))?
     }
 
-    pub async fn encode_http_csv(
-        &self,
-        recording: HttpRecording,
-    ) -> RecordingResult<String> {
+    pub async fn encode_http_csv(&self, recording: HttpRecording) -> RecordingResult<String> {
         tokio::task::spawn_blocking(move || encoders::encode_http_csv(&recording))
             .await
             .map_err(|e| RecordingError::Internal(e.to_string()))?
@@ -505,19 +522,13 @@ impl RecordingService {
             .map_err(|e| RecordingError::Internal(e.to_string()))?
     }
 
-    pub async fn encode_serial_raw(
-        &self,
-        recording: SerialRecording,
-    ) -> RecordingResult<String> {
+    pub async fn encode_serial_raw(&self, recording: SerialRecording) -> RecordingResult<String> {
         tokio::task::spawn_blocking(move || encoders::encode_serial_raw(&recording))
             .await
             .map_err(|e| RecordingError::Internal(e.to_string()))?
     }
 
-    pub async fn encode_frame_manifest(
-        &self,
-        recording: RdpRecording,
-    ) -> RecordingResult<String> {
+    pub async fn encode_frame_manifest(&self, recording: RdpRecording) -> RecordingResult<String> {
         tokio::task::spawn_blocking(move || encoders::encode_frame_sequence_manifest(&recording))
             .await
             .map_err(|e| RecordingError::Internal(e.to_string()))?
@@ -551,10 +562,7 @@ impl RecordingService {
     //  Library operations  (threaded I/O)
     // ──────────────────────────────────────────────────────────────────
 
-    pub async fn save_to_library(
-        &self,
-        envelope: SavedRecordingEnvelope,
-    ) -> RecordingResult<()> {
+    pub async fn save_to_library(&self, envelope: SavedRecordingEnvelope) -> RecordingResult<()> {
         let root = self.storage_root.lock().await.clone();
         {
             let mut eng = self.engine.lock().await;
@@ -698,11 +706,10 @@ impl RecordingService {
         .await
         .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
-        let deleted_size = tokio::task::spawn_blocking(move || {
-            storage::enforce_storage_limit(&root, max_bytes)
-        })
-        .await
-        .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        let deleted_size =
+            tokio::task::spawn_blocking(move || storage::enforce_storage_limit(&root, max_bytes))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
         // Also clean from in-memory library
         {
@@ -733,6 +740,7 @@ impl RecordingService {
     // ──────────────────────────────────────────────────────────────────
 
     /// One-shot: encode a terminal recording, compress, and save to library.
+    #[allow(clippy::too_many_arguments)]
     pub async fn encode_compress_save_terminal(
         &self,
         recording: TerminalRecording,
@@ -748,24 +756,21 @@ impl RecordingService {
         let fmt = format.clone();
 
         // Encode on a blocking thread
-        let encoded = tokio::task::spawn_blocking(move || {
-            match fmt {
-                ExportFormat::Asciicast => encoders::encode_asciicast(&rec),
-                ExportFormat::Script => encoders::encode_script(&rec),
-                ExportFormat::Json => encoders::encode_terminal_json(&rec),
-                _ => encoders::encode_terminal_json(&rec),
-            }
+        let encoded = tokio::task::spawn_blocking(move || match fmt {
+            ExportFormat::Asciicast => encoders::encode_asciicast(&rec),
+            ExportFormat::Script => encoders::encode_script(&rec),
+            ExportFormat::Json => encoders::encode_terminal_json(&rec),
+            _ => encoders::encode_terminal_json(&rec),
         })
         .await
         .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
         // Compress on a blocking thread
         let algo2 = algo.clone();
-        let data = tokio::task::spawn_blocking(move || {
-            compression::compress_to_b64(&encoded, &algo2)
-        })
-        .await
-        .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        let data =
+            tokio::task::spawn_blocking(move || compression::compress_to_b64(&encoded, &algo2))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
         let envelope = SavedRecordingEnvelope {
             id: id.clone(),
@@ -789,6 +794,7 @@ impl RecordingService {
     }
 
     /// One-shot: encode an HTTP recording, compress, and save to library.
+    #[allow(clippy::too_many_arguments)]
     pub async fn encode_compress_save_http(
         &self,
         recording: HttpRecording,
@@ -803,23 +809,20 @@ impl RecordingService {
         let rec = recording.clone();
         let fmt = format.clone();
 
-        let encoded = tokio::task::spawn_blocking(move || {
-            match fmt {
-                ExportFormat::Har => encoders::encode_har(&rec),
-                ExportFormat::Csv => encoders::encode_http_csv(&rec),
-                ExportFormat::Json => encoders::encode_http_json(&rec),
-                _ => encoders::encode_http_json(&rec),
-            }
+        let encoded = tokio::task::spawn_blocking(move || match fmt {
+            ExportFormat::Har => encoders::encode_har(&rec),
+            ExportFormat::Csv => encoders::encode_http_csv(&rec),
+            ExportFormat::Json => encoders::encode_http_json(&rec),
+            _ => encoders::encode_http_json(&rec),
         })
         .await
         .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
         let algo2 = algo.clone();
-        let data = tokio::task::spawn_blocking(move || {
-            compression::compress_to_b64(&encoded, &algo2)
-        })
-        .await
-        .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        let data =
+            tokio::task::spawn_blocking(move || compression::compress_to_b64(&encoded, &algo2))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
         let envelope = SavedRecordingEnvelope {
             id: id.clone(),
@@ -843,6 +846,7 @@ impl RecordingService {
     }
 
     /// One-shot: encode a screen recording, compress, and save to library.
+    #[allow(clippy::too_many_arguments)]
     pub async fn encode_compress_save_screen(
         &self,
         recording: RdpRecording,
@@ -857,22 +861,19 @@ impl RecordingService {
         let rec = recording.clone();
         let fmt = format.clone();
 
-        let encoded = tokio::task::spawn_blocking(move || {
-            match fmt {
-                ExportFormat::FrameSequence => encoders::encode_frame_sequence_manifest(&rec),
-                ExportFormat::Json => encoders::encode_screen_json(&rec),
-                _ => encoders::encode_screen_json(&rec),
-            }
+        let encoded = tokio::task::spawn_blocking(move || match fmt {
+            ExportFormat::FrameSequence => encoders::encode_frame_sequence_manifest(&rec),
+            ExportFormat::Json => encoders::encode_screen_json(&rec),
+            _ => encoders::encode_screen_json(&rec),
         })
         .await
         .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
         let algo2 = algo.clone();
-        let data = tokio::task::spawn_blocking(move || {
-            compression::compress_to_b64(&encoded, &algo2)
-        })
-        .await
-        .map_err(|e| RecordingError::Internal(e.to_string()))??;
+        let data =
+            tokio::task::spawn_blocking(move || compression::compress_to_b64(&encoded, &algo2))
+                .await
+                .map_err(|e| RecordingError::Internal(e.to_string()))??;
 
         let envelope = SavedRecordingEnvelope {
             id: id.clone(),

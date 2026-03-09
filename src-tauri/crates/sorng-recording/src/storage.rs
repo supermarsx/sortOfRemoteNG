@@ -123,10 +123,10 @@ pub fn clear_envelopes(root: &Path) -> RecordingResult<usize> {
         let entry =
             entry.map_err(|e| RecordingError::StorageError(format!("readdir entry: {}", e)))?;
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("json") {
-            if std::fs::remove_file(&path).is_ok() {
-                count += 1;
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some("json")
+            && std::fs::remove_file(&path).is_ok()
+        {
+            count += 1;
         }
     }
     Ok(count)
@@ -141,11 +141,9 @@ pub fn storage_size(root: &Path) -> RecordingResult<u64> {
     let mut total: u64 = 0;
     let entries = std::fs::read_dir(&dir)
         .map_err(|e| RecordingError::StorageError(format!("readdir: {}", e)))?;
-    for entry in entries {
-        if let Ok(entry) = entry {
-            if let Ok(meta) = entry.metadata() {
-                total += meta.len();
-            }
+    for entry in entries.flatten() {
+        if let Ok(meta) = entry.metadata() {
+            total += meta.len();
         }
     }
     Ok(total)
@@ -254,10 +252,8 @@ pub fn cleanup_old_envelopes(root: &Path, days: u64) -> RecordingResult<usize> {
         // Try to read and check date
         if let Ok(json) = std::fs::read_to_string(&path) {
             if let Ok(env) = serde_json::from_str::<SavedRecordingEnvelope>(&json) {
-                if env.saved_at < cutoff {
-                    if std::fs::remove_file(&path).is_ok() {
-                        deleted += 1;
-                    }
+                if env.saved_at < cutoff && std::fs::remove_file(&path).is_ok() {
+                    deleted += 1;
                 }
             }
         }

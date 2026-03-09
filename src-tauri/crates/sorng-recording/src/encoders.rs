@@ -305,7 +305,10 @@ pub fn encode_serial_raw(recording: &SerialRecording) -> RecordingResult<String>
         "# Serial recording: {} @ {} baud\n# Started: {}\n\n",
         recording.metadata.port_name,
         recording.metadata.baud_rate,
-        recording.metadata.start_time.format("%Y-%m-%d %H:%M:%S UTC")
+        recording
+            .metadata
+            .start_time
+            .format("%Y-%m-%d %H:%M:%S UTC")
     ));
     for entry in &recording.entries {
         match &entry.entry_type {
