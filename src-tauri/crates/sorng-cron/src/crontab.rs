@@ -13,7 +13,10 @@ pub async fn list_user_crontabs(host: &CronHost) -> Result<Vec<String>, CronErro
     let (stdout, _stderr, exit_code) = client::exec(
         host,
         "sh",
-        &["-c", "ls /var/spool/cron/crontabs/ 2>/dev/null || ls /var/spool/cron/ 2>/dev/null"],
+        &[
+            "-c",
+            "ls /var/spool/cron/crontabs/ 2>/dev/null || ls /var/spool/cron/ 2>/dev/null",
+        ],
     )
     .await?;
 
@@ -30,12 +33,8 @@ pub async fn list_user_crontabs(host: &CronHost) -> Result<Vec<String>, CronErro
 }
 
 /// Read a user's crontab and parse it into entries.
-pub async fn get_crontab(
-    host: &CronHost,
-    user: &str,
-) -> Result<Vec<CrontabEntry>, CronError> {
-    let (stdout, stderr, exit_code) =
-        client::exec(host, "crontab", &["-l", "-u", user]).await?;
+pub async fn get_crontab(host: &CronHost, user: &str) -> Result<Vec<CrontabEntry>, CronError> {
+    let (stdout, stderr, exit_code) = client::exec(host, "crontab", &["-l", "-u", user]).await?;
 
     // "no crontab for <user>" is exit 1 — return empty
     if exit_code != 0 {
@@ -64,11 +63,7 @@ pub async fn set_crontab(
 }
 
 /// Append a job to a user's crontab.
-pub async fn add_job(
-    host: &CronHost,
-    user: &str,
-    job: &CronJob,
-) -> Result<(), CronError> {
+pub async fn add_job(host: &CronHost, user: &str, job: &CronJob) -> Result<(), CronError> {
     let mut entries = get_crontab(host, user).await?;
 
     // If there's a comment, add it before the job
@@ -91,11 +86,7 @@ pub async fn add_job(
 }
 
 /// Remove a job by id from a user's crontab.
-pub async fn remove_job(
-    host: &CronHost,
-    user: &str,
-    job_id: &str,
-) -> Result<(), CronError> {
+pub async fn remove_job(host: &CronHost, user: &str, job_id: &str) -> Result<(), CronError> {
     let entries = get_crontab(host, user).await?;
     let filtered: Vec<CrontabEntry> = entries
         .into_iter()
@@ -140,11 +131,7 @@ pub async fn update_job(
 }
 
 /// Enable (uncomment) a job in the user's crontab.
-pub async fn enable_job(
-    host: &CronHost,
-    user: &str,
-    job_id: &str,
-) -> Result<(), CronError> {
+pub async fn enable_job(host: &CronHost, user: &str, job_id: &str) -> Result<(), CronError> {
     let entries = get_crontab(host, user).await?;
     let mut found = false;
     let updated: Vec<CrontabEntry> = entries
@@ -170,11 +157,7 @@ pub async fn enable_job(
 }
 
 /// Disable (comment out) a job in the user's crontab.
-pub async fn disable_job(
-    host: &CronHost,
-    user: &str,
-    job_id: &str,
-) -> Result<(), CronError> {
+pub async fn disable_job(host: &CronHost, user: &str, job_id: &str) -> Result<(), CronError> {
     let entries = get_crontab(host, user).await?;
     let mut found = false;
     let updated: Vec<CrontabEntry> = entries
@@ -206,12 +189,8 @@ pub async fn remove_crontab(host: &CronHost, user: &str) -> Result<(), CronError
 }
 
 /// Back up a user's crontab as raw text.
-pub async fn backup_crontab(
-    host: &CronHost,
-    user: &str,
-) -> Result<String, CronError> {
-    let (stdout, stderr, exit_code) =
-        client::exec(host, "crontab", &["-l", "-u", user]).await?;
+pub async fn backup_crontab(host: &CronHost, user: &str) -> Result<String, CronError> {
+    let (stdout, stderr, exit_code) = client::exec(host, "crontab", &["-l", "-u", user]).await?;
 
     if exit_code != 0 {
         if stderr.contains("no crontab for") {
@@ -227,11 +206,7 @@ pub async fn backup_crontab(
 }
 
 /// Restore a user's crontab from raw text content.
-pub async fn restore_crontab(
-    host: &CronHost,
-    user: &str,
-    content: &str,
-) -> Result<(), CronError> {
+pub async fn restore_crontab(host: &CronHost, user: &str, content: &str) -> Result<(), CronError> {
     client::exec_with_stdin(host, "crontab", &["-u", user, "-"], content).await?;
     Ok(())
 }
@@ -311,14 +286,11 @@ fn parse_env_var(line: &str) -> Option<(String, String)> {
     if key.is_empty() {
         return None;
     }
-    if !key
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
     // Reject if key starts with a digit (it's probably a cron schedule)
-    if key.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+    if key.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         return None;
     }
     // Reject if key is a single * or contains * (likely a cron line)
@@ -326,19 +298,12 @@ fn parse_env_var(line: &str) -> Option<(String, String)> {
         return None;
     }
 
-    let unquoted = value
-        .trim_matches('"')
-        .trim_matches('\'')
-        .to_string();
+    let unquoted = value.trim_matches('"').trim_matches('\'').to_string();
     Some((key.to_string(), unquoted))
 }
 
 /// Try to parse a cron-format line: min hour dom month dow command
-fn try_parse_cron_line(
-    line: &str,
-    user: &str,
-    env: &HashMap<String, String>,
-) -> Option<CronJob> {
+fn try_parse_cron_line(line: &str, user: &str, env: &HashMap<String, String>) -> Option<CronJob> {
     // Handle @presets
     if line.starts_with('@') {
         let parts: Vec<&str> = line.splitn(2, char::is_whitespace).collect();

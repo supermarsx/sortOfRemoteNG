@@ -13,10 +13,7 @@ pub async fn get_anacrontab(host: &CronHost) -> Result<Vec<AnacronEntry>, CronEr
 }
 
 /// Add a new entry to /etc/anacrontab.
-pub async fn add_anacron_entry(
-    host: &CronHost,
-    entry: &AnacronEntry,
-) -> Result<(), CronError> {
+pub async fn add_anacron_entry(host: &CronHost, entry: &AnacronEntry) -> Result<(), CronError> {
     let mut entries = get_anacrontab(host).await?;
 
     // Check for duplicate job_identifier
@@ -62,10 +59,7 @@ pub async fn update_anacron_entry(
 }
 
 /// Remove an anacron entry by job_identifier.
-pub async fn remove_anacron_entry(
-    host: &CronHost,
-    job_id: &str,
-) -> Result<(), CronError> {
+pub async fn remove_anacron_entry(host: &CronHost, job_id: &str) -> Result<(), CronError> {
     let entries = get_anacrontab(host).await?;
     let initial_len = entries.len();
     let filtered: Vec<AnacronEntry> = entries
@@ -82,11 +76,7 @@ pub async fn remove_anacron_entry(
 
 /// Run anacron, optionally with `-f` (force).
 pub async fn run_anacron(host: &CronHost, force: bool) -> Result<String, CronError> {
-    let args: Vec<&str> = if force {
-        vec!["-f", "-n"]
-    } else {
-        vec!["-n"]
-    };
+    let args: Vec<&str> = if force { vec!["-f", "-n"] } else { vec!["-n"] };
     client::exec_ok(host, "anacron", &args).await
 }
 
@@ -111,8 +101,7 @@ pub async fn get_anacron_timestamps(
         }
 
         let path = format!("/var/spool/anacron/{filename}");
-        let (content, _stderr, exit_code) =
-            client::exec(host, "cat", &[&path]).await?;
+        let (content, _stderr, exit_code) = client::exec(host, "cat", &[&path]).await?;
 
         if exit_code != 0 {
             continue;
@@ -145,14 +134,19 @@ fn parse_anacrontab(raw: &str) -> Result<Vec<AnacronEntry>, CronError> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if trimmed.contains('=') && !trimmed.starts_with(|c: char| c.is_ascii_digit()) && !trimmed.starts_with('@') {
+        if trimmed.contains('=')
+            && !trimmed.starts_with(|c: char| c.is_ascii_digit())
+            && !trimmed.starts_with('@')
+        {
             continue;
         }
 
         // Handle @monthly, @weekly, etc. anacron special periods
         let effective_line = if trimmed.starts_with('@') {
             // @monthly → 30, @weekly → 7, @daily → 1
-            let (preset, rest) = trimmed.split_once(char::is_whitespace).unwrap_or((trimmed, ""));
+            let (preset, rest) = trimmed
+                .split_once(char::is_whitespace)
+                .unwrap_or((trimmed, ""));
             let period = match preset {
                 "@monthly" => "30",
                 "@weekly" => "7",
@@ -194,13 +188,9 @@ fn parse_anacrontab(raw: &str) -> Result<Vec<AnacronEntry>, CronError> {
 
 /// Write the full /etc/anacrontab file.
 /// Preserves a standard header with SHELL and PATH.
-async fn write_anacrontab(
-    host: &CronHost,
-    entries: &[AnacronEntry],
-) -> Result<(), CronError> {
+async fn write_anacrontab(host: &CronHost, entries: &[AnacronEntry]) -> Result<(), CronError> {
     // Read existing file to preserve env vars and comments at the top
-    let (existing, _stderr, _exit_code) =
-        client::exec(host, "cat", &["/etc/anacrontab"]).await?;
+    let (existing, _stderr, _exit_code) = client::exec(host, "cat", &["/etc/anacrontab"]).await?;
 
     let mut header_lines = Vec::new();
     for line in existing.lines() {
@@ -288,6 +278,9 @@ LOGNAME=root
             job_identifier: "cron.daily".to_string(),
             command: "run-parts --report /etc/cron.daily".to_string(),
         };
-        assert_eq!(entry.to_line(), "1\t5\tcron.daily\trun-parts --report /etc/cron.daily");
+        assert_eq!(
+            entry.to_line(),
+            "1\t5\tcron.daily\trun-parts --report /etc/cron.daily"
+        );
     }
 }

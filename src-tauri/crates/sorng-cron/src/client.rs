@@ -32,11 +32,7 @@ pub async fn exec(
 }
 
 /// Execute a command and return stdout on success, or error on non-zero exit.
-pub async fn exec_ok(
-    host: &CronHost,
-    program: &str,
-    args: &[&str],
-) -> Result<String, CronError> {
+pub async fn exec_ok(host: &CronHost, program: &str, args: &[&str]) -> Result<String, CronError> {
     let (stdout, stderr, exit_code) = exec(host, program, args).await?;
     if exit_code != 0 {
         return Err(CronError::CommandFailed {

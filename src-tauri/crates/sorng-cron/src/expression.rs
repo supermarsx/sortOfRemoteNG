@@ -78,7 +78,7 @@ pub fn next_runs(expr: &str, count: usize) -> Result<CronNextRun, CronError> {
 
         let m = candidate.minute();
         let h = candidate.hour();
-        let dom = candidate.day() as u32;
+        let dom = candidate.day();
         let mon = candidate.month();
         let dow = candidate.weekday().num_days_from_sunday();
 
@@ -90,7 +90,7 @@ pub fn next_runs(expr: &str, count: usize) -> Result<CronNextRun, CronError> {
             results.push(candidate);
         }
 
-        candidate = candidate + Duration::minutes(1);
+        candidate += Duration::minutes(1);
     }
 
     Ok(CronNextRun {
@@ -328,10 +328,8 @@ fn expand_field(field: &str, min: u32, max: u32) -> Result<Vec<u32>, CronError> 
             for v in start..=end {
                 values.push(v);
             }
-        } else {
-            if let Ok(v) = parse_field_value(part, "field") {
-                values.push(v);
-            }
+        } else if let Ok(v) = parse_field_value(part, "field") {
+            values.push(v);
         }
     }
 

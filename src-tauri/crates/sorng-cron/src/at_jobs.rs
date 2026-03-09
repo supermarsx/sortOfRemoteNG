@@ -66,9 +66,12 @@ pub async fn schedule_at_job(
 ) -> Result<AtJob, CronError> {
     // echo 'command' | at time_spec
     // at writes to stderr on success: "job N at DATE"
-    let args_str = format!("echo '{}' | at {}", escape_single_quotes(command), time_spec);
-    let (stdout, stderr, exit_code) =
-        client::exec(host, "sh", &["-c", &args_str]).await?;
+    let args_str = format!(
+        "echo '{}' | at {}",
+        escape_single_quotes(command),
+        time_spec
+    );
+    let (stdout, stderr, exit_code) = client::exec(host, "sh", &["-c", &args_str]).await?;
 
     // at uses stderr for its messages, even on success
     let combined = format!("{}{}", stdout, stderr);
@@ -103,13 +106,9 @@ pub async fn schedule_at_job(
 }
 
 /// Schedule a job to run when system load permits (`batch`).
-pub async fn schedule_batch_job(
-    host: &CronHost,
-    command: &str,
-) -> Result<AtJob, CronError> {
+pub async fn schedule_batch_job(host: &CronHost, command: &str) -> Result<AtJob, CronError> {
     let args_str = format!("echo '{}' | batch", escape_single_quotes(command));
-    let (stdout, stderr, _exit_code) =
-        client::exec(host, "sh", &["-c", &args_str]).await?;
+    let (stdout, stderr, _exit_code) = client::exec(host, "sh", &["-c", &args_str]).await?;
 
     let combined = format!("{}{}", stdout, stderr);
     let (job_id, scheduled_at) = parse_at_schedule_output(&combined)?;
@@ -139,10 +138,8 @@ pub async fn remove_at_job(host: &CronHost, job_id: u64) -> Result<(), CronError
 
 /// Read at access control files (/etc/at.allow, /etc/at.deny).
 pub async fn get_at_access(host: &CronHost) -> Result<CronAccessControl, CronError> {
-    let (allow_out, _, allow_exit) =
-        client::exec(host, "cat", &["/etc/at.allow"]).await?;
-    let (deny_out, _, deny_exit) =
-        client::exec(host, "cat", &["/etc/at.deny"]).await?;
+    let (allow_out, _, allow_exit) = client::exec(host, "cat", &["/etc/at.allow"]).await?;
+    let (deny_out, _, deny_exit) = client::exec(host, "cat", &["/etc/at.deny"]).await?;
 
     let allow_exists = allow_exit == 0;
     let deny_exists = deny_exit == 0;
@@ -246,10 +243,10 @@ fn parse_atq_line_spaces(line: &str) -> Option<AtJob> {
 fn parse_at_datetime(s: &str) -> Option<DateTime<Utc>> {
     // Try common formats
     let formats = [
-        "%a %b %d %H:%M:%S %Y",   // "Fri Mar  7 14:30:00 2026"
-        "%a %b %e %H:%M:%S %Y",   // "Fri Mar 7 14:30:00 2026" (single-digit day)
-        "%Y-%m-%d %H:%M:%S",      // "2026-03-07 14:30:00"
-        "%Y-%m-%d %H:%M",         // "2026-03-07 14:30"
+        "%a %b %d %H:%M:%S %Y", // "Fri Mar  7 14:30:00 2026"
+        "%a %b %e %H:%M:%S %Y", // "Fri Mar 7 14:30:00 2026" (single-digit day)
+        "%Y-%m-%d %H:%M:%S",    // "2026-03-07 14:30:00"
+        "%Y-%m-%d %H:%M",       // "2026-03-07 14:30"
     ];
 
     let trimmed = s.trim();
@@ -272,8 +269,7 @@ fn parse_at_schedule_output(output: &str) -> Result<(u64, DateTime<Utc>), CronEr
                 let job_id: u64 = parts[0].trim().parse().map_err(|_| {
                     CronError::ParseError(format!("Cannot parse job ID from: {trimmed}"))
                 })?;
-                let date = parse_at_datetime(parts[1].trim())
-                    .unwrap_or_else(Utc::now);
+                let date = parse_at_datetime(parts[1].trim()).unwrap_or_else(Utc::now);
                 return Ok((job_id, date));
             }
         }
@@ -305,10 +301,17 @@ fn extract_at_command(script: &str) -> String {
             continue;
         }
         // Stop when we hit shell boilerplate
-        if trimmed.starts_with("cd ") || trimmed.starts_with("umask ") || trimmed == "{" || trimmed == "}" {
+        if trimmed.starts_with("cd ")
+            || trimmed.starts_with("umask ")
+            || trimmed == "{"
+            || trimmed == "}"
+        {
             break;
         }
-        if trimmed.starts_with("export ") || trimmed.contains("=${") || trimmed.contains("; export ") {
+        if trimmed.starts_with("export ")
+            || trimmed.contains("=${")
+            || trimmed.contains("; export ")
+        {
             break;
         }
         in_command = true;

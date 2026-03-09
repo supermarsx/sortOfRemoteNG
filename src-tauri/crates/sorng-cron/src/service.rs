@@ -23,10 +23,7 @@ impl CronService {
 
     pub fn add_host(&mut self, host: CronHost) -> Result<(), CronError> {
         if self.hosts.contains_key(&host.id) {
-            return Err(CronError::Other(format!(
-                "Host {} already exists",
-                host.id
-            )));
+            return Err(CronError::Other(format!("Host {} already exists", host.id)));
         }
         self.hosts.insert(host.id.clone(), host);
         Ok(())

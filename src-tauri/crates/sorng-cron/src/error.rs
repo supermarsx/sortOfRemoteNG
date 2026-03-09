@@ -5,7 +5,11 @@ use std::fmt;
 #[derive(Debug)]
 pub enum CronError {
     CommandNotFound(String),
-    CommandFailed { command: String, exit_code: i32, stderr: String },
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
     SshError(String),
     HostNotFound(String),
     PermissionDenied(String),
@@ -23,7 +27,11 @@ impl fmt::Display for CronError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommandNotFound(c) => write!(f, "Command not found: {c}"),
-            Self::CommandFailed { command, exit_code, stderr } => {
+            Self::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+            } => {
                 write!(f, "Command `{command}` failed (exit {exit_code}): {stderr}")
             }
             Self::SshError(e) => write!(f, "SSH error: {e}"),

@@ -63,7 +63,8 @@ pub async fn cron_update_host(
         created_at: existing.created_at,
         updated_at: chrono::Utc::now(),
     };
-    svc.update_host(updated.clone()).map_err(|e| e.to_string())?;
+    svc.update_host(updated.clone())
+        .map_err(|e| e.to_string())?;
     Ok(updated)
 }
 
@@ -77,9 +78,7 @@ pub async fn cron_get_host(
 }
 
 #[tauri::command]
-pub async fn cron_list_hosts(
-    state: State<'_, CronServiceState>,
-) -> Result<Vec<CronHost>, String> {
+pub async fn cron_list_hosts(state: State<'_, CronServiceState>) -> Result<Vec<CronHost>, String> {
     let svc = state.lock().await;
     Ok(svc.list_hosts().into_iter().cloned().collect())
 }
@@ -94,7 +93,9 @@ pub async fn cron_list_user_crontabs(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::list_user_crontabs(&host).await.map_err(|e| e.to_string())
+    crontab::list_user_crontabs(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -106,7 +107,9 @@ pub async fn cron_get_crontab(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::get_crontab(&host, &user).await.map_err(|e| e.to_string())
+    crontab::get_crontab(&host, &user)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -123,8 +126,7 @@ pub async fn cron_add_job(
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
 
-    let parsed_schedule = expression::validate_expression(&schedule)
-        .map_err(|e| e.to_string())?;
+    let parsed_schedule = expression::validate_expression(&schedule).map_err(|e| e.to_string())?;
 
     let job = CronJob {
         id: uuid::Uuid::new_v4().to_string(),
@@ -137,7 +139,9 @@ pub async fn cron_add_job(
         source: CronJobSource::UserCrontab,
     };
 
-    crontab::add_job(&host, &user, &job).await.map_err(|e| e.to_string())
+    crontab::add_job(&host, &user, &job)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -150,10 +154,13 @@ pub async fn cron_remove_job(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::remove_job(&host, &user, &job_id).await.map_err(|e| e.to_string())
+    crontab::remove_job(&host, &user, &job_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn cron_update_job(
     state: State<'_, CronServiceState>,
     host_id: String,
@@ -169,12 +176,18 @@ pub async fn cron_update_job(
     drop(svc);
 
     // Fetch current entries and find the job to update
-    let entries = crontab::get_crontab(&host, &user).await.map_err(|e| e.to_string())?;
+    let entries = crontab::get_crontab(&host, &user)
+        .await
+        .map_err(|e| e.to_string())?;
     let existing = entries
         .iter()
         .find_map(|e| {
             if let CrontabEntry::Job(j) = e {
-                if j.id == job_id { Some(j.clone()) } else { None }
+                if j.id == job_id {
+                    Some(j.clone())
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -213,7 +226,9 @@ pub async fn cron_enable_job(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::enable_job(&host, &user, &job_id).await.map_err(|e| e.to_string())
+    crontab::enable_job(&host, &user, &job_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -226,7 +241,9 @@ pub async fn cron_disable_job(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::disable_job(&host, &user, &job_id).await.map_err(|e| e.to_string())
+    crontab::disable_job(&host, &user, &job_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -238,7 +255,9 @@ pub async fn cron_remove_crontab(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::remove_crontab(&host, &user).await.map_err(|e| e.to_string())
+    crontab::remove_crontab(&host, &user)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -250,7 +269,9 @@ pub async fn cron_backup_crontab(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::backup_crontab(&host, &user).await.map_err(|e| e.to_string())
+    crontab::backup_crontab(&host, &user)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -263,7 +284,9 @@ pub async fn cron_restore_crontab(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    crontab::restore_crontab(&host, &user, &content).await.map_err(|e| e.to_string())
+    crontab::restore_crontab(&host, &user, &content)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── System cron (/etc/cron.d/, /etc/crontab, periodic) ────────────
@@ -276,7 +299,9 @@ pub async fn cron_list_system_files(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    system_cron::list_system_cron_files(&host).await.map_err(|e| e.to_string())
+    system_cron::list_system_cron_files(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -288,7 +313,9 @@ pub async fn cron_get_system_file(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    system_cron::get_system_cron_file(&host, &name).await.map_err(|e| e.to_string())
+    system_cron::get_system_cron_file(&host, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -315,7 +342,9 @@ pub async fn cron_delete_system_file(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    system_cron::delete_system_cron_file(&host, &name).await.map_err(|e| e.to_string())
+    system_cron::delete_system_cron_file(&host, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -326,7 +355,9 @@ pub async fn cron_list_periodic(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    system_cron::list_periodic_jobs(&host).await.map_err(|e| e.to_string())
+    system_cron::list_periodic_jobs(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -337,7 +368,9 @@ pub async fn cron_get_etc_crontab(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    system_cron::get_etc_crontab(&host).await.map_err(|e| e.to_string())
+    system_cron::get_etc_crontab(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── At / Batch Jobs ────────────────────────────────────────────────
@@ -350,7 +383,9 @@ pub async fn cron_list_at_jobs(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    at_jobs::list_at_jobs(&host).await.map_err(|e| e.to_string())
+    at_jobs::list_at_jobs(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -362,7 +397,9 @@ pub async fn cron_get_at_job(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    at_jobs::get_at_job(&host, job_id).await.map_err(|e| e.to_string())
+    at_jobs::get_at_job(&host, job_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -389,7 +426,9 @@ pub async fn cron_schedule_batch_job(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    at_jobs::schedule_batch_job(&host, &command).await.map_err(|e| e.to_string())
+    at_jobs::schedule_batch_job(&host, &command)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -401,7 +440,9 @@ pub async fn cron_remove_at_job(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    at_jobs::remove_at_job(&host, job_id).await.map_err(|e| e.to_string())
+    at_jobs::remove_at_job(&host, job_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -412,7 +453,9 @@ pub async fn cron_get_at_access(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    at_jobs::get_at_access(&host).await.map_err(|e| e.to_string())
+    at_jobs::get_at_access(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Anacron ────────────────────────────────────────────────────────
@@ -425,7 +468,9 @@ pub async fn cron_get_anacrontab(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    anacron::get_anacrontab(&host).await.map_err(|e| e.to_string())
+    anacron::get_anacrontab(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -448,7 +493,9 @@ pub async fn cron_add_anacron_entry(
         command,
     };
 
-    anacron::add_anacron_entry(&host, &entry).await.map_err(|e| e.to_string())
+    anacron::add_anacron_entry(&host, &entry)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -460,7 +507,9 @@ pub async fn cron_remove_anacron_entry(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    anacron::remove_anacron_entry(&host, &job_id).await.map_err(|e| e.to_string())
+    anacron::remove_anacron_entry(&host, &job_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -472,7 +521,9 @@ pub async fn cron_run_anacron(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    anacron::run_anacron(&host, force).await.map_err(|e| e.to_string())
+    anacron::run_anacron(&host, force)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -496,26 +547,19 @@ pub async fn cron_get_anacron_timestamps(
 // ─── Cron Expression Utilities (no state needed) ────────────────────
 
 #[tauri::command]
-pub fn cron_validate_expression(
-    expression: String,
-) -> Result<CronSchedule, String> {
+pub fn cron_validate_expression(expression: String) -> Result<CronSchedule, String> {
     expression::validate_expression(&expression).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn cron_next_runs(
-    expression: String,
-    count: Option<usize>,
-) -> Result<Vec<String>, String> {
+pub fn cron_next_runs(expression: String, count: Option<usize>) -> Result<Vec<String>, String> {
     let n = count.unwrap_or(5);
     let result = expression::next_runs(&expression, n).map_err(|e| e.to_string())?;
     Ok(result.next_times.iter().map(|t| t.to_rfc3339()).collect())
 }
 
 #[tauri::command]
-pub fn cron_describe_expression(
-    expression: String,
-) -> Result<String, String> {
+pub fn cron_describe_expression(expression: String) -> Result<String, String> {
     expression::describe_expression(&expression).map_err(|e| e.to_string())
 }
 
@@ -529,7 +573,9 @@ pub async fn cron_get_access(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    access::get_cron_access(&host).await.map_err(|e| e.to_string())
+    access::get_cron_access(&host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -541,7 +587,9 @@ pub async fn cron_set_allow(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    access::set_cron_allow(&host, &users).await.map_err(|e| e.to_string())
+    access::set_cron_allow(&host, &users)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -553,7 +601,9 @@ pub async fn cron_set_deny(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    access::set_cron_deny(&host, &users).await.map_err(|e| e.to_string())
+    access::set_cron_deny(&host, &users)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -565,5 +615,7 @@ pub async fn cron_check_user_access(
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(|e| e.to_string())?.clone();
     drop(svc);
-    access::check_user_access(&host, &user).await.map_err(|e| e.to_string())
+    access::check_user_access(&host, &user)
+        .await
+        .map_err(|e| e.to_string())
 }

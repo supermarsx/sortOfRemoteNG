@@ -6,10 +6,8 @@ use crate::types::{CronAccessControl, CronHost};
 
 /// Read cron access control files (/etc/cron.allow, /etc/cron.deny).
 pub async fn get_cron_access(host: &CronHost) -> Result<CronAccessControl, CronError> {
-    let (allow_out, _, allow_exit) =
-        client::exec(host, "cat", &["/etc/cron.allow"]).await?;
-    let (deny_out, _, deny_exit) =
-        client::exec(host, "cat", &["/etc/cron.deny"]).await?;
+    let (allow_out, _, allow_exit) = client::exec(host, "cat", &["/etc/cron.allow"]).await?;
+    let (deny_out, _, deny_exit) = client::exec(host, "cat", &["/etc/cron.deny"]).await?;
 
     let allow_exists = allow_exit == 0;
     let deny_exists = deny_exit == 0;
@@ -35,20 +33,14 @@ pub async fn get_cron_access(host: &CronHost) -> Result<CronAccessControl, CronE
 }
 
 /// Set the list of users in /etc/cron.allow.
-pub async fn set_cron_allow(
-    host: &CronHost,
-    users: &[String],
-) -> Result<(), CronError> {
+pub async fn set_cron_allow(host: &CronHost, users: &[String]) -> Result<(), CronError> {
     let content = users.join("\n") + "\n";
     client::exec_with_stdin(host, "tee", &["/etc/cron.allow"], &content).await?;
     Ok(())
 }
 
 /// Set the list of users in /etc/cron.deny.
-pub async fn set_cron_deny(
-    host: &CronHost,
-    users: &[String],
-) -> Result<(), CronError> {
+pub async fn set_cron_deny(host: &CronHost, users: &[String]) -> Result<(), CronError> {
     let content = users.join("\n") + "\n";
     client::exec_with_stdin(host, "tee", &["/etc/cron.deny"], &content).await?;
     Ok(())
@@ -62,10 +54,7 @@ pub async fn set_cron_deny(
 ///    all users except those listed in cron.deny may use cron.
 /// 3. If neither file exists, either only root may use cron (some systems)
 ///    or all users may (depends on distribution). We assume all users allowed.
-pub async fn check_user_access(
-    host: &CronHost,
-    user: &str,
-) -> Result<bool, CronError> {
+pub async fn check_user_access(host: &CronHost, user: &str) -> Result<bool, CronError> {
     let access = get_cron_access(host).await?;
 
     if access.allow_file_exists {

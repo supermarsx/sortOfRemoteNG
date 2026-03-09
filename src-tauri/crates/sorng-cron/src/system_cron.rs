@@ -11,8 +11,7 @@ use uuid::Uuid;
 
 /// List files in /etc/cron.d/.
 pub async fn list_system_cron_files(host: &CronHost) -> Result<Vec<String>, CronError> {
-    let (stdout, _stderr, exit_code) =
-        client::exec(host, "ls", &["-1", "/etc/cron.d/"]).await?;
+    let (stdout, _stderr, exit_code) = client::exec(host, "ls", &["-1", "/etc/cron.d/"]).await?;
 
     if exit_code != 0 {
         return Ok(Vec::new());
@@ -47,8 +46,7 @@ pub async fn create_system_cron_file(
     let path = format!("/etc/cron.d/{name}");
 
     // Check it doesn't already exist
-    let (_stdout, _stderr, exit_code) =
-        client::exec(host, "test", &["-f", &path]).await?;
+    let (_stdout, _stderr, exit_code) = client::exec(host, "test", &["-f", &path]).await?;
     if exit_code == 0 {
         return Err(CronError::Other(format!("File {path} already exists")));
     }
@@ -70,10 +68,7 @@ pub async fn update_system_cron_file(
 }
 
 /// Delete a file from /etc/cron.d/.
-pub async fn delete_system_cron_file(
-    host: &CronHost,
-    name: &str,
-) -> Result<(), CronError> {
+pub async fn delete_system_cron_file(host: &CronHost, name: &str) -> Result<(), CronError> {
     validate_filename(name)?;
     let path = format!("/etc/cron.d/{name}");
     client::exec_ok(host, "rm", &["-f", &path]).await?;
@@ -90,8 +85,7 @@ pub async fn list_periodic_jobs(
 
     for period in &["hourly", "daily", "weekly", "monthly"] {
         let dir = format!("/etc/cron.{period}");
-        let (stdout, _stderr, exit_code) =
-            client::exec(host, "ls", &["-1", &dir]).await?;
+        let (stdout, _stderr, exit_code) = client::exec(host, "ls", &["-1", &dir]).await?;
 
         let scripts = if exit_code == 0 {
             stdout
@@ -230,24 +224,39 @@ fn try_parse_system_cron_line(
                 day_of_week: String::new(),
             },
             "@yearly" | "@annually" => CronSchedule {
-                minute: "0".into(), hour: "0".into(), day_of_month: "1".into(),
-                month: "1".into(), day_of_week: "*".into(),
+                minute: "0".into(),
+                hour: "0".into(),
+                day_of_month: "1".into(),
+                month: "1".into(),
+                day_of_week: "*".into(),
             },
             "@monthly" => CronSchedule {
-                minute: "0".into(), hour: "0".into(), day_of_month: "1".into(),
-                month: "*".into(), day_of_week: "*".into(),
+                minute: "0".into(),
+                hour: "0".into(),
+                day_of_month: "1".into(),
+                month: "*".into(),
+                day_of_week: "*".into(),
             },
             "@weekly" => CronSchedule {
-                minute: "0".into(), hour: "0".into(), day_of_month: "*".into(),
-                month: "*".into(), day_of_week: "0".into(),
+                minute: "0".into(),
+                hour: "0".into(),
+                day_of_month: "*".into(),
+                month: "*".into(),
+                day_of_week: "0".into(),
             },
             "@daily" | "@midnight" => CronSchedule {
-                minute: "0".into(), hour: "0".into(), day_of_month: "*".into(),
-                month: "*".into(), day_of_week: "*".into(),
+                minute: "0".into(),
+                hour: "0".into(),
+                day_of_month: "*".into(),
+                month: "*".into(),
+                day_of_week: "*".into(),
             },
             "@hourly" => CronSchedule {
-                minute: "0".into(), hour: "*".into(), day_of_month: "*".into(),
-                month: "*".into(), day_of_week: "*".into(),
+                minute: "0".into(),
+                hour: "*".into(),
+                day_of_month: "*".into(),
+                month: "*".into(),
+                day_of_week: "*".into(),
             },
             _ => return None,
         };
@@ -284,8 +293,11 @@ fn try_parse_system_cron_line(
         // Rejoin the command part from the original line
         // Find where the 6th token ends in the original line
         let mut pos = 0;
-        for i in 0..6 {
-            pos = line[pos..].find(tokens[i]).map(|p| p + pos + tokens[i].len()).unwrap_or(pos);
+        for token in tokens.iter().take(6) {
+            pos = line[pos..]
+                .find(token)
+                .map(|p| p + pos + token.len())
+                .unwrap_or(pos);
         }
         let cmd = line[pos..].trim();
         v.push(cmd);
@@ -346,7 +358,10 @@ fn system_entries_to_string(entries: &[CrontabEntry]) -> String {
         match entry {
             CrontabEntry::Job(job) => {
                 let prefix = if job.enabled { "" } else { "#" };
-                lines.push(format!("{}{} {} {}", prefix, job.schedule, job.user, job.command));
+                lines.push(format!(
+                    "{}{} {} {}",
+                    prefix, job.schedule, job.user, job.command
+                ));
             }
             other => lines.push(other.to_line()),
         }
@@ -359,11 +374,7 @@ fn system_entries_to_string(entries: &[CrontabEntry]) -> String {
 }
 
 /// Write content to a file via tee (works with sudo).
-async fn write_file_via_tee(
-    host: &CronHost,
-    path: &str,
-    content: &str,
-) -> Result<(), CronError> {
+async fn write_file_via_tee(host: &CronHost, path: &str, content: &str) -> Result<(), CronError> {
     client::exec_with_stdin(host, "tee", &[path], content).await?;
     Ok(())
 }
@@ -378,11 +389,10 @@ fn is_cron_field(field: &str) -> bool {
         // Allow 3-letter month/day abbreviations in ranges/lists
         let lower = field.to_lowercase();
         let names = [
-            "jan", "feb", "mar", "apr", "may", "jun",
-            "jul", "aug", "sep", "oct", "nov", "dec",
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
             "sun", "mon", "tue", "wed", "thu", "fri", "sat",
         ];
-        for part in lower.split(|c: char| c == ',' || c == '-' || c == '/') {
+        for part in lower.split([',', '-', '/']) {
             if part.is_empty() {
                 continue;
             }
@@ -410,13 +420,10 @@ fn parse_env_var(line: &str) -> Option<(String, String)> {
     if key.is_empty() {
         return None;
     }
-    if !key
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
-    if key.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+    if key.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         return None;
     }
     if key.contains('*') {
@@ -436,9 +443,7 @@ fn validate_filename(name: &str) -> Result<(), CronError> {
         || name == "."
         || name == ".."
     {
-        return Err(CronError::ParseError(format!(
-            "Invalid filename: {name}"
-        )));
+        return Err(CronError::ParseError(format!("Invalid filename: {name}")));
     }
     // cron.d filenames must match [a-zA-Z0-9_-]+
     if !name
