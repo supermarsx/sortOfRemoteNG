@@ -13,12 +13,10 @@ tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true, features = ["cookies", "native-tls"] }
+reqwest = { workspace = true, features = ["cookies"] }
 base64 = { workspace = true }
 url = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
-native-tls = { workspace = true }
-tokio-native-tls = { workspace = true }
 regex = { workspace = true }
 dirs = { workspace = true }

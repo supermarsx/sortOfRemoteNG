@@ -21,7 +21,7 @@ use tokio::time::{timeout, Duration};
 #[allow(clippy::large_enum_variant)]
 pub enum DataStream {
     Plain(TcpStream),
-    Tls(tokio_native_tls::TlsStream<TcpStream>),
+    Tls(tokio_rustls::client::TlsStream<TcpStream>),
 }
 
 /// Open a data channel according to the configured mode.

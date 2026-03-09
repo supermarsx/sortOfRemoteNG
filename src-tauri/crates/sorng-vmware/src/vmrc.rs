@@ -638,13 +638,45 @@ async fn relay_connection(
     remote_port: u16,
     accept_invalid_certs: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Build TLS connector
-    let tls_connector = native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(accept_invalid_certs)
-        .build()
-        .map_err(|e| format!("TLS connector build failed: {e}"))?;
+    #[derive(Debug)]
+    struct NoCertificateVerification;
 
-    let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
+    impl rustls::client::ServerCertVerifier for NoCertificateVerification {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &rustls::Certificate,
+            _intermediates: &[rustls::Certificate],
+            _server_name: &rustls::ServerName,
+            _scts: &mut dyn Iterator<Item = &[u8]>,
+            _ocsp_response: &[u8],
+            _now: std::time::SystemTime,
+        ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+            Ok(rustls::client::ServerCertVerified::assertion())
+        }
+    }
+
+    let tls_config = if accept_invalid_certs {
+        rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+            .with_no_client_auth()
+    } else {
+        let mut roots = rustls::RootCertStore::empty();
+        for cert in rustls_native_certs::load_native_certs()
+            .map_err(|e| format!("Native cert load failed: {e}"))?
+        {
+            roots
+                .add(&rustls::Certificate(cert.0))
+                .map_err(|e| format!("Native cert parse failed: {e}"))?;
+        }
+
+        rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth()
+    };
+
+    let tls_connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
 
     // Connect to remote ESXi host
     let remote_tcp = tokio::net::TcpStream::connect((remote_host, remote_port))
@@ -657,7 +689,11 @@ async fn relay_connection(
         })?;
 
     let remote_tls = tls_connector
-        .connect(remote_host, remote_tcp)
+        .connect(
+            rustls::ServerName::try_from(remote_host)
+                .map_err(|_| format!("Invalid TLS server name: {remote_host}"))?,
+            remote_tcp,
+        )
         .await
         .map_err(|e| {
             format!(

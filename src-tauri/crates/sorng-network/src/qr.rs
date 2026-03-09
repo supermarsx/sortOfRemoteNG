@@ -39,20 +39,9 @@ impl QrService {
         data: String,
         size: Option<u32>,
     ) -> Result<String, String> {
-        let size = size.unwrap_or(256);
-
-        let code =
-            QrCode::new(data.as_bytes()).map_err(|e| format!("Failed to create QR code: {}", e))?;
-
-        // Generate PNG bytes
-        let image = code
-            .render::<image::Luma<u8>>()
-            .min_dimensions(size, size)
-            .build();
-
-        // Convert to base64
-        let b64 = general_purpose::STANDARD.encode(image.as_raw());
-        Ok(format!("data:image/png;base64,{}", b64))
+        let svg = self.generate_qr_code(data, size).await?;
+        let b64 = general_purpose::STANDARD.encode(svg.as_bytes());
+        Ok(format!("data:image/svg+xml;base64,{}", b64))
     }
 }
 

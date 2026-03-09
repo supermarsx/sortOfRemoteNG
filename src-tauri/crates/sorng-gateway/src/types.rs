@@ -412,9 +412,9 @@ pub struct TlsConfig {
     ///
     /// **`"ssl3"`** is recognised for configuration purposes (maps to the
     /// `allow_ssl_3_0` policy flag) but is *not* enforceable at the
-    /// transport layer — neither `rustls` nor `native-tls` implement
-    /// SSL 3.0.  When `"ssl3"` is set, the effective floor is TLS 1.0
-    /// and a warning is emitted.
+    /// transport layer — the workspace-standard rustls backend does not
+    /// implement SSL 3.0. When `"ssl3"` is set, the effective floor is
+    /// TLS 1.2 and a warning is emitted.
     pub min_version: String,
 }
 

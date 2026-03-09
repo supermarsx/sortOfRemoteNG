@@ -15,6 +15,53 @@ use super::stats::RdpSessionStats;
 use super::types::*;
 use super::RdpServiceState;
 
+fn resize_rgba_nearest(
+    src: &[u8],
+    src_w: u32,
+    src_h: u32,
+    dst_w: u32,
+    dst_h: u32,
+) -> Result<Vec<u8>, String> {
+    if src.len() != (src_w as usize) * (src_h as usize) * 4 {
+        return Err("Invalid framebuffer data".to_string());
+    }
+
+    if dst_w == 0 || dst_h == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut out = vec![0u8; (dst_w as usize) * (dst_h as usize) * 4];
+    for y in 0..dst_h {
+        let src_y = ((y as u64) * (src_h as u64) / (dst_h as u64)) as u32;
+        for x in 0..dst_w {
+            let src_x = ((x as u64) * (src_w as u64) / (dst_w as u64)) as u32;
+            let src_idx = ((src_y * src_w + src_x) * 4) as usize;
+            let dst_idx = ((y * dst_w + x) * 4) as usize;
+            out[dst_idx..dst_idx + 4].copy_from_slice(&src[src_idx..src_idx + 4]);
+        }
+    }
+
+    Ok(out)
+}
+
+fn encode_rgba_png(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    if pixels.len() != (width as usize) * (height as usize) * 4 {
+        return Err("Invalid RGBA buffer for PNG encoding".to_string());
+    }
+
+    let mut buf = Vec::new();
+    let mut encoder = png::Encoder::new(&mut buf, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .map_err(|e| format!("Failed to create PNG header: {e}"))?
+        .write_image_data(pixels)
+        .map_err(|e| format!("Failed to encode PNG: {e}"))?;
+
+    Ok(buf)
+}
+
 // ---- Tauri commands ----
 
 /// Detect the current Windows keyboard layout and return the HKL (low 16 bits
@@ -454,17 +501,9 @@ pub fn rdp_get_thumbnail(
         return Err("Empty framebuffer".to_string());
     }
 
-    let src = image::RgbaImage::from_raw(src_w, src_h, slot.data.clone())
-        .ok_or("Invalid framebuffer data")?;
+    let thumb = resize_rgba_nearest(&slot.data, src_w, src_h, thumb_width, thumb_height)?;
 
-    let thumb = image::imageops::resize(
-        &src,
-        thumb_width,
-        thumb_height,
-        image::imageops::FilterType::Nearest,
-    );
-
-    Ok(tauri::ipc::Response::new(thumb.into_raw()))
+    Ok(tauri::ipc::Response::new(thumb))
 }
 
 /// Save a screenshot of the RDP session framebuffer to a file.
@@ -486,10 +525,17 @@ pub fn rdp_save_screenshot(
         return Err("Empty framebuffer".to_string());
     }
 
-    let img = image::RgbaImage::from_raw(src_w, src_h, slot.data.clone())
-        .ok_or("Invalid framebuffer data")?;
+    let path = std::path::Path::new(&file_path);
+    let is_png = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("png"));
+    if !is_png {
+        return Err("Only .png screenshots are supported".to_string());
+    }
 
-    img.save(&file_path).map_err(|e| e.to_string())?;
+    let png = encode_rgba_png(&slot.data, src_w, src_h)?;
+    std::fs::write(path, png).map_err(|e| e.to_string())?;
     Ok(())
 }
 

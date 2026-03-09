@@ -17,6 +17,8 @@ use tokio::sync::Mutex;
 
 // ---- Public type aliases ----
 pub type RdpServiceState = Arc<Mutex<types::RdpService>>;
+pub(crate) type RdpTlsConfig = Arc<rustls::ClientConfig>;
+pub(crate) type RdpTlsStream = rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>;
 
 // ---- Re-exports: types visible to the rest of the crate ----
 pub use errors::RdpError;

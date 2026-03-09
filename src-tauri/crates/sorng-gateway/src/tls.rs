@@ -125,7 +125,7 @@ impl TlsManager {
 
     /// Load and parse certificate files.
     fn load_certificates(&mut self) {
-        // In production, this would use rustls or native-tls to parse certificates.
+        // In production, this would use rustls to parse certificates.
         // For now, we verify the files exist and record placeholder metadata.
         if let Some(ref cert_path) = self.config.cert_path {
             if std::path::Path::new(cert_path).exists() {

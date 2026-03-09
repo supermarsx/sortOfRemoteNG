@@ -10,7 +10,7 @@ use crate::ftp::types::FtpResponse;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio_native_tls::TlsStream;
+use tokio_rustls::client::TlsStream;
 
 /// Abstraction over plain TCP or TLS-wrapped read half.
 pub enum ReadHalf {

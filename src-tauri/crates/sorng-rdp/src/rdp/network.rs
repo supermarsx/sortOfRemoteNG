@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use ironrdp_blocking::Framed;
 
+use super::{RdpTlsConfig, RdpTlsStream};
+
 // ---- Network client for CredSSP HTTP requests ----
 
 pub(crate) struct BlockingNetworkClient {
@@ -126,34 +128,69 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
 
 // ---- TLS upgrade helper ----
 
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl rustls::client::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
+    }
+}
+
+pub(crate) fn build_tls_config(
+    accept_invalid_certs: bool,
+) -> Result<RdpTlsConfig, Box<dyn std::error::Error + Send + Sync>> {
+    let config = if accept_invalid_certs {
+        rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+            .with_no_client_auth()
+    } else {
+        let mut roots = rustls::RootCertStore::empty();
+        for cert in rustls_native_certs::load_native_certs()? {
+            roots.add(&rustls::Certificate(cert.0))?;
+        }
+
+        rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth()
+    };
+
+    Ok(Arc::new(config))
+}
+
 #[allow(clippy::type_complexity)]
 pub(crate) fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
     leftover: ::bytes::BytesMut,
-    cached_connector: Option<Arc<native_tls::TlsConnector>>,
-) -> Result<
-    (Framed<native_tls::TlsStream<TcpStream>>, Vec<u8>),
-    Box<dyn std::error::Error + Send + Sync>,
-> {
-    // Re-use the cached TLS connector when available -- building one from
+    cached_connector: Option<RdpTlsConfig>,
+) -> Result<(Framed<RdpTlsStream>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+    // Re-use the cached TLS config when available -- building one from
     // scratch loads the system certificate store which is very slow on Windows.
-    let owned_connector;
-    let tls_connector: &native_tls::TlsConnector = match &cached_connector {
-        Some(arc) => arc.as_ref(),
-        None => {
-            owned_connector = native_tls::TlsConnector::builder()
-                .danger_accept_invalid_certs(true)
-                .use_sni(false)
-                .build()
-                .map_err(|e| format!("TLS connector build error: {e}"))?;
-            &owned_connector
-        }
+    let tls_config = match cached_connector {
+        Some(config) => config,
+        None => build_tls_config(true)?,
     };
 
-    let tls_stream = tls_connector
-        .connect(server_name, stream)
+    let server_name = rustls::ServerName::try_from(server_name)
+        .map_err(|_| format!("Invalid TLS server name: {server_name}"))?;
+    let mut client = rustls::ClientConnection::new(tls_config, server_name)
+        .map_err(|e| format!("TLS client creation failed: {e}"))?;
+    let mut tcp_stream = stream;
+    client
+        .complete_io(&mut tcp_stream)
         .map_err(|e| format!("TLS handshake failed: {e}"))?;
+    let tls_stream = rustls::StreamOwned::new(client, tcp_stream);
 
     let server_public_key = extract_server_public_key(&tls_stream)?;
     let framed = Framed::new_with_leftover(tls_stream, leftover);
@@ -161,18 +198,16 @@ pub(crate) fn tls_upgrade(
 }
 
 pub(crate) fn extract_server_public_key(
-    tls_stream: &native_tls::TlsStream<TcpStream>,
+    tls_stream: &RdpTlsStream,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     use x509_cert::der::Decode;
 
-    let peer_cert = tls_stream
-        .peer_certificate()
-        .map_err(|e| format!("Failed to get peer certificate: {e}"))?
+    let der = tls_stream
+        .conn
+        .peer_certificates()
+        .and_then(|certs| certs.first())
+        .map(|cert| cert.0.clone())
         .ok_or("Peer certificate is missing")?;
-
-    let der = peer_cert
-        .to_der()
-        .map_err(|e| format!("Failed to convert certificate to DER: {e}"))?;
 
     let cert = x509_cert::Certificate::from_der(&der)
         .map_err(|e| format!("Failed to parse X.509 certificate: {e}"))?;
@@ -189,13 +224,14 @@ pub(crate) fn extract_server_public_key(
 }
 
 /// Extract SHA-256 fingerprint of the server's TLS certificate
-pub(crate) fn extract_cert_fingerprint(
-    tls_stream: &native_tls::TlsStream<TcpStream>,
-) -> Option<String> {
+pub(crate) fn extract_cert_fingerprint(tls_stream: &RdpTlsStream) -> Option<String> {
     use sha2::{Digest, Sha256};
 
-    let peer_cert = tls_stream.peer_certificate().ok()??;
-    let der = peer_cert.to_der().ok()?;
+    let der = tls_stream
+        .conn
+        .peer_certificates()
+        .and_then(|certs| certs.first())
+        .map(|cert| cert.0.clone())?;
     let hash = Sha256::digest(&der);
     let hex: Vec<String> = hash.iter().map(|b| format!("{b:02x}")).collect();
     Some(hex.join(":"))

@@ -8,8 +8,9 @@ description = "Comprehensive FTP/FTPS client — full RFC 959/2228/4217/3659 imp
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tokio-native-tls = { workspace = true }
-native-tls = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
 tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

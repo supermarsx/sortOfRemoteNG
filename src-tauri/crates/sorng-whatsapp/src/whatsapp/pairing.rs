@@ -272,7 +272,6 @@ impl PairingManager {
 
     /// Render QR code content to a PNG byte vector.
     fn render_qr_png(&self, content: &str) -> WhatsAppResult<Vec<u8>> {
-        use image::{ImageBuffer, Luma};
         use qrcode::QrCode;
 
         let code = QrCode::new(content.as_bytes())
@@ -284,23 +283,18 @@ impl PairingManager {
         let scale = scale.max(1);
         let img_size = (module_count + 8) * scale;
 
-        let mut img: ImageBuffer<Luma<u8>, Vec<u8>> =
-            ImageBuffer::from_pixel(img_size, img_size, Luma([255u8]));
+        let mut pixels = vec![255u8; (img_size * img_size) as usize];
 
         for (y, row) in code.to_colors().chunks(module_count as usize).enumerate() {
             for (x, &color) in row.iter().enumerate() {
-                let pixel = if color == qrcode::Color::Dark {
-                    Luma([0u8])
-                } else {
-                    Luma([255u8])
-                };
-
                 let px = (x as u32 + 4) * scale;
                 let py = (y as u32 + 4) * scale;
+                let value = if color == qrcode::Color::Dark { 0 } else { 255 };
                 for dy in 0..scale {
+                    let row_offset = (py + dy) * img_size;
                     for dx in 0..scale {
                         if px + dx < img_size && py + dy < img_size {
-                            img.put_pixel(px + dx, py + dy, pixel);
+                            pixels[(row_offset + px + dx) as usize] = value;
                         }
                     }
                 }
@@ -308,15 +302,14 @@ impl PairingManager {
         }
 
         let mut buf = Vec::new();
-        let encoder = image::codecs::png::PngEncoder::new(&mut buf);
-        image::ImageEncoder::write_image(
-            encoder,
-            img.as_raw(),
-            img_size,
-            img_size,
-            image::ExtendedColorType::L8,
-        )
-        .map_err(|e| WhatsAppError::internal(format!("PNG encode: {}", e)))?;
+        let mut encoder = png::Encoder::new(&mut buf, img_size, img_size);
+        encoder.set_color(png::ColorType::Grayscale);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .map_err(|e| WhatsAppError::internal(format!("PNG header: {}", e)))?
+            .write_image_data(&pixels)
+            .map_err(|e| WhatsAppError::internal(format!("PNG encode: {}", e)))?;
 
         Ok(buf)
     }

@@ -1,9 +1,8 @@
 //! QR-code generation for `otpauth://` URIs.
 //!
-//! Uses the `qrcode` crate to produce the QR matrix and the `image` crate
-//! to render it as a PNG blob suitable for embedding in UIs or HTML exports.
+//! Uses the `qrcode` crate to produce the QR matrix and the `png` crate
+//! to encode it as a PNG blob suitable for embedding in UIs or HTML exports.
 
-use image::{GrayImage, Luma};
 use qrcode::QrCode;
 
 use crate::totp::types::*;
@@ -32,7 +31,7 @@ pub fn text_to_qr_png(text: &str, module_px: Option<u32>) -> Result<Vec<u8>, Tot
     let width = code.width() as u32;
     let img_size = (width + QUIET_ZONE * 2) * px;
 
-    let mut img = GrayImage::from_pixel(img_size, img_size, Luma([255u8]));
+    let mut pixels = vec![255u8; (img_size * img_size) as usize];
 
     for y in 0..width {
         for x in 0..width {
@@ -41,8 +40,9 @@ pub fn text_to_qr_png(text: &str, module_px: Option<u32>) -> Result<Vec<u8>, Tot
                 let px_x = (x + QUIET_ZONE) * px;
                 let px_y = (y + QUIET_ZONE) * px;
                 for dy in 0..px {
+                    let row = (px_y + dy) * img_size;
                     for dx in 0..px {
-                        img.put_pixel(px_x + dx, px_y + dy, Luma([0u8]));
+                        pixels[(row + px_x + dx) as usize] = 0;
                     }
                 }
             }
@@ -50,20 +50,24 @@ pub fn text_to_qr_png(text: &str, module_px: Option<u32>) -> Result<Vec<u8>, Tot
     }
 
     let mut buf = Vec::new();
-    let encoder = image::codecs::png::PngEncoder::new(&mut buf);
-    image::ImageEncoder::write_image(
-        encoder,
-        img.as_raw(),
-        img_size,
-        img_size,
-        image::ExtendedColorType::L8,
-    )
-    .map_err(|e| {
-        TotpError::new(
-            TotpErrorKind::QrEncodeFailed,
-            format!("PNG encode error: {}", e),
-        )
-    })?;
+    let mut encoder = png::Encoder::new(&mut buf, img_size, img_size);
+    encoder.set_color(png::ColorType::Grayscale);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .map_err(|e| {
+            TotpError::new(
+                TotpErrorKind::QrEncodeFailed,
+                format!("PNG header error: {}", e),
+            )
+        })?
+        .write_image_data(&pixels)
+        .map_err(|e| {
+            TotpError::new(
+                TotpErrorKind::QrEncodeFailed,
+                format!("PNG encode error: {}", e),
+            )
+        })?;
 
     Ok(buf)
 }

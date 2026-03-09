@@ -8,6 +8,7 @@ use ironrdp_blocking::Framed;
 use super::network::{extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
 use super::settings::ResolvedSettings;
 use super::RdpServiceState;
+use super::RdpTlsConfig;
 
 use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
@@ -67,7 +68,7 @@ fn run_diagnostics(
     password: &str,
     domain: Option<&str>,
     settings: &ResolvedSettings,
-    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
 ) -> DiagnosticReport {
     let run_start = Instant::now();

@@ -20,8 +20,8 @@ hmac = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
 qrcode = "0.14"
-image = { version = "0.25", default-features = false, features = ["png"] }
-tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+png = "0.18"
+tokio-tungstenite = { workspace = true }
 futures-util = "0.3"
 aes-gcm = { workspace = true }
 hkdf = "0.12"

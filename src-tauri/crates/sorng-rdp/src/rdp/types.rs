@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tokio::sync::mpsc;
 
+use super::network::build_tls_config;
 use super::stats::RdpSessionStats;
 
 // ---- Events emitted to the frontend ----
@@ -158,7 +159,7 @@ pub struct RdpService {
     /// Building a TLS connector loads the system root certificate store which
     /// is very expensive on Windows (200-500 ms).  Caching it avoids paying that
     /// cost on every connection.
-    pub(crate) cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    pub(crate) cached_tls_connector: Option<super::RdpTlsConfig>,
     /// Cached reqwest blocking client for CredSSP/Kerberos HTTP requests.
     /// Has a short connect + request timeout so it doesn't hang waiting for an
     /// unreachable KDC.
@@ -171,12 +172,7 @@ impl RdpService {
     pub fn new() -> super::RdpServiceState {
         // Pre-build the TLS connector and HTTP client eagerly so the first
         // connection doesn't pay the initialisation cost.
-        let tls_connector = native_tls::TlsConnector::builder()
-            .danger_accept_invalid_certs(true)
-            .use_sni(false)
-            .build()
-            .ok()
-            .map(Arc::new);
+        let tls_connector = build_tls_config(true).ok();
 
         let http_client = reqwest::blocking::Client::builder()
             .danger_accept_invalid_certs(true)

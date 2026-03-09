@@ -31,10 +31,9 @@ pub async fn execute_dot_query(
         .map_err(|_| format!("DoT connection to {} timed out", tcp_addr))?
         .map_err(|e| format!("DoT TCP connection failed: {}", e))?;
 
-    // Use native-tls for TLS (via tokio-native-tls style wrapping)
-    // Since we don't have tokio-native-tls as a dep, we simulate with
-    // raw TCP + DNS wire message. In production, this would use
-    // tokio-rustls or tokio-native-tls.
+    // The workspace now standardises on rustls for TLS.
+    // This placeholder still simulates DoT with raw TCP + DNS wire messages.
+    // In production, this would wrap the socket with tokio-rustls.
     //
     // For now, implement the DNS-over-TCP framing (2-byte length prefix)
     // and document that TLS wrapping is needed.

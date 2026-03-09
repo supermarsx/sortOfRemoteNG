@@ -201,8 +201,8 @@ impl From<FtpError> for String {
     }
 }
 
-impl From<native_tls::Error> for FtpError {
-    fn from(e: native_tls::Error) -> Self {
+impl From<rustls::Error> for FtpError {
+    fn from(e: rustls::Error) -> Self {
         Self::tls_failed(e.to_string())
     }
 }

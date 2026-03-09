@@ -22,6 +22,7 @@ use super::network::{extract_cert_fingerprint, tls_upgrade, BlockingNetworkClien
 use super::settings::{build_bitmap_codecs, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpPointerEvent, RdpStatusEvent};
+use super::{RdpTlsConfig, RdpTlsStream};
 use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
 
 // ---- Deactivation-Reactivation Sequence handler ----
@@ -132,7 +133,7 @@ enum SessionLoopExit {
 /// to run the active session loop.
 #[allow(dead_code)]
 struct EstablishedSession {
-    tls_framed: Framed<native_tls::TlsStream<TcpStream>>,
+    tls_framed: Framed<RdpTlsStream>,
     active_stage: ActiveStage,
     image: DecodedImage,
     desktop_width: u16,
@@ -156,7 +157,7 @@ pub(crate) fn run_rdp_session(
     app_handle: AppHandle,
     mut cmd_rx: mpsc::UnboundedReceiver<RdpCommand>,
     stats: Arc<RdpSessionStats>,
-    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: SharedFrameStoreState,
     frame_channel: Channel<InvokeResponseBody>,
@@ -318,7 +319,7 @@ fn run_rdp_session_auto_detect(
     app_handle: &AppHandle,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
-    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &Channel<InvokeResponseBody>,
@@ -566,7 +567,7 @@ fn establish_rdp_connection(
     app_handle: &AppHandle,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
-    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
 ) -> Result<EstablishedSession, Box<dyn std::error::Error + Send + Sync>> {
@@ -1670,7 +1671,7 @@ fn run_rdp_session_inner(
     app_handle: &AppHandle,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
-    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &Channel<InvokeResponseBody>,
