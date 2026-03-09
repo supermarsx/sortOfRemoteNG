@@ -553,18 +553,14 @@ pub async fn ps_get_events(
 }
 
 #[tauri::command]
-pub async fn ps_clear_events(
-    state: State<'_, PsRemotingServiceState>,
-) -> Result<(), String> {
+pub async fn ps_clear_events(state: State<'_, PsRemotingServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.clear_events();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn ps_cleanup(
-    state: State<'_, PsRemotingServiceState>,
-) -> Result<(), String> {
+pub async fn ps_cleanup(state: State<'_, PsRemotingServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.cleanup().await
 }

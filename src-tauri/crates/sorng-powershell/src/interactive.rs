@@ -8,7 +8,7 @@ use crate::transport::WinRmTransport;
 use crate::types::*;
 use chrono::Utc;
 use lazy_static::lazy_static;
-use log::{debug, info, warn};
+use log::{debug, info};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
@@ -56,16 +56,10 @@ pub struct InteractiveSession {
 
 impl InteractiveSession {
     /// Enter an interactive session (Enter-PSSession).
-    pub async fn enter(
-        manager: &PsSessionManager,
-        session_id: &str,
-    ) -> Result<Self, String> {
+    pub async fn enter(manager: &PsSessionManager, session_id: &str) -> Result<Self, String> {
         let session = manager.get_session(session_id)?;
         if session.state != PsSessionState::Opened {
-            return Err(format!(
-                "Cannot enter session in state {:?}",
-                session.state
-            ));
+            return Err(format!("Cannot enter session in state {:?}", session.state));
         }
 
         let transport = manager.get_transport(session_id)?;
@@ -93,9 +87,7 @@ impl InteractiveSession {
         // Initialize command history
         {
             let mut history = COMMAND_HISTORY.lock().unwrap();
-            history
-                .entry(session_id.to_string())
-                .or_insert_with(Vec::new);
+            history.entry(session_id.to_string()).or_default();
         }
 
         // Get the initial working directory
@@ -202,8 +194,8 @@ impl InteractiveSession {
         // Process stdout
         for line in stdout.lines() {
             // Check for CWD marker
-            if line.starts_with("__CWD:") {
-                self.cwd = line[6..].to_string();
+            if let Some(stripped) = line.strip_prefix("__CWD:") {
+                self.cwd = stripped.to_string();
                 self.prompt = format!(
                     "[{}]: PS {}> ",
                     self.session_id.split('-').next().unwrap_or("?"),
@@ -247,7 +239,7 @@ impl InteractiveSession {
     /// Send raw input (e.g., for interactive prompts).
     pub async fn send_input(&self, data: &str) -> Result<(), String> {
         // Find any active command and send stdin
-        let mut t = self.transport.lock().await;
+        let _t = self.transport.lock().await;
         // Note: In a full implementation, we'd track the active command ID
         // and send input to it. For now, this is a placeholder.
         debug!(

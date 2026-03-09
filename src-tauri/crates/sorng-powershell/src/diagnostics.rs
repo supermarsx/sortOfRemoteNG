@@ -3,11 +3,9 @@
 //! Test-WSMan, WinRM service checks, connectivity diagnostics,
 //! TLS/certificate validation, firewall rule checks, and performance analysis.
 
+use crate::session::PsSessionManager;
 use crate::transport::WinRmTransport;
 use crate::types::*;
-use crate::session::PsSessionManager;
-use log::{debug, info, warn};
-use std::collections::HashMap;
 
 /// PowerShell Remoting diagnostic operations.
 pub struct PsDiagnosticsManager;
@@ -99,7 +97,7 @@ impl PsDiagnosticsManager {
 
         let elapsed = start.elapsed();
         let all_passed = checks.iter().all(|c| c.passed);
-        let critical_passed = checks
+        let _critical_passed = checks
             .iter()
             .filter(|c| c.severity == DiagnosticSeverity::Critical)
             .all(|c| c.passed);
@@ -293,14 +291,14 @@ $listeners = Get-ChildItem WSMan:\localhost\Listener | ForEach-Object {
     ) -> Result<LatencyResult, String> {
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
-        let iterations = iterations.min(100).max(1);
+        let iterations = iterations.clamp(1, 100);
 
         let mut latencies: Vec<u64> = Vec::new();
 
-        for i in 0..iterations {
+        for _i in 0..iterations {
             let start = std::time::Instant::now();
 
-            let (stdout, _) = {
+            let (_stdout, _) = {
                 let mut t = transport.lock().await;
                 let cmd_id = t
                     .execute_ps_command(&shell_id, "Write-Output 'pong'")
@@ -480,11 +478,7 @@ async fn test_dns_resolution(hostname: &str) -> DiagnosticCheck {
                 message: if addr_list.is_empty() {
                     format!("No addresses found for '{}'", hostname)
                 } else {
-                    format!(
-                        "Resolved '{}' to: {}",
-                        hostname,
-                        addr_list.join(", ")
-                    )
+                    format!("Resolved '{}' to: {}", hostname, addr_list.join(", "))
                 },
                 severity: DiagnosticSeverity::Critical,
                 duration_ms: Some(elapsed),
@@ -585,7 +579,10 @@ async fn test_winrm_endpoint(config: &PsRemotingConfig) -> DiagnosticCheck {
             } else if status == 200 || status == 500 {
                 (
                     true,
-                    format!("WinRM endpoint at {} responded with {}", endpoint_url, status),
+                    format!(
+                        "WinRM endpoint at {} responded with {}",
+                        endpoint_url, status
+                    ),
                 )
             } else {
                 (
@@ -667,10 +664,7 @@ async fn test_wsman_identify(config: &PsRemotingConfig) -> DiagnosticCheck {
                 // Parse product version
                 let version = extract_xml_value(&body, "ProductVersion")
                     .unwrap_or_else(|| "unknown".to_string());
-                format!(
-                    "WS-Man identify succeeded. Product version: {}",
-                    version
-                )
+                format!("WS-Man identify succeeded. Product version: {}", version)
             } else if status == 401 {
                 "WS-Man endpoint responded (authentication required)".to_string()
             } else {
@@ -714,7 +708,10 @@ async fn test_tls_certificate(config: &PsRemotingConfig) -> DiagnosticCheck {
                 DiagnosticCheck {
                     name: "TLS Certificate".to_string(),
                     passed: true,
-                    message: format!("TLS certificate for {} is valid and trusted", config.computer_name),
+                    message: format!(
+                        "TLS certificate for {} is valid and trusted",
+                        config.computer_name
+                    ),
                     severity: DiagnosticSeverity::Warning,
                     duration_ms: Some(elapsed),
                 }
@@ -778,10 +775,7 @@ async fn test_authentication(config: &PsRemotingConfig) -> DiagnosticCheck {
             DiagnosticCheck {
                 name: "Authentication".to_string(),
                 passed: true,
-                message: format!(
-                    "Authentication succeeded using {:?}",
-                    config.auth_method
-                ),
+                message: format!("Authentication succeeded using {:?}", config.auth_method),
                 severity: DiagnosticSeverity::Critical,
                 duration_ms: Some(elapsed),
             }
@@ -826,12 +820,10 @@ fn parse_winrm_service_status(json_str: &str) -> Result<WinRmServiceStatus, Stri
         return Err("Empty response from WinRM service check".to_string());
     }
 
-    let value: serde_json::Value =
-        serde_json::from_str(trimmed).map_err(|e| format!("Failed to parse WinRM status: {}", e))?;
+    let value: serde_json::Value = serde_json::from_str(trimmed)
+        .map_err(|e| format!("Failed to parse WinRM status: {}", e))?;
 
-    let config = value
-        .get("Config")
-        .ok_or("Missing 'Config' in response")?;
+    let config = value.get("Config").ok_or("Missing 'Config' in response")?;
 
     let listeners_val = value.get("Listeners");
     let mut listeners = Vec::new();
@@ -839,11 +831,23 @@ fn parse_winrm_service_status(json_str: &str) -> Result<WinRmServiceStatus, Stri
     if let Some(serde_json::Value::Array(arr)) = listeners_val {
         for item in arr {
             listeners.push(ListenerInfo {
-                address: item.get("Address").and_then(|v| v.as_str()).map(String::from),
-                transport: item.get("Transport").and_then(|v| v.as_str()).map(String::from),
+                address: item
+                    .get("Address")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                transport: item
+                    .get("Transport")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 port: item.get("Port").and_then(|v| v.as_str()).map(String::from),
-                hostname: item.get("Hostname").and_then(|v| v.as_str()).map(String::from),
-                enabled: item.get("Enabled").and_then(|v| v.as_str()).map(String::from),
+                hostname: item
+                    .get("Hostname")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                enabled: item
+                    .get("Enabled")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 certificate_thumbprint: item
                     .get("CertificateThumbprint")
                     .and_then(|v| v.as_str())
@@ -852,11 +856,23 @@ fn parse_winrm_service_status(json_str: &str) -> Result<WinRmServiceStatus, Stri
         }
     } else if let Some(item @ serde_json::Value::Object(_)) = listeners_val {
         listeners.push(ListenerInfo {
-            address: item.get("Address").and_then(|v| v.as_str()).map(String::from),
-            transport: item.get("Transport").and_then(|v| v.as_str()).map(String::from),
+            address: item
+                .get("Address")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            transport: item
+                .get("Transport")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             port: item.get("Port").and_then(|v| v.as_str()).map(String::from),
-            hostname: item.get("Hostname").and_then(|v| v.as_str()).map(String::from),
-            enabled: item.get("Enabled").and_then(|v| v.as_str()).map(String::from),
+            hostname: item
+                .get("Hostname")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            enabled: item
+                .get("Enabled")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             certificate_thumbprint: item
                 .get("CertificateThumbprint")
                 .and_then(|v| v.as_str())
@@ -1080,10 +1096,7 @@ fn parse_certificate_info(json_str: &str) -> Result<Vec<PsCertificateInfo>, Stri
                     .get("KeyUsage")
                     .and_then(|v| v.as_str())
                     .map(String::from),
-                is_self_signed: map
-                    .get("Subject")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
+                is_self_signed: map.get("Subject").and_then(|v| v.as_str()).unwrap_or("")
                     == map.get("Issuer").and_then(|v| v.as_str()).unwrap_or(""),
                 key_size: map
                     .get("PublicKey")

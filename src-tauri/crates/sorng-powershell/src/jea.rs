@@ -5,8 +5,7 @@
 
 use crate::session::PsSessionManager;
 use crate::types::*;
-use log::{debug, info, warn};
-use std::collections::HashMap;
+use log::{info, warn};
 
 /// JEA operations manager.
 pub struct JeaManager;
@@ -25,10 +24,7 @@ impl JeaManager {
         let pssc_content = build_pssc_content(endpoint);
 
         // Create the .pssc file on the remote system
-        let pssc_path = format!(
-            "$env:ProgramData\\JEAConfiguration\\{}.pssc",
-            endpoint.name
-        );
+        let pssc_path = format!("$env:ProgramData\\JEAConfiguration\\{}.pssc", endpoint.name);
 
         let create_script = format!(
             "$dir = Split-Path '{}' -Parent\n\
@@ -168,10 +164,7 @@ impl JeaManager {
         };
 
         if !stderr.trim().is_empty() {
-            return Err(format!(
-                "Failed to get endpoint details: {}",
-                stderr.trim()
-            ));
+            return Err(format!("Failed to get endpoint details: {}", stderr.trim()));
         }
 
         serde_json::from_str(stdout.trim())
@@ -219,7 +212,11 @@ impl JeaManager {
             ));
         }
 
-        info!("Role capability '{}' created at {}", role_name, stdout.trim());
+        info!(
+            "Role capability '{}' created at {}",
+            role_name,
+            stdout.trim()
+        );
         Ok(stdout.trim().to_string())
     }
 
@@ -228,7 +225,7 @@ impl JeaManager {
         ps_manager: &PsSessionManager,
         session_id: &str,
         endpoint_name: &str,
-        username: &str,
+        _username: &str,
     ) -> Result<Vec<String>, String> {
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
@@ -298,8 +295,8 @@ impl JeaManager {
             result
         };
 
-        let value: serde_json::Value = serde_json::from_str(stdout.trim())
-            .unwrap_or(serde_json::Value::Array(Vec::new()));
+        let value: serde_json::Value =
+            serde_json::from_str(stdout.trim()).unwrap_or(serde_json::Value::Array(Vec::new()));
 
         match value {
             serde_json::Value::Array(arr) => Ok(arr),
@@ -321,10 +318,7 @@ fn build_pssc_content(endpoint: &JeaEndpoint) -> String {
 
     // GUID
     let default_guid = uuid::Uuid::new_v4().to_string();
-    let guid = endpoint
-        .guid
-        .as_deref()
-        .unwrap_or(&default_guid);
+    let guid = endpoint.guid.as_deref().unwrap_or(&default_guid);
     lines.push(format!("    GUID = '{}'", guid));
 
     // Session type
@@ -465,7 +459,7 @@ fn build_pssc_content(endpoint: &JeaEndpoint) -> String {
     lines.join("\n")
 }
 
-fn build_psrc_content(role_name: &str, capability: &JeaRoleCapability) -> String {
+fn build_psrc_content(_role_name: &str, capability: &JeaRoleCapability) -> String {
     let mut lines = Vec::new();
 
     lines.push("@{".to_string());
@@ -559,7 +553,10 @@ fn parse_session_configurations(json_str: &str) -> Result<Vec<PsSessionConfigura
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                ps_version: map.get("PSVersion").and_then(|v| v.as_str()).map(String::from),
+                ps_version: map
+                    .get("PSVersion")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 startup_script: map
                     .get("StartupScript")
                     .and_then(|v| v.as_str())

@@ -4,7 +4,6 @@
 //! and event subscription through WS-Management protocol.
 
 use crate::session::PsSessionManager;
-use crate::transport;
 use crate::types::*;
 use chrono::Utc;
 use log::{debug, info, warn};
@@ -21,6 +20,7 @@ pub struct CimSessionManager {
     subscriptions: HashMap<String, CimSubscription>,
 }
 
+#[allow(dead_code)]
 struct CimManagedSession {
     pub id: String,
     pub config: CimSessionConfig,
@@ -29,11 +29,18 @@ struct CimManagedSession {
     pub created_at: chrono::DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 struct CimSubscription {
     pub id: String,
     pub cim_session_id: String,
     pub query: String,
     pub active: bool,
+}
+
+impl Default for CimSessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CimSessionManager {
@@ -90,7 +97,10 @@ impl CimSessionManager {
             },
         );
 
-        info!("CIM session {} created on PS session {}", cim_session_id, ps_session_id);
+        info!(
+            "CIM session {} created on PS session {}",
+            cim_session_id, ps_session_id
+        );
         Ok(cim_session_id)
     }
 
@@ -105,10 +115,7 @@ impl CimSessionManager {
             .get(&params.session_id)
             .ok_or_else(|| format!("CIM session '{}' not found", params.session_id))?;
 
-        let namespace = params
-            .namespace
-            .as_deref()
-            .unwrap_or("root/cimv2");
+        let namespace = params.namespace.as_deref().unwrap_or("root/cimv2");
 
         let mut script = format!(
             "Get-CimInstance -ClassName '{}' -Namespace '{}'",
@@ -171,10 +178,7 @@ impl CimSessionManager {
             .get(&params.session_id)
             .ok_or_else(|| format!("CIM session '{}' not found", params.session_id))?;
 
-        let namespace = params
-            .namespace
-            .as_deref()
-            .unwrap_or("root/cimv2");
+        let namespace = params.namespace.as_deref().unwrap_or("root/cimv2");
 
         let mut script = format!(
             "Invoke-CimMethod -ClassName '{}' -Namespace '{}' -MethodName '{}'",
@@ -236,10 +240,7 @@ impl CimSessionManager {
         );
 
         if let Some(interval) = params.polling_interval_sec {
-            script.push_str(&format!(
-                " -OperationTimeoutSec {}",
-                interval
-            ));
+            script.push_str(&format!(" -OperationTimeoutSec {}", interval));
         }
 
         let transport = ps_manager.get_transport(&cim_session.ps_session_id)?;
@@ -288,10 +289,7 @@ impl CimSessionManager {
             .get(&sub.cim_session_id)
             .ok_or("CIM session not found")?;
 
-        let script = format!(
-            "Unregister-Event -SourceIdentifier '{}'",
-            subscription_id
-        );
+        let script = format!("Unregister-Event -SourceIdentifier '{}'", subscription_id);
 
         let transport = ps_manager.get_transport(&cim_session.ps_session_id)?;
         let shell_id = ps_manager.get_shell_id(&cim_session.ps_session_id)?;
@@ -362,7 +360,10 @@ fn build_new_cim_session_script(config: &CimSessionConfig) -> String {
     ));
 
     if let Some(port) = config.port {
-        parts.last_mut().unwrap().push_str(&format!(" -Port {}", port));
+        parts
+            .last_mut()
+            .unwrap()
+            .push_str(&format!(" -Port {}", port));
     }
 
     parts.join("; ")

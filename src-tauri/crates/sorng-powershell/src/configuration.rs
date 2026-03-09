@@ -6,8 +6,7 @@
 
 use crate::session::PsSessionManager;
 use crate::types::*;
-use log::{debug, info};
-use std::collections::HashMap;
+use log::info;
 
 /// Session configuration operations.
 pub struct PsConfigurationManager;
@@ -81,7 +80,10 @@ impl PsConfigurationManager {
             params.push(format!("-PSVersion '{}'", ps_version));
         }
         if let Some(max_cmd_size) = config.max_received_command_size_mb {
-            params.push(format!("-MaximumReceivedDataSizePerCommandMB {}", max_cmd_size));
+            params.push(format!(
+                "-MaximumReceivedDataSizePerCommandMB {}",
+                max_cmd_size
+            ));
         }
         if let Some(max_obj_size) = config.max_received_object_size_mb {
             params.push(format!("-MaximumReceivedObjectSizeMB {}", max_obj_size));
@@ -328,7 +330,7 @@ impl PsConfigurationManager {
 
         let script = "Restart-Service WinRM -Force";
 
-        let (_, stderr) = {
+        let (_, _stderr) = {
             let mut t = transport.lock().await;
             let cmd_id = t.execute_ps_command(&shell_id, script).await?;
             let result = t.receive_all_output(&shell_id, &cmd_id).await?;
@@ -402,8 +404,8 @@ impl PsConfigurationManager {
         );
 
         if use_https {
-            let thumbprint = cert_thumbprint
-                .ok_or("Certificate thumbprint is required for HTTPS listener")?;
+            let thumbprint =
+                cert_thumbprint.ok_or("Certificate thumbprint is required for HTTPS listener")?;
             script.push_str(&format!(
                 "New-Item -Path WSMan:\\localhost\\Listener -Transport HTTPS -Address * -CertificateThumbPrint '{}' -Port {} -Force\n",
                 thumbprint, port_num

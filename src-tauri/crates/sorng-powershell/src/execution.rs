@@ -9,7 +9,7 @@ use crate::session::PsSessionManager;
 use crate::transport::WinRmTransport;
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -24,6 +24,7 @@ pub struct PsCommandExecutor {
 }
 
 /// Tracks a single command invocation.
+#[allow(dead_code)]
 struct PsInvocation {
     pub id: String,
     pub session_id: String,
@@ -32,6 +33,12 @@ struct PsInvocation {
     pub state: PsInvocationState,
     pub started_at: chrono::DateTime<Utc>,
     pub output: Vec<PsStreamRecord>,
+}
+
+impl Default for PsCommandExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PsCommandExecutor {
@@ -47,10 +54,7 @@ impl PsCommandExecutor {
         manager: &mut PsSessionManager,
         params: PsInvokeCommandParams,
     ) -> Result<PsCommandOutput, String> {
-        let session_id = params
-            .session_id
-            .as_ref()
-            .ok_or("Session ID is required")?;
+        let session_id = params.session_id.as_ref().ok_or("Session ID is required")?;
 
         // Validate session state
         let session = manager.get_session(session_id)?;
@@ -180,7 +184,7 @@ impl PsCommandExecutor {
 
         // Process in chunks according to throttle limit
         for chunk in session_ids.chunks(throttle) {
-            let mut handles: Vec<()> = Vec::new();
+            let _handles: Vec<()> = Vec::new();
 
             for session_id in chunk {
                 let mut p = params.clone();
@@ -198,6 +202,7 @@ impl PsCommandExecutor {
     }
 
     /// Collect output from a running command until completion.
+    #[allow(clippy::too_many_arguments)]
     async fn collect_output(
         &mut self,
         transport: Arc<Mutex<WinRmTransport>>,
@@ -227,10 +232,7 @@ impl PsCommandExecutor {
                     let _ = t
                         .signal_command(shell_id, command_id, WsManSignal::TERMINATE)
                         .await;
-                    return Err(format!(
-                        "Command timed out after {} seconds",
-                        timeout_sec
-                    ));
+                    return Err(format!("Command timed out after {} seconds", timeout_sec));
                 }
             }
 
@@ -269,9 +271,7 @@ impl PsCommandExecutor {
 
         // Parse stdout
         if !all_stdout.is_empty() {
-            if all_stdout.contains(serialization::CLIXML_HEADER)
-                || all_stdout.contains("<Objs")
-            {
+            if all_stdout.contains(serialization::CLIXML_HEADER) || all_stdout.contains("<Objs") {
                 // CLIXML output
                 match serialization::parse_clixml_to_json(&all_stdout) {
                     Ok(objects) => {
@@ -442,10 +442,7 @@ fn build_script(params: &PsInvokeCommandParams) -> Result<String, String> {
 
     // If a file path is specified, read and use that instead of script block
     if let Some(ref file_path) = params.file_path {
-        script.push_str(&format!(
-            "& {{ . '{}' ",
-            file_path.replace('\'', "''")
-        ));
+        script.push_str(&format!("& {{ . '{}' ", file_path.replace('\'', "''")));
     } else if let Some(ref command_name) = params.command_name {
         // Direct command execution
         script.push_str(&format!("{} ", command_name));

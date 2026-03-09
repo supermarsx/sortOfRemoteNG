@@ -6,10 +6,8 @@
 use crate::session::PsSessionManager;
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 // ─── File Transfer Manager ───────────────────────────────────────────────────
@@ -18,6 +16,12 @@ use uuid::Uuid;
 pub struct PsFileTransferManager {
     /// Active transfers by transfer ID
     transfers: HashMap<String, PsFileTransferProgress>,
+}
+
+impl Default for PsFileTransferManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PsFileTransferManager {
@@ -53,7 +57,7 @@ impl PsFileTransferManager {
         let total_bytes = file_data.len() as u64;
 
         // Initialize progress
-        let mut progress = PsFileTransferProgress {
+        let progress = PsFileTransferProgress {
             transfer_id: transfer_id.clone(),
             session_id: params.session_id.clone(),
             direction: PsFileCopyDirection::ToSession,
@@ -98,10 +102,7 @@ impl PsFileTransferManager {
 
         // Send chunks
         for (chunk_idx, chunk) in file_data.chunks(chunk_size).enumerate() {
-            let encoded = base64::Engine::encode(
-                &base64::engine::general_purpose::STANDARD,
-                chunk,
-            );
+            let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, chunk);
 
             let append_script = format!(
                 "$bytes = [System.Convert]::FromBase64String('{}'); \
@@ -138,19 +139,14 @@ impl PsFileTransferManager {
                 if bps > 0.0 {
                     let remaining_bytes = total_bytes - transferred;
                     let remaining_secs = remaining_bytes as f64 / bps;
-                    p.estimated_completion = Some(
-                        Utc::now()
-                            + chrono::Duration::seconds(remaining_secs as i64),
-                    );
+                    p.estimated_completion =
+                        Some(Utc::now() + chrono::Duration::seconds(remaining_secs as i64));
                 }
             }
         }
 
         // Verify the transfer
-        let verify_script = format!(
-            "(Get-Item '{}').Length",
-            remote_path_escaped
-        );
+        let verify_script = format!("(Get-Item '{}').Length", remote_path_escaped);
         let remote_size = {
             let mut t = transport.lock().await;
             let cmd_id = t.execute_ps_command(&shell_id, &verify_script).await?;
@@ -225,10 +221,7 @@ impl PsFileTransferManager {
                 .await;
 
             if !stderr.trim().is_empty() {
-                return Err(format!(
-                    "Failed to get remote file size: {}",
-                    stderr.trim()
-                ));
+                return Err(format!("Failed to get remote file size: {}", stderr.trim()));
             }
             stdout
                 .trim()
@@ -237,7 +230,7 @@ impl PsFileTransferManager {
         };
 
         // Initialize progress
-        let mut progress = PsFileTransferProgress {
+        let progress = PsFileTransferProgress {
             transfer_id: transfer_id.clone(),
             session_id: params.session_id.clone(),
             direction: PsFileCopyDirection::FromSession,
@@ -281,14 +274,15 @@ impl PsFileTransferManager {
                     .await;
 
                 if !stderr.trim().is_empty() {
-                    warn!("Download chunk error at offset {}: {}", offset, stderr.trim());
+                    warn!(
+                        "Download chunk error at offset {}: {}",
+                        offset,
+                        stderr.trim()
+                    );
                 }
 
-                base64::Engine::decode(
-                    &base64::engine::general_purpose::STANDARD,
-                    stdout.trim(),
-                )
-                .map_err(|e| format!("Failed to decode chunk at offset {}: {}", offset, e))?
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, stdout.trim())
+                    .map_err(|e| format!("Failed to decode chunk at offset {}: {}", offset, e))?
             };
 
             file_data.extend_from_slice(&chunk_data);

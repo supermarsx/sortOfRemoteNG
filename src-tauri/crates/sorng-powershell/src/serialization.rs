@@ -4,7 +4,7 @@
 //! format used for remote object transport) and JSON-friendly representations.
 
 use crate::types::*;
-use log::{debug, trace, warn};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
@@ -123,9 +123,7 @@ impl PsValue {
                     b
                 ))
             }
-            PsValue::Array(arr) => {
-                JsonValue::Array(arr.iter().map(|v| v.to_json()).collect())
-            }
+            PsValue::Array(arr) => JsonValue::Array(arr.iter().map(|v| v.to_json()).collect()),
             PsValue::Dictionary(entries) => {
                 let mut map = serde_json::Map::new();
                 for (k, v) in entries {
@@ -152,10 +150,7 @@ impl PsObject {
 
         // Add type metadata
         if !self.type_names.is_empty() {
-            map.insert(
-                "__typenames".to_string(),
-                json!(self.type_names),
-            );
+            map.insert("__typenames".to_string(), json!(self.type_names));
         }
 
         // Add properties
@@ -178,11 +173,7 @@ impl PsObject {
 pub fn parse_clixml(clixml: &str) -> Result<Vec<PsObject>, String> {
     let xml = if clixml.starts_with(CLIXML_HEADER) {
         // Strip the header line
-        clixml
-            .lines()
-            .skip(1)
-            .collect::<Vec<_>>()
-            .join("\n")
+        clixml.lines().skip(1).collect::<Vec<_>>().join("\n")
     } else {
         clixml.to_string()
     };
@@ -253,10 +244,11 @@ impl<'a> CliXmlParser<'a> {
                     if let Ok(obj) = self.parse_object() {
                         objects.push(obj);
                     }
-                } else if self.remaining().starts_with("<S") || self.remaining().starts_with("<I32") {
+                } else if self.remaining().starts_with("<S") || self.remaining().starts_with("<I32")
+                {
                     // Primitive output
                     let value = self.parse_value()?;
-                    let mut obj = PsObject {
+                    let obj = PsObject {
                         type_names: Vec::new(),
                         properties: HashMap::new(),
                         to_string: None,
@@ -412,8 +404,7 @@ impl<'a> CliXmlParser<'a> {
         let tag_start = self.pos;
         let tag_content = self.read_tag_opening()?;
 
-        let name = extract_attribute(&tag_content, "N")
-            .map(|s| s.to_string());
+        let name = extract_attribute(&tag_content, "N").map(|s| s.to_string());
 
         // Determine the value type from the tag
         let tag_name = tag_content
@@ -463,11 +454,9 @@ impl<'a> CliXmlParser<'a> {
             "G" => PsValue::Guid(self.read_until(&close_tag)?),
             "BA" => {
                 let text = self.read_until(&close_tag)?;
-                let bytes = base64::Engine::decode(
-                    &base64::engine::general_purpose::STANDARD,
-                    text.trim(),
-                )
-                .unwrap_or_default();
+                let bytes =
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, text.trim())
+                        .unwrap_or_default();
                 PsValue::ByteArray(bytes)
             }
             "SBK" => PsValue::ScriptBlock(self.read_until(&close_tag)?),
@@ -679,11 +668,7 @@ fn write_value_as_clixml(xml: &mut String, value: &JsonValue, indent: usize) {
             for (key, val) in map {
                 match val {
                     JsonValue::Null => {
-                        xml.push_str(&format!(
-                            "{}  <Nil N=\"{}\" />\n",
-                            pad,
-                            xml_escape_str(key)
-                        ));
+                        xml.push_str(&format!("{}  <Nil N=\"{}\" />\n", pad, xml_escape_str(key)));
                     }
                     JsonValue::String(s) => {
                         xml.push_str(&format!(
@@ -761,39 +746,29 @@ pub fn parse_error_stream(clixml: &str) -> Vec<PsErrorRecord> {
                     .properties
                     .get("Exception")
                     .and_then(|v| match v {
-                        PsValue::Object(o) => o
-                            .properties
-                            .get("Message")
-                            .and_then(|m| match m {
-                                PsValue::String(s) => Some(s.clone()),
-                                _ => None,
-                            }),
+                        PsValue::Object(o) => o.properties.get("Message").and_then(|m| match m {
+                            PsValue::String(s) => Some(s.clone()),
+                            _ => None,
+                        }),
                         _ => None,
                     })
                     .or_else(|| obj.to_string.clone())
                     .unwrap_or_else(|| "Unknown error".to_string()),
-                fully_qualified_error_id: obj
-                    .properties
-                    .get("FullyQualifiedErrorId")
-                    .and_then(|v| match v {
+                fully_qualified_error_id: obj.properties.get("FullyQualifiedErrorId").and_then(
+                    |v| match v {
                         PsValue::String(s) => Some(s.clone()),
                         _ => None,
-                    }),
-                category: obj
-                    .properties
-                    .get("CategoryInfo")
-                    .and_then(|v| match v {
-                        PsValue::Object(o) => o.to_string.clone(),
-                        PsValue::String(s) => Some(s.clone()),
-                        _ => None,
-                    }),
-                target_object: obj
-                    .properties
-                    .get("TargetObject")
-                    .and_then(|v| match v {
-                        PsValue::String(s) => Some(s.clone()),
-                        _ => None,
-                    }),
+                    },
+                ),
+                category: obj.properties.get("CategoryInfo").and_then(|v| match v {
+                    PsValue::Object(o) => o.to_string.clone(),
+                    PsValue::String(s) => Some(s.clone()),
+                    _ => None,
+                }),
+                target_object: obj.properties.get("TargetObject").and_then(|v| match v {
+                    PsValue::String(s) => Some(s.clone()),
+                    _ => None,
+                }),
                 script_stack_trace: obj
                     .properties
                     .get("ScriptStackTrace")
@@ -801,13 +776,10 @@ pub fn parse_error_stream(clixml: &str) -> Vec<PsErrorRecord> {
                         PsValue::String(s) => Some(s.clone()),
                         _ => None,
                     }),
-                invocation_info: obj
-                    .properties
-                    .get("InvocationInfo")
-                    .and_then(|v| match v {
-                        PsValue::Object(o) => o.to_string.clone(),
-                        _ => None,
-                    }),
+                invocation_info: obj.properties.get("InvocationInfo").and_then(|v| match v {
+                    PsValue::Object(o) => o.to_string.clone(),
+                    _ => None,
+                }),
                 pipeline_iteration_info: None,
             };
             errors.push(error);
@@ -824,8 +796,7 @@ pub fn parse_error_stream(clixml: &str) -> Vec<PsErrorRecord> {
                 let msg = xml_unescape(&clixml[abs_start..abs_start + end]);
                 if !msg.trim().is_empty() {
                     errors.push(PsErrorRecord {
-                        exception_type: "System.Management.Automation.RemoteException"
-                            .to_string(),
+                        exception_type: "System.Management.Automation.RemoteException".to_string(),
                         message: msg,
                         fully_qualified_error_id: None,
                         category: None,
@@ -851,14 +822,9 @@ pub fn parse_progress_stream(clixml: &str) -> Vec<PsProgressRecord> {
     let objects = parse_clixml(clixml).unwrap_or_default();
 
     for obj in &objects {
-        if obj
-            .type_names
-            .iter()
-            .any(|t| t.contains("ProgressRecord"))
-        {
+        if obj.type_names.iter().any(|t| t.contains("ProgressRecord")) {
             let record = PsProgressRecord {
-                activity: extract_string_prop(&obj.properties, "Activity")
-                    .unwrap_or_default(),
+                activity: extract_string_prop(&obj.properties, "Activity").unwrap_or_default(),
                 status_description: extract_string_prop(&obj.properties, "StatusDescription")
                     .unwrap_or_default(),
                 percent_complete: extract_int_prop(&obj.properties, "PercentComplete")
@@ -866,17 +832,10 @@ pub fn parse_progress_stream(clixml: &str) -> Vec<PsProgressRecord> {
                 seconds_remaining: extract_int_prop(&obj.properties, "SecondsRemaining")
                     .map(|v| v as i64)
                     .unwrap_or(-1),
-                current_operation: extract_string_prop(
-                    &obj.properties,
-                    "CurrentOperation",
-                ),
-                parent_activity_id: extract_int_prop(
-                    &obj.properties,
-                    "ParentActivityId",
-                )
-                .unwrap_or(-1),
-                activity_id: extract_int_prop(&obj.properties, "ActivityId")
-                    .unwrap_or(0),
+                current_operation: extract_string_prop(&obj.properties, "CurrentOperation"),
+                parent_activity_id: extract_int_prop(&obj.properties, "ParentActivityId")
+                    .unwrap_or(-1),
+                activity_id: extract_int_prop(&obj.properties, "ActivityId").unwrap_or(0),
                 record_type: ProgressRecordType::Processing,
             };
             records.push(record);

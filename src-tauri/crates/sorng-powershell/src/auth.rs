@@ -21,10 +21,7 @@ pub trait AuthProvider: Send + Sync {
 
     /// Process a 401 challenge and return the next auth header.
     /// Returns None if authentication is complete (for single-round auth).
-    async fn process_challenge(
-        &mut self,
-        challenge: &str,
-    ) -> Result<Option<String>, String>;
+    async fn process_challenge(&mut self, challenge: &str) -> Result<Option<String>, String>;
 
     /// Whether this auth method requires HTTPS.
     fn requires_https(&self) -> bool {
@@ -68,8 +65,8 @@ impl AuthProvider for BasicAuth {
         } else {
             self.username.clone()
         };
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode(format!("{}:{}", user, self.password));
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", user, self.password));
         Ok(format!("Basic {}", encoded))
     }
 
@@ -97,6 +94,7 @@ pub struct NtlmAuth {
     domain: String,
     workstation: String,
     state: NtlmState,
+    #[allow(dead_code)]
     server_challenge: Option<Vec<u8>>,
 }
 
@@ -117,10 +115,7 @@ impl NtlmAuth {
         Self {
             username: credential.username.clone(),
             password: credential.password.clone().unwrap_or_default(),
-            domain: credential
-                .domain
-                .clone()
-                .unwrap_or_else(|| ".".to_string()),
+            domain: credential.domain.clone().unwrap_or_else(|| ".".to_string()),
             workstation,
             state: NtlmState::Initial,
             server_challenge: None,
@@ -163,7 +158,6 @@ impl NtlmAuth {
     fn build_authenticate_message(&self, challenge: &[u8]) -> Result<Vec<u8>, String> {
         use hmac::{Hmac, Mac};
         use md5::Md5;
-        use sha2::Digest;
 
         // Extract the 8-byte server challenge from Type 2 message
         if challenge.len() < 32 {
@@ -184,11 +178,7 @@ impl NtlmAuth {
         let nt_hash = md4_hash(&password_utf16);
 
         // 2. HMAC-MD5(NT hash, UPPERCASE(username) + domain)
-        let user_domain = format!(
-            "{}{}",
-            self.username.to_uppercase(),
-            self.domain
-        );
+        let user_domain = format!("{}{}", self.username.to_uppercase(), self.domain);
         let user_domain_utf16: Vec<u8> = user_domain
             .encode_utf16()
             .flat_map(|c| c.to_le_bytes())
@@ -216,8 +206,8 @@ impl NtlmAuth {
         data.extend_from_slice(server_challenge);
         data.extend_from_slice(&blob);
 
-        let mut hmac2 = Hmac::<Md5>::new_from_slice(&ntlmv2_hash)
-            .map_err(|e| format!("HMAC error: {}", e))?;
+        let mut hmac2 =
+            Hmac::<Md5>::new_from_slice(&ntlmv2_hash).map_err(|e| format!("HMAC error: {}", e))?;
         hmac2.update(&data);
         let nt_proof = hmac2.finalize().into_bytes();
 
@@ -419,9 +409,11 @@ impl AuthProvider for KerberosAuth {
             "Kerberos auth requested for SPN {} - using stub implementation",
             self.spn
         );
-        Err("Kerberos authentication requires OS-level SSPI/GSSAPI integration. \
+        Err(
+            "Kerberos authentication requires OS-level SSPI/GSSAPI integration. \
              Use Negotiate for automatic Kerberos with NTLM fallback."
-            .to_string())
+                .to_string(),
+        )
     }
 
     async fn process_challenge(&mut self, _challenge: &str) -> Result<Option<String>, String> {
@@ -441,10 +433,12 @@ impl AuthProvider for KerberosAuth {
 /// authentication scenarios. Requires TLS.
 pub struct CredSspAuth {
     _credential: PsCredential,
+    #[allow(dead_code)]
     state: CredSspState,
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum CredSspState {
     Initial,
     TlsHandshake,
@@ -499,6 +493,7 @@ impl AuthProvider for CredSspAuth {
 pub struct CertificateAuth {
     certificate_path: Option<String>,
     thumbprint: Option<String>,
+    #[allow(dead_code)]
     private_key_path: Option<String>,
 }
 
@@ -603,7 +598,7 @@ impl AuthProvider for DigestAuth {
             .get("nonce")
             .ok_or("Missing nonce in Digest challenge")?
             .clone();
-        let qop = params.get("qop").cloned().unwrap_or_default();
+        let _qop = params.get("qop").cloned().unwrap_or_default();
 
         self.realm = Some(realm.clone());
         self.nonce = Some(nonce.clone());

@@ -6,7 +6,7 @@
 use crate::transport::WinRmTransport;
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -40,6 +40,12 @@ pub struct ManagedSession {
     active_commands: Vec<String>,
 }
 
+impl Default for PsSessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PsSessionManager {
     pub fn new() -> Self {
         Self {
@@ -61,8 +67,7 @@ impl PsSessionManager {
             .sessions
             .values()
             .filter(|s| {
-                s.info.state == PsSessionState::Opened
-                    || s.info.state == PsSessionState::Opening
+                s.info.state == PsSessionState::Opened || s.info.state == PsSessionState::Opening
             })
             .count();
 
@@ -157,7 +162,10 @@ impl PsSessionManager {
             self.start_keepalive(&session_id).await;
         }
 
-        info!("PSSession '{}' ({}) opened successfully", session.name, session_id);
+        info!(
+            "PSSession '{}' ({}) opened successfully",
+            session.name, session_id
+        );
         Ok(session)
     }
 
@@ -180,12 +188,11 @@ impl PsSessionManager {
             .filter(|s| {
                 state_filter
                     .as_ref()
-                    .map_or(true, |state| s.info.state == *state)
+                    .is_none_or(|state| s.info.state == *state)
             })
             .map(|s| {
                 let mut info = s.info.clone();
-                info.idle_seconds =
-                    (Utc::now() - info.last_activity).num_seconds().max(0) as u64;
+                info.idle_seconds = (Utc::now() - info.last_activity).num_seconds().max(0) as u64;
                 info
             })
             .collect()
@@ -323,10 +330,7 @@ impl PsSessionManager {
     }
 
     /// Get the transport handle for a session.
-    pub fn get_transport(
-        &self,
-        session_id: &str,
-    ) -> Result<Arc<Mutex<WinRmTransport>>, String> {
+    pub fn get_transport(&self, session_id: &str) -> Result<Arc<Mutex<WinRmTransport>>, String> {
         self.sessions
             .get(session_id)
             .map(|s| s.transport.clone())
@@ -466,7 +470,7 @@ impl PsSessionPool {
 
         self.pool
             .entry(computer_name.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(session_id.clone());
 
         Ok(session_id)

@@ -5,13 +5,9 @@
 //! message correlation, shell lifecycle, and command I/O.
 
 use crate::types::*;
-use chrono::Utc;
 use log::{debug, error, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 // ─── Transport State ─────────────────────────────────────────────────────────
@@ -26,8 +22,10 @@ pub struct WinRmTransport {
     /// Authentication header value
     auth_header: Option<String>,
     /// Whether to skip certificate validation
+    #[allow(dead_code)]
     skip_cert_validation: bool,
     /// Maximum envelope size in bytes (server negotiated)
+    #[allow(dead_code)]
     max_envelope_size: usize,
     /// Operation timeout as ISO 8601 duration
     operation_timeout: String,
@@ -101,8 +99,7 @@ impl WinRmTransport {
         if let Some(ref auth) = self.auth_header {
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                HeaderValue::from_str(auth)
-                    .map_err(|e| format!("Invalid auth header: {}", e))?,
+                HeaderValue::from_str(auth).map_err(|e| format!("Invalid auth header: {}", e))?,
             );
         }
 
@@ -138,7 +135,12 @@ impl WinRmTransport {
             .await
             .map_err(|e| format!("Failed to read WinRM response body: {}", e))?;
 
-        trace!("WinRM response #{}: status={}, body:\n{}", req_id, status, body);
+        trace!(
+            "WinRM response #{}: status={}, body:\n{}",
+            req_id,
+            status,
+            body
+        );
 
         if !status.is_success() {
             let fault = parse_soap_fault(&body).unwrap_or_else(|| body.clone());
@@ -221,8 +223,7 @@ impl WinRmTransport {
         );
 
         let response = self.send_message(&envelope).await?;
-        let actual_command_id =
-            extract_command_id(&response).unwrap_or(command_id);
+        let actual_command_id = extract_command_id(&response).unwrap_or(command_id);
 
         debug!(
             "Executed command in shell {}: {}",
@@ -489,13 +490,14 @@ fn wrap_envelope(header: &str, body: &str) -> String {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_create_shell_envelope(
     endpoint: &str,
     message_id: &str,
     resource_uri: &str,
-    config_name: &str,
+    _config_name: &str,
     timeout: &str,
-    locale: &str,
+    _locale: &str,
     options: &PsSessionOption,
     shell_id: &str,
 ) -> String {
@@ -631,11 +633,7 @@ fn build_send_envelope(
         timeout,
     );
 
-    let end_attr = if end_of_stream {
-        r#" End="true""#
-    } else {
-        ""
-    };
+    let end_attr = if end_of_stream { r#" End="true""# } else { "" };
 
     let body = format!(
         r#"<rsp:Send>
@@ -798,8 +796,9 @@ pub fn parse_receive_response(response: &str) -> Result<(String, String, bool), 
     extract_stream_data(response, "stderr", &mut stderr);
 
     // Check if command state is "Done"
-    let is_done = response.contains("State=\"http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done\"")
-        || response.contains("CommandState State=\"Done\"");
+    let is_done = response.contains(
+        "State=\"http://schemas.microsoft.com/wbem/wsman/1/windows/shell/CommandState/Done\"",
+    ) || response.contains("CommandState State=\"Done\"");
 
     Ok((stdout, stderr, is_done))
 }
@@ -818,10 +817,9 @@ fn extract_stream_data(response: &str, stream_name: &str, output: &mut String) {
             if let Some(end_pos) = response[data_start..].find("</rsp:Stream>") {
                 let encoded = &response[data_start..data_start + end_pos].trim();
                 if !encoded.is_empty() {
-                    if let Ok(decoded) = base64::Engine::decode(
-                        &base64::engine::general_purpose::STANDARD,
-                        encoded,
-                    ) {
+                    if let Ok(decoded) =
+                        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+                    {
                         if let Ok(text) = String::from_utf8(decoded) {
                             output.push_str(&text);
                         }

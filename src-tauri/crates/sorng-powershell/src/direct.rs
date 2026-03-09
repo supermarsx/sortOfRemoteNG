@@ -6,10 +6,8 @@
 
 use crate::session::PsSessionManager;
 use crate::types::*;
-use log::{debug, info, warn};
+use log::info;
 use std::collections::HashMap;
-use tokio::sync::Mutex;
-use std::sync::Arc;
 
 /// Manager for PowerShell Direct (Hyper-V VM) sessions.
 pub struct PsDirectManager {
@@ -22,6 +20,12 @@ struct VmSessionEntry {
     vm_name: String,
     vm_id: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl Default for PsDirectManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PsDirectManager {
@@ -120,7 +124,11 @@ impl PsDirectManager {
                 PsInvocationState::Completed
             },
             streams: build_stream_records(&stdout, &stderr),
-            output: if stdout.trim().is_empty() { Vec::new() } else { vec![serde_json::Value::String(stdout.clone())] },
+            output: if stdout.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![serde_json::Value::String(stdout.clone())]
+            },
             errors: Vec::new(),
             had_errors,
             started_at: start_time,
@@ -158,7 +166,7 @@ impl PsDirectManager {
             cred_block, vm_target
         );
 
-        let (stdout, stderr) = {
+        let (_stdout, stderr) = {
             let mut t = transport.lock().await;
             let cmd_id = t.execute_ps_command(&shell_id, &script).await?;
             let result = t.receive_all_output(&shell_id, &cmd_id).await?;
@@ -186,7 +194,9 @@ impl PsDirectManager {
 
         info!(
             "VM session {} created for VM '{}' via host session {}",
-            vm_session_id, config.vm_name.as_deref().unwrap_or(""), host_session_id
+            vm_session_id,
+            config.vm_name.as_deref().unwrap_or(""),
+            host_session_id
         );
 
         Ok(vm_session_id)
@@ -242,7 +252,11 @@ impl PsDirectManager {
                 PsInvocationState::Completed
             },
             streams: build_stream_records(&stdout, &stderr),
-            output: if stdout.trim().is_empty() { Vec::new() } else { vec![serde_json::Value::String(stdout.clone())] },
+            output: if stdout.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![serde_json::Value::String(stdout.clone())]
+            },
             errors: Vec::new(),
             had_errors,
             started_at: start_time,
@@ -397,7 +411,11 @@ fn format_credential_block(credential: &PsCredential) -> String {
     format!(
         "$secpass = ConvertTo-SecureString '{}' -AsPlainText -Force\n\
          $cred = New-Object System.Management.Automation.PSCredential ('{}', $secpass)",
-        credential.password.as_deref().unwrap_or("").replace('\'', "''"),
+        credential
+            .password
+            .as_deref()
+            .unwrap_or("")
+            .replace('\'', "''"),
         credential.username.replace('\'', "''")
     )
 }

@@ -6,7 +6,7 @@
 use crate::session::PsSessionManager;
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::collections::HashMap;
 
 /// DSC operations manager.
@@ -156,8 +156,7 @@ impl DscManager {
         }
 
         // Apply the configuration
-        let mut apply_script =
-            "Start-DscConfiguration -Path $env:TEMP\\SorngDSC".to_string();
+        let mut apply_script = "Start-DscConfiguration -Path $env:TEMP\\SorngDSC".to_string();
         if wait {
             apply_script.push_str(" -Wait -Verbose");
         }
@@ -237,7 +236,10 @@ impl DscManager {
         };
 
         if !stderr.trim().is_empty() {
-            warn!("Get-DscLocalConfigurationManager warnings: {}", stderr.trim());
+            warn!(
+                "Get-DscLocalConfigurationManager warnings: {}",
+                stderr.trim()
+            );
         }
 
         serde_json::from_str(stdout.trim())
@@ -271,10 +273,7 @@ impl DscManager {
             ));
         }
 
-        info!(
-            "DSC configuration restored on session {}",
-            session_id
-        );
+        info!("DSC configuration restored on session {}", session_id);
         Ok(())
     }
 
@@ -325,8 +324,8 @@ fn parse_dsc_resources(json_str: &str) -> Result<Vec<DscResourceState>, String> 
         return Ok(Vec::new());
     }
 
-    let value: serde_json::Value = serde_json::from_str(trimmed)
-        .map_err(|e| format!("Failed to parse DSC output: {}", e))?;
+    let value: serde_json::Value =
+        serde_json::from_str(trimmed).map_err(|e| format!("Failed to parse DSC output: {}", e))?;
 
     let items = match &value {
         serde_json::Value::Array(arr) => arr.clone(),

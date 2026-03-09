@@ -181,18 +181,13 @@ impl PsRemotingService {
         _session_id: &str,
         command_id: &str,
     ) -> Result<(), String> {
-        self.executor
-            .stop_command(&self.sessions, command_id)
-            .await
+        self.executor.stop_command(&self.sessions, command_id).await
     }
 
     // ─── Interactive Sessions ────────────────────────────────────────
 
     /// Enter an interactive session (Enter-PSSession).
-    pub async fn enter_session(
-        &mut self,
-        session_id: &str,
-    ) -> Result<String, String> {
+    pub async fn enter_session(&mut self, session_id: &str) -> Result<String, String> {
         let cmd_id = uuid::Uuid::new_v4().to_string();
         self.sessions.mark_busy(session_id, &cmd_id);
 
@@ -216,10 +211,16 @@ impl PsRemotingService {
         session_id: &str,
         line: &str,
     ) -> Result<String, String> {
-        let interactive = self.interactive_sessions.get_mut(session_id)
+        let interactive = self
+            .interactive_sessions
+            .get_mut(session_id)
             .ok_or_else(|| format!("No interactive session for '{}'", session_id))?;
         let lines = interactive.execute_line(line).await?;
-        Ok(lines.into_iter().map(|l| l.text).collect::<Vec<_>>().join("\n"))
+        Ok(lines
+            .into_iter()
+            .map(|l| l.text)
+            .collect::<Vec<_>>()
+            .join("\n"))
     }
 
     /// Tab-complete in an interactive session.
@@ -228,9 +229,13 @@ impl PsRemotingService {
         session_id: &str,
         partial: &str,
     ) -> Result<Vec<String>, String> {
-        let interactive = self.interactive_sessions.get(session_id)
+        let interactive = self
+            .interactive_sessions
+            .get(session_id)
             .ok_or_else(|| format!("No interactive session for '{}'", session_id))?;
-        interactive.tab_complete(partial, partial.len() as u32).await
+        interactive
+            .tab_complete(partial, partial.len() as u32)
+            .await
     }
 
     /// Exit an interactive session.
@@ -298,8 +303,12 @@ impl PsRemotingService {
     }
 
     /// Get file transfer progress.
-    pub fn get_transfer_progress(&self, transfer_id: &str) -> Result<PsFileTransferProgress, String> {
-        self.file_transfer.get_progress(transfer_id)
+    pub fn get_transfer_progress(
+        &self,
+        transfer_id: &str,
+    ) -> Result<PsFileTransferProgress, String> {
+        self.file_transfer
+            .get_progress(transfer_id)
             .ok_or_else(|| format!("Transfer '{}' not found", transfer_id))
     }
 
@@ -333,9 +342,7 @@ impl PsRemotingService {
         _cim_session_id: &str,
         params: CimQueryParams,
     ) -> Result<Vec<CimInstance>, String> {
-        self.cim
-            .get_instances(&self.sessions, &params)
-            .await
+        self.cim.get_instances(&self.sessions, &params).await
     }
 
     /// Invoke a CIM method.
@@ -345,9 +352,7 @@ impl PsRemotingService {
         _cim_session_id: &str,
         params: CimMethodParams,
     ) -> Result<serde_json::Value, String> {
-        self.cim
-            .invoke_method(&self.sessions, &params)
-            .await
+        self.cim.invoke_method(&self.sessions, &params).await
     }
 
     /// Remove a CIM session.
@@ -356,17 +361,13 @@ impl PsRemotingService {
         _session_id: &str,
         cim_session_id: &str,
     ) -> Result<(), String> {
-        self.cim
-            .remove_session(cim_session_id)
+        self.cim.remove_session(cim_session_id)
     }
 
     // ─── DSC Operations ──────────────────────────────────────────────
 
     /// Test DSC configuration compliance.
-    pub async fn test_dsc_configuration(
-        &self,
-        session_id: &str,
-    ) -> Result<DscResult, String> {
+    pub async fn test_dsc_configuration(&self, session_id: &str) -> Result<DscResult, String> {
         DscManager::test_configuration(&self.sessions, session_id, true).await
     }
 
@@ -384,7 +385,8 @@ impl PsRemotingService {
         session_id: &str,
         configuration: &DscConfiguration,
     ) -> Result<DscResult, String> {
-        DscManager::start_configuration(&self.sessions, session_id, configuration, true, false).await
+        DscManager::start_configuration(&self.sessions, session_id, configuration, true, false)
+            .await
     }
 
     /// Get DSC resources available on the remote system.
@@ -412,8 +414,7 @@ impl PsRemotingService {
         session_id: &str,
         endpoint_name: &str,
     ) -> Result<(), String> {
-        crate::jea::JeaManager::unregister_endpoint(&self.sessions, session_id, endpoint_name)
-            .await
+        crate::jea::JeaManager::unregister_endpoint(&self.sessions, session_id, endpoint_name).await
     }
 
     /// List JEA/session endpoints.
@@ -443,7 +444,10 @@ impl PsRemotingService {
     // ─── PowerShell Direct ───────────────────────────────────────────
 
     /// List Hyper-V VMs on a remote host.
-    pub async fn list_vms(&self, session_id: &str) -> Result<Vec<crate::direct::HyperVVmInfo>, String> {
+    pub async fn list_vms(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crate::direct::HyperVVmInfo>, String> {
         PsDirectManager::list_vms(&self.sessions, session_id).await
     }
 
@@ -475,27 +479,18 @@ impl PsRemotingService {
         &self,
         session_id: &str,
     ) -> Result<Vec<PsSessionConfiguration>, String> {
-        crate::configuration::PsConfigurationManager::get_configurations(
-            &self.sessions,
-            session_id,
-        )
-        .await
+        crate::configuration::PsConfigurationManager::get_configurations(&self.sessions, session_id)
+            .await
     }
 
     /// Get WinRM configuration.
-    pub async fn get_winrm_config(
-        &self,
-        session_id: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn get_winrm_config(&self, session_id: &str) -> Result<serde_json::Value, String> {
         crate::configuration::PsConfigurationManager::get_winrm_config(&self.sessions, session_id)
             .await
     }
 
     /// Get trusted hosts.
-    pub async fn get_trusted_hosts(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<String>, String> {
+    pub async fn get_trusted_hosts(&self, session_id: &str) -> Result<Vec<String>, String> {
         crate::configuration::PsConfigurationManager::get_trusted_hosts(&self.sessions, session_id)
             .await
     }

@@ -7,19 +7,15 @@ use std::collections::HashMap;
 /// Transport protocol used for PowerShell Remoting connections.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum PsTransportProtocol {
     /// WinRM over HTTP (port 5985)
     Http,
     /// WinRM over HTTPS (port 5986)
+    #[default]
     Https,
     /// PowerShell Remoting over SSH (PS 7+)
     Ssh,
-}
-
-impl Default for PsTransportProtocol {
-    fn default() -> Self {
-        Self::Https
-    }
 }
 
 impl PsTransportProtocol {
@@ -37,12 +33,14 @@ impl PsTransportProtocol {
 /// Authentication method for WinRM connections.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PsAuthMethod {
     /// HTTP Basic authentication (plaintext, HTTPS recommended)
     Basic,
     /// Windows NTLM authentication
     Ntlm,
     /// Windows Negotiate (SPNEGO: Kerberos with NTLM fallback)
+    #[default]
     Negotiate,
     /// Kerberos authentication only
     Kerberos,
@@ -54,12 +52,6 @@ pub enum PsAuthMethod {
     Default,
     /// Digest authentication
     Digest,
-}
-
-impl Default for PsAuthMethod {
-    fn default() -> Self {
-        Self::Negotiate
-    }
 }
 
 /// Credentials for PowerShell Remoting sessions.
@@ -173,7 +165,9 @@ impl PsRemotingConfig {
         let scheme = match self.transport {
             PsTransportProtocol::Http => "http",
             PsTransportProtocol::Https => "https",
-            PsTransportProtocol::Ssh => return format!("ssh://{}:{}", self.computer_name, self.effective_port()),
+            PsTransportProtocol::Ssh => {
+                return format!("ssh://{}:{}", self.computer_name, self.effective_port())
+            }
         };
         format!(
             "{}://{}:{}/{}/{}",
@@ -315,8 +309,10 @@ impl Default for PsSessionOption {
 /// State of a PowerShell Remoting session.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PsSessionState {
     /// Session is being created
+    #[default]
     Opening,
     /// Session is open and ready for commands
     Opened,
@@ -328,12 +324,6 @@ pub enum PsSessionState {
     Closed,
     /// Session encountered an unrecoverable error
     Broken,
-}
-
-impl Default for PsSessionState {
-    fn default() -> Self {
-        Self::Opening
-    }
 }
 
 /// Information about an active PowerShell Remoting session.
@@ -383,8 +373,10 @@ pub struct PsSession {
 /// Availability of a PSSession for new commands.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PsSessionAvailability {
     /// Session is available for new commands
+    #[default]
     Available,
     /// Session is currently busy executing a command
     Busy,
@@ -392,30 +384,20 @@ pub enum PsSessionAvailability {
     None,
 }
 
-impl Default for PsSessionAvailability {
-    fn default() -> Self {
-        Self::Available
-    }
-}
-
 // ─── Output Buffering ────────────────────────────────────────────────────────
 
 /// How output is buffered when a session is disconnected.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum OutputBufferingMode {
     /// No output buffering; commands may fail
     None,
     /// Drop oldest output when buffer is full
     Drop,
     /// Block command execution when buffer is full
+    #[default]
     Block,
-}
-
-impl Default for OutputBufferingMode {
-    fn default() -> Self {
-        Self::Block
-    }
 }
 
 // ─── Invocation State ────────────────────────────────────────────────────────
@@ -423,7 +405,9 @@ impl Default for OutputBufferingMode {
 /// State of a command invocation (pipeline).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PsInvocationState {
+    #[default]
     NotStarted,
     Running,
     Stopping,
@@ -431,12 +415,6 @@ pub enum PsInvocationState {
     Completed,
     Failed,
     Disconnected,
-}
-
-impl Default for PsInvocationState {
-    fn default() -> Self {
-        Self::NotStarted
-    }
 }
 
 // ─── Output Streams ──────────────────────────────────────────────────────────
@@ -500,15 +478,11 @@ pub struct PsProgressRecord {
 /// Type of progress record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ProgressRecordType {
+    #[default]
     Processing,
     Completed,
-}
-
-impl Default for ProgressRecordType {
-    fn default() -> Self {
-        Self::Processing
-    }
 }
 
 // ─── Command Output ──────────────────────────────────────────────────────────
@@ -646,15 +620,11 @@ pub struct CimSessionConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum CimProtocol {
+    #[default]
     Wsman,
     Dcom,
-}
-
-impl Default for CimProtocol {
-    fn default() -> Self {
-        Self::Wsman
-    }
 }
 
 /// CIM instance data.
@@ -825,48 +795,36 @@ pub struct JeaRoleCapability {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum JeaSessionType {
+    #[default]
     RestrictedRemoteServer,
     Empty,
     Default,
 }
 
-impl Default for JeaSessionType {
-    fn default() -> Self {
-        Self::RestrictedRemoteServer
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PsLanguageMode {
     FullLanguage,
+    #[default]
     RestrictedLanguage,
     ConstrainedLanguage,
     NoLanguage,
 }
 
-impl Default for PsLanguageMode {
-    fn default() -> Self {
-        Self::RestrictedLanguage
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum PsExecutionPolicy {
     Unrestricted,
+    #[default]
     RemoteSigned,
     AllSigned,
     Restricted,
     Bypass,
     Undefined,
-}
-
-impl Default for PsExecutionPolicy {
-    fn default() -> Self {
-        Self::RemoteSigned
-    }
 }
 
 // ─── File Transfer ───────────────────────────────────────────────────────────
@@ -1177,7 +1135,9 @@ impl WsManAction {
             Self::Get => "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get",
             Self::Put => "http://schemas.xmlsoap.org/ws/2004/09/transfer/Put",
             Self::Enumerate => "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate",
-            Self::EnumerateResponse => "http://schemas.xmlsoap.org/ws/2004/09/enumeration/EnumerateResponse",
+            Self::EnumerateResponse => {
+                "http://schemas.xmlsoap.org/ws/2004/09/enumeration/EnumerateResponse"
+            }
             Self::Pull => "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Pull",
             Self::Subscribe => "http://schemas.xmlsoap.org/ws/2004/11/eventing/Subscribe",
             Self::Unsubscribe => "http://schemas.xmlsoap.org/ws/2004/11/eventing/Unsubscribe",
@@ -1210,16 +1170,12 @@ impl WsManSignal {
 pub struct WsManResourceUri;
 
 impl WsManResourceUri {
-    pub const SHELL: &'static str =
-        "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd";
+    pub const SHELL: &'static str = "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd";
     pub const PS_SHELL: &'static str =
         "http://schemas.microsoft.com/powershell/Microsoft.PowerShell";
-    pub const CONFIG: &'static str =
-        "http://schemas.microsoft.com/wbem/wsman/1/config";
-    pub const WINRS: &'static str =
-        "http://schemas.microsoft.com/wbem/wsman/1/windows/shell";
-    pub const CIM: &'static str =
-        "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2";
+    pub const CONFIG: &'static str = "http://schemas.microsoft.com/wbem/wsman/1/config";
+    pub const WINRS: &'static str = "http://schemas.microsoft.com/wbem/wsman/1/windows/shell";
+    pub const CIM: &'static str = "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2";
     pub const PLUGIN: &'static str =
         "http://schemas.microsoft.com/wbem/wsman/1/config/PluginConfiguration";
 }
@@ -1236,9 +1192,11 @@ impl WsManNamespace {
     pub const SHELL: &'static str = "http://schemas.microsoft.com/wbem/wsman/1/windows/shell";
     pub const WSEN: &'static str = "http://schemas.xmlsoap.org/ws/2004/09/enumeration";
     pub const WSET: &'static str = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
-    pub const WSSE: &'static str = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
+    pub const WSSE: &'static str =
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
     pub const XMLSCHEMA: &'static str = "http://www.w3.org/2001/XMLSchema";
     pub const XMLSCHEMA_INST: &'static str = "http://www.w3.org/2001/XMLSchema-instance";
-    pub const PS_STREAMS: &'static str = "http://schemas.microsoft.com/powershell/Microsoft.PowerShell";
+    pub const PS_STREAMS: &'static str =
+        "http://schemas.microsoft.com/powershell/Microsoft.PowerShell";
     pub const CIM: &'static str = "http://schemas.dmtf.org/wbem/wscim/1/common";
 }
