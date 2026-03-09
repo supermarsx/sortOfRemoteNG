@@ -12,6 +12,12 @@ pub struct DisplayManager {
     frame_count: u64,
 }
 
+impl Default for DisplayManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DisplayManager {
     pub fn new() -> Self {
         Self {
@@ -42,7 +48,8 @@ impl DisplayManager {
 
     /// Get the primary surface.
     pub fn primary_surface(&self) -> Option<&SpiceSurface> {
-        self.primary_surface_id.and_then(|id| self.surfaces.get(&id))
+        self.primary_surface_id
+            .and_then(|id| self.surfaces.get(&id))
     }
 
     /// Get display resolution from primary surface.
@@ -63,7 +70,14 @@ impl DisplayManager {
     pub fn process_draw(&mut self, cmd: &DrawCommand) -> Option<SpiceFrameEvent> {
         self.frame_count += 1;
         match cmd {
-            DrawCommand::Fill { surface_id, x, y, width, height, color } => {
+            DrawCommand::Fill {
+                surface_id,
+                x,
+                y,
+                width,
+                height,
+                color,
+            } => {
                 // Generate a solid-colour rectangle fill.
                 let pixel_count = (*width * *height) as usize;
                 let r = ((*color >> 16) & 0xFF) as u8;
@@ -77,22 +91,35 @@ impl DisplayManager {
                 Some(SpiceFrameEvent {
                     session_id: String::new(), // filled in by caller
                     surface_id: *surface_id,
-                    data: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &pixels),
-                    x: *x, y: *y,
-                    width: *width, height: *height,
+                    data: base64::Engine::encode(
+                        &base64::engine::general_purpose::STANDARD,
+                        &pixels,
+                    ),
+                    x: *x,
+                    y: *y,
+                    width: *width,
+                    height: *height,
                     compression: "none".to_string(),
                 })
             }
-            DrawCommand::Opaque { surface_id, x, y, width, height, data, compression } => {
-                Some(SpiceFrameEvent {
-                    session_id: String::new(),
-                    surface_id: *surface_id,
-                    data: data.clone(),
-                    x: *x, y: *y,
-                    width: *width, height: *height,
-                    compression: compression.to_string(),
-                })
-            }
+            DrawCommand::Opaque {
+                surface_id,
+                x,
+                y,
+                width,
+                height,
+                data,
+                compression,
+            } => Some(SpiceFrameEvent {
+                session_id: String::new(),
+                surface_id: *surface_id,
+                data: data.clone(),
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+                compression: compression.to_string(),
+            }),
             DrawCommand::Copy { .. } => {
                 // CopyRect — client-side operation, return None (handle locally).
                 None
@@ -163,8 +190,12 @@ mod tests {
             stream_id: 0,
             surface_id: 1,
             codec: VideoCodec::H264,
-            x: 0, y: 0, width: 640, height: 480,
-            fps: 30, flags: 0,
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+            fps: 30,
+            flags: 0,
         });
         assert_eq!(dm.streams().len(), 1);
         dm.destroy_stream(0);

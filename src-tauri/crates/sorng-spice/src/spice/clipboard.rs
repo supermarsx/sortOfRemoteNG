@@ -80,12 +80,18 @@ pub struct ClipboardData {
 impl ClipboardData {
     /// Convenience constructor for text.
     pub fn text(s: &str) -> Self {
-        Self { format: ClipboardFormat::Text, data: s.as_bytes().to_vec() }
+        Self {
+            format: ClipboardFormat::Text,
+            data: s.as_bytes().to_vec(),
+        }
     }
 
     /// Convenience constructor for HTML.
     pub fn html(s: &str) -> Self {
-        Self { format: ClipboardFormat::Html, data: s.as_bytes().to_vec() }
+        Self {
+            format: ClipboardFormat::Html,
+            data: s.as_bytes().to_vec(),
+        }
     }
 
     /// Try to interpret the payload as UTF-8 text.
@@ -168,25 +174,33 @@ impl ClipboardManager {
 
     /// Guest announces it has new clipboard data.
     pub fn handle_guest_grab(&mut self, formats: Vec<ClipboardFormat>) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         self.guest_formats = formats;
     }
 
     /// Client announces it has new clipboard data.
     pub fn handle_client_grab(&mut self, formats: Vec<ClipboardFormat>) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         self.client_formats = formats.clone();
-        self.outgoing.push_back(ClipboardMessage::Grab(ClipboardGrab {
-            formats,
-            direction: Some("client_to_guest".into()),
-        }));
+        self.outgoing
+            .push_back(ClipboardMessage::Grab(ClipboardGrab {
+                formats,
+                direction: Some("client_to_guest".into()),
+            }));
     }
 
     /// Guest requests clipboard data in a specific format.
     pub fn handle_guest_request(&mut self, format: ClipboardFormat) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         if self.client_formats.contains(&format) {
-            self.outgoing.push_back(ClipboardMessage::Request(ClipboardRequest { format }));
+            self.outgoing
+                .push_back(ClipboardMessage::Request(ClipboardRequest { format }));
         }
     }
 
@@ -196,7 +210,11 @@ impl ClipboardManager {
             return Err("clipboard sharing is disabled".into());
         }
         if data.data.len() > self.max_size {
-            return Err(format!("clipboard data exceeds max size ({} > {})", data.data.len(), self.max_size));
+            return Err(format!(
+                "clipboard data exceeds max size ({} > {})",
+                data.data.len(),
+                self.max_size
+            ));
         }
         self.outgoing.push_back(ClipboardMessage::Data(data));
         Ok(())
@@ -269,7 +287,8 @@ mod tests {
         mgr.handle_guest_request(ClipboardFormat::Text);
 
         // Send data
-        mgr.send_to_guest(ClipboardData::text("hello world")).unwrap();
+        mgr.send_to_guest(ClipboardData::text("hello world"))
+            .unwrap();
 
         let msgs = mgr.drain_outgoing();
         assert_eq!(msgs.len(), 3); // grab + request + data

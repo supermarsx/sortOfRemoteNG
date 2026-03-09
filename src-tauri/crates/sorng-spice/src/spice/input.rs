@@ -25,12 +25,20 @@ pub struct KeyEvent {
 impl KeyEvent {
     /// Create a key press event.
     pub fn press(scancode: u32) -> Self {
-        Self { scancode, down: true, scancode_type: ScanCodeType::At }
+        Self {
+            scancode,
+            down: true,
+            scancode_type: ScanCodeType::At,
+        }
     }
 
     /// Create a key release event.
     pub fn release(scancode: u32) -> Self {
-        Self { scancode, down: false, scancode_type: ScanCodeType::At }
+        Self {
+            scancode,
+            down: false,
+            scancode_type: ScanCodeType::At,
+        }
     }
 
     /// Encode for SPICE inputs channel.
@@ -56,9 +64,15 @@ pub struct KeyboardState {
 impl KeyboardState {
     pub fn to_mask(&self) -> u16 {
         let mut mask = 0u16;
-        if self.scroll_lock { mask |= 1; }
-        if self.num_lock { mask |= 2; }
-        if self.caps_lock { mask |= 4; }
+        if self.scroll_lock {
+            mask |= 1;
+        }
+        if self.num_lock {
+            mask |= 2;
+        }
+        if self.caps_lock {
+            mask |= 4;
+        }
         mask
     }
 
@@ -109,12 +123,22 @@ pub struct PointerEvent {
 impl PointerEvent {
     /// Create a motion event (no button change).
     pub fn motion(x: i32, y: i32, mode: MouseMode) -> Self {
-        Self { x, y, button_mask: 0, mode }
+        Self {
+            x,
+            y,
+            button_mask: 0,
+            mode,
+        }
     }
 
     /// Create a button press event.
     pub fn button_press(x: i32, y: i32, button_mask: u8, mode: MouseMode) -> Self {
-        Self { x, y, button_mask, mode }
+        Self {
+            x,
+            y,
+            button_mask,
+            mode,
+        }
     }
 
     /// Encode for SPICE inputs channel.
@@ -152,11 +176,21 @@ impl ScrollEvent {
         let mut events = Vec::new();
         if self.delta_y < 0 {
             // Scroll up
-            events.push(PointerEvent::button_press(self.x, self.y, MouseButton::SCROLL_UP, mode));
+            events.push(PointerEvent::button_press(
+                self.x,
+                self.y,
+                MouseButton::SCROLL_UP,
+                mode,
+            ));
             events.push(PointerEvent::motion(self.x, self.y, mode));
         } else if self.delta_y > 0 {
             // Scroll down
-            events.push(PointerEvent::button_press(self.x, self.y, MouseButton::SCROLL_DOWN, mode));
+            events.push(PointerEvent::button_press(
+                self.x,
+                self.y,
+                MouseButton::SCROLL_DOWN,
+                mode,
+            ));
             events.push(PointerEvent::motion(self.x, self.y, mode));
         }
         events

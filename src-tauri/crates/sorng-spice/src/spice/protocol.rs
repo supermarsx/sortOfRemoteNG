@@ -41,7 +41,10 @@ impl SpiceLinkHeader {
         }
         let magic = buf.get_u32_le();
         if magic != SPICE_MAGIC {
-            return Err(SpiceError::protocol(format!("Invalid SPICE magic: 0x{:08X}", magic)));
+            return Err(SpiceError::protocol(format!(
+                "Invalid SPICE magic: 0x{:08X}",
+                magic
+            )));
         }
         let major = buf.get_u32_le();
         let minor = buf.get_u32_le();
@@ -125,7 +128,10 @@ impl SpiceLinkReply {
         }
         let error = buf.get_u32_le();
         if error != 0 {
-            return Err(SpiceError::protocol(format!("Server link error: {}", error)));
+            return Err(SpiceError::protocol(format!(
+                "Server link error: {}",
+                error
+            )));
         }
         // Public key (1024 bits = 128 bytes + overhead, but varies).
         // For simplicity, read the DER-encoded RSA pub key.
@@ -183,7 +189,7 @@ impl SpiceDataHeader {
         if buf.len() < Self::SIZE {
             return Err(SpiceError::protocol("Incomplete data header"));
         }
-        let mut b = &buf[..];
+        let mut b = buf;
         Ok(Self {
             serial: read_u64_le(&mut b),
             msg_type: read_u16_le(&mut b),
@@ -235,9 +241,17 @@ pub struct CapabilitySet {
     caps: HashSet<u32>,
 }
 
+impl Default for CapabilitySet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CapabilitySet {
     pub fn new() -> Self {
-        Self { caps: HashSet::new() }
+        Self {
+            caps: HashSet::new(),
+        }
     }
 
     pub fn add(&mut self, cap: u32) -> &mut Self {
@@ -316,7 +330,10 @@ mod tests {
 
     #[test]
     fn mini_header_roundtrip() {
-        let h = SpiceMiniDataHeader { msg_type: 42, size: 1024 };
+        let h = SpiceMiniDataHeader {
+            msg_type: 42,
+            size: 1024,
+        };
         let mut buf = BytesMut::new();
         h.encode(&mut buf);
         assert_eq!(buf.len(), SpiceMiniDataHeader::SIZE);

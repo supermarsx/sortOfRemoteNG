@@ -147,19 +147,29 @@ impl UsbFilterRule {
     /// Check if this rule matches a device.
     pub fn matches(&self, device: &UsbDevice) -> bool {
         if let Some(vid) = self.vendor_id {
-            if device.vendor_id != vid { return false; }
+            if device.vendor_id != vid {
+                return false;
+            }
         }
         if let Some(pid) = self.product_id {
-            if device.product_id != pid { return false; }
+            if device.product_id != pid {
+                return false;
+            }
         }
         if let Some(cls) = self.device_class {
-            if device.device_class != cls { return false; }
+            if device.device_class != cls {
+                return false;
+            }
         }
         if let Some(sub) = self.device_subclass {
-            if device.device_subclass != sub { return false; }
+            if device.device_subclass != sub {
+                return false;
+            }
         }
         if let Some(proto) = self.device_protocol {
-            if device.device_protocol != proto { return false; }
+            if device.device_protocol != proto {
+                return false;
+            }
         }
         true
     }
@@ -172,13 +182,19 @@ pub fn parse_filter_string(s: &str) -> Vec<UsbFilterRule> {
     let mut rules = Vec::new();
     for entry in s.split('|') {
         let entry = entry.trim();
-        if entry.is_empty() { continue; }
+        if entry.is_empty() {
+            continue;
+        }
         let parts: Vec<&str> = entry.split(',').map(|p| p.trim()).collect();
-        if parts.len() < 6 { continue; }
+        if parts.len() < 6 {
+            continue;
+        }
 
         let parse_opt_u16 = |s: &str| -> Option<u16> {
             let s = s.trim();
-            if s == "-1" { return None; }
+            if s == "-1" {
+                return None;
+            }
             if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
                 u16::from_str_radix(hex, 16).ok()
             } else {
@@ -187,11 +203,17 @@ pub fn parse_filter_string(s: &str) -> Vec<UsbFilterRule> {
         };
         let parse_opt_u8 = |s: &str| -> Option<u8> {
             let s = s.trim();
-            if s == "-1" { return None; }
+            if s == "-1" {
+                return None;
+            }
             s.parse().ok()
         };
 
-        let action = if parts[5] == "0" { FilterAction::Block } else { FilterAction::Allow };
+        let action = if parts[5] == "0" {
+            FilterAction::Block
+        } else {
+            FilterAction::Allow
+        };
         rules.push(UsbFilterRule {
             action,
             vendor_id: parse_opt_u16(parts[0]),
@@ -275,7 +297,9 @@ impl UsbRedirectManager {
 
     /// Notify that a USB device was plugged in on the host.
     pub fn device_connected(&mut self, device: UsbDevice) -> Option<String> {
-        if !self.enabled { return None; }
+        if !self.enabled {
+            return None;
+        }
         let key = format!("{}:{}", device.vendor_id, device.product_id);
         let should_redirect = self.auto_redirect && self.is_allowed(&device);
         let state = if should_redirect {
@@ -283,12 +307,19 @@ impl UsbRedirectManager {
         } else {
             UsbRedirectState::Available
         };
-        self.devices.insert(key.clone(), TrackedUsbDevice {
-            device,
-            state,
-            error: None,
-        });
-        if should_redirect { Some(key) } else { None }
+        self.devices.insert(
+            key.clone(),
+            TrackedUsbDevice {
+                device,
+                state,
+                error: None,
+            },
+        );
+        if should_redirect {
+            Some(key)
+        } else {
+            None
+        }
     }
 
     /// Notify that a USB device was unplugged.
@@ -299,13 +330,22 @@ impl UsbRedirectManager {
 
     /// Request redirect of a specific device.
     pub fn redirect(&mut self, vendor_id: u16, product_id: u16) -> Result<(), String> {
-        if !self.enabled { return Err("USB redirection is disabled".into()); }
+        if !self.enabled {
+            return Err("USB redirection is disabled".into());
+        }
 
-        let redirected_count = self.devices.values()
-            .filter(|d| d.state == UsbRedirectState::Redirected || d.state == UsbRedirectState::Redirecting)
+        let redirected_count = self
+            .devices
+            .values()
+            .filter(|d| {
+                d.state == UsbRedirectState::Redirected || d.state == UsbRedirectState::Redirecting
+            })
             .count();
         if redirected_count >= self.max_redirected {
-            return Err(format!("maximum redirected devices ({}) reached", self.max_redirected));
+            return Err(format!(
+                "maximum redirected devices ({}) reached",
+                self.max_redirected
+            ));
         }
 
         let key = format!("{}:{}", vendor_id, product_id);
@@ -368,7 +408,8 @@ impl UsbRedirectManager {
 
     /// List only redirected devices.
     pub fn list_redirected(&self) -> Vec<&TrackedUsbDevice> {
-        self.devices.values()
+        self.devices
+            .values()
             .filter(|d| d.state == UsbRedirectState::Redirected)
             .collect()
     }

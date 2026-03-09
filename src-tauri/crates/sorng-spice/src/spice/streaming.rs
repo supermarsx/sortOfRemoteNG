@@ -66,8 +66,7 @@ pub struct StreamRegion {
 
 impl StreamRegion {
     pub fn contains_point(&self, px: u32, py: u32) -> bool {
-        px >= self.x && px < self.x + self.width &&
-        py >= self.y && py < self.y + self.height
+        px >= self.x && px < self.x + self.width && py >= self.y && py < self.y + self.height
     }
 
     pub fn area(&self) -> u64 {
@@ -153,7 +152,9 @@ impl ManagedStream {
 
     /// Drop rate as a percentage.
     pub fn drop_rate(&self) -> f64 {
-        if self.frames_received == 0 { return 0.0; }
+        if self.frames_received == 0 {
+            return 0.0;
+        }
         (self.frames_dropped as f64 / self.frames_received as f64) * 100.0
     }
 }
@@ -200,7 +201,8 @@ impl StreamingManager {
         }
         let id = self.next_id;
         self.next_id += 1;
-        self.streams.insert(id, ManagedStream::new(id, codec, region, width, height));
+        self.streams
+            .insert(id, ManagedStream::new(id, codec, region, width, height));
         Ok(id)
     }
 
@@ -219,8 +221,11 @@ impl StreamingManager {
         if self.streams.contains_key(&id) {
             return Err(format!("stream {} already exists", id));
         }
-        self.streams.insert(id, ManagedStream::new(id, codec, region, width, height));
-        if id >= self.next_id { self.next_id = id + 1; }
+        self.streams
+            .insert(id, ManagedStream::new(id, codec, region, width, height));
+        if id >= self.next_id {
+            self.next_id = id + 1;
+        }
         Ok(())
     }
 
@@ -231,7 +236,9 @@ impl StreamingManager {
 
     /// Process an incoming encoded frame.
     pub fn process_encoded_frame(&mut self, frame: &EncodedFrame) -> Result<(), String> {
-        let stream = self.streams.get_mut(&frame.stream_id)
+        let stream = self
+            .streams
+            .get_mut(&frame.stream_id)
             .ok_or_else(|| format!("stream {} not found", frame.stream_id))?;
         stream.record_frame_received(frame.data.len(), frame.timestamp_ms);
         Ok(())
@@ -254,7 +261,10 @@ impl StreamingManager {
 
     /// Active stream count.
     pub fn active_count(&self) -> usize {
-        self.streams.values().filter(|s| s.state == StreamState::Active).count()
+        self.streams
+            .values()
+            .filter(|s| s.state == StreamState::Active)
+            .count()
     }
 
     /// Total bytes received across all streams.
@@ -276,7 +286,13 @@ impl StreamingManager {
         let y = r.y.min(display_h);
         let w = (r.width).min(display_w.saturating_sub(x));
         let h = (r.height).min(display_h.saturating_sub(y));
-        Some(StreamRegion { surface_id: r.surface_id, x, y, width: w, height: h })
+        Some(StreamRegion {
+            surface_id: r.surface_id,
+            x,
+            y,
+            width: w,
+            height: h,
+        })
     }
 }
 
@@ -287,8 +303,16 @@ mod tests {
     #[test]
     fn stream_lifecycle() {
         let mut mgr = StreamingManager::new(VideoCodec::H264);
-        let region = StreamRegion { surface_id: 0, x: 0, y: 0, width: 1920, height: 1080 };
-        let id = mgr.create_stream(VideoCodec::H264, region, 1920, 1080).unwrap();
+        let region = StreamRegion {
+            surface_id: 0,
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let id = mgr
+            .create_stream(VideoCodec::H264, region, 1920, 1080)
+            .unwrap();
 
         let frame = EncodedFrame {
             stream_id: id,
@@ -307,7 +331,13 @@ mod tests {
 
     #[test]
     fn stream_region_contains() {
-        let r = StreamRegion { surface_id: 0, x: 10, y: 20, width: 100, height: 50 };
+        let r = StreamRegion {
+            surface_id: 0,
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 50,
+        };
         assert!(r.contains_point(10, 20));
         assert!(r.contains_point(50, 40));
         assert!(!r.contains_point(9, 20));
@@ -318,7 +348,13 @@ mod tests {
     fn max_streams_limit() {
         let mut mgr = StreamingManager::new(VideoCodec::Vp8);
         mgr.max_streams = 2;
-        let r = StreamRegion { surface_id: 0, x: 0, y: 0, width: 640, height: 480 };
+        let r = StreamRegion {
+            surface_id: 0,
+            x: 0,
+            y: 0,
+            width: 640,
+            height: 480,
+        };
         mgr.create_stream(VideoCodec::Vp8, r, 640, 480).unwrap();
         mgr.create_stream(VideoCodec::Vp8, r, 640, 480).unwrap();
         let result = mgr.create_stream(VideoCodec::Vp8, r, 640, 480);
@@ -327,7 +363,13 @@ mod tests {
 
     #[test]
     fn drop_rate_calculation() {
-        let r = StreamRegion { surface_id: 0, x: 0, y: 0, width: 100, height: 100 };
+        let r = StreamRegion {
+            surface_id: 0,
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        };
         let mut stream = ManagedStream::new(1, VideoCodec::Mjpeg, r, 100, 100);
         stream.frames_received = 100;
         stream.frames_dropped = 5;
@@ -337,8 +379,16 @@ mod tests {
     #[test]
     fn clip_region() {
         let mut mgr = StreamingManager::new(VideoCodec::H264);
-        let region = StreamRegion { surface_id: 0, x: 1800, y: 900, width: 400, height: 300 };
-        let id = mgr.create_stream(VideoCodec::H264, region, 400, 300).unwrap();
+        let region = StreamRegion {
+            surface_id: 0,
+            x: 1800,
+            y: 900,
+            width: 400,
+            height: 300,
+        };
+        let id = mgr
+            .create_stream(VideoCodec::H264, region, 400, 300)
+            .unwrap();
 
         let clipped = mgr.clip_region(id, 1920, 1080).unwrap();
         assert_eq!(clipped.width, 120); // 1920 - 1800

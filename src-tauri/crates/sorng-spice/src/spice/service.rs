@@ -18,6 +18,12 @@ pub struct SpiceService {
     sessions: HashMap<String, SpiceSessionHandle>,
 }
 
+impl Default for SpiceService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpiceService {
     /// Create a new (empty) service.
     pub fn new() -> Self {
@@ -125,20 +131,12 @@ impl SpiceService {
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
         session
-            .send_command(SessionCommand::PointerEvent {
-                x,
-                y,
-                button_mask,
-            })
+            .send_command(SessionCommand::PointerEvent { x, y, button_mask })
             .await
     }
 
     /// Send clipboard text to a session.
-    pub async fn send_clipboard(
-        &self,
-        session_id: &str,
-        text: String,
-    ) -> Result<(), SpiceError> {
+    pub async fn send_clipboard(&self, session_id: &str, text: String) -> Result<(), SpiceError> {
         let session = self
             .sessions
             .get(session_id)
@@ -154,9 +152,7 @@ impl SpiceService {
             .sessions
             .get(session_id)
             .ok_or_else(|| SpiceError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::RequestUpdate)
-            .await
+        session.send_command(SessionCommand::RequestUpdate).await
     }
 
     /// Set display resolution for a session.
@@ -232,7 +228,11 @@ impl SpiceService {
 
         let st = session.state.lock().await;
 
-        Ok(SpiceSession::from_config(&session.config, session.id.clone(), st.connected))
+        Ok(SpiceSession::from_config(
+            &session.config,
+            session.id.clone(),
+            st.connected,
+        ))
     }
 
     /// List all sessions.

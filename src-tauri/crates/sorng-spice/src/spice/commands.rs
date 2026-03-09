@@ -6,6 +6,7 @@ use crate::spice::types::*;
 // ── Connection management ───────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn connect_spice(
     state: tauri::State<'_, SpiceServiceState>,
     host: String,
@@ -147,9 +148,7 @@ pub async fn request_spice_update(
     session_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.request_update(&session_id)
-        .await
-        .map_err(|e| e.message)
+    svc.request_update(&session_id).await.map_err(|e| e.message)
 }
 
 #[tauri::command]

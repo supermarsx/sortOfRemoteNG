@@ -1,8 +1,8 @@
 //! SPICE channel management: multiplexer, per-channel state, message routing.
 
-use std::collections::HashMap;
-use crate::spice::types::*;
 use crate::spice::protocol::CapabilitySet;
+use crate::spice::types::*;
+use std::collections::HashMap;
 
 // ── Message type ranges per channel ─────────────────────────────────────────
 
@@ -168,7 +168,11 @@ impl ChannelMux {
     }
 
     /// Get a channel mutable reference.
-    pub fn get_mut(&mut self, channel_type: SpiceChannelType, channel_id: u8) -> Option<&mut SpiceChannel> {
+    pub fn get_mut(
+        &mut self,
+        channel_type: SpiceChannelType,
+        channel_id: u8,
+    ) -> Option<&mut SpiceChannel> {
         self.channels.get_mut(&(channel_type, channel_id))
     }
 

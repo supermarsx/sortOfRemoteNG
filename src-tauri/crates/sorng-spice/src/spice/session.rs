@@ -196,12 +196,21 @@ async fn session_task(
     mess_buf.put_u32_le(link_mess.num_channel_caps);
     mess_buf.put_u32_le(link_mess.caps_offset);
 
-    writer.write_all(&header_buf).await.map_err(SpiceError::from)?;
-    writer.write_all(&mess_buf).await.map_err(SpiceError::from)?;
+    writer
+        .write_all(&header_buf)
+        .await
+        .map_err(SpiceError::from)?;
+    writer
+        .write_all(&mess_buf)
+        .await
+        .map_err(SpiceError::from)?;
 
     // 3. Read server link reply
     let mut reply_buf = [0u8; 16];
-    reader.read_exact(&mut reply_buf).await.map_err(SpiceError::from)?;
+    reader
+        .read_exact(&mut reply_buf)
+        .await
+        .map_err(SpiceError::from)?;
     let mut reply_bytes = BytesMut::from(&reply_buf[..]);
     let _server_header = SpiceLinkHeader::decode(&mut reply_bytes)?;
 
@@ -212,7 +221,10 @@ async fn session_task(
 
     // Read the rest of the reply (simplified — accept any size)
     let mut reply_rest = vec![0u8; 128];
-    let n = reader.read(&mut reply_rest).await.map_err(SpiceError::from)?;
+    let n = reader
+        .read(&mut reply_rest)
+        .await
+        .map_err(SpiceError::from)?;
     {
         let mut st = state.lock().await;
         st.bytes_received += n as u64;
@@ -227,7 +239,10 @@ async fn session_task(
 
         // Read auth result (4 bytes)
         let mut auth_result = [0u8; 4];
-        reader.read_exact(&mut auth_result).await.map_err(SpiceError::from)?;
+        reader
+            .read_exact(&mut auth_result)
+            .await
+            .map_err(SpiceError::from)?;
         st.bytes_received += 4;
         let result_code = u32::from_le_bytes(auth_result);
         if result_code != 0 {
@@ -247,13 +262,8 @@ async fn session_task(
     // 6. Initialize sub-managers
     let _display_mgr = DisplayManager::new();
     let _clipboard_mgr = ClipboardManager::new(config.share_clipboard);
-    let _usb_mgr = UsbRedirectManager::new(
-        config.usb_redirection,
-        config.usb_auto_redirect,
-    );
-    let _streaming_mgr = StreamingManager::new(
-        config.video_codec.clone().unwrap_or(VideoCodec::Mjpeg),
-    );
+    let _usb_mgr = UsbRedirectManager::new(config.usb_redirection, config.usb_auto_redirect);
+    let _streaming_mgr = StreamingManager::new(config.video_codec.unwrap_or(VideoCodec::Mjpeg));
 
     // 7. Mark connected
     {

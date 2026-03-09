@@ -30,7 +30,9 @@ impl SpiceVersion {
             Self::V3 => 3,
         }
     }
-    pub fn minor(&self) -> u32 { 0 }
+    pub fn minor(&self) -> u32 {
+        0
+    }
 }
 
 impl fmt::Display for SpiceVersion {
@@ -246,25 +248,37 @@ pub struct SpiceSurface {
 pub enum DrawCommand {
     Fill {
         surface_id: u32,
-        x: i32, y: i32, width: u32, height: u32,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
         color: u32,
     },
     Copy {
         surface_id: u32,
-        src_x: i32, src_y: i32,
-        dst_x: i32, dst_y: i32,
-        width: u32, height: u32,
+        src_x: i32,
+        src_y: i32,
+        dst_x: i32,
+        dst_y: i32,
+        width: u32,
+        height: u32,
     },
     Opaque {
         surface_id: u32,
-        x: i32, y: i32, width: u32, height: u32,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
         /// Base64-encoded image data.
         data: String,
         compression: ImageCompression,
     },
     Inval {
         surface_id: u32,
-        x: i32, y: i32, width: u32, height: u32,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
     },
 }
 
@@ -532,10 +546,18 @@ pub struct SpiceConfig {
     pub disable_effects: Vec<String>,
 }
 
-fn default_spice_port() -> u16 { 5900 }
-fn default_true() -> bool { true }
-fn default_connect_timeout() -> u64 { 15 }
-fn default_display_count() -> u8 { 1 }
+fn default_spice_port() -> u16 {
+    5900
+}
+fn default_true() -> bool {
+    true
+}
+fn default_connect_timeout() -> u64 {
+    15
+}
+fn default_display_count() -> u8 {
+    1
+}
 
 impl Default for SpiceConfig {
     fn default() -> Self {
@@ -809,10 +831,16 @@ impl std::error::Error for SpiceError {}
 
 impl SpiceError {
     pub fn new(kind: SpiceErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(SpiceErrorKind::SessionNotFound, format!("Session '{}' not found", id))
+        Self::new(
+            SpiceErrorKind::SessionNotFound,
+            format!("Session '{}' not found", id),
+        )
     }
     pub fn protocol(msg: impl Into<String>) -> Self {
         Self::new(SpiceErrorKind::ProtocolViolation, msg)
@@ -852,9 +880,7 @@ impl From<std::io::Error> for SpiceError {
             std::io::ErrorKind::ConnectionRefused => {
                 Self::new(SpiceErrorKind::ConnectionRefused, e.to_string())
             }
-            std::io::ErrorKind::TimedOut => {
-                Self::new(SpiceErrorKind::Timeout, e.to_string())
-            }
+            std::io::ErrorKind::TimedOut => Self::new(SpiceErrorKind::Timeout, e.to_string()),
             _ => Self::new(SpiceErrorKind::Io, e.to_string()),
         }
     }
