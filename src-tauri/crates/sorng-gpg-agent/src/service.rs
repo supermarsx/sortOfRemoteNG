@@ -37,6 +37,12 @@ pub struct GpgAgentService {
     pub status: GpgAgentStatus,
 }
 
+impl Default for GpgAgentService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GpgAgentService {
     /// Create a new GPG agent service.
     pub fn new() -> Self {
@@ -160,7 +166,7 @@ impl GpgAgentService {
         info!("Stopping gpg-agent");
 
         // Try killagent via protocol, fall back to gpgconf
-        if let Err(_) = self.protocol.killagent().await {
+        if self.protocol.killagent().await.is_err() {
             self.config.gpgconf_kill("gpg-agent").await?;
         }
 
@@ -254,7 +260,11 @@ impl GpgAgentService {
         Ok(result)
     }
 
-    pub async fn import_key(&mut self, data: &[u8], armor: bool) -> Result<KeyImportResult, String> {
+    pub async fn import_key(
+        &mut self,
+        data: &[u8],
+        armor: bool,
+    ) -> Result<KeyImportResult, String> {
         let result = self.keyring.import_key(data, armor).await?;
         self.audit.log_event(
             GpgAuditAction::KeyImport,
@@ -280,7 +290,11 @@ impl GpgAgentService {
         Ok(result)
     }
 
-    pub async fn export_key(&self, key_id: &str, options: &KeyExportOptions) -> Result<Vec<u8>, String> {
+    pub async fn export_key(
+        &self,
+        key_id: &str,
+        options: &KeyExportOptions,
+    ) -> Result<Vec<u8>, String> {
         self.keyring.export_key(key_id, options).await
     }
 
@@ -419,7 +433,14 @@ impl GpgAgentService {
     ) -> Result<bool, String> {
         let result = self
             .signing
-            .sign_key(signer_id, target_id, uid_names, local_only, trust_level, exportable)
+            .sign_key(
+                signer_id,
+                target_id,
+                uid_names,
+                local_only,
+                trust_level,
+                exportable,
+            )
             .await?;
         self.audit.log_event(
             GpgAuditAction::KeySign,
@@ -606,9 +627,7 @@ impl GpgAgentService {
         subkey_index: usize,
         slot: CardSlot,
     ) -> Result<bool, String> {
-        self.card
-            .move_key_to_card(key_id, subkey_index, slot)
-            .await
+        self.card.move_key_to_card(key_id, subkey_index, slot).await
     }
 
     pub async fn card_fetch_key(&self) -> Result<KeyImportResult, String> {
@@ -662,14 +681,9 @@ mod tests {
     #[test]
     fn test_service_audit_clear() {
         let mut service = GpgAgentService::new();
-        service.audit.log_event(
-            GpgAuditAction::Encrypt,
-            None,
-            None,
-            "test",
-            true,
-            None,
-        );
+        service
+            .audit
+            .log_event(GpgAuditAction::Encrypt, None, None, "test", true, None);
         assert_eq!(service.audit.entry_count(), 1);
         service.audit_clear();
         assert_eq!(service.audit.entry_count(), 0);

@@ -10,7 +10,8 @@ use tauri::State;
 
 /// Decode a base64-encoded string to bytes.
 fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
-    B64.decode(s).map_err(|e| format!("base64 decode error: {}", e))
+    B64.decode(s)
+        .map_err(|e| format!("base64 decode error: {}", e))
 }
 
 /// Convenience alias for command return types.
@@ -201,12 +202,7 @@ pub async fn gpg_add_subkey(
 ) -> CmdResult<bool> {
     let service = state.lock().await;
     service
-        .add_subkey(
-            &key_id,
-            &algorithm,
-            &capabilities,
-            expiration.as_deref(),
-        )
+        .add_subkey(&key_id, &algorithm, &capabilities, expiration.as_deref())
         .await
 }
 
@@ -282,9 +278,7 @@ pub async fn gpg_verify_signature(
         None => None,
     };
     let mut service = state.lock().await;
-    service
-        .verify_signature(&data, sig.as_deref())
-        .await
+    service.verify_signature(&data, sig.as_deref()).await
 }
 
 /// Sign another user's key.
@@ -300,7 +294,14 @@ pub async fn gpg_sign_key(
 ) -> CmdResult<bool> {
     let mut service = state.lock().await;
     service
-        .sign_key(&signer_id, &target_id, &uid_names, local_only, trust_level, exportable)
+        .sign_key(
+            &signer_id,
+            &target_id,
+            &uid_names,
+            local_only,
+            trust_level,
+            exportable,
+        )
         .await
 }
 
@@ -349,9 +350,7 @@ pub async fn gpg_set_owner_trust(
 
 /// Get trust database statistics.
 #[tauri::command]
-pub async fn gpg_trust_db_stats(
-    state: State<'_, GpgServiceState>,
-) -> CmdResult<TrustDbStats> {
+pub async fn gpg_trust_db_stats(state: State<'_, GpgServiceState>) -> CmdResult<TrustDbStats> {
     let service = state.lock().await;
     service.get_trust_db_stats().await
 }
@@ -397,9 +396,7 @@ pub async fn gpg_send_to_keyserver(
 
 /// Refresh all keys from the keyserver.
 #[tauri::command]
-pub async fn gpg_refresh_keys(
-    state: State<'_, GpgServiceState>,
-) -> CmdResult<KeyImportResult> {
+pub async fn gpg_refresh_keys(state: State<'_, GpgServiceState>) -> CmdResult<KeyImportResult> {
     let service = state.lock().await;
     service.refresh_keys().await
 }
@@ -417,9 +414,7 @@ pub async fn gpg_card_status(
 
 /// List all known smart cards.
 #[tauri::command]
-pub async fn gpg_list_cards(
-    state: State<'_, GpgServiceState>,
-) -> CmdResult<Vec<SmartCardInfo>> {
+pub async fn gpg_list_cards(state: State<'_, GpgServiceState>) -> CmdResult<Vec<SmartCardInfo>> {
     let service = state.lock().await;
     service.list_cards().await
 }
@@ -477,9 +472,7 @@ pub async fn gpg_card_move_key(
 
 /// Fetch the public key stored on the card and import it.
 #[tauri::command]
-pub async fn gpg_card_fetch_key(
-    state: State<'_, GpgServiceState>,
-) -> CmdResult<KeyImportResult> {
+pub async fn gpg_card_fetch_key(state: State<'_, GpgServiceState>) -> CmdResult<KeyImportResult> {
     let service = state.lock().await;
     service.card_fetch_key().await
 }

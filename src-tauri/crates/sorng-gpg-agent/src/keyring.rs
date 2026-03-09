@@ -83,19 +83,14 @@ impl KeyringManager {
     // ── Import ──────────────────────────────────────────────────────
 
     /// Import key data.
-    pub async fn import_key(
-        &self,
-        data: &[u8],
-        _armor: bool,
-    ) -> Result<KeyImportResult, String> {
+    pub async fn import_key(&self, data: &[u8], _armor: bool) -> Result<KeyImportResult, String> {
         let mut args = self.base_args();
         args.push("--import".to_string());
         args.push("--status-fd".to_string());
         args.push("1".to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output_bytes =
-            run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
+        let output_bytes = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
         let output = String::from_utf8_lossy(&output_bytes).to_string();
         Ok(parse_import_result(&output))
     }
@@ -209,9 +204,7 @@ impl KeyringManager {
                 script.push_str("Key-Type: eddsa\n");
                 script.push_str("Key-Curve: ed25519\n");
             }
-            GpgKeyAlgorithm::Rsa2048
-            | GpgKeyAlgorithm::Rsa3072
-            | GpgKeyAlgorithm::Rsa4096 => {
+            GpgKeyAlgorithm::Rsa2048 | GpgKeyAlgorithm::Rsa3072 | GpgKeyAlgorithm::Rsa4096 => {
                 script.push_str("Key-Type: RSA\n");
                 script.push_str(&format!("Key-Length: {}\n", params.key_length));
             }
@@ -230,10 +223,7 @@ impl KeyringManager {
                     script.push_str("Subkey-Curve: cv25519\n");
                 }
                 _ => {
-                    script.push_str(&format!(
-                        "Subkey-Type: {}\n",
-                        sub_type.to_gpg_algo()
-                    ));
+                    script.push_str(&format!("Subkey-Type: {}\n", sub_type.to_gpg_algo()));
                     if let Some(sub_len) = params.subkey_length {
                         script.push_str(&format!("Subkey-Length: {}\n", sub_len));
                     }
@@ -271,12 +261,8 @@ impl KeyringManager {
         args.push("1".to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output_bytes = run_gpg_command_with_input(
-            &self.gpg_binary,
-            &args_ref,
-            script.as_bytes(),
-        )
-        .await?;
+        let output_bytes =
+            run_gpg_command_with_input(&self.gpg_binary, &args_ref, script.as_bytes()).await?;
 
         let output = String::from_utf8_lossy(&output_bytes).to_string();
         debug!("Key generation output: {}", output);
@@ -377,14 +363,16 @@ impl KeyringManager {
         args.push(algorithm.to_gpg_algo().to_string());
 
         // Usage flags
-        let usage: String = capabilities.iter().map(|c| {
-            match c {
+        let usage: String = capabilities
+            .iter()
+            .map(|c| match c {
                 KeyCapability::Sign => "sign",
                 KeyCapability::Encrypt => "encr",
                 KeyCapability::Authenticate => "auth",
                 KeyCapability::Certify => "cert",
-            }
-        }).collect::<Vec<_>>().join(",");
+            })
+            .collect::<Vec<_>>()
+            .join(",");
         if !usage.is_empty() {
             args.push(usage);
         }
@@ -421,12 +409,8 @@ impl KeyringManager {
         args.push(key_id.to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let _output = run_gpg_command_with_input(
-            &self.gpg_binary,
-            &args_ref,
-            script.as_bytes(),
-        )
-        .await;
+        let _output =
+            run_gpg_command_with_input(&self.gpg_binary, &args_ref, script.as_bytes()).await;
         info!(
             "Revoked subkey {} on key {} (reason: {})",
             subkey_index, key_id, reason
@@ -477,12 +461,8 @@ impl KeyringManager {
         let input = format!("y\n{}\n{}\ny\n", reason, description);
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output_bytes = run_gpg_command_with_input(
-            &self.gpg_binary,
-            &args_ref,
-            input.as_bytes(),
-        )
-        .await?;
+        let output_bytes =
+            run_gpg_command_with_input(&self.gpg_binary, &args_ref, input.as_bytes()).await?;
 
         let output = String::from_utf8_lossy(&output_bytes).to_string();
         info!("Generated revocation certificate for {}", key_id);
@@ -506,10 +486,7 @@ impl KeyringManager {
     }
 
     /// Search for keys on a keyserver.
-    pub async fn search_keyserver(
-        &self,
-        query: &str,
-    ) -> Result<Vec<KeyServerResult>, String> {
+    pub async fn search_keyserver(&self, query: &str) -> Result<Vec<KeyServerResult>, String> {
         let mut args = self.base_args();
         args.push("--keyserver".to_string());
         args.push(self.keyserver.clone());
@@ -522,10 +499,7 @@ impl KeyringManager {
     }
 
     /// Fetch a key from keyserver.
-    pub async fn fetch_key_from_keyserver(
-        &self,
-        key_id: &str,
-    ) -> Result<KeyImportResult, String> {
+    pub async fn fetch_key_from_keyserver(&self, key_id: &str) -> Result<KeyImportResult, String> {
         let mut args = self.base_args();
         args.push("--keyserver".to_string());
         args.push(self.keyserver.clone());
@@ -581,8 +555,10 @@ pub fn parse_colon_key_listing(output: &str, secret_only: bool) -> Vec<GpgKey> {
                 }
 
                 in_subkey = false;
-                let mut key = GpgKey::default();
-                key.is_secret = fields[0] == "sec" || secret_only;
+                let mut key = GpgKey {
+                    is_secret: fields[0] == "sec" || secret_only,
+                    ..GpgKey::default()
+                };
 
                 if fields.len() > 1 {
                     key.validity = KeyValidity::from_colon(fields[1]);
@@ -906,10 +882,7 @@ grp:::::::::1234567890ABCDEF1234567890ABCDEF12345678:\n\
 
         let key = &keys[0];
         assert_eq!(key.key_id, "AABBCCDD11223344");
-        assert_eq!(
-            key.fingerprint,
-            "AABBCCDD1122334455667788AABBCCDD11223344"
-        );
+        assert_eq!(key.fingerprint, "AABBCCDD1122334455667788AABBCCDD11223344");
         assert_eq!(key.bits, 4096);
         assert_eq!(key.validity, KeyValidity::Ultimate);
         assert_eq!(key.owner_trust, KeyOwnerTrust::Ultimate);
@@ -957,8 +930,7 @@ grp:::::::::1234567890ABCDEF1234567890ABCDEF12345678:\n\
 
     #[test]
     fn test_parse_keyserver_search() {
-        let output =
-            "pub:AABBCCDD11223344:1:4096:1609459200::\n\
+        let output = "pub:AABBCCDD11223344:1:4096:1609459200::\n\
              uid:Alice Smith <alice@example.com>:1609459200::\n\
              pub:EEFF001122334455:22:256:1609459200::\n\
              uid:Bob <bob@example.com>:1609459200::\n";
@@ -988,7 +960,11 @@ grp:::::::::1234567890ABCDEF1234567890ABCDEF12345678:\n\
 
     #[test]
     fn test_keyring_manager_new() {
-        let mgr = KeyringManager::new("gpg", Some("/home/user/.gnupg".to_string()), "hkps://keys.openpgp.org");
+        let mgr = KeyringManager::new(
+            "gpg",
+            Some("/home/user/.gnupg".to_string()),
+            "hkps://keys.openpgp.org",
+        );
         assert_eq!(mgr.gpg_binary, "gpg");
         assert_eq!(mgr.keyserver, "hkps://keys.openpgp.org");
     }

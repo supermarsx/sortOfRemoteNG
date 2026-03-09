@@ -88,9 +88,10 @@ impl TrustManager {
         let output = run_gpg_command(&self.gpg_binary, &args_ref).await?;
 
         let keys = keyring::parse_colon_key_listing(&output, false);
-        let mut stats = TrustDbStats::default();
-
-        stats.total_keys = keys.len() as u32;
+        let mut stats = TrustDbStats {
+            total_keys: keys.len() as u32,
+            ..TrustDbStats::default()
+        };
 
         for key in &keys {
             match key.owner_trust {

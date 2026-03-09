@@ -51,14 +51,14 @@
 //! └───────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod types;
-pub mod protocol;
-pub mod keyring;
-pub mod signing;
-pub mod encryption;
-pub mod trust;
-pub mod card;
-pub mod config;
 pub mod audit;
-pub mod service;
+pub mod card;
 pub mod commands;
+pub mod config;
+pub mod encryption;
+pub mod keyring;
+pub mod protocol;
+pub mod service;
+pub mod signing;
+pub mod trust;
+pub mod types;

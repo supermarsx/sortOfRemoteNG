@@ -65,8 +65,7 @@ impl SigningEngine {
         }
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output =
-            run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
+        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
 
         let armor_str = if armor {
             String::from_utf8_lossy(&output).to_string()
@@ -153,8 +152,7 @@ impl SigningEngine {
         args.push("--clearsign".to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output =
-            run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
+        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
 
         let armor_str = String::from_utf8_lossy(&output).to_string();
         info!("Clearsigned data with key {}", key_id);
@@ -185,18 +183,15 @@ impl SigningEngine {
 
         if let Some(sig) = signature {
             // Detached signature: write sig to temp, pass data via stdin
-            let sig_path = std::env::temp_dir().join(format!(
-                "gpg_sig_{}.sig",
-                uuid::Uuid::new_v4()
-            ));
+            let sig_path =
+                std::env::temp_dir().join(format!("gpg_sig_{}.sig", uuid::Uuid::new_v4()));
             std::fs::write(&sig_path, sig)
                 .map_err(|e| format!("Failed to write temp sig file: {}", e))?;
             args.push(sig_path.to_string_lossy().to_string());
             args.push("-".to_string());
 
             let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-            let output =
-                run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await;
+            let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await;
 
             // Clean up temp file
             let _ = std::fs::remove_file(&sig_path);
@@ -211,8 +206,7 @@ impl SigningEngine {
 
         // Inline/clear-text signature
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output =
-            run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await;
+        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await;
 
         let output_str = match output {
             Ok(o) => String::from_utf8_lossy(&o).to_string(),
@@ -455,8 +449,7 @@ mod tests {
 
     #[test]
     fn test_parse_missing_signer() {
-        let output =
-            "[GNUPG:] ERRSIG AABBCCDD11223344 1 10 00 1704067200 9\n";
+        let output = "[GNUPG:] ERRSIG AABBCCDD11223344 1 10 00 1704067200 9\n";
         let result = parse_verification_output(output);
         assert!(!result.valid);
         assert_eq!(result.signature_status, SigStatus::MissingSigner);
@@ -464,8 +457,7 @@ mod tests {
 
     #[test]
     fn test_parse_expired_key() {
-        let output =
-            "[GNUPG:] EXPKEYSIG AABBCCDD11223344 Alice Smith <alice@example.com>\n";
+        let output = "[GNUPG:] EXPKEYSIG AABBCCDD11223344 Alice Smith <alice@example.com>\n";
         let result = parse_verification_output(output);
         assert!(!result.valid);
         assert_eq!(result.signature_status, SigStatus::ExpiredKey);

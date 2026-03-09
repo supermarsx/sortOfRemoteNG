@@ -128,10 +128,7 @@ impl CardManager {
             info!("Unblocked card PIN");
             Ok(true)
         } else {
-            Err(format!(
-                "Failed to unblock PIN: {}",
-                result.error_message
-            ))
+            Err(format!("Failed to unblock PIN: {}", result.error_message))
         }
     }
 
@@ -146,12 +143,8 @@ impl CardManager {
         args.push("--card-edit".to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let _output = run_gpg_command_with_input(
-            &self.gpg_binary,
-            &args_ref,
-            script.as_bytes(),
-        )
-        .await;
+        let _output =
+            run_gpg_command_with_input(&self.gpg_binary, &args_ref, script.as_bytes()).await;
 
         info!("Factory-reset smart card");
         Ok(true)
@@ -218,10 +211,7 @@ impl CardManager {
         slot: CardSlot,
     ) -> Result<bool, String> {
         let slot_num = slot.index();
-        let script = format!(
-            "key {}\nkeytocard\n{}\nsave\n",
-            subkey_index, slot_num
-        );
+        let script = format!("key {}\nkeytocard\n{}\nsave\n", subkey_index, slot_num);
 
         let mut args = self.base_args();
         args.retain(|a| a != "--with-colons");
@@ -231,12 +221,8 @@ impl CardManager {
         args.push(key_id.to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let _output = run_gpg_command_with_input(
-            &self.gpg_binary,
-            &args_ref,
-            script.as_bytes(),
-        )
-        .await?;
+        let _output =
+            run_gpg_command_with_input(&self.gpg_binary, &args_ref, script.as_bytes()).await?;
 
         info!(
             "Moved subkey {} of {} to card slot {}",
@@ -252,12 +238,8 @@ impl CardManager {
 
         let script = "fetch\nquit\n";
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output = run_gpg_command_with_input(
-            &self.gpg_binary,
-            &args_ref,
-            script.as_bytes(),
-        )
-        .await?;
+        let output =
+            run_gpg_command_with_input(&self.gpg_binary, &args_ref, script.as_bytes()).await?;
 
         let output_str = String::from_utf8_lossy(&output).to_string();
         Ok(crate::keyring::parse_import_result(&output_str))
@@ -274,12 +256,8 @@ impl CardManager {
         args.push("--card-edit".to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let _output = run_gpg_command_with_input(
-            &self.gpg_binary,
-            &args_ref,
-            script.as_bytes(),
-        )
-        .await;
+        let _output =
+            run_gpg_command_with_input(&self.gpg_binary, &args_ref, script.as_bytes()).await;
 
         Ok(true)
     }

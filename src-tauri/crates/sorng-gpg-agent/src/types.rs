@@ -690,7 +690,7 @@ pub struct KeyServerResult {
 // ── Signature Result ────────────────────────────────────────────────
 
 /// Result of a signing operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SignatureResult {
     pub success: bool,
     #[serde(with = "serde_bytes_base64")]
@@ -702,22 +702,6 @@ pub struct SignatureResult {
     pub signer_fingerprint: String,
     pub created_at: String,
     pub expires_at: Option<String>,
-}
-
-impl Default for SignatureResult {
-    fn default() -> Self {
-        Self {
-            success: false,
-            signature_data: Vec::new(),
-            signature_armor: String::new(),
-            hash_algo: String::new(),
-            sig_class: String::new(),
-            signer_key_id: String::new(),
-            signer_fingerprint: String::new(),
-            created_at: String::new(),
-            expires_at: None,
-        }
-    }
 }
 
 // ── Verification Result ─────────────────────────────────────────────
@@ -796,7 +780,7 @@ impl Default for VerificationResult {
 // ── Encryption / Decryption ─────────────────────────────────────────
 
 /// Result of an encryption operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EncryptionResult {
     pub success: bool,
     #[serde(with = "serde_bytes_base64")]
@@ -805,19 +789,6 @@ pub struct EncryptionResult {
     pub recipients: Vec<String>,
     pub session_key_algo: String,
     pub is_symmetric: bool,
-}
-
-impl Default for EncryptionResult {
-    fn default() -> Self {
-        Self {
-            success: false,
-            ciphertext: Vec::new(),
-            armor: String::new(),
-            recipients: Vec::new(),
-            session_key_algo: String::new(),
-            is_symmetric: false,
-        }
-    }
 }
 
 /// A recipient that a message was encrypted to.
@@ -830,7 +801,7 @@ pub struct DecryptionRecipient {
 }
 
 /// Result of a decryption operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DecryptionResult {
     pub success: bool,
     #[serde(with = "serde_bytes_base64")]
@@ -841,23 +812,10 @@ pub struct DecryptionResult {
     pub filename: Option<String>,
 }
 
-impl Default for DecryptionResult {
-    fn default() -> Self {
-        Self {
-            success: false,
-            plaintext: Vec::new(),
-            session_key_algo: String::new(),
-            recipients: Vec::new(),
-            signature_info: None,
-            filename: None,
-        }
-    }
-}
-
 // ── Trust DB ────────────────────────────────────────────────────────
 
 /// Statistics from the GPG trust database.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TrustDbStats {
     pub total_keys: u32,
     pub trusted_keys: u32,
@@ -867,21 +825,6 @@ pub struct TrustDbStats {
     pub revoked_keys: u32,
     pub expired_keys: u32,
     pub unknown_trust: u32,
-}
-
-impl Default for TrustDbStats {
-    fn default() -> Self {
-        Self {
-            total_keys: 0,
-            trusted_keys: 0,
-            marginal_trust: 0,
-            full_trust: 0,
-            ultimate_trust: 0,
-            revoked_keys: 0,
-            expired_keys: 0,
-            unknown_trust: 0,
-        }
-    }
 }
 
 // ── Export / Import Options ─────────────────────────────────────────
@@ -911,7 +854,7 @@ impl Default for KeyExportOptions {
 }
 
 /// Result from a key import operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyImportResult {
     pub total: u32,
     pub imported: u32,
@@ -925,25 +868,6 @@ pub struct KeyImportResult {
     pub secrets_imported: u32,
     pub secrets_unchanged: u32,
     pub not_imported: u32,
-}
-
-impl Default for KeyImportResult {
-    fn default() -> Self {
-        Self {
-            total: 0,
-            imported: 0,
-            unchanged: 0,
-            no_user_id: 0,
-            new_keys: 0,
-            new_subkeys: 0,
-            new_signatures: 0,
-            new_revocations: 0,
-            secrets_read: 0,
-            secrets_imported: 0,
-            secrets_unchanged: 0,
-            not_imported: 0,
-        }
-    }
 }
 
 // ── Audit ───────────────────────────────────────────────────────────
@@ -1071,7 +995,15 @@ pub fn parse_uid_string(uid: &str) -> (String, String, String) {
                 comment = name[start + 1..end].to_string();
                 let before = name[..start].trim().to_string();
                 let after = name[end + 1..].trim().to_string();
-                name = format!("{}{}", before, if after.is_empty() { String::new() } else { format!(" {}", after) });
+                name = format!(
+                    "{}{}",
+                    before,
+                    if after.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {}", after)
+                    }
+                );
                 name = name.trim().to_string();
             }
         }
@@ -1089,9 +1021,15 @@ mod tests {
     #[test]
     fn test_algorithm_from_gpg_id() {
         assert_eq!(GpgKeyAlgorithm::from_gpg_id("22"), GpgKeyAlgorithm::Ed25519);
-        assert_eq!(GpgKeyAlgorithm::from_gpg_id("rsa4096"), GpgKeyAlgorithm::Rsa4096);
+        assert_eq!(
+            GpgKeyAlgorithm::from_gpg_id("rsa4096"),
+            GpgKeyAlgorithm::Rsa4096
+        );
         assert_eq!(GpgKeyAlgorithm::from_gpg_id("1"), GpgKeyAlgorithm::Rsa2048);
-        assert!(matches!(GpgKeyAlgorithm::from_gpg_id("xyz"), GpgKeyAlgorithm::Unknown(_)));
+        assert!(matches!(
+            GpgKeyAlgorithm::from_gpg_id("xyz"),
+            GpgKeyAlgorithm::Unknown(_)
+        ));
     }
 
     #[test]
@@ -1143,7 +1081,10 @@ mod tests {
     fn test_card_slot_from_str() {
         assert_eq!(CardSlot::from_str_name("sig"), Some(CardSlot::Signature));
         assert_eq!(CardSlot::from_str_name("enc"), Some(CardSlot::Encryption));
-        assert_eq!(CardSlot::from_str_name("auth"), Some(CardSlot::Authentication));
+        assert_eq!(
+            CardSlot::from_str_name("auth"),
+            Some(CardSlot::Authentication)
+        );
         assert_eq!(CardSlot::from_str_name("unknown"), None);
     }
 

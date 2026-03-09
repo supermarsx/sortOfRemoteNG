@@ -224,14 +224,7 @@ mod tests {
     fn test_filter_by_action() {
         let mut logger = GpgAuditLogger::default_logger();
         logger.log_event(GpgAuditAction::Sign, None, None, "sign1", true, None);
-        logger.log_event(
-            GpgAuditAction::Encrypt,
-            None,
-            None,
-            "encrypt1",
-            true,
-            None,
-        );
+        logger.log_event(GpgAuditAction::Encrypt, None, None, "encrypt1", true, None);
         logger.log_event(GpgAuditAction::Sign, None, None, "sign2", true, None);
 
         let sign_entries = logger.filter_by_action(&GpgAuditAction::Sign);
@@ -276,14 +269,7 @@ mod tests {
     #[test]
     fn test_export_json() {
         let mut logger = GpgAuditLogger::default_logger();
-        logger.log_event(
-            GpgAuditAction::KeyGenerate,
-            None,
-            None,
-            "test",
-            true,
-            None,
-        );
+        logger.log_event(GpgAuditAction::KeyGenerate, None, None, "test", true, None);
 
         let json = logger.export_json().unwrap();
         assert!(json.contains("KeyGenerate"));

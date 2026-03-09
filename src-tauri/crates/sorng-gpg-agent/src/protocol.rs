@@ -80,10 +80,8 @@ pub fn assuan_percent_decode(input: &str) -> Vec<u8> {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(val) = u8::from_str_radix(
-                &String::from_utf8_lossy(&bytes[i + 1..i + 3]),
-                16,
-            ) {
+            if let Ok(val) = u8::from_str_radix(&String::from_utf8_lossy(&bytes[i + 1..i + 3]), 16)
+            {
                 result.push(val);
                 i += 3;
                 continue;
@@ -107,37 +105,34 @@ pub fn parse_assuan_line(line: &str) -> Option<AssuanResponse> {
         return Some(AssuanResponse::Ok(msg));
     }
 
-    if line.starts_with("ERR ") {
-        let rest = &line[4..];
+    if let Some(rest) = line.strip_prefix("ERR ") {
         let mut parts = rest.splitn(2, ' ');
         let code = parts.next().unwrap_or("0").parse::<u32>().unwrap_or(0);
         let msg = parts.next().unwrap_or("").to_string();
         return Some(AssuanResponse::Err(code, msg));
     }
 
-    if line.starts_with("D ") {
-        let data = assuan_percent_decode(&line[2..]);
+    if let Some(stripped) = line.strip_prefix("D ") {
+        let data = assuan_percent_decode(stripped);
         return Some(AssuanResponse::Data(data));
     }
 
-    if line.starts_with("S ") {
-        let rest = &line[2..];
+    if let Some(rest) = line.strip_prefix("S ") {
         let mut parts = rest.splitn(2, ' ');
         let keyword = parts.next().unwrap_or("").to_string();
         let args = parts.next().unwrap_or("").to_string();
         return Some(AssuanResponse::Status(keyword, args));
     }
 
-    if line.starts_with("INQUIRE ") {
-        let rest = &line[8..];
+    if let Some(rest) = line.strip_prefix("INQUIRE ") {
         let mut parts = rest.splitn(2, ' ');
         let keyword = parts.next().unwrap_or("").to_string();
         let args = parts.next().unwrap_or("").to_string();
         return Some(AssuanResponse::Inquire(keyword, args));
     }
 
-    if line.starts_with('#') {
-        return Some(AssuanResponse::Comment(line[1..].trim().to_string()));
+    if let Some(stripped) = line.strip_prefix('#') {
+        return Some(AssuanResponse::Comment(stripped.trim().to_string()));
     }
 
     None
@@ -335,21 +330,14 @@ impl AssuanClient {
     }
 
     /// Smart card daemon: decrypt with card key.
-    pub async fn scd_pkdecrypt(
-        &self,
-        keygrip: &str,
-        ciphertext: &[u8],
-    ) -> Result<Vec<u8>, String> {
+    pub async fn scd_pkdecrypt(&self, keygrip: &str, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
         let _ct_hex: String = ciphertext.iter().map(|b| format!("{:02X}", b)).collect();
         let cmd = format!("SCD PKDECRYPT {}", keygrip);
         let result = self.send_command(&cmd).await?;
         if result.ok {
             Ok(result.data_lines.into_iter().flatten().collect())
         } else {
-            Err(format!(
-                "SCD PKDECRYPT failed: {}",
-                result.error_message
-            ))
+            Err(format!("SCD PKDECRYPT failed: {}", result.error_message))
         }
     }
 
@@ -395,10 +383,7 @@ impl AssuanClient {
             info!("gpg-agent reloaded");
             Ok(())
         } else {
-            Err(format!(
-                "RELOADAGENT failed: {}",
-                result.error_message
-            ))
+            Err(format!("RELOADAGENT failed: {}", result.error_message))
         }
     }
 
@@ -448,10 +433,7 @@ impl AssuanClient {
         if result.ok {
             Ok(())
         } else {
-            Err(format!(
-                "CLEAR_PASSPHRASE failed: {}",
-                result.error_message
-            ))
+            Err(format!("CLEAR_PASSPHRASE failed: {}", result.error_message))
         }
     }
 
@@ -466,9 +448,7 @@ impl AssuanClient {
             .map_err(|e| format!("Failed to run gpgconf: {}", e))?;
 
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             Ok(path)
         } else {
             // Fallback: try standard locations
@@ -522,9 +502,7 @@ impl AssuanClient {
             .map_err(|e| format!("Failed to run gpgconf: {}", e))?;
 
         if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string())
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
         } else {
             Err("Could not determine GPG home directory".to_string())
         }
@@ -534,10 +512,7 @@ impl AssuanClient {
 // ── Helper: run a gpg command and capture output ────────────────────
 
 /// Execute a gpg command and return stdout as a string.
-pub async fn run_gpg_command(
-    gpg_binary: &str,
-    args: &[&str],
-) -> Result<String, String> {
+pub async fn run_gpg_command(gpg_binary: &str, args: &[&str]) -> Result<String, String> {
     debug!("Running gpg command: {} {:?}", gpg_binary, args);
 
     let output = Command::new(gpg_binary)
@@ -571,10 +546,7 @@ pub async fn run_gpg_command(
 }
 
 /// Execute a gpg command and return raw stdout bytes.
-pub async fn run_gpg_command_bytes(
-    gpg_binary: &str,
-    args: &[&str],
-) -> Result<Vec<u8>, String> {
+pub async fn run_gpg_command_bytes(gpg_binary: &str, args: &[&str]) -> Result<Vec<u8>, String> {
     debug!("Running gpg command (bytes): {} {:?}", gpg_binary, args);
 
     let output = Command::new(gpg_binary)

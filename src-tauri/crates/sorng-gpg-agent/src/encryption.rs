@@ -69,8 +69,7 @@ impl EncryptionEngine {
         }
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output =
-            run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
+        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
 
         let armor_str = if armor {
             String::from_utf8_lossy(&output).to_string()
@@ -155,8 +154,7 @@ impl EncryptionEngine {
         args.push("loopback".to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output =
-            run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
+        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
 
         let armor_str = if armor {
             String::from_utf8_lossy(&output).to_string()
@@ -184,8 +182,7 @@ impl EncryptionEngine {
         args.push("--decrypt".to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output =
-            run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
+        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
 
         info!("Decrypted data ({} bytes)", output.len());
 
