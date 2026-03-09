@@ -163,33 +163,25 @@ impl PermissionChecker {
         }
         self.grants
             .get(extension_id)
-            .map_or(false, |set| set.contains(permission))
+            .is_some_and(|set| set.contains(permission))
     }
 
     /// Check if an extension has ALL of the specified permissions.
-    pub fn has_all_permissions(
-        &self,
-        extension_id: &str,
-        permissions: &[Permission],
-    ) -> bool {
-        permissions.iter().all(|p| self.has_permission(extension_id, p))
+    pub fn has_all_permissions(&self, extension_id: &str, permissions: &[Permission]) -> bool {
+        permissions
+            .iter()
+            .all(|p| self.has_permission(extension_id, p))
     }
 
     /// Check if an extension has ANY of the specified permissions.
-    pub fn has_any_permission(
-        &self,
-        extension_id: &str,
-        permissions: &[Permission],
-    ) -> bool {
-        permissions.iter().any(|p| self.has_permission(extension_id, p))
+    pub fn has_any_permission(&self, extension_id: &str, permissions: &[Permission]) -> bool {
+        permissions
+            .iter()
+            .any(|p| self.has_permission(extension_id, p))
     }
 
     /// Enforce that an extension has a specific permission, returning an error if not.
-    pub fn enforce(
-        &self,
-        extension_id: &str,
-        permission: &Permission,
-    ) -> ExtResult<()> {
+    pub fn enforce(&self, extension_id: &str, permission: &Permission) -> ExtResult<()> {
         if !self.has_permission(extension_id, permission) {
             warn!(
                 "Permission denied for extension '{}': {:?}",
@@ -205,11 +197,7 @@ impl PermissionChecker {
     }
 
     /// Enforce that an extension has ALL of the specified permissions.
-    pub fn enforce_all(
-        &self,
-        extension_id: &str,
-        permissions: &[Permission],
-    ) -> ExtResult<()> {
+    pub fn enforce_all(&self, extension_id: &str, permissions: &[Permission]) -> ExtResult<()> {
         for perm in permissions {
             self.enforce(extension_id, perm)?;
         }
@@ -257,9 +245,7 @@ impl PermissionChecker {
     }
 
     /// Classify permissions as "safe" and "dangerous" for user review.
-    pub fn classify_permissions(
-        permissions: &[Permission],
-    ) -> (Vec<Permission>, Vec<Permission>) {
+    pub fn classify_permissions(permissions: &[Permission]) -> (Vec<Permission>, Vec<Permission>) {
         let mut safe = Vec::new();
         let mut dangerous = Vec::new();
         for perm in permissions {
@@ -288,7 +274,10 @@ mod tests {
     #[test]
     fn grant_and_check_permission() {
         let mut checker = PermissionChecker::new();
-        checker.grant("com.test.ext", &[Permission::StorageRead, Permission::StorageWrite]);
+        checker.grant(
+            "com.test.ext",
+            &[Permission::StorageRead, Permission::StorageWrite],
+        );
 
         assert!(checker.has_permission("com.test.ext", &Permission::StorageRead));
         assert!(checker.has_permission("com.test.ext", &Permission::StorageWrite));
@@ -298,7 +287,10 @@ mod tests {
     #[test]
     fn revoke_permission() {
         let mut checker = PermissionChecker::new();
-        checker.grant("com.test.ext", &[Permission::StorageRead, Permission::StorageWrite]);
+        checker.grant(
+            "com.test.ext",
+            &[Permission::StorageRead, Permission::StorageWrite],
+        );
         checker.revoke("com.test.ext", &Permission::StorageWrite);
 
         assert!(checker.has_permission("com.test.ext", &Permission::StorageRead));
@@ -308,7 +300,10 @@ mod tests {
     #[test]
     fn revoke_all() {
         let mut checker = PermissionChecker::new();
-        checker.grant("com.test.ext", &[Permission::StorageRead, Permission::StorageWrite]);
+        checker.grant(
+            "com.test.ext",
+            &[Permission::StorageRead, Permission::StorageWrite],
+        );
         checker.revoke_all("com.test.ext");
 
         assert!(!checker.has_permission("com.test.ext", &Permission::StorageRead));
@@ -337,7 +332,10 @@ mod tests {
     #[test]
     fn has_all_permissions() {
         let mut checker = PermissionChecker::new();
-        checker.grant("com.test.ext", &[Permission::StorageRead, Permission::StorageWrite]);
+        checker.grant(
+            "com.test.ext",
+            &[Permission::StorageRead, Permission::StorageWrite],
+        );
 
         assert!(checker.has_all_permissions(
             "com.test.ext",
@@ -369,7 +367,9 @@ mod tests {
         let mut checker = PermissionChecker::new();
         checker.grant("com.test.ext", &[Permission::StorageRead]);
 
-        assert!(checker.enforce("com.test.ext", &Permission::StorageRead).is_ok());
+        assert!(checker
+            .enforce("com.test.ext", &Permission::StorageRead)
+            .is_ok());
     }
 
     #[test]
@@ -384,13 +384,22 @@ mod tests {
     #[test]
     fn enforce_all_permissions() {
         let mut checker = PermissionChecker::new();
-        checker.grant("com.test.ext", &[Permission::StorageRead, Permission::StorageWrite]);
+        checker.grant(
+            "com.test.ext",
+            &[Permission::StorageRead, Permission::StorageWrite],
+        );
 
         assert!(checker
-            .enforce_all("com.test.ext", &[Permission::StorageRead, Permission::StorageWrite])
+            .enforce_all(
+                "com.test.ext",
+                &[Permission::StorageRead, Permission::StorageWrite]
+            )
             .is_ok());
         assert!(checker
-            .enforce_all("com.test.ext", &[Permission::StorageRead, Permission::FileRead])
+            .enforce_all(
+                "com.test.ext",
+                &[Permission::StorageRead, Permission::FileRead]
+            )
             .is_err());
     }
 
@@ -399,7 +408,9 @@ mod tests {
         assert!(PermissionChecker::is_dangerous(&Permission::ProcessExec));
         assert!(PermissionChecker::is_dangerous(&Permission::FileWrite));
         assert!(!PermissionChecker::is_dangerous(&Permission::StorageRead));
-        assert!(!PermissionChecker::is_dangerous(&Permission::NotificationSend));
+        assert!(!PermissionChecker::is_dangerous(
+            &Permission::NotificationSend
+        ));
     }
 
     #[test]
@@ -419,7 +430,11 @@ mod tests {
 
     #[test]
     fn dangerous_permissions_filter() {
-        let perms = vec![Permission::StorageRead, Permission::ProcessExec, Permission::EnvRead];
+        let perms = vec![
+            Permission::StorageRead,
+            Permission::ProcessExec,
+            Permission::EnvRead,
+        ];
         let dangerous = PermissionChecker::dangerous_permissions(&perms);
         assert_eq!(dangerous.len(), 2);
     }

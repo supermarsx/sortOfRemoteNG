@@ -271,7 +271,8 @@ pub async fn ext_create_manifest_template(
     extension_type: ExtensionType,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    let manifest = svc.create_manifest_template(id, name, version, description, author, extension_type);
+    let manifest =
+        svc.create_manifest_template(id, name, version, description, author, extension_type);
     svc.serialize_manifest(&manifest).map_err(err_str)
 }
 

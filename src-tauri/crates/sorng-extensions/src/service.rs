@@ -49,10 +49,7 @@ impl ExtensionsService {
     /// Create with custom config.
     pub fn with_config(config: EngineConfig) -> ExtensionsServiceState {
         let service = Self {
-            registry: ExtensionRegistry::with_limits(
-                config.max_extensions,
-                5000,
-            ),
+            registry: ExtensionRegistry::with_limits(config.max_extensions, 5000),
             permissions: PermissionChecker::new(),
             hooks: HookManager::new(),
             storage: ExtensionStorage::with_limits(
@@ -157,10 +154,9 @@ impl ExtensionsService {
             ));
         }
 
-        let script_src = state
-            .script_source
-            .as_ref()
-            .ok_or_else(|| ExtError::script(format!("Extension '{}' has no script", extension_id)))?;
+        let script_src = state.script_source.as_ref().ok_or_else(|| {
+            ExtError::script(format!("Extension '{}' has no script", extension_id))
+        })?;
 
         let sandbox_config = state.sandbox_config.clone();
 
@@ -215,8 +211,13 @@ impl ExtensionsService {
             match self.execute_handler(&ext_id, &handler_name, args) {
                 Ok(exec_result) => {
                     let duration_ms = start.elapsed().as_millis() as u64;
-                    self.hooks
-                        .record_dispatch(event, &ext_id, &handler_name, exec_result.success, exec_result.error.clone());
+                    self.hooks.record_dispatch(
+                        event,
+                        &ext_id,
+                        &handler_name,
+                        exec_result.success,
+                        exec_result.error.clone(),
+                    );
 
                     results.push(HookResult {
                         extension_id: ext_id,
@@ -230,8 +231,13 @@ impl ExtensionsService {
                 }
                 Err(e) => {
                     let duration_ms = start.elapsed().as_millis() as u64;
-                    self.hooks
-                        .record_dispatch(event, &ext_id, &handler_name, false, Some(e.message.clone()));
+                    self.hooks.record_dispatch(
+                        event,
+                        &ext_id,
+                        &handler_name,
+                        false,
+                        Some(e.message.clone()),
+                    );
 
                     results.push(HookResult {
                         extension_id: ext_id,
@@ -275,11 +281,7 @@ impl ExtensionsService {
     }
 
     /// Delete a value from extension storage.
-    pub fn storage_delete(
-        &mut self,
-        extension_id: &str,
-        key: &str,
-    ) -> ExtResult<bool> {
+    pub fn storage_delete(&mut self, extension_id: &str, key: &str) -> ExtResult<bool> {
         self.permissions
             .enforce(extension_id, &Permission::StorageWrite)?;
         Ok(self.storage.delete(extension_id, key))

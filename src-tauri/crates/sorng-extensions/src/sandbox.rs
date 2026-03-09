@@ -223,7 +223,11 @@ impl Sandbox {
     pub fn check_host_allowed(&self, host: &str) -> ExtResult<()> {
         self.check_network_access()?;
         if !self.config.allowed_hosts.is_empty()
-            && !self.config.allowed_hosts.iter().any(|h| h == host || h == "*")
+            && !self
+                .config
+                .allowed_hosts
+                .iter()
+                .any(|h| h == host || h == "*")
         {
             return Err(ExtError::sandbox(format!(
                 "Host '{}' is not in the allowed hosts list",
@@ -245,7 +249,11 @@ impl Sandbox {
     pub fn check_path_allowed(&self, path: &str) -> ExtResult<()> {
         self.check_file_access()?;
         if !self.config.allowed_paths.is_empty()
-            && !self.config.allowed_paths.iter().any(|p| path.starts_with(p) || p == "*")
+            && !self
+                .config
+                .allowed_paths
+                .iter()
+                .any(|p| path.starts_with(p) || p == "*")
         {
             return Err(ExtError::sandbox(format!(
                 "Path '{}' is not in the allowed paths list",

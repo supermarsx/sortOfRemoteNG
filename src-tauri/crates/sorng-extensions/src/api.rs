@@ -108,10 +108,9 @@ impl ApiRegistry {
         extension_id: &str,
         perm_checker: &PermissionChecker,
     ) -> ExtResult<()> {
-        let func = self
-            .functions
-            .get(function_name)
-            .ok_or_else(|| ExtError::api_unavailable(format!("API '{}' not found", function_name)))?;
+        let func = self.functions.get(function_name).ok_or_else(|| {
+            ExtError::api_unavailable(format!("API '{}' not found", function_name))
+        })?;
 
         for perm in &func.required_permissions {
             perm_checker.enforce(extension_id, perm)?;
@@ -247,7 +246,12 @@ impl ApiRegistry {
             name: "connections.list".into(),
             category: ApiCategory::Connections,
             description: "List all connections visible to the extension".into(),
-            parameters: vec![param_typed("filter", "Optional filter object", "object", false)],
+            parameters: vec![param_typed(
+                "filter",
+                "Optional filter object",
+                "object",
+                false,
+            )],
             required_permissions: vec![Permission::ConnectionRead],
             returns: Some("Connection[]".into()),
         });
@@ -265,7 +269,12 @@ impl ApiRegistry {
             name: "connections.create".into(),
             category: ApiCategory::Connections,
             description: "Create a new connection".into(),
-            parameters: vec![param_typed("connection", "Connection data object", "object", true)],
+            parameters: vec![param_typed(
+                "connection",
+                "Connection data object",
+                "object",
+                true,
+            )],
             required_permissions: vec![Permission::ConnectionWrite],
             returns: Some("string".into()),
         });
@@ -700,10 +709,14 @@ mod tests {
     fn http_functions_require_network_permission() {
         let reg = ApiRegistry::new();
         let http_get = reg.get("http.get").unwrap();
-        assert!(http_get.required_permissions.contains(&Permission::NetworkHttp));
+        assert!(http_get
+            .required_permissions
+            .contains(&Permission::NetworkHttp));
 
         let storage_get = reg.get("storage.get").unwrap();
-        assert!(!storage_get.required_permissions.contains(&Permission::NetworkHttp));
+        assert!(!storage_get
+            .required_permissions
+            .contains(&Permission::NetworkHttp));
     }
 
     #[test]

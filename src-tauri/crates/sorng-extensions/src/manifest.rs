@@ -19,7 +19,9 @@ pub fn validate_extension_id(id: &str) -> ExtResult<()> {
         return Err(ExtError::manifest("Extension ID cannot be empty"));
     }
     if id.len() > 128 {
-        return Err(ExtError::manifest("Extension ID cannot exceed 128 characters"));
+        return Err(ExtError::manifest(
+            "Extension ID cannot exceed 128 characters",
+        ));
     }
 
     let segments: Vec<&str> = id.split('.').collect();
@@ -31,9 +33,7 @@ pub fn validate_extension_id(id: &str) -> ExtResult<()> {
 
     for seg in &segments {
         if seg.is_empty() {
-            return Err(ExtError::manifest(
-                "Extension ID segments cannot be empty",
-            ));
+            return Err(ExtError::manifest("Extension ID segments cannot be empty"));
         }
         let first = seg.chars().next().unwrap();
         if !first.is_ascii_lowercase() {
@@ -42,7 +42,10 @@ pub fn validate_extension_id(id: &str) -> ExtResult<()> {
                 seg
             )));
         }
-        if !seg.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        if !seg
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
             return Err(ExtError::manifest(format!(
                 "Extension ID segment '{}' may only contain lowercase letters, digits, and hyphens",
                 seg
@@ -131,14 +134,12 @@ pub fn validate_manifest(manifest: &ExtensionManifest) -> ExtResult<()> {
 
     // Validate min/max app versions if set.
     if let Some(ref v) = manifest.min_app_version {
-        validate_version(v).map_err(|_| {
-            ExtError::manifest(format!("Invalid min_app_version: '{}'", v))
-        })?;
+        validate_version(v)
+            .map_err(|_| ExtError::manifest(format!("Invalid min_app_version: '{}'", v)))?;
     }
     if let Some(ref v) = manifest.max_app_version {
-        validate_version(v).map_err(|_| {
-            ExtError::manifest(format!("Invalid max_app_version: '{}'", v))
-        })?;
+        validate_version(v)
+            .map_err(|_| ExtError::manifest(format!("Invalid max_app_version: '{}'", v)))?;
     }
 
     // Validate hook registrations.
@@ -189,7 +190,7 @@ pub fn validate_manifest(manifest: &ExtensionManifest) -> ExtResult<()> {
         }
         if (setting.setting_type == SettingType::Select
             || setting.setting_type == SettingType::MultiSelect)
-            && setting.options.as_ref().map_or(true, |o| o.is_empty())
+            && setting.options.as_ref().is_none_or(|o| o.is_empty())
         {
             return Err(ExtError::manifest(format!(
                 "Setting '{}' of type {:?} must have at least one option",
@@ -311,10 +312,19 @@ mod tests {
 
     #[test]
     fn version_comparison() {
-        assert_eq!(compare_versions("1.0.0", "1.0.0"), std::cmp::Ordering::Equal);
-        assert_eq!(compare_versions("1.0.1", "1.0.0"), std::cmp::Ordering::Greater);
+        assert_eq!(
+            compare_versions("1.0.0", "1.0.0"),
+            std::cmp::Ordering::Equal
+        );
+        assert_eq!(
+            compare_versions("1.0.1", "1.0.0"),
+            std::cmp::Ordering::Greater
+        );
         assert_eq!(compare_versions("0.9.9", "1.0.0"), std::cmp::Ordering::Less);
-        assert_eq!(compare_versions("2.0.0", "1.9.9"), std::cmp::Ordering::Greater);
+        assert_eq!(
+            compare_versions("2.0.0", "1.9.9"),
+            std::cmp::Ordering::Greater
+        );
     }
 
     #[test]

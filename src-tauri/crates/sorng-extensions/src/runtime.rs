@@ -73,7 +73,10 @@ impl RuntimeEnv {
 
     /// Get a variable value, returning Null if not set.
     pub fn get_var(&self, name: &str) -> ScriptValue {
-        self.variables.get(name).cloned().unwrap_or(ScriptValue::Null)
+        self.variables
+            .get(name)
+            .cloned()
+            .unwrap_or(ScriptValue::Null)
     }
 
     /// Check whether a variable exists.
@@ -379,16 +382,14 @@ impl ScriptInterpreter {
                 try_block,
                 catch_var,
                 catch_block,
-            } => {
-                match self.execute_block(try_block, sandbox, env) {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        env.set_var(catch_var, ScriptValue::String(e.message.clone()));
-                        env.caught_error = Some(e.message);
-                        self.execute_block(catch_block, sandbox, env)
-                    }
+            } => match self.execute_block(try_block, sandbox, env) {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    env.set_var(catch_var, ScriptValue::String(e.message.clone()));
+                    env.caught_error = Some(e.message);
+                    self.execute_block(catch_block, sandbox, env)
                 }
-            }
+            },
 
             ScriptInstruction::Break => {
                 env.break_flag = true;
@@ -457,18 +458,22 @@ impl ScriptInterpreter {
         match op {
             CompareOp::Equal => left == right,
             CompareOp::NotEqual => left != right,
-            CompareOp::LessThan => {
-                left.as_float().zip(right.as_float()).map_or(false, |(a, b)| a < b)
-            }
-            CompareOp::LessEqual => {
-                left.as_float().zip(right.as_float()).map_or(false, |(a, b)| a <= b)
-            }
-            CompareOp::GreaterThan => {
-                left.as_float().zip(right.as_float()).map_or(false, |(a, b)| a > b)
-            }
-            CompareOp::GreaterEqual => {
-                left.as_float().zip(right.as_float()).map_or(false, |(a, b)| a >= b)
-            }
+            CompareOp::LessThan => left
+                .as_float()
+                .zip(right.as_float())
+                .is_some_and(|(a, b)| a < b),
+            CompareOp::LessEqual => left
+                .as_float()
+                .zip(right.as_float())
+                .is_some_and(|(a, b)| a <= b),
+            CompareOp::GreaterThan => left
+                .as_float()
+                .zip(right.as_float())
+                .is_some_and(|(a, b)| a > b),
+            CompareOp::GreaterEqual => left
+                .as_float()
+                .zip(right.as_float())
+                .is_some_and(|(a, b)| a >= b),
             CompareOp::Contains => {
                 let ls = left.to_display_string();
                 let rs = right.to_display_string();
@@ -487,7 +492,7 @@ impl ScriptInterpreter {
             CompareOp::Matches => {
                 if let Some(pattern) = right.as_str() {
                     let text = left.to_display_string();
-                    regex::Regex::new(pattern).map_or(false, |re| re.is_match(&text))
+                    regex::Regex::new(pattern).is_ok_and(|re| re.is_match(&text))
                 } else {
                     false
                 }
@@ -506,19 +511,28 @@ impl ScriptInterpreter {
 
         // string.upper
         self.register_api("string.upper", |args, _env| {
-            let s = args.first().map(|v| v.to_display_string()).unwrap_or_default();
+            let s = args
+                .first()
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
             Ok(ScriptValue::String(s.to_uppercase()))
         });
 
         // string.lower
         self.register_api("string.lower", |args, _env| {
-            let s = args.first().map(|v| v.to_display_string()).unwrap_or_default();
+            let s = args
+                .first()
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
             Ok(ScriptValue::String(s.to_lowercase()))
         });
 
         // string.trim
         self.register_api("string.trim", |args, _env| {
-            let s = args.first().map(|v| v.to_display_string()).unwrap_or_default();
+            let s = args
+                .first()
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
             Ok(ScriptValue::String(s.trim().to_string()))
         });
 
@@ -530,30 +544,54 @@ impl ScriptInterpreter {
 
         // string.split
         self.register_api("string.split", |args, _env| {
-            let s = args.first().map(|v| v.to_display_string()).unwrap_or_default();
+            let s = args
+                .first()
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
             let sep = args.get(1).and_then(|v| v.as_str()).unwrap_or(",");
-            let parts: Vec<ScriptValue> = s.split(sep).map(|p| ScriptValue::String(p.to_string())).collect();
+            let parts: Vec<ScriptValue> = s
+                .split(sep)
+                .map(|p| ScriptValue::String(p.to_string()))
+                .collect();
             Ok(ScriptValue::Array(parts))
         });
 
         // string.replace
         self.register_api("string.replace", |args, _env| {
-            let s = args.first().map(|v| v.to_display_string()).unwrap_or_default();
-            let from = args.get(1).map(|v| v.to_display_string()).unwrap_or_default();
-            let to = args.get(2).map(|v| v.to_display_string()).unwrap_or_default();
+            let s = args
+                .first()
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
+            let from = args
+                .get(1)
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
+            let to = args
+                .get(2)
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
             Ok(ScriptValue::String(s.replace(&from, &to)))
         });
 
         // string.contains
         self.register_api("string.contains", |args, _env| {
-            let s = args.first().map(|v| v.to_display_string()).unwrap_or_default();
-            let needle = args.get(1).map(|v| v.to_display_string()).unwrap_or_default();
+            let s = args
+                .first()
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
+            let needle = args
+                .get(1)
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
             Ok(ScriptValue::Bool(s.contains(&needle)))
         });
 
         // string.substring
         self.register_api("string.substring", |args, _env| {
-            let s = args.first().map(|v| v.to_display_string()).unwrap_or_default();
+            let s = args
+                .first()
+                .map(|v| v.to_display_string())
+                .unwrap_or_default();
             let start = args.get(1).and_then(|v| v.as_int()).unwrap_or(0) as usize;
             let len = args.get(2).and_then(|v| v.as_int()).map(|v| v as usize);
             let result = if let Some(l) = len {
@@ -640,11 +678,9 @@ impl ScriptInterpreter {
         });
 
         // array.length
-        self.register_api("array.length", |args, _env| {
-            match args.first() {
-                Some(ScriptValue::Array(arr)) => Ok(ScriptValue::Int(arr.len() as i64)),
-                _ => Ok(ScriptValue::Int(0)),
-            }
+        self.register_api("array.length", |args, _env| match args.first() {
+            Some(ScriptValue::Array(arr)) => Ok(ScriptValue::Int(arr.len() as i64)),
+            _ => Ok(ScriptValue::Int(0)),
         });
 
         // array.push
@@ -661,15 +697,13 @@ impl ScriptInterpreter {
         });
 
         // array.join
-        self.register_api("array.join", |args, _env| {
-            match args.first() {
-                Some(ScriptValue::Array(arr)) => {
-                    let sep = args.get(1).and_then(|v| v.as_str()).unwrap_or(",");
-                    let parts: Vec<String> = arr.iter().map(|v| v.to_display_string()).collect();
-                    Ok(ScriptValue::String(parts.join(sep)))
-                }
-                _ => Ok(ScriptValue::String(String::new())),
+        self.register_api("array.join", |args, _env| match args.first() {
+            Some(ScriptValue::Array(arr)) => {
+                let sep = args.get(1).and_then(|v| v.as_str()).unwrap_or(",");
+                let parts: Vec<String> = arr.iter().map(|v| v.to_display_string()).collect();
+                Ok(ScriptValue::String(parts.join(sep)))
             }
+            _ => Ok(ScriptValue::String(String::new())),
         });
 
         // json.parse
@@ -722,7 +756,11 @@ impl ScriptInterpreter {
 
         // env.set — set a variable in the environment
         self.register_api("env.set", |args, env| {
-            let name = args.first().and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = args
+                .first()
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let value = args.get(1).cloned().unwrap_or(ScriptValue::Null);
             if !name.is_empty() {
                 env.set_var(name, value);
@@ -883,10 +921,7 @@ mod tests {
                         },
                         ScriptInstruction::CallApi {
                             function: "math.add".into(),
-                            args: vec![
-                                ScriptValue::String("$count".into()),
-                                ScriptValue::Int(1),
-                            ],
+                            args: vec![ScriptValue::String("$count".into()), ScriptValue::Int(1)],
                             result_var: Some("count".into()),
                         },
                     ],
@@ -1296,10 +1331,7 @@ mod tests {
                     },
                     body: vec![ScriptInstruction::CallApi {
                         function: "math.add".into(),
-                        args: vec![
-                            ScriptValue::String("$i".into()),
-                            ScriptValue::Int(1),
-                        ],
+                        args: vec![ScriptValue::String("$i".into()), ScriptValue::Int(1)],
                         result_var: Some("i".into()),
                     }],
                 },
@@ -1326,17 +1358,27 @@ mod tests {
         script.handlers.insert(
             "logic_test".into(),
             vec![
-                ScriptInstruction::SetVar { name: "a".into(), value: ScriptValue::Bool(true) },
-                ScriptInstruction::SetVar { name: "b".into(), value: ScriptValue::Bool(false) },
+                ScriptInstruction::SetVar {
+                    name: "a".into(),
+                    value: ScriptValue::Bool(true),
+                },
+                ScriptInstruction::SetVar {
+                    name: "b".into(),
+                    value: ScriptValue::Bool(false),
+                },
                 ScriptInstruction::If {
                     condition: ScriptCondition::And(
                         Box::new(ScriptCondition::VarTruthy("a".into())),
-                        Box::new(ScriptCondition::Not(
-                            Box::new(ScriptCondition::VarTruthy("b".into())),
-                        )),
+                        Box::new(ScriptCondition::Not(Box::new(ScriptCondition::VarTruthy(
+                            "b".into(),
+                        )))),
                     ),
-                    then_block: vec![ScriptInstruction::Return { value: ScriptValue::String("pass".into()) }],
-                    else_block: vec![ScriptInstruction::Return { value: ScriptValue::String("fail".into()) }],
+                    then_block: vec![ScriptInstruction::Return {
+                        value: ScriptValue::String("pass".into()),
+                    }],
+                    else_block: vec![ScriptInstruction::Return {
+                        value: ScriptValue::String("fail".into()),
+                    }],
                 },
             ],
         );
@@ -1399,7 +1441,9 @@ mod tests {
         let mut sandbox = make_sandbox();
         let mut env = RuntimeEnv::new();
 
-        let result = interp.run_handler("contains_test", HashMap::new(), &mut sandbox, &mut env).unwrap();
+        let result = interp
+            .run_handler("contains_test", HashMap::new(), &mut sandbox, &mut env)
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.output, Some(serde_json::json!(true)));
     }
@@ -1430,7 +1474,9 @@ mod tests {
         let mut sandbox = make_sandbox();
         let mut env = RuntimeEnv::new();
 
-        let result = interp.run_handler("custom_api", HashMap::new(), &mut sandbox, &mut env).unwrap();
+        let result = interp
+            .run_handler("custom_api", HashMap::new(), &mut sandbox, &mut env)
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.output, Some(serde_json::json!(14)));
     }

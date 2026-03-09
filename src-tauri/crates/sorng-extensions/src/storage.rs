@@ -53,20 +53,12 @@ impl ExtensionStorage {
     // ── CRUD ────────────────────────────────────────────────────
 
     /// Get a value from extension storage.
-    pub fn get(
-        &self,
-        extension_id: &str,
-        key: &str,
-    ) -> Option<&StorageEntry> {
+    pub fn get(&self, extension_id: &str, key: &str) -> Option<&StorageEntry> {
         self.data.get(extension_id)?.get(key)
     }
 
     /// Get a value and deserialize it.
-    pub fn get_value(
-        &self,
-        extension_id: &str,
-        key: &str,
-    ) -> Option<serde_json::Value> {
+    pub fn get_value(&self, extension_id: &str, key: &str) -> Option<serde_json::Value> {
         self.get(extension_id, key).map(|e| e.value.clone())
     }
 
@@ -85,19 +77,25 @@ impl ExtensionStorage {
             return Err(ExtError::storage("Storage key too long (max 256 chars)"));
         }
 
-        let value_size = serde_json::to_string(&value)
-            .map(|s| s.len())
-            .unwrap_or(0);
+        let value_size = serde_json::to_string(&value).map(|s| s.len()).unwrap_or(0);
 
         // Compute sizes before acquiring mutable borrow on data.
         let current_ext_size = self.extension_size_bytes(extension_id);
         let total_size = self.total_size_bytes();
-        let old_size = self.data
+        let old_size = self
+            .data
             .get(extension_id)
             .and_then(|d| d.get(key))
-            .map(|e| serde_json::to_string(&e.value).map(|s| s.len()).unwrap_or(0))
+            .map(|e| {
+                serde_json::to_string(&e.value)
+                    .map(|s| s.len())
+                    .unwrap_or(0)
+            })
             .unwrap_or(0);
-        let key_exists = self.data.get(extension_id).map_or(false, |d| d.contains_key(key));
+        let key_exists = self
+            .data
+            .get(extension_id)
+            .is_some_and(|d| d.contains_key(key));
         let key_count = self.data.get(extension_id).map_or(0, |d| d.len());
 
         // Check per-extension size limit.
@@ -135,17 +133,22 @@ impl ExtensionStorage {
         let ext_data = self.data.entry(extension_id.to_string()).or_default();
 
         let now = Utc::now();
-        let entry = ext_data.entry(key.to_string()).or_insert_with(|| StorageEntry {
-            key: key.to_string(),
-            value: serde_json::Value::Null,
-            created_at: now,
-            updated_at: now,
-        });
+        let entry = ext_data
+            .entry(key.to_string())
+            .or_insert_with(|| StorageEntry {
+                key: key.to_string(),
+                value: serde_json::Value::Null,
+                created_at: now,
+                updated_at: now,
+            });
 
         entry.value = value;
         entry.updated_at = now;
 
-        debug!("Storage set: {}:{} ({} bytes)", extension_id, key, value_size);
+        debug!(
+            "Storage set: {}:{} ({} bytes)",
+            extension_id, key, value_size
+        );
         Ok(())
     }
 
@@ -220,7 +223,7 @@ impl ExtensionStorage {
     pub fn has_key(&self, extension_id: &str, key: &str) -> bool {
         self.data
             .get(extension_id)
-            .map_or(false, |d| d.contains_key(key))
+            .is_some_and(|d| d.contains_key(key))
     }
 
     /// Count keys for an extension.
@@ -232,7 +235,15 @@ impl ExtensionStorage {
     pub fn extension_size_bytes(&self, extension_id: &str) -> usize {
         self.data
             .get(extension_id)
-            .map(|d| d.values().map(|e| serde_json::to_string(&e.value).map(|s| s.len()).unwrap_or(0)).sum())
+            .map(|d| {
+                d.values()
+                    .map(|e| {
+                        serde_json::to_string(&e.value)
+                            .map(|s| s.len())
+                            .unwrap_or(0)
+                    })
+                    .sum()
+            })
             .unwrap_or(0)
     }
 
@@ -241,19 +252,31 @@ impl ExtensionStorage {
         self.data
             .values()
             .flat_map(|d| d.values())
-            .map(|e| serde_json::to_string(&e.value).map(|s| s.len()).unwrap_or(0))
+            .map(|e| {
+                serde_json::to_string(&e.value)
+                    .map(|s| s.len())
+                    .unwrap_or(0)
+            })
             .sum()
     }
 
     /// Get a summary of storage usage for an extension.
     pub fn extension_summary(&self, extension_id: &str) -> StorageSummary {
-        let entries: Vec<&StorageEntry> = self.data
+        let entries: Vec<&StorageEntry> = self
+            .data
             .get(extension_id)
             .map(|d| d.values().collect())
             .unwrap_or_default();
         StorageSummary {
             entry_count: entries.len(),
-            total_size_bytes: entries.iter().map(|e| serde_json::to_string(&e.value).map(|s| s.len() as u64).unwrap_or(0)).sum(),
+            total_size_bytes: entries
+                .iter()
+                .map(|e| {
+                    serde_json::to_string(&e.value)
+                        .map(|s| s.len() as u64)
+                        .unwrap_or(0)
+                })
+                .sum(),
             oldest_entry: entries.iter().map(|e| e.created_at).min(),
             newest_entry: entries.iter().map(|e| e.updated_at).max(),
         }
@@ -301,11 +324,7 @@ impl ExtensionStorage {
     }
 
     /// Import values from a JSON object into extension storage.
-    pub fn import(
-        &mut self,
-        extension_id: &str,
-        data: serde_json::Value,
-    ) -> ExtResult<usize> {
+    pub fn import(&mut self, extension_id: &str, data: serde_json::Value) -> ExtResult<usize> {
         let obj = data
             .as_object()
             .ok_or_else(|| ExtError::storage("Import data must be a JSON object"))?;
@@ -334,7 +353,9 @@ mod tests {
     #[test]
     fn set_and_get() {
         let mut store = ExtensionStorage::new();
-        store.set("ext.a", "key1", serde_json::json!("value1")).unwrap();
+        store
+            .set("ext.a", "key1", serde_json::json!("value1"))
+            .unwrap();
 
         let val = store.get_value("ext.a", "key1").unwrap();
         assert_eq!(val, serde_json::json!("value1"));
@@ -433,7 +454,9 @@ mod tests {
     #[test]
     fn total_storage_limit() {
         let mut store = ExtensionStorage::with_limits(10_000_000, 10_000, 50);
-        store.set("ext.a", "k1", serde_json::json!("short")).unwrap();
+        store
+            .set("ext.a", "k1", serde_json::json!("short"))
+            .unwrap();
         let result = store.set("ext.a", "k2", serde_json::json!("x".repeat(100)));
         assert!(result.is_err());
     }
@@ -449,7 +472,9 @@ mod tests {
     #[test]
     fn extension_size_bytes() {
         let mut store = ExtensionStorage::new();
-        store.set("ext.a", "key", serde_json::json!("value")).unwrap();
+        store
+            .set("ext.a", "key", serde_json::json!("value"))
+            .unwrap();
         assert!(store.extension_size_bytes("ext.a") > 0);
         assert_eq!(store.extension_size_bytes("ext.unknown"), 0);
     }
@@ -494,9 +519,15 @@ mod tests {
     #[test]
     fn keys_with_prefix() {
         let mut store = ExtensionStorage::new();
-        store.set("ext.a", "config.host", serde_json::json!("localhost")).unwrap();
-        store.set("ext.a", "config.port", serde_json::json!(8080)).unwrap();
-        store.set("ext.a", "data.items", serde_json::json!([])).unwrap();
+        store
+            .set("ext.a", "config.host", serde_json::json!("localhost"))
+            .unwrap();
+        store
+            .set("ext.a", "config.port", serde_json::json!(8080))
+            .unwrap();
+        store
+            .set("ext.a", "data.items", serde_json::json!([]))
+            .unwrap();
 
         let config_keys = store.keys_with_prefix("ext.a", "config.");
         assert_eq!(config_keys.len(), 2);
@@ -537,8 +568,12 @@ mod tests {
     #[test]
     fn total_size_bytes() {
         let mut store = ExtensionStorage::new();
-        store.set("ext.a", "k1", serde_json::json!("hello")).unwrap();
-        store.set("ext.b", "k2", serde_json::json!("world")).unwrap();
+        store
+            .set("ext.a", "k1", serde_json::json!("hello"))
+            .unwrap();
+        store
+            .set("ext.b", "k2", serde_json::json!("world"))
+            .unwrap();
 
         assert!(store.total_size_bytes() > 0);
     }

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 use log::debug;
 
-use crate::permissions::{PermissionChecker};
+use crate::permissions::PermissionChecker;
 use crate::types::*;
 
 // ─── HookRegistrationEntry (internal) ───────────────────────────────
@@ -372,9 +372,7 @@ pub fn key_to_event(key: &str) -> Option<HookEvent> {
         "data.backup_created" => Some(HookEvent::BackupCreated),
         "scheduled.task_triggered" => Some(HookEvent::ScheduledTaskTriggered),
         "scheduled.timer_fired" => Some(HookEvent::TimerFired),
-        other if other.starts_with("custom.") => {
-            Some(HookEvent::Custom(other[7..].to_string()))
-        }
+        other if other.starts_with("custom.") => Some(HookEvent::Custom(other[7..].to_string())),
         _ => None,
     }
 }
@@ -388,10 +386,7 @@ mod tests {
 
     fn make_checker_with_subscribe(ext_id: &str) -> PermissionChecker {
         let mut checker = PermissionChecker::new();
-        checker.grant(
-            ext_id,
-            &[Permission::EventSubscribe, Permission::EventEmit],
-        );
+        checker.grant(ext_id, &[Permission::EventSubscribe, Permission::EventEmit]);
         checker
     }
 
@@ -409,8 +404,7 @@ mod tests {
     fn register_rejects_without_permission() {
         let mut mgr = HookManager::new();
         let checker = PermissionChecker::new(); // no permissions
-        let result =
-            mgr.register("ext.a", &HookEvent::AppStartup, "on_startup", 10, &checker);
+        let result = mgr.register("ext.a", &HookEvent::AppStartup, "on_startup", 10, &checker);
         assert!(result.is_err());
     }
 
@@ -574,7 +568,13 @@ mod tests {
         let mut mgr = HookManager::new();
         mgr.record_dispatch(&HookEvent::AppStartup, "ext.a", "h1", true, None);
         mgr.record_dispatch(&HookEvent::AppStartup, "ext.b", "h2", true, None);
-        mgr.record_dispatch(&HookEvent::AppShutdown, "ext.a", "h3", false, Some("err".into()));
+        mgr.record_dispatch(
+            &HookEvent::AppShutdown,
+            "ext.a",
+            "h3",
+            false,
+            Some("err".into()),
+        );
 
         let ext_a = mgr.extension_dispatches("ext.a");
         assert_eq!(ext_a.len(), 2);

@@ -479,7 +479,7 @@ impl Default for SandboxConfig {
 }
 
 /// Tracks resource utilization during sandboxed execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SandboxMetrics {
     /// Instructions executed so far.
     pub instructions_executed: u64,
@@ -493,19 +493,6 @@ pub struct SandboxMetrics {
     pub total_api_calls: u64,
     /// Wall-clock time elapsed in milliseconds.
     pub elapsed_ms: u64,
-}
-
-impl Default for SandboxMetrics {
-    fn default() -> Self {
-        Self {
-            instructions_executed: 0,
-            memory_used_bytes: 0,
-            current_call_depth: 0,
-            api_calls_this_minute: 0,
-            total_api_calls: 0,
-            elapsed_ms: 0,
-        }
-    }
 }
 
 // ─── Extension Manifest ─────────────────────────────────────────────
@@ -795,11 +782,9 @@ impl From<ScriptValue> for serde_json::Value {
             ScriptValue::Null => serde_json::Value::Null,
             ScriptValue::Bool(b) => serde_json::Value::Bool(b),
             ScriptValue::Int(i) => serde_json::Value::Number(serde_json::Number::from(i)),
-            ScriptValue::Float(f) => {
-                serde_json::Number::from_f64(f)
-                    .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null)
-            }
+            ScriptValue::Float(f) => serde_json::Number::from_f64(f)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
             ScriptValue::String(s) => serde_json::Value::String(s),
             ScriptValue::Array(arr) => {
                 serde_json::Value::Array(arr.into_iter().map(serde_json::Value::from).collect())
@@ -819,10 +804,7 @@ impl From<ScriptValue> for serde_json::Value {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ScriptInstruction {
     /// Set a variable: `let <name> = <expression>`.
-    SetVar {
-        name: String,
-        value: ScriptValue,
-    },
+    SetVar { name: String, value: ScriptValue },
     /// Call a built-in API function.
     CallApi {
         function: String,
@@ -848,23 +830,16 @@ pub enum ScriptInstruction {
         body: Vec<ScriptInstruction>,
     },
     /// Return a value.
-    Return {
-        value: ScriptValue,
-    },
+    Return { value: ScriptValue },
     /// Log a message (maps to log::info!).
-    Log {
-        level: LogLevel,
-        message: String,
-    },
+    Log { level: LogLevel, message: String },
     /// Emit a custom event.
     EmitEvent {
         event_name: String,
         data: ScriptValue,
     },
     /// Sleep / delay in milliseconds.
-    Sleep {
-        ms: u64,
-    },
+    Sleep { ms: u64 },
     /// Try-catch block for error handling.
     TryCatch {
         try_block: Vec<ScriptInstruction>,
@@ -876,9 +851,7 @@ pub enum ScriptInstruction {
     /// Continue to the next iteration of a loop.
     Continue,
     /// No-op (used for comments / markers).
-    Noop {
-        comment: Option<String>,
-    },
+    Noop { comment: Option<String> },
 }
 
 /// Conditions for if/while instructions.
@@ -927,7 +900,7 @@ pub enum LogLevel {
 }
 
 /// A parsed extension script — a named collection of handlers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExtensionScript {
     /// Named handler functions in the script.
     pub handlers: HashMap<String, Vec<ScriptInstruction>>,
@@ -935,16 +908,6 @@ pub struct ExtensionScript {
     pub init: Vec<ScriptInstruction>,
     /// Cleanup instructions (run on unload).
     pub cleanup: Vec<ScriptInstruction>,
-}
-
-impl Default for ExtensionScript {
-    fn default() -> Self {
-        Self {
-            handlers: HashMap::new(),
-            init: Vec::new(),
-            cleanup: Vec::new(),
-        }
-    }
 }
 
 /// The result of executing a script handler.
@@ -1178,8 +1141,8 @@ mod tests {
         let err = ExtError::manifest("missing 'id' field");
         assert_eq!(err.to_string(), "ManifestInvalid: missing 'id' field");
 
-        let err_with_ext = ExtError::permission_denied("network access denied")
-            .with_ext("com.example.test");
+        let err_with_ext =
+            ExtError::permission_denied("network access denied").with_ext("com.example.test");
         assert!(err_with_ext.to_string().contains("com.example.test"));
         assert!(err_with_ext.to_string().contains("network access denied"));
     }
@@ -1188,7 +1151,10 @@ mod tests {
     fn status_display() {
         assert_eq!(ExtensionStatus::Enabled.to_string(), "enabled");
         assert_eq!(ExtensionStatus::Disabled.to_string(), "disabled");
-        assert_eq!(ExtensionStatus::PendingRemoval.to_string(), "pending_removal");
+        assert_eq!(
+            ExtensionStatus::PendingRemoval.to_string(),
+            "pending_removal"
+        );
     }
 
     #[test]
@@ -1244,8 +1210,7 @@ mod tests {
 
     #[test]
     fn hook_registration_builder() {
-        let hook = HookRegistration::new(HookEvent::AppStartup, "on_startup")
-            .with_priority(50);
+        let hook = HookRegistration::new(HookEvent::AppStartup, "on_startup").with_priority(50);
         assert_eq!(hook.priority, 50);
         assert!(hook.enabled);
         assert_eq!(hook.handler, "on_startup");
@@ -1294,8 +1259,7 @@ mod tests {
 
     #[test]
     fn error_with_extension_id() {
-        let err = ExtError::not_found("no such extension")
-            .with_ext("com.example.missing");
+        let err = ExtError::not_found("no such extension").with_ext("com.example.missing");
         assert_eq!(err.extension_id.as_deref(), Some("com.example.missing"));
         assert_eq!(err.kind, ExtErrorKind::NotFound);
     }

@@ -66,10 +66,7 @@ impl ExtensionRegistry {
         if self.extensions.len() >= self.max_extensions {
             return Err(ExtError::new(
                 ExtErrorKind::InvalidState,
-                format!(
-                    "Extension limit reached ({})",
-                    self.max_extensions
-                ),
+                format!("Extension limit reached ({})", self.max_extensions),
             ));
         }
 
@@ -304,11 +301,7 @@ impl ExtensionRegistry {
     // ── Record Execution ────────────────────────────────────────
 
     /// Record an execution of a handler.
-    pub fn record_execution(
-        &mut self,
-        extension_id: &str,
-        duration_ms: u64,
-    ) -> ExtResult<()> {
+    pub fn record_execution(&mut self, extension_id: &str, duration_ms: u64) -> ExtResult<()> {
         let state = self
             .extensions
             .get_mut(extension_id)
@@ -352,11 +345,7 @@ impl ExtensionRegistry {
     }
 
     /// Remove an extension setting.
-    pub fn remove_setting(
-        &mut self,
-        extension_id: &str,
-        key: &str,
-    ) -> ExtResult<bool> {
+    pub fn remove_setting(&mut self, extension_id: &str, key: &str) -> ExtResult<bool> {
         let state = self
             .extensions
             .get_mut(extension_id)
@@ -381,7 +370,7 @@ impl ExtensionRegistry {
     pub fn is_enabled(&self, extension_id: &str) -> bool {
         self.extensions
             .get(extension_id)
-            .map_or(false, |s| s.status == ExtensionStatus::Enabled)
+            .is_some_and(|s| s.status == ExtensionStatus::Enabled)
     }
 
     /// Get all extension IDs.
@@ -403,10 +392,7 @@ impl ExtensionRegistry {
     }
 
     /// List extensions with flexible filtering and sorting.
-    pub fn list_extensions(
-        &self,
-        filter: &ExtensionFilter,
-    ) -> Vec<ExtensionSummary> {
+    pub fn list_extensions(&self, filter: &ExtensionFilter) -> Vec<ExtensionSummary> {
         let mut results: Vec<ExtensionSummary> = self
             .extensions
             .values()
@@ -477,13 +463,9 @@ impl ExtensionRegistry {
         results.sort_by(|a, b| {
             let ord = match sort_field {
                 ExtensionSortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                ExtensionSortField::Author => {
-                    a.author.to_lowercase().cmp(&b.author.to_lowercase())
-                }
+                ExtensionSortField::Author => a.author.to_lowercase().cmp(&b.author.to_lowercase()),
                 ExtensionSortField::InstalledAt => a.installed_at.cmp(&b.installed_at),
-                ExtensionSortField::ExecutionCount => {
-                    a.execution_count.cmp(&b.execution_count)
-                }
+                ExtensionSortField::ExecutionCount => a.execution_count.cmp(&b.execution_count),
                 ExtensionSortField::Status => a.status.to_string().cmp(&b.status.to_string()),
                 ExtensionSortField::UpdatedAt => a.installed_at.cmp(&b.installed_at),
             };
@@ -508,8 +490,8 @@ impl ExtensionRegistry {
             total_hooks: 0, // Updated externally.
             total_executions: self.extensions.values().map(|s| s.execution_count).sum(),
             total_storage_entries: 0, // Updated externally.
-            total_storage_bytes: 0, // Updated externally.
-            uptime_seconds: 0, // Updated externally.
+            total_storage_bytes: 0,   // Updated externally.
+            uptime_seconds: 0,        // Updated externally.
             api_calls_this_minute: 0, // Updated externally.
         }
     }
@@ -933,10 +915,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            reg.get_setting("com.test.ext", "key").unwrap(),
-            None
-        );
+        assert_eq!(reg.get_setting("com.test.ext", "key").unwrap(), None);
 
         reg.set_setting("com.test.ext", "key", serde_json::json!("value"))
             .unwrap();
@@ -1153,9 +1132,30 @@ mod tests {
         let mut perms = PermissionChecker::new();
         let mut hooks = HookManager::new();
 
-        reg.install(make_manifest("com.a", "A"), None, None, &mut perms, &mut hooks).unwrap();
-        reg.install(make_manifest("com.b", "B"), None, None, &mut perms, &mut hooks).unwrap();
-        reg.install(make_manifest("com.c", "C"), None, None, &mut perms, &mut hooks).unwrap();
+        reg.install(
+            make_manifest("com.a", "A"),
+            None,
+            None,
+            &mut perms,
+            &mut hooks,
+        )
+        .unwrap();
+        reg.install(
+            make_manifest("com.b", "B"),
+            None,
+            None,
+            &mut perms,
+            &mut hooks,
+        )
+        .unwrap();
+        reg.install(
+            make_manifest("com.c", "C"),
+            None,
+            None,
+            &mut perms,
+            &mut hooks,
+        )
+        .unwrap();
         reg.enable("com.a").unwrap();
         reg.enable("com.b").unwrap();
         reg.mark_error("com.c", "broken").unwrap();
