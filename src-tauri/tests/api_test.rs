@@ -1,24 +1,24 @@
 use std::sync::Arc;
 
 // Import our services from the library
+use app_lib::agent::AgentService;
+use app_lib::api::ApiService;
 use app_lib::auth::AuthService;
-use app_lib::ssh::SshService;
+use app_lib::aws::AwsService;
+use app_lib::cloudflare::CloudflareService;
+use app_lib::commander::CommanderService;
 use app_lib::db::DbService;
 use app_lib::ftp::FtpService;
-use app_lib::network::NetworkService;
-use app_lib::security::SecurityService;
-use app_lib::wol::WolService;
-use app_lib::qr::QrService;
-use app_lib::rustdesk::RustDeskService;
-use app_lib::wmi::WmiService;
-use app_lib::rpc::RpcService;
 use app_lib::meshcentral::MeshCentralService;
-use app_lib::agent::AgentService;
-use app_lib::commander::CommanderService;
-use app_lib::aws::AwsService;
+use app_lib::network::NetworkService;
+use app_lib::qr::QrService;
+use app_lib::rpc::RpcService;
+use app_lib::rustdesk::RustDeskService;
+use app_lib::security::SecurityService;
+use app_lib::ssh::SshService;
 use app_lib::vercel::VercelService;
-use app_lib::cloudflare::CloudflareService;
-use app_lib::api::ApiService;
+use app_lib::wmi::WmiService;
+use app_lib::wol::WolService;
 
 #[tokio::test]
 async fn test_api_server_startup() {

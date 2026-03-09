@@ -51,14 +51,22 @@ async fn test_encrypt_decrypt_round_trip() {
     let test_key = "my_secret_key_12345";
 
     // Encrypt the data
-    let encrypt_result = service.lock().await.encrypt_data(test_data.to_string(), test_key.to_string()).await;
+    let encrypt_result = service
+        .lock()
+        .await
+        .encrypt_data(test_data.to_string(), test_key.to_string())
+        .await;
     assert!(encrypt_result.is_ok());
     let encrypted = encrypt_result.unwrap();
     assert!(!encrypted.is_empty());
     assert_ne!(encrypted, test_data);
 
     // Decrypt the data
-    let decrypt_result = service.lock().await.decrypt_data(encrypted, test_key.to_string()).await;
+    let decrypt_result = service
+        .lock()
+        .await
+        .decrypt_data(encrypted, test_key.to_string())
+        .await;
     assert!(decrypt_result.is_ok());
     let decrypted = decrypt_result.unwrap();
     assert_eq!(decrypted, test_data);
@@ -70,8 +78,18 @@ async fn test_encrypt_different_keys() {
     let service = SecurityService::new();
     let test_data = "Same data, different keys";
 
-    let result1 = service.lock().await.encrypt_data(test_data.to_string(), "key1".to_string()).await.unwrap();
-    let result2 = service.lock().await.encrypt_data(test_data.to_string(), "key2".to_string()).await.unwrap();
+    let result1 = service
+        .lock()
+        .await
+        .encrypt_data(test_data.to_string(), "key1".to_string())
+        .await
+        .unwrap();
+    let result2 = service
+        .lock()
+        .await
+        .encrypt_data(test_data.to_string(), "key2".to_string())
+        .await
+        .unwrap();
 
     assert_ne!(result1, result2);
 }
@@ -84,9 +102,18 @@ async fn test_decrypt_wrong_key() {
     let correct_key = "correct_key";
     let wrong_key = "wrong_key";
 
-    let encrypted = service.lock().await.encrypt_data(test_data.to_string(), correct_key.to_string()).await.unwrap();
+    let encrypted = service
+        .lock()
+        .await
+        .encrypt_data(test_data.to_string(), correct_key.to_string())
+        .await
+        .unwrap();
 
-    let decrypt_result = service.lock().await.decrypt_data(encrypted, wrong_key.to_string()).await;
+    let decrypt_result = service
+        .lock()
+        .await
+        .decrypt_data(encrypted, wrong_key.to_string())
+        .await;
     assert!(decrypt_result.is_err());
 }
 
@@ -96,12 +123,21 @@ async fn test_encrypt_empty_data() {
     let service = SecurityService::new();
     let test_key = "test_key";
 
-    let result = service.lock().await.encrypt_data("".to_string(), test_key.to_string()).await;
+    let result = service
+        .lock()
+        .await
+        .encrypt_data("".to_string(), test_key.to_string())
+        .await;
     assert!(result.is_ok());
     let encrypted = result.unwrap();
     assert!(!encrypted.is_empty());
 
-    let decrypted = service.lock().await.decrypt_data(encrypted, test_key.to_string()).await.unwrap();
+    let decrypted = service
+        .lock()
+        .await
+        .decrypt_data(encrypted, test_key.to_string())
+        .await
+        .unwrap();
     assert_eq!(decrypted, "");
 }
 
@@ -110,7 +146,11 @@ async fn test_encrypt_empty_data() {
 async fn test_decrypt_empty_data() {
     let service = SecurityService::new();
 
-    let result = service.lock().await.decrypt_data("".to_string(), "key".to_string()).await;
+    let result = service
+        .lock()
+        .await
+        .decrypt_data("".to_string(), "key".to_string())
+        .await;
     assert!(result.is_err()); // Empty data should fail to decrypt
 }
 
@@ -127,8 +167,18 @@ async fn test_concurrent_encryption() {
         let key = format!("key{}", i);
 
         let handle = tokio::spawn(async move {
-            let encrypted = service_clone.lock().await.encrypt_data(data.clone(), key.clone()).await.unwrap();
-            let decrypted = service_clone.lock().await.decrypt_data(encrypted, key).await.unwrap();
+            let encrypted = service_clone
+                .lock()
+                .await
+                .encrypt_data(data.clone(), key.clone())
+                .await
+                .unwrap();
+            let decrypted = service_clone
+                .lock()
+                .await
+                .decrypt_data(encrypted, key)
+                .await
+                .unwrap();
             assert_eq!(decrypted, data);
         });
         handles.push(handle);

@@ -14,7 +14,10 @@ use app_lib::native_renderer::RenderBackend;
 #[test]
 fn render_backend_from_str_known_values() {
     assert_eq!(RenderBackend::from_str("webview"), RenderBackend::Webview);
-    assert_eq!(RenderBackend::from_str("softbuffer"), RenderBackend::Softbuffer);
+    assert_eq!(
+        RenderBackend::from_str("softbuffer"),
+        RenderBackend::Softbuffer
+    );
     assert_eq!(RenderBackend::from_str("wgpu"), RenderBackend::Wgpu);
     assert_eq!(RenderBackend::from_str("gpu"), RenderBackend::Wgpu);
     assert_eq!(RenderBackend::from_str("auto"), RenderBackend::Auto);
@@ -22,7 +25,10 @@ fn render_backend_from_str_known_values() {
 
 #[test]
 fn render_backend_from_str_case_insensitive() {
-    assert_eq!(RenderBackend::from_str("Softbuffer"), RenderBackend::Softbuffer);
+    assert_eq!(
+        RenderBackend::from_str("Softbuffer"),
+        RenderBackend::Softbuffer
+    );
     assert_eq!(RenderBackend::from_str("WGPU"), RenderBackend::Wgpu);
     assert_eq!(RenderBackend::from_str("AUTO"), RenderBackend::Auto);
     assert_eq!(RenderBackend::from_str("WebView"), RenderBackend::Webview);
@@ -51,16 +57,28 @@ fn render_backend_as_str_round_trips() {
 
 #[test]
 fn render_backend_is_native_classification() {
-    assert!(!RenderBackend::Webview.is_native(), "webview should not be native");
-    assert!(RenderBackend::Softbuffer.is_native(), "softbuffer should be native");
+    assert!(
+        !RenderBackend::Webview.is_native(),
+        "webview should not be native"
+    );
+    assert!(
+        RenderBackend::Softbuffer.is_native(),
+        "softbuffer should be native"
+    );
     assert!(RenderBackend::Wgpu.is_native(), "wgpu should be native");
     assert!(RenderBackend::Auto.is_native(), "auto should be native");
 }
 
 #[test]
 fn render_backend_is_composited() {
-    assert!(!RenderBackend::Webview.is_composited(), "webview is not composited");
-    assert!(RenderBackend::Softbuffer.is_composited(), "softbuffer is composited");
+    assert!(
+        !RenderBackend::Webview.is_composited(),
+        "webview is not composited"
+    );
+    assert!(
+        RenderBackend::Softbuffer.is_composited(),
+        "softbuffer is composited"
+    );
     assert!(RenderBackend::Wgpu.is_composited(), "wgpu is composited");
     assert!(RenderBackend::Auto.is_composited(), "auto is composited");
 }
@@ -82,7 +100,10 @@ mod compositor_tests {
     #[test]
     fn softbuffer_compositor_flush_when_clean_returns_none() {
         let mut comp = SoftbufferCompositor::new(64, 48);
-        assert!(comp.flush().is_none(), "flush on clean compositor should return None");
+        assert!(
+            comp.flush().is_none(),
+            "flush on clean compositor should return None"
+        );
     }
 
     #[test]
@@ -93,8 +114,8 @@ mod compositor_tests {
         let mut image_data = vec![0u8; 64 * 48 * 4];
         for pixel in image_data.chunks_exact_mut(4) {
             pixel[0] = 255; // R
-            pixel[1] = 0;   // G
-            pixel[2] = 0;   // B
+            pixel[1] = 0; // G
+            pixel[2] = 0; // B
             pixel[3] = 255; // A
         }
 
@@ -111,8 +132,8 @@ mod compositor_tests {
 
         // Verify pixel data: first pixel should be red
         assert_eq!(frame.rgba[0], 255); // R
-        assert_eq!(frame.rgba[1], 0);   // G
-        assert_eq!(frame.rgba[2], 0);   // B
+        assert_eq!(frame.rgba[1], 0); // G
+        assert_eq!(frame.rgba[2], 0); // B
         assert_eq!(frame.rgba[3], 255); // A
 
         // After flush, should no longer be dirty
@@ -163,7 +184,7 @@ mod compositor_tests {
         let image_data = vec![128u8; 100 * 100 * 4];
 
         // Two separate updates that should merge into one bounding rect
-        comp.update_region(&image_data, 100, 10, 10, 5, 5);  // (10,10)-(14,14)
+        comp.update_region(&image_data, 100, 10, 10, 5, 5); // (10,10)-(14,14)
         comp.update_region(&image_data, 100, 50, 50, 10, 10); // (50,50)-(59,59)
 
         let frame = comp.flush().expect("should flush merged region");
@@ -225,7 +246,10 @@ mod compositor_tests {
     #[test]
     fn create_compositor_wgpu_falls_back() {
         let result = native_renderer::create_compositor(&RenderBackend::Wgpu, 320, 240);
-        assert!(result.is_some(), "wgpu compositor should be created (CPU fallback)");
+        assert!(
+            result.is_some(),
+            "wgpu compositor should be created (CPU fallback)"
+        );
         let (comp, name) = result.unwrap();
         // Currently WgpuCompositor delegates to softbuffer
         assert!(name == "wgpu" || name == "softbuffer");

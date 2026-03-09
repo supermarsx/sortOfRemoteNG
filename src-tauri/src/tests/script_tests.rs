@@ -1,4 +1,4 @@
-use crate::script::{ScriptService, ScriptContext};
+use crate::script::{ScriptContext, ScriptService};
 use crate::ssh::SshService;
 
 /// Helper function to create a script service with a mock SSH service
@@ -26,11 +26,11 @@ async fn test_execute_javascript_simple() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        "2 + 2".to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+    let result = service
+        .lock()
+        .await
+        .execute_script("2 + 2".to_string(), "javascript".to_string(), context)
+        .await;
 
     assert!(result.is_ok());
     let script_result = result.unwrap();
@@ -48,11 +48,15 @@ async fn test_execute_javascript_console_log() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        r#""console.log test""#.to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+    let result = service
+        .lock()
+        .await
+        .execute_script(
+            r#""console.log test""#.to_string(),
+            "javascript".to_string(),
+            context,
+        )
+        .await;
 
     if let Err(ref e) = result {
         println!("Error: {}", e);
@@ -73,15 +77,20 @@ async fn test_execute_javascript_variables() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        r#"
+    let result = service
+        .lock()
+        .await
+        .execute_script(
+            r#"
         let x = 10;
         let y = 20;
         x + y
-        "#.to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+        "#
+            .to_string(),
+            "javascript".to_string(),
+            context,
+        )
+        .await;
 
     assert!(result.is_ok());
     let script_result = result.unwrap();
@@ -99,16 +108,21 @@ async fn test_execute_javascript_function() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        r#"
+    let result = service
+        .lock()
+        .await
+        .execute_script(
+            r#"
         function add(a, b) {
             return a + b;
         }
         add(5, 3)
-        "#.to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+        "#
+            .to_string(),
+            "javascript".to_string(),
+            context,
+        )
+        .await;
 
     assert!(result.is_ok());
     let script_result = result.unwrap();
@@ -126,11 +140,15 @@ async fn test_execute_javascript_syntax_error() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        "function broken { return 1; }".to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+    let result = service
+        .lock()
+        .await
+        .execute_script(
+            "function broken { return 1; }".to_string(),
+            "javascript".to_string(),
+            context,
+        )
+        .await;
 
     // Should handle syntax errors gracefully
     assert!(result.is_ok() || result.is_err());
@@ -147,11 +165,11 @@ async fn test_execute_javascript_dangerous_code() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        "eval('2+2')".to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+    let result = service
+        .lock()
+        .await
+        .execute_script("eval('2+2')".to_string(), "javascript".to_string(), context)
+        .await;
 
     // Should be blocked due to security check
     assert!(result.is_err());
@@ -168,11 +186,15 @@ async fn test_execute_javascript_require_blocked() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        "require('fs')".to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+    let result = service
+        .lock()
+        .await
+        .execute_script(
+            "require('fs')".to_string(),
+            "javascript".to_string(),
+            context,
+        )
+        .await;
 
     // Should be blocked due to security check
     assert!(result.is_err());
@@ -189,11 +211,15 @@ async fn test_execute_javascript_function_constructor_blocked() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        "new Function('return 1')()".to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+    let result = service
+        .lock()
+        .await
+        .execute_script(
+            "new Function('return 1')()".to_string(),
+            "javascript".to_string(),
+            context,
+        )
+        .await;
 
     // Should be blocked due to security check
     assert!(result.is_err());
@@ -210,11 +236,11 @@ async fn test_execute_unsupported_script_type() {
         trigger: "test".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        "print('hello')".to_string(),
-        "python".to_string(),
-        context,
-    ).await;
+    let result = service
+        .lock()
+        .await
+        .execute_script("print('hello')".to_string(), "python".to_string(), context)
+        .await;
 
     // Should return error for unsupported script type
     assert!(result.is_err());
@@ -231,14 +257,19 @@ async fn test_execute_script_with_connection_context() {
         trigger: "connection_event".to_string(),
     };
 
-    let result = service.lock().await.execute_script(
-        r#"
+    let result = service
+        .lock()
+        .await
+        .execute_script(
+            r#"
 // Script with connection context - simplified test
 "Connection context test executed"
-        "#.to_string(),
-        "javascript".to_string(),
-        context,
-    ).await;
+        "#
+            .to_string(),
+            "javascript".to_string(),
+            context,
+        )
+        .await;
 
     assert!(result.is_ok());
     let script_result = result.unwrap();

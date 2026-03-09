@@ -2,8 +2,8 @@
 mod tests {
     use crate::ssh::*;
     use crate::ssh::{
-        default_true, default_keepalive_probes, default_rdp_port, default_vnc_port, default_ftp_port,
-        generate_totp_code, RDP_TUNNELS, VNC_TUNNELS, FTP_TUNNELS
+        default_ftp_port, default_keepalive_probes, default_rdp_port, default_true,
+        default_vnc_port, generate_totp_code, FTP_TUNNELS, RDP_TUNNELS, VNC_TUNNELS,
     };
     use chrono::Utc;
     use uuid::Uuid;
@@ -122,27 +122,32 @@ mod tests {
         let tid = format!("rdp_test_{}", Uuid::new_v4());
         {
             let mut tunnels = RDP_TUNNELS.lock().unwrap();
-            tunnels.insert(tid.clone(), RdpTunnelStatus {
-                tunnel_id: tid.clone(),
-                session_id: "test_session".to_string(),
-                local_port: 13389,
-                remote_rdp_host: "192.168.1.100".to_string(),
-                remote_rdp_port: 3389,
-                forward_id: "fwd_test".to_string(),
-                bind_address: "127.0.0.1".to_string(),
-                label: None,
-                nla_enabled: true,
-                enable_udp: false,
-                connection_string: "localhost:13389".to_string(),
-                created_at: Utc::now(),
-            });
+            tunnels.insert(
+                tid.clone(),
+                RdpTunnelStatus {
+                    tunnel_id: tid.clone(),
+                    session_id: "test_session".to_string(),
+                    local_port: 13389,
+                    remote_rdp_host: "192.168.1.100".to_string(),
+                    remote_rdp_port: 3389,
+                    forward_id: "fwd_test".to_string(),
+                    bind_address: "127.0.0.1".to_string(),
+                    label: None,
+                    nla_enabled: true,
+                    enable_udp: false,
+                    connection_string: "localhost:13389".to_string(),
+                    created_at: Utc::now(),
+                },
+            );
         }
         let result = generate_rdp_file(tid.clone(), None);
         assert!(result.is_ok());
         let rdp = result.unwrap();
         assert!(rdp.contains("full address:s:localhost:13389"));
         assert!(rdp.contains("enablecredsspsupport:i:1"));
-        { RDP_TUNNELS.lock().unwrap().remove(&tid); }
+        {
+            RDP_TUNNELS.lock().unwrap().remove(&tid);
+        }
     }
 
     #[test]
@@ -216,7 +221,10 @@ mod tests {
     fn test_recording_entry_type() {
         let output = RecordingEntryType::Output;
         let input = RecordingEntryType::Input;
-        let resize = RecordingEntryType::Resize { cols: 120, rows: 40 };
+        let resize = RecordingEntryType::Resize {
+            cols: 120,
+            rows: 40,
+        };
         assert!(serde_json::to_string(&output).unwrap().contains("Output"));
         assert!(serde_json::to_string(&input).unwrap().contains("Input"));
         assert!(serde_json::to_string(&resize).unwrap().contains("120"));
@@ -313,65 +321,83 @@ mod tests {
     fn test_rdp_tunnel_storage() {
         let tid = format!("rdp_st_{}", Uuid::new_v4());
         {
-            RDP_TUNNELS.lock().unwrap().insert(tid.clone(), RdpTunnelStatus {
-                tunnel_id: tid.clone(),
-                session_id: "s1".to_string(),
-                local_port: 33389,
-                remote_rdp_host: "h".to_string(),
-                remote_rdp_port: 3389,
-                forward_id: "f".to_string(),
-                bind_address: "127.0.0.1".to_string(),
-                label: None,
-                nla_enabled: true,
-                enable_udp: false,
-                connection_string: "localhost:33389".to_string(),
-                created_at: Utc::now(),
-            });
+            RDP_TUNNELS.lock().unwrap().insert(
+                tid.clone(),
+                RdpTunnelStatus {
+                    tunnel_id: tid.clone(),
+                    session_id: "s1".to_string(),
+                    local_port: 33389,
+                    remote_rdp_host: "h".to_string(),
+                    remote_rdp_port: 3389,
+                    forward_id: "f".to_string(),
+                    bind_address: "127.0.0.1".to_string(),
+                    label: None,
+                    nla_enabled: true,
+                    enable_udp: false,
+                    connection_string: "localhost:33389".to_string(),
+                    created_at: Utc::now(),
+                },
+            );
         }
         assert!(get_rdp_tunnel_status(tid.clone()).unwrap().is_some());
-        assert!(list_rdp_tunnels().unwrap().iter().any(|t| t.tunnel_id == tid));
-        { RDP_TUNNELS.lock().unwrap().remove(&tid); }
+        assert!(list_rdp_tunnels()
+            .unwrap()
+            .iter()
+            .any(|t| t.tunnel_id == tid));
+        {
+            RDP_TUNNELS.lock().unwrap().remove(&tid);
+        }
     }
 
     #[test]
     fn test_vnc_tunnel_storage() {
         let tid = format!("vnc_st_{}", Uuid::new_v4());
         {
-            VNC_TUNNELS.lock().unwrap().insert(tid.clone(), VncTunnelStatus {
-                tunnel_id: tid.clone(),
-                session_id: "s2".to_string(),
-                local_port: 25900,
-                remote_vnc_host: "h".to_string(),
-                remote_vnc_port: 5900,
-                forward_id: "f".to_string(),
-                bind_address: "127.0.0.1".to_string(),
-                label: None,
-                connection_string: "localhost:25900".to_string(),
-                created_at: Utc::now(),
-            });
+            VNC_TUNNELS.lock().unwrap().insert(
+                tid.clone(),
+                VncTunnelStatus {
+                    tunnel_id: tid.clone(),
+                    session_id: "s2".to_string(),
+                    local_port: 25900,
+                    remote_vnc_host: "h".to_string(),
+                    remote_vnc_port: 5900,
+                    forward_id: "f".to_string(),
+                    bind_address: "127.0.0.1".to_string(),
+                    label: None,
+                    connection_string: "localhost:25900".to_string(),
+                    created_at: Utc::now(),
+                },
+            );
         }
         assert!(get_vnc_tunnel_status(tid.clone()).unwrap().is_some());
-        { VNC_TUNNELS.lock().unwrap().remove(&tid); }
+        {
+            VNC_TUNNELS.lock().unwrap().remove(&tid);
+        }
     }
 
     #[test]
     fn test_ftp_tunnel_storage() {
         let tid = format!("ftp_st_{}", Uuid::new_v4());
         {
-            FTP_TUNNELS.lock().unwrap().insert(tid.clone(), FtpTunnelStatus {
-                tunnel_id: tid.clone(),
-                session_id: "s3".to_string(),
-                local_control_port: 2121,
-                remote_ftp_host: "h".to_string(),
-                remote_ftp_port: 21,
-                passive_mode: true,
-                passive_ports: vec![],
-                control_forward_id: "c".to_string(),
-                data_forward_ids: vec![],
-            });
+            FTP_TUNNELS.lock().unwrap().insert(
+                tid.clone(),
+                FtpTunnelStatus {
+                    tunnel_id: tid.clone(),
+                    session_id: "s3".to_string(),
+                    local_control_port: 2121,
+                    remote_ftp_host: "h".to_string(),
+                    remote_ftp_port: 21,
+                    passive_mode: true,
+                    passive_ports: vec![],
+                    control_forward_id: "c".to_string(),
+                    data_forward_ids: vec![],
+                },
+            );
         }
         assert!(get_ftp_tunnel_status(tid.clone()).unwrap().is_some());
-        { FTP_TUNNELS.lock().unwrap().remove(&tid); }
+        {
+            FTP_TUNNELS.lock().unwrap().remove(&tid);
+        }
     }
 
     // ===== Default Tests =====
