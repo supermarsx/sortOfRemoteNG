@@ -19,7 +19,8 @@ impl<'a> LicenseManager<'a> {
         if let Ok(rf) = self.client.require_redfish() {
             let data: serde_json::Value = rf.get_license().await?;
 
-            let tier_str = data.get("LicenseType")
+            let tier_str = data
+                .get("LicenseType")
                 .or_else(|| data.get("License"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("Standard");
@@ -34,23 +35,33 @@ impl<'a> LicenseManager<'a> {
 
             return Ok(IloLicense {
                 tier,
-                key: data.get("LicenseKey")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                license_string: data.get("LicenseString")
+                key: data
+                    .get("LicenseKey")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                license_string: data
+                    .get("LicenseString")
                     .or_else(|| data.get("License"))
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                expiration: data.get("LicenseExpire")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                install_date: data.get("LicenseInstallDate")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                expiration: data
+                    .get("LicenseExpire")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                install_date: data
+                    .get("LicenseInstallDate")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {
             let data = ribcl.get_license().await?;
 
-            let tier_str = data.get("LICENSE_TYPE")
-                .and_then(|v| v.as_str()).unwrap_or("Standard");
+            let tier_str = data
+                .get("LICENSE_TYPE")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Standard");
 
             let tier = match tier_str.to_lowercase().as_str() {
                 s if s.contains("advanced") => IloLicenseTier::Advanced,
@@ -60,24 +71,35 @@ impl<'a> LicenseManager<'a> {
 
             return Ok(IloLicense {
                 tier,
-                key: data.get("LICENSE_KEY")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                license_string: data.get("LICENSE_TYPE")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                key: data
+                    .get("LICENSE_KEY")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                license_string: data
+                    .get("LICENSE_TYPE")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 expiration: None,
-                install_date: data.get("LICENSE_INSTALL_DATE")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                install_date: data
+                    .get("LICENSE_INSTALL_DATE")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
 
-        Err(IloError::unsupported("No protocol available for license info"))
+        Err(IloError::unsupported(
+            "No protocol available for license info",
+        ))
     }
 
     /// Activate a license key.
     pub async fn activate_license(&self, key: &str) -> IloResult<()> {
         if let Ok(rf) = self.client.require_redfish() {
             let gen = self.client.generation;
-            let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
+            let path = if matches!(
+                gen,
+                IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7
+            ) {
                 "/redfish/v1/Managers/1/LicenseService/1"
             } else {
                 "/redfish/v1/Managers/1/LicenseService"
@@ -93,13 +115,17 @@ impl<'a> LicenseManager<'a> {
             return Ok(());
         }
 
-        Err(IloError::unsupported("No protocol available for license activation"))
+        Err(IloError::unsupported(
+            "No protocol available for license activation",
+        ))
     }
 
     /// Delete/deactivate the current license.
     pub async fn deactivate_license(&self) -> IloResult<()> {
         let rf = self.client.require_redfish()?;
-        rf.inner.delete("/redfish/v1/Managers/1/LicenseService/1").await?;
+        rf.inner
+            .delete("/redfish/v1/Managers/1/LicenseService/1")
+            .await?;
         Ok(())
     }
 }

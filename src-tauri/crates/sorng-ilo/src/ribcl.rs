@@ -114,10 +114,14 @@ impl RibclClient {
 
         // Check for RIBCL-level errors in the XML response
         if body.contains("STATUS=\"0x0002\"") {
-            return Err(IloError::auth("RIBCL authentication failed — bad credentials"));
+            return Err(IloError::auth(
+                "RIBCL authentication failed — bad credentials",
+            ));
         }
         if body.contains("STATUS=\"0x0003\"") {
-            return Err(IloError::access_denied("RIBCL access denied — insufficient privileges"));
+            return Err(IloError::access_denied(
+                "RIBCL access denied — insufficient privileges",
+            ));
         }
         if body.contains("STATUS=\"0x0004\"") {
             return Err(IloError::ribcl("RIBCL resource not found"));
@@ -437,8 +441,7 @@ impl RibclClient {
         let resp = self.send_command(csr_xml).await?;
 
         // Extract the CSR PEM from the response
-        let csr = Self::extract_cdata(&resp)
-            .unwrap_or_else(|| resp.clone());
+        let csr = Self::extract_cdata(&resp).unwrap_or_else(|| resp.clone());
         Ok(csr)
     }
 
@@ -524,21 +527,28 @@ impl RibclClient {
             let trimmed = line.trim();
 
             // Skip XML declaration and RIBCL/LOGIN wrappers
-            if trimmed.starts_with("<?") || trimmed.starts_with("<RIBCL")
-                || trimmed.starts_with("</RIBCL") || trimmed.starts_with("<LOGIN")
-                || trimmed.starts_with("</LOGIN") || trimmed.starts_with("<RESPONSE")
+            if trimmed.starts_with("<?")
+                || trimmed.starts_with("<RIBCL")
+                || trimmed.starts_with("</RIBCL")
+                || trimmed.starts_with("<LOGIN")
+                || trimmed.starts_with("</LOGIN")
+                || trimmed.starts_with("<RESPONSE")
                 || trimmed.is_empty()
             {
                 continue;
             }
 
             // Detect section start (e.g., <GET_HOST_DATA>, <DRIVES>)
-            if trimmed.starts_with('<') && !trimmed.starts_with("</") && !trimmed.contains("VALUE=") {
-                if let Some(tag_end) = trimmed.find(|c: char| c == ' ' || c == '>' || c == '/') {
+            if trimmed.starts_with('<') && !trimmed.starts_with("</") && !trimmed.contains("VALUE=")
+            {
+                if let Some(tag_end) = trimmed.find([' ', '>', '/']) {
                     let tag = &trimmed[1..tag_end];
                     if !trimmed.ends_with("/>") && !trimmed.contains("</") {
                         if in_section && !section_items.is_empty() {
-                            map.insert(section_name.clone(), serde_json::Value::Array(section_items.clone()));
+                            map.insert(
+                                section_name.clone(),
+                                serde_json::Value::Array(section_items.clone()),
+                            );
                             section_items.clear();
                         }
                         section_name = tag.to_string();
@@ -551,12 +561,15 @@ impl RibclClient {
             // Extract VALUE="..." attributes from self-closing tags
             if trimmed.contains("VALUE=\"") {
                 if let Some(tag_start) = trimmed.find('<') {
-                    if let Some(tag_end) = trimmed[tag_start + 1..].find(|c: char| c == ' ' || c == '/' || c == '>') {
+                    if let Some(tag_end) = trimmed[tag_start + 1..].find([' ', '/', '>']) {
                         let key = &trimmed[tag_start + 1..tag_start + 1 + tag_end];
                         if let Some(val) = Self::extract_xml_value(trimmed, "VALUE") {
                             if in_section {
                                 let mut item = serde_json::Map::new();
-                                item.insert("key".to_string(), serde_json::Value::String(key.to_string()));
+                                item.insert(
+                                    "key".to_string(),
+                                    serde_json::Value::String(key.to_string()),
+                                );
                                 item.insert("value".to_string(), serde_json::Value::String(val));
                                 section_items.push(serde_json::Value::Object(item));
                             } else {
@@ -570,7 +583,10 @@ impl RibclClient {
             // Section end
             if trimmed.starts_with("</") {
                 if in_section && !section_items.is_empty() {
-                    map.insert(section_name.clone(), serde_json::Value::Array(section_items.clone()));
+                    map.insert(
+                        section_name.clone(),
+                        serde_json::Value::Array(section_items.clone()),
+                    );
                     section_items.clear();
                 }
                 in_section = false;

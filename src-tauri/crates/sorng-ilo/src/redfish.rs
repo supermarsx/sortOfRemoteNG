@@ -23,11 +23,10 @@
 //! | Boot order             | `/redfish/v1/Systems/1/BootOptions`                      | 5+   |
 //! | Directory (LDAP/AD)    | `/redfish/v1/AccountService/DirectoryService`            | 5+   |
 
-use crate::error::{IloError, IloResult};
+use crate::error::IloResult;
 use crate::types::IloGeneration;
 
 use sorng_bmc_common::redfish::{RedfishClient, RedfishConfig};
-use sorng_bmc_common::types::OdataLink;
 
 /// iLO Redfish client with HP OEM extensions.
 pub struct IloRedfishClient {
@@ -67,13 +66,18 @@ impl IloRedfishClient {
         let user = self.inner.login(use_session).await?;
 
         // Detect generation from Manager endpoint
-        if let Ok(mgr) = self.inner.get::<serde_json::Value>("/redfish/v1/Managers/1").await {
+        if let Ok(mgr) = self
+            .inner
+            .get::<serde_json::Value>("/redfish/v1/Managers/1")
+            .await
+        {
             if let Some(fw) = mgr.get("FirmwareVersion").and_then(|v| v.as_str()) {
                 self.firmware_version = Some(fw.to_string());
             }
 
             // Detect generation from OEM block
-            let oem = mgr.get("Oem")
+            let oem = mgr
+                .get("Oem")
                 .and_then(|o| o.get("Hpe").or_else(|| o.get("Hp")));
 
             if let Some(oem_data) = oem {
@@ -155,10 +159,10 @@ impl IloRedfishClient {
     /// Send a Redfish reset (power) action.
     pub async fn power_action(&self, reset_type: &str) -> IloResult<Option<String>> {
         let body = serde_json::json!({ "ResetType": reset_type });
-        Ok(self.inner.post_action(
-            "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset",
-            &body,
-        ).await?)
+        Ok(self
+            .inner
+            .post_action("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", &body)
+            .await?)
     }
 
     /// Get power data from chassis.
@@ -182,58 +186,64 @@ impl IloRedfishClient {
 
     /// Get DMTF standard storage (iLO 5+).
     pub async fn get_storage_collection(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded("/redfish/v1/Systems/1/Storage").await?)
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Systems/1/Storage")
+            .await?)
     }
 
     // ── Network ─────────────────────────────────────────────────────
 
     /// Get network adapters.
     pub async fn get_network_adapters(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/Systems/1/NetworkAdapters"
-        ).await.unwrap_or_default())
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Systems/1/NetworkAdapters")
+            .await
+            .unwrap_or_default())
     }
 
     /// Get iLO ethernet interfaces (the BMC's own NICs).
     pub async fn get_ilo_ethernet(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/Managers/1/EthernetInterfaces"
-        ).await?)
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Managers/1/EthernetInterfaces")
+            .await?)
     }
 
     // ── Firmware ────────────────────────────────────────────────────
 
     /// Get firmware inventory.
     pub async fn get_firmware_inventory(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/UpdateService/FirmwareInventory"
-        ).await?)
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/UpdateService/FirmwareInventory")
+            .await?)
     }
 
     // ── Virtual Media ───────────────────────────────────────────────
 
     /// Get virtual media devices.
     pub async fn get_virtual_media(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/Managers/1/VirtualMedia"
-        ).await?)
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Managers/1/VirtualMedia")
+            .await?)
     }
 
     /// Insert virtual media.
-    pub async fn insert_virtual_media(
-        &self,
-        media_id: &str,
-        image_url: &str,
-    ) -> IloResult<()> {
+    pub async fn insert_virtual_media(&self, media_id: &str, image_url: &str) -> IloResult<()> {
         let body = serde_json::json!({
             "Image": image_url,
             "Inserted": true,
             "WriteProtected": true
         });
-        self.inner.patch_json(
-            &format!("/redfish/v1/Managers/1/VirtualMedia/{media_id}"),
-            &body,
-        ).await?;
+        self.inner
+            .patch_json(
+                &format!("/redfish/v1/Managers/1/VirtualMedia/{media_id}"),
+                &body,
+            )
+            .await?;
         Ok(())
     }
 
@@ -243,10 +253,12 @@ impl IloRedfishClient {
             "Image": null,
             "Inserted": false
         });
-        self.inner.patch_json(
-            &format!("/redfish/v1/Managers/1/VirtualMedia/{media_id}"),
-            &body,
-        ).await?;
+        self.inner
+            .patch_json(
+                &format!("/redfish/v1/Managers/1/VirtualMedia/{media_id}"),
+                &body,
+            )
+            .await?;
         Ok(())
     }
 
@@ -254,35 +266,41 @@ impl IloRedfishClient {
 
     /// Get IML (Integrated Management Log) entries.
     pub async fn get_iml_entries(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/Systems/1/LogServices/IML/Entries"
-        ).await?)
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Systems/1/LogServices/IML/Entries")
+            .await?)
     }
 
     /// Get iLO Event Log entries.
     pub async fn get_ilo_event_log(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/Managers/1/LogServices/IEL/Entries"
-        ).await?)
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Managers/1/LogServices/IEL/Entries")
+            .await?)
     }
 
     /// Clear IML.
     pub async fn clear_iml(&self) -> IloResult<()> {
         let body = serde_json::json!({});
-        self.inner.post_action(
-            "/redfish/v1/Systems/1/LogServices/IML/Actions/LogService.ClearLog",
-            &body,
-        ).await?;
+        self.inner
+            .post_action(
+                "/redfish/v1/Systems/1/LogServices/IML/Actions/LogService.ClearLog",
+                &body,
+            )
+            .await?;
         Ok(())
     }
 
     /// Clear iLO event log.
     pub async fn clear_ilo_event_log(&self) -> IloResult<()> {
         let body = serde_json::json!({});
-        self.inner.post_action(
-            "/redfish/v1/Managers/1/LogServices/IEL/Actions/LogService.ClearLog",
-            &body,
-        ).await?;
+        self.inner
+            .post_action(
+                "/redfish/v1/Managers/1/LogServices/IEL/Actions/LogService.ClearLog",
+                &body,
+            )
+            .await?;
         Ok(())
     }
 
@@ -290,9 +308,10 @@ impl IloRedfishClient {
 
     /// Get all accounts.
     pub async fn get_accounts(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/AccountService/Accounts"
-        ).await?)
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/AccountService/Accounts")
+            .await?)
     }
 
     // ── BIOS ────────────────────────────────────────────────────────
@@ -303,14 +322,10 @@ impl IloRedfishClient {
     }
 
     /// Set BIOS attributes (applied on next reboot).
-    pub async fn set_bios_attributes(
-        &self,
-        attrs: &serde_json::Value,
-    ) -> IloResult<()> {
-        self.inner.patch_json(
-            "/redfish/v1/Systems/1/Bios/Settings",
-            attrs,
-        ).await?;
+    pub async fn set_bios_attributes(&self, attrs: &serde_json::Value) -> IloResult<()> {
+        self.inner
+            .patch_json("/redfish/v1/Systems/1/Bios/Settings", attrs)
+            .await?;
         Ok(())
     }
 
@@ -320,39 +335,50 @@ impl IloRedfishClient {
     pub async fn get_certificate(&self) -> IloResult<serde_json::Value> {
         // iLO 5+: /redfish/v1/Managers/1/SecurityService/HttpsCert
         // iLO 4:  /redfish/v1/Managers/1/SecurityService/HttpsCert
-        Ok(self.inner.get(
-            "/redfish/v1/Managers/1/SecurityService/HttpsCert"
-        ).await?)
+        Ok(self
+            .inner
+            .get("/redfish/v1/Managers/1/SecurityService/HttpsCert")
+            .await?)
     }
 
     // ── License ─────────────────────────────────────────────────────
 
     /// Get license info.
     pub async fn get_license(&self) -> IloResult<serde_json::Value> {
-        Ok(self.inner.get("/redfish/v1/Managers/1/LicenseService/1").await?)
+        Ok(self
+            .inner
+            .get("/redfish/v1/Managers/1/LicenseService/1")
+            .await?)
     }
 
     // ── Security ────────────────────────────────────────────────────
 
     /// Get security parameters (iLO 5+).
     pub async fn get_security_params(&self) -> IloResult<serde_json::Value> {
-        Ok(self.inner.get("/redfish/v1/Managers/1/SecurityService").await?)
+        Ok(self
+            .inner
+            .get("/redfish/v1/Managers/1/SecurityService")
+            .await?)
     }
 
     // ── Federation ──────────────────────────────────────────────────
 
     /// Get federation groups (iLO 5+).
     pub async fn get_federation_groups(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/Managers/1/FederationGroups"
-        ).await.unwrap_or_default())
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Managers/1/FederationGroups")
+            .await
+            .unwrap_or_default())
     }
 
     /// Get federation peers via multicast discovery.
     pub async fn get_federation_peers(&self) -> IloResult<Vec<serde_json::Value>> {
-        Ok(self.inner.get_collection_expanded(
-            "/redfish/v1/Managers/1/FederationPeers"
-        ).await.unwrap_or_default())
+        Ok(self
+            .inner
+            .get_collection_expanded("/redfish/v1/Managers/1/FederationPeers")
+            .await
+            .unwrap_or_default())
     }
 
     // ── Console ─────────────────────────────────────────────────────
@@ -361,7 +387,8 @@ impl IloRedfishClient {
     pub async fn get_console_info(&self) -> IloResult<serde_json::Value> {
         // OEM path for console info
         let mgr: serde_json::Value = self.inner.get("/redfish/v1/Managers/1").await?;
-        let oem = mgr.get("Oem")
+        let oem = mgr
+            .get("Oem")
             .and_then(|o| o.get("Hpe").or_else(|| o.get("Hp")));
 
         let mut info = serde_json::Map::new();
@@ -386,10 +413,9 @@ impl IloRedfishClient {
     /// Reset the iLO processor.
     pub async fn reset_ilo(&self) -> IloResult<()> {
         let body = serde_json::json!({ "ResetType": "GracefulRestart" });
-        self.inner.post_action(
-            "/redfish/v1/Managers/1/Actions/Manager.Reset",
-            &body,
-        ).await?;
+        self.inner
+            .post_action("/redfish/v1/Managers/1/Actions/Manager.Reset", &body)
+            .await?;
         Ok(())
     }
 }

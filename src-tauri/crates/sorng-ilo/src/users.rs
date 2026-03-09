@@ -21,23 +21,37 @@ impl<'a> UserManager<'a> {
             let mut users = Vec::new();
 
             for acct in &accounts {
-                    let username = acct.get("UserName").and_then(|v| v.as_str()).unwrap_or("");
-                    if username.is_empty() {
-                        continue;
-                    }
+                let username = acct.get("UserName").and_then(|v| v.as_str()).unwrap_or("");
+                if username.is_empty() {
+                    continue;
+                }
 
-                    let oem = acct.get("Oem")
-                        .and_then(|o| o.get("Hpe").or_else(|| o.get("Hp")));
-                    let _ = oem; // OEM data available for HP-specific privileges
+                let oem = acct
+                    .get("Oem")
+                    .and_then(|o| o.get("Hpe").or_else(|| o.get("Hp")));
+                let _ = oem; // OEM data available for HP-specific privileges
 
-                    users.push(BmcUser {
-                        id: acct.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        username: username.to_string(),
-                        role: acct.get("RoleId")
-                            .and_then(|v| v.as_str()).unwrap_or("ReadOnly").to_string(),
-                        enabled: acct.get("Enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                        locked: acct.get("Locked").and_then(|v| v.as_bool()).unwrap_or(false),
-                    });
+                users.push(BmcUser {
+                    id: acct
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    username: username.to_string(),
+                    role: acct
+                        .get("RoleId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("ReadOnly")
+                        .to_string(),
+                    enabled: acct
+                        .get("Enabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                    locked: acct
+                        .get("Locked")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                });
             }
             return Ok(users);
         }
@@ -54,8 +68,11 @@ impl<'a> UserManager<'a> {
                     }
 
                     users.push(BmcUser {
-                        id: user.get("USER_LOGIN").and_then(|v| v.as_str())
-                            .unwrap_or(username).to_string(),
+                        id: user
+                            .get("USER_LOGIN")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(username)
+                            .to_string(),
                         username: username.to_string(),
                         role: "Unknown".to_string(),
                         enabled: true,
@@ -66,23 +83,22 @@ impl<'a> UserManager<'a> {
             return Ok(users);
         }
 
-        Err(IloError::unsupported("No protocol available for user management"))
+        Err(IloError::unsupported(
+            "No protocol available for user management",
+        ))
     }
 
     /// Create a new user account.
-    pub async fn create_user(
-        &self,
-        username: &str,
-        password: &str,
-        role: &str,
-    ) -> IloResult<()> {
+    pub async fn create_user(&self, username: &str, password: &str, role: &str) -> IloResult<()> {
         let rf = self.client.require_redfish()?;
         let body = serde_json::json!({
             "UserName": username,
             "Password": password,
             "RoleId": role,
         });
-        rf.inner.post_json::<_, ()>("/redfish/v1/AccountService/Accounts", &body).await?;
+        rf.inner
+            .post_json::<_, ()>("/redfish/v1/AccountService/Accounts", &body)
+            .await?;
         Ok(())
     }
 

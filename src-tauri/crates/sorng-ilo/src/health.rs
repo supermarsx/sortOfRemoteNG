@@ -19,14 +19,24 @@ impl<'a> HealthManager<'a> {
         if let Ok(rf) = self.client.require_redfish() {
             let sys: serde_json::Value = rf.get_system().await?;
 
-            let system_health = sys.get("Status").and_then(|s| s.get("Health"))
-                .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+            let system_health = sys
+                .get("Status")
+                .and_then(|s| s.get("Health"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
 
-            let proc_health = sys.pointer("/ProcessorSummary/Status/Health")
-                .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+            let proc_health = sys
+                .pointer("/ProcessorSummary/Status/Health")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
 
-            let memory_health = sys.pointer("/MemorySummary/Status/Health")
-                .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+            let memory_health = sys
+                .pointer("/MemorySummary/Status/Health")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
 
             return Ok(BmcHealthRollup {
                 overall: system_health,
@@ -44,7 +54,8 @@ impl<'a> HealthManager<'a> {
             let health = ribcl.get_embedded_health().await?;
 
             let get_status = |section: &str| -> String {
-                health.get(section)
+                health
+                    .get(section)
                     .and_then(|d| d.get("STATUS"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown")
@@ -64,13 +75,15 @@ impl<'a> HealthManager<'a> {
             });
         }
 
-        Err(IloError::unsupported("No protocol available for health status"))
+        Err(IloError::unsupported(
+            "No protocol available for health status",
+        ))
     }
 
     /// Get an aggregated dashboard view.
     pub async fn get_dashboard(&self) -> IloResult<IloDashboard> {
-        use crate::system::SystemManager;
         use crate::power::PowerManager;
+        use crate::system::SystemManager;
         use crate::thermal::ThermalManager;
 
         let system = SystemManager::new(self.client);

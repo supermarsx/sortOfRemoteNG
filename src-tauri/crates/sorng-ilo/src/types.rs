@@ -6,9 +6,9 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export the vendor-neutral types so consumers only need `sorng_ilo::types::*`
-pub use sorng_bmc_common::types::*;
 pub use sorng_bmc_common::power::PowerAction;
 pub use sorng_bmc_common::redfish::RedfishSession;
+pub use sorng_bmc_common::types::*;
 
 /// Helper to build a ComponentHealth from a simple status string.
 pub fn component_health(status: &str) -> ComponentHealth {
@@ -55,7 +55,10 @@ impl IloGeneration {
 
     /// Whether RIBCL XML is supported on this generation.
     pub fn supports_ribcl(&self) -> bool {
-        matches!(self, Self::Ilo1 | Self::Ilo2 | Self::Ilo3 | Self::Ilo4 | Self::Ilo5)
+        matches!(
+            self,
+            Self::Ilo1 | Self::Ilo2 | Self::Ilo3 | Self::Ilo4 | Self::Ilo5
+        )
     }
 
     /// Whether HTML5 remote console is available.

@@ -82,7 +82,7 @@ impl IloClient {
             self.config.insecure,
             self.config.timeout_secs,
         )?;
-        let user = client.login(use_session).await?;
+        let _user = client.login(use_session).await?;
         self.generation = client.generation;
         let msg = format!(
             "Connected to {} via Redfish ({}, FW {})",
@@ -143,7 +143,10 @@ impl IloClient {
 
     /// Check if any protocol backend is connected.
     pub fn is_connected(&self) -> bool {
-        self.redfish.as_ref().map(|c| c.is_connected()).unwrap_or(false)
+        self.redfish
+            .as_ref()
+            .map(|c| c.is_connected())
+            .unwrap_or(false)
             || self.ribcl.is_some()
             || self.ipmi.is_some()
     }
@@ -168,23 +171,25 @@ impl IloClient {
         self.redfish
             .as_ref()
             .filter(|c| c.is_connected())
-            .ok_or_else(|| IloError::unsupported(
-                "This operation requires Redfish (iLO 4+). Not connected via Redfish."
-            ))
+            .ok_or_else(|| {
+                IloError::unsupported(
+                    "This operation requires Redfish (iLO 4+). Not connected via Redfish.",
+                )
+            })
     }
 
     /// Require RIBCL backend or error.
     pub fn require_ribcl(&self) -> IloResult<&RibclClient> {
-        self.ribcl.as_ref().ok_or_else(|| IloError::unsupported(
-            "This operation requires RIBCL. Not connected via RIBCL."
-        ))
+        self.ribcl.as_ref().ok_or_else(|| {
+            IloError::unsupported("This operation requires RIBCL. Not connected via RIBCL.")
+        })
     }
 
     /// Require IPMI backend or error.
     pub fn require_ipmi(&self) -> IloResult<&IpmiClient> {
-        self.ipmi.as_ref().ok_or_else(|| IloError::unsupported(
-            "This operation requires IPMI. Not connected via IPMI."
-        ))
+        self.ipmi.as_ref().ok_or_else(|| {
+            IloError::unsupported("This operation requires IPMI. Not connected via IPMI.")
+        })
     }
 
     /// Get the detected protocol.
@@ -201,7 +206,10 @@ impl IloClient {
             insecure: self.config.insecure,
             protocol: self.detected_protocol.clone(),
             generation: self.generation,
-            firmware_version: self.redfish.as_ref().and_then(|rf| rf.firmware_version.clone()),
+            firmware_version: self
+                .redfish
+                .as_ref()
+                .and_then(|rf| rf.firmware_version.clone()),
             server_model: None,
         }
     }

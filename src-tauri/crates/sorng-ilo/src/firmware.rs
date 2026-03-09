@@ -21,17 +21,37 @@ impl<'a> FirmwareManager<'a> {
             let mut firmware = Vec::new();
 
             for fw in &items {
-                    firmware.push(BmcFirmwareItem {
-                        id: fw.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        name: fw.get("Name").and_then(|v| v.as_str()).unwrap_or("Firmware").to_string(),
-                        version: fw.get("Version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        updateable: fw.get("Updateable").and_then(|v| v.as_bool()).unwrap_or(false),
-                        component_type: fw.get("Description").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        status: component_health(
-                            fw.get("Status").and_then(|s| s.get("Health"))
-                                .and_then(|v| v.as_str()).unwrap_or("OK")
-                        ),
-                    });
+                firmware.push(BmcFirmwareItem {
+                    id: fw
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: fw
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Firmware")
+                        .to_string(),
+                    version: fw
+                        .get("Version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    updateable: fw
+                        .get("Updateable")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    component_type: fw
+                        .get("Description")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    status: component_health(
+                        fw.get("Status")
+                            .and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("OK"),
+                    ),
+                });
             }
             return Ok(firmware);
         }
@@ -79,6 +99,8 @@ impl<'a> FirmwareManager<'a> {
             return Ok(firmware);
         }
 
-        Err(IloError::unsupported("No protocol available for firmware inventory"))
+        Err(IloError::unsupported(
+            "No protocol available for firmware inventory",
+        ))
     }
 }

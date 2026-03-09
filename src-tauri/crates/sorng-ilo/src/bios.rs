@@ -32,7 +32,8 @@ impl<'a> BiosManager<'a> {
         }
 
         // Check for pending settings
-        if let Some(pending_link) = bios.pointer("/Oem/Hpe/Links/Settings/@odata.id")
+        if let Some(pending_link) = bios
+            .pointer("/Oem/Hpe/Links/Settings/@odata.id")
             .or_else(|| bios.pointer("/@Redfish.Settings/SettingsObject/@odata.id"))
             .and_then(|v| v.as_str())
         {
@@ -78,21 +79,29 @@ impl<'a> BiosManager<'a> {
                 }
             }
 
-            let override_target = boot.get("BootSourceOverrideTarget")
-                .and_then(|v| v.as_str()).map(|s| s.to_string());
-            let override_enabled = boot.get("BootSourceOverrideEnabled")
-                .and_then(|v| v.as_str()).map(|s| s.to_string());
+            let override_target = boot
+                .get("BootSourceOverrideTarget")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let override_enabled = boot
+                .get("BootSourceOverrideEnabled")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             return Ok(BootConfig {
                 boot_order: sources,
                 boot_override_target: override_target,
                 boot_override_enabled: override_enabled,
-                uefi_boot_mode: boot.get("BootSourceOverrideMode")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                uefi_boot_mode: boot
+                    .get("BootSourceOverrideMode")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
 
-        Err(IloError::unsupported("No protocol available for boot config"))
+        Err(IloError::unsupported(
+            "No protocol available for boot config",
+        ))
     }
 
     /// Set one-time boot override.

@@ -21,20 +21,38 @@ impl<'a> VirtualMediaManager<'a> {
             let mut result = Vec::new();
 
             for vm in &items {
-                    result.push(BmcVirtualMedia {
-                        id: vm.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        media_types: vm.get("MediaTypes")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| arr.iter()
+                result.push(BmcVirtualMedia {
+                    id: vm
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    media_types: vm
+                        .get("MediaTypes")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
                                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                .collect())
-                            .unwrap_or_default(),
-                        image: vm.get("Image").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        inserted: vm.get("Inserted").and_then(|v| v.as_bool()).unwrap_or(false),
-                        write_protected: vm.get("WriteProtected").and_then(|v| v.as_bool()).unwrap_or(true),
-                        connected_via: vm.get("ConnectedVia")
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    });
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    image: vm
+                        .get("Image")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    inserted: vm
+                        .get("Inserted")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    write_protected: vm
+                        .get("WriteProtected")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                    connected_via: vm
+                        .get("ConnectedVia")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                });
             }
             return Ok(result);
         }
@@ -44,16 +62,27 @@ impl<'a> VirtualMediaManager<'a> {
             let mut result = Vec::new();
 
             // RIBCL returns VM_APPLET info
-            let image = status.get("IMAGE_URL").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let device = status.get("DEVICE").and_then(|v| v.as_str()).unwrap_or("CDROM");
-            let inserted = status.get("VM_APPLET")
+            let image = status
+                .get("IMAGE_URL")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let device = status
+                .get("DEVICE")
+                .and_then(|v| v.as_str())
+                .unwrap_or("CDROM");
+            let inserted = status
+                .get("VM_APPLET")
                 .and_then(|v| v.as_str())
                 .map(|s| s == "CONNECTED")
                 .unwrap_or(false);
 
             result.push(BmcVirtualMedia {
                 id: device.to_string(),
-                media_types: vec![if device.contains("FLOPPY") { "Floppy".to_string() } else { "CD".to_string() }],
+                media_types: vec![if device.contains("FLOPPY") {
+                    "Floppy".to_string()
+                } else {
+                    "CD".to_string()
+                }],
                 image,
                 inserted,
                 write_protected: true,
@@ -63,7 +92,9 @@ impl<'a> VirtualMediaManager<'a> {
             return Ok(result);
         }
 
-        Err(IloError::unsupported("No protocol available for virtual media"))
+        Err(IloError::unsupported(
+            "No protocol available for virtual media",
+        ))
     }
 
     /// Mount virtual media image.
@@ -79,7 +110,9 @@ impl<'a> VirtualMediaManager<'a> {
             return Ok(());
         }
 
-        Err(IloError::unsupported("No protocol available for mounting virtual media"))
+        Err(IloError::unsupported(
+            "No protocol available for mounting virtual media",
+        ))
     }
 
     /// Eject virtual media.
@@ -95,7 +128,9 @@ impl<'a> VirtualMediaManager<'a> {
             return Ok(());
         }
 
-        Err(IloError::unsupported("No protocol available for ejecting virtual media"))
+        Err(IloError::unsupported(
+            "No protocol available for ejecting virtual media",
+        ))
     }
 
     /// Set one-time boot from virtual media.
@@ -117,6 +152,8 @@ impl<'a> VirtualMediaManager<'a> {
             return Ok(());
         }
 
-        Err(IloError::unsupported("No protocol available for boot override"))
+        Err(IloError::unsupported(
+            "No protocol available for boot override",
+        ))
     }
 }

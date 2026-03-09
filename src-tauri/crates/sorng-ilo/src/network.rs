@@ -21,22 +21,37 @@ impl<'a> NetworkManager<'a> {
             let mut result = Vec::new();
 
             for nic in &adapters {
-                    result.push(BmcNetworkAdapter {
-                        id: nic.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        name: nic.get("Name").and_then(|v| v.as_str()).unwrap_or("NIC").to_string(),
-                        manufacturer: nic.get("Manufacturer")
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        model: nic.get("Model")
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        mac_address: nic.pointer("/Controllers/0/MACAddresses/0")
+                result.push(BmcNetworkAdapter {
+                    id: nic
+                        .get("Id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: nic
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("NIC")
+                        .to_string(),
+                    manufacturer: nic
+                        .get("Manufacturer")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    model: nic
+                        .get("Model")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    mac_address: nic
+                        .pointer("/Controllers/0/MACAddresses/0")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| nic.get("MACAddress").and_then(|v| v.as_str()))
+                        .map(|s| s.to_string()),
+                    status: component_health(
+                        nic.get("Status")
+                            .and_then(|s| s.get("Health"))
                             .and_then(|v| v.as_str())
-                            .or_else(|| nic.get("MACAddress").and_then(|v| v.as_str()))
-                            .map(|s| s.to_string()),
-                        status: component_health(
-                            nic.get("Status").and_then(|s| s.get("Health"))
-                                .and_then(|v| v.as_str()).unwrap_or("Unknown")
-                        ),
-                    });
+                            .unwrap_or("Unknown"),
+                    ),
+                });
             }
             return Ok(result);
         }
@@ -47,20 +62,27 @@ impl<'a> NetworkManager<'a> {
 
             if let Some(nic_arr) = health.get("NIC").and_then(|v| v.as_array()) {
                 for (i, nic) in nic_arr.iter().enumerate() {
-                    let mac = nic.get("MAC_ADDRESS")
+                    let mac = nic
+                        .get("MAC_ADDRESS")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
-                    let status = nic.get("STATUS")
-                        .and_then(|v| v.as_str()).unwrap_or("Unknown");
+                    let status = nic
+                        .get("STATUS")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
 
                     result.push(BmcNetworkAdapter {
                         id: format!("{}", i + 1),
-                        name: nic.get("NETWORK_PORT")
+                        name: nic
+                            .get("NETWORK_PORT")
                             .and_then(|v| v.as_str())
-                            .unwrap_or("NIC").to_string(),
+                            .unwrap_or("NIC")
+                            .to_string(),
                         manufacturer: None,
-                        model: nic.get("PORT_DESCRIPTION")
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        model: nic
+                            .get("PORT_DESCRIPTION")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         mac_address: mac,
                         status: component_health(status),
                     });
@@ -69,7 +91,9 @@ impl<'a> NetworkManager<'a> {
             return Ok(result);
         }
 
-        Err(IloError::unsupported("No protocol available for network adapters"))
+        Err(IloError::unsupported(
+            "No protocol available for network adapters",
+        ))
     }
 
     /// Get iLO dedicated network interface info.
@@ -80,9 +104,11 @@ impl<'a> NetworkManager<'a> {
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {
-            return ribcl.get_network_settings().await.map_err(Into::into);
+            return ribcl.get_network_settings().await;
         }
 
-        Err(IloError::unsupported("No protocol available for iLO network info"))
+        Err(IloError::unsupported(
+            "No protocol available for iLO network info",
+        ))
     }
 }

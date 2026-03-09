@@ -39,27 +39,27 @@
 //! - **service**         — Aggregate facade + Tauri state alias
 //! - **commands**        — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
-pub mod ribcl;
-pub mod redfish;
-pub mod client;
-pub mod system;
-pub mod power;
-pub mod thermal;
-pub mod hardware;
-pub mod storage;
-pub mod network;
-pub mod firmware;
-pub mod virtual_media;
-pub mod virtual_console;
-pub mod event_log;
-pub mod users;
 pub mod bios;
 pub mod certificates;
+pub mod client;
+pub mod commands;
+pub mod error;
+pub mod event_log;
+pub mod federation;
+pub mod firmware;
+pub mod hardware;
 pub mod health;
 pub mod license;
+pub mod network;
+pub mod power;
+pub mod redfish;
+pub mod ribcl;
 pub mod security;
-pub mod federation;
 pub mod service;
-pub mod commands;
+pub mod storage;
+pub mod system;
+pub mod thermal;
+pub mod types;
+pub mod users;
+pub mod virtual_console;
+pub mod virtual_media;

@@ -55,12 +55,10 @@ impl<'a> VirtualConsoleManager<'a> {
             } else {
                 None
             },
-            hotkeys: vec![
-                HotkeyConfig {
-                    name: "Ctrl+Alt+Del".to_string(),
-                    key_sequence: "Ctrl+Alt+Del".to_string(),
-                },
-            ],
+            hotkeys: vec![HotkeyConfig {
+                name: "Ctrl+Alt+Del".to_string(),
+                key_sequence: "Ctrl+Alt+Del".to_string(),
+            }],
         })
     }
 
@@ -73,7 +71,8 @@ impl<'a> VirtualConsoleManager<'a> {
         let mut console_types = Vec::new();
 
         // Check Oem data for console capabilities
-        let oem = data.get("Oem")
+        let oem = data
+            .get("Oem")
             .and_then(|o| o.get("Hpe").or_else(|| o.get("Hp")));
 
         if gen.supports_html5_console() {
@@ -85,7 +84,10 @@ impl<'a> VirtualConsoleManager<'a> {
         }
 
         // Check for .NET IRC
-        if let Some(features) = oem.and_then(|o| o.get("Features")).and_then(|f| f.as_array()) {
+        if let Some(features) = oem
+            .and_then(|o| o.get("Features"))
+            .and_then(|f| f.as_array())
+        {
             for f in features {
                 if let Some(name) = f.get("FeatureName").and_then(|v| v.as_str()) {
                     if name.contains(".NET") {
@@ -113,18 +115,24 @@ impl<'a> VirtualConsoleManager<'a> {
         let hotkeys = oem
             .and_then(|o| o.get("Hotkeys"))
             .and_then(|h| h.as_array())
-            .map(|arr| arr.iter().filter_map(|hk| {
-                let name = hk.get("Name").and_then(|v| v.as_str())?;
-                let keys = hk.get("KeySequence").and_then(|v| v.as_str())?;
-                Some(HotkeyConfig {
-                    name: name.to_string(),
-                    key_sequence: keys.to_string(),
-                })
-            }).collect())
-            .unwrap_or_else(|| vec![HotkeyConfig {
-                name: "Ctrl+Alt+Del".to_string(),
-                key_sequence: "Ctrl+Alt+Del".to_string(),
-            }]);
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|hk| {
+                        let name = hk.get("Name").and_then(|v| v.as_str())?;
+                        let keys = hk.get("KeySequence").and_then(|v| v.as_str())?;
+                        Some(HotkeyConfig {
+                            name: name.to_string(),
+                            key_sequence: keys.to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(|| {
+                vec![HotkeyConfig {
+                    name: "Ctrl+Alt+Del".to_string(),
+                    key_sequence: "Ctrl+Alt+Del".to_string(),
+                }]
+            });
 
         Ok(IloConsoleInfo {
             available_types: console_types,
@@ -139,7 +147,8 @@ impl<'a> VirtualConsoleManager<'a> {
         let gen = self.client.generation;
         if !gen.supports_html5_console() {
             return Err(IloError::console(format!(
-                "HTML5 console not supported on {:?}", gen
+                "HTML5 console not supported on {:?}",
+                gen
             )));
         }
 

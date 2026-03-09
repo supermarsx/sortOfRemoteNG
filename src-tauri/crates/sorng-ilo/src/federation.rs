@@ -21,18 +21,24 @@ impl<'a> FederationManager<'a> {
             let mut groups = Vec::new();
 
             for group in &members {
-                    groups.push(IloFederationGroup {
-                        name: group.get("Name")
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        key: None, // Never expose the key
-                        privileges: group.get("Privileges")
-                            .and_then(|v| v.as_object())
-                            .map(|p| p.iter()
+                groups.push(IloFederationGroup {
+                    name: group
+                        .get("Name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    key: None, // Never expose the key
+                    privileges: group
+                        .get("Privileges")
+                        .and_then(|v| v.as_object())
+                        .map(|p| {
+                            p.iter()
                                 .filter(|(_, v)| v.as_bool().unwrap_or(false))
                                 .map(|(k, _)| k.clone())
-                                .collect())
-                            .unwrap_or_default(),
-                    });
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                });
             }
             return Ok(groups);
         }
@@ -43,8 +49,10 @@ impl<'a> FederationManager<'a> {
 
             if let Some(arr) = data.as_array() {
                 for group in arr {
-                    let name = group.get("GROUP_NAME")
-                        .and_then(|v| v.as_str()).unwrap_or("");
+                    let name = group
+                        .get("GROUP_NAME")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if !name.is_empty() {
                         groups.push(IloFederationGroup {
                             name: name.to_string(),
@@ -57,7 +65,9 @@ impl<'a> FederationManager<'a> {
             return Ok(groups);
         }
 
-        Err(IloError::unsupported("No protocol available for federation groups"))
+        Err(IloError::unsupported(
+            "No protocol available for federation groups",
+        ))
     }
 
     /// Get discovered federation peers.
@@ -67,21 +77,36 @@ impl<'a> FederationManager<'a> {
             let mut peers = Vec::new();
 
             for peer in &members {
-                    peers.push(IloFederationPeer {
-                        name: peer.get("ManagerIPAddress")
-                            .or_else(|| peer.get("Name"))
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        ip_address: peer.get("ManagerIPAddress")
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        group: peer.get("GroupName")
-                            .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        ilo_generation: peer.pointer("/Oem/Hpe/iLOType")
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        firmware_version: peer.pointer("/Oem/Hpe/iLOFirmwareVersion")
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        server_name: peer.get("ServerName")
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    });
+                peers.push(IloFederationPeer {
+                    name: peer
+                        .get("ManagerIPAddress")
+                        .or_else(|| peer.get("Name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    ip_address: peer
+                        .get("ManagerIPAddress")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    group: peer
+                        .get("GroupName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    ilo_generation: peer
+                        .pointer("/Oem/Hpe/iLOType")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    firmware_version: peer
+                        .pointer("/Oem/Hpe/iLOFirmwareVersion")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    server_name: peer
+                        .get("ServerName")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                });
             }
             return Ok(peers);
         }
@@ -93,19 +118,17 @@ impl<'a> FederationManager<'a> {
             return Ok(Vec::new());
         }
 
-        Err(IloError::unsupported("No protocol available for federation peers"))
+        Err(IloError::unsupported(
+            "No protocol available for federation peers",
+        ))
     }
 
     /// Add a federation group.
     pub async fn add_group(&self, name: &str, key: &str) -> IloResult<()> {
         let rf = self.client.require_redfish()?;
-        let gen = self.client.generation;
+        let _gen = self.client.generation;
 
-        let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
-            "/redfish/v1/Managers/1/FederationGroups"
-        } else {
-            "/redfish/v1/Managers/1/FederationGroups"
-        };
+        let path = "/redfish/v1/Managers/1/FederationGroups";
 
         let body = serde_json::json!({
             "Name": name,

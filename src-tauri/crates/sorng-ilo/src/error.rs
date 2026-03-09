@@ -45,7 +45,10 @@ pub struct IloError {
 
 impl IloError {
     pub fn new(kind: IloErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     // ── Convenience constructors ────────────────────────────────────

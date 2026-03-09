@@ -10,6 +10,7 @@ use tauri::State;
 // ── Connection ──────────────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn ilo_connect(
     state: State<'_, IloServiceState>,
     host: String,
@@ -33,7 +34,7 @@ pub async fn ilo_connect(
         Some("ipmi") => Some(IloProtocol::Ipmi),
         _ => None, // auto-detect
     };
-    let gen = match generation.as_deref() {
+    let _gen = match generation.as_deref() {
         Some("ilo1") | Some("1") => Some(IloGeneration::Ilo1),
         Some("ilo2") | Some("2") => Some(IloGeneration::Ilo2),
         Some("ilo3") | Some("3") => Some(IloGeneration::Ilo3),
@@ -77,7 +78,9 @@ pub async fn ilo_is_connected(state: State<'_, IloServiceState>) -> Result<bool,
 }
 
 #[tauri::command]
-pub async fn ilo_get_config(state: State<'_, IloServiceState>) -> Result<Option<IloConfigSafe>, String> {
+pub async fn ilo_get_config(
+    state: State<'_, IloServiceState>,
+) -> Result<Option<IloConfigSafe>, String> {
     let svc = state.lock().await;
     Ok(svc.get_config())
 }
@@ -85,7 +88,9 @@ pub async fn ilo_get_config(state: State<'_, IloServiceState>) -> Result<Option<
 // ── System ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_system_info(state: State<'_, IloServiceState>) -> Result<BmcSystemInfo, String> {
+pub async fn ilo_get_system_info(
+    state: State<'_, IloServiceState>,
+) -> Result<BmcSystemInfo, String> {
     let svc = state.lock().await;
     svc.get_system_info().await.map_err(|e| e.to_string())
 }
@@ -97,21 +102,32 @@ pub async fn ilo_get_ilo_info(state: State<'_, IloServiceState>) -> Result<IloIn
 }
 
 #[tauri::command]
-pub async fn ilo_set_asset_tag(state: State<'_, IloServiceState>, tag: String) -> Result<(), String> {
+pub async fn ilo_set_asset_tag(
+    state: State<'_, IloServiceState>,
+    tag: String,
+) -> Result<(), String> {
     let svc = state.lock().await;
     svc.set_asset_tag(&tag).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_set_indicator_led(state: State<'_, IloServiceState>, led_state: String) -> Result<(), String> {
+pub async fn ilo_set_indicator_led(
+    state: State<'_, IloServiceState>,
+    led_state: String,
+) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_indicator_led(&led_state).await.map_err(|e| e.to_string())
+    svc.set_indicator_led(&led_state)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Power ───────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_power_action(state: State<'_, IloServiceState>, action: String) -> Result<(), String> {
+pub async fn ilo_power_action(
+    state: State<'_, IloServiceState>,
+    action: String,
+) -> Result<(), String> {
     let pa = match action.to_lowercase().as_str() {
         "on" => PowerAction::On,
         "forceoff" | "force_off" => PowerAction::ForceOff,
@@ -134,7 +150,9 @@ pub async fn ilo_get_power_state(state: State<'_, IloServiceState>) -> Result<St
 }
 
 #[tauri::command]
-pub async fn ilo_get_power_metrics(state: State<'_, IloServiceState>) -> Result<BmcPowerMetrics, String> {
+pub async fn ilo_get_power_metrics(
+    state: State<'_, IloServiceState>,
+) -> Result<BmcPowerMetrics, String> {
     let svc = state.lock().await;
     svc.get_power_metrics().await.map_err(|e| e.to_string())
 }
@@ -142,13 +160,17 @@ pub async fn ilo_get_power_metrics(state: State<'_, IloServiceState>) -> Result<
 // ── Thermal ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_thermal_data(state: State<'_, IloServiceState>) -> Result<BmcThermalData, String> {
+pub async fn ilo_get_thermal_data(
+    state: State<'_, IloServiceState>,
+) -> Result<BmcThermalData, String> {
     let svc = state.lock().await;
     svc.get_thermal_data().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_get_thermal_summary(state: State<'_, IloServiceState>) -> Result<ThermalSummary, String> {
+pub async fn ilo_get_thermal_summary(
+    state: State<'_, IloServiceState>,
+) -> Result<ThermalSummary, String> {
     let svc = state.lock().await;
     svc.get_thermal_summary().await.map_err(|e| e.to_string())
 }
@@ -156,13 +178,17 @@ pub async fn ilo_get_thermal_summary(state: State<'_, IloServiceState>) -> Resul
 // ── Hardware ────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_processors(state: State<'_, IloServiceState>) -> Result<Vec<BmcProcessor>, String> {
+pub async fn ilo_get_processors(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcProcessor>, String> {
     let svc = state.lock().await;
     svc.get_processors().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_get_memory(state: State<'_, IloServiceState>) -> Result<Vec<BmcMemoryDimm>, String> {
+pub async fn ilo_get_memory(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcMemoryDimm>, String> {
     let svc = state.lock().await;
     svc.get_memory().await.map_err(|e| e.to_string())
 }
@@ -170,19 +196,27 @@ pub async fn ilo_get_memory(state: State<'_, IloServiceState>) -> Result<Vec<Bmc
 // ── Storage ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_storage_controllers(state: State<'_, IloServiceState>) -> Result<Vec<BmcStorageController>, String> {
+pub async fn ilo_get_storage_controllers(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcStorageController>, String> {
     let svc = state.lock().await;
-    svc.get_storage_controllers().await.map_err(|e| e.to_string())
+    svc.get_storage_controllers()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_get_virtual_disks(state: State<'_, IloServiceState>) -> Result<Vec<BmcVirtualDisk>, String> {
+pub async fn ilo_get_virtual_disks(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcVirtualDisk>, String> {
     let svc = state.lock().await;
     svc.get_virtual_disks().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_get_physical_disks(state: State<'_, IloServiceState>) -> Result<Vec<BmcPhysicalDisk>, String> {
+pub async fn ilo_get_physical_disks(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcPhysicalDisk>, String> {
     let svc = state.lock().await;
     svc.get_physical_disks().await.map_err(|e| e.to_string())
 }
@@ -190,13 +224,17 @@ pub async fn ilo_get_physical_disks(state: State<'_, IloServiceState>) -> Result
 // ── Network ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_network_adapters(state: State<'_, IloServiceState>) -> Result<Vec<BmcNetworkAdapter>, String> {
+pub async fn ilo_get_network_adapters(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcNetworkAdapter>, String> {
     let svc = state.lock().await;
     svc.get_network_adapters().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_get_ilo_network(state: State<'_, IloServiceState>) -> Result<serde_json::Value, String> {
+pub async fn ilo_get_ilo_network(
+    state: State<'_, IloServiceState>,
+) -> Result<serde_json::Value, String> {
     let svc = state.lock().await;
     svc.get_ilo_network().await.map_err(|e| e.to_string())
 }
@@ -204,17 +242,25 @@ pub async fn ilo_get_ilo_network(state: State<'_, IloServiceState>) -> Result<se
 // ── Firmware ────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_firmware_inventory(state: State<'_, IloServiceState>) -> Result<Vec<BmcFirmwareItem>, String> {
+pub async fn ilo_get_firmware_inventory(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcFirmwareItem>, String> {
     let svc = state.lock().await;
-    svc.get_firmware_inventory().await.map_err(|e| e.to_string())
+    svc.get_firmware_inventory()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Virtual Media ───────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_virtual_media_status(state: State<'_, IloServiceState>) -> Result<Vec<BmcVirtualMedia>, String> {
+pub async fn ilo_get_virtual_media_status(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcVirtualMedia>, String> {
     let svc = state.lock().await;
-    svc.get_virtual_media_status().await.map_err(|e| e.to_string())
+    svc.get_virtual_media_status()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -224,7 +270,9 @@ pub async fn ilo_insert_virtual_media(
     media_id: Option<String>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.insert_virtual_media(&url, media_id.as_deref()).await.map_err(|e| e.to_string())
+    svc.insert_virtual_media(&url, media_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -233,7 +281,9 @@ pub async fn ilo_eject_virtual_media(
     media_id: Option<String>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.eject_virtual_media(media_id.as_deref()).await.map_err(|e| e.to_string())
+    svc.eject_virtual_media(media_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -245,7 +295,9 @@ pub async fn ilo_set_vm_boot_once(state: State<'_, IloServiceState>) -> Result<(
 // ── Virtual Console ─────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_console_info(state: State<'_, IloServiceState>) -> Result<IloConsoleInfo, String> {
+pub async fn ilo_get_console_info(
+    state: State<'_, IloServiceState>,
+) -> Result<IloConsoleInfo, String> {
     let svc = state.lock().await;
     svc.get_console_info().await.map_err(|e| e.to_string())
 }
@@ -259,13 +311,17 @@ pub async fn ilo_get_html5_launch_url(state: State<'_, IloServiceState>) -> Resu
 // ── Event Logs ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_iml(state: State<'_, IloServiceState>) -> Result<Vec<BmcEventLogEntry>, String> {
+pub async fn ilo_get_iml(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcEventLogEntry>, String> {
     let svc = state.lock().await;
     svc.get_iml().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_get_ilo_event_log(state: State<'_, IloServiceState>) -> Result<Vec<BmcEventLogEntry>, String> {
+pub async fn ilo_get_ilo_event_log(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BmcEventLogEntry>, String> {
     let svc = state.lock().await;
     svc.get_ilo_event_log().await.map_err(|e| e.to_string())
 }
@@ -298,7 +354,9 @@ pub async fn ilo_create_user(
     role: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.create_user(&username, &password, &role).await.map_err(|e| e.to_string())
+    svc.create_user(&username, &password, &role)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -308,11 +366,16 @@ pub async fn ilo_update_password(
     new_password: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.update_password(&user_id, &new_password).await.map_err(|e| e.to_string())
+    svc.update_password(&user_id, &new_password)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_delete_user(state: State<'_, IloServiceState>, user_id: String) -> Result<(), String> {
+pub async fn ilo_delete_user(
+    state: State<'_, IloServiceState>,
+    user_id: String,
+) -> Result<(), String> {
     let svc = state.lock().await;
     svc.delete_user(&user_id).await.map_err(|e| e.to_string())
 }
@@ -324,13 +387,17 @@ pub async fn ilo_set_user_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_user_enabled(&user_id, enabled).await.map_err(|e| e.to_string())
+    svc.set_user_enabled(&user_id, enabled)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── BIOS ────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_bios_attributes(state: State<'_, IloServiceState>) -> Result<Vec<BiosAttribute>, String> {
+pub async fn ilo_get_bios_attributes(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<BiosAttribute>, String> {
     let svc = state.lock().await;
     svc.get_bios_attributes().await.map_err(|e| e.to_string())
 }
@@ -341,7 +408,9 @@ pub async fn ilo_set_bios_attributes(
     attributes: serde_json::Value,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_bios_attributes(&attributes).await.map_err(|e| e.to_string())
+    svc.set_bios_attributes(&attributes)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -356,13 +425,17 @@ pub async fn ilo_set_boot_override(
     target: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_boot_override(&target).await.map_err(|e| e.to_string())
+    svc.set_boot_override(&target)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Certificates ────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_certificate(state: State<'_, IloServiceState>) -> Result<IloCertificate, String> {
+pub async fn ilo_get_certificate(
+    state: State<'_, IloServiceState>,
+) -> Result<IloCertificate, String> {
     let svc = state.lock().await;
     svc.get_certificate().await.map_err(|e| e.to_string())
 }
@@ -395,13 +468,17 @@ pub async fn ilo_import_certificate(
     cert_pem: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.import_certificate(&cert_pem).await.map_err(|e| e.to_string())
+    svc.import_certificate(&cert_pem)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Health ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_health_rollup(state: State<'_, IloServiceState>) -> Result<BmcHealthRollup, String> {
+pub async fn ilo_get_health_rollup(
+    state: State<'_, IloServiceState>,
+) -> Result<BmcHealthRollup, String> {
     let svc = state.lock().await;
     svc.get_health_rollup().await.map_err(|e| e.to_string())
 }
@@ -421,7 +498,10 @@ pub async fn ilo_get_license(state: State<'_, IloServiceState>) -> Result<IloLic
 }
 
 #[tauri::command]
-pub async fn ilo_activate_license(state: State<'_, IloServiceState>, key: String) -> Result<(), String> {
+pub async fn ilo_activate_license(
+    state: State<'_, IloServiceState>,
+    key: String,
+) -> Result<(), String> {
     let svc = state.lock().await;
     svc.activate_license(&key).await.map_err(|e| e.to_string())
 }
@@ -435,7 +515,9 @@ pub async fn ilo_deactivate_license(state: State<'_, IloServiceState>) -> Result
 // ── Security ────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_security_status(state: State<'_, IloServiceState>) -> Result<IloSecurityStatus, String> {
+pub async fn ilo_get_security_status(
+    state: State<'_, IloServiceState>,
+) -> Result<IloSecurityStatus, String> {
     let svc = state.lock().await;
     svc.get_security_status().await.map_err(|e| e.to_string())
 }
@@ -446,7 +528,9 @@ pub async fn ilo_set_min_tls_version(
     version: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_min_tls_version(&version).await.map_err(|e| e.to_string())
+    svc.set_min_tls_version(&version)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -455,19 +539,25 @@ pub async fn ilo_set_ipmi_over_lan(
     enabled: bool,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_ipmi_over_lan(enabled).await.map_err(|e| e.to_string())
+    svc.set_ipmi_over_lan(enabled)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Federation ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn ilo_get_federation_groups(state: State<'_, IloServiceState>) -> Result<Vec<IloFederationGroup>, String> {
+pub async fn ilo_get_federation_groups(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<IloFederationGroup>, String> {
     let svc = state.lock().await;
     svc.get_federation_groups().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn ilo_get_federation_peers(state: State<'_, IloServiceState>) -> Result<Vec<IloFederationPeer>, String> {
+pub async fn ilo_get_federation_peers(
+    state: State<'_, IloServiceState>,
+) -> Result<Vec<IloFederationPeer>, String> {
     let svc = state.lock().await;
     svc.get_federation_peers().await.map_err(|e| e.to_string())
 }
@@ -479,7 +569,9 @@ pub async fn ilo_add_federation_group(
     key: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.add_federation_group(&name, &key).await.map_err(|e| e.to_string())
+    svc.add_federation_group(&name, &key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -488,7 +580,9 @@ pub async fn ilo_remove_federation_group(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.remove_federation_group(&name).await.map_err(|e| e.to_string())
+    svc.remove_federation_group(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── iLO Reset ───────────────────────────────────────────────────────

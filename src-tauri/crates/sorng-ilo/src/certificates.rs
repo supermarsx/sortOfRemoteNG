@@ -20,16 +20,30 @@ impl<'a> CertificateManager<'a> {
             let cert_data: serde_json::Value = rf.get_certificate().await?;
 
             return Ok(IloCertificate {
-                issuer: cert_data.get("Issuer")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                subject: cert_data.get("Subject")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                valid_from: cert_data.get("ValidNotBefore")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                valid_to: cert_data.get("ValidNotAfter")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                serial_number: cert_data.get("SerialNumber")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                issuer: cert_data
+                    .get("Issuer")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                subject: cert_data
+                    .get("Subject")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                valid_from: cert_data
+                    .get("ValidNotBefore")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                valid_to: cert_data
+                    .get("ValidNotAfter")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                serial_number: cert_data
+                    .get("SerialNumber")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 fingerprint: None,
             });
         }
@@ -38,21 +52,37 @@ impl<'a> CertificateManager<'a> {
             let cert_data = ribcl.get_certificate().await?;
 
             return Ok(IloCertificate {
-                issuer: cert_data.get("ISSUER")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                subject: cert_data.get("SUBJECT")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                valid_from: cert_data.get("VALID_FROM")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                valid_to: cert_data.get("VALID_UNTIL")
-                    .and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                serial_number: cert_data.get("SERIAL_NUMBER")
-                    .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                issuer: cert_data
+                    .get("ISSUER")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                subject: cert_data
+                    .get("SUBJECT")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                valid_from: cert_data
+                    .get("VALID_FROM")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                valid_to: cert_data
+                    .get("VALID_UNTIL")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                serial_number: cert_data
+                    .get("SERIAL_NUMBER")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 fingerprint: None,
             });
         }
 
-        Err(IloError::unsupported("No protocol available for certificate info"))
+        Err(IloError::unsupported(
+            "No protocol available for certificate info",
+        ))
     }
 
     /// Generate a Certificate Signing Request (CSR).
@@ -69,35 +99,47 @@ impl<'a> CertificateManager<'a> {
 
             // HP iLO OEM CSR generation endpoint
             let gen = self.client.generation;
-            let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
+            let path = if matches!(
+                gen,
+                IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7
+            ) {
                 "/redfish/v1/Managers/1/SecurityService/HttpsCert/Actions/HpeHttpsCert.GenerateCSR"
             } else {
                 "/redfish/v1/Managers/1/SecurityService/HttpsCert"
             };
 
-            let response = rf.inner.post_json::<_, serde_json::Value>(path, &body).await?;
+            let response = rf
+                .inner
+                .post_json::<_, serde_json::Value>(path, &body)
+                .await?;
 
             // CSR is async on iLO — may need to poll
             if let Some(csr) = response.get("CSR").and_then(|v| v.as_str()) {
                 return Ok(csr.to_string());
             }
 
-            return Ok("CSR generation started. Poll the certificate endpoint for results.".to_string());
+            return Ok(
+                "CSR generation started. Poll the certificate endpoint for results.".to_string(),
+            );
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {
-            let csr = ribcl.generate_csr(
-                &params.common_name,
-                &params.organization,
-                params.organizational_unit.as_deref().unwrap_or(""),
-                params.city.as_deref().unwrap_or(""),
-                params.state.as_deref().unwrap_or(""),
-                &params.country,
-            ).await?;
+            let csr = ribcl
+                .generate_csr(
+                    &params.common_name,
+                    &params.organization,
+                    params.organizational_unit.as_deref().unwrap_or(""),
+                    params.city.as_deref().unwrap_or(""),
+                    params.state.as_deref().unwrap_or(""),
+                    &params.country,
+                )
+                .await?;
             return Ok(csr);
         }
 
-        Err(IloError::unsupported("No protocol available for CSR generation"))
+        Err(IloError::unsupported(
+            "No protocol available for CSR generation",
+        ))
     }
 
     /// Import a signed certificate.
@@ -105,7 +147,10 @@ impl<'a> CertificateManager<'a> {
         let rf = self.client.require_redfish()?;
         let gen = self.client.generation;
 
-        let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
+        let path = if matches!(
+            gen,
+            IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7
+        ) {
             "/redfish/v1/Managers/1/SecurityService/HttpsCert/Actions/HpeHttpsCert.ImportCertificate"
         } else {
             "/redfish/v1/Managers/1/SecurityService/HttpsCert"
