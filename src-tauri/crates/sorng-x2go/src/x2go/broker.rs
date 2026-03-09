@@ -154,8 +154,18 @@ impl X2goBrokerClient {
 
         let mut extra = params.clone();
         for known in &[
-            "name", "host", "sshport", "user", "session_type", "command",
-            "geometry", "colordepth", "link", "sound", "printing", "rootless",
+            "name",
+            "host",
+            "sshport",
+            "user",
+            "session_type",
+            "command",
+            "geometry",
+            "colordepth",
+            "link",
+            "sound",
+            "printing",
+            "rootless",
         ] {
             extra.remove(*known);
         }
@@ -185,10 +195,8 @@ mod tests {
 
     #[test]
     fn broker_urls() {
-        let client = X2goBrokerClient::new(
-            "https://broker.example.com/x2go".into(),
-            BrokerAuth::None,
-        );
+        let client =
+            X2goBrokerClient::new("https://broker.example.com/x2go".into(), BrokerAuth::None);
         assert_eq!(
             client.list_profiles_url(),
             "https://broker.example.com/x2go/profiles/list"

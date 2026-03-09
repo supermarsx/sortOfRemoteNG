@@ -20,7 +20,10 @@ pub enum SessionCommand {
     /// Resize the display.
     Resize { width: u32, height: u32 },
     /// Mount a shared folder.
-    MountFolder { local_path: String, remote_name: String },
+    MountFolder {
+        local_path: String,
+        remote_name: String,
+    },
     /// Unmount a shared folder.
     UnmountFolder { remote_name: String },
 }
@@ -202,12 +205,9 @@ async fn session_task(
         ssh_args.push(format!("ProxyCommand={}", proxy));
     }
 
-    match &config.ssh.auth {
-        X2goSshAuth::PrivateKey { key_path, .. } => {
-            ssh_args.push("-i".into());
-            ssh_args.push(key_path.clone());
-        }
-        _ => {}
+    if let X2goSshAuth::PrivateKey { key_path, .. } = &config.ssh.auth {
+        ssh_args.push("-i".into());
+        ssh_args.push(key_path.clone());
     }
 
     let target = format!("{}@{}", config.username, config.host);
@@ -376,10 +376,8 @@ async fn session_task(
     // 7. Auto-mount shared folders
     for folder in &config.shared_folders {
         if folder.auto_mount {
-            let mount_cmd = crate::x2go::protocol::build_mount_dirs_cmd(
-                &agent_info.session_id,
-                None,
-            );
+            let mount_cmd =
+                crate::x2go::protocol::build_mount_dirs_cmd(&agent_info.session_id, None);
             let _ = Command::new("ssh")
                 .args(&ssh_args)
                 .arg(&target)
@@ -545,7 +543,10 @@ mod tests {
         let _ = SessionCommand::Terminate;
         let _ = SessionCommand::Disconnect;
         let _ = SessionCommand::SendClipboard("text".into());
-        let _ = SessionCommand::Resize { width: 1920, height: 1080 };
+        let _ = SessionCommand::Resize {
+            width: 1920,
+            height: 1080,
+        };
         let _ = SessionCommand::MountFolder {
             local_path: "/home".into(),
             remote_name: "home".into(),

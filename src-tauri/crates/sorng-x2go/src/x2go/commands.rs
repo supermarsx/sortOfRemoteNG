@@ -12,9 +12,7 @@ pub async fn connect_x2go(
     config: X2goConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.connect(session_id, config)
-        .await
-        .map_err(|e| e.message)
+    svc.connect(session_id, config).await.map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -45,9 +43,7 @@ pub async fn disconnect_x2go(
 }
 
 #[tauri::command]
-pub async fn disconnect_all_x2go(
-    state: tauri::State<'_, X2goServiceState>,
-) -> Result<(), String> {
+pub async fn disconnect_all_x2go(state: tauri::State<'_, X2goServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect_all().await;
     Ok(())

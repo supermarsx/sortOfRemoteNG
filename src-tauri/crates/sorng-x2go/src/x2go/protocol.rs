@@ -16,10 +16,7 @@ pub fn build_list_sessions_cmd(server_path: Option<&str>) -> String {
 }
 
 /// Build the x2gostartagent command.
-pub fn build_start_agent_cmd(
-    config: &X2goConfig,
-    server_path: Option<&str>,
-) -> String {
+pub fn build_start_agent_cmd(config: &X2goConfig, server_path: Option<&str>) -> String {
     let prefix = server_path.unwrap_or("");
     let (width, height) = match &config.display {
         X2goDisplayMode::Window { width, height } => (*width, *height),
@@ -206,7 +203,11 @@ pub fn parse_version(output: &str) -> Option<X2goServerVersion> {
     Some(X2goServerVersion {
         major: parts[0].parse().ok()?,
         minor: parts[1].parse().ok()?,
-        patch: parts[2].split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()?,
+        patch: parts[2]
+            .split(|c: char| !c.is_ascii_digit())
+            .next()?
+            .parse()
+            .ok()?,
         full: trimmed.to_string(),
     })
 }
@@ -383,7 +384,10 @@ mod tests {
         let config = X2goConfig {
             host: "server".into(),
             username: "user".into(),
-            display: X2goDisplayMode::Window { width: 1920, height: 1080 },
+            display: X2goDisplayMode::Window {
+                width: 1920,
+                height: 1080,
+            },
             session_type: X2goSessionType::Xfce,
             ..Default::default()
         };

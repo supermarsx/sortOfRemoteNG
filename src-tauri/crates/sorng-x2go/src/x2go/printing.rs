@@ -143,9 +143,8 @@ impl X2goPrintManager {
     /// Clear completed/failed/cancelled jobs.
     pub fn clear_finished(&mut self) -> usize {
         let before = self.jobs.len();
-        self.jobs.retain(|j| {
-            matches!(j.state, PrintJobState::Pending | PrintJobState::Printing)
-        });
+        self.jobs
+            .retain(|j| matches!(j.state, PrintJobState::Pending | PrintJobState::Printing));
         before - self.jobs.len()
     }
 

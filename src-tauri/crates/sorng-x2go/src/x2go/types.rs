@@ -190,23 +190,13 @@ pub struct X2goSharedFolder {
 // ── Printing ────────────────────────────────────────────────────────────────
 
 /// Printing configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct X2goPrintConfig {
     pub enabled: bool,
     /// Local CUPS server address.
     pub cups_server: Option<String>,
     /// Default printer name.
     pub default_printer: Option<String>,
-}
-
-impl Default for X2goPrintConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            cups_server: None,
-            default_printer: None,
-        }
-    }
 }
 
 // ── Display ─────────────────────────────────────────────────────────────────
@@ -388,9 +378,10 @@ impl Default for X2goConfig {
 
 // ── Clipboard ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum X2goClipboardMode {
     /// Bidirectional clipboard sharing
+    #[default]
     Both,
     /// Client-to-server only
     ClientToServer,
@@ -398,12 +389,6 @@ pub enum X2goClipboardMode {
     ServerToClient,
     /// Disabled
     None,
-}
-
-impl Default for X2goClipboardMode {
-    fn default() -> Self {
-        Self::Both
-    }
 }
 
 impl X2goClipboardMode {
@@ -591,7 +576,10 @@ impl From<std::io::Error> for X2goError {
 
 impl X2goError {
     pub fn new(kind: X2goErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn ssh(msg: impl Into<String>) -> Self {

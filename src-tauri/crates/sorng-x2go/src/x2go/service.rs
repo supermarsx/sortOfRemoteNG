@@ -82,11 +82,7 @@ impl X2goService {
     }
 
     /// Send clipboard data.
-    pub async fn send_clipboard(
-        &self,
-        session_id: &str,
-        data: String,
-    ) -> Result<(), X2goError> {
+    pub async fn send_clipboard(&self, session_id: &str, data: String) -> Result<(), X2goError> {
         let handle = self
             .sessions
             .get(session_id)
@@ -97,12 +93,7 @@ impl X2goService {
     }
 
     /// Resize remote display.
-    pub async fn resize(
-        &self,
-        session_id: &str,
-        width: u32,
-        height: u32,
-    ) -> Result<(), X2goError> {
+    pub async fn resize(&self, session_id: &str, width: u32, height: u32) -> Result<(), X2goError> {
         let handle = self
             .sessions
             .get(session_id)
@@ -124,7 +115,10 @@ impl X2goService {
             .get(session_id)
             .ok_or_else(|| X2goError::not_found(format!("session '{}' not found", session_id)))?;
         handle
-            .send_command(SessionCommand::MountFolder { local_path, remote_name })
+            .send_command(SessionCommand::MountFolder {
+                local_path,
+                remote_name,
+            })
             .await
     }
 
@@ -161,10 +155,7 @@ impl X2goService {
     }
 
     /// Get session info as JSON.
-    pub async fn get_session_info(
-        &self,
-        session_id: &str,
-    ) -> Result<serde_json::Value, X2goError> {
+    pub async fn get_session_info(&self, session_id: &str) -> Result<serde_json::Value, X2goError> {
         let handle = self
             .sessions
             .get(session_id)
@@ -240,10 +231,7 @@ impl X2goService {
 
         for (id, handle) in &self.sessions {
             let st = handle.state.lock().await;
-            if matches!(
-                st.state,
-                X2goSessionState::Ended | X2goSessionState::Failed
-            ) {
+            if matches!(st.state, X2goSessionState::Ended | X2goSessionState::Failed) {
                 to_remove.push(id.clone());
             }
         }
