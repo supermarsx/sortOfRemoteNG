@@ -78,10 +78,7 @@ pub async fn handle_connection<R, W>(
         // Read message payload
         let mut payload = vec![0u8; msg_len];
         if let Err(e) = reader.read_exact(&mut payload).await {
-            warn!(
-                "Connection {} failed to read payload: {}",
-                connection_id, e
-            );
+            warn!("Connection {} failed to read payload: {}", connection_id, e);
             break;
         }
 
@@ -103,10 +100,7 @@ pub async fn handle_connection<R, W>(
 
         let encoded = protocol::encode_message(&response);
         if let Err(e) = writer.write_all(&encoded).await {
-            warn!(
-                "Connection {} write error: {}",
-                connection_id, e
-            );
+            warn!("Connection {} write error: {}", connection_id, e);
             break;
         }
     }
@@ -179,8 +173,8 @@ pub async fn start_unix_listener(
     // Remove stale socket file
     let _ = std::fs::remove_file(path);
 
-    let listener = UnixListener::bind(path)
-        .map_err(|e| format!("Failed to bind Unix socket: {}", e))?;
+    let listener =
+        UnixListener::bind(path).map_err(|e| format!("Failed to bind Unix socket: {}", e))?;
 
     // Set appropriate permissions (owner-only)
     #[cfg(unix)]

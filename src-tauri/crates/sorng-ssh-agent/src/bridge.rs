@@ -83,7 +83,7 @@ impl SystemAgentBridge {
             let pipe = r"\\.\pipe\openssh-ssh-agent";
             // We can't easily check if the pipe exists without connecting
             // but we return the standard path
-            return Some(pipe.to_string());
+            Some(pipe.to_string())
         }
 
         #[cfg(not(any(unix, windows)))]
@@ -98,44 +98,39 @@ impl SystemAgentBridge {
             return Err("No agent socket path configured".to_string());
         }
 
-        info!(
-            "Connecting to system SSH agent at: {}",
-            self.socket_path
-        );
+        info!("Connecting to system SSH agent at: {}", self.socket_path);
 
         // Verify the socket/pipe exists
         #[cfg(unix)]
         {
             if !std::path::Path::new(&self.socket_path).exists() {
-                return Err(format!(
-                    "Agent socket not found: {}",
-                    self.socket_path
-                ));
+                return Err(format!("Agent socket not found: {}", self.socket_path));
             }
         }
 
         // Try to send a request-identities to verify connectivity
-        match self.send_raw_message(&protocol::encode_message(&AgentMessage::RequestIdentities)).await {
-            Ok(response) => {
-                match protocol::decode_message(&response) {
-                    Ok(AgentMessage::IdentitiesAnswer { identities }) => {
-                        info!(
-                            "Connected to system agent, {} keys available",
-                            identities.len()
-                        );
-                        self.cached_identities = identities;
-                        self.last_refresh = Some(chrono::Utc::now());
-                        self.connected = true;
-                        Ok(())
-                    }
-                    Ok(_) => {
-                        warn!("Unexpected response from system agent");
-                        self.connected = true;
-                        Ok(())
-                    }
-                    Err(e) => Err(format!("Failed to parse agent response: {}", e)),
+        match self
+            .send_raw_message(&protocol::encode_message(&AgentMessage::RequestIdentities))
+            .await
+        {
+            Ok(response) => match protocol::decode_message(&response) {
+                Ok(AgentMessage::IdentitiesAnswer { identities }) => {
+                    info!(
+                        "Connected to system agent, {} keys available",
+                        identities.len()
+                    );
+                    self.cached_identities = identities;
+                    self.last_refresh = Some(chrono::Utc::now());
+                    self.connected = true;
+                    Ok(())
                 }
-            }
+                Ok(_) => {
+                    warn!("Unexpected response from system agent");
+                    self.connected = true;
+                    Ok(())
+                }
+                Err(e) => Err(format!("Failed to parse agent response: {}", e)),
+            },
             Err(e) => Err(format!("Failed to connect to system agent: {}", e)),
         }
     }
@@ -202,12 +197,7 @@ impl SystemAgentBridge {
     }
 
     /// Forward a sign request to the system agent.
-    pub async fn sign(
-        &self,
-        key_blob: &[u8],
-        data: &[u8],
-        flags: u32,
-    ) -> Result<Vec<u8>, String> {
+    pub async fn sign(&self, key_blob: &[u8], data: &[u8], flags: u32) -> Result<Vec<u8>, String> {
         if !self.connected {
             return Err("Not connected to system agent".to_string());
         }

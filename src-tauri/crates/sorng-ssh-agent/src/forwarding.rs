@@ -25,9 +25,10 @@ pub struct ForwardingManager {
 }
 
 /// How to filter keys when forwarding.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub enum KeyFilterMode {
     /// Forward all keys.
+    #[default]
     AllKeys,
     /// Forward no keys (block forwarding).
     NoKeys,
@@ -35,12 +36,6 @@ pub enum KeyFilterMode {
     SelectedKeys(Vec<String>),
     /// Forward keys matching a pattern (glob on comment/fingerprint).
     Pattern(String),
-}
-
-impl Default for KeyFilterMode {
-    fn default() -> Self {
-        Self::AllKeys
-    }
 }
 
 /// Per-session forwarding policy.
@@ -108,10 +103,7 @@ impl ForwardingManager {
         }
 
         if !self.is_host_allowed(remote_host) {
-            return Err(format!(
-                "Forwarding not allowed to host: {}",
-                remote_host
-            ));
+            return Err(format!("Forwarding not allowed to host: {}", remote_host));
         }
 
         let session = ForwardingSession {
@@ -261,7 +253,8 @@ mod tests {
     #[test]
     fn test_start_stop_session() {
         let mut mgr = ForwardingManager::new(5, true);
-        mgr.start_session("s1", "host.com", "user", 1, None).unwrap();
+        mgr.start_session("s1", "host.com", "user", 1, None)
+            .unwrap();
         assert_eq!(mgr.active_session_count(), 1);
 
         let stopped = mgr.stop_session("s1").unwrap();

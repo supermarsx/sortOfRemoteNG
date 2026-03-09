@@ -21,25 +21,19 @@ pub async fn ssh_agent_get_status(
 
 /// Start the SSH agent service.
 #[tauri::command]
-pub async fn ssh_agent_start(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<()> {
+pub async fn ssh_agent_start(state: State<'_, SshAgentServiceState>) -> CmdResult<()> {
     state.lock().await.start().await
 }
 
 /// Stop the SSH agent service.
 #[tauri::command]
-pub async fn ssh_agent_stop(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<()> {
+pub async fn ssh_agent_stop(state: State<'_, SshAgentServiceState>) -> CmdResult<()> {
     state.lock().await.stop().await
 }
 
 /// Restart the SSH agent service.
 #[tauri::command]
-pub async fn ssh_agent_restart(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<()> {
+pub async fn ssh_agent_restart(state: State<'_, SshAgentServiceState>) -> CmdResult<()> {
     state.lock().await.restart().await
 }
 
@@ -93,9 +87,7 @@ pub async fn ssh_agent_remove_key(
 
 /// Remove all keys.
 #[tauri::command]
-pub async fn ssh_agent_remove_all_keys(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<usize> {
+pub async fn ssh_agent_remove_all_keys(state: State<'_, SshAgentServiceState>) -> CmdResult<usize> {
     Ok(state.lock().await.remove_all_keys())
 }
 
@@ -121,17 +113,13 @@ pub async fn ssh_agent_unlock(
 
 /// Connect to the system SSH agent.
 #[tauri::command]
-pub async fn ssh_agent_connect_system(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<()> {
+pub async fn ssh_agent_connect_system(state: State<'_, SshAgentServiceState>) -> CmdResult<()> {
     state.lock().await.connect_system_agent().await
 }
 
 /// Disconnect from the system SSH agent.
 #[tauri::command]
-pub async fn ssh_agent_disconnect_system(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<()> {
+pub async fn ssh_agent_disconnect_system(state: State<'_, SshAgentServiceState>) -> CmdResult<()> {
     state.lock().await.disconnect_system_agent();
     Ok(())
 }
@@ -210,18 +198,14 @@ pub async fn ssh_agent_audit_log(
 
 /// Export the full audit log as JSON.
 #[tauri::command]
-pub async fn ssh_agent_export_audit(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<String> {
+pub async fn ssh_agent_export_audit(state: State<'_, SshAgentServiceState>) -> CmdResult<String> {
     let svc = state.lock().await;
     svc.export_audit_log()
 }
 
 /// Clear the audit log.
 #[tauri::command]
-pub async fn ssh_agent_clear_audit(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<()> {
+pub async fn ssh_agent_clear_audit(state: State<'_, SshAgentServiceState>) -> CmdResult<()> {
     state.lock().await.clear_audit_log();
     Ok(())
 }
@@ -230,9 +214,7 @@ pub async fn ssh_agent_clear_audit(
 
 /// Run periodic maintenance (expire keys, clean confirmations).
 #[tauri::command]
-pub async fn ssh_agent_run_maintenance(
-    state: State<'_, SshAgentServiceState>,
-) -> CmdResult<()> {
+pub async fn ssh_agent_run_maintenance(state: State<'_, SshAgentServiceState>) -> CmdResult<()> {
     state.lock().await.run_maintenance();
     Ok(())
 }
@@ -310,6 +292,7 @@ pub async fn ssh_agent_list_security_keys(
 
 /// Enroll a new FIDO2 security key.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn ssh_agent_add_security_key(
     state: State<'_, SshAgentServiceState>,
     sk_provider: Option<String>,

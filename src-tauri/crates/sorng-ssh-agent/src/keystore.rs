@@ -72,10 +72,7 @@ impl KeyStore {
             return Err("Agent is locked".to_string());
         }
         if self.max_keys > 0 && self.keys.len() >= self.max_keys {
-            return Err(format!(
-                "Maximum key limit reached ({})",
-                self.max_keys
-            ));
+            return Err(format!("Maximum key limit reached ({})", self.max_keys));
         }
 
         // Check for duplicate by blob
@@ -98,7 +95,10 @@ impl KeyStore {
         if self.locked {
             return Err("Agent is locked".to_string());
         }
-        let key = self.keys.remove(id).ok_or_else(|| "Key not found".to_string())?;
+        let key = self
+            .keys
+            .remove(id)
+            .ok_or_else(|| "Key not found".to_string())?;
         self.blob_index.remove(&key.public_key_blob);
         info!("Removed key {}", id);
         Ok(key)
@@ -134,9 +134,7 @@ impl KeyStore {
         if self.locked {
             return None;
         }
-        self.blob_index
-            .get(blob)
-            .and_then(|id| self.keys.get(id))
+        self.blob_index.get(blob).and_then(|id| self.keys.get(id))
     }
 
     /// Find a key by its unique ID.
@@ -201,10 +199,7 @@ impl KeyStore {
         // Check max-signatures constraint
         for c in &key.constraints {
             if c.is_max_signatures_reached(key.sign_count) {
-                warn!(
-                    "Key {} reached max signatures ({})",
-                    key.id, key.sign_count
-                );
+                warn!("Key {} reached max signatures ({})", key.id, key.sign_count);
                 return Ok(false);
             }
         }
@@ -259,9 +254,9 @@ impl KeyStore {
         if let Some(key) = self.find_by_blob(blob) {
             for c in &key.constraints {
                 if let KeyConstraint::HostRestriction(hosts) = c {
-                    return hosts.iter().any(|h| {
-                        h == host || (h.starts_with("*.") && host.ends_with(&h[1..]))
-                    });
+                    return hosts
+                        .iter()
+                        .any(|h| h == host || (h.starts_with("*.") && host.ends_with(&h[1..])));
                 }
             }
             // No host restriction → allowed by default

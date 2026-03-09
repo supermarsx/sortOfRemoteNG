@@ -135,10 +135,7 @@ impl AuditLogger {
 
     /// Filter entries by action.
     pub fn filter_by_action(&self, action: &str) -> Vec<&AuditEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.action == action)
-            .collect()
+        self.entries.iter().filter(|e| e.action == action).collect()
     }
 
     /// Filter entries by key fingerprint.
@@ -215,11 +212,17 @@ fn event_to_audit(event: &AgentEvent) -> (String, String) {
         AgentEvent::Stopped => ("agent_stopped".to_string(), "SSH agent stopped".to_string()),
         AgentEvent::Locked => ("agent_locked".to_string(), "Agent locked".to_string()),
         AgentEvent::Unlocked => ("agent_unlocked".to_string(), "Agent unlocked".to_string()),
-        AgentEvent::KeyAdded { key_id, fingerprint } => (
+        AgentEvent::KeyAdded {
+            key_id,
+            fingerprint,
+        } => (
             "key_added".to_string(),
             format!("Key {} added ({})", key_id, fingerprint),
         ),
-        AgentEvent::KeyRemoved { key_id, fingerprint } => (
+        AgentEvent::KeyRemoved {
+            key_id,
+            fingerprint,
+        } => (
             "key_removed".to_string(),
             format!("Key {} removed ({})", key_id, fingerprint),
         ),
@@ -227,11 +230,17 @@ fn event_to_audit(event: &AgentEvent) -> (String, String) {
             "all_keys_removed".to_string(),
             "All keys removed".to_string(),
         ),
-        AgentEvent::SignRequest { key_fingerprint, data_hash } => (
+        AgentEvent::SignRequest {
+            key_fingerprint,
+            data_hash,
+        } => (
             "sign_request".to_string(),
             format!("Sign request for {} (data: {})", key_fingerprint, data_hash),
         ),
-        AgentEvent::SignCompleted { key_fingerprint, success } => (
+        AgentEvent::SignCompleted {
+            key_fingerprint,
+            success,
+        } => (
             "sign_completed".to_string(),
             format!(
                 "Sign {} for {}",
@@ -239,7 +248,10 @@ fn event_to_audit(event: &AgentEvent) -> (String, String) {
                 key_fingerprint
             ),
         ),
-        AgentEvent::ForwardingStarted { session_id, remote_host } => (
+        AgentEvent::ForwardingStarted {
+            session_id,
+            remote_host,
+        } => (
             "forwarding_started".to_string(),
             format!("Forwarding started: {} → {}", session_id, remote_host),
         ),
@@ -258,7 +270,10 @@ fn event_to_audit(event: &AgentEvent) -> (String, String) {
                 req.id, req.key_fingerprint
             ),
         ),
-        AgentEvent::ConfirmationResponse { request_id, approved } => (
+        AgentEvent::ConfirmationResponse {
+            request_id,
+            approved,
+        } => (
             "confirmation_response".to_string(),
             format!(
                 "Confirmation {}: {}",
@@ -274,10 +289,7 @@ fn event_to_audit(event: &AgentEvent) -> (String, String) {
             "pkcs11_event".to_string(),
             format!("PKCS#11 {} : {}", provider, event),
         ),
-        AgentEvent::Error { message } => (
-            "error".to_string(),
-            format!("Error: {}", message),
-        ),
+        AgentEvent::Error { message } => ("error".to_string(), format!("Error: {}", message)),
     }
 }
 
@@ -286,8 +298,12 @@ fn extract_fingerprint(event: &AgentEvent) -> Option<String> {
     match event {
         AgentEvent::KeyAdded { fingerprint, .. } => Some(fingerprint.clone()),
         AgentEvent::KeyRemoved { fingerprint, .. } => Some(fingerprint.clone()),
-        AgentEvent::SignRequest { key_fingerprint, .. } => Some(key_fingerprint.clone()),
-        AgentEvent::SignCompleted { key_fingerprint, .. } => Some(key_fingerprint.clone()),
+        AgentEvent::SignRequest {
+            key_fingerprint, ..
+        } => Some(key_fingerprint.clone()),
+        AgentEvent::SignCompleted {
+            key_fingerprint, ..
+        } => Some(key_fingerprint.clone()),
         _ => None,
     }
 }

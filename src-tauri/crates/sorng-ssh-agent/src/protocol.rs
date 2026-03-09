@@ -105,10 +105,7 @@ pub enum AgentMessage {
     },
 
     /// Remove PKCS#11 keys.
-    RemoveSmartcardKey {
-        provider: String,
-        pin: String,
-    },
+    RemoveSmartcardKey { provider: String, pin: String },
 
     /// Lock the agent with a passphrase.
     Lock { passphrase: String },
@@ -117,10 +114,7 @@ pub enum AgentMessage {
     Unlock { passphrase: String },
 
     /// Extension request (session-bind@openssh.com, etc.).
-    Extension {
-        name: String,
-        data: Vec<u8>,
-    },
+    Extension { name: String, data: Vec<u8> },
 
     // ── Responses (from agent) ──
     /// Generic success.
@@ -130,14 +124,10 @@ pub enum AgentMessage {
     Failure,
 
     /// List of identities.
-    IdentitiesAnswer {
-        identities: Vec<ProtocolIdentity>,
-    },
+    IdentitiesAnswer { identities: Vec<ProtocolIdentity> },
 
     /// Signature response.
-    SignResponse {
-        signature: Vec<u8>,
-    },
+    SignResponse { signature: Vec<u8> },
 
     /// Extension failure.
     ExtensionFailure,
@@ -234,7 +224,11 @@ fn encode_payload(msg: &AgentMessage) -> Vec<u8> {
             buf
         }
 
-        AgentMessage::SignRequest { key_blob, data, flags } => {
+        AgentMessage::SignRequest {
+            key_blob,
+            data,
+            flags,
+        } => {
             let mut buf = vec![msg::SSH_AGENTC_SIGN_REQUEST];
             buf.extend(write_string(key_blob));
             buf.extend(write_string(data));
@@ -248,7 +242,11 @@ fn encode_payload(msg: &AgentMessage) -> Vec<u8> {
             buf
         }
 
-        AgentMessage::AddIdentity { key_type, key_data, comment } => {
+        AgentMessage::AddIdentity {
+            key_type,
+            key_data,
+            comment,
+        } => {
             let mut buf = vec![msg::SSH_AGENTC_ADD_IDENTITY];
             buf.extend(write_string(key_type.as_bytes()));
             buf.extend(key_data.clone());
@@ -256,7 +254,12 @@ fn encode_payload(msg: &AgentMessage) -> Vec<u8> {
             buf
         }
 
-        AgentMessage::AddIdentityConstrained { key_type, key_data, comment, constraints } => {
+        AgentMessage::AddIdentityConstrained {
+            key_type,
+            key_data,
+            comment,
+            constraints,
+        } => {
             let mut buf = vec![msg::SSH_AGENTC_ADD_ID_CONSTRAINED];
             buf.extend(write_string(key_type.as_bytes()));
             buf.extend(key_data.clone());
@@ -295,7 +298,11 @@ fn encode_payload(msg: &AgentMessage) -> Vec<u8> {
             buf
         }
 
-        AgentMessage::AddSmartcardKeyConstrained { provider, pin, constraints } => {
+        AgentMessage::AddSmartcardKeyConstrained {
+            provider,
+            pin,
+            constraints,
+        } => {
             let mut buf = vec![msg::SSH_AGENTC_ADD_SMARTCARD_KEY_CONSTRAINED];
             buf.extend(write_string(provider.as_bytes()));
             buf.extend(write_string(pin.as_bytes()));
@@ -399,7 +406,10 @@ pub fn decode_message(packet: &[u8]) -> Result<AgentMessage, String> {
         msg::SSH_AGENTC_EXTENSION => {
             let (name, offset) = read_utf8_string(data, 0)?;
             let ext_data = data[offset..].to_vec();
-            Ok(AgentMessage::Extension { name, data: ext_data })
+            Ok(AgentMessage::Extension {
+                name,
+                data: ext_data,
+            })
         }
 
         msg::SSH_AGENT_IDENTITIES_ANSWER => {
@@ -457,12 +467,10 @@ mod tests {
     #[test]
     fn test_roundtrip_identities_answer() {
         let msg = AgentMessage::IdentitiesAnswer {
-            identities: vec![
-                ProtocolIdentity {
-                    key_blob: vec![1, 2, 3],
-                    comment: "test-key".to_string(),
-                },
-            ],
+            identities: vec![ProtocolIdentity {
+                key_blob: vec![1, 2, 3],
+                comment: "test-key".to_string(),
+            }],
         };
         let encoded = encode_message(&msg);
         let decoded = decode_message(&encoded[4..]).unwrap();
@@ -484,7 +492,12 @@ mod tests {
         };
         let encoded = encode_message(&msg);
         let decoded = decode_message(&encoded[4..]).unwrap();
-        if let AgentMessage::SignRequest { key_blob, data, flags } = decoded {
+        if let AgentMessage::SignRequest {
+            key_blob,
+            data,
+            flags,
+        } = decoded
+        {
             assert_eq!(key_blob, vec![0xAA, 0xBB]);
             assert_eq!(data, vec![0xCC, 0xDD]);
             assert_eq!(flags, msg::SSH_AGENT_RSA_SHA2_256);
@@ -495,7 +508,9 @@ mod tests {
 
     #[test]
     fn test_roundtrip_lock_unlock() {
-        let lock = AgentMessage::Lock { passphrase: "secret".to_string() };
+        let lock = AgentMessage::Lock {
+            passphrase: "secret".to_string(),
+        };
         let encoded = encode_message(&lock);
         let decoded = decode_message(&encoded[4..]).unwrap();
         if let AgentMessage::Lock { passphrase } = decoded {

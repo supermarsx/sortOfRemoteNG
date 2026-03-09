@@ -36,10 +36,7 @@ pub struct EvalContext {
 }
 
 /// Evaluate all constraints on a key against the given context.
-pub fn evaluate_constraints(
-    constraints: &[KeyConstraint],
-    ctx: &EvalContext,
-) -> ConstraintResult {
+pub fn evaluate_constraints(constraints: &[KeyConstraint], ctx: &EvalContext) -> ConstraintResult {
     let mut result = ConstraintResult {
         allowed: true,
         needs_confirmation: false,
@@ -77,25 +74,22 @@ pub fn evaluate_constraints(
                         ctx.current_sign_count, max
                     ));
                 } else {
-                    result.info.push(format!(
-                        "Signatures: {}/{}",
-                        ctx.current_sign_count, max
-                    ));
+                    result
+                        .info
+                        .push(format!("Signatures: {}/{}", ctx.current_sign_count, max));
                 }
             }
 
             KeyConstraint::HostRestriction(hosts) => {
                 if let Some(ref target_host) = ctx.host {
                     let allowed = hosts.iter().any(|h| {
-                        h == target_host
-                            || (h.starts_with("*.") && target_host.ends_with(&h[1..]))
+                        h == target_host || (h.starts_with("*.") && target_host.ends_with(&h[1..]))
                     });
                     if !allowed {
                         result.allowed = false;
-                        result.deny_reasons.push(format!(
-                            "Host '{}' not in allowed list",
-                            target_host
-                        ));
+                        result
+                            .deny_reasons
+                            .push(format!("Host '{}' not in allowed list", target_host));
                     }
                 } else {
                     result
@@ -108,10 +102,9 @@ pub fn evaluate_constraints(
                 if let Some(ref target_user) = ctx.user {
                     if !users.contains(target_user) {
                         result.allowed = false;
-                        result.deny_reasons.push(format!(
-                            "User '{}' not in allowed list",
-                            target_user
-                        ));
+                        result
+                            .deny_reasons
+                            .push(format!("User '{}' not in allowed list", target_user));
                     }
                 } else {
                     result
@@ -136,18 +129,13 @@ pub fn evaluate_constraints(
                     name,
                     data.len()
                 );
-                result
-                    .info
-                    .push(format!("Extension constraint: {}", name));
+                result.info.push(format!("Extension constraint: {}", name));
             }
         }
     }
 
     if !result.allowed {
-        warn!(
-            "Constraint evaluation denied: {:?}",
-            result.deny_reasons
-        );
+        warn!("Constraint evaluation denied: {:?}", result.deny_reasons);
     }
 
     result
@@ -239,7 +227,7 @@ mod tests {
     #[test]
     fn test_host_allowed() {
         let key = make_key(vec![KeyConstraint::HostRestriction(vec![
-            "*.example.com".to_string(),
+            "*.example.com".to_string()
         ])]);
         let result = can_sign(&key, Some("a.example.com"), None, 0);
         assert!(result.allowed);
@@ -248,7 +236,7 @@ mod tests {
     #[test]
     fn test_host_denied() {
         let key = make_key(vec![KeyConstraint::HostRestriction(vec![
-            "safe.com".to_string(),
+            "safe.com".to_string()
         ])]);
         let result = can_sign(&key, Some("evil.com"), None, 0);
         assert!(!result.allowed);
@@ -257,7 +245,7 @@ mod tests {
     #[test]
     fn test_user_restriction() {
         let key = make_key(vec![KeyConstraint::UserRestriction(vec![
-            "alice".to_string(),
+            "alice".to_string()
         ])]);
         let r1 = can_sign(&key, None, Some("alice"), 0);
         assert!(r1.allowed);

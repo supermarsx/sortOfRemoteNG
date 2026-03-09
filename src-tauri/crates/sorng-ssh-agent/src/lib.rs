@@ -51,14 +51,14 @@
 //! └─────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod types;
-pub mod protocol;
-pub mod keystore;
 pub mod agent;
-pub mod bridge;
-pub mod forwarding;
-pub mod constraints;
-pub mod socket;
 pub mod audit;
-pub mod service;
+pub mod bridge;
 pub mod commands;
+pub mod constraints;
+pub mod forwarding;
+pub mod keystore;
+pub mod protocol;
+pub mod service;
+pub mod socket;
+pub mod types;

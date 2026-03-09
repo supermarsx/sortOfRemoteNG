@@ -39,12 +39,16 @@ impl BuiltinAgent {
     pub async fn process_message(&mut self, msg: AgentMessage) -> AgentMessage {
         match msg {
             AgentMessage::RequestIdentities => self.handle_request_identities(),
-            AgentMessage::SignRequest { key_blob, data, flags } => {
-                self.handle_sign_request(&key_blob, &data, flags).await
-            }
-            AgentMessage::AddIdentity { key_type, key_data, comment } => {
-                self.handle_add_identity(&key_type, &key_data, &comment, Vec::new())
-            }
+            AgentMessage::SignRequest {
+                key_blob,
+                data,
+                flags,
+            } => self.handle_sign_request(&key_blob, &data, flags).await,
+            AgentMessage::AddIdentity {
+                key_type,
+                key_data,
+                comment,
+            } => self.handle_add_identity(&key_type, &key_data, &comment, Vec::new()),
             AgentMessage::AddIdentityConstrained {
                 key_type,
                 key_data,
@@ -54,9 +58,7 @@ impl BuiltinAgent {
                 let parsed = parse_protocol_constraints(&constraints);
                 self.handle_add_identity(&key_type, &key_data, &comment, parsed)
             }
-            AgentMessage::RemoveIdentity { key_blob } => {
-                self.handle_remove_identity(&key_blob)
-            }
+            AgentMessage::RemoveIdentity { key_blob } => self.handle_remove_identity(&key_blob),
             AgentMessage::RemoveAllIdentities => self.handle_remove_all(),
             AgentMessage::Lock { passphrase } => self.handle_lock(&passphrase),
             AgentMessage::Unlock { passphrase } => self.handle_unlock(&passphrase),
@@ -74,9 +76,7 @@ impl BuiltinAgent {
             AgentMessage::RemoveSmartcardKey { provider, pin } => {
                 self.handle_remove_smartcard(&provider, &pin)
             }
-            AgentMessage::Extension { name, data } => {
-                self.handle_extension(&name, &data)
-            }
+            AgentMessage::Extension { name, data } => self.handle_extension(&name, &data),
             // Responses should not be received by the agent as requests
             _ => AgentMessage::Failure,
         }
@@ -118,7 +118,7 @@ impl BuiltinAgent {
 
         let fingerprint = key.fingerprint_sha256.clone();
         let _key_id = key.id.clone();
-        let algorithm = key.algorithm.clone();
+        let algorithm = key.algorithm;
         let data_hash = hex::encode(Sha256::digest(data));
 
         // Emit sign request event
@@ -153,7 +153,10 @@ impl BuiltinAgent {
         match self.store.record_sign(key_blob) {
             Ok(true) => {}
             Ok(false) => {
-                warn!("Signing denied — max signatures reached for {}", fingerprint);
+                warn!(
+                    "Signing denied — max signatures reached for {}",
+                    fingerprint
+                );
                 return AgentMessage::Failure;
             }
             Err(e) => {
@@ -203,7 +206,7 @@ impl BuiltinAgent {
         let key = AgentKey {
             id: uuid::Uuid::new_v4().to_string(),
             comment: comment.to_string(),
-            algorithm: algorithm.clone(),
+            algorithm,
             bits: algorithm.default_bits(),
             fingerprint_sha256: fingerprint.clone(),
             fingerprint_md5: String::new(),
@@ -299,10 +302,7 @@ impl BuiltinAgent {
     }
 
     fn handle_remove_smartcard(&mut self, provider: &str, _pin: &str) -> AgentMessage {
-        info!(
-            "Smartcard remove requested for provider: {}",
-            provider
-        );
+        info!("Smartcard remove requested for provider: {}", provider);
         let _ = self.event_tx.send(AgentEvent::Pkcs11Event {
             provider: provider.to_string(),
             event: "remove_requested".to_string(),
@@ -510,17 +510,13 @@ impl BuiltinAgent {
 }
 
 /// Parse wire-format constraints into typed KeyConstraint values.
-fn parse_protocol_constraints(
-    constraints: &[protocol::ProtocolConstraint],
-) -> Vec<KeyConstraint> {
+fn parse_protocol_constraints(constraints: &[protocol::ProtocolConstraint]) -> Vec<KeyConstraint> {
     constraints
         .iter()
         .filter_map(|c| match c.constraint_type {
             msg::SSH_AGENT_CONSTRAIN_LIFETIME => {
                 if c.data.len() >= 4 {
-                    let secs = u32::from_be_bytes([
-                        c.data[0], c.data[1], c.data[2], c.data[3],
-                    ]);
+                    let secs = u32::from_be_bytes([c.data[0], c.data[1], c.data[2], c.data[3]]);
                     Some(KeyConstraint::Lifetime(secs as u64))
                 } else {
                     None
@@ -528,10 +524,7 @@ fn parse_protocol_constraints(
             }
             msg::SSH_AGENT_CONSTRAIN_CONFIRM => Some(KeyConstraint::ConfirmBeforeUse),
             _ => {
-                debug!(
-                    "Unknown constraint type {}",
-                    c.constraint_type
-                );
+                debug!("Unknown constraint type {}", c.constraint_type);
                 None
             }
         })
@@ -541,10 +534,7 @@ fn parse_protocol_constraints(
 /// Hex encoding helper (no extra dep needed).
 mod hex {
     pub fn encode(data: impl AsRef<[u8]>) -> String {
-        data.as_ref()
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect()
+        data.as_ref().iter().map(|b| format!("{:02x}", b)).collect()
     }
 }
 
@@ -618,7 +608,9 @@ mod tests {
         agent.process_message(add).await;
 
         let resp = agent
-            .process_message(AgentMessage::Lock { passphrase: "pw".to_string() })
+            .process_message(AgentMessage::Lock {
+                passphrase: "pw".to_string(),
+            })
             .await;
         assert!(matches!(resp, AgentMessage::Success));
 
@@ -628,7 +620,9 @@ mod tests {
         }
 
         let resp = agent
-            .process_message(AgentMessage::Unlock { passphrase: "pw".to_string() })
+            .process_message(AgentMessage::Unlock {
+                passphrase: "pw".to_string(),
+            })
             .await;
         assert!(matches!(resp, AgentMessage::Success));
     }
@@ -644,7 +638,9 @@ mod tests {
             };
             agent.process_message(add).await;
         }
-        let resp = agent.process_message(AgentMessage::RemoveAllIdentities).await;
+        let resp = agent
+            .process_message(AgentMessage::RemoveAllIdentities)
+            .await;
         assert!(matches!(resp, AgentMessage::Success));
         assert_eq!(agent.store.key_count(), 0);
     }

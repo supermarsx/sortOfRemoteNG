@@ -14,10 +14,12 @@ use tokio::sync::Mutex;
 /// SSH key algorithm families supported by the agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum KeyAlgorithm {
     /// RSA (ssh-rsa, rsa-sha2-256, rsa-sha2-512)
     Rsa,
     /// Ed25519 (ssh-ed25519)
+    #[default]
     Ed25519,
     /// ECDSA NIST P-256 (ecdsa-sha2-nistp256)
     EcdsaP256,
@@ -90,30 +92,20 @@ impl KeyAlgorithm {
     }
 }
 
-impl Default for KeyAlgorithm {
-    fn default() -> Self {
-        Self::Ed25519
-    }
-}
-
 // ── Signature Hash ──────────────────────────────────────────────────
 
 /// Hash algorithm used for RSA signatures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum RsaHashAlgorithm {
     /// SHA-1 (legacy ssh-rsa, RFC 4253)
     Sha1,
     /// SHA-256 (rsa-sha2-256, RFC 8332)
+    #[default]
     Sha256,
     /// SHA-512 (rsa-sha2-512, RFC 8332)
     Sha512,
-}
-
-impl Default for RsaHashAlgorithm {
-    fn default() -> Self {
-        Self::Sha256
-    }
 }
 
 // ── Agent Key ───────────────────────────────────────────────────────
@@ -362,14 +354,30 @@ pub struct AgentConfig {
     pub audit_file: String,
 }
 
-fn default_true() -> bool { true }
-fn default_agent_name() -> String { "default".to_string() }
-fn default_tcp_port() -> u16 { 0 }
-fn default_max_keys() -> usize { 256 }
-fn default_min_rsa_bits() -> u32 { 2048 }
-fn default_max_forward_depth() -> u32 { 5 }
-fn default_max_audit_events() -> usize { 1000 }
-fn default_cache_ttl() -> u64 { 300 }
+fn default_true() -> bool {
+    true
+}
+fn default_agent_name() -> String {
+    "default".to_string()
+}
+fn default_tcp_port() -> u16 {
+    0
+}
+fn default_max_keys() -> usize {
+    256
+}
+fn default_min_rsa_bits() -> u32 {
+    2048
+}
+fn default_max_forward_depth() -> u32 {
+    5
+}
+fn default_max_audit_events() -> usize {
+    1000
+}
+fn default_cache_ttl() -> u64 {
+    300
+}
 
 impl Default for AgentConfig {
     fn default() -> Self {
@@ -410,7 +418,7 @@ impl Default for AgentConfig {
 // ── Agent Status ────────────────────────────────────────────────────
 
 /// Current state of the SSH agent service.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentStatus {
     /// Whether the agent is running.
     pub running: bool,
@@ -428,20 +436,6 @@ pub struct AgentStatus {
     pub started_at: Option<DateTime<Utc>>,
 }
 
-impl Default for AgentStatus {
-    fn default() -> Self {
-        Self {
-            running: false,
-            locked: false,
-            socket_path: None,
-            system_agent_connected: false,
-            loaded_keys: 0,
-            forwarding_sessions: 0,
-            started_at: None,
-        }
-    }
-}
-
 // ── Agent Events ────────────────────────────────────────────────────
 
 /// Events emitted by the agent for audit and UI updates.
@@ -457,15 +451,9 @@ pub enum AgentEvent {
     /// Agent unlocked.
     Unlocked,
     /// Key added to agent.
-    KeyAdded {
-        key_id: String,
-        fingerprint: String,
-    },
+    KeyAdded { key_id: String, fingerprint: String },
     /// Key removed from agent.
-    KeyRemoved {
-        key_id: String,
-        fingerprint: String,
-    },
+    KeyRemoved { key_id: String, fingerprint: String },
     /// All keys removed.
     AllKeysRemoved,
     /// Signing request.
@@ -484,34 +472,19 @@ pub enum AgentEvent {
         remote_host: String,
     },
     /// Forwarding session ended.
-    ForwardingStopped {
-        session_id: String,
-    },
+    ForwardingStopped { session_id: String },
     /// Key constraint triggered (lifetime expired, max sign, etc.).
-    ConstraintTriggered {
-        key_id: String,
-        constraint: String,
-    },
+    ConstraintTriggered { key_id: String, constraint: String },
     /// Confirmation requested for key use.
     ConfirmationRequested(PendingSignRequest),
     /// Confirmation response.
-    ConfirmationResponse {
-        request_id: String,
-        approved: bool,
-    },
+    ConfirmationResponse { request_id: String, approved: bool },
     /// System agent bridge event.
-    SystemAgentEvent {
-        event: String,
-    },
+    SystemAgentEvent { event: String },
     /// PKCS#11 provider event.
-    Pkcs11Event {
-        provider: String,
-        event: String,
-    },
+    Pkcs11Event { provider: String, event: String },
     /// Error event.
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 impl AgentEvent {
@@ -638,7 +611,10 @@ mod tests {
     fn test_key_algorithm_ssh_names() {
         assert_eq!(KeyAlgorithm::Rsa.ssh_name(), "ssh-rsa");
         assert_eq!(KeyAlgorithm::Ed25519.ssh_name(), "ssh-ed25519");
-        assert_eq!(KeyAlgorithm::SkEd25519.ssh_name(), "sk-ssh-ed25519@openssh.com");
+        assert_eq!(
+            KeyAlgorithm::SkEd25519.ssh_name(),
+            "sk-ssh-ed25519@openssh.com"
+        );
         assert_eq!(KeyAlgorithm::EcdsaP256.ssh_name(), "ecdsa-sha2-nistp256");
     }
 

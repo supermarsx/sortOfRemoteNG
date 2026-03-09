@@ -34,6 +34,12 @@ pub struct SshAgentService {
     config: AgentConfig,
 }
 
+impl Default for SshAgentService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SshAgentService {
     /// Create a new service with default configuration.
     pub fn new() -> Self {
@@ -49,10 +55,8 @@ impl SshAgentService {
             config.system_agent_cache_ttl,
         );
 
-        let forwarding = ForwardingManager::new(
-            config.max_forwarding_depth,
-            config.allow_forwarding,
-        );
+        let forwarding =
+            ForwardingManager::new(config.max_forwarding_depth, config.allow_forwarding);
 
         let audit = AuditLogger::new(
             config.audit_enabled,
@@ -169,7 +173,8 @@ impl SshAgentService {
         self.forwarding.set_enabled(config.allow_forwarding);
         self.audit.set_enabled(config.audit_enabled);
         if !config.audit_file.is_empty() {
-            self.audit.set_log_file(Some(PathBuf::from(&config.audit_file)));
+            self.audit
+                .set_log_file(Some(PathBuf::from(&config.audit_file)));
         }
         self.agent.update_config(config.clone());
         self.config = config;
@@ -351,12 +356,8 @@ impl SshAgentService {
     pub fn run_maintenance(&mut self) {
         let expired = self.agent.expire_keys();
         for id in &expired {
-            self.audit.log_custom(
-                "key_expired",
-                None,
-                true,
-                &format!("Key {} expired", id),
-            );
+            self.audit
+                .log_custom("key_expired", None, true, &format!("Key {} expired", id));
         }
         self.agent.cleanup_expired_confirmations();
         self.status.loaded_keys = self.agent.store.key_count() as u32;
@@ -420,9 +421,7 @@ impl SshAgentService {
             .map(|path| Pkcs11ProviderStatus {
                 library_path: path.clone(),
                 loaded: true,
-                key_count: self
-                    .agent
-                    .count_keys_by_source(&format!("pkcs11:{}", path)),
+                key_count: self.agent.count_keys_by_source(&format!("pkcs11:{}", path)),
                 slots: vec![],
                 error: None,
             })
@@ -430,10 +429,7 @@ impl SshAgentService {
     }
 
     /// Get slot information for a loaded PKCS#11 provider.
-    pub fn get_pkcs11_slots(
-        &self,
-        provider_path: &str,
-    ) -> Result<Vec<Pkcs11SlotInfo>, String> {
+    pub fn get_pkcs11_slots(&self, provider_path: &str) -> Result<Vec<Pkcs11SlotInfo>, String> {
         if !self
             .config
             .pkcs11_providers
@@ -464,7 +460,7 @@ impl SshAgentService {
             event: "smartcard_add".to_string(),
         });
         let _ = pin; // Would be used to authenticate to the token
-        // In production, this would enumerate keys from the smart card via PKCS#11
+                     // In production, this would enumerate keys from the smart card via PKCS#11
         Ok(0)
     }
 
@@ -496,6 +492,7 @@ impl SshAgentService {
     }
 
     /// Enroll a new FIDO2 security key.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_security_key(
         &mut self,
         sk_provider: Option<&str>,
@@ -530,11 +527,7 @@ impl SshAgentService {
     }
 
     /// Approve or deny a pending sign request.
-    pub fn confirm_sign_request(
-        &mut self,
-        request_id: &str,
-        approved: bool,
-    ) -> Result<(), String> {
+    pub fn confirm_sign_request(&mut self, request_id: &str, approved: bool) -> Result<(), String> {
         log::info!(
             "Confirming sign request {}: approved={}",
             request_id,
@@ -555,11 +548,7 @@ impl SshAgentService {
     }
 
     /// Update the comment on a loaded key.
-    pub fn update_key_comment(
-        &mut self,
-        key_id: &str,
-        comment: &str,
-    ) -> Result<(), String> {
+    pub fn update_key_comment(&mut self, key_id: &str, comment: &str) -> Result<(), String> {
         self.agent.update_comment(key_id, comment)
     }
 
