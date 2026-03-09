@@ -14,11 +14,7 @@ pub async fn read_sysfs(host: &KernelHost, path: &str) -> Result<String, KernelE
 }
 
 /// Write a value to a sysfs attribute.
-pub async fn write_sysfs(
-    host: &KernelHost,
-    path: &str,
-    value: &str,
-) -> Result<(), KernelError> {
+pub async fn write_sysfs(host: &KernelHost, path: &str, value: &str) -> Result<(), KernelError> {
     let safe_path = validate_sysfs_path(path)?;
     let cmd = format!(
         "echo '{}' > '{}'",
@@ -124,7 +120,11 @@ pub async fn get_block_devices(
 /// Validate that a path is under /sys or /proc to prevent path traversal.
 fn validate_sysfs_path(path: &str) -> Result<String, KernelError> {
     let normalized = path.trim();
-    if normalized.starts_with("/sys/") || normalized.starts_with("/proc/") || normalized == "/sys" || normalized == "/proc" {
+    if normalized.starts_with("/sys/")
+        || normalized.starts_with("/proc/")
+        || normalized == "/sys"
+        || normalized == "/proc"
+    {
         if normalized.contains("..") {
             return Err(KernelError::PermissionDenied(
                 "Path traversal not allowed".to_string(),

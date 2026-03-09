@@ -39,8 +39,10 @@ pub async fn list_loaded_modules(host: &KernelHost) -> Result<Vec<KernelModule>,
     }
     // Enrich with /proc/modules for state/offset/taint
     if let Ok(proc) = client::exec_shell(host, "cat /proc/modules").await {
-        let proc_map: std::collections::HashMap<String, (ModuleState, Option<String>, Option<String>)> =
-            proc.lines().filter_map(parse_proc_module_line).collect();
+        let proc_map: std::collections::HashMap<
+            String,
+            (ModuleState, Option<String>, Option<String>),
+        > = proc.lines().filter_map(parse_proc_module_line).collect();
         for m in &mut modules {
             if let Some((state, offset, taint)) = proc_map.get(&m.name) {
                 m.state = state.clone();
@@ -72,7 +74,10 @@ fn parse_used_by(s: &str) -> (u32, Vec<String>) {
 
 /// Parse a single /proc/modules line:
 /// `nf_conntrack 172032 3 nf_nat,..., Live 0xffffffffc0a60000 (E)`
-fn parse_proc_module_line(line: &str) -> Option<(String, (ModuleState, Option<String>, Option<String>))> {
+#[allow(clippy::type_complexity)]
+fn parse_proc_module_line(
+    line: &str,
+) -> Option<(String, (ModuleState, Option<String>, Option<String>))> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 5 {
         return None;
@@ -80,19 +85,23 @@ fn parse_proc_module_line(line: &str) -> Option<(String, (ModuleState, Option<St
     let name = parts[0].to_string();
     let state = ModuleState::parse(parts[4]);
     let offset = parts.get(5).map(|s| s.to_string());
-    let taint = parts.get(6).map(|s| s.trim_matches(|c| c == '(' || c == ')').to_string());
+    let taint = parts
+        .get(6)
+        .map(|s| s.trim_matches(|c| c == '(' || c == ')').to_string());
     Some((name, (state, offset, taint)))
 }
 
 /// Get detailed module information via `modinfo`.
 pub async fn get_module_info(host: &KernelHost, name: &str) -> Result<ModuleInfo, KernelError> {
-    let out = client::exec_ok(host, "modinfo", &[name]).await.map_err(|e| {
-        if matches!(e, KernelError::CommandFailed { .. }) {
-            KernelError::ModuleNotFound(name.to_string())
-        } else {
-            e
-        }
-    })?;
+    let out = client::exec_ok(host, "modinfo", &[name])
+        .await
+        .map_err(|e| {
+            if matches!(e, KernelError::CommandFailed { .. }) {
+                KernelError::ModuleNotFound(name.to_string())
+            } else {
+                e
+            }
+        })?;
     parse_modinfo(&out, name)
 }
 
@@ -157,7 +166,12 @@ fn parse_modinfo_parm(value: &str) -> Option<ModuleParameter> {
     } else {
         (rest.to_string(), String::new())
     };
-    Some(ModuleParameter { name, param_type, description, current_value: None })
+    Some(ModuleParameter {
+        name,
+        param_type,
+        description,
+        current_value: None,
+    })
 }
 
 /// Load a kernel module with optional parameters.
@@ -170,17 +184,13 @@ pub async fn load_module(
     let param_strings: Vec<String> = params.iter().map(|(k, v)| format!("{k}={v}")).collect();
     let param_refs: Vec<&str> = param_strings.iter().map(|s| s.as_str()).collect();
     args.extend(param_refs);
-    let arg_refs: Vec<&str> = args.iter().copied().collect();
+    let arg_refs: Vec<&str> = args.to_vec();
     client::exec_ok(host, "modprobe", &arg_refs).await?;
     Ok(())
 }
 
 /// Unload a kernel module, optionally with force.
-pub async fn unload_module(
-    host: &KernelHost,
-    name: &str,
-    force: bool,
-) -> Result<(), KernelError> {
+pub async fn unload_module(host: &KernelHost, name: &str, force: bool) -> Result<(), KernelError> {
     // First check if module is loaded
     if !check_module_loaded(host, name).await? {
         return Err(KernelError::ModuleNotFound(name.to_string()));
@@ -315,7 +325,13 @@ pub async fn get_module_dependencies(
             if parts.len() >= 2 {
                 let path = parts[1];
                 let basename = path.rsplit('/').next().unwrap_or(path);
-                Some(basename.trim_end_matches(".ko").trim_end_matches(".ko.xz").trim_end_matches(".ko.zst").to_string())
+                Some(
+                    basename
+                        .trim_end_matches(".ko")
+                        .trim_end_matches(".ko.xz")
+                        .trim_end_matches(".ko.zst")
+                        .to_string(),
+                )
             } else {
                 None
             }
@@ -328,9 +344,9 @@ pub async fn get_module_dependencies(
 /// Check whether a module is currently loaded.
 pub async fn check_module_loaded(host: &KernelHost, name: &str) -> Result<bool, KernelError> {
     let (stdout, _, _) = client::exec(host, "lsmod", &[]).await?;
-    Ok(stdout.lines().any(|line| {
-        line.split_whitespace().next() == Some(name)
-    }))
+    Ok(stdout
+        .lines()
+        .any(|line| line.split_whitespace().next() == Some(name)))
 }
 
 /// Blacklist a module by adding it to /etc/modprobe.d/blacklist-sorng.conf.
@@ -412,9 +428,7 @@ pub async fn add_autoload_module(host: &KernelHost, name: &str) -> Result<(), Ke
 
 /// Remove a module from autoloading.
 pub async fn remove_autoload_module(host: &KernelHost, name: &str) -> Result<(), KernelError> {
-    let cmd = format!(
-        "sed -i '/^{name}$/d' /etc/modules-load.d/sorng.conf 2>/dev/null; true"
-    );
+    let cmd = format!("sed -i '/^{name}$/d' /etc/modules-load.d/sorng.conf 2>/dev/null; true");
     client::exec_shell(host, &cmd).await?;
     Ok(())
 }

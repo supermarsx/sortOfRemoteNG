@@ -7,19 +7,19 @@ use std::collections::HashMap;
 
 /// Get the current power state and available states.
 pub async fn get_power_state(host: &KernelHost) -> Result<PowerState, KernelError> {
-    let states_out = client::exec_shell(host, "cat /sys/power/state 2>/dev/null").await
+    let states_out = client::exec_shell(host, "cat /sys/power/state 2>/dev/null")
+        .await
         .unwrap_or_default();
     let available_states: Vec<String> = states_out
-        .trim()
         .split_whitespace()
         .map(|s| s.to_string())
         .collect();
 
-    let mem_sleep = client::exec_shell(host, "cat /sys/power/mem_sleep 2>/dev/null").await
+    let mem_sleep = client::exec_shell(host, "cat /sys/power/mem_sleep 2>/dev/null")
+        .await
         .unwrap_or_default();
     // Active suspend type is in brackets: s2idle [deep]
     let suspend_type = mem_sleep
-        .trim()
         .split_whitespace()
         .find(|s| s.starts_with('['))
         .map(|s| s.trim_matches(|c| c == '[' || c == ']').to_string())
@@ -28,7 +28,11 @@ pub async fn get_power_state(host: &KernelHost) -> Result<PowerState, KernelErro
     // If the system is running, current state is "on"
     let current_state = "on".to_string();
 
-    Ok(PowerState { current_state, available_states, suspend_type })
+    Ok(PowerState {
+        current_state,
+        available_states,
+        suspend_type,
+    })
 }
 
 /// List all thermal zones from /sys/class/thermal/.
@@ -55,7 +59,9 @@ pub async fn list_thermal_zones(host: &KernelHost) -> Result<Vec<ThermalZone>, K
              [ -f \"$tp\" ] && echo \"$(cat $tp)|$(cat $tt 2>/dev/null)\" || break; \
              done"
         );
-        let tp_out = client::exec_shell(host, &trip_cmd).await.unwrap_or_default();
+        let tp_out = client::exec_shell(host, &trip_cmd)
+            .await
+            .unwrap_or_default();
         let trip_points: Vec<TripPoint> = tp_out
             .lines()
             .filter_map(|tl| {
@@ -71,7 +77,12 @@ pub async fn list_thermal_zones(host: &KernelHost) -> Result<Vec<ThermalZone>, K
             })
             .collect();
 
-        zones.push(ThermalZone { name, type_str, temp_millicelsius: temp, trip_points });
+        zones.push(ThermalZone {
+            name,
+            type_str,
+            temp_millicelsius: temp,
+            trip_points,
+        });
     }
     Ok(zones)
 }
@@ -113,19 +124,13 @@ pub async fn get_cpu_frequency(
 
 /// Get the scaling governor for a specific CPU.
 pub async fn get_governor(host: &KernelHost, cpu: u32) -> Result<String, KernelError> {
-    let cmd = format!(
-        "cat /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor 2>/dev/null"
-    );
+    let cmd = format!("cat /sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor 2>/dev/null");
     let out = client::exec_shell(host, &cmd).await?;
     Ok(out.trim().to_string())
 }
 
 /// Set the scaling governor for a specific CPU.
-pub async fn set_governor(
-    host: &KernelHost,
-    cpu: u32,
-    governor: &str,
-) -> Result<(), KernelError> {
+pub async fn set_governor(host: &KernelHost, cpu: u32, governor: &str) -> Result<(), KernelError> {
     let cmd = format!(
         "echo '{}' > /sys/devices/system/cpu/cpu{}/cpufreq/scaling_governor",
         governor.replace('\'', "'\\''"),
@@ -139,34 +144,24 @@ pub async fn set_governor(
 pub async fn list_governors(host: &KernelHost) -> Result<Vec<String>, KernelError> {
     let cmd = "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors 2>/dev/null";
     let out = client::exec_shell(host, cmd).await?;
-    Ok(out
-        .trim()
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect())
+    Ok(out.split_whitespace().map(|s| s.to_string()).collect())
 }
 
 /// Get the current power profile (power-profiles-daemon or tuned).
 pub async fn get_power_profile(host: &KernelHost) -> Result<String, KernelError> {
     // Try power-profiles-daemon first
-    let (ppd_out, _, ppd_code) = client::exec_shell_raw(
-        host,
-        "powerprofilesctl get 2>/dev/null",
-    )
-    .await?;
+    let (ppd_out, _, ppd_code) =
+        client::exec_shell_raw(host, "powerprofilesctl get 2>/dev/null").await?;
     if ppd_code == 0 && !ppd_out.trim().is_empty() {
         return Ok(ppd_out.trim().to_string());
     }
 
     // Try tuned-adm
-    let (tuned_out, _, tuned_code) = client::exec_shell_raw(
-        host,
-        "tuned-adm active 2>/dev/null",
-    )
-    .await?;
+    let (tuned_out, _, tuned_code) =
+        client::exec_shell_raw(host, "tuned-adm active 2>/dev/null").await?;
     if tuned_code == 0 && !tuned_out.trim().is_empty() {
         // "Current active profile: balanced"
-        if let Some(profile) = tuned_out.split(':').last() {
+        if let Some(profile) = tuned_out.split(':').next_back() {
             return Ok(profile.trim().to_string());
         }
         return Ok(tuned_out.trim().to_string());

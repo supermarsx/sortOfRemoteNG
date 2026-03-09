@@ -17,8 +17,13 @@ pub struct SshConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SshAuth {
-    Password { password: String },
-    PrivateKey { key_path: String, passphrase: Option<String> },
+    Password {
+        password: String,
+    },
+    PrivateKey {
+        key_path: String,
+        passphrase: Option<String>,
+    },
     Agent,
 }
 
@@ -120,13 +125,13 @@ impl SysctlCategory {
     pub fn prefix(&self) -> &'static str {
         match self {
             Self::Kernel => "kernel.",
-            Self::Net    => "net.",
-            Self::Vm     => "vm.",
-            Self::Fs     => "fs.",
-            Self::Debug  => "debug.",
-            Self::Dev    => "dev.",
-            Self::Abi    => "abi.",
-            Self::User   => "user.",
+            Self::Net => "net.",
+            Self::Vm => "vm.",
+            Self::Fs => "fs.",
+            Self::Debug => "debug.",
+            Self::Dev => "dev.",
+            Self::Abi => "abi.",
+            Self::User => "user.",
         }
     }
 }

@@ -32,14 +32,14 @@
 //! - Read/write arbitrary /sys attributes
 //! - Block device enumeration
 
-pub mod types;
-pub mod error;
 pub mod client;
-pub mod service;
 pub mod commands;
-pub mod modules;
-pub mod sysctl;
+pub mod error;
 pub mod features;
 pub mod interrupts;
+pub mod modules;
 pub mod power;
+pub mod service;
+pub mod sysctl;
 pub mod sysfs;
+pub mod types;

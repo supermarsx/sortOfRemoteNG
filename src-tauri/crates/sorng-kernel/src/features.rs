@@ -7,12 +7,26 @@ use std::collections::HashMap;
 
 /// Get the running kernel version.
 pub async fn get_kernel_version(host: &KernelHost) -> Result<KernelVersion, KernelError> {
-    let version = client::exec_ok(host, "uname", &["-r"]).await?.trim().to_string();
-    let full_string = client::exec_ok(host, "uname", &["-a"]).await?.trim().to_string();
-    let release = client::exec_ok(host, "uname", &["-v"]).await?.trim().to_string();
+    let version = client::exec_ok(host, "uname", &["-r"])
+        .await?
+        .trim()
+        .to_string();
+    let full_string = client::exec_ok(host, "uname", &["-a"])
+        .await?
+        .trim()
+        .to_string();
+    let release = client::exec_ok(host, "uname", &["-v"])
+        .await?
+        .trim()
+        .to_string();
     // Try to parse build date from full_string — usually the last date-like segment
     let build_date = extract_build_date(&full_string);
-    Ok(KernelVersion { version, release, full_string, build_date })
+    Ok(KernelVersion {
+        version,
+        release,
+        full_string,
+        build_date,
+    })
 }
 
 fn extract_build_date(full: &str) -> Option<String> {
@@ -107,11 +121,8 @@ pub async fn detect_cgroup_version(host: &KernelHost) -> Result<u8, KernelError>
     } else if fs_type.contains("tmpfs") {
         // cgroup v1 typically has /sys/fs/cgroup as tmpfs
         // Double-check by looking for cgroup2 mount
-        let (mount_out, _, _) = client::exec_shell_raw(
-            host,
-            "mount | grep 'type cgroup2' | head -1",
-        )
-        .await?;
+        let (mount_out, _, _) =
+            client::exec_shell_raw(host, "mount | grep 'type cgroup2' | head -1").await?;
         if mount_out.trim().is_empty() {
             Ok(1)
         } else {
@@ -178,8 +189,7 @@ pub async fn detect_io_schedulers(
     for line in out.lines() {
         if let Some((device, schedulers_str)) = line.split_once(':') {
             let schedulers: Vec<String> = schedulers_str
-                .replace('[', "")
-                .replace(']', "")
+                .replace(['[', ']'], "")
                 .split_whitespace()
                 .map(|s| s.to_string())
                 .collect();

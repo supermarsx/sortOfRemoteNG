@@ -13,31 +13,30 @@ pub async fn get_all_sysctl(host: &KernelHost) -> Result<Vec<SysctlEntry>, Kerne
 
 /// Get a single sysctl value.
 pub async fn get_sysctl(host: &KernelHost, key: &str) -> Result<SysctlEntry, KernelError> {
-    let out = client::exec_ok(host, "sysctl", &[key]).await.map_err(|_| {
-        KernelError::SysctlError(format!("key not found: {key}"))
-    })?;
+    let out = client::exec_ok(host, "sysctl", &[key])
+        .await
+        .map_err(|_| KernelError::SysctlError(format!("key not found: {key}")))?;
     let persistent = load_persistent_keys(host).await.unwrap_or_default();
-    let (k, v) = parse_sysctl_line(out.trim()).ok_or_else(|| {
-        KernelError::ParseError(format!("cannot parse sysctl output: {out}"))
-    })?;
+    let (k, v) = parse_sysctl_line(out.trim())
+        .ok_or_else(|| KernelError::ParseError(format!("cannot parse sysctl output: {out}")))?;
     let source = if persistent.contains(&k) {
         SysctlSource::Both
     } else {
         SysctlSource::Runtime
     };
-    Ok(SysctlEntry { key: k, value: v, source })
+    Ok(SysctlEntry {
+        key: k,
+        value: v,
+        source,
+    })
 }
 
 /// Set a sysctl value at runtime (non-persistent).
-pub async fn set_sysctl(
-    host: &KernelHost,
-    key: &str,
-    value: &str,
-) -> Result<(), KernelError> {
+pub async fn set_sysctl(host: &KernelHost, key: &str, value: &str) -> Result<(), KernelError> {
     let arg = format!("{key}={value}");
-    client::exec_ok(host, "sysctl", &["-w", &arg]).await.map_err(|e| {
-        KernelError::SysctlError(format!("failed to set {key}: {e}"))
-    })?;
+    client::exec_ok(host, "sysctl", &["-w", &arg])
+        .await
+        .map_err(|e| KernelError::SysctlError(format!("failed to set {key}: {e}")))?;
     Ok(())
 }
 
@@ -54,30 +53,26 @@ pub async fn set_sysctl_persistent(
          echo '{key} = {value}' >> /etc/sysctl.d/99-sorng.conf && \
          sysctl -w '{key}={value}'"
     );
-    client::exec_shell(host, &cmd).await.map_err(|e| {
-        KernelError::SysctlError(format!("failed to persist {key}: {e}"))
-    })?;
+    client::exec_shell(host, &cmd)
+        .await
+        .map_err(|e| KernelError::SysctlError(format!("failed to persist {key}: {e}")))?;
     Ok(())
 }
 
 /// Remove a persistent sysctl entry.
-pub async fn remove_sysctl_persistent(
-    host: &KernelHost,
-    key: &str,
-) -> Result<(), KernelError> {
+pub async fn remove_sysctl_persistent(host: &KernelHost, key: &str) -> Result<(), KernelError> {
     let escaped_key = key.replace('.', "\\.");
-    let cmd = format!(
-        "sed -i '/^{escaped_key}\\s*=/d' /etc/sysctl.d/99-sorng.conf 2>/dev/null; true"
-    );
+    let cmd =
+        format!("sed -i '/^{escaped_key}\\s*=/d' /etc/sysctl.d/99-sorng.conf 2>/dev/null; true");
     client::exec_shell(host, &cmd).await?;
     Ok(())
 }
 
 /// Reload all sysctl configuration files.
 pub async fn reload_sysctl(host: &KernelHost) -> Result<(), KernelError> {
-    client::exec_ok(host, "sysctl", &["--system"]).await.map_err(|e| {
-        KernelError::SysctlError(format!("sysctl reload failed: {e}"))
-    })?;
+    client::exec_ok(host, "sysctl", &["--system"])
+        .await
+        .map_err(|e| KernelError::SysctlError(format!("sysctl reload failed: {e}")))?;
     Ok(())
 }
 
@@ -205,7 +200,11 @@ fn parse_sysctl_file_content(text: &str) -> Vec<SysctlEntry> {
     text.lines()
         .filter_map(|line| {
             let (key, value) = parse_sysctl_line(line)?;
-            Some(SysctlEntry { key, value, source: SysctlSource::Persistent })
+            Some(SysctlEntry {
+                key,
+                value,
+                source: SysctlSource::Persistent,
+            })
         })
         .collect()
 }

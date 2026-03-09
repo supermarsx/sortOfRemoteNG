@@ -14,12 +14,17 @@ pub struct KernelService {
 
 impl KernelService {
     pub fn new() -> KernelServiceState {
-        Arc::new(Mutex::new(Self { hosts: HashMap::new() }))
+        Arc::new(Mutex::new(Self {
+            hosts: HashMap::new(),
+        }))
     }
 
     pub fn add_host(&mut self, host: KernelHost) -> Result<(), KernelError> {
         if self.hosts.contains_key(&host.id) {
-            return Err(KernelError::Other(format!("Host {} already exists", host.id)));
+            return Err(KernelError::Other(format!(
+                "Host {} already exists",
+                host.id
+            )));
         }
         self.hosts.insert(host.id.clone(), host);
         Ok(())
@@ -34,11 +39,15 @@ impl KernelService {
     }
 
     pub fn remove_host(&mut self, host_id: &str) -> Result<KernelHost, KernelError> {
-        self.hosts.remove(host_id).ok_or_else(|| KernelError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .remove(host_id)
+            .ok_or_else(|| KernelError::HostNotFound(host_id.to_string()))
     }
 
     pub fn get_host(&self, host_id: &str) -> Result<&KernelHost, KernelError> {
-        self.hosts.get(host_id).ok_or_else(|| KernelError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .get(host_id)
+            .ok_or_else(|| KernelError::HostNotFound(host_id.to_string()))
     }
 
     pub fn list_hosts(&self) -> Vec<&KernelHost> {

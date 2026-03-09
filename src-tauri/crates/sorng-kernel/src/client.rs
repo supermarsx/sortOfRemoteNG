@@ -1,7 +1,7 @@
 //! Command execution — local and remote SSH for kernel management.
 
 use crate::error::KernelError;
-use crate::types::{SshConfig, KernelHost};
+use crate::types::{KernelHost, SshConfig};
 use log::debug;
 use tokio::process::Command;
 
@@ -49,10 +49,7 @@ pub async fn exec_ok(
 }
 
 /// Execute a shell pipeline/expression via `sh -c`.
-pub async fn exec_shell(
-    host: &KernelHost,
-    shell_cmd: &str,
-) -> Result<String, KernelError> {
+pub async fn exec_shell(host: &KernelHost, shell_cmd: &str) -> Result<String, KernelError> {
     exec_ok(host, "sh", &["-c", shell_cmd]).await
 }
 
@@ -71,7 +68,11 @@ async fn exec_local(
     args: &[&str],
 ) -> Result<std::process::Output, KernelError> {
     let output = if use_sudo {
-        Command::new("sudo").arg(program).args(args).output().await?
+        Command::new("sudo")
+            .arg(program)
+            .args(args)
+            .output()
+            .await?
     } else {
         Command::new(program).args(args).output().await?
     };
@@ -90,12 +91,16 @@ async fn exec_remote(
         format!("{} {}", program, args.join(" "))
     };
     let mut cmd = Command::new("ssh");
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg(format!("ConnectTimeout={}", ssh.timeout_secs))
-        .arg("-p").arg(ssh.port.to_string());
+    cmd.arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", ssh.timeout_secs))
+        .arg("-p")
+        .arg(ssh.port.to_string());
     if let crate::types::SshAuth::PrivateKey { key_path, .. } = &ssh.auth {
         cmd.arg("-i").arg(key_path);
     }
-    cmd.arg(format!("{}@{}", ssh.username, ssh.host)).arg(&remote_cmd);
+    cmd.arg(format!("{}@{}", ssh.username, ssh.host))
+        .arg(&remote_cmd);
     Ok(cmd.output().await?)
 }
