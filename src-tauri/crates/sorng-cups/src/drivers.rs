@@ -67,8 +67,7 @@ fn device_id_score(driver_did: Option<&str>, target_did: &str) -> u32 {
         return 0;
     }
 
-    let driver_map: std::collections::HashMap<String, String> =
-        driver_parts.into_iter().collect();
+    let driver_map: std::collections::HashMap<String, String> = driver_parts.into_iter().collect();
 
     let mut matched = 0u32;
     let mut total = 0u32;
@@ -159,7 +158,7 @@ pub async fn list_drivers(
     let drivers = resp
         .groups(tag::PRINTER_ATTRIBUTES)
         .into_iter()
-        .map(|g| driver_from_group(g))
+        .map(driver_from_group)
         .collect();
     Ok(drivers)
 }
@@ -320,9 +319,10 @@ pub async fn get_driver_options(
         )));
     }
 
-    let raw = response.text().await.map_err(|e| {
-        CupsError::driver_error(format!("Failed to read driver PPD body: {e}"))
-    })?;
+    let raw = response
+        .text()
+        .await
+        .map_err(|e| CupsError::driver_error(format!("Failed to read driver PPD body: {e}")))?;
 
     Ok(crate::ppd::parse_ppd_options_from_raw(&raw))
 }
@@ -332,13 +332,9 @@ fn urlencoding_encode(input: &str) -> String {
     let mut out = String::with_capacity(input.len() * 3);
     for b in input.bytes() {
         match b {
-            b'A'..=b'Z'
-            | b'a'..=b'z'
-            | b'0'..=b'9'
-            | b'-'
-            | b'_'
-            | b'.'
-            | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
             _ => {
                 out.push('%');
                 out.push(char::from(HEX_DIGITS[(b >> 4) as usize]));

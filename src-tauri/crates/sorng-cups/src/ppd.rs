@@ -9,7 +9,7 @@
 //! - Basic PPD file parsing for UI rendering of options
 
 use crate::error::CupsError;
-use crate::ipp::{self, op, tag, IppRequestBuilder};
+use crate::ipp::{self, op, tag};
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -112,10 +112,7 @@ fn parse_ppd_options(raw: &str) -> Vec<PpdOption> {
                 text
             };
 
-            let default_choice = defaults
-                .get(&keyword)
-                .cloned()
-                .unwrap_or_default();
+            let default_choice = defaults.get(&keyword).cloned().unwrap_or_default();
 
             current_option = Some(PpdOption {
                 keyword: keyword.clone(),
@@ -145,16 +142,16 @@ fn parse_ppd_options(raw: &str) -> Vec<PpdOption> {
                     // Parse: *PageSize Letter/US Letter: "<< ... >>"
                     if let Some(rest) = rest.strip_prefix(' ') {
                         if let Some((choice_part, _)) = rest.split_once(':') {
-                            let (choice_key, choice_text) =
-                                if let Some(idx) = choice_part.find('/') {
-                                    (
-                                        choice_part[..idx].trim().to_string(),
-                                        choice_part[idx + 1..].trim().to_string(),
-                                    )
-                                } else {
-                                    let ck = choice_part.trim().to_string();
-                                    (ck.clone(), ck)
-                                };
+                            let (choice_key, choice_text) = if let Some(idx) = choice_part.find('/')
+                            {
+                                (
+                                    choice_part[..idx].trim().to_string(),
+                                    choice_part[idx + 1..].trim().to_string(),
+                                )
+                            } else {
+                                let ck = choice_part.trim().to_string();
+                                (ck.clone(), ck)
+                            };
 
                             let is_default = opt.default_choice == choice_key;
                             opt.choices.push(PpdChoice {
@@ -251,7 +248,7 @@ pub async fn list_ppds(
     let ppds = resp
         .groups(tag::PRINTER_ATTRIBUTES)
         .into_iter()
-        .map(|g| ppd_from_group(g))
+        .map(ppd_from_group)
         .collect();
     Ok(ppds)
 }
@@ -298,9 +295,10 @@ pub async fn get_ppd(
         )));
     }
 
-    let text = response.text().await.map_err(|e| {
-        CupsError::ppd_error(format!("Failed to read PPD body: {e}"))
-    })?;
+    let text = response
+        .text()
+        .await
+        .map_err(|e| CupsError::ppd_error(format!("Failed to read PPD body: {e}")))?;
 
     if text.is_empty() {
         return Err(CupsError::ppd_error(format!(
@@ -353,13 +351,13 @@ pub async fn upload_ppd(
     // CUPS-Add-Modify-Printer request, not as IPP attributes.
     let url = format!("{}/admin/", config.base_url());
 
-    let mut http_req = client
+    let mut _http_req = client
         .put(&url)
         .header("Content-Type", "application/vnd.cups-ppd")
         .body(ppd_content.to_string());
 
     if let (Some(user), Some(pass)) = (config.username.as_deref(), config.password.as_deref()) {
-        http_req = http_req.basic_auth(user, Some(pass));
+        _http_req = _http_req.basic_auth(user, Some(pass));
     }
 
     // Build a minimal IPP header to identify the target printer.

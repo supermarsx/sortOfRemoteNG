@@ -3,7 +3,7 @@
 use crate::error::CupsError;
 use crate::ipp::{self, op, tag, IppRequestBuilder};
 use crate::types::*;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 
 // ═══════════════════════════════════════════════════════════════════════
 // Helpers
@@ -16,16 +16,27 @@ fn job_from_group(group: &ipp::IppAttributeGroup) -> JobInfo {
     let state = JobState::from_ipp(state_val);
 
     let created_epoch = group.get_integer("time-at-creation").unwrap_or(0) as i64;
-    let created_at = Utc.timestamp_opt(created_epoch, 0).single().unwrap_or_else(Utc::now);
+    let created_at = Utc
+        .timestamp_opt(created_epoch, 0)
+        .single()
+        .unwrap_or_else(Utc::now);
 
     let processing_epoch = group.get_integer("time-at-processing").map(|v| v as i64);
     let processing_at = processing_epoch.and_then(|e| {
-        if e > 0 { Utc.timestamp_opt(e, 0).single() } else { None }
+        if e > 0 {
+            Utc.timestamp_opt(e, 0).single()
+        } else {
+            None
+        }
     });
 
     let completed_epoch = group.get_integer("time-at-completed").map(|v| v as i64);
     let completed_at = completed_epoch.and_then(|e| {
-        if e > 0 { Utc.timestamp_opt(e, 0).single() } else { None }
+        if e > 0 {
+            Utc.timestamp_opt(e, 0).single()
+        } else {
+            None
+        }
     });
 
     let sides_str = group.get_string("sides");
@@ -53,8 +64,13 @@ fn job_from_group(group: &ipp::IppAttributeGroup) -> JobInfo {
             .into_iter()
             .map(String::from)
             .collect(),
-        user: group.get_string("job-originating-user-name").map(String::from),
-        printer_uri: group.get_string("job-printer-uri").unwrap_or("").to_string(),
+        user: group
+            .get_string("job-originating-user-name")
+            .map(String::from),
+        printer_uri: group
+            .get_string("job-printer-uri")
+            .unwrap_or("")
+            .to_string(),
         printer_name: group
             .get_string("job-printer-uri")
             .and_then(|u| u.rsplit('/').next())
@@ -148,7 +164,10 @@ pub async fn submit_job(
     let printer_uri = config.printer_uri(printer);
 
     let mut req = ipp::standard_request(op::PRINT_JOB, &printer_uri)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .name_without_language("document-name", filename)
         .mime_media_type("document-format", &guess_mime(filename));
 
@@ -184,7 +203,10 @@ pub async fn submit_job_uri(
     let printer_uri = config.printer_uri(printer);
 
     let mut req = ipp::standard_request(op::PRINT_URI, &printer_uri)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .uri("document-uri", document_uri);
 
     req = apply_print_options(req, options);
@@ -217,7 +239,10 @@ pub async fn cancel_job(
 ) -> Result<(), CupsError> {
     let printer_uri = config.printer_uri(printer);
     let body = ipp::job_request(op::CANCEL_JOB, &printer_uri, job_id)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .end_of_attributes()
         .build();
 
@@ -242,7 +267,10 @@ pub async fn hold_job(
 ) -> Result<(), CupsError> {
     let printer_uri = config.printer_uri(printer);
     let body = ipp::job_request(op::HOLD_JOB, &printer_uri, job_id)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .end_of_attributes()
         .build();
 
@@ -267,7 +295,10 @@ pub async fn release_job(
 ) -> Result<(), CupsError> {
     let printer_uri = config.printer_uri(printer);
     let body = ipp::job_request(op::RELEASE_JOB, &printer_uri, job_id)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .end_of_attributes()
         .build();
 
@@ -292,7 +323,10 @@ pub async fn restart_job(
 ) -> Result<(), CupsError> {
     let printer_uri = config.printer_uri(printer);
     let body = ipp::job_request(op::RESTART_JOB, &printer_uri, job_id)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .end_of_attributes()
         .build();
 
@@ -331,7 +365,7 @@ pub async fn get_job(
     ipp::check_response(&resp)?;
 
     resp.group(tag::JOB_ATTRIBUTES)
-        .map(|g| job_from_group(g))
+        .map(job_from_group)
         .ok_or_else(|| CupsError::job_not_found(job_id))
 }
 
@@ -353,36 +387,37 @@ pub async fn list_jobs(
         .keyword("which-jobs", which.as_ipp_keyword());
 
     if my_jobs {
-        req = req
-            .boolean("my-jobs", true)
-            .name_without_language(
-                "requesting-user-name",
-                config.username.as_deref().unwrap_or("anonymous"),
-            );
+        req = req.boolean("my-jobs", true).name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        );
     }
 
     if let Some(max) = limit {
         req = req.integer("limit", max as i32);
     }
 
-    req = req.keywords("requested-attributes", &[
-        "job-id",
-        "job-name",
-        "job-state",
-        "job-state-reasons",
-        "job-originating-user-name",
-        "job-printer-uri",
-        "time-at-creation",
-        "time-at-processing",
-        "time-at-completed",
-        "job-media-sheets-completed",
-        "copies",
-        "job-priority",
-        "job-k-octets",
-        "media",
-        "sides",
-        "print-quality",
-    ]);
+    req = req.keywords(
+        "requested-attributes",
+        &[
+            "job-id",
+            "job-name",
+            "job-state",
+            "job-state-reasons",
+            "job-originating-user-name",
+            "job-printer-uri",
+            "time-at-creation",
+            "time-at-processing",
+            "time-at-completed",
+            "job-media-sheets-completed",
+            "copies",
+            "job-priority",
+            "job-k-octets",
+            "media",
+            "sides",
+            "print-quality",
+        ],
+    );
 
     let body = req.end_of_attributes().build();
     let url = match printer {
@@ -403,7 +438,7 @@ pub async fn list_jobs(
     let jobs = resp
         .groups(tag::JOB_ATTRIBUTES)
         .into_iter()
-        .map(|g| job_from_group(g))
+        .map(job_from_group)
         .collect();
     Ok(jobs)
 }
@@ -445,8 +480,10 @@ pub async fn set_job_attributes(
     attributes: Vec<(String, String)>,
 ) -> Result<(), CupsError> {
     let job_uri = format!("{}/jobs/{job_id}", config.base_url());
-    let mut req = ipp::standard_request(op::SET_JOB_ATTRIBUTES, &job_uri)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"));
+    let mut req = ipp::standard_request(op::SET_JOB_ATTRIBUTES, &job_uri).name_without_language(
+        "requesting-user-name",
+        config.username.as_deref().unwrap_or("anonymous"),
+    );
 
     req = req.job_attributes();
     for (name, value) in &attributes {
@@ -473,7 +510,10 @@ pub async fn cancel_all_jobs(
 ) -> Result<(), CupsError> {
     let printer_uri = config.printer_uri(printer);
     let body = ipp::standard_request(op::PURGE_JOBS, &printer_uri)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .end_of_attributes()
         .build();
 
@@ -500,7 +540,10 @@ pub async fn move_job(
     let target_uri = config.printer_uri(target_printer);
 
     let body = ipp::standard_request(op::CUPS_MOVE_JOB, &job_uri)
-        .name_without_language("requesting-user-name", config.username.as_deref().unwrap_or("anonymous"))
+        .name_without_language(
+            "requesting-user-name",
+            config.username.as_deref().unwrap_or("anonymous"),
+        )
         .job_attributes()
         .uri("job-printer-uri", &target_uri)
         .end_of_attributes()
@@ -533,7 +576,15 @@ pub async fn get_active_jobs(
     config: &CupsConnectionConfig,
     printer: Option<&str>,
 ) -> Result<Vec<JobInfo>, CupsError> {
-    list_jobs(client, config, printer, WhichJobs::NotCompleted, false, None).await
+    list_jobs(
+        client,
+        config,
+        printer,
+        WhichJobs::NotCompleted,
+        false,
+        None,
+    )
+    .await
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -542,26 +593,26 @@ pub async fn get_active_jobs(
 fn guess_mime(filename: &str) -> String {
     let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
     match ext.as_str() {
-        "pdf"  => "application/pdf",
-        "ps"   => "application/postscript",
-        "txt"  => "text/plain",
+        "pdf" => "application/pdf",
+        "ps" => "application/postscript",
+        "txt" => "text/plain",
         "html" | "htm" => "text/html",
-        "jpg"  | "jpeg" => "image/jpeg",
-        "png"  => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
         "tiff" | "tif" => "image/tiff",
-        "gif"  => "image/gif",
-        "bmp"  => "image/bmp",
-        "svg"  => "image/svg+xml",
-        "doc"  => "application/msword",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "doc" => "application/msword",
         "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "xls"  => "application/vnd.ms-excel",
+        "xls" => "application/vnd.ms-excel",
         "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "ppt"  => "application/vnd.ms-powerpoint",
+        "ppt" => "application/vnd.ms-powerpoint",
         "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "odt"  => "application/vnd.oasis.opendocument.text",
-        "ods"  => "application/vnd.oasis.opendocument.spreadsheet",
-        "odp"  => "application/vnd.oasis.opendocument.presentation",
-        _      => "application/octet-stream",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        "odp" => "application/vnd.oasis.opendocument.presentation",
+        _ => "application/octet-stream",
     }
     .to_string()
 }

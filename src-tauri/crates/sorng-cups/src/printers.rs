@@ -1,15 +1,15 @@
 //! Printer management — list, add, modify, delete, pause, resume, discover.
 
 use crate::error::CupsError;
-use crate::ipp::{self, op, tag, IppRequestBuilder, IppResponse};
+use crate::ipp::{self, op, tag};
 use crate::types::*;
 
 /// Extract a `PrinterInfo` from a single printer-attributes group.
-fn printer_from_group(group: &ipp::IppAttributeGroup, config: &CupsConnectionConfig) -> PrinterInfo {
-    let name = group
-        .get_string("printer-name")
-        .unwrap_or("")
-        .to_string();
+fn printer_from_group(
+    group: &ipp::IppAttributeGroup,
+    _config: &CupsConnectionConfig,
+) -> PrinterInfo {
+    let name = group.get_string("printer-name").unwrap_or("").to_string();
 
     let state_val = group.get_integer("printer-state").unwrap_or(3);
     let state = PrinterState::from_ipp(state_val);
@@ -28,22 +28,36 @@ fn printer_from_group(group: &ipp::IppAttributeGroup, config: &CupsConnectionCon
             .to_string(),
         state,
         state_message: group.get_string("printer-state-message").map(String::from),
-        state_reasons: group.get_strings("printer-state-reasons").into_iter().map(String::from).collect(),
+        state_reasons: group
+            .get_strings("printer-state-reasons")
+            .into_iter()
+            .map(String::from)
+            .collect(),
         location: group.get_string("printer-location").map(String::from),
         description: group.get_string("printer-info").map(String::from),
         make_model: group.get_string("printer-make-and-model").map(String::from),
         device_uri: group.get_string("device-uri").map(String::from),
         printer_type: PrinterTypeFlags(printer_type_bits),
         is_shared: group.get_boolean("printer-is-shared").unwrap_or(false),
-        is_accepting: group.get_boolean("printer-is-accepting-jobs").unwrap_or(true),
+        is_accepting: group
+            .get_boolean("printer-is-accepting-jobs")
+            .unwrap_or(true),
         is_default,
         color_supported: group.get_boolean("color-supported").unwrap_or(false),
         duplex_supported: group
             .get_strings("sides-supported")
             .iter()
             .any(|s| s.contains("two-sided")),
-        media_supported: group.get_strings("media-supported").into_iter().map(String::from).collect(),
-        resolution_supported: group.get_strings("printer-resolution-supported").into_iter().map(String::from).collect(),
+        media_supported: group
+            .get_strings("media-supported")
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        resolution_supported: group
+            .get_strings("printer-resolution-supported")
+            .into_iter()
+            .map(String::from)
+            .collect(),
         job_count: group.get_integer("queued-job-count").unwrap_or(0) as u32,
         total_page_count: group.get_integer("printer-up-time").unwrap_or(0) as u64, // rough proxy
         info: group.get_string("printer-info").map(String::from),
@@ -71,24 +85,27 @@ pub async fn list_printers(
 ) -> Result<Vec<PrinterInfo>, CupsError> {
     let uri = config.ipp_uri();
     let body = ipp::standard_request(op::CUPS_GET_PRINTERS, &uri)
-        .keywords("requested-attributes", &[
-            "printer-name",
-            "printer-uri-supported",
-            "printer-state",
-            "printer-state-message",
-            "printer-state-reasons",
-            "printer-location",
-            "printer-info",
-            "printer-make-and-model",
-            "device-uri",
-            "printer-type",
-            "printer-is-shared",
-            "printer-is-accepting-jobs",
-            "color-supported",
-            "sides-supported",
-            "media-supported",
-            "queued-job-count",
-        ])
+        .keywords(
+            "requested-attributes",
+            &[
+                "printer-name",
+                "printer-uri-supported",
+                "printer-state",
+                "printer-state-message",
+                "printer-state-reasons",
+                "printer-location",
+                "printer-info",
+                "printer-make-and-model",
+                "device-uri",
+                "printer-type",
+                "printer-is-shared",
+                "printer-is-accepting-jobs",
+                "color-supported",
+                "sides-supported",
+                "media-supported",
+                "queued-job-count",
+            ],
+        )
         .end_of_attributes()
         .build();
 
@@ -119,9 +136,7 @@ pub async fn get_printer(
 ) -> Result<PrinterInfo, CupsError> {
     let printer_uri = config.printer_uri(name);
     let body = ipp::standard_request(op::GET_PRINTER_ATTRIBUTES, &printer_uri)
-        .keywords("requested-attributes", &[
-            "all",
-        ])
+        .keywords("requested-attributes", &["all"])
         .end_of_attributes()
         .build();
 
@@ -142,6 +157,7 @@ pub async fn get_printer(
 }
 
 /// Add a new printer.
+#[allow(clippy::too_many_arguments)]
 pub async fn add_printer(
     client: &reqwest::Client,
     config: &CupsConnectionConfig,
@@ -461,7 +477,10 @@ pub async fn discover_printers(
         .groups(tag::PRINTER_ATTRIBUTES)
         .into_iter()
         .map(|g| DiscoveredDevice {
-            device_class: g.get_string("device-class").unwrap_or("unknown").to_string(),
+            device_class: g
+                .get_string("device-class")
+                .unwrap_or("unknown")
+                .to_string(),
             device_uri: g.get_string("device-uri").unwrap_or("").to_string(),
             device_make_model: g.get_string("device-make-and-model").map(String::from),
             device_info: g.get_string("device-info").map(String::from),
@@ -508,18 +527,41 @@ pub async fn get_printer_statistics(
 ) -> Result<PrinterStatistics, CupsError> {
     use crate::jobs;
 
-    let completed = jobs::list_jobs(client, config, Some(name), WhichJobs::Completed, false, Some(10_000))
-        .await
-        .unwrap_or_default();
-    let active = jobs::list_jobs(client, config, Some(name), WhichJobs::NotCompleted, false, None)
-        .await
-        .unwrap_or_default();
+    let completed = jobs::list_jobs(
+        client,
+        config,
+        Some(name),
+        WhichJobs::Completed,
+        false,
+        Some(10_000),
+    )
+    .await
+    .unwrap_or_default();
+    let active = jobs::list_jobs(
+        client,
+        config,
+        Some(name),
+        WhichJobs::NotCompleted,
+        false,
+        None,
+    )
+    .await
+    .unwrap_or_default();
 
     let total_jobs = completed.len() as u64 + active.len() as u64;
     let completed_count = completed.len() as u64;
-    let canceled = completed.iter().filter(|j| j.state == JobState::Canceled).count() as u64;
-    let aborted = completed.iter().filter(|j| j.state == JobState::Aborted).count() as u64;
-    let total_pages: u64 = completed.iter().map(|j| j.pages_completed as u64).sum::<u64>()
+    let canceled = completed
+        .iter()
+        .filter(|j| j.state == JobState::Canceled)
+        .count() as u64;
+    let aborted = completed
+        .iter()
+        .filter(|j| j.state == JobState::Aborted)
+        .count() as u64;
+    let total_pages: u64 = completed
+        .iter()
+        .map(|j| j.pages_completed as u64)
+        .sum::<u64>()
         + active.iter().map(|j| j.pages_completed as u64).sum::<u64>();
     let total_bytes: u64 = completed.iter().map(|j| j.size_bytes).sum::<u64>()
         + active.iter().map(|j| j.size_bytes).sum::<u64>();

@@ -33,10 +33,7 @@ const CLASS_LIST_ATTRS: &[&str] = &[
 
 /// Extract a `PrinterClass` from an IPP printer-attributes group.
 fn class_from_group(group: &ipp::IppAttributeGroup) -> PrinterClass {
-    let name = group
-        .get_string("printer-name")
-        .unwrap_or("")
-        .to_string();
+    let name = group.get_string("printer-name").unwrap_or("").to_string();
 
     let state_val = group.get_integer("printer-state").unwrap_or(3);
     let state = PrinterState::from_ipp(state_val);
@@ -61,7 +58,9 @@ fn class_from_group(group: &ipp::IppAttributeGroup) -> PrinterClass {
         location: group.get_string("printer-location").map(String::from),
         state,
         state_message: group.get_string("printer-state-message").map(String::from),
-        is_accepting: group.get_boolean("printer-is-accepting-jobs").unwrap_or(true),
+        is_accepting: group
+            .get_boolean("printer-is-accepting-jobs")
+            .unwrap_or(true),
         is_shared: group.get_boolean("printer-is-shared").unwrap_or(false),
     }
 }
@@ -98,7 +97,7 @@ pub async fn list_classes(
     let classes = resp
         .groups(tag::PRINTER_ATTRIBUTES)
         .into_iter()
-        .map(|g| class_from_group(g))
+        .map(class_from_group)
         .collect();
     Ok(classes)
 }
@@ -130,7 +129,7 @@ pub async fn get_class(
     ipp::check_response(&resp)?;
 
     resp.group(tag::PRINTER_ATTRIBUTES)
-        .map(|g| class_from_group(g))
+        .map(class_from_group)
         .ok_or_else(|| CupsError::class_not_found(name))
 }
 
@@ -167,10 +166,7 @@ pub async fn create_class(
     let mut req = ipp::standard_request(op::CUPS_ADD_MODIFY_CLASS, &class_uri);
 
     // Add member URIs as a multi-valued attribute.
-    let member_uris: Vec<String> = members
-        .iter()
-        .map(|m| config.printer_uri(m))
-        .collect();
+    let member_uris: Vec<String> = members.iter().map(|m| config.printer_uri(m)).collect();
     let member_uri_refs: Vec<&str> = member_uris.iter().map(|s| s.as_str()).collect();
     req = req.keywords("member-uris", &member_uri_refs);
 
@@ -214,10 +210,7 @@ pub async fn modify_class(
     let mut req = ipp::standard_request(op::CUPS_ADD_MODIFY_CLASS, &class_uri);
 
     if let Some(ref member_names) = changes.member_names {
-        let member_uris: Vec<String> = member_names
-            .iter()
-            .map(|m| config.printer_uri(m))
-            .collect();
+        let member_uris: Vec<String> = member_names.iter().map(|m| config.printer_uri(m)).collect();
         let member_uri_refs: Vec<&str> = member_uris.iter().map(|s| s.as_str()).collect();
         req = req.keywords("member-uris", &member_uri_refs);
     }
@@ -297,10 +290,7 @@ pub async fn add_member(
     members.push(printer_name.to_string());
 
     let class_uri = config.class_uri(class_name);
-    let member_uris: Vec<String> = members
-        .iter()
-        .map(|m| config.printer_uri(m))
-        .collect();
+    let member_uris: Vec<String> = members.iter().map(|m| config.printer_uri(m)).collect();
     let member_uri_refs: Vec<&str> = member_uris.iter().map(|s| s.as_str()).collect();
 
     let body = ipp::standard_request(op::CUPS_ADD_MODIFY_CLASS, &class_uri)
@@ -343,17 +333,12 @@ pub async fn remove_member(
     if members.is_empty() {
         return Err(CupsError::new(
             crate::error::CupsErrorKind::InvalidConfig,
-            format!(
-                "Cannot remove {printer_name}: it is the last member of class {class_name}"
-            ),
+            format!("Cannot remove {printer_name}: it is the last member of class {class_name}"),
         ));
     }
 
     let class_uri = config.class_uri(class_name);
-    let member_uris: Vec<String> = members
-        .iter()
-        .map(|m| config.printer_uri(m))
-        .collect();
+    let member_uris: Vec<String> = members.iter().map(|m| config.printer_uri(m)).collect();
     let member_uri_refs: Vec<&str> = member_uris.iter().map(|s| s.as_str()).collect();
 
     let body = ipp::standard_request(op::CUPS_ADD_MODIFY_CLASS, &class_uri)

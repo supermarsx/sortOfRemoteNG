@@ -69,6 +69,7 @@ pub async fn cups_get_printer(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn cups_add_printer(
     state: tauri::State<'_, CupsServiceState>,
     session_id: String,

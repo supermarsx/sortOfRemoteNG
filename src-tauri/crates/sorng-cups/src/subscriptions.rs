@@ -26,9 +26,7 @@ const DEFAULT_LEASE_SECS: u32 = 86400;
 fn subscription_from_group(group: &ipp::IppAttributeGroup) -> SubscriptionInfo {
     let id = group.get_integer("notify-subscription-id").unwrap_or(0) as u32;
 
-    let lease_duration = group
-        .get_integer("notify-lease-duration")
-        .unwrap_or(0) as u32;
+    let lease_duration = group.get_integer("notify-lease-duration").unwrap_or(0) as u32;
 
     let created_epoch = group
         .get_integer("notify-time-interval")
@@ -45,15 +43,12 @@ fn subscription_from_group(group: &ipp::IppAttributeGroup) -> SubscriptionInfo {
     let events: Vec<NotifyEvent> = group
         .get_strings("notify-events")
         .into_iter()
-        .filter_map(|s| NotifyEvent::from_keyword(s))
+        .filter_map(NotifyEvent::from_keyword)
         .collect();
 
     let expiration = if lease_duration > 0 {
-        Utc.timestamp_opt(
-            created_at.timestamp() + lease_duration as i64,
-            0,
-        )
-        .single()
+        Utc.timestamp_opt(created_at.timestamp() + lease_duration as i64, 0)
+            .single()
     } else {
         None
     };
@@ -63,9 +58,7 @@ fn subscription_from_group(group: &ipp::IppAttributeGroup) -> SubscriptionInfo {
         events,
         printer_uri: group.get_string("notify-printer-uri").map(String::from),
         job_id: group.get_integer("notify-job-id").map(|v| v as u32),
-        recipient_uri: group
-            .get_string("notify-recipient-uri")
-            .map(String::from),
+        recipient_uri: group.get_string("notify-recipient-uri").map(String::from),
         lease_duration,
         created_at,
         expiration,
@@ -74,20 +67,14 @@ fn subscription_from_group(group: &ipp::IppAttributeGroup) -> SubscriptionInfo {
 
 /// Parse a notification event-attributes group into a `NotificationEvent`.
 fn event_from_group(group: &ipp::IppAttributeGroup) -> NotificationEvent {
-    let sub_id = group
-        .get_integer("notify-subscription-id")
-        .unwrap_or(0) as u32;
-    let seq = group
-        .get_integer("notify-sequence-number")
-        .unwrap_or(0) as u32;
+    let sub_id = group.get_integer("notify-subscription-id").unwrap_or(0) as u32;
+    let seq = group.get_integer("notify-sequence-number").unwrap_or(0) as u32;
     let event_kw = group
         .get_string("notify-subscribed-event")
         .or_else(|| group.get_string("notify-event"))
         .unwrap_or("unknown")
         .to_string();
-    let timestamp_epoch = group
-        .get_integer("notify-time-stamp")
-        .unwrap_or(0) as i64;
+    let timestamp_epoch = group.get_integer("notify-time-stamp").unwrap_or(0) as i64;
     let timestamp = if timestamp_epoch > 0 {
         Utc.timestamp_opt(timestamp_epoch, 0)
             .single()
@@ -115,9 +102,7 @@ fn event_from_group(group: &ipp::IppAttributeGroup) -> NotificationEvent {
         job_id: group.get_integer("notify-job-id").map(|v| v as u32),
         job_state,
         timestamp,
-        message: group
-            .get_string("notify-text")
-            .map(String::from),
+        message: group.get_string("notify-text").map(String::from),
     }
 }
 
@@ -254,15 +239,18 @@ pub async fn list_subscriptions(
             "requesting-user-name",
             config.username.as_deref().unwrap_or("anonymous"),
         )
-        .keywords("requested-attributes", &[
-            "notify-subscription-id",
-            "notify-events",
-            "notify-printer-uri",
-            "notify-job-id",
-            "notify-recipient-uri",
-            "notify-lease-duration",
-            "notify-time-interval",
-        ])
+        .keywords(
+            "requested-attributes",
+            &[
+                "notify-subscription-id",
+                "notify-events",
+                "notify-printer-uri",
+                "notify-job-id",
+                "notify-recipient-uri",
+                "notify-lease-duration",
+                "notify-time-interval",
+            ],
+        )
         .end_of_attributes()
         .build();
 
@@ -289,7 +277,7 @@ pub async fn list_subscriptions(
     let subs = resp
         .groups(tag::SUBSCRIPTION_ATTRIBUTES)
         .into_iter()
-        .map(|g| subscription_from_group(g))
+        .map(subscription_from_group)
         .collect();
     Ok(subs)
 }
@@ -334,7 +322,7 @@ pub async fn get_events(
     let events = resp
         .groups(tag::EVENT_NOTIFICATION)
         .into_iter()
-        .map(|g| event_from_group(g))
+        .map(event_from_group)
         .collect();
     Ok(events)
 }

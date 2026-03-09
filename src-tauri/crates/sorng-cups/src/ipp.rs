@@ -5,7 +5,6 @@
 
 use crate::error::CupsError;
 use crate::types::*;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -15,85 +14,85 @@ use std::sync::atomic::{AtomicI32, Ordering};
 /// IPP operation codes (RFC 8011 + CUPS extensions).
 pub mod op {
     // Standard operations
-    pub const PRINT_JOB: u16                 = 0x0002;
-    pub const PRINT_URI: u16                 = 0x0003;
-    pub const VALIDATE_JOB: u16              = 0x0004;
-    pub const CREATE_JOB: u16                = 0x0005;
-    pub const SEND_DOCUMENT: u16             = 0x0006;
-    pub const SEND_URI: u16                  = 0x0007;
-    pub const CANCEL_JOB: u16                = 0x0008;
-    pub const GET_JOB_ATTRIBUTES: u16        = 0x0009;
-    pub const GET_JOBS: u16                  = 0x000A;
-    pub const GET_PRINTER_ATTRIBUTES: u16    = 0x000B;
-    pub const HOLD_JOB: u16                  = 0x000C;
-    pub const RELEASE_JOB: u16               = 0x000D;
-    pub const RESTART_JOB: u16               = 0x000E;
-    pub const PAUSE_PRINTER: u16             = 0x0010;
-    pub const RESUME_PRINTER: u16            = 0x0011;
-    pub const PURGE_JOBS: u16                = 0x0012;
-    pub const SET_PRINTER_ATTRIBUTES: u16    = 0x0013;
-    pub const SET_JOB_ATTRIBUTES: u16        = 0x0014;
+    pub const PRINT_JOB: u16 = 0x0002;
+    pub const PRINT_URI: u16 = 0x0003;
+    pub const VALIDATE_JOB: u16 = 0x0004;
+    pub const CREATE_JOB: u16 = 0x0005;
+    pub const SEND_DOCUMENT: u16 = 0x0006;
+    pub const SEND_URI: u16 = 0x0007;
+    pub const CANCEL_JOB: u16 = 0x0008;
+    pub const GET_JOB_ATTRIBUTES: u16 = 0x0009;
+    pub const GET_JOBS: u16 = 0x000A;
+    pub const GET_PRINTER_ATTRIBUTES: u16 = 0x000B;
+    pub const HOLD_JOB: u16 = 0x000C;
+    pub const RELEASE_JOB: u16 = 0x000D;
+    pub const RESTART_JOB: u16 = 0x000E;
+    pub const PAUSE_PRINTER: u16 = 0x0010;
+    pub const RESUME_PRINTER: u16 = 0x0011;
+    pub const PURGE_JOBS: u16 = 0x0012;
+    pub const SET_PRINTER_ATTRIBUTES: u16 = 0x0013;
+    pub const SET_JOB_ATTRIBUTES: u16 = 0x0014;
     pub const CREATE_PRINTER_SUBSCRIPTIONS: u16 = 0x0016;
-    pub const CREATE_JOB_SUBSCRIPTIONS: u16     = 0x0017;
-    pub const GET_SUBSCRIPTION_ATTRIBUTES: u16  = 0x0018;
-    pub const GET_SUBSCRIPTIONS: u16            = 0x0019;
-    pub const RENEW_SUBSCRIPTION: u16           = 0x001A;
-    pub const CANCEL_SUBSCRIPTION: u16          = 0x001B;
-    pub const GET_NOTIFICATIONS: u16            = 0x001C;
+    pub const CREATE_JOB_SUBSCRIPTIONS: u16 = 0x0017;
+    pub const GET_SUBSCRIPTION_ATTRIBUTES: u16 = 0x0018;
+    pub const GET_SUBSCRIPTIONS: u16 = 0x0019;
+    pub const RENEW_SUBSCRIPTION: u16 = 0x001A;
+    pub const CANCEL_SUBSCRIPTION: u16 = 0x001B;
+    pub const GET_NOTIFICATIONS: u16 = 0x001C;
 
     // CUPS extension operations
-    pub const CUPS_GET_DEFAULT: u16          = 0x4001;
-    pub const CUPS_GET_PRINTERS: u16         = 0x4002;
-    pub const CUPS_ADD_MODIFY_PRINTER: u16   = 0x4003;
-    pub const CUPS_DELETE_PRINTER: u16       = 0x4004;
-    pub const CUPS_GET_CLASSES: u16          = 0x4005;
-    pub const CUPS_ADD_MODIFY_CLASS: u16     = 0x4006;
-    pub const CUPS_DELETE_CLASS: u16         = 0x4007;
-    pub const CUPS_ACCEPT_JOBS: u16          = 0x4008;
-    pub const CUPS_REJECT_JOBS: u16          = 0x4009;
-    pub const CUPS_SET_DEFAULT: u16          = 0x400A;
-    pub const CUPS_GET_DEVICES: u16          = 0x400B;
-    pub const CUPS_GET_PPDS: u16             = 0x400C;
-    pub const CUPS_MOVE_JOB: u16             = 0x400D;
-    pub const CUPS_GET_DOCUMENT: u16         = 0x4027;
+    pub const CUPS_GET_DEFAULT: u16 = 0x4001;
+    pub const CUPS_GET_PRINTERS: u16 = 0x4002;
+    pub const CUPS_ADD_MODIFY_PRINTER: u16 = 0x4003;
+    pub const CUPS_DELETE_PRINTER: u16 = 0x4004;
+    pub const CUPS_GET_CLASSES: u16 = 0x4005;
+    pub const CUPS_ADD_MODIFY_CLASS: u16 = 0x4006;
+    pub const CUPS_DELETE_CLASS: u16 = 0x4007;
+    pub const CUPS_ACCEPT_JOBS: u16 = 0x4008;
+    pub const CUPS_REJECT_JOBS: u16 = 0x4009;
+    pub const CUPS_SET_DEFAULT: u16 = 0x400A;
+    pub const CUPS_GET_DEVICES: u16 = 0x400B;
+    pub const CUPS_GET_PPDS: u16 = 0x400C;
+    pub const CUPS_MOVE_JOB: u16 = 0x400D;
+    pub const CUPS_GET_DOCUMENT: u16 = 0x4027;
 }
 
 // ── Attribute tags ──────────────────────────────────────────────────
 
 pub mod tag {
     // Delimiter tags
-    pub const OPERATION_ATTRIBUTES: u8    = 0x01;
-    pub const JOB_ATTRIBUTES: u8          = 0x02;
-    pub const END_OF_ATTRIBUTES: u8       = 0x03;
-    pub const PRINTER_ATTRIBUTES: u8      = 0x04;
-    pub const UNSUPPORTED_ATTRIBUTES: u8  = 0x05;
+    pub const OPERATION_ATTRIBUTES: u8 = 0x01;
+    pub const JOB_ATTRIBUTES: u8 = 0x02;
+    pub const END_OF_ATTRIBUTES: u8 = 0x03;
+    pub const PRINTER_ATTRIBUTES: u8 = 0x04;
+    pub const UNSUPPORTED_ATTRIBUTES: u8 = 0x05;
     pub const SUBSCRIPTION_ATTRIBUTES: u8 = 0x06;
-    pub const EVENT_NOTIFICATION: u8      = 0x07;
+    pub const EVENT_NOTIFICATION: u8 = 0x07;
 
     // Value tags
-    pub const UNSUPPORTED_VALUE: u8  = 0x10;
-    pub const UNKNOWN_VALUE: u8      = 0x12;
-    pub const NO_VALUE: u8           = 0x13;
-    pub const INTEGER: u8            = 0x21;
-    pub const BOOLEAN: u8            = 0x22;
-    pub const ENUM: u8               = 0x23;
-    pub const OCTET_STRING: u8       = 0x30;
-    pub const DATE_TIME: u8          = 0x31;
-    pub const RESOLUTION: u8         = 0x32;
-    pub const RANGE_OF_INTEGER: u8   = 0x33;
-    pub const BEG_COLLECTION: u8     = 0x34;
-    pub const TEXT_WITH_LANG: u8     = 0x35;
-    pub const NAME_WITH_LANG: u8     = 0x36;
-    pub const END_COLLECTION: u8     = 0x37;
-    pub const TEXT_WITHOUT_LANG: u8  = 0x41;
-    pub const NAME_WITHOUT_LANG: u8  = 0x42;
-    pub const KEYWORD: u8            = 0x44;
-    pub const URI: u8                = 0x45;
-    pub const URI_SCHEME: u8         = 0x46;
-    pub const CHARSET: u8            = 0x47;
-    pub const NATURAL_LANGUAGE: u8   = 0x48;
-    pub const MIME_MEDIA_TYPE: u8    = 0x49;
-    pub const MEMBER_ATTR_NAME: u8   = 0x4A;
+    pub const UNSUPPORTED_VALUE: u8 = 0x10;
+    pub const UNKNOWN_VALUE: u8 = 0x12;
+    pub const NO_VALUE: u8 = 0x13;
+    pub const INTEGER: u8 = 0x21;
+    pub const BOOLEAN: u8 = 0x22;
+    pub const ENUM: u8 = 0x23;
+    pub const OCTET_STRING: u8 = 0x30;
+    pub const DATE_TIME: u8 = 0x31;
+    pub const RESOLUTION: u8 = 0x32;
+    pub const RANGE_OF_INTEGER: u8 = 0x33;
+    pub const BEG_COLLECTION: u8 = 0x34;
+    pub const TEXT_WITH_LANG: u8 = 0x35;
+    pub const NAME_WITH_LANG: u8 = 0x36;
+    pub const END_COLLECTION: u8 = 0x37;
+    pub const TEXT_WITHOUT_LANG: u8 = 0x41;
+    pub const NAME_WITHOUT_LANG: u8 = 0x42;
+    pub const KEYWORD: u8 = 0x44;
+    pub const URI: u8 = 0x45;
+    pub const URI_SCHEME: u8 = 0x46;
+    pub const CHARSET: u8 = 0x47;
+    pub const NATURAL_LANGUAGE: u8 = 0x48;
+    pub const MIME_MEDIA_TYPE: u8 = 0x49;
+    pub const MEMBER_ATTR_NAME: u8 = 0x4A;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -171,7 +170,8 @@ impl IppRequestBuilder {
 
     fn write_attr_header(&mut self, value_tag: u8, name: &str) {
         self.buf.push(value_tag);
-        self.buf.extend_from_slice(&(name.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(name.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(name.as_bytes());
     }
 
@@ -183,28 +183,32 @@ impl IppRequestBuilder {
 
     pub fn charset(mut self, name: &str, value: &str) -> Self {
         self.write_attr_header(tag::CHARSET, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value.as_bytes());
         self
     }
 
     pub fn natural_language(mut self, name: &str, value: &str) -> Self {
         self.write_attr_header(tag::NATURAL_LANGUAGE, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value.as_bytes());
         self
     }
 
     pub fn uri(mut self, name: &str, value: &str) -> Self {
         self.write_attr_header(tag::URI, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value.as_bytes());
         self
     }
 
     pub fn keyword(mut self, name: &str, value: &str) -> Self {
         self.write_attr_header(tag::KEYWORD, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value.as_bytes());
         self
     }
@@ -212,7 +216,8 @@ impl IppRequestBuilder {
     pub fn keywords(mut self, name: &str, values: &[&str]) -> Self {
         if let Some((first, rest)) = values.split_first() {
             self.write_attr_header(tag::KEYWORD, name);
-            self.buf.extend_from_slice(&(first.len() as u16).to_be_bytes());
+            self.buf
+                .extend_from_slice(&(first.len() as u16).to_be_bytes());
             self.buf.extend_from_slice(first.as_bytes());
             for v in rest {
                 self.write_additional_value_header(tag::KEYWORD);
@@ -225,14 +230,16 @@ impl IppRequestBuilder {
 
     pub fn text(mut self, name: &str, value: &str) -> Self {
         self.write_attr_header(tag::TEXT_WITHOUT_LANG, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value.as_bytes());
         self
     }
 
     pub fn name_without_language(mut self, name: &str, value: &str) -> Self {
         self.write_attr_header(tag::NAME_WITHOUT_LANG, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value.as_bytes());
         self
     }
@@ -277,14 +284,16 @@ impl IppRequestBuilder {
 
     pub fn octet_string(mut self, name: &str, value: &[u8]) -> Self {
         self.write_attr_header(tag::OCTET_STRING, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value);
         self
     }
 
     pub fn mime_media_type(mut self, name: &str, value: &str) -> Self {
         self.write_attr_header(tag::MIME_MEDIA_TYPE, name);
-        self.buf.extend_from_slice(&(value.len() as u16).to_be_bytes());
+        self.buf
+            .extend_from_slice(&(value.len() as u16).to_be_bytes());
         self.buf.extend_from_slice(value.as_bytes());
         self
     }
@@ -365,7 +374,10 @@ impl IppResponse {
 
     /// Get all attribute groups with the given tag.
     pub fn groups(&self, tag: u8) -> Vec<&IppAttributeGroup> {
-        self.attribute_groups.iter().filter(|g| g.tag == tag).collect()
+        self.attribute_groups
+            .iter()
+            .filter(|g| g.tag == tag)
+            .collect()
     }
 
     /// Whether the status code indicates success.
@@ -397,9 +409,7 @@ impl IppAttributeGroup {
 
     /// Get all string values of a set-of attribute.
     pub fn get_strings(&self, name: &str) -> Vec<&str> {
-        self.get(name)
-            .map(|a| a.all_strings())
-            .unwrap_or_default()
+        self.get(name).map(|a| a.all_strings()).unwrap_or_default()
     }
 }
 
@@ -522,10 +532,10 @@ pub fn parse_response(data: &[u8]) -> Result<IppResponse, CupsError> {
         let value = decode_value(tag_byte, value_bytes);
 
         if let Some(group) = current_group.as_mut() {
-            if attr_name.is_some() {
+            if let Some(name) = attr_name {
                 // New attribute
                 group.attributes.push(IppAttribute {
-                    name: attr_name.unwrap(),
+                    name,
                     values: vec![value],
                 });
             } else if let Some(ref name) = current_attr_name {
@@ -561,9 +571,7 @@ fn decode_value(value_tag: u8, data: &[u8]) -> IppAttributeValue {
                 IppAttributeValue::Unknown(data.to_vec())
             }
         }
-        tag::BOOLEAN => {
-            IppAttributeValue::Boolean(data.first().copied().unwrap_or(0) != 0)
-        }
+        tag::BOOLEAN => IppAttributeValue::Boolean(data.first().copied().unwrap_or(0) != 0),
         tag::ENUM => {
             if data.len() >= 4 {
                 IppAttributeValue::Enum(i32::from_be_bytes([data[0], data[1], data[2], data[3]]))
@@ -577,33 +585,25 @@ fn decode_value(value_tag: u8, data: &[u8]) -> IppAttributeValue {
         tag::NAME_WITHOUT_LANG | tag::NAME_WITH_LANG => {
             IppAttributeValue::Name(String::from_utf8_lossy(data).to_string())
         }
-        tag::KEYWORD => {
-            IppAttributeValue::Keyword(String::from_utf8_lossy(data).to_string())
-        }
-        tag::URI => {
-            IppAttributeValue::Uri(String::from_utf8_lossy(data).to_string())
-        }
-        tag::URI_SCHEME => {
-            IppAttributeValue::Text(String::from_utf8_lossy(data).to_string())
-        }
-        tag::CHARSET => {
-            IppAttributeValue::Charset(String::from_utf8_lossy(data).to_string())
-        }
+        tag::KEYWORD => IppAttributeValue::Keyword(String::from_utf8_lossy(data).to_string()),
+        tag::URI => IppAttributeValue::Uri(String::from_utf8_lossy(data).to_string()),
+        tag::URI_SCHEME => IppAttributeValue::Text(String::from_utf8_lossy(data).to_string()),
+        tag::CHARSET => IppAttributeValue::Charset(String::from_utf8_lossy(data).to_string()),
         tag::NATURAL_LANGUAGE => {
             IppAttributeValue::NaturalLanguage(String::from_utf8_lossy(data).to_string())
         }
-        tag::MIME_MEDIA_TYPE => {
-            IppAttributeValue::Text(String::from_utf8_lossy(data).to_string())
-        }
-        tag::DATE_TIME => {
-            IppAttributeValue::DateTime(String::from_utf8_lossy(data).to_string())
-        }
+        tag::MIME_MEDIA_TYPE => IppAttributeValue::Text(String::from_utf8_lossy(data).to_string()),
+        tag::DATE_TIME => IppAttributeValue::DateTime(String::from_utf8_lossy(data).to_string()),
         tag::RESOLUTION => {
             if data.len() >= 9 {
                 let cross_feed = i32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 let feed = i32::from_be_bytes([data[4], data[5], data[6], data[7]]);
                 let units = data[8] as i32;
-                IppAttributeValue::Resolution { cross_feed, feed, units }
+                IppAttributeValue::Resolution {
+                    cross_feed,
+                    feed,
+                    units,
+                }
             } else {
                 IppAttributeValue::Unknown(data.to_vec())
             }
@@ -617,12 +617,8 @@ fn decode_value(value_tag: u8, data: &[u8]) -> IppAttributeValue {
                 IppAttributeValue::Unknown(data.to_vec())
             }
         }
-        tag::OCTET_STRING => {
-            IppAttributeValue::OctetString(data.to_vec())
-        }
-        _ => {
-            IppAttributeValue::Unknown(data.to_vec())
-        }
+        tag::OCTET_STRING => IppAttributeValue::OctetString(data.to_vec()),
+        _ => IppAttributeValue::Unknown(data.to_vec()),
     }
 }
 
@@ -694,7 +690,10 @@ mod tests {
 
         assert_eq!(body[0], 1); // version major
         assert_eq!(body[1], 1); // version minor
-        assert_eq!(u16::from_be_bytes([body[2], body[3]]), op::GET_PRINTER_ATTRIBUTES);
+        assert_eq!(
+            u16::from_be_bytes([body[2], body[3]]),
+            op::GET_PRINTER_ATTRIBUTES
+        );
         // Must contain the end-of-attributes tag
         assert!(body.contains(&tag::END_OF_ATTRIBUTES));
     }
@@ -703,10 +702,10 @@ mod tests {
     fn test_parse_empty_response() {
         // Minimal valid IPP response: version 1.1, successful-ok, request-id 1, end-of-attrs
         let data = vec![
-            1, 1,       // version 1.1
-            0, 0,       // status: successful-ok
-            0, 0, 0, 1, // request-id 1
-            0x03,       // end-of-attributes
+            1, 1, // version 1.1
+            0, 0, // status: successful-ok
+            0, 0, 0, 1,    // request-id 1
+            0x03, // end-of-attributes
         ];
         let resp = parse_response(&data).unwrap();
         assert_eq!(resp.version_major, 1);
@@ -719,8 +718,8 @@ mod tests {
     fn test_parse_response_with_attrs() {
         // Build a tiny response with one printer-attributes group
         let mut data = vec![
-            1, 1,       // version
-            0, 0,       // success
+            1, 1, // version
+            0, 0, // success
             0, 0, 0, 2, // request-id 2
         ];
         // Printer-attributes group

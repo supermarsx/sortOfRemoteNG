@@ -57,6 +57,12 @@ pub struct CupsService {
     sessions: HashMap<String, CupsSession>,
 }
 
+impl Default for CupsService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CupsService {
     pub fn new() -> Self {
         Self {
@@ -113,6 +119,7 @@ impl CupsService {
         crate::printers::get_printer(&s.client, &s.config, name).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_printer(
         &self,
         session_id: &str,
@@ -147,64 +154,37 @@ impl CupsService {
         crate::printers::modify_printer(&s.client, &s.config, name, changes).await
     }
 
-    pub async fn delete_printer(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn delete_printer(&self, session_id: &str, name: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::printers::delete_printer(&s.client, &s.config, name).await
     }
 
-    pub async fn pause_printer(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn pause_printer(&self, session_id: &str, name: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::printers::pause_printer(&s.client, &s.config, name).await
     }
 
-    pub async fn resume_printer(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn resume_printer(&self, session_id: &str, name: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::printers::resume_printer(&s.client, &s.config, name).await
     }
 
-    pub async fn set_default_printer(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn set_default_printer(&self, session_id: &str, name: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::printers::set_default_printer(&s.client, &s.config, name).await
     }
 
-    pub async fn get_default_printer(
-        &self,
-        session_id: &str,
-    ) -> Result<PrinterInfo, CupsError> {
+    pub async fn get_default_printer(&self, session_id: &str) -> Result<PrinterInfo, CupsError> {
         let s = self.session(session_id)?;
         crate::printers::get_default_printer(&s.client, &s.config).await
     }
 
-    pub async fn accept_jobs(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn accept_jobs(&self, session_id: &str, name: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::printers::accept_jobs(&s.client, &s.config, name).await
     }
 
-    pub async fn reject_jobs(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn reject_jobs(&self, session_id: &str, name: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::printers::reject_jobs(&s.client, &s.config, name).await
     }
@@ -231,11 +211,7 @@ impl CupsService {
         crate::jobs::list_jobs(&s.client, &s.config, printer, which, my_jobs, limit).await
     }
 
-    pub async fn get_job(
-        &self,
-        session_id: &str,
-        job_id: u32,
-    ) -> Result<JobInfo, CupsError> {
+    pub async fn get_job(&self, session_id: &str, job_id: u32) -> Result<JobInfo, CupsError> {
         let s = self.session(session_id)?;
         crate::jobs::get_job(&s.client, &s.config, job_id).await
     }
@@ -301,11 +277,7 @@ impl CupsService {
         crate::jobs::release_job(&s.client, &s.config, printer, job_id).await
     }
 
-    pub async fn cancel_all_jobs(
-        &self,
-        session_id: &str,
-        printer: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn cancel_all_jobs(&self, session_id: &str, printer: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::jobs::cancel_all_jobs(&s.client, &s.config, printer).await
     }
@@ -322,19 +294,12 @@ impl CupsService {
 
     // ── Classes ─────────────────────────────────────────────────
 
-    pub async fn list_classes(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<PrinterClass>, CupsError> {
+    pub async fn list_classes(&self, session_id: &str) -> Result<Vec<PrinterClass>, CupsError> {
         let s = self.session(session_id)?;
         crate::classes::list_classes(&s.client, &s.config).await
     }
 
-    pub async fn get_class(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<PrinterClass, CupsError> {
+    pub async fn get_class(&self, session_id: &str, name: &str) -> Result<PrinterClass, CupsError> {
         let s = self.session(session_id)?;
         crate::classes::get_class(&s.client, &s.config, name).await
     }
@@ -371,11 +336,7 @@ impl CupsService {
         crate::classes::modify_class(&s.client, &s.config, name, changes).await
     }
 
-    pub async fn delete_class(
-        &self,
-        session_id: &str,
-        name: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn delete_class(&self, session_id: &str, name: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::classes::delete_class(&s.client, &s.config, name).await
     }
@@ -420,11 +381,7 @@ impl CupsService {
         crate::ppd::search_ppds(&s.client, &s.config, query).await
     }
 
-    pub async fn get_ppd(
-        &self,
-        session_id: &str,
-        printer_name: &str,
-    ) -> Result<String, CupsError> {
+    pub async fn get_ppd(&self, session_id: &str, printer_name: &str) -> Result<String, CupsError> {
         let s = self.session(session_id)?;
         crate::ppd::get_ppd(&s.client, &s.config, printer_name).await
     }
@@ -460,10 +417,7 @@ impl CupsService {
 
     // ── Drivers ─────────────────────────────────────────────────
 
-    pub async fn list_drivers(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<DriverInfo>, CupsError> {
+    pub async fn list_drivers(&self, session_id: &str) -> Result<Vec<DriverInfo>, CupsError> {
         let s = self.session(session_id)?;
         crate::drivers::list_drivers(&s.client, &s.config).await
     }
@@ -485,14 +439,7 @@ impl CupsService {
         limit: Option<usize>,
     ) -> Result<Vec<DriverInfo>, CupsError> {
         let s = self.session(session_id)?;
-        crate::drivers::recommend_driver(
-            &s.client,
-            &s.config,
-            device_id,
-            make_model,
-            limit,
-        )
-        .await
+        crate::drivers::recommend_driver(&s.client, &s.config, device_id, make_model, limit).await
     }
 
     pub async fn get_driver_options(
@@ -506,10 +453,7 @@ impl CupsService {
 
     // ── Admin ───────────────────────────────────────────────────
 
-    pub async fn get_server_settings(
-        &self,
-        session_id: &str,
-    ) -> Result<CupsServerInfo, CupsError> {
+    pub async fn get_server_settings(&self, session_id: &str) -> Result<CupsServerInfo, CupsError> {
         let s = self.session(session_id)?;
         crate::admin::get_server_settings(&s.client, &s.config).await
     }
@@ -533,19 +477,12 @@ impl CupsService {
         crate::admin::get_error_log(&s.client, &s.config, log_type, max_lines).await
     }
 
-    pub async fn test_page(
-        &self,
-        session_id: &str,
-        printer_name: &str,
-    ) -> Result<u32, CupsError> {
+    pub async fn test_page(&self, session_id: &str, printer_name: &str) -> Result<u32, CupsError> {
         let s = self.session(session_id)?;
         crate::admin::test_page(&s.client, &s.config, printer_name).await
     }
 
-    pub async fn get_subscriptions_status(
-        &self,
-        session_id: &str,
-    ) -> Result<u32, CupsError> {
+    pub async fn get_subscriptions_status(&self, session_id: &str) -> Result<u32, CupsError> {
         let s = self.session(session_id)?;
         crate::admin::get_subscriptions_status(&s.client, &s.config).await
     }
@@ -559,10 +496,7 @@ impl CupsService {
         crate::admin::cleanup_jobs(&s.client, &s.config, max_age_secs).await
     }
 
-    pub async fn restart_cups(
-        &self,
-        session_id: &str,
-    ) -> Result<(), CupsError> {
+    pub async fn restart_cups(&self, session_id: &str) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
         crate::admin::restart_cups(&s.client, &s.config).await
     }
@@ -614,13 +548,8 @@ impl CupsService {
         since_sequence: u32,
     ) -> Result<Vec<NotificationEvent>, CupsError> {
         let s = self.session(session_id)?;
-        crate::subscriptions::get_events(
-            &s.client,
-            &s.config,
-            subscription_id,
-            since_sequence,
-        )
-        .await
+        crate::subscriptions::get_events(&s.client, &s.config, subscription_id, since_sequence)
+            .await
     }
 
     pub async fn renew_subscription(
@@ -630,12 +559,7 @@ impl CupsService {
         lease_secs: Option<u32>,
     ) -> Result<(), CupsError> {
         let s = self.session(session_id)?;
-        crate::subscriptions::renew_subscription(
-            &s.client,
-            &s.config,
-            subscription_id,
-            lease_secs,
-        )
-        .await
+        crate::subscriptions::renew_subscription(&s.client, &s.config, subscription_id, lease_secs)
+            .await
     }
 }

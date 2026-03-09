@@ -67,11 +67,17 @@ impl CupsError {
     }
 
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(CupsErrorKind::SessionNotFound, format!("Session not found: {id}"))
+        Self::new(
+            CupsErrorKind::SessionNotFound,
+            format!("Session not found: {id}"),
+        )
     }
 
     pub fn printer_not_found(name: &str) -> Self {
-        Self::new(CupsErrorKind::PrinterNotFound, format!("Printer not found: {name}"))
+        Self::new(
+            CupsErrorKind::PrinterNotFound,
+            format!("Printer not found: {name}"),
+        )
     }
 
     pub fn job_not_found(id: u32) -> Self {
@@ -79,7 +85,10 @@ impl CupsError {
     }
 
     pub fn class_not_found(name: &str) -> Self {
-        Self::new(CupsErrorKind::ClassNotFound, format!("Class not found: {name}"))
+        Self::new(
+            CupsErrorKind::ClassNotFound,
+            format!("Class not found: {name}"),
+        )
     }
 
     pub fn ipp_error(status: u16, msg: impl Into<String>) -> Self {

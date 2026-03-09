@@ -21,6 +21,7 @@ use chrono;
 
 /// Known cupsd.conf boolean directives that we map to the `CupsServerInfo`
 /// fields.
+#[allow(dead_code)]
 const BOOL_SETTINGS: &[(&str, &str)] = &[
     ("share-printers", "Browsing"),
     ("remote-admin", "RemoteAdmin"),
@@ -31,6 +32,7 @@ const BOOL_SETTINGS: &[(&str, &str)] = &[
 ];
 
 /// Parse the CUPS admin HTTP API settings response into a `CupsServerInfo`.
+#[allow(dead_code)]
 fn parse_server_info(group: &ipp::IppAttributeGroup) -> CupsServerInfo {
     let bool_val = |name: &str| -> bool {
         group
@@ -41,29 +43,19 @@ fn parse_server_info(group: &ipp::IppAttributeGroup) -> CupsServerInfo {
 
     CupsServerInfo {
         version: group.get_string("cups-version").map(String::from),
-        default_auth_type: group
-            .get_string("default-auth-type")
-            .map(String::from),
-        default_encryption: group
-            .get_string("default-encryption")
-            .map(String::from),
+        default_auth_type: group.get_string("default-auth-type").map(String::from),
+        default_encryption: group.get_string("default-encryption").map(String::from),
         share_printers: bool_val("share-printers"),
         remote_admin: bool_val("remote-admin"),
         remote_any: bool_val("remote-any"),
         user_cancel_any: bool_val("user-cancel-any"),
         log_level: group.get_string("log-level").map(String::from),
-        max_clients: group
-            .get_integer("max-clients")
-            .unwrap_or(100) as u32,
-        max_jobs: group
-            .get_integer("max-jobs")
-            .unwrap_or(500) as u32,
+        max_clients: group.get_integer("max-clients").unwrap_or(100) as u32,
+        max_jobs: group.get_integer("max-jobs").unwrap_or(500) as u32,
         preserve_job_history: bool_val("preserve-job-history"),
         preserve_job_files: bool_val("preserve-job-files"),
         server_name: group.get_string("server-name").map(String::from),
-        default_paper_size: group
-            .get_string("default-paper-size")
-            .map(String::from),
+        default_paper_size: group.get_string("default-paper-size").map(String::from),
     }
 }
 
@@ -106,9 +98,10 @@ pub async fn get_server_settings(
         )));
     }
 
-    let body = response.text().await.map_err(|e| {
-        CupsError::parse_error(format!("Failed to read settings body: {e}"))
-    })?;
+    let body = response
+        .text()
+        .await
+        .map_err(|e| CupsError::parse_error(format!("Failed to read settings body: {e}")))?;
 
     // Parse the cupsd.conf key-value pairs.
     let info = parse_cupsd_conf(&body);
@@ -146,9 +139,8 @@ fn parse_cupsd_conf(body: &str) -> CupsServerInfo {
         let key = parts[0];
         let value = parts[1].trim();
 
-        let is_yes = value.eq_ignore_ascii_case("yes")
-            || value == "1"
-            || value.eq_ignore_ascii_case("true");
+        let is_yes =
+            value.eq_ignore_ascii_case("yes") || value == "1" || value.eq_ignore_ascii_case("true");
 
         match key {
             "DefaultAuthType" => info.default_auth_type = Some(value.to_string()),
@@ -212,9 +204,10 @@ pub async fn update_server_settings(
             resp.status()
         )));
     }
-    let current = resp.text().await.map_err(|e| {
-        CupsError::parse_error(format!("Failed to read config body: {e}"))
-    })?;
+    let current = resp
+        .text()
+        .await
+        .map_err(|e| CupsError::parse_error(format!("Failed to read config body: {e}")))?;
 
     // 2. Merge settings into the current config.
     let mut remaining: std::collections::HashMap<String, String> = settings.clone();
@@ -250,9 +243,10 @@ pub async fn update_server_settings(
         put_req = put_req.basic_auth(user, Some(pass));
     }
 
-    let put_resp = put_req.send().await.map_err(|e| {
-        CupsError::connection_failed(format!("Failed to upload config: {e}"))
-    })?;
+    let put_resp = put_req
+        .send()
+        .await
+        .map_err(|e| CupsError::connection_failed(format!("Failed to upload config: {e}")))?;
 
     if put_resp.status() == reqwest::StatusCode::UNAUTHORIZED
         || put_resp.status() == reqwest::StatusCode::FORBIDDEN
@@ -309,9 +303,10 @@ pub async fn get_error_log(
         )));
     }
 
-    let body = response.text().await.map_err(|e| {
-        CupsError::parse_error(format!("Failed to read log body: {e}"))
-    })?;
+    let body = response
+        .text()
+        .await
+        .map_err(|e| CupsError::parse_error(format!("Failed to read log body: {e}")))?;
 
     let lines: Vec<String> = body.lines().map(String::from).collect();
 
@@ -376,7 +371,8 @@ showpage
     let job_id = resp
         .group(tag::JOB_ATTRIBUTES)
         .and_then(|g| g.get_integer("job-id"))
-        .ok_or_else(|| CupsError::parse_error("No job-id in test page response"))? as u32;
+        .ok_or_else(|| CupsError::parse_error("No job-id in test page response"))?
+        as u32;
 
     Ok(job_id)
 }
@@ -390,9 +386,7 @@ pub async fn get_subscriptions_status(
 ) -> Result<u32, CupsError> {
     let uri = config.ipp_uri();
     let body = ipp::standard_request(op::GET_SUBSCRIPTIONS, &uri)
-        .keywords("requested-attributes", &[
-            "notify-subscription-id",
-        ])
+        .keywords("requested-attributes", &["notify-subscription-id"])
         .end_of_attributes()
         .build();
 
@@ -407,9 +401,7 @@ pub async fn get_subscriptions_status(
     .await?;
     // If there are no subscriptions the server may return a not-found status.
     if resp.is_success() {
-        let count = resp
-            .groups(tag::SUBSCRIPTION_ATTRIBUTES)
-            .len() as u32;
+        let count = resp.groups(tag::SUBSCRIPTION_ATTRIBUTES).len() as u32;
         Ok(count)
     } else {
         Ok(0)
@@ -426,31 +418,17 @@ pub async fn cleanup_jobs(
     max_age_secs: u64,
 ) -> Result<u32, CupsError> {
     let cutoff = chrono::Utc::now().timestamp() - max_age_secs as i64;
-    let jobs = crate::jobs::list_jobs(
-        client,
-        config,
-        None,
-        WhichJobs::Completed,
-        false,
-        None,
-    )
-    .await?;
+    let jobs =
+        crate::jobs::list_jobs(client, config, None, WhichJobs::Completed, false, None).await?;
 
     let mut purged = 0u32;
     for job in &jobs {
-        let completed_ts = job
-            .completed_at
-            .map(|dt| dt.timestamp())
-            .unwrap_or(0);
+        let completed_ts = job.completed_at.map(|dt| dt.timestamp()).unwrap_or(0);
         if completed_ts > 0 && completed_ts < cutoff {
             // Purge by canceling the completed job.
-            let printer_name = job
-                .printer_name
-                .as_deref()
-                .unwrap_or("");
+            let printer_name = job.printer_name.as_deref().unwrap_or("");
             if !printer_name.is_empty() {
-                let _result =
-                    crate::jobs::cancel_job(client, config, printer_name, job.id).await;
+                let _result = crate::jobs::cancel_job(client, config, printer_name, job.id).await;
                 purged += 1;
             }
         }
@@ -483,9 +461,10 @@ pub async fn restart_cups(
         req = req.basic_auth(user, Some(pass));
     }
 
-    let resp = req.send().await.map_err(|e| {
-        CupsError::connection_failed(format!("Failed to restart CUPS: {e}"))
-    })?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| CupsError::connection_failed(format!("Failed to restart CUPS: {e}")))?;
 
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED
         || resp.status() == reqwest::StatusCode::FORBIDDEN

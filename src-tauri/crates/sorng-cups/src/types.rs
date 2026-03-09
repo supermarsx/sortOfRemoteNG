@@ -11,21 +11,17 @@ use std::collections::HashMap;
 /// Encryption policy for the CUPS connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum CupsEncryption {
     /// Never use encryption.
     Never,
     /// Use encryption if available (opportunistic TLS).
+    #[default]
     IfRequested,
     /// Require encryption — fail if TLS cannot be established.
     Required,
     /// Always encrypt (alias for Required).
     Always,
-}
-
-impl Default for CupsEncryption {
-    fn default() -> Self {
-        Self::IfRequested
-    }
 }
 
 /// Configuration required to reach a CUPS server.
@@ -139,32 +135,40 @@ impl PrinterState {
 pub struct PrinterTypeFlags(pub u32);
 
 impl PrinterTypeFlags {
-    pub const LOCAL: u32         = 0x0000_0000;
-    pub const CLASS: u32         = 0x0000_0001;
-    pub const REMOTE: u32        = 0x0000_0002;
-    pub const NETWORK: u32       = 0x0000_0004; // not a true printer — a host
-    pub const FAX: u32           = 0x0000_0040;
-    pub const COLOR: u32         = 0x0000_0080;
-    pub const DUPLEX: u32        = 0x0000_0100;
-    pub const STAPLE: u32        = 0x0000_0200;
-    pub const COPIES: u32        = 0x0000_0400;
-    pub const COLLATE: u32       = 0x0000_0800;
-    pub const PUNCH: u32         = 0x0000_1000;
-    pub const COVER: u32         = 0x0000_2000;
-    pub const BIND: u32          = 0x0000_4000;
-    pub const SORT: u32          = 0x0000_8000;
-    pub const MFP: u32           = 0x0001_0000; // scanner + printer
-    pub const LARGE_FORMAT: u32  = 0x0002_0000;
-    pub const THREE_D: u32       = 0x0004_0000;
-    pub const DISCOVERED: u32    = 0x0080_0000;
+    pub const LOCAL: u32 = 0x0000_0000;
+    pub const CLASS: u32 = 0x0000_0001;
+    pub const REMOTE: u32 = 0x0000_0002;
+    pub const NETWORK: u32 = 0x0000_0004; // not a true printer — a host
+    pub const FAX: u32 = 0x0000_0040;
+    pub const COLOR: u32 = 0x0000_0080;
+    pub const DUPLEX: u32 = 0x0000_0100;
+    pub const STAPLE: u32 = 0x0000_0200;
+    pub const COPIES: u32 = 0x0000_0400;
+    pub const COLLATE: u32 = 0x0000_0800;
+    pub const PUNCH: u32 = 0x0000_1000;
+    pub const COVER: u32 = 0x0000_2000;
+    pub const BIND: u32 = 0x0000_4000;
+    pub const SORT: u32 = 0x0000_8000;
+    pub const MFP: u32 = 0x0001_0000; // scanner + printer
+    pub const LARGE_FORMAT: u32 = 0x0002_0000;
+    pub const THREE_D: u32 = 0x0004_0000;
+    pub const DISCOVERED: u32 = 0x0080_0000;
 
     pub fn is_set(&self, flag: u32) -> bool {
         (self.0 & flag) != 0
     }
-    pub fn is_class(&self) -> bool { self.is_set(Self::CLASS) }
-    pub fn is_remote(&self) -> bool { self.is_set(Self::REMOTE) }
-    pub fn is_color(&self) -> bool { self.is_set(Self::COLOR) }
-    pub fn is_duplex(&self) -> bool { self.is_set(Self::DUPLEX) }
+    pub fn is_class(&self) -> bool {
+        self.is_set(Self::CLASS)
+    }
+    pub fn is_remote(&self) -> bool {
+        self.is_set(Self::REMOTE)
+    }
+    pub fn is_color(&self) -> bool {
+        self.is_set(Self::COLOR)
+    }
+    pub fn is_duplex(&self) -> bool {
+        self.is_set(Self::DUPLEX)
+    }
 }
 
 /// Comprehensive printer information.
@@ -636,8 +640,15 @@ pub enum IppAttributeValue {
     Charset(String),
     NaturalLanguage(String),
     DateTime(String),
-    Resolution { cross_feed: i32, feed: i32, units: i32 },
-    RangeOfInteger { lower: i32, upper: i32 },
+    Resolution {
+        cross_feed: i32,
+        feed: i32,
+        units: i32,
+    },
+    RangeOfInteger {
+        lower: i32,
+        upper: i32,
+    },
     OctetString(Vec<u8>),
     Collection(HashMap<String, IppAttributeValue>),
     SetOf(Vec<IppAttributeValue>),
@@ -657,24 +668,24 @@ pub struct IppAttribute {
 pub struct IppStatusCode(pub u16);
 
 impl IppStatusCode {
-    pub const SUCCESSFUL_OK: u16                          = 0x0000;
-    pub const SUCCESSFUL_OK_IGNORED:  u16                 = 0x0001;
-    pub const SUCCESSFUL_OK_CONFLICTING_ATTRS: u16        = 0x0002;
-    pub const CLIENT_ERROR_BAD_REQUEST: u16               = 0x0400;
-    pub const CLIENT_ERROR_FORBIDDEN: u16                 = 0x0401;
-    pub const CLIENT_ERROR_NOT_AUTHENTICATED: u16         = 0x0402;
-    pub const CLIENT_ERROR_NOT_AUTHORIZED: u16            = 0x0403;
-    pub const CLIENT_ERROR_NOT_POSSIBLE: u16              = 0x0404;
-    pub const CLIENT_ERROR_TIMEOUT: u16                   = 0x0405;
-    pub const CLIENT_ERROR_NOT_FOUND: u16                 = 0x0406;
-    pub const CLIENT_ERROR_GONE: u16                      = 0x0407;
-    pub const CLIENT_ERROR_TOO_MANY_REQUESTS: u16         = 0x040C;
-    pub const SERVER_ERROR_INTERNAL: u16                  = 0x0500;
-    pub const SERVER_ERROR_NOT_ACCEPTING: u16             = 0x0501;
-    pub const SERVER_ERROR_BUSY: u16                      = 0x0502;
-    pub const SERVER_ERROR_VERSION_NOT_SUPPORTED: u16     = 0x0503;
-    pub const SERVER_ERROR_TEMPORARY: u16                 = 0x0504;
-    pub const SERVER_ERROR_SERVICE_UNAVAILABLE: u16       = 0x0505;
+    pub const SUCCESSFUL_OK: u16 = 0x0000;
+    pub const SUCCESSFUL_OK_IGNORED: u16 = 0x0001;
+    pub const SUCCESSFUL_OK_CONFLICTING_ATTRS: u16 = 0x0002;
+    pub const CLIENT_ERROR_BAD_REQUEST: u16 = 0x0400;
+    pub const CLIENT_ERROR_FORBIDDEN: u16 = 0x0401;
+    pub const CLIENT_ERROR_NOT_AUTHENTICATED: u16 = 0x0402;
+    pub const CLIENT_ERROR_NOT_AUTHORIZED: u16 = 0x0403;
+    pub const CLIENT_ERROR_NOT_POSSIBLE: u16 = 0x0404;
+    pub const CLIENT_ERROR_TIMEOUT: u16 = 0x0405;
+    pub const CLIENT_ERROR_NOT_FOUND: u16 = 0x0406;
+    pub const CLIENT_ERROR_GONE: u16 = 0x0407;
+    pub const CLIENT_ERROR_TOO_MANY_REQUESTS: u16 = 0x040C;
+    pub const SERVER_ERROR_INTERNAL: u16 = 0x0500;
+    pub const SERVER_ERROR_NOT_ACCEPTING: u16 = 0x0501;
+    pub const SERVER_ERROR_BUSY: u16 = 0x0502;
+    pub const SERVER_ERROR_VERSION_NOT_SUPPORTED: u16 = 0x0503;
+    pub const SERVER_ERROR_TEMPORARY: u16 = 0x0504;
+    pub const SERVER_ERROR_SERVICE_UNAVAILABLE: u16 = 0x0505;
 
     pub fn is_success(code: u16) -> bool {
         code < 0x0400

@@ -18,15 +18,15 @@
 //! - **service** — Session-based service façade with `Arc<Mutex<>>` state.
 //! - **commands** — `#[tauri::command]` handlers exposed to the Tauri frontend.
 
-pub mod types;
+pub mod admin;
+pub mod classes;
+pub mod commands;
+pub mod drivers;
 pub mod error;
 pub mod ipp;
-pub mod printers;
 pub mod jobs;
-pub mod classes;
 pub mod ppd;
-pub mod drivers;
-pub mod admin;
-pub mod subscriptions;
+pub mod printers;
 pub mod service;
-pub mod commands;
+pub mod subscriptions;
+pub mod types;
