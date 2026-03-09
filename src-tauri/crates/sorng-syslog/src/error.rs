@@ -4,7 +4,11 @@ use std::fmt;
 #[derive(Debug)]
 pub enum SyslogError {
     CommandNotFound(String),
-    CommandFailed { command: String, exit_code: i32, stderr: String },
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
     SshError(String),
     HostNotFound(String),
     ConfigParseError(String),
@@ -22,7 +26,11 @@ impl fmt::Display for SyslogError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommandNotFound(c) => write!(f, "Command not found: {c}"),
-            Self::CommandFailed { command, exit_code, stderr } => write!(f, "`{command}` failed (exit {exit_code}): {stderr}"),
+            Self::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+            } => write!(f, "`{command}` failed (exit {exit_code}): {stderr}"),
             Self::SshError(e) => write!(f, "SSH: {e}"),
             Self::HostNotFound(h) => write!(f, "Host not found: {h}"),
             Self::ConfigParseError(e) => write!(f, "Config parse: {e}"),
@@ -38,5 +46,13 @@ impl fmt::Display for SyslogError {
     }
 }
 impl std::error::Error for SyslogError {}
-impl From<std::io::Error> for SyslogError { fn from(e: std::io::Error) -> Self { Self::IoError(e.to_string()) } }
-impl From<serde_json::Error> for SyslogError { fn from(e: serde_json::Error) -> Self { Self::JsonError(e.to_string()) } }
+impl From<std::io::Error> for SyslogError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e.to_string())
+    }
+}
+impl From<serde_json::Error> for SyslogError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::JsonError(e.to_string())
+    }
+}

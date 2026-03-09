@@ -9,7 +9,8 @@ pub async fn get_config(host: &SyslogHost) -> Result<SyslogNgConfig, SyslogError
 }
 
 pub async fn restart(host: &SyslogHost) -> Result<(), SyslogError> {
-    client::exec_ok(host, "systemctl", &["restart", "syslog-ng"]).await?; Ok(())
+    client::exec_ok(host, "systemctl", &["restart", "syslog-ng"]).await?;
+    Ok(())
 }
 
 pub async fn check_config(host: &SyslogHost) -> Result<bool, SyslogError> {
@@ -19,8 +20,17 @@ pub async fn check_config(host: &SyslogHost) -> Result<bool, SyslogError> {
 
 fn parse_syslog_ng_conf(_content: &str) -> SyslogNgConfig {
     // TODO: implement full syslog-ng.conf parser
-    SyslogNgConfig { version: None, sources: Vec::new(), destinations: Vec::new(), filters: Vec::new(), log_paths: Vec::new() }
+    SyslogNgConfig {
+        version: None,
+        sources: Vec::new(),
+        destinations: Vec::new(),
+        filters: Vec::new(),
+        log_paths: Vec::new(),
+    }
 }
 
 #[cfg(test)]
-mod tests { #[test] fn test_module_loads() {} }
+mod tests {
+    #[test]
+    fn test_module_loads() {}
+}

@@ -5,10 +5,17 @@ use crate::types::*;
 
 pub async fn list_configs(host: &SyslogHost) -> Result<Vec<String>, SyslogError> {
     let stdout = client::exec_ok(host, "ls", &["-1", "/etc/logrotate.d/"]).await?;
-    Ok(stdout.lines().filter(|l| !l.trim().is_empty()).map(|l| l.trim().to_string()).collect())
+    Ok(stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .collect())
 }
 
-pub async fn get_file_config(host: &SyslogHost, name: &str) -> Result<Vec<LogrotateFileConfig>, SyslogError> {
+pub async fn get_file_config(
+    host: &SyslogHost,
+    name: &str,
+) -> Result<Vec<LogrotateFileConfig>, SyslogError> {
     let path = format!("/etc/logrotate.d/{name}");
     let content = client::read_file(host, &path).await?;
     Ok(parse_logrotate_file(&content))
@@ -41,7 +48,9 @@ pub fn parse_logrotate_file(content: &str) -> Vec<LogrotateFileConfig> {
             }
             continue;
         }
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if line.ends_with('{') {
             let path = line.trim_end_matches('{').trim().to_string();
             current_path = Some(path.clone());
@@ -56,7 +65,9 @@ pub fn parse_logrotate_file(content: &str) -> Vec<LogrotateFileConfig> {
             current_path = None;
         } else if in_block {
             apply_directive(&mut cfg, line);
-            if line == "postrotate" { postrotate = true; }
+            if line == "postrotate" {
+                postrotate = true;
+            }
         }
     }
     configs
@@ -64,11 +75,22 @@ pub fn parse_logrotate_file(content: &str) -> Vec<LogrotateFileConfig> {
 
 fn default_file_config(path: &str) -> LogrotateFileConfig {
     LogrotateFileConfig {
-        path: path.to_string(), frequency: None, rotate_count: None,
-        compress: None, delay_compress: None, missing_ok: false,
-        not_if_empty: false, create: None, postrotate: None, prerotate: None,
-        max_size: None, min_size: None, max_age: None,
-        copy_truncate: false, date_ext: false, shared_scripts: false,
+        path: path.to_string(),
+        frequency: None,
+        rotate_count: None,
+        compress: None,
+        delay_compress: None,
+        missing_ok: false,
+        not_if_empty: false,
+        create: None,
+        postrotate: None,
+        prerotate: None,
+        max_size: None,
+        min_size: None,
+        max_age: None,
+        copy_truncate: false,
+        date_ext: false,
+        shared_scripts: false,
     }
 }
 

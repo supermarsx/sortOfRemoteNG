@@ -4,14 +4,14 @@
 //! logrotate configuration, facility/severity utilities, centralized
 //! remote log forwarding, log file listing, and Tauri integration.
 
-pub mod types;
-pub mod error;
 pub mod client;
-pub mod service;
-pub mod rsyslog;
-pub mod syslog_ng;
-pub mod journald_conf;
-pub mod logrotate;
+pub mod error;
 pub mod facilities;
-pub mod remote_logging;
+pub mod journald_conf;
 pub mod log_files;
+pub mod logrotate;
+pub mod remote_logging;
+pub mod rsyslog;
+pub mod service;
+pub mod syslog_ng;
+pub mod types;

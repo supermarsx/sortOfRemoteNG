@@ -10,14 +10,17 @@ pub async fn get_config(host: &SyslogHost) -> Result<JournaldConfig, SyslogError
 }
 
 pub async fn restart(host: &SyslogHost) -> Result<(), SyslogError> {
-    client::exec_ok(host, "systemctl", &["restart", "systemd-journald"]).await?; Ok(())
+    client::exec_ok(host, "systemctl", &["restart", "systemd-journald"]).await?;
+    Ok(())
 }
 
 pub fn parse_journald_conf(content: &str) -> JournaldConfig {
     let mut settings = HashMap::new();
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with('[') { continue; }
+        if line.is_empty() || line.starts_with('#') || line.starts_with('[') {
+            continue;
+        }
         if let Some((k, v)) = line.split_once('=') {
             settings.insert(k.trim().to_string(), v.trim().to_string());
         }

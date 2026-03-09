@@ -6,35 +6,80 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshConfig {
-    pub host: String, pub port: u16, pub username: String, pub auth: SshAuth, pub timeout_secs: u64,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: SshAuth,
+    pub timeout_secs: u64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SshAuth {
-    Password { password: String },
-    PrivateKey { key_path: String, passphrase: Option<String> },
+    Password {
+        password: String,
+    },
+    PrivateKey {
+        key_path: String,
+        passphrase: Option<String>,
+    },
     Agent,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyslogHost {
-    pub id: String, pub name: String, pub ssh: Option<SshConfig>, pub use_sudo: bool,
-    pub backend: SyslogBackend, pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc>,
+    pub id: String,
+    pub name: String,
+    pub ssh: Option<SshConfig>,
+    pub use_sudo: bool,
+    pub backend: SyslogBackend,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SyslogBackend { Rsyslog, SyslogNg, Journald }
+pub enum SyslogBackend {
+    Rsyslog,
+    SyslogNg,
+    Journald,
+}
 
 // ─── Facility / Severity ────────────────────────────────────────────
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SyslogFacility {
-    Kern, User, Mail, Daemon, Auth, Syslog, Lpr, News, Uucp, Cron,
-    Authpriv, Ftp, Local0, Local1, Local2, Local3, Local4, Local5, Local6, Local7, Any,
+    Kern,
+    User,
+    Mail,
+    Daemon,
+    Auth,
+    Syslog,
+    Lpr,
+    News,
+    Uucp,
+    Cron,
+    Authpriv,
+    Ftp,
+    Local0,
+    Local1,
+    Local2,
+    Local3,
+    Local4,
+    Local5,
+    Local6,
+    Local7,
+    Any,
 }
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SyslogSeverity {
-    Emergency, Alert, Critical, Error, Warning, Notice, Info, Debug, Any,
+    Emergency,
+    Alert,
+    Critical,
+    Error,
+    Warning,
+    Notice,
+    Info,
+    Debug,
+    Any,
 }
 
 // ─── Rsyslog ────────────────────────────────────────────────────────
@@ -71,13 +116,29 @@ pub struct SyslogNgConfig {
     pub log_paths: Vec<SyslogNgLogPath>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyslogNgSource { pub name: String, pub driver: String, pub options: HashMap<String, String> }
+pub struct SyslogNgSource {
+    pub name: String,
+    pub driver: String,
+    pub options: HashMap<String, String>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyslogNgDestination { pub name: String, pub driver: String, pub path: Option<String>, pub options: HashMap<String, String> }
+pub struct SyslogNgDestination {
+    pub name: String,
+    pub driver: String,
+    pub path: Option<String>,
+    pub options: HashMap<String, String>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyslogNgFilter { pub name: String, pub expression: String }
+pub struct SyslogNgFilter {
+    pub name: String,
+    pub expression: String,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyslogNgLogPath { pub sources: Vec<String>, pub filters: Vec<String>, pub destinations: Vec<String> }
+pub struct SyslogNgLogPath {
+    pub sources: Vec<String>,
+    pub filters: Vec<String>,
+    pub destinations: Vec<String>,
+}
 
 // ─── journald ───────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,7 +173,12 @@ pub struct LogrotateGlobalConfig {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum LogrotateFrequency { Daily, Weekly, Monthly, Yearly }
+pub enum LogrotateFrequency {
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogrotateFileConfig {
     pub path: String,
@@ -159,7 +225,11 @@ pub struct RemoteLoggingConfig {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RemoteLogProtocol { Udp, Tcp, Relp }
+pub enum RemoteLogProtocol {
+    Udp,
+    Tcp,
+    Relp,
+}
 
 // ─── Health ─────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
