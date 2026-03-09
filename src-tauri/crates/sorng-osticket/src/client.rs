@@ -24,13 +24,24 @@ impl OsticketClient {
 
         let base = cfg.host.trim_end_matches('/').to_string();
 
-        Ok(Self { http, base_url: base, api_key: cfg.api_key.clone() })
+        Ok(Self {
+            http,
+            base_url: base,
+            api_key: cfg.api_key.clone(),
+        })
     }
 
     fn default_headers(&self) -> header::HeaderMap {
         let mut h = header::HeaderMap::new();
-        h.insert("X-API-Key", header::HeaderValue::from_str(&self.api_key).unwrap_or_else(|_| header::HeaderValue::from_static("")));
-        h.insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/json"));
+        h.insert(
+            "X-API-Key",
+            header::HeaderValue::from_str(&self.api_key)
+                .unwrap_or_else(|_| header::HeaderValue::from_static("")),
+        );
+        h.insert(
+            header::CONTENT_TYPE,
+            header::HeaderValue::from_static("application/json"),
+        );
         h
     }
 
@@ -39,37 +50,97 @@ impl OsticketClient {
     }
 
     pub(crate) async fn get<T: DeserializeOwned>(&self, path: &str) -> OsticketResult<T> {
-        let resp = self.http.get(self.url(path)).headers(self.default_headers()).send().await?;
+        let resp = self
+            .http
+            .get(self.url(path))
+            .headers(self.default_headers())
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 
-    pub(crate) async fn get_with_params<T: DeserializeOwned>(&self, path: &str, params: &[(String, String)]) -> OsticketResult<T> {
-        let resp = self.http.get(self.url(path)).headers(self.default_headers()).query(params).send().await?;
+    pub(crate) async fn get_with_params<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: &[(String, String)],
+    ) -> OsticketResult<T> {
+        let resp = self
+            .http
+            .get(self.url(path))
+            .headers(self.default_headers())
+            .query(params)
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 
-    pub(crate) async fn post<T: DeserializeOwned, B: serde::Serialize>(&self, path: &str, body: &B) -> OsticketResult<T> {
-        let resp = self.http.post(self.url(path)).headers(self.default_headers()).json(body).send().await?;
+    pub(crate) async fn post<T: DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> OsticketResult<T> {
+        let resp = self
+            .http
+            .post(self.url(path))
+            .headers(self.default_headers())
+            .json(body)
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 
-    pub(crate) async fn post_unit<B: serde::Serialize>(&self, path: &str, body: &B) -> OsticketResult<()> {
-        let resp = self.http.post(self.url(path)).headers(self.default_headers()).json(body).send().await?;
+    pub(crate) async fn post_unit<B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> OsticketResult<()> {
+        let resp = self
+            .http
+            .post(self.url(path))
+            .headers(self.default_headers())
+            .json(body)
+            .send()
+            .await?;
         self.handle_empty(resp).await
     }
 
-    pub(crate) async fn put<T: DeserializeOwned, B: serde::Serialize>(&self, path: &str, body: &B) -> OsticketResult<T> {
-        let resp = self.http.put(self.url(path)).headers(self.default_headers()).json(body).send().await?;
+    pub(crate) async fn put<T: DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> OsticketResult<T> {
+        let resp = self
+            .http
+            .put(self.url(path))
+            .headers(self.default_headers())
+            .json(body)
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 
-    pub(crate) async fn patch<T: DeserializeOwned, B: serde::Serialize>(&self, path: &str, body: &B) -> OsticketResult<T> {
-        let resp = self.http.patch(self.url(path)).headers(self.default_headers()).json(body).send().await?;
+    pub(crate) async fn patch<T: DeserializeOwned, B: serde::Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> OsticketResult<T> {
+        let resp = self
+            .http
+            .patch(self.url(path))
+            .headers(self.default_headers())
+            .json(body)
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 
     pub(crate) async fn delete(&self, path: &str) -> OsticketResult<()> {
-        let resp = self.http.delete(self.url(path)).headers(self.default_headers()).send().await?;
+        let resp = self
+            .http
+            .delete(self.url(path))
+            .headers(self.default_headers())
+            .send()
+            .await?;
         self.handle_empty(resp).await
     }
 
@@ -77,7 +148,12 @@ impl OsticketClient {
         let status = resp.status();
         if status.is_success() {
             let text = resp.text().await?;
-            serde_json::from_str(&text).map_err(|e| OsticketError::new(OsticketErrorKind::ParseError, format!("{}: {}", e, &text[..text.len().min(200)])))
+            serde_json::from_str(&text).map_err(|e| {
+                OsticketError::new(
+                    OsticketErrorKind::ParseError,
+                    format!("{}: {}", e, &text[..text.len().min(200)]),
+                )
+            })
         } else {
             let body = resp.text().await.unwrap_or_default();
             Err(self.status_error(status, body))
@@ -103,12 +179,22 @@ impl OsticketClient {
             429 => OsticketErrorKind::RateLimited,
             _ => OsticketErrorKind::ApiError(status.as_u16()),
         };
-        OsticketError::new(kind, format!("{}: {}", status, &body[..body.len().min(500)]))
+        OsticketError::new(
+            kind,
+            format!("{}: {}", status, &body[..body.len().min(500)]),
+        )
     }
 
     pub async fn ping(&self) -> OsticketResult<crate::types::OsticketConnectionStatus> {
         // Attempt a lightweight GET; any 200-level means connected
-        match self.http.get(self.url("/tickets")).headers(self.default_headers()).query(&[("limit", "1")]).send().await {
+        match self
+            .http
+            .get(self.url("/tickets"))
+            .headers(self.default_headers())
+            .query(&[("limit", "1")])
+            .send()
+            .await
+        {
             Ok(resp) if resp.status().is_success() => Ok(crate::types::OsticketConnectionStatus {
                 connected: true,
                 version: None,

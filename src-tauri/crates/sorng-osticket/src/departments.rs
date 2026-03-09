@@ -14,19 +14,33 @@ impl DepartmentManager {
         client.get(&format!("/departments/{}", dept_id)).await
     }
 
-    pub async fn create(client: &OsticketClient, req: &CreateDepartmentRequest) -> OsticketResult<OsticketDepartment> {
+    pub async fn create(
+        client: &OsticketClient,
+        req: &CreateDepartmentRequest,
+    ) -> OsticketResult<OsticketDepartment> {
         client.post("/departments", req).await
     }
 
-    pub async fn update(client: &OsticketClient, dept_id: i64, req: &UpdateDepartmentRequest) -> OsticketResult<OsticketDepartment> {
-        client.patch(&format!("/departments/{}", dept_id), req).await
+    pub async fn update(
+        client: &OsticketClient,
+        dept_id: i64,
+        req: &UpdateDepartmentRequest,
+    ) -> OsticketResult<OsticketDepartment> {
+        client
+            .patch(&format!("/departments/{}", dept_id), req)
+            .await
     }
 
     pub async fn delete(client: &OsticketClient, dept_id: i64) -> OsticketResult<()> {
         client.delete(&format!("/departments/{}", dept_id)).await
     }
 
-    pub async fn get_agents(client: &OsticketClient, dept_id: i64) -> OsticketResult<Vec<OsticketAgent>> {
-        client.get(&format!("/departments/{}/agents", dept_id)).await
+    pub async fn get_agents(
+        client: &OsticketClient,
+        dept_id: i64,
+    ) -> OsticketResult<Vec<OsticketAgent>> {
+        client
+            .get(&format!("/departments/{}/agents", dept_id))
+            .await
     }
 }

@@ -14,11 +14,18 @@ impl TeamManager {
         client.get(&format!("/teams/{}", team_id)).await
     }
 
-    pub async fn create(client: &OsticketClient, req: &CreateTeamRequest) -> OsticketResult<OsticketTeam> {
+    pub async fn create(
+        client: &OsticketClient,
+        req: &CreateTeamRequest,
+    ) -> OsticketResult<OsticketTeam> {
         client.post("/teams", req).await
     }
 
-    pub async fn update(client: &OsticketClient, team_id: i64, req: &UpdateTeamRequest) -> OsticketResult<OsticketTeam> {
+    pub async fn update(
+        client: &OsticketClient,
+        team_id: i64,
+        req: &UpdateTeamRequest,
+    ) -> OsticketResult<OsticketTeam> {
         client.patch(&format!("/teams/{}", team_id), req).await
     }
 
@@ -26,16 +33,31 @@ impl TeamManager {
         client.delete(&format!("/teams/{}", team_id)).await
     }
 
-    pub async fn add_member(client: &OsticketClient, team_id: i64, staff_id: i64) -> OsticketResult<TeamMember> {
+    pub async fn add_member(
+        client: &OsticketClient,
+        team_id: i64,
+        staff_id: i64,
+    ) -> OsticketResult<TeamMember> {
         let body = serde_json::json!({ "staff_id": staff_id });
-        client.post(&format!("/teams/{}/members", team_id), &body).await
+        client
+            .post(&format!("/teams/{}/members", team_id), &body)
+            .await
     }
 
-    pub async fn remove_member(client: &OsticketClient, team_id: i64, staff_id: i64) -> OsticketResult<()> {
-        client.delete(&format!("/teams/{}/members/{}", team_id, staff_id)).await
+    pub async fn remove_member(
+        client: &OsticketClient,
+        team_id: i64,
+        staff_id: i64,
+    ) -> OsticketResult<()> {
+        client
+            .delete(&format!("/teams/{}/members/{}", team_id, staff_id))
+            .await
     }
 
-    pub async fn get_members(client: &OsticketClient, team_id: i64) -> OsticketResult<Vec<TeamMember>> {
+    pub async fn get_members(
+        client: &OsticketClient,
+        team_id: i64,
+    ) -> OsticketResult<Vec<TeamMember>> {
         client.get(&format!("/teams/{}/members", team_id)).await
     }
 }

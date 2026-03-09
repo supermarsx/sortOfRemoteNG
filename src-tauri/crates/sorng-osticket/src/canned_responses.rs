@@ -10,15 +10,25 @@ impl CannedResponseManager {
         client.get("/canned").await
     }
 
-    pub async fn get(client: &OsticketClient, canned_id: i64) -> OsticketResult<OsticketCannedResponse> {
+    pub async fn get(
+        client: &OsticketClient,
+        canned_id: i64,
+    ) -> OsticketResult<OsticketCannedResponse> {
         client.get(&format!("/canned/{}", canned_id)).await
     }
 
-    pub async fn create(client: &OsticketClient, req: &CreateCannedResponseRequest) -> OsticketResult<OsticketCannedResponse> {
+    pub async fn create(
+        client: &OsticketClient,
+        req: &CreateCannedResponseRequest,
+    ) -> OsticketResult<OsticketCannedResponse> {
         client.post("/canned", req).await
     }
 
-    pub async fn update(client: &OsticketClient, canned_id: i64, req: &UpdateCannedResponseRequest) -> OsticketResult<OsticketCannedResponse> {
+    pub async fn update(
+        client: &OsticketClient,
+        canned_id: i64,
+        req: &UpdateCannedResponseRequest,
+    ) -> OsticketResult<OsticketCannedResponse> {
         client.patch(&format!("/canned/{}", canned_id), req).await
     }
 
@@ -26,7 +36,10 @@ impl CannedResponseManager {
         client.delete(&format!("/canned/{}", canned_id)).await
     }
 
-    pub async fn search(client: &OsticketClient, query: &str) -> OsticketResult<Vec<OsticketCannedResponse>> {
+    pub async fn search(
+        client: &OsticketClient,
+        query: &str,
+    ) -> OsticketResult<Vec<OsticketCannedResponse>> {
         let params = vec![("query".into(), query.to_string())];
         client.get_with_params("/canned", &params).await
     }

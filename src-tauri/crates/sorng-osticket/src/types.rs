@@ -16,7 +16,9 @@ pub struct OsticketConnectionConfig {
     pub skip_tls_verify: bool,
 }
 
-fn default_timeout() -> u64 { 30 }
+fn default_timeout() -> u64 {
+    30
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsticketConnectionStatus {

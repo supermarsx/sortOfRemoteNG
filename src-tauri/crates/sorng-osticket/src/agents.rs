@@ -14,11 +14,18 @@ impl AgentManager {
         client.get(&format!("/agents/{}", agent_id)).await
     }
 
-    pub async fn create(client: &OsticketClient, req: &CreateAgentRequest) -> OsticketResult<OsticketAgent> {
+    pub async fn create(
+        client: &OsticketClient,
+        req: &CreateAgentRequest,
+    ) -> OsticketResult<OsticketAgent> {
         client.post("/agents", req).await
     }
 
-    pub async fn update(client: &OsticketClient, agent_id: i64, req: &UpdateAgentRequest) -> OsticketResult<OsticketAgent> {
+    pub async fn update(
+        client: &OsticketClient,
+        agent_id: i64,
+        req: &UpdateAgentRequest,
+    ) -> OsticketResult<OsticketAgent> {
         client.patch(&format!("/agents/{}", agent_id), req).await
     }
 
@@ -26,12 +33,19 @@ impl AgentManager {
         client.delete(&format!("/agents/{}", agent_id)).await
     }
 
-    pub async fn set_vacation(client: &OsticketClient, agent_id: i64, on_vacation: bool) -> OsticketResult<OsticketAgent> {
+    pub async fn set_vacation(
+        client: &OsticketClient,
+        agent_id: i64,
+        on_vacation: bool,
+    ) -> OsticketResult<OsticketAgent> {
         let body = serde_json::json!({ "on_vacation": on_vacation });
         client.patch(&format!("/agents/{}", agent_id), &body).await
     }
 
-    pub async fn get_teams(client: &OsticketClient, agent_id: i64) -> OsticketResult<Vec<OsticketTeam>> {
+    pub async fn get_teams(
+        client: &OsticketClient,
+        agent_id: i64,
+    ) -> OsticketResult<Vec<OsticketTeam>> {
         client.get(&format!("/agents/{}/teams", agent_id)).await
     }
 }

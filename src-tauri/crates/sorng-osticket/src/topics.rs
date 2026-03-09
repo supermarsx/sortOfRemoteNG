@@ -14,11 +14,18 @@ impl TopicManager {
         client.get(&format!("/topics/{}", topic_id)).await
     }
 
-    pub async fn create(client: &OsticketClient, req: &CreateTopicRequest) -> OsticketResult<OsticketTopic> {
+    pub async fn create(
+        client: &OsticketClient,
+        req: &CreateTopicRequest,
+    ) -> OsticketResult<OsticketTopic> {
         client.post("/topics", req).await
     }
 
-    pub async fn update(client: &OsticketClient, topic_id: i64, req: &UpdateTopicRequest) -> OsticketResult<OsticketTopic> {
+    pub async fn update(
+        client: &OsticketClient,
+        topic_id: i64,
+        req: &UpdateTopicRequest,
+    ) -> OsticketResult<OsticketTopic> {
         client.patch(&format!("/topics/{}", topic_id), req).await
     }
 

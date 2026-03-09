@@ -14,19 +14,32 @@ impl CustomFieldManager {
         client.get(&format!("/forms/{}", form_id)).await
     }
 
-    pub async fn list_fields(client: &OsticketClient, form_id: i64) -> OsticketResult<Vec<OsticketCustomField>> {
+    pub async fn list_fields(
+        client: &OsticketClient,
+        form_id: i64,
+    ) -> OsticketResult<Vec<OsticketCustomField>> {
         client.get(&format!("/forms/{}/fields", form_id)).await
     }
 
-    pub async fn get_field(client: &OsticketClient, field_id: i64) -> OsticketResult<OsticketCustomField> {
+    pub async fn get_field(
+        client: &OsticketClient,
+        field_id: i64,
+    ) -> OsticketResult<OsticketCustomField> {
         client.get(&format!("/fields/{}", field_id)).await
     }
 
-    pub async fn create_field(client: &OsticketClient, req: &CreateCustomFieldRequest) -> OsticketResult<OsticketCustomField> {
+    pub async fn create_field(
+        client: &OsticketClient,
+        req: &CreateCustomFieldRequest,
+    ) -> OsticketResult<OsticketCustomField> {
         client.post("/fields", req).await
     }
 
-    pub async fn update_field(client: &OsticketClient, field_id: i64, req: &UpdateCustomFieldRequest) -> OsticketResult<OsticketCustomField> {
+    pub async fn update_field(
+        client: &OsticketClient,
+        field_id: i64,
+        req: &UpdateCustomFieldRequest,
+    ) -> OsticketResult<OsticketCustomField> {
         client.patch(&format!("/fields/{}", field_id), req).await
     }
 

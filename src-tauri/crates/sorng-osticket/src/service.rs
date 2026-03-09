@@ -7,15 +7,15 @@ use crate::client::OsticketClient;
 use crate::error::{OsticketError, OsticketResult};
 use crate::types::*;
 
-use crate::tickets::TicketManager;
-use crate::users::OsticketUserManager;
-use crate::departments::DepartmentManager;
-use crate::topics::TopicManager;
 use crate::agents::AgentManager;
-use crate::teams::TeamManager;
-use crate::sla::SlaManager;
 use crate::canned_responses::CannedResponseManager;
 use crate::custom_fields::CustomFieldManager;
+use crate::departments::DepartmentManager;
+use crate::sla::SlaManager;
+use crate::teams::TeamManager;
+use crate::tickets::TicketManager;
+use crate::topics::TopicManager;
+use crate::users::OsticketUserManager;
 
 pub type OsticketServiceState = Arc<Mutex<OsticketService>>;
 
@@ -23,14 +23,26 @@ pub struct OsticketService {
     connections: HashMap<String, OsticketClient>,
 }
 
+impl Default for OsticketService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OsticketService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ─────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: OsticketConnectionConfig) -> OsticketResult<OsticketConnectionStatus> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: OsticketConnectionConfig,
+    ) -> OsticketResult<OsticketConnectionStatus> {
         let client = OsticketClient::from_config(&config)?;
         let status = client.ping().await?;
         self.connections.insert(id, client);
@@ -38,8 +50,10 @@ impl OsticketService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> OsticketResult<()> {
-        self.connections.remove(id).map(|_| ())
-            .ok_or_else(|| OsticketError::session(&format!("No connection '{}'", id)))
+        self.connections
+            .remove(id)
+            .map(|_| ())
+            .ok_or_else(|| OsticketError::session(format!("No connection '{}'", id)))
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -47,8 +61,9 @@ impl OsticketService {
     }
 
     fn client(&self, id: &str) -> OsticketResult<&OsticketClient> {
-        self.connections.get(id)
-            .ok_or_else(|| OsticketError::session(&format!("No connection '{}'", id)))
+        self.connections
+            .get(id)
+            .ok_or_else(|| OsticketError::session(format!("No connection '{}'", id)))
     }
 
     pub async fn ping(&self, id: &str) -> OsticketResult<OsticketConnectionStatus> {
@@ -57,11 +72,20 @@ impl OsticketService {
 
     // ── Tickets ──────────────────────────────────────────────────
 
-    pub async fn list_tickets(&self, id: &str, page: Option<u32>, limit: Option<u32>) -> OsticketResult<TicketSearchResponse> {
+    pub async fn list_tickets(
+        &self,
+        id: &str,
+        page: Option<u32>,
+        limit: Option<u32>,
+    ) -> OsticketResult<TicketSearchResponse> {
         TicketManager::list(self.client(id)?, page, limit).await
     }
 
-    pub async fn search_tickets(&self, id: &str, req: TicketSearchRequest) -> OsticketResult<TicketSearchResponse> {
+    pub async fn search_tickets(
+        &self,
+        id: &str,
+        req: TicketSearchRequest,
+    ) -> OsticketResult<TicketSearchResponse> {
         TicketManager::search(self.client(id)?, &req).await
     }
 
@@ -69,11 +93,20 @@ impl OsticketService {
         TicketManager::get(self.client(id)?, ticket_id).await
     }
 
-    pub async fn create_ticket(&self, id: &str, req: CreateTicketRequest) -> OsticketResult<OsticketTicket> {
+    pub async fn create_ticket(
+        &self,
+        id: &str,
+        req: CreateTicketRequest,
+    ) -> OsticketResult<OsticketTicket> {
         TicketManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_ticket(&self, id: &str, ticket_id: i64, req: UpdateTicketRequest) -> OsticketResult<OsticketTicket> {
+    pub async fn update_ticket(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        req: UpdateTicketRequest,
+    ) -> OsticketResult<OsticketTicket> {
         TicketManager::update(self.client(id)?, ticket_id, &req).await
     }
 
@@ -89,45 +122,96 @@ impl OsticketService {
         TicketManager::reopen(self.client(id)?, ticket_id).await
     }
 
-    pub async fn assign_ticket(&self, id: &str, ticket_id: i64, staff_id: Option<i64>, team_id: Option<i64>) -> OsticketResult<OsticketTicket> {
+    pub async fn assign_ticket(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        staff_id: Option<i64>,
+        team_id: Option<i64>,
+    ) -> OsticketResult<OsticketTicket> {
         TicketManager::assign(self.client(id)?, ticket_id, staff_id, team_id).await
     }
 
-    pub async fn post_ticket_reply(&self, id: &str, ticket_id: i64, req: PostThreadRequest) -> OsticketResult<TicketThread> {
+    pub async fn post_ticket_reply(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        req: PostThreadRequest,
+    ) -> OsticketResult<TicketThread> {
         TicketManager::post_reply(self.client(id)?, ticket_id, &req).await
     }
 
-    pub async fn post_ticket_note(&self, id: &str, ticket_id: i64, req: PostThreadRequest) -> OsticketResult<TicketThread> {
+    pub async fn post_ticket_note(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        req: PostThreadRequest,
+    ) -> OsticketResult<TicketThread> {
         TicketManager::post_note(self.client(id)?, ticket_id, &req).await
     }
 
-    pub async fn get_ticket_threads(&self, id: &str, ticket_id: i64) -> OsticketResult<Vec<TicketThread>> {
+    pub async fn get_ticket_threads(
+        &self,
+        id: &str,
+        ticket_id: i64,
+    ) -> OsticketResult<Vec<TicketThread>> {
         TicketManager::get_threads(self.client(id)?, ticket_id).await
     }
 
-    pub async fn add_ticket_collaborator(&self, id: &str, ticket_id: i64, user_id: i64, email: Option<String>) -> OsticketResult<TicketCollaborator> {
-        TicketManager::add_collaborator(self.client(id)?, ticket_id, user_id, email.as_deref()).await
+    pub async fn add_ticket_collaborator(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        user_id: i64,
+        email: Option<String>,
+    ) -> OsticketResult<TicketCollaborator> {
+        TicketManager::add_collaborator(self.client(id)?, ticket_id, user_id, email.as_deref())
+            .await
     }
 
-    pub async fn get_ticket_collaborators(&self, id: &str, ticket_id: i64) -> OsticketResult<Vec<TicketCollaborator>> {
+    pub async fn get_ticket_collaborators(
+        &self,
+        id: &str,
+        ticket_id: i64,
+    ) -> OsticketResult<Vec<TicketCollaborator>> {
         TicketManager::get_collaborators(self.client(id)?, ticket_id).await
     }
 
-    pub async fn remove_ticket_collaborator(&self, id: &str, ticket_id: i64, user_id: i64) -> OsticketResult<()> {
+    pub async fn remove_ticket_collaborator(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        user_id: i64,
+    ) -> OsticketResult<()> {
         TicketManager::remove_collaborator(self.client(id)?, ticket_id, user_id).await
     }
 
-    pub async fn transfer_ticket(&self, id: &str, ticket_id: i64, dept_id: i64) -> OsticketResult<OsticketTicket> {
+    pub async fn transfer_ticket(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        dept_id: i64,
+    ) -> OsticketResult<OsticketTicket> {
         TicketManager::transfer(self.client(id)?, ticket_id, dept_id).await
     }
 
-    pub async fn merge_tickets(&self, id: &str, ticket_id: i64, merge_ids: Vec<i64>) -> OsticketResult<OsticketTicket> {
+    pub async fn merge_tickets(
+        &self,
+        id: &str,
+        ticket_id: i64,
+        merge_ids: Vec<i64>,
+    ) -> OsticketResult<OsticketTicket> {
         TicketManager::merge(self.client(id)?, ticket_id, &merge_ids).await
     }
 
     // ── Users ────────────────────────────────────────────────────
 
-    pub async fn list_users(&self, id: &str, page: Option<u32>, limit: Option<u32>) -> OsticketResult<Vec<OsticketUser>> {
+    pub async fn list_users(
+        &self,
+        id: &str,
+        page: Option<u32>,
+        limit: Option<u32>,
+    ) -> OsticketResult<Vec<OsticketUser>> {
         OsticketUserManager::list(self.client(id)?, page, limit).await
     }
 
@@ -135,15 +219,29 @@ impl OsticketService {
         OsticketUserManager::get(self.client(id)?, user_id).await
     }
 
-    pub async fn search_users(&self, id: &str, email: Option<String>, name: Option<String>) -> OsticketResult<Vec<OsticketUser>> {
+    pub async fn search_users(
+        &self,
+        id: &str,
+        email: Option<String>,
+        name: Option<String>,
+    ) -> OsticketResult<Vec<OsticketUser>> {
         OsticketUserManager::search(self.client(id)?, email.as_deref(), name.as_deref()).await
     }
 
-    pub async fn create_user(&self, id: &str, req: CreateUserRequest) -> OsticketResult<OsticketUser> {
+    pub async fn create_user(
+        &self,
+        id: &str,
+        req: CreateUserRequest,
+    ) -> OsticketResult<OsticketUser> {
         OsticketUserManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_user(&self, id: &str, user_id: i64, req: UpdateUserRequest) -> OsticketResult<OsticketUser> {
+    pub async fn update_user(
+        &self,
+        id: &str,
+        user_id: i64,
+        req: UpdateUserRequest,
+    ) -> OsticketResult<OsticketUser> {
         OsticketUserManager::update(self.client(id)?, user_id, &req).await
     }
 
@@ -151,7 +249,11 @@ impl OsticketService {
         OsticketUserManager::delete(self.client(id)?, user_id).await
     }
 
-    pub async fn get_user_tickets(&self, id: &str, user_id: i64) -> OsticketResult<Vec<OsticketTicket>> {
+    pub async fn get_user_tickets(
+        &self,
+        id: &str,
+        user_id: i64,
+    ) -> OsticketResult<Vec<OsticketTicket>> {
         OsticketUserManager::get_tickets(self.client(id)?, user_id).await
     }
 
@@ -161,15 +263,28 @@ impl OsticketService {
         DepartmentManager::list(self.client(id)?).await
     }
 
-    pub async fn get_department(&self, id: &str, dept_id: i64) -> OsticketResult<OsticketDepartment> {
+    pub async fn get_department(
+        &self,
+        id: &str,
+        dept_id: i64,
+    ) -> OsticketResult<OsticketDepartment> {
         DepartmentManager::get(self.client(id)?, dept_id).await
     }
 
-    pub async fn create_department(&self, id: &str, req: CreateDepartmentRequest) -> OsticketResult<OsticketDepartment> {
+    pub async fn create_department(
+        &self,
+        id: &str,
+        req: CreateDepartmentRequest,
+    ) -> OsticketResult<OsticketDepartment> {
         DepartmentManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_department(&self, id: &str, dept_id: i64, req: UpdateDepartmentRequest) -> OsticketResult<OsticketDepartment> {
+    pub async fn update_department(
+        &self,
+        id: &str,
+        dept_id: i64,
+        req: UpdateDepartmentRequest,
+    ) -> OsticketResult<OsticketDepartment> {
         DepartmentManager::update(self.client(id)?, dept_id, &req).await
     }
 
@@ -177,7 +292,11 @@ impl OsticketService {
         DepartmentManager::delete(self.client(id)?, dept_id).await
     }
 
-    pub async fn get_department_agents(&self, id: &str, dept_id: i64) -> OsticketResult<Vec<OsticketAgent>> {
+    pub async fn get_department_agents(
+        &self,
+        id: &str,
+        dept_id: i64,
+    ) -> OsticketResult<Vec<OsticketAgent>> {
         DepartmentManager::get_agents(self.client(id)?, dept_id).await
     }
 
@@ -191,11 +310,20 @@ impl OsticketService {
         TopicManager::get(self.client(id)?, topic_id).await
     }
 
-    pub async fn create_topic(&self, id: &str, req: CreateTopicRequest) -> OsticketResult<OsticketTopic> {
+    pub async fn create_topic(
+        &self,
+        id: &str,
+        req: CreateTopicRequest,
+    ) -> OsticketResult<OsticketTopic> {
         TopicManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_topic(&self, id: &str, topic_id: i64, req: UpdateTopicRequest) -> OsticketResult<OsticketTopic> {
+    pub async fn update_topic(
+        &self,
+        id: &str,
+        topic_id: i64,
+        req: UpdateTopicRequest,
+    ) -> OsticketResult<OsticketTopic> {
         TopicManager::update(self.client(id)?, topic_id, &req).await
     }
 
@@ -213,11 +341,20 @@ impl OsticketService {
         AgentManager::get(self.client(id)?, agent_id).await
     }
 
-    pub async fn create_agent(&self, id: &str, req: CreateAgentRequest) -> OsticketResult<OsticketAgent> {
+    pub async fn create_agent(
+        &self,
+        id: &str,
+        req: CreateAgentRequest,
+    ) -> OsticketResult<OsticketAgent> {
         AgentManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_agent(&self, id: &str, agent_id: i64, req: UpdateAgentRequest) -> OsticketResult<OsticketAgent> {
+    pub async fn update_agent(
+        &self,
+        id: &str,
+        agent_id: i64,
+        req: UpdateAgentRequest,
+    ) -> OsticketResult<OsticketAgent> {
         AgentManager::update(self.client(id)?, agent_id, &req).await
     }
 
@@ -225,11 +362,20 @@ impl OsticketService {
         AgentManager::delete(self.client(id)?, agent_id).await
     }
 
-    pub async fn set_agent_vacation(&self, id: &str, agent_id: i64, on_vacation: bool) -> OsticketResult<OsticketAgent> {
+    pub async fn set_agent_vacation(
+        &self,
+        id: &str,
+        agent_id: i64,
+        on_vacation: bool,
+    ) -> OsticketResult<OsticketAgent> {
         AgentManager::set_vacation(self.client(id)?, agent_id, on_vacation).await
     }
 
-    pub async fn get_agent_teams(&self, id: &str, agent_id: i64) -> OsticketResult<Vec<OsticketTeam>> {
+    pub async fn get_agent_teams(
+        &self,
+        id: &str,
+        agent_id: i64,
+    ) -> OsticketResult<Vec<OsticketTeam>> {
         AgentManager::get_teams(self.client(id)?, agent_id).await
     }
 
@@ -243,11 +389,20 @@ impl OsticketService {
         TeamManager::get(self.client(id)?, team_id).await
     }
 
-    pub async fn create_team(&self, id: &str, req: CreateTeamRequest) -> OsticketResult<OsticketTeam> {
+    pub async fn create_team(
+        &self,
+        id: &str,
+        req: CreateTeamRequest,
+    ) -> OsticketResult<OsticketTeam> {
         TeamManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_team(&self, id: &str, team_id: i64, req: UpdateTeamRequest) -> OsticketResult<OsticketTeam> {
+    pub async fn update_team(
+        &self,
+        id: &str,
+        team_id: i64,
+        req: UpdateTeamRequest,
+    ) -> OsticketResult<OsticketTeam> {
         TeamManager::update(self.client(id)?, team_id, &req).await
     }
 
@@ -255,15 +410,29 @@ impl OsticketService {
         TeamManager::delete(self.client(id)?, team_id).await
     }
 
-    pub async fn add_team_member(&self, id: &str, team_id: i64, staff_id: i64) -> OsticketResult<TeamMember> {
+    pub async fn add_team_member(
+        &self,
+        id: &str,
+        team_id: i64,
+        staff_id: i64,
+    ) -> OsticketResult<TeamMember> {
         TeamManager::add_member(self.client(id)?, team_id, staff_id).await
     }
 
-    pub async fn remove_team_member(&self, id: &str, team_id: i64, staff_id: i64) -> OsticketResult<()> {
+    pub async fn remove_team_member(
+        &self,
+        id: &str,
+        team_id: i64,
+        staff_id: i64,
+    ) -> OsticketResult<()> {
         TeamManager::remove_member(self.client(id)?, team_id, staff_id).await
     }
 
-    pub async fn get_team_members(&self, id: &str, team_id: i64) -> OsticketResult<Vec<TeamMember>> {
+    pub async fn get_team_members(
+        &self,
+        id: &str,
+        team_id: i64,
+    ) -> OsticketResult<Vec<TeamMember>> {
         TeamManager::get_members(self.client(id)?, team_id).await
     }
 
@@ -281,7 +450,12 @@ impl OsticketService {
         SlaManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_sla(&self, id: &str, sla_id: i64, req: UpdateSlaRequest) -> OsticketResult<OsticketSla> {
+    pub async fn update_sla(
+        &self,
+        id: &str,
+        sla_id: i64,
+        req: UpdateSlaRequest,
+    ) -> OsticketResult<OsticketSla> {
         SlaManager::update(self.client(id)?, sla_id, &req).await
     }
 
@@ -291,19 +465,35 @@ impl OsticketService {
 
     // ── Canned Responses ─────────────────────────────────────────
 
-    pub async fn list_canned_responses(&self, id: &str) -> OsticketResult<Vec<OsticketCannedResponse>> {
+    pub async fn list_canned_responses(
+        &self,
+        id: &str,
+    ) -> OsticketResult<Vec<OsticketCannedResponse>> {
         CannedResponseManager::list(self.client(id)?).await
     }
 
-    pub async fn get_canned_response(&self, id: &str, canned_id: i64) -> OsticketResult<OsticketCannedResponse> {
+    pub async fn get_canned_response(
+        &self,
+        id: &str,
+        canned_id: i64,
+    ) -> OsticketResult<OsticketCannedResponse> {
         CannedResponseManager::get(self.client(id)?, canned_id).await
     }
 
-    pub async fn create_canned_response(&self, id: &str, req: CreateCannedResponseRequest) -> OsticketResult<OsticketCannedResponse> {
+    pub async fn create_canned_response(
+        &self,
+        id: &str,
+        req: CreateCannedResponseRequest,
+    ) -> OsticketResult<OsticketCannedResponse> {
         CannedResponseManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_canned_response(&self, id: &str, canned_id: i64, req: UpdateCannedResponseRequest) -> OsticketResult<OsticketCannedResponse> {
+    pub async fn update_canned_response(
+        &self,
+        id: &str,
+        canned_id: i64,
+        req: UpdateCannedResponseRequest,
+    ) -> OsticketResult<OsticketCannedResponse> {
         CannedResponseManager::update(self.client(id)?, canned_id, &req).await
     }
 
@@ -311,7 +501,11 @@ impl OsticketService {
         CannedResponseManager::delete(self.client(id)?, canned_id).await
     }
 
-    pub async fn search_canned_responses(&self, id: &str, query: String) -> OsticketResult<Vec<OsticketCannedResponse>> {
+    pub async fn search_canned_responses(
+        &self,
+        id: &str,
+        query: String,
+    ) -> OsticketResult<Vec<OsticketCannedResponse>> {
         CannedResponseManager::search(self.client(id)?, &query).await
     }
 
@@ -325,19 +519,36 @@ impl OsticketService {
         CustomFieldManager::get_form(self.client(id)?, form_id).await
     }
 
-    pub async fn list_custom_fields(&self, id: &str, form_id: i64) -> OsticketResult<Vec<OsticketCustomField>> {
+    pub async fn list_custom_fields(
+        &self,
+        id: &str,
+        form_id: i64,
+    ) -> OsticketResult<Vec<OsticketCustomField>> {
         CustomFieldManager::list_fields(self.client(id)?, form_id).await
     }
 
-    pub async fn get_custom_field(&self, id: &str, field_id: i64) -> OsticketResult<OsticketCustomField> {
+    pub async fn get_custom_field(
+        &self,
+        id: &str,
+        field_id: i64,
+    ) -> OsticketResult<OsticketCustomField> {
         CustomFieldManager::get_field(self.client(id)?, field_id).await
     }
 
-    pub async fn create_custom_field(&self, id: &str, req: CreateCustomFieldRequest) -> OsticketResult<OsticketCustomField> {
+    pub async fn create_custom_field(
+        &self,
+        id: &str,
+        req: CreateCustomFieldRequest,
+    ) -> OsticketResult<OsticketCustomField> {
         CustomFieldManager::create_field(self.client(id)?, &req).await
     }
 
-    pub async fn update_custom_field(&self, id: &str, field_id: i64, req: UpdateCustomFieldRequest) -> OsticketResult<OsticketCustomField> {
+    pub async fn update_custom_field(
+        &self,
+        id: &str,
+        field_id: i64,
+        req: UpdateCustomFieldRequest,
+    ) -> OsticketResult<OsticketCustomField> {
         CustomFieldManager::update_field(self.client(id)?, field_id, &req).await
     }
 

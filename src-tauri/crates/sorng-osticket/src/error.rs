@@ -25,7 +25,10 @@ pub enum OsticketErrorKind {
 
 impl OsticketError {
     pub fn new(kind: OsticketErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn session(msg: impl Into<String>) -> Self {
         Self::new(OsticketErrorKind::SessionError, msg)
