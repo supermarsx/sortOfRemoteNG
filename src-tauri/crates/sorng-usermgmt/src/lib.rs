@@ -39,18 +39,18 @@
 //! - Batch create/delete/modify
 //! - Export user/group data
 
-pub mod types;
-pub mod error;
+pub mod bulk;
 pub mod client;
-pub mod service;
-pub mod users;
+pub mod error;
 pub mod groups;
+pub mod home;
+pub mod login_defs;
 pub mod passwords;
+pub mod quotas;
+pub mod service;
+pub mod sessions;
 pub mod shadow;
 pub mod shells;
-pub mod home;
 pub mod sudoers;
-pub mod quotas;
-pub mod login_defs;
-pub mod sessions;
-pub mod bulk;
+pub mod types;
+pub mod users;

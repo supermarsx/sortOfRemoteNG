@@ -33,7 +33,11 @@ pub async fn validate(host: &UserMgmtHost) -> Result<bool, UserMgmtError> {
 }
 
 /// Add a sudoers rule to /etc/sudoers.d/<filename>.
-pub async fn add_rule(host: &UserMgmtHost, filename: &str, rule_line: &str) -> Result<(), UserMgmtError> {
+pub async fn add_rule(
+    host: &UserMgmtHost,
+    filename: &str,
+    rule_line: &str,
+) -> Result<(), UserMgmtError> {
     let path = format!("/etc/sudoers.d/{filename}");
     let escaped = rule_line.replace('\'', "'\\''");
     client::exec_ok(host, "sh", &["-c", &format!("echo '{escaped}' > {path}")]).await?;
@@ -43,7 +47,9 @@ pub async fn add_rule(host: &UserMgmtHost, filename: &str, rule_line: &str) -> R
     let (_, _, code) = client::exec(host, "visudo", &["-c", "-f", &path]).await?;
     if code != 0 {
         client::exec_ok(host, "rm", &["-f", &path]).await?;
-        return Err(UserMgmtError::SudoersInvalid(format!("Rule failed validation: {rule_line}")));
+        return Err(UserMgmtError::SudoersInvalid(format!(
+            "Rule failed validation: {rule_line}"
+        )));
     }
 
     info!("Added sudoers rule to {path}");
@@ -82,9 +88,13 @@ fn parse_sudoers_rule(line: &str, source_file: &str, line_number: u32) -> Option
 
     let principal_str = parts[0];
     let principal = if principal_str.starts_with('%') {
-        SudoersPrincipal::Group { name: principal_str[1..].to_string() }
+        SudoersPrincipal::Group {
+            name: principal_str[1..].to_string(),
+        }
     } else {
-        SudoersPrincipal::User { name: principal_str.to_string() }
+        SudoersPrincipal::User {
+            name: principal_str.to_string(),
+        }
     };
 
     let no_password = line.contains("NOPASSWD:");

@@ -23,13 +23,17 @@ pub async fn list_groups(host: &UserMgmtHost) -> Result<Vec<SystemGroup>, UserMg
 /// Get a group by name.
 pub async fn get_group(host: &UserMgmtHost, name: &str) -> Result<SystemGroup, UserMgmtError> {
     let groups = list_groups(host).await?;
-    groups.into_iter()
+    groups
+        .into_iter()
         .find(|g| g.name == name)
         .ok_or_else(|| UserMgmtError::GroupNotFound(name.to_string()))
 }
 
 /// Create a new group.
-pub async fn create_group(host: &UserMgmtHost, opts: &CreateGroupOpts) -> Result<(), UserMgmtError> {
+pub async fn create_group(
+    host: &UserMgmtHost,
+    opts: &CreateGroupOpts,
+) -> Result<(), UserMgmtError> {
     let mut args: Vec<String> = Vec::new();
     if let Some(gid) = opts.gid {
         args.push("-g".into());
@@ -53,7 +57,10 @@ pub async fn create_group(host: &UserMgmtHost, opts: &CreateGroupOpts) -> Result
 }
 
 /// Modify a group.
-pub async fn modify_group(host: &UserMgmtHost, opts: &ModifyGroupOpts) -> Result<(), UserMgmtError> {
+pub async fn modify_group(
+    host: &UserMgmtHost,
+    opts: &ModifyGroupOpts,
+) -> Result<(), UserMgmtError> {
     let mut args: Vec<String> = Vec::new();
     if let Some(ref new_name) = opts.new_name {
         args.push("-n".into());
@@ -95,7 +102,11 @@ pub async fn add_member(host: &UserMgmtHost, group: &str, user: &str) -> Result<
 }
 
 /// Remove a user from a group.
-pub async fn remove_member(host: &UserMgmtHost, group: &str, user: &str) -> Result<(), UserMgmtError> {
+pub async fn remove_member(
+    host: &UserMgmtHost,
+    group: &str,
+    user: &str,
+) -> Result<(), UserMgmtError> {
     client::exec_ok(host, "gpasswd", &["-d", user, group]).await?;
     Ok(())
 }

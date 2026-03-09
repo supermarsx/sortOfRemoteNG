@@ -5,7 +5,10 @@ use crate::types::*;
 use crate::users;
 
 /// Bulk create users from a list of records.
-pub async fn bulk_create(host: &UserMgmtHost, records: &[BulkUserRecord]) -> Result<BulkResult, UserMgmtError> {
+pub async fn bulk_create(
+    host: &UserMgmtHost,
+    records: &[BulkUserRecord],
+) -> Result<BulkResult, UserMgmtError> {
     let mut result = BulkResult {
         total: records.len(),
         succeeded: 0,
@@ -63,7 +66,9 @@ pub fn parse_csv(content: &str) -> Result<Vec<BulkUserRecord>, UserMgmtError> {
     let mut lines = content.lines();
 
     // Skip header
-    let header = lines.next().ok_or_else(|| UserMgmtError::ParseError("Empty CSV".into()))?;
+    let header = lines
+        .next()
+        .ok_or_else(|| UserMgmtError::ParseError("Empty CSV".into()))?;
     let columns: Vec<&str> = header.split(',').map(|s| s.trim()).collect();
 
     for line in lines {
@@ -73,13 +78,15 @@ pub fn parse_csv(content: &str) -> Result<Vec<BulkUserRecord>, UserMgmtError> {
         let values: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
         let get = |col: &str| -> Option<String> {
             columns.iter().position(|c| *c == col).and_then(|i| {
-                values.get(i).filter(|v| !v.is_empty()).map(|v| v.to_string())
+                values
+                    .get(i)
+                    .filter(|v| !v.is_empty())
+                    .map(|v| v.to_string())
             })
         };
 
-        let username = get("username").ok_or_else(|| {
-            UserMgmtError::ParseError("Missing username column".into())
-        })?;
+        let username = get("username")
+            .ok_or_else(|| UserMgmtError::ParseError("Missing username column".into()))?;
 
         records.push(BulkUserRecord {
             username,
@@ -89,8 +96,12 @@ pub fn parse_csv(content: &str) -> Result<Vec<BulkUserRecord>, UserMgmtError> {
             comment: get("comment"),
             home_dir: get("home"),
             shell: get("shell"),
-            groups: get("groups").map(|g| g.split(';').map(|s| s.to_string()).collect()).unwrap_or_default(),
-            create_home: get("create_home").map(|v| v == "true" || v == "yes" || v == "1").unwrap_or(true),
+            groups: get("groups")
+                .map(|g| g.split(';').map(|s| s.to_string()).collect())
+                .unwrap_or_default(),
+            create_home: get("create_home")
+                .map(|v| v == "true" || v == "yes" || v == "1")
+                .unwrap_or(true),
         });
     }
 

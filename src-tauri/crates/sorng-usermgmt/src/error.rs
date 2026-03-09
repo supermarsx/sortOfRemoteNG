@@ -8,7 +8,11 @@ pub enum UserMgmtError {
     /// Command not found on the system
     CommandNotFound(String),
     /// Command returned a non-zero exit code
-    CommandFailed { command: String, exit_code: i32, stderr: String },
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
     /// SSH connection error
     SshError(String),
     /// Authentication failure
@@ -51,7 +55,11 @@ impl fmt::Display for UserMgmtError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommandNotFound(c) => write!(f, "Command not found: {c}"),
-            Self::CommandFailed { command, exit_code, stderr } => {
+            Self::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+            } => {
                 write!(f, "Command `{command}` failed (exit {exit_code}): {stderr}")
             }
             Self::SshError(e) => write!(f, "SSH error: {e}"),

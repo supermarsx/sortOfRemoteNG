@@ -26,7 +26,8 @@ pub async fn list_users(host: &UserMgmtHost) -> Result<Vec<SystemUser>, UserMgmt
 /// Get a single user by username.
 pub async fn get_user(host: &UserMgmtHost, username: &str) -> Result<SystemUser, UserMgmtError> {
     let users = list_users(host).await?;
-    users.into_iter()
+    users
+        .into_iter()
         .find(|u| u.username == username)
         .ok_or_else(|| UserMgmtError::UserNotFound(username.to_string()))
 }
@@ -193,17 +194,27 @@ pub async fn user_exists(host: &UserMgmtHost, username: &str) -> Result<bool, Us
     Ok(code == 0)
 }
 
-async fn set_password_stdin(host: &UserMgmtHost, username: &str, password: &str) -> Result<(), UserMgmtError> {
+async fn set_password_stdin(
+    host: &UserMgmtHost,
+    username: &str,
+    password: &str,
+) -> Result<(), UserMgmtError> {
     let payload = format!("{username}:{password}");
-    client::exec_ok(host, "chpasswd", &[]).await.or_else(|_| {
-        debug!("chpasswd without stdin not supported, password must be set manually");
-        Ok(String::new())
-    })?;
+    client::exec_ok(host, "chpasswd", &[])
+        .await
+        .or_else(|_| -> Result<String, UserMgmtError> {
+            debug!("chpasswd without stdin not supported, password must be set manually");
+            Ok(String::new())
+        })?;
     let _ = payload; // placeholder — real impl would pipe stdin
     Ok(())
 }
 
-fn parse_passwd_line(line: &str, _shadow: Option<&str>, _groups: Option<&str>) -> Option<SystemUser> {
+fn parse_passwd_line(
+    line: &str,
+    _shadow: Option<&str>,
+    _groups: Option<&str>,
+) -> Option<SystemUser> {
     let fields: Vec<&str> = line.split(':').collect();
     if fields.len() < 7 {
         return None;

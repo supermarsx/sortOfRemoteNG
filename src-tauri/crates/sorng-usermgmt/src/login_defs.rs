@@ -1,6 +1,5 @@
 //! /etc/login.defs parser and editor.
 
-use crate::error::UserMgmtError;
 use crate::types::LoginDefs;
 use std::collections::HashMap;
 
@@ -34,12 +33,20 @@ pub fn parse_login_defs(content: &str) -> LoginDefs {
         pass_min_len: settings.get("PASS_MIN_LEN").and_then(|v| v.parse().ok()),
         login_retries: settings.get("LOGIN_RETRIES").and_then(|v| v.parse().ok()),
         login_timeout: settings.get("LOGIN_TIMEOUT").and_then(|v| v.parse().ok()),
-        create_home: settings.get("CREATE_HOME").map(|v| v == "yes").unwrap_or(true),
+        create_home: settings
+            .get("CREATE_HOME")
+            .map(|v| v == "yes")
+            .unwrap_or(true),
         default_home: settings.get("DEFAULT_HOME").cloned(),
         umask: settings.get("UMASK").cloned(),
-        usergroups_enab: settings.get("USERGROUPS_ENAB").map(|v| v == "yes").unwrap_or(true),
+        usergroups_enab: settings
+            .get("USERGROUPS_ENAB")
+            .map(|v| v == "yes")
+            .unwrap_or(true),
         encrypt_method: settings.get("ENCRYPT_METHOD").cloned(),
-        sha_crypt_rounds: settings.get("SHA_CRYPT_MAX_ROUNDS").and_then(|v| v.parse().ok()),
+        sha_crypt_rounds: settings
+            .get("SHA_CRYPT_MAX_ROUNDS")
+            .and_then(|v| v.parse().ok()),
         all_settings: settings,
     }
 }

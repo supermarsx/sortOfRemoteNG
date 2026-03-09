@@ -5,7 +5,10 @@ use crate::error::UserMgmtError;
 use crate::types::*;
 
 /// Get login history via `last`.
-pub async fn login_history(host: &UserMgmtHost, count: Option<u32>) -> Result<Vec<LoginSession>, UserMgmtError> {
+pub async fn login_history(
+    host: &UserMgmtHost,
+    count: Option<u32>,
+) -> Result<Vec<LoginSession>, UserMgmtError> {
     let mut args = vec!["-F"];
     let n_str;
     if let Some(n) = count {

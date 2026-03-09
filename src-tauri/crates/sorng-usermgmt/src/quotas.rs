@@ -5,7 +5,10 @@ use crate::error::UserMgmtError;
 use crate::types::*;
 
 /// List all user quotas for a filesystem.
-pub async fn list_quotas(host: &UserMgmtHost, filesystem: &str) -> Result<Vec<DiskQuota>, UserMgmtError> {
+pub async fn list_quotas(
+    host: &UserMgmtHost,
+    filesystem: &str,
+) -> Result<Vec<DiskQuota>, UserMgmtError> {
     let stdout = client::exec_ok(host, "repquota", &["-u", "-p", filesystem]).await?;
     Ok(parse_repquota(&stdout, filesystem))
 }
@@ -22,9 +25,12 @@ pub async fn set_quota(host: &UserMgmtHost, opts: &SetQuotaOpts) -> Result<(), U
     let is = opts.inode_soft.unwrap_or(0).to_string();
     let ih = opts.inode_hard.unwrap_or(0).to_string();
 
-    client::exec_ok(host, "setquota", &[
-        flag, name, &bs, &bh, &is, &ih, &opts.filesystem,
-    ]).await?;
+    client::exec_ok(
+        host,
+        "setquota",
+        &[flag, name, &bs, &bh, &is, &ih, &opts.filesystem],
+    )
+    .await?;
     Ok(())
 }
 

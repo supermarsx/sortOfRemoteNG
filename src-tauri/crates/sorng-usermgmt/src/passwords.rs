@@ -53,7 +53,10 @@ pub async fn set_aging(host: &UserMgmtHost, opts: &ChangeAgingOpts) -> Result<()
 }
 
 /// Get password aging info via chage -l.
-pub async fn get_aging(host: &UserMgmtHost, username: &str) -> Result<PasswordAging, UserMgmtError> {
+pub async fn get_aging(
+    host: &UserMgmtHost,
+    username: &str,
+) -> Result<PasswordAging, UserMgmtError> {
     let out = client::exec_ok(host, "chage", &["-l", username]).await?;
     parse_chage_output(&out)
 }

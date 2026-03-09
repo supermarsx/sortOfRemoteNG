@@ -51,10 +51,7 @@ pub async fn exec_ok(
 }
 
 /// Read a file from the host (local or remote).
-pub async fn read_file(
-    host: &UserMgmtHost,
-    path: &str,
-) -> Result<String, UserMgmtError> {
+pub async fn read_file(host: &UserMgmtHost, path: &str) -> Result<String, UserMgmtError> {
     exec_ok(host, "cat", &[path]).await
 }
 
@@ -70,10 +67,7 @@ async fn exec_local(
             .output()
             .await?
     } else {
-        Command::new(program)
-            .args(args)
-            .output()
-            .await?
+        Command::new(program).args(args).output().await?
     };
     Ok(output)
 }
@@ -91,9 +85,12 @@ async fn exec_remote(
     };
 
     let mut cmd = Command::new("ssh");
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg(format!("ConnectTimeout={}", ssh.timeout_secs))
-        .arg("-p").arg(ssh.port.to_string());
+    cmd.arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", ssh.timeout_secs))
+        .arg("-p")
+        .arg(ssh.port.to_string());
 
     match &ssh.auth {
         crate::types::SshAuth::PrivateKey { key_path, .. } => {

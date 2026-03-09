@@ -23,7 +23,10 @@ impl UserMgmtService {
 
     pub fn add_host(&mut self, host: UserMgmtHost) -> Result<(), UserMgmtError> {
         if self.hosts.contains_key(&host.id) {
-            return Err(UserMgmtError::Other(format!("Host {} already exists", host.id)));
+            return Err(UserMgmtError::Other(format!(
+                "Host {} already exists",
+                host.id
+            )));
         }
         self.hosts.insert(host.id.clone(), host);
         Ok(())
@@ -38,11 +41,15 @@ impl UserMgmtService {
     }
 
     pub fn remove_host(&mut self, host_id: &str) -> Result<UserMgmtHost, UserMgmtError> {
-        self.hosts.remove(host_id).ok_or_else(|| UserMgmtError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .remove(host_id)
+            .ok_or_else(|| UserMgmtError::HostNotFound(host_id.to_string()))
     }
 
     pub fn get_host(&self, host_id: &str) -> Result<&UserMgmtHost, UserMgmtError> {
-        self.hosts.get(host_id).ok_or_else(|| UserMgmtError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .get(host_id)
+            .ok_or_else(|| UserMgmtError::HostNotFound(host_id.to_string()))
     }
 
     pub fn list_hosts(&self) -> Vec<&UserMgmtHost> {

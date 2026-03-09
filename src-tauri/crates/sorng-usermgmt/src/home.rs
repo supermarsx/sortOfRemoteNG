@@ -32,9 +32,17 @@ pub async fn home_info(host: &UserMgmtHost, path: &str) -> Result<HomeInfo, User
 }
 
 /// Get skeleton directory template.
-pub async fn get_skel(host: &UserMgmtHost, skel_path: Option<&str>) -> Result<SkelTemplate, UserMgmtError> {
+pub async fn get_skel(
+    host: &UserMgmtHost,
+    skel_path: Option<&str>,
+) -> Result<SkelTemplate, UserMgmtError> {
     let path = skel_path.unwrap_or("/etc/skel");
-    let stdout = client::exec_ok(host, "find", &[path, "-maxdepth", "3", "-printf", "%P\\t%y\\t%m\\t%s\\n"]).await?;
+    let stdout = client::exec_ok(
+        host,
+        "find",
+        &[path, "-maxdepth", "3", "-printf", "%P\\t%y\\t%m\\t%s\\n"],
+    )
+    .await?;
 
     let mut files = Vec::new();
     for line in stdout.lines() {
@@ -61,7 +69,11 @@ pub async fn get_skel(host: &UserMgmtHost, skel_path: Option<&str>) -> Result<Sk
 }
 
 /// Migrate home directory to a new location.
-pub async fn migrate_home(host: &UserMgmtHost, username: &str, new_path: &str) -> Result<(), UserMgmtError> {
+pub async fn migrate_home(
+    host: &UserMgmtHost,
+    username: &str,
+    new_path: &str,
+) -> Result<(), UserMgmtError> {
     client::exec_ok(host, "usermod", &["-d", new_path, "-m", username]).await?;
     info!("Migrated home for {username} to {new_path}");
     Ok(())

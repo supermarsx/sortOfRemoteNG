@@ -1,6 +1,5 @@
 //! /etc/shadow parser — password hashes and aging info.
 
-use crate::error::UserMgmtError;
 use crate::types::*;
 
 /// Parse /etc/shadow content into entries.
@@ -14,7 +13,9 @@ pub fn parse_shadow(content: &str) -> Vec<ShadowEntry> {
 
 /// Get shadow entry for a specific user.
 pub fn get_shadow_entry(content: &str, username: &str) -> Option<ShadowEntry> {
-    parse_shadow(content).into_iter().find(|e| e.username == username)
+    parse_shadow(content)
+        .into_iter()
+        .find(|e| e.username == username)
 }
 
 fn parse_shadow_line(line: &str) -> Option<ShadowEntry> {
@@ -60,11 +61,19 @@ fn detect_hash_algorithm(hash: &str) -> PasswordHashAlgorithm {
 }
 
 fn parse_opt_i64(s: &str) -> Option<i64> {
-    if s.is_empty() { None } else { s.parse().ok() }
+    if s.is_empty() {
+        None
+    } else {
+        s.parse().ok()
+    }
 }
 
 fn parse_opt_i32(s: &str) -> Option<i32> {
-    if s.is_empty() { None } else { s.parse().ok() }
+    if s.is_empty() {
+        None
+    } else {
+        s.parse().ok()
+    }
 }
 
 #[cfg(test)]
@@ -96,10 +105,25 @@ mod tests {
 
     #[test]
     fn test_detect_algorithms() {
-        assert_eq!(detect_hash_algorithm("$1$salt$hash"), PasswordHashAlgorithm::Md5);
-        assert_eq!(detect_hash_algorithm("$5$salt$hash"), PasswordHashAlgorithm::Sha256);
-        assert_eq!(detect_hash_algorithm("$6$salt$hash"), PasswordHashAlgorithm::Sha512);
-        assert_eq!(detect_hash_algorithm("$2b$12$hash"), PasswordHashAlgorithm::Blowfish);
-        assert_eq!(detect_hash_algorithm("*"), PasswordHashAlgorithm::NoPassword);
+        assert_eq!(
+            detect_hash_algorithm("$1$salt$hash"),
+            PasswordHashAlgorithm::Md5
+        );
+        assert_eq!(
+            detect_hash_algorithm("$5$salt$hash"),
+            PasswordHashAlgorithm::Sha256
+        );
+        assert_eq!(
+            detect_hash_algorithm("$6$salt$hash"),
+            PasswordHashAlgorithm::Sha512
+        );
+        assert_eq!(
+            detect_hash_algorithm("$2b$12$hash"),
+            PasswordHashAlgorithm::Blowfish
+        );
+        assert_eq!(
+            detect_hash_algorithm("*"),
+            PasswordHashAlgorithm::NoPassword
+        );
     }
 }
