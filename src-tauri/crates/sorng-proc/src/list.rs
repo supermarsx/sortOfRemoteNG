@@ -7,7 +7,8 @@ use std::collections::HashMap;
 
 // ─── ps format strings ─────────────────────────────────────────────
 
-const PS_FULL_FMT: &str = "pid,ppid,user,group,stat,nlwp,ni,pri,pcpu,pmem,rss,vsz,tty,wchan,lstart,etime,args";
+const PS_FULL_FMT: &str =
+    "pid,ppid,user,group,stat,nlwp,ni,pri,pcpu,pmem,rss,vsz,tty,wchan,lstart,etime,args";
 
 // ─── Public API ─────────────────────────────────────────────────────
 
@@ -19,12 +20,7 @@ pub async fn list_processes(host: &ProcHost) -> Result<Vec<ProcessInfo>, ProcErr
 
 /// List all processes with full extended fields.
 pub async fn list_processes_full(host: &ProcHost) -> Result<Vec<ProcessInfo>, ProcError> {
-    let stdout = client::exec_ok(
-        host,
-        "ps",
-        &["-eo", PS_FULL_FMT, "--no-header"],
-    )
-    .await?;
+    let stdout = client::exec_ok(host, "ps", &["-eo", PS_FULL_FMT, "--no-header"]).await?;
     Ok(parse_ps_full(&stdout))
 }
 
@@ -63,7 +59,10 @@ pub async fn get_process_tree(host: &ProcHost) -> Result<Vec<ProcessTree>, ProcE
 }
 
 /// Get direct children of a process.
-pub async fn get_process_children(host: &ProcHost, pid: u32) -> Result<Vec<ProcessInfo>, ProcError> {
+pub async fn get_process_children(
+    host: &ProcHost,
+    pid: u32,
+) -> Result<Vec<ProcessInfo>, ProcError> {
     let pid_s = pid.to_string();
     let stdout = client::exec_ok(
         host,
@@ -75,7 +74,10 @@ pub async fn get_process_children(host: &ProcHost, pid: u32) -> Result<Vec<Proce
 }
 
 /// Search processes matching a pattern (pgrep + ps).
-pub async fn search_processes(host: &ProcHost, pattern: &str) -> Result<Vec<ProcessInfo>, ProcError> {
+pub async fn search_processes(
+    host: &ProcHost,
+    pattern: &str,
+) -> Result<Vec<ProcessInfo>, ProcError> {
     let stdout = client::exec_shell_ok(
         host,
         &format!("pgrep -d, -f {} 2>/dev/null || true", shell_safe(pattern)),
@@ -85,12 +87,8 @@ pub async fn search_processes(host: &ProcHost, pattern: &str) -> Result<Vec<Proc
     if pids.is_empty() {
         return Ok(Vec::new());
     }
-    let ps_out = client::exec_ok(
-        host,
-        "ps",
-        &["-p", pids, "-o", PS_FULL_FMT, "--no-header"],
-    )
-    .await?;
+    let ps_out =
+        client::exec_ok(host, "ps", &["-p", pids, "-o", PS_FULL_FMT, "--no-header"]).await?;
     Ok(parse_ps_full(&ps_out))
 }
 
@@ -110,8 +108,10 @@ pub async fn top_processes(
         host,
         "ps",
         &[
-            "-eo", "pid,user,pcpu,pmem,comm",
-            "--sort", &format!("-{sort_key}"),
+            "-eo",
+            "pid,user,pcpu,pmem,comm",
+            "--sort",
+            &format!("-{sort_key}"),
             "--no-header",
         ],
     )
@@ -384,7 +384,11 @@ nobody    5678  0.0  0.0      0     0 ?        Z    Jan01   0:00 [zombie] <defun
         assert_eq!(tree[0].process.pid, 1);
         assert_eq!(tree[0].children.len(), 2);
 
-        let nginx = tree[0].children.iter().find(|c| c.process.pid == 200).unwrap();
+        let nginx = tree[0]
+            .children
+            .iter()
+            .find(|c| c.process.pid == 200)
+            .unwrap();
         assert_eq!(nginx.children.len(), 1);
         assert_eq!(nginx.children[0].process.pid, 201);
     }

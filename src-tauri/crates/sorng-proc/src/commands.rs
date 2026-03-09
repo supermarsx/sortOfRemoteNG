@@ -14,10 +14,7 @@ fn map_err<E: std::fmt::Display>(e: E) -> String {
 // ─── Host CRUD ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn proc_add_host(
-    state: State<'_, ProcServiceState>,
-    host: ProcHost,
-) -> CmdResult<()> {
+pub async fn proc_add_host(state: State<'_, ProcServiceState>, host: ProcHost) -> CmdResult<()> {
     state.lock().await.add_host(host).map_err(map_err)
 }
 
@@ -30,10 +27,7 @@ pub async fn proc_remove_host(
 }
 
 #[tauri::command]
-pub async fn proc_update_host(
-    state: State<'_, ProcServiceState>,
-    host: ProcHost,
-) -> CmdResult<()> {
+pub async fn proc_update_host(state: State<'_, ProcServiceState>, host: ProcHost) -> CmdResult<()> {
     state.lock().await.update_host(host).map_err(map_err)
 }
 
@@ -46,15 +40,19 @@ pub async fn proc_get_host(
         .lock()
         .await
         .get_host(&host_id)
-        .map(|h| h.clone())
+        .cloned()
         .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn proc_list_hosts(
-    state: State<'_, ProcServiceState>,
-) -> CmdResult<Vec<ProcHost>> {
-    Ok(state.lock().await.list_hosts().into_iter().cloned().collect())
+pub async fn proc_list_hosts(state: State<'_, ProcServiceState>) -> CmdResult<Vec<ProcHost>> {
+    Ok(state
+        .lock()
+        .await
+        .list_hosts()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -65,7 +63,7 @@ async fn resolve_host(state: &State<'_, ProcServiceState>, host_id: &str) -> Cmd
         .lock()
         .await
         .get_host(host_id)
-        .map(|h| h.clone())
+        .cloned()
         .map_err(map_err)
 }
 
@@ -355,7 +353,9 @@ pub async fn proc_get_load_average(
     host_id: String,
 ) -> CmdResult<SystemLoad> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::system::get_load_average(&host).await.map_err(map_err)
+    crate::system::get_load_average(&host)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]

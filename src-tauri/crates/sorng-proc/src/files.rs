@@ -7,9 +7,7 @@ use crate::types::*;
 /// List open files for a single process via /proc/pid/fd and fallback to lsof.
 pub async fn list_open_files(host: &ProcHost, pid: u32) -> Result<Vec<OpenFile>, ProcError> {
     // Try /proc/pid/fd first (no extra tools required).
-    let cmd = format!(
-        "ls -la /proc/{pid}/fd/ 2>/dev/null | tail -n +2"
-    );
+    let cmd = format!("ls -la /proc/{pid}/fd/ 2>/dev/null | tail -n +2");
     let (stdout, _, exit_code) = client::exec_shell(host, &cmd).await?;
     if exit_code == 0 && !stdout.trim().is_empty() {
         return Ok(parse_proc_fd_listing(&stdout));
@@ -45,7 +43,10 @@ pub async fn list_listening_ports(host: &ProcHost) -> Result<Vec<SocketInfo>, Pr
 }
 
 /// Find open files matching a name pattern via `lsof`.
-pub async fn find_files_by_name(host: &ProcHost, pattern: &str) -> Result<Vec<OpenFile>, ProcError> {
+pub async fn find_files_by_name(
+    host: &ProcHost,
+    pattern: &str,
+) -> Result<Vec<OpenFile>, ProcError> {
     let stdout = client::exec_ok(host, "lsof", &["-F", "ftDn", pattern]).await?;
     Ok(parse_lsof_fields(&stdout))
 }
@@ -153,12 +154,7 @@ fn parse_lsof_fields(output: &str) -> Vec<OpenFile> {
     files
 }
 
-fn flush_lsof_file(
-    files: &mut Vec<OpenFile>,
-    fd: &str,
-    ftype: &str,
-    name: &str,
-) {
+fn flush_lsof_file(files: &mut Vec<OpenFile>, fd: &str, ftype: &str, name: &str) {
     if fd.is_empty() && name.is_empty() {
         return;
     }
@@ -237,7 +233,9 @@ fn parse_ss_process_field(field: &str) -> (Option<u32>, String) {
     // Extract pid=N
     if let Some(start) = field.find("pid=") {
         let rest = &field[start + 4..];
-        let num_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+        let num_end = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
         pid = rest[..num_end].parse().ok();
     }
 
@@ -344,7 +342,10 @@ udp   UNCONN 0      0      127.0.0.53%lo:53     0.0.0.0:*          users:((\"sys
     fn test_classify_target() {
         assert_eq!(classify_target("socket:[12345]"), FileType::Socket);
         assert_eq!(classify_target("pipe:[12345]"), FileType::Pipe);
-        assert_eq!(classify_target("anon_inode:[eventpoll]"), FileType::AnonInode);
+        assert_eq!(
+            classify_target("anon_inode:[eventpoll]"),
+            FileType::AnonInode
+        );
         assert_eq!(classify_target("/dev/null"), FileType::Device);
         assert_eq!(classify_target("/etc/passwd"), FileType::Regular);
         assert_eq!(classify_target("/tmp/"), FileType::Directory);

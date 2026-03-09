@@ -1,7 +1,7 @@
 //! Command execution — local and remote SSH for process management commands.
 
 use crate::error::ProcError;
-use crate::types::{ProcHost, SshConfig, SshAuth};
+use crate::types::{ProcHost, SshAuth, SshConfig};
 use log::debug;
 use tokio::process::Command;
 
@@ -32,11 +32,7 @@ pub async fn exec(
 }
 
 /// Execute and require exit code 0.
-pub async fn exec_ok(
-    host: &ProcHost,
-    program: &str,
-    args: &[&str],
-) -> Result<String, ProcError> {
+pub async fn exec_ok(host: &ProcHost, program: &str, args: &[&str]) -> Result<String, ProcError> {
     let (stdout, stderr, exit_code) = exec(host, program, args).await?;
     if exit_code != 0 {
         return Err(ProcError::CommandFailed {
@@ -58,10 +54,7 @@ pub async fn exec_shell(
 }
 
 /// Execute a raw shell string and require exit code 0.
-pub async fn exec_shell_ok(
-    host: &ProcHost,
-    shell_cmd: &str,
-) -> Result<String, ProcError> {
+pub async fn exec_shell_ok(host: &ProcHost, shell_cmd: &str) -> Result<String, ProcError> {
     let (stdout, stderr, exit_code) = exec_shell(host, shell_cmd).await?;
     if exit_code != 0 {
         return Err(ProcError::CommandFailed {
@@ -79,7 +72,11 @@ async fn exec_local(
     args: &[&str],
 ) -> Result<std::process::Output, ProcError> {
     let output = if use_sudo {
-        Command::new("sudo").arg(program).args(args).output().await?
+        Command::new("sudo")
+            .arg(program)
+            .args(args)
+            .output()
+            .await?
     } else {
         Command::new(program).args(args).output().await?
     };
@@ -98,9 +95,12 @@ async fn exec_remote(
         format!("{} {}", program, shell_escape_args(args))
     };
     let mut cmd = Command::new("ssh");
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg(format!("ConnectTimeout={}", ssh.timeout_secs))
-        .arg("-p").arg(ssh.port.to_string());
+    cmd.arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", ssh.timeout_secs))
+        .arg("-p")
+        .arg(ssh.port.to_string());
     if let SshAuth::PrivateKey { ref key_path, .. } = ssh.auth {
         cmd.arg("-i").arg(key_path);
     }

@@ -3,7 +3,7 @@
 use crate::client;
 use crate::error::ProcError;
 use crate::types::*;
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
 use std::collections::HashMap;
 
 /// Read /proc/loadavg.
@@ -125,19 +125,19 @@ fn parse_loadavg(output: &str) -> Result<SystemLoad, ProcError> {
 
 /// Parse /proc/uptime: "12345.67 98765.43"
 fn parse_proc_uptime(output: &str) -> Result<(f64, f64), ProcError> {
-    let tokens: Vec<&str> = output.trim().split_whitespace().collect();
+    let tokens: Vec<&str> = output.split_whitespace().collect();
     if tokens.len() < 2 {
         return Err(ProcError::ParseError(format!(
             "Invalid uptime format: {}",
             output.trim()
         )));
     }
-    let uptime = tokens[0].parse::<f64>().map_err(|_| {
-        ProcError::ParseError(format!("Invalid uptime value: {}", tokens[0]))
-    })?;
-    let idle = tokens[1].parse::<f64>().map_err(|_| {
-        ProcError::ParseError(format!("Invalid idle value: {}", tokens[1]))
-    })?;
+    let uptime = tokens[0]
+        .parse::<f64>()
+        .map_err(|_| ProcError::ParseError(format!("Invalid uptime value: {}", tokens[0])))?;
+    let idle = tokens[1]
+        .parse::<f64>()
+        .map_err(|_| ProcError::ParseError(format!("Invalid idle value: {}", tokens[1])))?;
     Ok((uptime, idle))
 }
 

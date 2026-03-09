@@ -6,35 +6,29 @@ use crate::types::*;
 use std::collections::HashMap;
 
 /// Read /proc/<pid>/status and return as key-value pairs.
-pub async fn get_proc_status(host: &ProcHost, pid: u32) -> Result<HashMap<String, String>, ProcError> {
-    let stdout = client::exec_shell_ok(
-        host,
-        &format!("cat /proc/{pid}/status"),
-    )
-    .await
-    .map_err(|_| ProcError::ProcessNotFound(pid))?;
+pub async fn get_proc_status(
+    host: &ProcHost,
+    pid: u32,
+) -> Result<HashMap<String, String>, ProcError> {
+    let stdout = client::exec_shell_ok(host, &format!("cat /proc/{pid}/status"))
+        .await
+        .map_err(|_| ProcError::ProcessNotFound(pid))?;
     Ok(parse_proc_status(&stdout))
 }
 
 /// Read /proc/<pid>/cmdline (null-delimited).
 pub async fn get_proc_cmdline(host: &ProcHost, pid: u32) -> Result<String, ProcError> {
-    let stdout = client::exec_shell_ok(
-        host,
-        &format!("tr '\\0' ' ' < /proc/{pid}/cmdline"),
-    )
-    .await
-    .map_err(|_| ProcError::ProcessNotFound(pid))?;
+    let stdout = client::exec_shell_ok(host, &format!("tr '\\0' ' ' < /proc/{pid}/cmdline"))
+        .await
+        .map_err(|_| ProcError::ProcessNotFound(pid))?;
     Ok(stdout.trim().to_string())
 }
 
 /// Read /proc/<pid>/environ and parse into key=value pairs.
 pub async fn get_proc_environ(host: &ProcHost, pid: u32) -> Result<ProcessEnvironment, ProcError> {
-    let stdout = client::exec_shell_ok(
-        host,
-        &format!("tr '\\0' '\\n' < /proc/{pid}/environ"),
-    )
-    .await
-    .map_err(|_| ProcError::ProcessNotFound(pid))?;
+    let stdout = client::exec_shell_ok(host, &format!("tr '\\0' '\\n' < /proc/{pid}/environ"))
+        .await
+        .map_err(|_| ProcError::ProcessNotFound(pid))?;
     Ok(ProcessEnvironment {
         pid,
         variables: parse_environ(&stdout),
@@ -43,34 +37,25 @@ pub async fn get_proc_environ(host: &ProcHost, pid: u32) -> Result<ProcessEnviro
 
 /// Read /proc/<pid>/limits.
 pub async fn get_proc_limits(host: &ProcHost, pid: u32) -> Result<ProcessLimits, ProcError> {
-    let stdout = client::exec_shell_ok(
-        host,
-        &format!("cat /proc/{pid}/limits"),
-    )
-    .await
-    .map_err(|_| ProcError::ProcessNotFound(pid))?;
+    let stdout = client::exec_shell_ok(host, &format!("cat /proc/{pid}/limits"))
+        .await
+        .map_err(|_| ProcError::ProcessNotFound(pid))?;
     parse_proc_limits(pid, &stdout)
 }
 
 /// Read /proc/<pid>/maps.
 pub async fn get_proc_maps(host: &ProcHost, pid: u32) -> Result<Vec<MemoryMap>, ProcError> {
-    let stdout = client::exec_shell_ok(
-        host,
-        &format!("cat /proc/{pid}/maps"),
-    )
-    .await
-    .map_err(|_| ProcError::ProcessNotFound(pid))?;
+    let stdout = client::exec_shell_ok(host, &format!("cat /proc/{pid}/maps"))
+        .await
+        .map_err(|_| ProcError::ProcessNotFound(pid))?;
     Ok(parse_proc_maps(&stdout))
 }
 
 /// Read /proc/<pid>/io.
 pub async fn get_proc_io(host: &ProcHost, pid: u32) -> Result<ProcessIo, ProcError> {
-    let stdout = client::exec_shell_ok(
-        host,
-        &format!("cat /proc/{pid}/io"),
-    )
-    .await
-    .map_err(|_| ProcError::ProcessNotFound(pid))?;
+    let stdout = client::exec_shell_ok(host, &format!("cat /proc/{pid}/io"))
+        .await
+        .map_err(|_| ProcError::ProcessNotFound(pid))?;
     parse_proc_io(pid, &stdout)
 }
 
@@ -87,12 +72,9 @@ pub async fn get_proc_namespaces(host: &ProcHost, pid: u32) -> Result<ProcessNam
 
 /// Read /proc/<pid>/cgroup.
 pub async fn get_proc_cgroup(host: &ProcHost, pid: u32) -> Result<CgroupInfo, ProcError> {
-    let stdout = client::exec_shell_ok(
-        host,
-        &format!("cat /proc/{pid}/cgroup"),
-    )
-    .await
-    .map_err(|_| ProcError::ProcessNotFound(pid))?;
+    let stdout = client::exec_shell_ok(host, &format!("cat /proc/{pid}/cgroup"))
+        .await
+        .map_err(|_| ProcError::ProcessNotFound(pid))?;
     Ok(parse_proc_cgroup(&stdout))
 }
 
@@ -153,8 +135,14 @@ fn parse_proc_limits(pid: u32, output: &str) -> Result<ProcessLimits, ProcError>
     let get_limit = |name: &str| -> LimitValue {
         limits_map
             .get(name)
-            .map(|(s, h)| LimitValue { soft: s.clone(), hard: h.clone() })
-            .unwrap_or_else(|| LimitValue { soft: "unlimited".into(), hard: "unlimited".into() })
+            .map(|(s, h)| LimitValue {
+                soft: s.clone(),
+                hard: h.clone(),
+            })
+            .unwrap_or_else(|| LimitValue {
+                soft: "unlimited".into(),
+                hard: "unlimited".into(),
+            })
     };
 
     Ok(ProcessLimits {
@@ -192,7 +180,11 @@ fn parse_proc_maps(output: &str) -> Vec<MemoryMap> {
             offset: tokens[2].to_string(),
             device: tokens[3].to_string(),
             inode: tokens[4].parse().unwrap_or(0),
-            pathname: if tokens.len() > 5 { tokens[5].trim().to_string() } else { String::new() },
+            pathname: if tokens.len() > 5 {
+                tokens[5].trim().to_string()
+            } else {
+                String::new()
+            },
         });
     }
     maps
@@ -233,14 +225,15 @@ fn parse_proc_namespaces(pid: u32, output: &str) -> ProcessNamespace {
             let target = target.trim().trim_matches('\'');
             // target is like "pid:[4026531836]"
             if let Some((ns_name, ns_id)) = target.split_once(':') {
-                ns_map.insert(ns_name.to_string(), ns_id.trim_matches(|c| c == '[' || c == ']').to_string());
+                ns_map.insert(
+                    ns_name.to_string(),
+                    ns_id.trim_matches(|c| c == '[' || c == ']').to_string(),
+                );
             }
         }
     }
 
-    let get_ns = |name: &str| -> String {
-        ns_map.get(name).cloned().unwrap_or_default()
-    };
+    let get_ns = |name: &str| -> String { ns_map.get(name).cloned().unwrap_or_default() };
 
     ProcessNamespace {
         pid,

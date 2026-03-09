@@ -5,7 +5,11 @@ use std::fmt;
 #[derive(Debug)]
 pub enum ProcError {
     CommandNotFound(String),
-    CommandFailed { command: String, exit_code: i32, stderr: String },
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
     SshError(String),
     HostNotFound(String),
     PermissionDenied(String),
@@ -22,7 +26,11 @@ impl fmt::Display for ProcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommandNotFound(c) => write!(f, "Command not found: {c}"),
-            Self::CommandFailed { command, exit_code, stderr } => {
+            Self::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+            } => {
                 write!(f, "Command `{command}` failed (exit {exit_code}): {stderr}")
             }
             Self::SshError(e) => write!(f, "SSH error: {e}"),
@@ -42,9 +50,13 @@ impl fmt::Display for ProcError {
 impl std::error::Error for ProcError {}
 
 impl From<std::io::Error> for ProcError {
-    fn from(err: std::io::Error) -> Self { Self::IoError(err.to_string()) }
+    fn from(err: std::io::Error) -> Self {
+        Self::IoError(err.to_string())
+    }
 }
 
 impl From<serde_json::Error> for ProcError {
-    fn from(err: serde_json::Error) -> Self { Self::JsonError(err.to_string()) }
+    fn from(err: serde_json::Error) -> Self {
+        Self::JsonError(err.to_string())
+    }
 }

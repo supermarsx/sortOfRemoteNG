@@ -14,7 +14,9 @@ pub struct ProcService {
 
 impl ProcService {
     pub fn new() -> ProcServiceState {
-        Arc::new(Mutex::new(Self { hosts: HashMap::new() }))
+        Arc::new(Mutex::new(Self {
+            hosts: HashMap::new(),
+        }))
     }
 
     pub fn add_host(&mut self, host: ProcHost) -> Result<(), ProcError> {
