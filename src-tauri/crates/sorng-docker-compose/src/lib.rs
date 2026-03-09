@@ -27,12 +27,12 @@
 //! - **service** — Aggregate façade + Tauri `Arc<Mutex<_>>` state alias.
 //! - **commands** — `#[tauri::command]` handlers (50+ commands).
 
-pub mod types;
-pub mod error;
-pub mod parser;
 pub mod cli;
-pub mod graph;
-pub mod profiles;
-pub mod templates;
-pub mod service;
 pub mod commands;
+pub mod error;
+pub mod graph;
+pub mod parser;
+pub mod profiles;
+pub mod service;
+pub mod templates;
+pub mod types;

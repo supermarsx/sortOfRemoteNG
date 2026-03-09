@@ -15,10 +15,7 @@ impl ProfileManager {
 
         for (name, svc) in &compose.services {
             for p in &svc.profiles {
-                profile_map
-                    .entry(p.clone())
-                    .or_default()
-                    .push(name.clone());
+                profile_map.entry(p.clone()).or_default().push(name.clone());
             }
         }
 
@@ -47,10 +44,7 @@ impl ProfileManager {
     /// Services with no profiles are always active.
     /// Services with profiles are active only if at least one of their profiles
     /// is in the active set.
-    pub fn active_services(
-        compose: &ComposeFile,
-        active_profiles: &[String],
-    ) -> Vec<String> {
+    pub fn active_services(compose: &ComposeFile, active_profiles: &[String]) -> Vec<String> {
         let active_set: HashSet<&str> = active_profiles.iter().map(|s| s.as_str()).collect();
         let mut result = Vec::new();
 
@@ -80,10 +74,7 @@ impl ProfileManager {
     /// Validate that service dependencies respect profile boundaries —
     /// a service without profiles should not depend on a profile-only service
     /// that isn't in the active profile set.
-    pub fn validate_profile_deps(
-        compose: &ComposeFile,
-        active_profiles: &[String],
-    ) -> Vec<String> {
+    pub fn validate_profile_deps(compose: &ComposeFile, active_profiles: &[String]) -> Vec<String> {
         let active = Self::active_services(compose, active_profiles);
         let active_set: HashSet<&str> = active.iter().map(|s| s.as_str()).collect();
         let mut warnings = Vec::new();

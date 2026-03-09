@@ -222,7 +222,12 @@ volumes:
             name: "wordpress".to_string(),
             description: "WordPress with MySQL backend".to_string(),
             category: "application".to_string(),
-            tags: vec!["wordpress".into(), "cms".into(), "php".into(), "mysql".into()],
+            tags: vec![
+                "wordpress".into(),
+                "cms".into(),
+                "php".into(),
+                "mysql".into(),
+            ],
             content: r#"services:
   wordpress:
     image: wordpress:latest
@@ -380,7 +385,11 @@ volumes:
             name: "traefik".to_string(),
             description: "Traefik reverse proxy with dashboard".to_string(),
             category: "infrastructure".to_string(),
-            tags: vec!["traefik".into(), "reverse-proxy".into(), "load-balancer".into()],
+            tags: vec![
+                "traefik".into(),
+                "reverse-proxy".into(),
+                "load-balancer".into(),
+            ],
             content: r#"services:
   traefik:
     image: traefik:v3.0
@@ -416,7 +425,12 @@ volumes:
             name: "prometheus-grafana".to_string(),
             description: "Prometheus + Grafana monitoring stack".to_string(),
             category: "monitoring".to_string(),
-            tags: vec!["prometheus".into(), "grafana".into(), "monitoring".into(), "metrics".into()],
+            tags: vec![
+                "prometheus".into(),
+                "grafana".into(),
+                "monitoring".into(),
+                "metrics".into(),
+            ],
             content: r#"services:
   prometheus:
     image: prom/prometheus:latest
@@ -469,7 +483,12 @@ volumes:
             name: "elk".to_string(),
             description: "Elasticsearch + Logstash + Kibana stack".to_string(),
             category: "monitoring".to_string(),
-            tags: vec!["elasticsearch".into(), "logstash".into(), "kibana".into(), "logging".into()],
+            tags: vec![
+                "elasticsearch".into(),
+                "logstash".into(),
+                "kibana".into(),
+                "logging".into(),
+            ],
             content: r#"services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
@@ -522,7 +541,12 @@ volumes:
             name: "minio".to_string(),
             description: "MinIO S3-compatible object storage".to_string(),
             category: "storage".to_string(),
-            tags: vec!["minio".into(), "s3".into(), "storage".into(), "object-storage".into()],
+            tags: vec![
+                "minio".into(),
+                "s3".into(),
+                "storage".into(),
+                "object-storage".into(),
+            ],
             content: r#"services:
   minio:
     image: minio/minio:latest
@@ -554,7 +578,12 @@ volumes:
             name: "rabbitmq".to_string(),
             description: "RabbitMQ message broker with management UI".to_string(),
             category: "messaging".to_string(),
-            tags: vec!["rabbitmq".into(), "messaging".into(), "amqp".into(), "queue".into()],
+            tags: vec![
+                "rabbitmq".into(),
+                "messaging".into(),
+                "amqp".into(),
+                "queue".into(),
+            ],
             content: r#"services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -585,7 +614,12 @@ volumes:
             name: "mariadb".to_string(),
             description: "MariaDB database with persistent storage".to_string(),
             category: "database".to_string(),
-            tags: vec!["mariadb".into(), "database".into(), "sql".into(), "mysql".into()],
+            tags: vec![
+                "mariadb".into(),
+                "database".into(),
+                "sql".into(),
+                "mysql".into(),
+            ],
             content: r#"services:
   mariadb:
     image: mariadb:11
@@ -716,9 +750,16 @@ volumes:
     fn full_stack_template() -> ComposeTemplate {
         ComposeTemplate {
             name: "full-stack".to_string(),
-            description: "Full-stack app: frontend + API + database + cache + reverse proxy".to_string(),
+            description: "Full-stack app: frontend + API + database + cache + reverse proxy"
+                .to_string(),
             category: "application".to_string(),
-            tags: vec!["fullstack".into(), "nginx".into(), "api".into(), "postgres".into(), "redis".into()],
+            tags: vec![
+                "fullstack".into(),
+                "nginx".into(),
+                "api".into(),
+                "postgres".into(),
+                "redis".into(),
+            ],
             content: r#"services:
   proxy:
     image: nginx:alpine

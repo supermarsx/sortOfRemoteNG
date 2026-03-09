@@ -37,9 +37,9 @@ impl ComposeService {
 
     /// Ensure the CLI is available.
     fn cli(&self) -> ComposeResult<&ComposeCli> {
-        self.cli
-            .as_ref()
-            .ok_or_else(|| ComposeError::not_available("Compose CLI not initialised — call init first"))
+        self.cli.as_ref().ok_or_else(|| {
+            ComposeError::not_available("Compose CLI not initialised — call init first")
+        })
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -54,7 +54,11 @@ impl ComposeService {
         self.cli()?.version()
     }
 
-    pub fn list_projects(&self, all: bool, filter: Option<&str>) -> ComposeResult<Vec<ComposeProject>> {
+    pub fn list_projects(
+        &self,
+        all: bool,
+        filter: Option<&str>,
+    ) -> ComposeResult<Vec<ComposeProject>> {
         self.cli()?.list_projects(all, filter)
     }
 
@@ -193,7 +197,11 @@ impl ComposeService {
         ComposeParser::validate(compose)
     }
 
-    pub fn interpolate(&self, content: &str, vars: &std::collections::HashMap<String, String>) -> ComposeResult<String> {
+    pub fn interpolate(
+        &self,
+        content: &str,
+        vars: &std::collections::HashMap<String, String>,
+    ) -> ComposeResult<String> {
         ComposeParser::interpolate(content, vars)
     }
 
@@ -221,7 +229,11 @@ impl ComposeService {
         DependencyResolver::build_graph(compose)
     }
 
-    pub fn startup_order(&self, compose: &ComposeFile, services: &[String]) -> ComposeResult<Vec<String>> {
+    pub fn startup_order(
+        &self,
+        compose: &ComposeFile,
+        services: &[String],
+    ) -> ComposeResult<Vec<String>> {
         DependencyResolver::startup_order_for(compose, services)
     }
 

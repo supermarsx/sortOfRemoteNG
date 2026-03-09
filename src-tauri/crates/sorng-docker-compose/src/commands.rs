@@ -18,9 +18,7 @@ pub async fn compose_init(
 }
 
 #[tauri::command]
-pub async fn compose_is_available(
-    state: State<'_, ComposeServiceState>,
-) -> Result<bool, String> {
+pub async fn compose_is_available(state: State<'_, ComposeServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_available())
 }
@@ -383,7 +381,8 @@ pub async fn compose_startup_order(
     services: Vec<String>,
 ) -> Result<Vec<String>, String> {
     let svc = state.lock().await;
-    svc.startup_order(&compose, &services).map_err(|e| e.to_string())
+    svc.startup_order(&compose, &services)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

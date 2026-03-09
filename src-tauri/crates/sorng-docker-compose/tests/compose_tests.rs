@@ -2,13 +2,13 @@
 
 #[cfg(test)]
 mod tests {
-    use sorng_docker_compose::types::*;
-    use sorng_docker_compose::parser::ComposeParser;
-    use sorng_docker_compose::graph::DependencyResolver;
-    use sorng_docker_compose::profiles::ProfileManager;
-    use sorng_docker_compose::templates::TemplateManager;
     use sorng_docker_compose::error::{ComposeError, ComposeErrorKind};
+    use sorng_docker_compose::graph::DependencyResolver;
+    use sorng_docker_compose::parser::ComposeParser;
+    use sorng_docker_compose::profiles::ProfileManager;
     use sorng_docker_compose::service::ComposeService;
+    use sorng_docker_compose::templates::TemplateManager;
+    use sorng_docker_compose::types::*;
     use std::collections::HashMap;
 
     // ═══════════════════════════════════════════════════════════════
@@ -451,11 +451,7 @@ services:
       - db
 "#;
         let compose = ComposeParser::parse_yaml(yaml).unwrap();
-        let order = DependencyResolver::startup_order_for(
-            &compose,
-            &["web".to_string()],
-        )
-        .unwrap();
+        let order = DependencyResolver::startup_order_for(&compose, &["web".to_string()]).unwrap();
 
         // Should include web + api + db (transitive deps)
         assert!(order.contains(&"web".to_string()));
@@ -696,10 +692,18 @@ NUMBER=42
         let baz = env_file.variables.iter().find(|v| v.key == "BAZ").unwrap();
         assert_eq!(baz.value.as_deref(), Some("quoted value"));
 
-        let empty = env_file.variables.iter().find(|v| v.key == "EMPTY").unwrap();
+        let empty = env_file
+            .variables
+            .iter()
+            .find(|v| v.key == "EMPTY")
+            .unwrap();
         assert_eq!(empty.value.as_deref(), Some(""));
 
-        let bare = env_file.variables.iter().find(|v| v.key == "BARE_VAR").unwrap();
+        let bare = env_file
+            .variables
+            .iter()
+            .find(|v| v.key == "BARE_VAR")
+            .unwrap();
         assert_eq!(bare.value, None);
     }
 
@@ -905,8 +909,7 @@ configs:
         assert!(!active.contains(&"worker".to_string())); // workers profile
 
         // Active with production profile
-        let active_prod =
-            ProfileManager::active_services(&compose, &["production".to_string()]);
+        let active_prod = ProfileManager::active_services(&compose, &["production".to_string()]);
         assert!(active_prod.contains(&"app".to_string()));
 
         // Deploy config

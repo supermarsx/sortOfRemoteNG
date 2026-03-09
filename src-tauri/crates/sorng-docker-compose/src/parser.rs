@@ -29,10 +29,7 @@ impl ComposeParser {
             ComposeError::file_not_found(&format!("Cannot read {}: {}", path.display(), e))
         })?;
 
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("yml");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("yml");
 
         match ext {
             "json" => Self::parse_json(&content),
@@ -277,7 +274,7 @@ impl ComposeParser {
                 let default = &var_expr[idx + 2..];
                 vars.get(var_name)
                     .filter(|v| !v.is_empty())
-                    .map(|v| v.clone())
+                    .cloned()
                     .unwrap_or_else(|| default.to_string())
             } else if let Some(idx) = var_expr.find('-') {
                 let var_name = &var_expr[..idx];
@@ -424,7 +421,7 @@ impl ComposeParser {
             }
 
             // Warn on deprecated fields
-            if svc.links.len() > 0 {
+            if !svc.links.is_empty() {
                 warnings.push(ValidationIssue {
                     service: Some(name.clone()),
                     field: Some("links".to_string()),
@@ -445,10 +442,7 @@ impl ComposeParser {
                         errors.push(ValidationIssue {
                             service: Some(name.clone()),
                             field: Some("depends_on".to_string()),
-                            message: format!(
-                                "depends_on references unknown service '{}'",
-                                dep
-                            ),
+                            message: format!("depends_on references unknown service '{}'", dep),
                             severity: "error".to_string(),
                         });
                     }
@@ -462,16 +456,11 @@ impl ComposeParser {
                     ServiceNetworks::Map(map) => map.keys().map(|s| s.as_str()).collect(),
                 };
                 for net_name in net_names {
-                    if !compose.networks.contains_key(net_name)
-                        && net_name != "default"
-                    {
+                    if !compose.networks.contains_key(net_name) && net_name != "default" {
                         errors.push(ValidationIssue {
                             service: Some(name.clone()),
                             field: Some("networks".to_string()),
-                            message: format!(
-                                "references undefined network '{}'",
-                                net_name
-                            ),
+                            message: format!("references undefined network '{}'", net_name),
                             severity: "error".to_string(),
                         });
                     }
@@ -488,10 +477,7 @@ impl ComposeParser {
                     errors.push(ValidationIssue {
                         service: Some(name.clone()),
                         field: Some("secrets".to_string()),
-                        message: format!(
-                            "references undefined secret '{}'",
-                            sec_name
-                        ),
+                        message: format!("references undefined secret '{}'", sec_name),
                         severity: "error".to_string(),
                     });
                 }
@@ -507,10 +493,7 @@ impl ComposeParser {
                     errors.push(ValidationIssue {
                         service: Some(name.clone()),
                         field: Some("configs".to_string()),
-                        message: format!(
-                            "references undefined config '{}'",
-                            cfg_name
-                        ),
+                        message: format!("references undefined config '{}'", cfg_name),
                         severity: "error".to_string(),
                     });
                 }
