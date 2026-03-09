@@ -4,8 +4,8 @@
 
 use crate::types::*;
 use chrono::{DateTime, Duration, Utc};
-use log::{debug, warn};
-use std::path::PathBuf;
+use log::debug;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 /// Scan the user's `~/.ssh/` for opkssh-generated keys.
@@ -73,7 +73,7 @@ fn is_opkssh_key(pub_content: &str) -> bool {
 }
 
 /// Build key info from file paths and content.
-async fn build_key_info(key_path: &PathBuf, pub_path: &PathBuf, pub_content: &str) -> OpksshKey {
+async fn build_key_info(key_path: &PathBuf, pub_path: &Path, pub_content: &str) -> OpksshKey {
     let id = uuid::Uuid::new_v4().to_string();
 
     // Try to get file creation time as an approximation
@@ -81,7 +81,7 @@ async fn build_key_info(key_path: &PathBuf, pub_path: &PathBuf, pub_content: &st
         .await
         .ok()
         .and_then(|m| m.modified().ok())
-        .map(|t| DateTime::<Utc>::from(t));
+        .map(DateTime::<Utc>::from);
 
     // Default 24h expiry from creation
     let expires_at = created_at.map(|c| c + Duration::hours(24));
@@ -116,18 +116,16 @@ async fn build_key_info(key_path: &PathBuf, pub_path: &PathBuf, pub_content: &st
 }
 
 /// Get SSH key fingerprint using ssh-keygen.
-async fn get_key_fingerprint(pub_path: &PathBuf) -> Option<String> {
+async fn get_key_fingerprint(pub_path: &Path) -> Option<String> {
     match Command::new("ssh-keygen")
-        .args(&["-lf", &pub_path.to_string_lossy()])
+        .args(["-lf", &pub_path.to_string_lossy()])
         .output()
         .await
     {
         Ok(output) if output.status.success() => {
             let out = String::from_utf8_lossy(&output.stdout);
             // Output: "256 SHA256:... user@host (ECDSA)"
-            out.split_whitespace()
-                .nth(1)
-                .map(|s| s.to_string())
+            out.split_whitespace().nth(1).map(|s| s.to_string())
         }
         _ => None,
     }

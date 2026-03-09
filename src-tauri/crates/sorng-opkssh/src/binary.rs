@@ -84,7 +84,9 @@ pub async fn find_binary() -> Option<PathBuf> {
     // Check common installation paths
     let common_paths: Vec<PathBuf> = if cfg!(target_os = "windows") {
         vec![
-            dirs::home_dir().map(|h| h.join("opkssh.exe")).unwrap_or_default(),
+            dirs::home_dir()
+                .map(|h| h.join("opkssh.exe"))
+                .unwrap_or_default(),
             PathBuf::from(r"C:\Program Files\opkssh\opkssh.exe"),
             PathBuf::from(r"C:\ProgramData\chocolatey\bin\opkssh.exe"),
         ]
@@ -92,13 +94,17 @@ pub async fn find_binary() -> Option<PathBuf> {
         vec![
             PathBuf::from("/usr/local/bin/opkssh"),
             PathBuf::from("/opt/homebrew/bin/opkssh"),
-            dirs::home_dir().map(|h| h.join("opkssh")).unwrap_or_default(),
+            dirs::home_dir()
+                .map(|h| h.join("opkssh"))
+                .unwrap_or_default(),
         ]
     } else {
         vec![
             PathBuf::from("/usr/local/bin/opkssh"),
             PathBuf::from("/usr/bin/opkssh"),
-            dirs::home_dir().map(|h| h.join("opkssh")).unwrap_or_default(),
+            dirs::home_dir()
+                .map(|h| h.join("opkssh"))
+                .unwrap_or_default(),
         ]
     };
 

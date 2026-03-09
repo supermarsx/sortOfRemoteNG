@@ -4,7 +4,6 @@
 //! on remote servers via SSH command execution.
 
 use crate::types::*;
-use log::{debug, info};
 
 /// Build a shell script to read the server's opkssh configuration.
 pub fn build_read_config_script() -> String {
@@ -79,7 +78,9 @@ pub fn parse_server_config(raw: &str) -> ServerOpksshConfig {
     let user_auth_ids = parse_auth_ids(&user_auth_raw);
 
     let sshd_snippet = extract("===SSHD_CONFIG_BEGIN===", "===SSHD_CONFIG_END===");
-    let sshd_config_snippet = if sshd_snippet.contains("# no opkssh") || sshd_snippet.contains("# sshd_config not found") {
+    let sshd_config_snippet = if sshd_snippet.contains("# no opkssh")
+        || sshd_snippet.contains("# sshd_config not found")
+    {
         None
     } else {
         Some(sshd_snippet)
@@ -178,7 +179,8 @@ pub fn build_remove_identity_command(entry: &AuthIdEntry, user_level: bool) -> S
         "/etc/opk/auth_id"
     };
 
-    let pattern = format!("{}\\s+{}\\s+{}", 
+    let pattern = format!(
+        "{}\\s+{}\\s+{}",
         regex_escape(&entry.principal),
         regex_escape(&entry.identity),
         regex_escape(&entry.issuer)
@@ -195,9 +197,7 @@ pub fn build_remove_identity_command(entry: &AuthIdEntry, user_level: bool) -> S
 pub fn build_add_provider_command(entry: &ProviderEntry) -> String {
     format!(
         "echo '{} {} {}' | sudo tee -a /etc/opk/providers > /dev/null",
-        entry.issuer,
-        entry.client_id,
-        entry.expiration_policy
+        entry.issuer, entry.client_id, entry.expiration_policy
     )
 }
 
@@ -233,7 +233,9 @@ fn shell_escape(s: &str) -> String {
 
 /// Escape special regex characters for sed patterns.
 fn regex_escape(s: &str) -> String {
-    let special = ['/', '.', '*', '[', ']', '(', ')', '{', '}', '\\', '+', '?', '|', '^', '$'];
+    let special = [
+        '/', '.', '*', '[', ']', '(', ')', '{', '}', '\\', '+', '?', '|', '^', '$',
+    ];
     let mut result = String::with_capacity(s.len() * 2);
     for c in s.chars() {
         if special.contains(&c) {
@@ -257,8 +259,14 @@ https://login.microsoftonline.com/9188040d/v2.0 096ce0a3 48h
         let entries = parse_providers(content);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].issuer, "https://accounts.google.com");
-        assert_eq!(entries[0].expiration_policy, ExpirationPolicy::TwentyFourHours);
-        assert_eq!(entries[1].expiration_policy, ExpirationPolicy::FortyEightHours);
+        assert_eq!(
+            entries[0].expiration_policy,
+            ExpirationPolicy::TwentyFourHours
+        );
+        assert_eq!(
+            entries[1].expiration_policy,
+            ExpirationPolicy::FortyEightHours
+        );
     }
 
     #[test]

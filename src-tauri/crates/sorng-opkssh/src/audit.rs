@@ -3,8 +3,7 @@
 //! Parse and manage opkssh audit output for identity and access reviews.
 
 use crate::types::*;
-use chrono::{NaiveDateTime, Utc, DateTime};
-use log::debug;
+use chrono::{DateTime, NaiveDateTime, Utc};
 
 /// Build the command to run `opkssh audit` on a remote server.
 pub fn build_audit_command(principal: Option<&str>, limit: Option<usize>) -> String {
@@ -131,7 +130,8 @@ mod tests {
 
     #[test]
     fn test_parse_audit_line_basic() {
-        let entry = parse_audit_line("alice@gmail.com root https://accounts.google.com login success");
+        let entry =
+            parse_audit_line("alice@gmail.com root https://accounts.google.com login success");
         assert!(entry.is_some());
         let e = entry.unwrap();
         assert_eq!(e.identity, "alice@gmail.com");

@@ -4,9 +4,8 @@
 //! Managed as Tauri application state.
 
 use crate::types::*;
-use crate::{binary, keys, login, providers, server_policy, audit};
+use crate::{audit, binary, keys, login, providers, server_policy};
 use chrono::Utc;
-use log::{info, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -127,10 +126,7 @@ impl OpksshService {
     }
 
     /// Update the local client configuration and write to disk.
-    pub async fn update_client_config(
-        &mut self,
-        config: OpksshClientConfig,
-    ) -> Result<(), String> {
+    pub async fn update_client_config(&mut self, config: OpksshClientConfig) -> Result<(), String> {
         providers::write_client_config(&config).await?;
         self.client_config = Some(config);
         Ok(())
@@ -149,13 +145,10 @@ impl OpksshService {
     }
 
     /// Parse server config output.
-    pub fn parse_server_config(
-        &mut self,
-        session_id: &str,
-        raw: &str,
-    ) -> ServerOpksshConfig {
+    pub fn parse_server_config(&mut self, session_id: &str, raw: &str) -> ServerOpksshConfig {
         let config = server_policy::parse_server_config(raw);
-        self.server_configs.insert(session_id.to_string(), config.clone());
+        self.server_configs
+            .insert(session_id.to_string(), config.clone());
         config
     }
 
@@ -170,11 +163,7 @@ impl OpksshService {
     }
 
     /// Build command to remove an authorized identity.
-    pub fn build_remove_identity_command(
-        &self,
-        entry: &AuthIdEntry,
-        user_level: bool,
-    ) -> String {
+    pub fn build_remove_identity_command(&self, entry: &AuthIdEntry, user_level: bool) -> String {
         server_policy::build_remove_identity_command(entry, user_level)
     }
 
@@ -196,22 +185,15 @@ impl OpksshService {
     // ── Audit ──────────────────────────────────────────────────
 
     /// Build audit command.
-    pub fn build_audit_command(
-        &self,
-        principal: Option<&str>,
-        limit: Option<usize>,
-    ) -> String {
+    pub fn build_audit_command(&self, principal: Option<&str>, limit: Option<usize>) -> String {
         audit::build_audit_command(principal, limit)
     }
 
     /// Parse audit output.
-    pub fn parse_audit_output(
-        &mut self,
-        session_id: &str,
-        raw: &str,
-    ) -> AuditResult {
+    pub fn parse_audit_output(&mut self, session_id: &str, raw: &str) -> AuditResult {
         let result = audit::parse_audit_output(raw);
-        self.audit_results.insert(session_id.to_string(), result.clone());
+        self.audit_results
+            .insert(session_id.to_string(), result.clone());
         result
     }
 
@@ -241,9 +223,9 @@ impl OpksshService {
 
     /// Build the OPKSSH_PROVIDERS env var string from the current config.
     pub fn build_env_providers_string(&self) -> Option<String> {
-        self.client_config.as_ref().map(|c| {
-            providers::build_env_providers_string(&c.providers)
-        })
+        self.client_config
+            .as_ref()
+            .map(|c| providers::build_env_providers_string(&c.providers))
     }
 }
 

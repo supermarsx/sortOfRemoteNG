@@ -48,15 +48,15 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod types;
-pub mod service;
-pub mod binary;
-pub mod login;
-pub mod keys;
-pub mod server_policy;
-pub mod providers;
 pub mod audit;
+pub mod binary;
 pub mod commands;
+pub mod keys;
+pub mod login;
+pub mod providers;
+pub mod server_policy;
+pub mod service;
+pub mod types;
 
-pub use types::*;
 pub use service::{OpksshService, OpksshServiceState};
+pub use types::*;

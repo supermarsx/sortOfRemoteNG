@@ -42,9 +42,7 @@ pub async fn opkssh_login(
 
 /// List all opkssh-generated keys on disk.
 #[tauri::command]
-pub async fn opkssh_list_keys(
-    state: State<'_, OpksshServiceState>,
-) -> CmdResult<Vec<OpksshKey>> {
+pub async fn opkssh_list_keys(state: State<'_, OpksshServiceState>) -> CmdResult<Vec<OpksshKey>> {
     let mut svc = state.lock().await;
     Ok(svc.refresh_keys().await)
 }
@@ -219,9 +217,7 @@ pub async fn opkssh_get_audit_results(
 
 /// Get the full opkssh integration status.
 #[tauri::command]
-pub async fn opkssh_get_status(
-    state: State<'_, OpksshServiceState>,
-) -> CmdResult<OpksshStatus> {
+pub async fn opkssh_get_status(state: State<'_, OpksshServiceState>) -> CmdResult<OpksshStatus> {
     let mut svc = state.lock().await;
     Ok(svc.get_status().await)
 }

@@ -4,7 +4,7 @@
 //! provider configuration.
 
 use crate::types::*;
-use log::{debug, info, warn};
+use log::info;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -14,13 +14,15 @@ pub fn well_known_providers() -> Vec<CustomProvider> {
         CustomProvider {
             alias: "google".into(),
             issuer: "https://accounts.google.com".into(),
-            client_id: "206584157355-7cbe4s640tvm7naoludob4ut1emii7sf.apps.googleusercontent.com".into(),
+            client_id: "206584157355-7cbe4s640tvm7naoludob4ut1emii7sf.apps.googleusercontent.com"
+                .into(),
             client_secret: None,
             scopes: None,
         },
         CustomProvider {
             alias: "microsoft".into(),
-            issuer: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0".into(),
+            issuer: "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0"
+                .into(),
             client_id: "096ce0a3-5e72-4da8-9c86-12924b294a01".into(),
             client_secret: None,
             scopes: None,
@@ -159,7 +161,11 @@ fn parse_yaml_kv(line: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = line.splitn(2, ':').collect();
     if parts.len() == 2 {
         let key = parts[0].trim().to_string();
-        let value = parts[1].trim().trim_matches('"').trim_matches('\'').to_string();
+        let value = parts[1]
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
         if !key.is_empty() {
             return Some((key, value));
         }
@@ -194,10 +200,18 @@ fn parse_env_providers(env: &str) -> Vec<CustomProvider> {
                 issuer: parts.get(1).unwrap_or(&"").to_string(),
                 client_id: parts.get(2).unwrap_or(&"").to_string(),
                 client_secret: parts.get(3).and_then(|s| {
-                    if s.is_empty() { None } else { Some(s.to_string()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
                 }),
                 scopes: parts.get(4).and_then(|s| {
-                    if s.is_empty() { None } else { Some(s.to_string()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
                 }),
             });
         }
@@ -207,8 +221,7 @@ fn parse_env_providers(env: &str) -> Vec<CustomProvider> {
 
 /// Write an updated client config to `~/.opk/config.yml`.
 pub async fn write_client_config(config: &OpksshClientConfig) -> Result<(), String> {
-    let path = config_path()
-        .ok_or_else(|| "Cannot determine config path".to_string())?;
+    let path = config_path().ok_or_else(|| "Cannot determine config path".to_string())?;
 
     // Ensure directory exists
     if let Some(dir) = path.parent() {
@@ -250,11 +263,7 @@ pub fn build_env_providers_string(providers: &[CustomProvider]) -> String {
     providers
         .iter()
         .map(|p| {
-            let mut parts = vec![
-                p.alias.clone(),
-                p.issuer.clone(),
-                p.client_id.clone(),
-            ];
+            let mut parts = vec![p.alias.clone(), p.issuer.clone(), p.client_id.clone()];
             parts.push(p.client_secret.clone().unwrap_or_default());
             parts.push(p.scopes.clone().unwrap_or_default());
             parts.join(",")
@@ -288,15 +297,13 @@ mod tests {
 
     #[test]
     fn test_build_env_providers_string() {
-        let providers = vec![
-            CustomProvider {
-                alias: "test".into(),
-                issuer: "https://test.com".into(),
-                client_id: "cid".into(),
-                client_secret: None,
-                scopes: Some("openid".into()),
-            },
-        ];
+        let providers = vec![CustomProvider {
+            alias: "test".into(),
+            issuer: "https://test.com".into(),
+            client_id: "cid".into(),
+            client_secret: None,
+            scopes: Some("openid".into()),
+        }];
         let result = build_env_providers_string(&providers);
         assert!(result.contains("test,https://test.com,cid,"));
     }

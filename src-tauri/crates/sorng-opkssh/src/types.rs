@@ -118,10 +118,12 @@ pub struct OpksshKey {
 /// Expiration policy for a provider entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ExpirationPolicy {
     #[serde(rename = "12h")]
     TwelveHours,
     #[serde(rename = "24h")]
+    #[default]
     TwentyFourHours,
     #[serde(rename = "48h")]
     FortyEightHours,
@@ -143,12 +145,6 @@ impl std::fmt::Display for ExpirationPolicy {
             Self::Oidc => write!(f, "oidc"),
             Self::OidcRefreshed => write!(f, "oidc-refreshed"),
         }
-    }
-}
-
-impl Default for ExpirationPolicy {
-    fn default() -> Self {
-        Self::TwentyFourHours
     }
 }
 

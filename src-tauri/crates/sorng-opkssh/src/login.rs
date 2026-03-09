@@ -5,7 +5,7 @@
 
 use crate::types::*;
 use chrono::{Duration, Utc};
-use log::{info, warn};
+use log::info;
 use std::path::PathBuf;
 use tokio::process::Command;
 
@@ -118,17 +118,9 @@ fn parse_key_path(output: &str, opts: &OpksshLoginOptions) -> Option<String> {
     }
 
     // Fall back to default path
-    let key_name = opts
-        .key_file_name
-        .as_deref()
-        .unwrap_or("id_ecdsa");
+    let key_name = opts.key_file_name.as_deref().unwrap_or("id_ecdsa");
 
-    dirs::home_dir().map(|h| {
-        h.join(".ssh")
-            .join(key_name)
-            .to_string_lossy()
-            .to_string()
-    })
+    dirs::home_dir().map(|h| h.join(".ssh").join(key_name).to_string_lossy().to_string())
 }
 
 /// Extract a file path from a log line.
@@ -148,10 +140,13 @@ fn extract_path_from_line(line: &str) -> Option<String> {
 fn parse_identity(output: &str) -> Option<String> {
     for line in output.lines() {
         let lower = line.to_lowercase();
-        if lower.contains("authenticated") || lower.contains("identity") || lower.contains("email") {
+        if lower.contains("authenticated") || lower.contains("identity") || lower.contains("email")
+        {
             // Look for something that looks like an email
             for token in line.split_whitespace() {
-                let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '@' && c != '.' && c != '-' && c != '_');
+                let cleaned = token.trim_matches(|c: char| {
+                    !c.is_alphanumeric() && c != '@' && c != '.' && c != '-' && c != '_'
+                });
                 if cleaned.contains('@') && cleaned.contains('.') {
                     return Some(cleaned.to_string());
                 }
@@ -184,7 +179,9 @@ mod tests {
             ..Default::default()
         };
         let args = build_login_args(&opts);
-        assert!(args.contains(&"--provider=https://auth.example.com,my-client,,openid profile email".to_string()));
+        assert!(args.contains(
+            &"--provider=https://auth.example.com,my-client,,openid profile email".to_string()
+        ));
     }
 
     #[test]
