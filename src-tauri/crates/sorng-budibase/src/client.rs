@@ -24,7 +24,9 @@ impl BudibaseClient {
             builder = builder.danger_accept_invalid_certs(true);
         }
 
-        let http = builder.build().map_err(|e| BudibaseError::connection(&e.to_string()))?;
+        let http = builder
+            .build()
+            .map_err(|e| BudibaseError::connection(&e.to_string()))?;
 
         // Normalise base URL (strip trailing slash)
         let base_url = config.host.trim_end_matches('/').to_string();
@@ -40,10 +42,16 @@ impl BudibaseClient {
     /// Build the default headers for Budibase API requests.
     fn default_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert("x-budibase-api-key", HeaderValue::from_str(&self.api_key).unwrap_or_else(|_| HeaderValue::from_static("")));
+        headers.insert(
+            "x-budibase-api-key",
+            HeaderValue::from_str(&self.api_key).unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if let Some(ref app_id) = self.app_id {
-            headers.insert("x-budibase-app-id", HeaderValue::from_str(app_id).unwrap_or_else(|_| HeaderValue::from_static("")));
+            headers.insert(
+                "x-budibase-app-id",
+                HeaderValue::from_str(app_id).unwrap_or_else(|_| HeaderValue::from_static("")),
+            );
         }
         headers
     }
@@ -62,16 +70,24 @@ impl BudibaseClient {
 
     pub async fn get(&self, path: &str) -> BudibaseResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .headers(self.default_headers())
             .send()
             .await?;
         self.handle_response(resp).await
     }
 
-    pub async fn get_with_params(&self, path: &str, params: &[(&str, &str)]) -> BudibaseResult<serde_json::Value> {
+    pub async fn get_with_params(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+    ) -> BudibaseResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .headers(self.default_headers())
             .query(params)
             .send()
@@ -81,9 +97,15 @@ impl BudibaseClient {
 
     // ── POST ─────────────────────────────────────────────────────────
 
-    pub async fn post(&self, path: &str, body: &serde_json::Value) -> BudibaseResult<serde_json::Value> {
+    pub async fn post(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> BudibaseResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .headers(self.default_headers())
             .json(body)
             .send()
@@ -93,7 +115,9 @@ impl BudibaseClient {
 
     pub async fn post_empty(&self, path: &str) -> BudibaseResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .headers(self.default_headers())
             .send()
             .await?;
@@ -102,9 +126,15 @@ impl BudibaseClient {
 
     // ── PUT ──────────────────────────────────────────────────────────
 
-    pub async fn put(&self, path: &str, body: &serde_json::Value) -> BudibaseResult<serde_json::Value> {
+    pub async fn put(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> BudibaseResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.put(&url)
+        let resp = self
+            .http
+            .put(&url)
             .headers(self.default_headers())
             .json(body)
             .send()
@@ -116,7 +146,9 @@ impl BudibaseClient {
 
     pub async fn delete(&self, path: &str) -> BudibaseResult<serde_json::Value> {
         let url = self.url(path);
-        let resp = self.http.delete(&url)
+        let resp = self
+            .http
+            .delete(&url)
             .headers(self.default_headers())
             .send()
             .await?;
@@ -127,21 +159,29 @@ impl BudibaseClient {
 
     async fn handle_response(&self, resp: reqwest::Response) -> BudibaseResult<serde_json::Value> {
         let status = resp.status().as_u16();
-        if status >= 200 && status < 300 {
+        if (200..300).contains(&status) {
             let text = resp.text().await.unwrap_or_default();
             if text.is_empty() {
                 return Ok(serde_json::Value::Null);
             }
-            serde_json::from_str(&text).map_err(|e| BudibaseError::parse(&format!("Invalid JSON response: {e}")))
+            serde_json::from_str(&text)
+                .map_err(|e| BudibaseError::parse(&format!("Invalid JSON response: {e}")))
         } else {
             let body = resp.text().await.unwrap_or_default();
             match status {
-                401 => Err(BudibaseError::auth(&format!("Authentication failed: {body}"))),
+                401 => Err(BudibaseError::auth(&format!(
+                    "Authentication failed: {body}"
+                ))),
                 403 => Err(BudibaseError::forbidden(&format!("Forbidden: {body}"))),
                 404 => Err(BudibaseError::not_found(&format!("Not found: {body}"))),
                 409 => Err(BudibaseError::conflict(&format!("Conflict: {body}"))),
-                429 => Err(BudibaseError::rate_limited(&format!("Rate limited: {body}"))),
-                _ => Err(BudibaseError::api(status, &format!("API error {status}: {body}"))),
+                429 => Err(BudibaseError::rate_limited(&format!(
+                    "Rate limited: {body}"
+                ))),
+                _ => Err(BudibaseError::api(
+                    status,
+                    &format!("API error {status}: {body}"),
+                )),
             }
         }
     }

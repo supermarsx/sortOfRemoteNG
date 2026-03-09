@@ -29,24 +29,58 @@ pub struct BudibaseError {
 
 impl BudibaseError {
     pub fn new(kind: BudibaseErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: None }
+        Self {
+            kind,
+            message: message.into(),
+            details: None,
+        }
     }
 
-    pub fn with_details(kind: BudibaseErrorKind, message: impl Into<String>, details: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: Some(details.into()) }
+    pub fn with_details(
+        kind: BudibaseErrorKind,
+        message: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            details: Some(details.into()),
+        }
     }
 
-    pub fn connection(msg: &str) -> Self { Self::new(BudibaseErrorKind::ConnectionFailed, msg) }
-    pub fn auth(msg: &str) -> Self { Self::new(BudibaseErrorKind::AuthError, msg) }
-    pub fn not_found(msg: &str) -> Self { Self::new(BudibaseErrorKind::NotFound, msg) }
-    pub fn conflict(msg: &str) -> Self { Self::new(BudibaseErrorKind::Conflict, msg) }
-    pub fn forbidden(msg: &str) -> Self { Self::new(BudibaseErrorKind::Forbidden, msg) }
-    pub fn timeout(msg: &str) -> Self { Self::new(BudibaseErrorKind::Timeout, msg) }
-    pub fn parse(msg: &str) -> Self { Self::new(BudibaseErrorKind::ParseError, msg) }
-    pub fn validation(msg: &str) -> Self { Self::new(BudibaseErrorKind::ValidationError, msg) }
-    pub fn rate_limited(msg: &str) -> Self { Self::new(BudibaseErrorKind::RateLimited, msg) }
-    pub fn session(msg: &str) -> Self { Self::new(BudibaseErrorKind::SessionError, msg) }
-    pub fn other(msg: &str) -> Self { Self::new(BudibaseErrorKind::Other, msg) }
+    pub fn connection(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::ConnectionFailed, msg)
+    }
+    pub fn auth(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::AuthError, msg)
+    }
+    pub fn not_found(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::NotFound, msg)
+    }
+    pub fn conflict(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::Conflict, msg)
+    }
+    pub fn forbidden(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::Forbidden, msg)
+    }
+    pub fn timeout(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::Timeout, msg)
+    }
+    pub fn parse(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::ParseError, msg)
+    }
+    pub fn validation(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::ValidationError, msg)
+    }
+    pub fn rate_limited(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::RateLimited, msg)
+    }
+    pub fn session(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::SessionError, msg)
+    }
+    pub fn other(msg: &str) -> Self {
+        Self::new(BudibaseErrorKind::Other, msg)
+    }
 
     pub fn api(status: u16, msg: &str) -> Self {
         Self::new(BudibaseErrorKind::ApiError(status), msg)
