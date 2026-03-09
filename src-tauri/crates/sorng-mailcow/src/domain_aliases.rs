@@ -17,7 +17,9 @@ impl DomainAliasManager {
         client: &MailcowClient,
         alias_domain: &str,
     ) -> MailcowResult<MailcowDomainAlias> {
-        client.get(&format!("/get/alias-domain/{alias_domain}")).await
+        client
+            .get(&format!("/get/alias-domain/{alias_domain}"))
+            .await
     }
 
     /// Create a domain alias. POST /api/v1/add/alias-domain
@@ -46,6 +48,8 @@ impl DomainAliasManager {
         client: &MailcowClient,
         alias_domain: &str,
     ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/alias-domain", &serde_json::json!([alias_domain])).await
+        client
+            .post("/delete/alias-domain", &serde_json::json!([alias_domain]))
+            .await
     }
 }

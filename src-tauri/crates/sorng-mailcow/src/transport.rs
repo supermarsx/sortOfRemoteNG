@@ -36,15 +36,17 @@ impl TransportManager {
             items: Vec<String>,
             attr: &'a CreateTransportMapRequest,
         }
-        let payload = Envelope { items: vec![id.to_string()], attr: req };
+        let payload = Envelope {
+            items: vec![id.to_string()],
+            attr: req,
+        };
         client.post("/edit/transport", &payload).await
     }
 
     /// Delete a transport map. POST /api/v1/delete/transport
-    pub async fn delete(
-        client: &MailcowClient,
-        id: i64,
-    ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/transport", &serde_json::json!([id.to_string()])).await
+    pub async fn delete(client: &MailcowClient, id: i64) -> MailcowResult<serde_json::Value> {
+        client
+            .post("/delete/transport", &serde_json::json!([id.to_string()]))
+            .await
     }
 }

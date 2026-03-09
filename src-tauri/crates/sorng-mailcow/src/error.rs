@@ -59,7 +59,10 @@ impl std::error::Error for MailcowError {}
 
 impl MailcowError {
     pub fn new(kind: MailcowErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected(msg: impl Into<String>) -> Self {

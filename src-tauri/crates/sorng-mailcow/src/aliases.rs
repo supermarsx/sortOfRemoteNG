@@ -14,8 +14,7 @@ impl AliasManager {
 
     /// Get a single alias by ID. GET /api/v1/get/alias/{id}
     pub async fn get(client: &MailcowClient, id: i64) -> MailcowResult<MailcowAlias> {
-        let items: Vec<MailcowAlias> =
-            client.get(&format!("/get/alias/{id}")).await?;
+        let items: Vec<MailcowAlias> = client.get(&format!("/get/alias/{id}")).await?;
         items.into_iter().next().ok_or_else(|| {
             crate::error::MailcowError::alias_not_found(format!("Alias not found: {id}"))
         })
@@ -40,15 +39,17 @@ impl AliasManager {
             items: Vec<String>,
             attr: &'a UpdateAliasRequest,
         }
-        let payload = Envelope { items: vec![id.to_string()], attr: req };
+        let payload = Envelope {
+            items: vec![id.to_string()],
+            attr: req,
+        };
         client.post("/edit/alias", &payload).await
     }
 
     /// Delete an alias. POST /api/v1/delete/alias
-    pub async fn delete(
-        client: &MailcowClient,
-        id: i64,
-    ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/alias", &serde_json::json!([id.to_string()])).await
+    pub async fn delete(client: &MailcowClient, id: i64) -> MailcowResult<serde_json::Value> {
+        client
+            .post("/delete/alias", &serde_json::json!([id.to_string()]))
+            .await
     }
 }

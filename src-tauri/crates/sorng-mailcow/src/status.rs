@@ -17,18 +17,16 @@ impl StatusManager {
     }
 
     /// Get Solr status. GET /api/v1/get/status/solr
-    pub async fn get_solr_status(
-        client: &MailcowClient,
-    ) -> MailcowResult<serde_json::Value> {
+    pub async fn get_solr_status(client: &MailcowClient) -> MailcowResult<serde_json::Value> {
         client.get("/get/status/solr").await
     }
 
     /// Get aggregated system status (containers + disk + solr).
-    pub async fn get_system_status(
-        client: &MailcowClient,
-    ) -> MailcowResult<MailcowSystemStatus> {
-        let containers: Vec<MailcowContainerStatus> =
-            client.get("/get/status/containers").await.unwrap_or_default();
+    pub async fn get_system_status(client: &MailcowClient) -> MailcowResult<MailcowSystemStatus> {
+        let containers: Vec<MailcowContainerStatus> = client
+            .get("/get/status/containers")
+            .await
+            .unwrap_or_default();
         let solr: Option<String> = client
             .get::<serde_json::Value>("/get/status/solr")
             .await
@@ -42,9 +40,7 @@ impl StatusManager {
     }
 
     /// Get Rspamd statistics. GET /api/v1/get/rspamd/stats
-    pub async fn get_rspamd_stats(
-        client: &MailcowClient,
-    ) -> MailcowResult<serde_json::Value> {
+    pub async fn get_rspamd_stats(client: &MailcowClient) -> MailcowResult<serde_json::Value> {
         client.get("/get/rspamd/stats").await
     }
 
@@ -128,15 +124,15 @@ impl StatusManager {
         client: &MailcowClient,
         id: i64,
     ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/app-passwd", &serde_json::json!([id])).await
+        client
+            .post("/delete/app-passwd", &serde_json::json!([id]))
+            .await
     }
 
     // ── Resources ────────────────────────────────────────────────────
 
     /// List all resources. GET /api/v1/get/resource/all
-    pub async fn list_resources(
-        client: &MailcowClient,
-    ) -> MailcowResult<Vec<MailcowResource>> {
+    pub async fn list_resources(client: &MailcowClient) -> MailcowResult<Vec<MailcowResource>> {
         client.get("/get/resource/all").await
     }
 
@@ -167,7 +163,10 @@ impl StatusManager {
             items: Vec<&'a str>,
             attr: &'a CreateResourceRequest,
         }
-        let payload = Envelope { items: vec![name], attr: req };
+        let payload = Envelope {
+            items: vec![name],
+            attr: req,
+        };
         client.post("/edit/resource", &payload).await
     }
 
@@ -176,6 +175,8 @@ impl StatusManager {
         client: &MailcowClient,
         name: &str,
     ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/resource", &serde_json::json!([name])).await
+        client
+            .post("/delete/resource", &serde_json::json!([name]))
+            .await
     }
 }

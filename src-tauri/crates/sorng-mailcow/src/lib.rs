@@ -18,18 +18,18 @@
 //! - **service** — Aggregate facade + Tauri state alias
 //! - **commands** — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod domains;
-pub mod mailboxes;
 pub mod aliases;
+pub mod client;
+pub mod commands;
 pub mod dkim;
 pub mod domain_aliases;
-pub mod transport;
-pub mod queue;
-pub mod quarantine;
+pub mod domains;
+pub mod error;
 pub mod logs;
-pub mod status;
+pub mod mailboxes;
+pub mod quarantine;
+pub mod queue;
 pub mod service;
-pub mod commands;
+pub mod status;
+pub mod transport;
+pub mod types;

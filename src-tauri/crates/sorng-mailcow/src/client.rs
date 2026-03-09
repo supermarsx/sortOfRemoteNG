@@ -48,7 +48,8 @@ impl MailcowClient {
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> MailcowResult<T> {
         let url = self.api_url(path);
         debug!("MAILCOW GET {url}");
-        let resp = self.apply_auth(self.http.get(&url))
+        let resp = self
+            .apply_auth(self.http.get(&url))
             .send()
             .await
             .map_err(|e| MailcowError::connection(format!("GET {url}: {e}")))?;
@@ -62,7 +63,8 @@ impl MailcowClient {
     ) -> MailcowResult<T> {
         let url = self.api_url(path);
         debug!("MAILCOW POST {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
             .map_err(|e| MailcowError::connection(format!("POST {url}: {e}")))?;
@@ -76,7 +78,8 @@ impl MailcowClient {
     ) -> MailcowResult<T> {
         let url = self.api_url(path);
         debug!("MAILCOW PUT {url}");
-        let resp = self.apply_auth(self.http.put(&url).json(body))
+        let resp = self
+            .apply_auth(self.http.put(&url).json(body))
             .send()
             .await
             .map_err(|e| MailcowError::connection(format!("PUT {url}: {e}")))?;
@@ -86,7 +89,8 @@ impl MailcowClient {
     pub async fn delete_req(&self, path: &str) -> MailcowResult<()> {
         let url = self.api_url(path);
         debug!("MAILCOW DELETE {url}");
-        let resp = self.apply_auth(self.http.delete(&url))
+        let resp = self
+            .apply_auth(self.http.delete(&url))
             .send()
             .await
             .map_err(|e| MailcowError::connection(format!("DELETE {url}: {e}")))?;
@@ -101,7 +105,8 @@ impl MailcowClient {
     pub async fn post_empty<T: DeserializeOwned>(&self, path: &str) -> MailcowResult<T> {
         let url = self.api_url(path);
         debug!("MAILCOW POST (empty) {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(&serde_json::json!({})))
+        let resp = self
+            .apply_auth(self.http.post(&url).json(&serde_json::json!({})))
             .send()
             .await
             .map_err(|e| MailcowError::connection(format!("POST {url}: {e}")))?;
@@ -115,7 +120,8 @@ impl MailcowClient {
     ) -> MailcowResult<T> {
         let url = self.api_url(path);
         debug!("MAILCOW DELETE+body {url}");
-        let resp = self.apply_auth(self.http.delete(&url).json(body))
+        let resp = self
+            .apply_auth(self.http.delete(&url).json(body))
             .send()
             .await
             .map_err(|e| MailcowError::connection(format!("DELETE {url}: {e}")))?;

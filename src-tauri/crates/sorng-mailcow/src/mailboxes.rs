@@ -21,16 +21,10 @@ impl MailboxManager {
     }
 
     /// Get a single mailbox. GET /api/v1/get/mailbox/{username}
-    pub async fn get(
-        client: &MailcowClient,
-        username: &str,
-    ) -> MailcowResult<MailcowMailbox> {
-        let items: Vec<MailcowMailbox> =
-            client.get(&format!("/get/mailbox/{username}")).await?;
+    pub async fn get(client: &MailcowClient, username: &str) -> MailcowResult<MailcowMailbox> {
+        let items: Vec<MailcowMailbox> = client.get(&format!("/get/mailbox/{username}")).await?;
         items.into_iter().next().ok_or_else(|| {
-            crate::error::MailcowError::mailbox_not_found(format!(
-                "Mailbox not found: {username}"
-            ))
+            crate::error::MailcowError::mailbox_not_found(format!("Mailbox not found: {username}"))
         })
     }
 
@@ -53,7 +47,10 @@ impl MailboxManager {
             items: Vec<&'a str>,
             attr: &'a UpdateMailboxRequest,
         }
-        let payload = Envelope { items: vec![username], attr: req };
+        let payload = Envelope {
+            items: vec![username],
+            attr: req,
+        };
         client.post("/edit/mailbox", &payload).await
     }
 
@@ -62,7 +59,9 @@ impl MailboxManager {
         client: &MailcowClient,
         username: &str,
     ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/mailbox", &serde_json::json!([username])).await
+        client
+            .post("/delete/mailbox", &serde_json::json!([username]))
+            .await
     }
 
     /// Set quarantine notification for a mailbox.

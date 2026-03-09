@@ -18,10 +18,7 @@ impl QuarantineManager {
     }
 
     /// Release a quarantined message. POST /api/v1/edit/quarantine
-    pub async fn release(
-        client: &MailcowClient,
-        id: i64,
-    ) -> MailcowResult<serde_json::Value> {
+    pub async fn release(client: &MailcowClient, id: i64) -> MailcowResult<serde_json::Value> {
         let payload = serde_json::json!({
             "items": [id],
             "attr": { "action": "release" }
@@ -30,11 +27,10 @@ impl QuarantineManager {
     }
 
     /// Delete a quarantined message. POST /api/v1/delete/quarantine
-    pub async fn delete(
-        client: &MailcowClient,
-        id: i64,
-    ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/quarantine", &serde_json::json!([id])).await
+    pub async fn delete(client: &MailcowClient, id: i64) -> MailcowResult<serde_json::Value> {
+        client
+            .post("/delete/quarantine", &serde_json::json!([id]))
+            .await
     }
 
     /// Whitelist the sender of a quarantined message. POST /api/v1/edit/quarantine
@@ -50,9 +46,7 @@ impl QuarantineManager {
     }
 
     /// Get quarantine notification settings. GET /api/v1/get/quarantine/settings
-    pub async fn get_settings(
-        client: &MailcowClient,
-    ) -> MailcowResult<serde_json::Value> {
+    pub async fn get_settings(client: &MailcowClient) -> MailcowResult<serde_json::Value> {
         client.get("/get/quarantine/settings").await
     }
 

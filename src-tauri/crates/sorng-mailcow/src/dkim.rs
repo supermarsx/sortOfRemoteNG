@@ -21,11 +21,10 @@ impl DkimManager {
     }
 
     /// Delete DKIM key for a domain. POST /api/v1/delete/dkim
-    pub async fn delete(
-        client: &MailcowClient,
-        domain: &str,
-    ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/dkim", &serde_json::json!([domain])).await
+    pub async fn delete(client: &MailcowClient, domain: &str) -> MailcowResult<serde_json::Value> {
+        client
+            .post("/delete/dkim", &serde_json::json!([domain]))
+            .await
     }
 
     /// Duplicate DKIM from one domain to another.

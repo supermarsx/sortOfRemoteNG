@@ -39,15 +39,17 @@ impl DomainManager {
             items: Vec<&'a str>,
             attr: &'a UpdateDomainRequest,
         }
-        let payload = Envelope { items: vec![domain], attr: req };
+        let payload = Envelope {
+            items: vec![domain],
+            attr: req,
+        };
         client.post("/edit/domain", &payload).await
     }
 
     /// Delete a domain. POST /api/v1/delete/domain
-    pub async fn delete(
-        client: &MailcowClient,
-        domain: &str,
-    ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/domain", &serde_json::json!([domain])).await
+    pub async fn delete(client: &MailcowClient, domain: &str) -> MailcowResult<serde_json::Value> {
+        client
+            .post("/delete/domain", &serde_json::json!([domain]))
+            .await
     }
 }

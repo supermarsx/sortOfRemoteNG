@@ -37,7 +37,9 @@ impl QueueManager {
         client: &MailcowClient,
         queue_id: &str,
     ) -> MailcowResult<serde_json::Value> {
-        client.post("/delete/mailq", &serde_json::json!([queue_id])).await
+        client
+            .post("/delete/mailq", &serde_json::json!([queue_id]))
+            .await
     }
 
     /// Delete all items in a queue (super delete).

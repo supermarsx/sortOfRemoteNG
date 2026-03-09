@@ -88,10 +88,18 @@ pub struct CreateDomainRequest {
     pub restart_sogo: bool,
 }
 
-fn default_aliases() -> i64 { 400 }
-fn default_mailboxes() -> i64 { 10 }
-fn default_max_quota() -> i64 { 1073741824 }
-fn default_true() -> bool { true }
+fn default_aliases() -> i64 {
+    400
+}
+fn default_mailboxes() -> i64 {
+    10
+}
+fn default_max_quota() -> i64 {
+    1073741824
+}
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateDomainRequest {
@@ -262,8 +270,12 @@ pub struct GenerateDkimRequest {
     pub key_size: i64,
 }
 
-fn default_dkim_selector() -> String { "dkim".to_string() }
-fn default_dkim_key_size() -> i64 { 2048 }
+fn default_dkim_selector() -> String {
+    "dkim".to_string()
+}
+fn default_dkim_key_size() -> i64 {
+    2048
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 6. Domain Aliases
