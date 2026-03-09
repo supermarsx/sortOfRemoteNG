@@ -58,16 +58,28 @@ pub struct InstanceState {
 
 impl InstanceState {
     pub fn running() -> Self {
-        Self { code: 16, name: "running".to_string() }
+        Self {
+            code: 16,
+            name: "running".to_string(),
+        }
     }
     pub fn stopped() -> Self {
-        Self { code: 80, name: "stopped".to_string() }
+        Self {
+            code: 80,
+            name: "stopped".to_string(),
+        }
     }
     pub fn pending() -> Self {
-        Self { code: 0, name: "pending".to_string() }
+        Self {
+            code: 0,
+            name: "pending".to_string(),
+        }
     }
     pub fn terminated() -> Self {
-        Self { code: 48, name: "terminated".to_string() }
+        Self {
+            code: 48,
+            name: "terminated".to_string(),
+        }
     }
 }
 
@@ -416,7 +428,10 @@ impl Ec2Client {
             params.insert("SubnetId".to_string(), subnet.clone());
         }
         if let Some(ref user_data) = input.user_data {
-            params.insert("UserData".to_string(), base64::Engine::encode(&base64::engine::general_purpose::STANDARD, user_data));
+            params.insert(
+                "UserData".to_string(),
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, user_data),
+            );
         }
         if let Some(ref profile) = input.iam_instance_profile {
             params.insert("IamInstanceProfile.Arn".to_string(), profile.clone());
@@ -435,7 +450,10 @@ impl Ec2Client {
             .map(|(k, v)| crate::config::Tag::new(k, v))
             .collect();
         if !tags.is_empty() {
-            params.insert("TagSpecification.1.ResourceType".to_string(), "instance".to_string());
+            params.insert(
+                "TagSpecification.1.ResourceType".to_string(),
+                "instance".to_string(),
+            );
             for (i, tag) in tags.iter().enumerate() {
                 params.insert(
                     format!("TagSpecification.1.Tag.{}.Key", i + 1),
@@ -460,7 +478,10 @@ impl Ec2Client {
                     params.insert(format!("{}.Ebs.VolumeType", prefix), vtype.clone());
                 }
                 if let Some(del) = ebs.delete_on_termination {
-                    params.insert(format!("{}.Ebs.DeleteOnTermination", prefix), del.to_string());
+                    params.insert(
+                        format!("{}.Ebs.DeleteOnTermination", prefix),
+                        del.to_string(),
+                    );
                 }
                 if let Some(enc) = ebs.encrypted {
                     params.insert(format!("{}.Ebs.Encrypted", prefix), enc.to_string());
@@ -470,14 +491,21 @@ impl Ec2Client {
 
         let response = self.client.query_request(SERVICE, &params).await?;
         let reservations = self.parse_describe_instances_response(&response.body);
-        reservations
-            .into_iter()
-            .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No reservation in RunInstances response", 200))
+        reservations.into_iter().next().ok_or_else(|| {
+            AwsError::new(
+                SERVICE,
+                "ParseError",
+                "No reservation in RunInstances response",
+                200,
+            )
+        })
     }
 
     /// StartInstances
-    pub async fn start_instances(&self, instance_ids: &[String]) -> AwsResult<Vec<InstanceStateChange>> {
+    pub async fn start_instances(
+        &self,
+        instance_ids: &[String],
+    ) -> AwsResult<Vec<InstanceStateChange>> {
         let mut params = client::build_query_params("StartInstances", API_VERSION);
         for (i, id) in instance_ids.iter().enumerate() {
             params.insert(format!("InstanceId.{}", i + 1), id.clone());
@@ -487,7 +515,11 @@ impl Ec2Client {
     }
 
     /// StopInstances
-    pub async fn stop_instances(&self, instance_ids: &[String], force: bool) -> AwsResult<Vec<InstanceStateChange>> {
+    pub async fn stop_instances(
+        &self,
+        instance_ids: &[String],
+        force: bool,
+    ) -> AwsResult<Vec<InstanceStateChange>> {
         let mut params = client::build_query_params("StopInstances", API_VERSION);
         for (i, id) in instance_ids.iter().enumerate() {
             params.insert(format!("InstanceId.{}", i + 1), id.clone());
@@ -510,7 +542,10 @@ impl Ec2Client {
     }
 
     /// TerminateInstances
-    pub async fn terminate_instances(&self, instance_ids: &[String]) -> AwsResult<Vec<InstanceStateChange>> {
+    pub async fn terminate_instances(
+        &self,
+        instance_ids: &[String],
+    ) -> AwsResult<Vec<InstanceStateChange>> {
         let mut params = client::build_query_params("TerminateInstances", API_VERSION);
         for (i, id) in instance_ids.iter().enumerate() {
             params.insert(format!("InstanceId.{}", i + 1), id.clone());
@@ -535,7 +570,10 @@ impl Ec2Client {
     }
 
     /// CreateSecurityGroup.
-    pub async fn create_security_group(&self, input: &CreateSecurityGroupInput) -> AwsResult<String> {
+    pub async fn create_security_group(
+        &self,
+        input: &CreateSecurityGroupInput,
+    ) -> AwsResult<String> {
         let mut params = client::build_query_params("CreateSecurityGroup", API_VERSION);
         params.insert("GroupName".to_string(), input.group_name.clone());
         params.insert("GroupDescription".to_string(), input.description.clone());
@@ -556,7 +594,10 @@ impl Ec2Client {
     }
 
     /// AuthorizeSecurityGroupIngress.
-    pub async fn authorize_security_group_ingress(&self, input: &AuthorizeSecurityGroupInput) -> AwsResult<()> {
+    pub async fn authorize_security_group_ingress(
+        &self,
+        input: &AuthorizeSecurityGroupInput,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("AuthorizeSecurityGroupIngress", API_VERSION);
         params.insert("GroupId".to_string(), input.group_id.clone());
         self.add_ip_permissions_params(&mut params, &input.ip_permissions);
@@ -565,7 +606,10 @@ impl Ec2Client {
     }
 
     /// AuthorizeSecurityGroupEgress.
-    pub async fn authorize_security_group_egress(&self, input: &AuthorizeSecurityGroupInput) -> AwsResult<()> {
+    pub async fn authorize_security_group_egress(
+        &self,
+        input: &AuthorizeSecurityGroupInput,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("AuthorizeSecurityGroupEgress", API_VERSION);
         params.insert("GroupId".to_string(), input.group_id.clone());
         self.add_ip_permissions_params(&mut params, &input.ip_permissions);
@@ -584,18 +628,22 @@ impl Ec2Client {
     }
 
     /// CreateKeyPair.
-    pub async fn create_key_pair(&self, key_name: &str, key_type: Option<&str>) -> AwsResult<(KeyPairInfo, String)> {
+    pub async fn create_key_pair(
+        &self,
+        key_name: &str,
+        key_type: Option<&str>,
+    ) -> AwsResult<(KeyPairInfo, String)> {
         let mut params = client::build_query_params("CreateKeyPair", API_VERSION);
         params.insert("KeyName".to_string(), key_name.to_string());
         if let Some(kt) = key_type {
             params.insert("KeyType".to_string(), kt.to_string());
         }
         let response = self.client.query_request(SERVICE, &params).await?;
-        let key_material = client::xml_text(&response.body, "keyMaterial")
-            .unwrap_or_default();
+        let key_material = client::xml_text(&response.body, "keyMaterial").unwrap_or_default();
         let info = KeyPairInfo {
             key_pair_id: client::xml_text(&response.body, "keyPairId").unwrap_or_default(),
-            key_name: client::xml_text(&response.body, "keyName").unwrap_or_else(|| key_name.to_string()),
+            key_name: client::xml_text(&response.body, "keyName")
+                .unwrap_or_else(|| key_name.to_string()),
             key_fingerprint: client::xml_text(&response.body, "keyFingerprint").unwrap_or_default(),
             key_type: key_type.map(|s| s.to_string()),
             create_time: None,
@@ -613,7 +661,11 @@ impl Ec2Client {
     }
 
     /// DescribeVpcs.
-    pub async fn describe_vpcs(&self, vpc_ids: &[String], filters: &[Filter]) -> AwsResult<Vec<Vpc>> {
+    pub async fn describe_vpcs(
+        &self,
+        vpc_ids: &[String],
+        filters: &[Filter],
+    ) -> AwsResult<Vec<Vpc>> {
         let mut params = client::build_query_params("DescribeVpcs", API_VERSION);
         for (i, id) in vpc_ids.iter().enumerate() {
             params.insert(format!("VpcId.{}", i + 1), id.clone());
@@ -624,7 +676,11 @@ impl Ec2Client {
     }
 
     /// DescribeSubnets.
-    pub async fn describe_subnets(&self, subnet_ids: &[String], filters: &[Filter]) -> AwsResult<Vec<Subnet>> {
+    pub async fn describe_subnets(
+        &self,
+        subnet_ids: &[String],
+        filters: &[Filter],
+    ) -> AwsResult<Vec<Subnet>> {
         let mut params = client::build_query_params("DescribeSubnets", API_VERSION);
         for (i, id) in subnet_ids.iter().enumerate() {
             params.insert(format!("SubnetId.{}", i + 1), id.clone());
@@ -670,7 +726,11 @@ impl Ec2Client {
     }
 
     /// DescribeVolumes.
-    pub async fn describe_volumes(&self, volume_ids: &[String], filters: &[Filter]) -> AwsResult<Vec<Volume>> {
+    pub async fn describe_volumes(
+        &self,
+        volume_ids: &[String],
+        filters: &[Filter],
+    ) -> AwsResult<Vec<Volume>> {
         let mut params = client::build_query_params("DescribeVolumes", API_VERSION);
         for (i, id) in volume_ids.iter().enumerate() {
             params.insert(format!("VolumeId.{}", i + 1), id.clone());
@@ -690,7 +750,10 @@ impl Ec2Client {
         iops: Option<u32>,
     ) -> AwsResult<Volume> {
         let mut params = client::build_query_params("CreateVolume", API_VERSION);
-        params.insert("AvailabilityZone".to_string(), availability_zone.to_string());
+        params.insert(
+            "AvailabilityZone".to_string(),
+            availability_zone.to_string(),
+        );
         params.insert("Size".to_string(), size.to_string());
         params.insert("VolumeType".to_string(), volume_type.to_string());
         params.insert("Encrypted".to_string(), encrypted.to_string());
@@ -724,7 +787,11 @@ impl Ec2Client {
     }
 
     /// DescribeSnapshots.
-    pub async fn describe_snapshots(&self, snapshot_ids: &[String], filters: &[Filter]) -> AwsResult<Vec<Snapshot>> {
+    pub async fn describe_snapshots(
+        &self,
+        snapshot_ids: &[String],
+        filters: &[Filter],
+    ) -> AwsResult<Vec<Snapshot>> {
         let mut params = client::build_query_params("DescribeSnapshots", API_VERSION);
         for (i, id) in snapshot_ids.iter().enumerate() {
             params.insert(format!("SnapshotId.{}", i + 1), id.clone());
@@ -735,7 +802,11 @@ impl Ec2Client {
     }
 
     /// CreateSnapshot.
-    pub async fn create_snapshot(&self, volume_id: &str, description: Option<&str>) -> AwsResult<Snapshot> {
+    pub async fn create_snapshot(
+        &self,
+        volume_id: &str,
+        description: Option<&str>,
+    ) -> AwsResult<Snapshot> {
         let mut params = client::build_query_params("CreateSnapshot", API_VERSION);
         params.insert("VolumeId".to_string(), volume_id.to_string());
         if let Some(desc) = description {
@@ -759,7 +830,12 @@ impl Ec2Client {
     }
 
     /// DescribeImages (AMIs).
-    pub async fn describe_images(&self, image_ids: &[String], filters: &[Filter], owners: &[String]) -> AwsResult<Vec<Image>> {
+    pub async fn describe_images(
+        &self,
+        image_ids: &[String],
+        filters: &[Filter],
+        owners: &[String],
+    ) -> AwsResult<Vec<Image>> {
         let mut params = client::build_query_params("DescribeImages", API_VERSION);
         for (i, id) in image_ids.iter().enumerate() {
             params.insert(format!("ImageId.{}", i + 1), id.clone());
@@ -773,7 +849,11 @@ impl Ec2Client {
     }
 
     /// CreateTags - tag any EC2 resource.
-    pub async fn create_tags(&self, resource_ids: &[String], tags: &[crate::config::Tag]) -> AwsResult<()> {
+    pub async fn create_tags(
+        &self,
+        resource_ids: &[String],
+        tags: &[crate::config::Tag],
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("CreateTags", API_VERSION);
         for (i, id) in resource_ids.iter().enumerate() {
             params.insert(format!("ResourceId.{}", i + 1), id.clone());
@@ -900,7 +980,10 @@ impl Ec2Client {
         let mut tags = HashMap::new();
         let tag_blocks = client::xml_blocks(xml, "item");
         for block in &tag_blocks {
-            if let (Some(key), Some(value)) = (client::xml_text(block, "key"), client::xml_text(block, "value")) {
+            if let (Some(key), Some(value)) = (
+                client::xml_text(block, "key"),
+                client::xml_text(block, "value"),
+            ) {
                 tags.insert(key, value);
             }
         }
@@ -998,7 +1081,8 @@ impl Ec2Client {
                     subnet_id,
                     vpc_id: client::xml_text(block, "vpcId").unwrap_or_default(),
                     cidr_block: client::xml_text(block, "cidrBlock").unwrap_or_default(),
-                    availability_zone: client::xml_text(block, "availabilityZone").unwrap_or_default(),
+                    availability_zone: client::xml_text(block, "availabilityZone")
+                        .unwrap_or_default(),
                     available_ip_address_count: client::xml_text(block, "availableIpAddressCount")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0),
@@ -1048,7 +1132,8 @@ impl Ec2Client {
                         .unwrap_or(0),
                     volume_type: client::xml_text(block, "volumeType").unwrap_or_default(),
                     state: client::xml_text(block, "status").unwrap_or_default(),
-                    availability_zone: client::xml_text(block, "availabilityZone").unwrap_or_default(),
+                    availability_zone: client::xml_text(block, "availabilityZone")
+                        .unwrap_or_default(),
                     encrypted: client::xml_text(block, "encrypted")
                         .map(|v| v == "true")
                         .unwrap_or(false),
@@ -1117,7 +1202,11 @@ impl Ec2Client {
             .collect()
     }
 
-    fn add_ip_permissions_params(&self, params: &mut std::collections::BTreeMap<String, String>, perms: &[IpPermission]) {
+    fn add_ip_permissions_params(
+        &self,
+        params: &mut std::collections::BTreeMap<String, String>,
+        perms: &[IpPermission],
+    ) {
         for (i, perm) in perms.iter().enumerate() {
             let prefix = format!("IpPermissions.{}", i + 1);
             params.insert(format!("{}.IpProtocol", prefix), perm.ip_protocol.clone());

@@ -74,7 +74,10 @@ impl SnsClient {
 
     // ── Topics ──────────────────────────────────────────────────────
 
-    pub async fn list_topics(&self, next_token: Option<&str>) -> AwsResult<(Vec<Topic>, Option<String>)> {
+    pub async fn list_topics(
+        &self,
+        next_token: Option<&str>,
+    ) -> AwsResult<(Vec<Topic>, Option<String>)> {
         let mut params = client::build_query_params("ListTopics", API_VERSION);
         if let Some(nt) = next_token {
             params.insert("NextToken".to_string(), nt.to_string());
@@ -88,7 +91,11 @@ impl SnsClient {
         Ok((arns, next))
     }
 
-    pub async fn create_topic(&self, name: &str, attributes: &HashMap<String, String>) -> AwsResult<String> {
+    pub async fn create_topic(
+        &self,
+        name: &str,
+        attributes: &HashMap<String, String>,
+    ) -> AwsResult<String> {
         let mut params = client::build_query_params("CreateTopic", API_VERSION);
         params.insert("Name".to_string(), name.to_string());
         for (i, (k, v)) in attributes.iter().enumerate() {
@@ -115,16 +122,27 @@ impl SnsClient {
             topic_arn: topic_arn.to_string(),
             display_name: attrs.get("DisplayName").cloned(),
             owner: attrs.get("Owner").cloned(),
-            subscriptions_confirmed: attrs.get("SubscriptionsConfirmed").and_then(|v| v.parse().ok()),
-            subscriptions_deleted: attrs.get("SubscriptionsDeleted").and_then(|v| v.parse().ok()),
-            subscriptions_pending: attrs.get("SubscriptionsPending").and_then(|v| v.parse().ok()),
+            subscriptions_confirmed: attrs
+                .get("SubscriptionsConfirmed")
+                .and_then(|v| v.parse().ok()),
+            subscriptions_deleted: attrs
+                .get("SubscriptionsDeleted")
+                .and_then(|v| v.parse().ok()),
+            subscriptions_pending: attrs
+                .get("SubscriptionsPending")
+                .and_then(|v| v.parse().ok()),
             effective_delivery_policy: attrs.get("EffectiveDeliveryPolicy").cloned(),
             policy: attrs.get("Policy").cloned(),
             kms_master_key_id: attrs.get("KmsMasterKeyId").cloned(),
         })
     }
 
-    pub async fn set_topic_attributes(&self, topic_arn: &str, attribute_name: &str, attribute_value: &str) -> AwsResult<()> {
+    pub async fn set_topic_attributes(
+        &self,
+        topic_arn: &str,
+        attribute_name: &str,
+        attribute_value: &str,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("SetTopicAttributes", API_VERSION);
         params.insert("TopicArn".to_string(), topic_arn.to_string());
         params.insert("AttributeName".to_string(), attribute_name.to_string());
@@ -135,13 +153,19 @@ impl SnsClient {
 
     // ── Subscriptions ───────────────────────────────────────────────
 
-    pub async fn subscribe(&self, topic_arn: &str, protocol: &str, endpoint: &str) -> AwsResult<String> {
+    pub async fn subscribe(
+        &self,
+        topic_arn: &str,
+        protocol: &str,
+        endpoint: &str,
+    ) -> AwsResult<String> {
         let mut params = client::build_query_params("Subscribe", API_VERSION);
         params.insert("TopicArn".to_string(), topic_arn.to_string());
         params.insert("Protocol".to_string(), protocol.to_string());
         params.insert("Endpoint".to_string(), endpoint.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
-        Ok(client::xml_text(&response.body, "SubscriptionArn").unwrap_or_else(|| "pending confirmation".to_string()))
+        Ok(client::xml_text(&response.body, "SubscriptionArn")
+            .unwrap_or_else(|| "pending confirmation".to_string()))
     }
 
     pub async fn unsubscribe(&self, subscription_arn: &str) -> AwsResult<()> {
@@ -151,43 +175,63 @@ impl SnsClient {
         Ok(())
     }
 
-    pub async fn list_subscriptions(&self, next_token: Option<&str>) -> AwsResult<(Vec<Subscription>, Option<String>)> {
+    pub async fn list_subscriptions(
+        &self,
+        next_token: Option<&str>,
+    ) -> AwsResult<(Vec<Subscription>, Option<String>)> {
         let mut params = client::build_query_params("ListSubscriptions", API_VERSION);
         if let Some(nt) = next_token {
             params.insert("NextToken".to_string(), nt.to_string());
         }
         let response = self.client.query_request(SERVICE, &params).await?;
-        let subs = client::xml_blocks(&response.body, "member").iter().filter_map(|b| {
-            Some(Subscription {
-                subscription_arn: client::xml_text(b, "SubscriptionArn")?,
-                topic_arn: client::xml_text(b, "TopicArn").unwrap_or_default(),
-                protocol: client::xml_text(b, "Protocol").unwrap_or_default(),
-                endpoint: client::xml_text(b, "Endpoint").unwrap_or_default(),
-                owner: client::xml_text(b, "Owner"),
+        let subs = client::xml_blocks(&response.body, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(Subscription {
+                    subscription_arn: client::xml_text(b, "SubscriptionArn")?,
+                    topic_arn: client::xml_text(b, "TopicArn").unwrap_or_default(),
+                    protocol: client::xml_text(b, "Protocol").unwrap_or_default(),
+                    endpoint: client::xml_text(b, "Endpoint").unwrap_or_default(),
+                    owner: client::xml_text(b, "Owner"),
+                })
             })
-        }).collect();
+            .collect();
         let next = client::xml_text(&response.body, "NextToken");
         Ok((subs, next))
     }
 
-    pub async fn list_subscriptions_by_topic(&self, topic_arn: &str) -> AwsResult<Vec<Subscription>> {
+    pub async fn list_subscriptions_by_topic(
+        &self,
+        topic_arn: &str,
+    ) -> AwsResult<Vec<Subscription>> {
         let mut params = client::build_query_params("ListSubscriptionsByTopic", API_VERSION);
         params.insert("TopicArn".to_string(), topic_arn.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
-        Ok(client::xml_blocks(&response.body, "member").iter().filter_map(|b| {
-            Some(Subscription {
-                subscription_arn: client::xml_text(b, "SubscriptionArn")?,
-                topic_arn: client::xml_text(b, "TopicArn").unwrap_or_default(),
-                protocol: client::xml_text(b, "Protocol").unwrap_or_default(),
-                endpoint: client::xml_text(b, "Endpoint").unwrap_or_default(),
-                owner: client::xml_text(b, "Owner"),
+        Ok(client::xml_blocks(&response.body, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(Subscription {
+                    subscription_arn: client::xml_text(b, "SubscriptionArn")?,
+                    topic_arn: client::xml_text(b, "TopicArn").unwrap_or_default(),
+                    protocol: client::xml_text(b, "Protocol").unwrap_or_default(),
+                    endpoint: client::xml_text(b, "Endpoint").unwrap_or_default(),
+                    owner: client::xml_text(b, "Owner"),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     // ── Publishing ──────────────────────────────────────────────────
 
-    pub async fn publish(&self, topic_arn: Option<&str>, target_arn: Option<&str>, phone_number: Option<&str>, message: &str, subject: Option<&str>, message_attributes: &HashMap<String, MessageAttribute>) -> AwsResult<PublishResponse> {
+    pub async fn publish(
+        &self,
+        topic_arn: Option<&str>,
+        target_arn: Option<&str>,
+        phone_number: Option<&str>,
+        message: &str,
+        subject: Option<&str>,
+        message_attributes: &HashMap<String, MessageAttribute>,
+    ) -> AwsResult<PublishResponse> {
         let mut params = client::build_query_params("Publish", API_VERSION);
         if let Some(ta) = topic_arn {
             params.insert("TopicArn".to_string(), ta.to_string());
@@ -218,7 +262,11 @@ impl SnsClient {
     }
 
     /// Publishes a message in batch to a topic.
-    pub async fn publish_batch(&self, topic_arn: &str, entries: &[(String, String)]) -> AwsResult<Vec<String>> {
+    pub async fn publish_batch(
+        &self,
+        topic_arn: &str,
+        entries: &[(String, String)],
+    ) -> AwsResult<Vec<String>> {
         let mut params = client::build_query_params("PublishBatch", API_VERSION);
         params.insert("TopicArn".to_string(), topic_arn.to_string());
         for (i, (id, message)) in entries.iter().enumerate() {
@@ -227,9 +275,10 @@ impl SnsClient {
             params.insert(format!("{}.Message", prefix), message.clone());
         }
         let response = self.client.query_request(SERVICE, &params).await?;
-        let ids = client::xml_blocks(&response.body, "member").iter().filter_map(|b| {
-            client::xml_text(b, "MessageId")
-        }).collect();
+        let ids = client::xml_blocks(&response.body, "member")
+            .iter()
+            .filter_map(|b| client::xml_text(b, "MessageId"))
+            .collect();
         Ok(ids)
     }
 
@@ -238,7 +287,10 @@ impl SnsClient {
     fn parse_attributes(&self, xml: &str) -> HashMap<String, String> {
         let mut attrs = HashMap::new();
         for entry in client::xml_blocks(xml, "entry") {
-            if let (Some(key), Some(value)) = (client::xml_text(&entry, "key"), client::xml_text(&entry, "value")) {
+            if let (Some(key), Some(value)) = (
+                client::xml_text(&entry, "key"),
+                client::xml_text(&entry, "value"),
+            ) {
                 attrs.insert(key, value);
             }
         }
@@ -252,7 +304,9 @@ mod tests {
 
     #[test]
     fn topic_serde() {
-        let t = Topic { topic_arn: "arn:aws:sns:us-east-1:123:my-topic".to_string() };
+        let t = Topic {
+            topic_arn: "arn:aws:sns:us-east-1:123:my-topic".to_string(),
+        };
         let json = serde_json::to_string(&t).unwrap();
         let back: Topic = serde_json::from_str(&json).unwrap();
         assert_eq!(back.topic_arn, "arn:aws:sns:us-east-1:123:my-topic");

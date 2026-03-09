@@ -276,12 +276,7 @@ impl AwsConnectionConfig {
     /// Convert to credentials.
     pub fn to_credentials(&self) -> AwsCredentials {
         if let Some(ref token) = self.session_token {
-            AwsCredentials::new_temporary(
-                &self.access_key_id,
-                &self.secret_access_key,
-                token,
-                None,
-            )
+            AwsCredentials::new_temporary(&self.access_key_id, &self.secret_access_key, token, None)
         } else {
             AwsCredentials::new(&self.access_key_id, &self.secret_access_key)
         }
@@ -440,9 +435,7 @@ impl Tag {
 
 /// Convert a HashMap of tags to a Vec<Tag>.
 pub fn tags_from_map(map: &HashMap<String, String>) -> Vec<Tag> {
-    map.iter()
-        .map(|(k, v)| Tag::new(k, v))
-        .collect()
+    map.iter().map(|(k, v)| Tag::new(k, v)).collect()
 }
 
 /// Convert a Vec<Tag> to a HashMap.
@@ -506,7 +499,10 @@ mod tests {
         let r = AwsRegion::new("us-east-1");
         assert_eq!(r.endpoint("ec2"), "https://ec2.us-east-1.amazonaws.com");
         assert_eq!(r.endpoint("s3"), "https://s3.us-east-1.amazonaws.com");
-        assert_eq!(r.endpoint("lambda"), "https://lambda.us-east-1.amazonaws.com");
+        assert_eq!(
+            r.endpoint("lambda"),
+            "https://lambda.us-east-1.amazonaws.com"
+        );
     }
 
     #[test]

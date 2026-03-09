@@ -254,43 +254,68 @@ impl EcsClient {
 
     pub async fn list_clusters(&self) -> AwsResult<Vec<String>> {
         let body = serde_json::json!({});
-        let response = self.client.json_request(SERVICE, &Self::target("ListClusters"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("ListClusters"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("clusterArns")
+        Ok(result
+            .get("clusterArns")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     pub async fn describe_clusters(&self, clusters: &[String]) -> AwsResult<Vec<Cluster>> {
         let body = serde_json::json!({ "clusters": clusters, "include": ["STATISTICS"] });
-        let response = self.client.json_request(SERVICE, &Self::target("DescribeClusters"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                &Self::target("DescribeClusters"),
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("clusters")
+        Ok(result
+            .get("clusters")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn create_cluster(&self, cluster_name: &str, capacity_providers: &[String]) -> AwsResult<Cluster> {
+    pub async fn create_cluster(
+        &self,
+        cluster_name: &str,
+        capacity_providers: &[String],
+    ) -> AwsResult<Cluster> {
         let mut body = serde_json::json!({ "clusterName": cluster_name });
         if !capacity_providers.is_empty() {
-            body["capacityProviders"] = serde_json::to_value(capacity_providers).unwrap_or_default();
+            body["capacityProviders"] =
+                serde_json::to_value(capacity_providers).unwrap_or_default();
         }
-        let response = self.client.json_request(SERVICE, &Self::target("CreateCluster"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("CreateCluster"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("cluster")
+        result
+            .get("cluster")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No cluster in response", 200))
     }
 
     pub async fn delete_cluster(&self, cluster: &str) -> AwsResult<Cluster> {
         let body = serde_json::json!({ "cluster": cluster });
-        let response = self.client.json_request(SERVICE, &Self::target("DeleteCluster"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("DeleteCluster"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("cluster")
+        result
+            .get("cluster")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No cluster in response", 200))
     }
@@ -299,25 +324,49 @@ impl EcsClient {
 
     pub async fn list_services(&self, cluster: &str) -> AwsResult<Vec<String>> {
         let body = serde_json::json!({ "cluster": cluster });
-        let response = self.client.json_request(SERVICE, &Self::target("ListServices"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("ListServices"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("serviceArns")
+        Ok(result
+            .get("serviceArns")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn describe_services(&self, cluster: &str, services: &[String]) -> AwsResult<Vec<Service>> {
+    pub async fn describe_services(
+        &self,
+        cluster: &str,
+        services: &[String],
+    ) -> AwsResult<Vec<Service>> {
         let body = serde_json::json!({ "cluster": cluster, "services": services });
-        let response = self.client.json_request(SERVICE, &Self::target("DescribeServices"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                &Self::target("DescribeServices"),
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("services")
+        Ok(result
+            .get("services")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn create_service(&self, cluster: &str, service_name: &str, task_definition: &str, desired_count: i32, launch_type: Option<&str>, network_config: Option<&NetworkConfiguration>) -> AwsResult<Service> {
+    pub async fn create_service(
+        &self,
+        cluster: &str,
+        service_name: &str,
+        task_definition: &str,
+        desired_count: i32,
+        launch_type: Option<&str>,
+        network_config: Option<&NetworkConfiguration>,
+    ) -> AwsResult<Service> {
         let mut body = serde_json::json!({
             "cluster": cluster,
             "serviceName": service_name,
@@ -330,15 +379,25 @@ impl EcsClient {
         if let Some(nc) = network_config {
             body["networkConfiguration"] = serde_json::to_value(nc).unwrap_or_default();
         }
-        let response = self.client.json_request(SERVICE, &Self::target("CreateService"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("CreateService"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("service")
+        result
+            .get("service")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No service in response", 200))
     }
 
-    pub async fn update_service(&self, cluster: &str, service: &str, desired_count: Option<i32>, task_definition: Option<&str>) -> AwsResult<Service> {
+    pub async fn update_service(
+        &self,
+        cluster: &str,
+        service: &str,
+        desired_count: Option<i32>,
+        task_definition: Option<&str>,
+    ) -> AwsResult<Service> {
         let mut body = serde_json::json!({ "cluster": cluster, "service": service });
         if let Some(dc) = desired_count {
             body["desiredCount"] = serde_json::json!(dc);
@@ -346,27 +405,45 @@ impl EcsClient {
         if let Some(td) = task_definition {
             body["taskDefinition"] = serde_json::Value::String(td.to_string());
         }
-        let response = self.client.json_request(SERVICE, &Self::target("UpdateService"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("UpdateService"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("service")
+        result
+            .get("service")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No service in response", 200))
     }
 
-    pub async fn delete_service(&self, cluster: &str, service: &str, force: bool) -> AwsResult<Service> {
+    pub async fn delete_service(
+        &self,
+        cluster: &str,
+        service: &str,
+        force: bool,
+    ) -> AwsResult<Service> {
         let body = serde_json::json!({ "cluster": cluster, "service": service, "force": force });
-        let response = self.client.json_request(SERVICE, &Self::target("DeleteService"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("DeleteService"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("service")
+        result
+            .get("service")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No service in response", 200))
     }
 
     // ── Tasks ───────────────────────────────────────────────────────
 
-    pub async fn list_tasks(&self, cluster: &str, service_name: Option<&str>, desired_status: Option<&str>) -> AwsResult<Vec<String>> {
+    pub async fn list_tasks(
+        &self,
+        cluster: &str,
+        service_name: Option<&str>,
+        desired_status: Option<&str>,
+    ) -> AwsResult<Vec<String>> {
         let mut body = serde_json::json!({ "cluster": cluster });
         if let Some(sn) = service_name {
             body["serviceName"] = serde_json::Value::String(sn.to_string());
@@ -374,25 +451,40 @@ impl EcsClient {
         if let Some(ds) = desired_status {
             body["desiredStatus"] = serde_json::Value::String(ds.to_string());
         }
-        let response = self.client.json_request(SERVICE, &Self::target("ListTasks"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("ListTasks"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("taskArns")
+        Ok(result
+            .get("taskArns")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     pub async fn describe_tasks(&self, cluster: &str, tasks: &[String]) -> AwsResult<Vec<Task>> {
         let body = serde_json::json!({ "cluster": cluster, "tasks": tasks });
-        let response = self.client.json_request(SERVICE, &Self::target("DescribeTasks"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("DescribeTasks"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("tasks")
+        Ok(result
+            .get("tasks")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn run_task(&self, cluster: &str, task_definition: &str, count: i32, launch_type: Option<&str>, network_config: Option<&NetworkConfiguration>) -> AwsResult<Vec<Task>> {
+    pub async fn run_task(
+        &self,
+        cluster: &str,
+        task_definition: &str,
+        count: i32,
+        launch_type: Option<&str>,
+        network_config: Option<&NetworkConfiguration>,
+    ) -> AwsResult<Vec<Task>> {
         let mut body = serde_json::json!({
             "cluster": cluster,
             "taskDefinition": task_definition,
@@ -404,61 +496,123 @@ impl EcsClient {
         if let Some(nc) = network_config {
             body["networkConfiguration"] = serde_json::to_value(nc).unwrap_or_default();
         }
-        let response = self.client.json_request(SERVICE, &Self::target("RunTask"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("RunTask"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("tasks")
+        Ok(result
+            .get("tasks")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn stop_task(&self, cluster: &str, task: &str, reason: Option<&str>) -> AwsResult<Task> {
+    pub async fn stop_task(
+        &self,
+        cluster: &str,
+        task: &str,
+        reason: Option<&str>,
+    ) -> AwsResult<Task> {
         let mut body = serde_json::json!({ "cluster": cluster, "task": task });
         if let Some(r) = reason {
             body["reason"] = serde_json::Value::String(r.to_string());
         }
-        let response = self.client.json_request(SERVICE, &Self::target("StopTask"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, &Self::target("StopTask"), &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("task")
+        result
+            .get("task")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No task in response", 200))
     }
 
     // ── Task Definitions ────────────────────────────────────────────
 
-    pub async fn register_task_definition(&self, family: &str, container_definitions: &[ContainerDefinition], cpu: Option<&str>, memory: Option<&str>, network_mode: Option<&str>, requires_compatibilities: &[String], execution_role_arn: Option<&str>, task_role_arn: Option<&str>) -> AwsResult<TaskDefinition> {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn register_task_definition(
+        &self,
+        family: &str,
+        container_definitions: &[ContainerDefinition],
+        cpu: Option<&str>,
+        memory: Option<&str>,
+        network_mode: Option<&str>,
+        requires_compatibilities: &[String],
+        execution_role_arn: Option<&str>,
+        task_role_arn: Option<&str>,
+    ) -> AwsResult<TaskDefinition> {
         let mut body = serde_json::json!({
             "family": family,
             "containerDefinitions": container_definitions,
         });
-        if let Some(c) = cpu { body["cpu"] = serde_json::Value::String(c.to_string()); }
-        if let Some(m) = memory { body["memory"] = serde_json::Value::String(m.to_string()); }
-        if let Some(nm) = network_mode { body["networkMode"] = serde_json::Value::String(nm.to_string()); }
-        if !requires_compatibilities.is_empty() {
-            body["requiresCompatibilities"] = serde_json::to_value(requires_compatibilities).unwrap_or_default();
+        if let Some(c) = cpu {
+            body["cpu"] = serde_json::Value::String(c.to_string());
         }
-        if let Some(era) = execution_role_arn { body["executionRoleArn"] = serde_json::Value::String(era.to_string()); }
-        if let Some(tra) = task_role_arn { body["taskRoleArn"] = serde_json::Value::String(tra.to_string()); }
-        let response = self.client.json_request(SERVICE, &Self::target("RegisterTaskDefinition"), &body.to_string()).await?;
+        if let Some(m) = memory {
+            body["memory"] = serde_json::Value::String(m.to_string());
+        }
+        if let Some(nm) = network_mode {
+            body["networkMode"] = serde_json::Value::String(nm.to_string());
+        }
+        if !requires_compatibilities.is_empty() {
+            body["requiresCompatibilities"] =
+                serde_json::to_value(requires_compatibilities).unwrap_or_default();
+        }
+        if let Some(era) = execution_role_arn {
+            body["executionRoleArn"] = serde_json::Value::String(era.to_string());
+        }
+        if let Some(tra) = task_role_arn {
+            body["taskRoleArn"] = serde_json::Value::String(tra.to_string());
+        }
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                &Self::target("RegisterTaskDefinition"),
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("taskDefinition")
+        result
+            .get("taskDefinition")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No taskDefinition in response", 200))
+            .ok_or_else(|| {
+                AwsError::new(SERVICE, "ParseError", "No taskDefinition in response", 200)
+            })
     }
 
-    pub async fn deregister_task_definition(&self, task_definition: &str) -> AwsResult<TaskDefinition> {
+    pub async fn deregister_task_definition(
+        &self,
+        task_definition: &str,
+    ) -> AwsResult<TaskDefinition> {
         let body = serde_json::json!({ "taskDefinition": task_definition });
-        let response = self.client.json_request(SERVICE, &Self::target("DeregisterTaskDefinition"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                &Self::target("DeregisterTaskDefinition"),
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("taskDefinition")
+        result
+            .get("taskDefinition")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No taskDefinition in response", 200))
+            .ok_or_else(|| {
+                AwsError::new(SERVICE, "ParseError", "No taskDefinition in response", 200)
+            })
     }
 
-    pub async fn list_task_definitions(&self, family_prefix: Option<&str>, status: Option<&str>) -> AwsResult<Vec<String>> {
+    pub async fn list_task_definitions(
+        &self,
+        family_prefix: Option<&str>,
+        status: Option<&str>,
+    ) -> AwsResult<Vec<String>> {
         let mut body = serde_json::json!({});
         if let Some(fp) = family_prefix {
             body["familyPrefix"] = serde_json::Value::String(fp.to_string());
@@ -466,10 +620,18 @@ impl EcsClient {
         if let Some(s) = status {
             body["status"] = serde_json::Value::String(s.to_string());
         }
-        let response = self.client.json_request(SERVICE, &Self::target("ListTaskDefinitions"), &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                &Self::target("ListTaskDefinitions"),
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("taskDefinitionArns")
+        Ok(result
+            .get("taskDefinitionArns")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
@@ -505,8 +667,15 @@ mod tests {
             memory: Some(512),
             memory_reservation: None,
             essential: Some(true),
-            port_mappings: vec![PortMapping { container_port: Some(80), host_port: Some(80), protocol: Some("tcp".to_string()) }],
-            environment: vec![KeyValuePair { name: Some("ENV".to_string()), value: Some("prod".to_string()) }],
+            port_mappings: vec![PortMapping {
+                container_port: Some(80),
+                host_port: Some(80),
+                protocol: Some("tcp".to_string()),
+            }],
+            environment: vec![KeyValuePair {
+                name: Some("ENV".to_string()),
+                value: Some("prod".to_string()),
+            }],
             log_configuration: Some(LogConfiguration {
                 log_driver: "awslogs".to_string(),
                 options: [("awslogs-group".to_string(), "/ecs/my-app".to_string())].into(),

@@ -5,10 +5,10 @@
 //!
 //! Reference: <https://docs.aws.amazon.com/Route53/latest/APIReference/>
 
-use std::collections::BTreeMap;
 use crate::client::{self, AwsClient};
 use crate::error::{AwsError, AwsResult};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 const SERVICE: &str = "route53";
 
@@ -150,13 +150,26 @@ impl Route53Client {
     }
 
     /// Lists all hosted zones.
-    pub async fn list_hosted_zones(&self, max_items: Option<u32>, marker: Option<&str>) -> AwsResult<(Vec<HostedZone>, Option<String>)> {
+    pub async fn list_hosted_zones(
+        &self,
+        max_items: Option<u32>,
+        marker: Option<&str>,
+    ) -> AwsResult<(Vec<HostedZone>, Option<String>)> {
         let mut path = "/2013-04-01/hostedzone".to_string();
         let mut qp = Vec::new();
-        if let Some(mi) = max_items { qp.push(format!("maxitems={}", mi)); }
-        if let Some(mk) = marker { qp.push(format!("marker={}", mk)); }
-        if !qp.is_empty() { path = format!("{}?{}", path, qp.join("&")); }
-        let response = self.client.rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "").await?;
+        if let Some(mi) = max_items {
+            qp.push(format!("maxitems={}", mi));
+        }
+        if let Some(mk) = marker {
+            qp.push(format!("marker={}", mk));
+        }
+        if !qp.is_empty() {
+            path = format!("{}?{}", path, qp.join("&"));
+        }
+        let response = self
+            .client
+            .rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "")
+            .await?;
         let zones = self.parse_hosted_zones(&response.body);
         let next_marker = client::xml_text(&response.body, "NextMarker");
         Ok((zones, next_marker))
@@ -166,15 +179,32 @@ impl Route53Client {
     pub async fn get_hosted_zone(&self, zone_id: &str) -> AwsResult<HostedZone> {
         let clean_id = zone_id.trim_start_matches("/hostedzone/");
         let path = format!("/2013-04-01/hostedzone/{}", clean_id);
-        let response = self.client.rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "")
+            .await?;
         self.parse_hosted_zones(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "NoSuchHostedZone", &format!("Zone {} not found", zone_id), 404))
+            .ok_or_else(|| {
+                AwsError::new(
+                    SERVICE,
+                    "NoSuchHostedZone",
+                    &format!("Zone {} not found", zone_id),
+                    404,
+                )
+            })
     }
 
     /// Creates a new hosted zone.
-    pub async fn create_hosted_zone(&self, name: &str, comment: Option<&str>, private_zone: bool, vpc_id: Option<&str>, vpc_region: Option<&str>) -> AwsResult<(HostedZone, ChangeInfo)> {
+    pub async fn create_hosted_zone(
+        &self,
+        name: &str,
+        comment: Option<&str>,
+        private_zone: bool,
+        vpc_id: Option<&str>,
+        vpc_region: Option<&str>,
+    ) -> AwsResult<(HostedZone, ChangeInfo)> {
         let caller_ref = uuid::Uuid::new_v4().to_string();
         let mut xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -198,13 +228,36 @@ impl Route53Client {
             ));
         }
         xml.push_str("</CreateHostedZoneRequest>");
-        let response = self.client.rest_xml_request(SERVICE, "POST", "/2013-04-01/hostedzone", &BTreeMap::new(), &xml).await?;
-        let zone = self.parse_hosted_zones(&response.body)
+        let response = self
+            .client
+            .rest_xml_request(
+                SERVICE,
+                "POST",
+                "/2013-04-01/hostedzone",
+                &BTreeMap::new(),
+                &xml,
+            )
+            .await?;
+        let zone = self
+            .parse_hosted_zones(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No zone in CreateHostedZone response", 200))?;
-        let change_info = self.parse_change_info(&response.body)
-            .unwrap_or(ChangeInfo { id: String::new(), status: "PENDING".to_string(), submitted_at: String::new(), comment: None });
+            .ok_or_else(|| {
+                AwsError::new(
+                    SERVICE,
+                    "ParseError",
+                    "No zone in CreateHostedZone response",
+                    200,
+                )
+            })?;
+        let change_info = self
+            .parse_change_info(&response.body)
+            .unwrap_or(ChangeInfo {
+                id: String::new(),
+                status: "PENDING".to_string(),
+                submitted_at: String::new(),
+                comment: None,
+            });
         Ok((zone, change_info))
     }
 
@@ -212,32 +265,57 @@ impl Route53Client {
     pub async fn delete_hosted_zone(&self, zone_id: &str) -> AwsResult<ChangeInfo> {
         let clean_id = zone_id.trim_start_matches("/hostedzone/");
         let path = format!("/2013-04-01/hostedzone/{}", clean_id);
-        let response = self.client.rest_xml_request(SERVICE, "DELETE", &path, &BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_xml_request(SERVICE, "DELETE", &path, &BTreeMap::new(), "")
+            .await?;
         self.parse_change_info(&response.body)
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No ChangeInfo in response", 200))
     }
 
     /// Lists resource record sets for a hosted zone.
-    pub async fn list_resource_record_sets(&self, zone_id: &str, start_record_name: Option<&str>, start_record_type: Option<&str>, max_items: Option<u32>) -> AwsResult<Vec<ResourceRecordSet>> {
+    pub async fn list_resource_record_sets(
+        &self,
+        zone_id: &str,
+        start_record_name: Option<&str>,
+        start_record_type: Option<&str>,
+        max_items: Option<u32>,
+    ) -> AwsResult<Vec<ResourceRecordSet>> {
         let clean_id = zone_id.trim_start_matches("/hostedzone/");
         let mut path = format!("/2013-04-01/hostedzone/{}/rrset", clean_id);
         let mut qp = Vec::new();
-        if let Some(srn) = start_record_name { qp.push(format!("name={}", srn)); }
-        if let Some(srt) = start_record_type { qp.push(format!("type={}", srt)); }
-        if let Some(mi) = max_items { qp.push(format!("maxitems={}", mi)); }
-        if !qp.is_empty() { path = format!("{}?{}", path, qp.join("&")); }
-        let response = self.client.rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "").await?;
+        if let Some(srn) = start_record_name {
+            qp.push(format!("name={}", srn));
+        }
+        if let Some(srt) = start_record_type {
+            qp.push(format!("type={}", srt));
+        }
+        if let Some(mi) = max_items {
+            qp.push(format!("maxitems={}", mi));
+        }
+        if !qp.is_empty() {
+            path = format!("{}?{}", path, qp.join("&"));
+        }
+        let response = self
+            .client
+            .rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "")
+            .await?;
         Ok(self.parse_resource_record_sets(&response.body))
     }
 
     /// Changes resource record sets (create, delete, or upsert).
-    pub async fn change_resource_record_sets(&self, zone_id: &str, changes: &[Change], comment: Option<&str>) -> AwsResult<ChangeInfo> {
+    pub async fn change_resource_record_sets(
+        &self,
+        zone_id: &str,
+        changes: &[Change],
+        comment: Option<&str>,
+    ) -> AwsResult<ChangeInfo> {
         let clean_id = zone_id.trim_start_matches("/hostedzone/");
         let path = format!("/2013-04-01/hostedzone/{}/rrset", clean_id);
         let mut xml = String::from(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <ChangeResourceRecordSetsRequest xmlns="https://route53.amazonaws.com/doc/2013-04-01/">
-  <ChangeBatch>"#
+  <ChangeBatch>"#,
         );
         if let Some(c) = comment {
             xml.push_str(&format!("    <Comment>{}</Comment>", c));
@@ -246,23 +324,41 @@ impl Route53Client {
         for change in changes {
             xml.push_str(&format!("      <Change><Action>{}</Action>", change.action));
             xml.push_str("        <ResourceRecordSet>");
-            xml.push_str(&format!("          <Name>{}</Name>", change.resource_record_set.name));
-            xml.push_str(&format!("          <Type>{}</Type>", change.resource_record_set.record_type));
+            xml.push_str(&format!(
+                "          <Name>{}</Name>",
+                change.resource_record_set.name
+            ));
+            xml.push_str(&format!(
+                "          <Type>{}</Type>",
+                change.resource_record_set.record_type
+            ));
             if let Some(ttl) = change.resource_record_set.ttl {
                 xml.push_str(&format!("          <TTL>{}</TTL>", ttl));
             }
             if !change.resource_record_set.resource_records.is_empty() {
                 xml.push_str("          <ResourceRecords>");
                 for rr in &change.resource_record_set.resource_records {
-                    xml.push_str(&format!("            <ResourceRecord><Value>{}</Value></ResourceRecord>", rr.value));
+                    xml.push_str(&format!(
+                        "            <ResourceRecord><Value>{}</Value></ResourceRecord>",
+                        rr.value
+                    ));
                 }
                 xml.push_str("          </ResourceRecords>");
             }
             if let Some(ref alias) = change.resource_record_set.alias_target {
                 xml.push_str("          <AliasTarget>");
-                xml.push_str(&format!("            <HostedZoneId>{}</HostedZoneId>", alias.hosted_zone_id));
-                xml.push_str(&format!("            <DNSName>{}</DNSName>", alias.dns_name));
-                xml.push_str(&format!("            <EvaluateTargetHealth>{}</EvaluateTargetHealth>", alias.evaluate_target_health));
+                xml.push_str(&format!(
+                    "            <HostedZoneId>{}</HostedZoneId>",
+                    alias.hosted_zone_id
+                ));
+                xml.push_str(&format!(
+                    "            <DNSName>{}</DNSName>",
+                    alias.dns_name
+                ));
+                xml.push_str(&format!(
+                    "            <EvaluateTargetHealth>{}</EvaluateTargetHealth>",
+                    alias.evaluate_target_health
+                ));
                 xml.push_str("          </AliasTarget>");
             }
             xml.push_str("        </ResourceRecordSet>");
@@ -271,7 +367,10 @@ impl Route53Client {
         xml.push_str("    </Changes>");
         xml.push_str("  </ChangeBatch>");
         xml.push_str("</ChangeResourceRecordSetsRequest>");
-        let response = self.client.rest_xml_request(SERVICE, "POST", &path, &BTreeMap::new(), &xml).await?;
+        let response = self
+            .client
+            .rest_xml_request(SERVICE, "POST", &path, &BTreeMap::new(), &xml)
+            .await?;
         self.parse_change_info(&response.body)
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No ChangeInfo in response", 200))
     }
@@ -279,7 +378,16 @@ impl Route53Client {
     // ── Health Checks ───────────────────────────────────────────────
 
     pub async fn list_health_checks(&self) -> AwsResult<Vec<HealthCheck>> {
-        let response = self.client.rest_xml_request(SERVICE, "GET", "/2013-04-01/healthcheck", &BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_xml_request(
+                SERVICE,
+                "GET",
+                "/2013-04-01/healthcheck",
+                &BTreeMap::new(),
+                "",
+            )
+            .await?;
         Ok(self.parse_health_checks(&response.body))
     }
 
@@ -293,15 +401,39 @@ impl Route53Client {
     <Type>{}</Type>"#,
             caller_ref, config.health_check_type
         );
-        if let Some(ref ip) = config.ip_address { xml.push_str(&format!("    <IPAddress>{}</IPAddress>", ip)); }
-        if let Some(p) = config.port { xml.push_str(&format!("    <Port>{}</Port>", p)); }
-        if let Some(ref rp) = config.resource_path { xml.push_str(&format!("    <ResourcePath>{}</ResourcePath>", rp)); }
-        if let Some(ref f) = config.fqdn { xml.push_str(&format!("    <FullyQualifiedDomainName>{}</FullyQualifiedDomainName>", f)); }
-        if let Some(ri) = config.request_interval { xml.push_str(&format!("    <RequestInterval>{}</RequestInterval>", ri)); }
-        if let Some(ft) = config.failure_threshold { xml.push_str(&format!("    <FailureThreshold>{}</FailureThreshold>", ft)); }
+        if let Some(ref ip) = config.ip_address {
+            xml.push_str(&format!("    <IPAddress>{}</IPAddress>", ip));
+        }
+        if let Some(p) = config.port {
+            xml.push_str(&format!("    <Port>{}</Port>", p));
+        }
+        if let Some(ref rp) = config.resource_path {
+            xml.push_str(&format!("    <ResourcePath>{}</ResourcePath>", rp));
+        }
+        if let Some(ref f) = config.fqdn {
+            xml.push_str(&format!(
+                "    <FullyQualifiedDomainName>{}</FullyQualifiedDomainName>",
+                f
+            ));
+        }
+        if let Some(ri) = config.request_interval {
+            xml.push_str(&format!("    <RequestInterval>{}</RequestInterval>", ri));
+        }
+        if let Some(ft) = config.failure_threshold {
+            xml.push_str(&format!("    <FailureThreshold>{}</FailureThreshold>", ft));
+        }
         xml.push_str("  </HealthCheckConfig>");
         xml.push_str("</CreateHealthCheckRequest>");
-        let response = self.client.rest_xml_request(SERVICE, "POST", "/2013-04-01/healthcheck", &BTreeMap::new(), &xml).await?;
+        let response = self
+            .client
+            .rest_xml_request(
+                SERVICE,
+                "POST",
+                "/2013-04-01/healthcheck",
+                &BTreeMap::new(),
+                &xml,
+            )
+            .await?;
         self.parse_health_checks(&response.body)
             .into_iter()
             .next()
@@ -310,70 +442,97 @@ impl Route53Client {
 
     pub async fn delete_health_check(&self, health_check_id: &str) -> AwsResult<()> {
         let path = format!("/2013-04-01/healthcheck/{}", health_check_id);
-        self.client.rest_xml_request(SERVICE, "DELETE", &path, &BTreeMap::new(), "").await?;
+        self.client
+            .rest_xml_request(SERVICE, "DELETE", &path, &BTreeMap::new(), "")
+            .await?;
         Ok(())
     }
 
     // ── XML Parsers ─────────────────────────────────────────────────
 
     fn parse_hosted_zones(&self, xml: &str) -> Vec<HostedZone> {
-        client::xml_blocks(xml, "HostedZone").iter().filter_map(|b| {
-            Some(HostedZone {
-                id: client::xml_text(b, "Id")?,
-                name: client::xml_text(b, "Name")?,
-                caller_reference: client::xml_text(b, "CallerReference").unwrap_or_default(),
-                config: client::xml_block(b, "Config").map(|cb| HostedZoneConfig {
-                    comment: client::xml_text(&cb, "Comment"),
-                    private_zone: client::xml_text(&cb, "PrivateZone").map(|v| v == "true").unwrap_or(false),
-                }),
-                resource_record_set_count: client::xml_text(b, "ResourceRecordSetCount").and_then(|v| v.parse().ok()),
+        client::xml_blocks(xml, "HostedZone")
+            .iter()
+            .filter_map(|b| {
+                Some(HostedZone {
+                    id: client::xml_text(b, "Id")?,
+                    name: client::xml_text(b, "Name")?,
+                    caller_reference: client::xml_text(b, "CallerReference").unwrap_or_default(),
+                    config: client::xml_block(b, "Config").map(|cb| HostedZoneConfig {
+                        comment: client::xml_text(&cb, "Comment"),
+                        private_zone: client::xml_text(&cb, "PrivateZone")
+                            .map(|v| v == "true")
+                            .unwrap_or(false),
+                    }),
+                    resource_record_set_count: client::xml_text(b, "ResourceRecordSetCount")
+                        .and_then(|v| v.parse().ok()),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_resource_record_sets(&self, xml: &str) -> Vec<ResourceRecordSet> {
-        client::xml_blocks(xml, "ResourceRecordSet").iter().filter_map(|b| {
-            Some(ResourceRecordSet {
-                name: client::xml_text(b, "Name")?,
-                record_type: client::xml_text(b, "Type")?,
-                ttl: client::xml_text(b, "TTL").and_then(|v| v.parse().ok()),
-                resource_records: client::xml_blocks(b, "ResourceRecord").iter().filter_map(|rr| {
-                    Some(ResourceRecord { value: client::xml_text(rr, "Value")? })
-                }).collect(),
-                alias_target: client::xml_block(b, "AliasTarget").map(|ab| AliasTarget {
-                    hosted_zone_id: client::xml_text(&ab, "HostedZoneId").unwrap_or_default(),
-                    dns_name: client::xml_text(&ab, "DNSName").unwrap_or_default(),
-                    evaluate_target_health: client::xml_text(&ab, "EvaluateTargetHealth").map(|v| v == "true").unwrap_or(false),
-                }),
-                set_identifier: client::xml_text(b, "SetIdentifier"),
-                weight: client::xml_text(b, "Weight").and_then(|v| v.parse().ok()),
-                region: client::xml_text(b, "Region"),
-                failover: client::xml_text(b, "Failover"),
-                health_check_id: client::xml_text(b, "HealthCheckId"),
+        client::xml_blocks(xml, "ResourceRecordSet")
+            .iter()
+            .filter_map(|b| {
+                Some(ResourceRecordSet {
+                    name: client::xml_text(b, "Name")?,
+                    record_type: client::xml_text(b, "Type")?,
+                    ttl: client::xml_text(b, "TTL").and_then(|v| v.parse().ok()),
+                    resource_records: client::xml_blocks(b, "ResourceRecord")
+                        .iter()
+                        .filter_map(|rr| {
+                            Some(ResourceRecord {
+                                value: client::xml_text(rr, "Value")?,
+                            })
+                        })
+                        .collect(),
+                    alias_target: client::xml_block(b, "AliasTarget").map(|ab| AliasTarget {
+                        hosted_zone_id: client::xml_text(&ab, "HostedZoneId").unwrap_or_default(),
+                        dns_name: client::xml_text(&ab, "DNSName").unwrap_or_default(),
+                        evaluate_target_health: client::xml_text(&ab, "EvaluateTargetHealth")
+                            .map(|v| v == "true")
+                            .unwrap_or(false),
+                    }),
+                    set_identifier: client::xml_text(b, "SetIdentifier"),
+                    weight: client::xml_text(b, "Weight").and_then(|v| v.parse().ok()),
+                    region: client::xml_text(b, "Region"),
+                    failover: client::xml_text(b, "Failover"),
+                    health_check_id: client::xml_text(b, "HealthCheckId"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_health_checks(&self, xml: &str) -> Vec<HealthCheck> {
-        client::xml_blocks(xml, "HealthCheck").iter().filter_map(|b| {
-            Some(HealthCheck {
-                id: client::xml_text(b, "Id")?,
-                caller_reference: client::xml_text(b, "CallerReference").unwrap_or_default(),
-                health_check_config: {
-                    let cfg_block = client::xml_block(b, "HealthCheckConfig").unwrap_or_default();
-                    HealthCheckConfig {
-                        ip_address: client::xml_text(&cfg_block, "IPAddress"),
-                        port: client::xml_text(&cfg_block, "Port").and_then(|v| v.parse().ok()),
-                        health_check_type: client::xml_text(&cfg_block, "Type").unwrap_or_default(),
-                        resource_path: client::xml_text(&cfg_block, "ResourcePath"),
-                        fqdn: client::xml_text(&cfg_block, "FullyQualifiedDomainName"),
-                        request_interval: client::xml_text(&cfg_block, "RequestInterval").and_then(|v| v.parse().ok()),
-                        failure_threshold: client::xml_text(&cfg_block, "FailureThreshold").and_then(|v| v.parse().ok()),
-                    }
-                },
-                health_check_version: client::xml_text(b, "HealthCheckVersion").and_then(|v| v.parse().ok()).unwrap_or(1),
+        client::xml_blocks(xml, "HealthCheck")
+            .iter()
+            .filter_map(|b| {
+                Some(HealthCheck {
+                    id: client::xml_text(b, "Id")?,
+                    caller_reference: client::xml_text(b, "CallerReference").unwrap_or_default(),
+                    health_check_config: {
+                        let cfg_block =
+                            client::xml_block(b, "HealthCheckConfig").unwrap_or_default();
+                        HealthCheckConfig {
+                            ip_address: client::xml_text(&cfg_block, "IPAddress"),
+                            port: client::xml_text(&cfg_block, "Port").and_then(|v| v.parse().ok()),
+                            health_check_type: client::xml_text(&cfg_block, "Type")
+                                .unwrap_or_default(),
+                            resource_path: client::xml_text(&cfg_block, "ResourcePath"),
+                            fqdn: client::xml_text(&cfg_block, "FullyQualifiedDomainName"),
+                            request_interval: client::xml_text(&cfg_block, "RequestInterval")
+                                .and_then(|v| v.parse().ok()),
+                            failure_threshold: client::xml_text(&cfg_block, "FailureThreshold")
+                                .and_then(|v| v.parse().ok()),
+                        }
+                    },
+                    health_check_version: client::xml_text(b, "HealthCheckVersion")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_change_info(&self, xml: &str) -> Option<ChangeInfo> {
@@ -404,7 +563,10 @@ mod tests {
             id: "/hostedzone/Z1234".to_string(),
             name: "example.com.".to_string(),
             caller_reference: "ref-1".to_string(),
-            config: Some(HostedZoneConfig { comment: Some("Main zone".to_string()), private_zone: false }),
+            config: Some(HostedZoneConfig {
+                comment: Some("Main zone".to_string()),
+                private_zone: false,
+            }),
             resource_record_set_count: Some(5),
         };
         let json = serde_json::to_string(&zone).unwrap();
@@ -418,7 +580,9 @@ mod tests {
             name: "www.example.com.".to_string(),
             record_type: "A".to_string(),
             ttl: Some(300),
-            resource_records: vec![ResourceRecord { value: "192.0.2.1".to_string() }],
+            resource_records: vec![ResourceRecord {
+                value: "192.0.2.1".to_string(),
+            }],
             alias_target: None,
             set_identifier: None,
             weight: None,

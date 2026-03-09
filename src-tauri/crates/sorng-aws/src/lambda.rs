@@ -45,7 +45,10 @@ pub enum Runtime {
 
 impl std::fmt::Display for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = serde_json::to_value(self).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+        let s = serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
         f.write_str(&s)
     }
 }
@@ -250,7 +253,11 @@ impl LambdaClient {
     }
 
     /// Lists all Lambda functions in the account.
-    pub async fn list_functions(&self, marker: Option<&str>, max_items: Option<u32>) -> AwsResult<(Vec<FunctionConfiguration>, Option<String>)> {
+    pub async fn list_functions(
+        &self,
+        marker: Option<&str>,
+        max_items: Option<u32>,
+    ) -> AwsResult<(Vec<FunctionConfiguration>, Option<String>)> {
         let mut path = "/2015-03-31/functions".to_string();
         let mut query_parts = Vec::new();
         if let Some(m) = marker {
@@ -262,13 +269,18 @@ impl LambdaClient {
         if !query_parts.is_empty() {
             path = format!("{}?{}", path, query_parts.join("&"));
         }
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        let functions: Vec<FunctionConfiguration> = result.get("Functions")
+        let functions: Vec<FunctionConfiguration> = result
+            .get("Functions")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        let next_marker = result.get("NextMarker")
+        let next_marker = result
+            .get("NextMarker")
             .and_then(|v| v.as_str())
             .map(String::from);
         Ok((functions, next_marker))
@@ -277,54 +289,92 @@ impl LambdaClient {
     /// Gets a function's configuration and code location.
     pub async fn get_function(&self, function_name: &str) -> AwsResult<FunctionConfiguration> {
         let path = format!("/2015-03-31/functions/{}", function_name);
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        let config = result.get("Configuration")
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No Configuration in response", 200))?;
+        let config = result.get("Configuration").ok_or_else(|| {
+            AwsError::new(SERVICE, "ParseError", "No Configuration in response", 200)
+        })?;
         serde_json::from_value(config.clone())
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), 200))
     }
 
     /// Creates a new Lambda function.
-    pub async fn create_function(&self, input: &CreateFunctionInput) -> AwsResult<FunctionConfiguration> {
+    pub async fn create_function(
+        &self,
+        input: &CreateFunctionInput,
+    ) -> AwsResult<FunctionConfiguration> {
         let path = "/2015-03-31/functions";
-        let body = serde_json::to_string(input).map_err(|e| AwsError::new(SERVICE, "SerializeError", &e.to_string(), 0))?;
-        let response = self.client.rest_request(SERVICE, "POST", path, BTreeMap::new(), &body).await?;
+        let body = serde_json::to_string(input)
+            .map_err(|e| AwsError::new(SERVICE, "SerializeError", &e.to_string(), 0))?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "POST", path, BTreeMap::new(), &body)
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     /// Deletes a Lambda function.
-    pub async fn delete_function(&self, function_name: &str, qualifier: Option<&str>) -> AwsResult<()> {
+    pub async fn delete_function(
+        &self,
+        function_name: &str,
+        qualifier: Option<&str>,
+    ) -> AwsResult<()> {
         let mut path = format!("/2015-03-31/functions/{}", function_name);
         if let Some(q) = qualifier {
             path = format!("{}?Qualifier={}", path, q);
         }
-        self.client.rest_request(SERVICE, "DELETE", &path, BTreeMap::new(), "").await?;
+        self.client
+            .rest_request(SERVICE, "DELETE", &path, BTreeMap::new(), "")
+            .await?;
         Ok(())
     }
 
     /// Updates a function's code.
-    pub async fn update_function_code(&self, function_name: &str, code: &FunctionCode) -> AwsResult<FunctionConfiguration> {
+    pub async fn update_function_code(
+        &self,
+        function_name: &str,
+        code: &FunctionCode,
+    ) -> AwsResult<FunctionConfiguration> {
         let path = format!("/2015-03-31/functions/{}/code", function_name);
-        let body = serde_json::to_string(code).map_err(|e| AwsError::new(SERVICE, "SerializeError", &e.to_string(), 0))?;
-        let response = self.client.rest_request(SERVICE, "PUT", &path, BTreeMap::new(), &body).await?;
+        let body = serde_json::to_string(code)
+            .map_err(|e| AwsError::new(SERVICE, "SerializeError", &e.to_string(), 0))?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "PUT", &path, BTreeMap::new(), &body)
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     /// Updates a function's configuration.
-    pub async fn update_function_configuration(&self, function_name: &str, config: &serde_json::Value) -> AwsResult<FunctionConfiguration> {
+    pub async fn update_function_configuration(
+        &self,
+        function_name: &str,
+        config: &serde_json::Value,
+    ) -> AwsResult<FunctionConfiguration> {
         let path = format!("/2015-03-31/functions/{}/configuration", function_name);
-        let body = serde_json::to_string(config).map_err(|e| AwsError::new(SERVICE, "SerializeError", &e.to_string(), 0))?;
-        let response = self.client.rest_request(SERVICE, "PUT", &path, BTreeMap::new(), &body).await?;
+        let body = serde_json::to_string(config)
+            .map_err(|e| AwsError::new(SERVICE, "SerializeError", &e.to_string(), 0))?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "PUT", &path, BTreeMap::new(), &body)
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     /// Invokes a Lambda function synchronously or asynchronously.
-    pub async fn invoke(&self, function_name: &str, payload: &[u8], invocation_type: Option<&str>) -> AwsResult<InvocationResponse> {
+    pub async fn invoke(
+        &self,
+        function_name: &str,
+        payload: &[u8],
+        invocation_type: Option<&str>,
+    ) -> AwsResult<InvocationResponse> {
         let path = format!("/2015-03-31/functions/{}/invocations", function_name);
         let body = std::str::from_utf8(payload).unwrap_or("{}");
 
@@ -334,7 +384,10 @@ impl LambdaClient {
         }
         headers.insert("x-amz-log-type".to_string(), "Tail".to_string());
 
-        let response = self.client.rest_request(SERVICE, "POST", &path, headers, body).await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "POST", &path, headers, body)
+            .await?;
         Ok(InvocationResponse {
             status_code: response.status,
             function_error: response.headers.get("x-amz-function-error").cloned(),
@@ -345,21 +398,33 @@ impl LambdaClient {
     }
 
     /// Lists event source mappings.
-    pub async fn list_event_source_mappings(&self, function_name: Option<&str>) -> AwsResult<Vec<EventSourceMapping>> {
+    pub async fn list_event_source_mappings(
+        &self,
+        function_name: Option<&str>,
+    ) -> AwsResult<Vec<EventSourceMapping>> {
         let mut path = "/2015-03-31/event-source-mappings".to_string();
         if let Some(fn_name) = function_name {
             path = format!("{}?FunctionName={}", path, fn_name);
         }
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("EventSourceMappings")
+        Ok(result
+            .get("EventSourceMappings")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     /// Creates an event source mapping.
-    pub async fn create_event_source_mapping(&self, function_name: &str, event_source_arn: &str, batch_size: Option<u32>) -> AwsResult<EventSourceMapping> {
+    pub async fn create_event_source_mapping(
+        &self,
+        function_name: &str,
+        event_source_arn: &str,
+        batch_size: Option<u32>,
+    ) -> AwsResult<EventSourceMapping> {
         let path = "/2015-03-31/event-source-mappings";
         let body = serde_json::json!({
             "FunctionName": function_name,
@@ -368,7 +433,10 @@ impl LambdaClient {
             "Enabled": true,
         });
         let body_str = body.to_string();
-        let response = self.client.rest_request(SERVICE, "POST", path, BTreeMap::new(), &body_str).await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "POST", path, BTreeMap::new(), &body_str)
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
@@ -376,16 +444,26 @@ impl LambdaClient {
     /// Lists function aliases.
     pub async fn list_aliases(&self, function_name: &str) -> AwsResult<Vec<Alias>> {
         let path = format!("/2015-03-31/functions/{}/aliases", function_name);
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Aliases")
+        Ok(result
+            .get("Aliases")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     /// Creates a function alias.
-    pub async fn create_alias(&self, function_name: &str, name: &str, function_version: &str, description: Option<&str>) -> AwsResult<Alias> {
+    pub async fn create_alias(
+        &self,
+        function_name: &str,
+        name: &str,
+        function_version: &str,
+        description: Option<&str>,
+    ) -> AwsResult<Alias> {
         let path = format!("/2015-03-31/functions/{}/aliases", function_name);
         let mut body = serde_json::json!({
             "Name": name,
@@ -395,7 +473,10 @@ impl LambdaClient {
             body["Description"] = serde_json::Value::String(desc.to_string());
         }
         let body_str = body.to_string();
-        let response = self.client.rest_request(SERVICE, "POST", &path, BTreeMap::new(), &body_str).await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "POST", &path, BTreeMap::new(), &body_str)
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
@@ -403,10 +484,14 @@ impl LambdaClient {
     /// Lists layer versions.
     pub async fn list_layer_versions(&self, layer_name: &str) -> AwsResult<Vec<LayerVersion>> {
         let path = format!("/2018-10-31/layers/{}/versions", layer_name);
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("LayerVersions")
+        Ok(result
+            .get("LayerVersions")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
@@ -414,41 +499,65 @@ impl LambdaClient {
     /// Gets the reserved concurrency configuration for a function.
     pub async fn get_function_concurrency(&self, function_name: &str) -> AwsResult<Concurrency> {
         let path = format!("/2019-09-30/functions/{}/concurrency", function_name);
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     /// Sets the reserved concurrency for a function.
-    pub async fn put_function_concurrency(&self, function_name: &str, concurrent_executions: u32) -> AwsResult<Concurrency> {
+    pub async fn put_function_concurrency(
+        &self,
+        function_name: &str,
+        concurrent_executions: u32,
+    ) -> AwsResult<Concurrency> {
         let path = format!("/2017-10-31/functions/{}/concurrency", function_name);
         let body = serde_json::json!({ "ReservedConcurrentExecutions": concurrent_executions });
         let body_str = body.to_string();
-        let response = self.client.rest_request(SERVICE, "PUT", &path, BTreeMap::new(), &body_str).await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "PUT", &path, BTreeMap::new(), &body_str)
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     /// Publishes a version of the function.
-    pub async fn publish_version(&self, function_name: &str, description: Option<&str>) -> AwsResult<FunctionConfiguration> {
+    pub async fn publish_version(
+        &self,
+        function_name: &str,
+        description: Option<&str>,
+    ) -> AwsResult<FunctionConfiguration> {
         let path = format!("/2015-03-31/functions/{}/versions", function_name);
         let mut body = serde_json::json!({});
         if let Some(desc) = description {
             body["Description"] = serde_json::Value::String(desc.to_string());
         }
         let body_str = body.to_string();
-        let response = self.client.rest_request(SERVICE, "POST", &path, BTreeMap::new(), &body_str).await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "POST", &path, BTreeMap::new(), &body_str)
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     /// Lists published versions of a function.
-    pub async fn list_versions_by_function(&self, function_name: &str) -> AwsResult<Vec<FunctionConfiguration>> {
+    pub async fn list_versions_by_function(
+        &self,
+        function_name: &str,
+    ) -> AwsResult<Vec<FunctionConfiguration>> {
         let path = format!("/2015-03-31/functions/{}/versions", function_name);
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Versions")
+        Ok(result
+            .get("Versions")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
@@ -458,17 +567,23 @@ impl LambdaClient {
         let path = format!("/2017-03-31/tags/{}", arn);
         let body = serde_json::json!({ "Tags": tags });
         let body_str = body.to_string();
-        self.client.rest_request(SERVICE, "POST", &path, BTreeMap::new(), &body_str).await?;
+        self.client
+            .rest_request(SERVICE, "POST", &path, BTreeMap::new(), &body_str)
+            .await?;
         Ok(())
     }
 
     /// Lists tags for a Lambda resource.
     pub async fn list_tags(&self, arn: &str) -> AwsResult<HashMap<String, String>> {
         let path = format!("/2017-03-31/tags/{}", arn);
-        let response = self.client.rest_request(SERVICE, "GET", &path, BTreeMap::new(), "").await?;
+        let response = self
+            .client
+            .rest_request(SERVICE, "GET", &path, BTreeMap::new(), "")
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Tags")
+        Ok(result
+            .get("Tags")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }

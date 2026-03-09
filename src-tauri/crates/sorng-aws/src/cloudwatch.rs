@@ -239,7 +239,12 @@ impl CloudWatchClient {
     // ── Metrics ─────────────────────────────────────────────────────
 
     /// Lists metrics matching optional filters.
-    pub async fn list_metrics(&self, namespace: Option<&str>, metric_name: Option<&str>, dimensions: &[Dimension]) -> AwsResult<Vec<Metric>> {
+    pub async fn list_metrics(
+        &self,
+        namespace: Option<&str>,
+        metric_name: Option<&str>,
+        dimensions: &[Dimension],
+    ) -> AwsResult<Vec<Metric>> {
         let mut params = client::build_query_params("ListMetrics", METRICS_API_VERSION);
         if let Some(ns) = namespace {
             params.insert("Namespace".to_string(), ns.to_string());
@@ -248,22 +253,41 @@ impl CloudWatchClient {
             params.insert("MetricName".to_string(), mn.to_string());
         }
         for (i, dim) in dimensions.iter().enumerate() {
-            params.insert(format!("Dimensions.member.{}.Name", i + 1), dim.name.clone());
-            params.insert(format!("Dimensions.member.{}.Value", i + 1), dim.value.clone());
+            params.insert(
+                format!("Dimensions.member.{}.Name", i + 1),
+                dim.name.clone(),
+            );
+            params.insert(
+                format!("Dimensions.member.{}.Value", i + 1),
+                dim.value.clone(),
+            );
         }
         let response = self.client.query_request(SERVICE, &params).await?;
         let blocks = client::xml_blocks(&response.body, "member");
-        Ok(blocks.iter().filter_map(|b| {
-            Some(Metric {
-                namespace: client::xml_text(b, "Namespace")?,
-                metric_name: client::xml_text(b, "MetricName")?,
-                dimensions: self.parse_dimensions(b),
+        Ok(blocks
+            .iter()
+            .filter_map(|b| {
+                Some(Metric {
+                    namespace: client::xml_text(b, "Namespace")?,
+                    metric_name: client::xml_text(b, "MetricName")?,
+                    dimensions: self.parse_dimensions(b),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     /// Gets statistics for a specific metric.
-    pub async fn get_metric_statistics(&self, namespace: &str, metric_name: &str, start_time: &str, end_time: &str, period: u32, statistics: &[Statistic], dimensions: &[Dimension]) -> AwsResult<Vec<Datapoint>> {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_metric_statistics(
+        &self,
+        namespace: &str,
+        metric_name: &str,
+        start_time: &str,
+        end_time: &str,
+        period: u32,
+        statistics: &[Statistic],
+        dimensions: &[Dimension],
+    ) -> AwsResult<Vec<Datapoint>> {
         let mut params = client::build_query_params("GetMetricStatistics", METRICS_API_VERSION);
         params.insert("Namespace".to_string(), namespace.to_string());
         params.insert("MetricName".to_string(), metric_name.to_string());
@@ -274,24 +298,37 @@ impl CloudWatchClient {
             params.insert(format!("Statistics.member.{}", i + 1), stat.to_string());
         }
         for (i, dim) in dimensions.iter().enumerate() {
-            params.insert(format!("Dimensions.member.{}.Name", i + 1), dim.name.clone());
-            params.insert(format!("Dimensions.member.{}.Value", i + 1), dim.value.clone());
+            params.insert(
+                format!("Dimensions.member.{}.Name", i + 1),
+                dim.name.clone(),
+            );
+            params.insert(
+                format!("Dimensions.member.{}.Value", i + 1),
+                dim.value.clone(),
+            );
         }
         let response = self.client.query_request(SERVICE, &params).await?;
         let blocks = client::xml_blocks(&response.body, "member");
-        Ok(blocks.iter().map(|b| Datapoint {
-            timestamp: client::xml_text(b, "Timestamp").unwrap_or_default(),
-            sample_count: client::xml_text(b, "SampleCount").and_then(|v| v.parse().ok()),
-            average: client::xml_text(b, "Average").and_then(|v| v.parse().ok()),
-            sum: client::xml_text(b, "Sum").and_then(|v| v.parse().ok()),
-            minimum: client::xml_text(b, "Minimum").and_then(|v| v.parse().ok()),
-            maximum: client::xml_text(b, "Maximum").and_then(|v| v.parse().ok()),
-            unit: client::xml_text(b, "Unit"),
-        }).collect())
+        Ok(blocks
+            .iter()
+            .map(|b| Datapoint {
+                timestamp: client::xml_text(b, "Timestamp").unwrap_or_default(),
+                sample_count: client::xml_text(b, "SampleCount").and_then(|v| v.parse().ok()),
+                average: client::xml_text(b, "Average").and_then(|v| v.parse().ok()),
+                sum: client::xml_text(b, "Sum").and_then(|v| v.parse().ok()),
+                minimum: client::xml_text(b, "Minimum").and_then(|v| v.parse().ok()),
+                maximum: client::xml_text(b, "Maximum").and_then(|v| v.parse().ok()),
+                unit: client::xml_text(b, "Unit"),
+            })
+            .collect())
     }
 
     /// Publishes metric data points to CloudWatch.
-    pub async fn put_metric_data(&self, namespace: &str, metric_data: &[MetricDatum]) -> AwsResult<()> {
+    pub async fn put_metric_data(
+        &self,
+        namespace: &str,
+        metric_data: &[MetricDatum],
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("PutMetricData", METRICS_API_VERSION);
         params.insert("Namespace".to_string(), namespace.to_string());
         for (i, datum) in metric_data.iter().enumerate() {
@@ -307,8 +344,14 @@ impl CloudWatchClient {
                 params.insert(format!("{}.Timestamp", prefix), ts.clone());
             }
             for (j, dim) in datum.dimensions.iter().enumerate() {
-                params.insert(format!("{}.Dimensions.member.{}.Name", prefix, j + 1), dim.name.clone());
-                params.insert(format!("{}.Dimensions.member.{}.Value", prefix, j + 1), dim.value.clone());
+                params.insert(
+                    format!("{}.Dimensions.member.{}.Name", prefix, j + 1),
+                    dim.name.clone(),
+                );
+                params.insert(
+                    format!("{}.Dimensions.member.{}.Value", prefix, j + 1),
+                    dim.value.clone(),
+                );
             }
         }
         self.client.query_request(SERVICE, &params).await?;
@@ -317,7 +360,11 @@ impl CloudWatchClient {
 
     // ── Alarms ──────────────────────────────────────────────────────
 
-    pub async fn describe_alarms(&self, alarm_names: &[String], state_value: Option<&str>) -> AwsResult<Vec<MetricAlarm>> {
+    pub async fn describe_alarms(
+        &self,
+        alarm_names: &[String],
+        state_value: Option<&str>,
+    ) -> AwsResult<Vec<MetricAlarm>> {
         let mut params = client::build_query_params("DescribeAlarms", METRICS_API_VERSION);
         for (i, name) in alarm_names.iter().enumerate() {
             params.insert(format!("AlarmNames.member.{}", i + 1), name.clone());
@@ -336,9 +383,15 @@ impl CloudWatchClient {
         params.insert("Namespace".to_string(), input.namespace.clone());
         params.insert("Statistic".to_string(), input.statistic.clone());
         params.insert("Period".to_string(), input.period.to_string());
-        params.insert("EvaluationPeriods".to_string(), input.evaluation_periods.to_string());
+        params.insert(
+            "EvaluationPeriods".to_string(),
+            input.evaluation_periods.to_string(),
+        );
         params.insert("Threshold".to_string(), input.threshold.to_string());
-        params.insert("ComparisonOperator".to_string(), input.comparison_operator.clone());
+        params.insert(
+            "ComparisonOperator".to_string(),
+            input.comparison_operator.clone(),
+        );
         if let Some(ref desc) = input.alarm_description {
             params.insert("AlarmDescription".to_string(), desc.clone());
         }
@@ -349,8 +402,14 @@ impl CloudWatchClient {
             params.insert(format!("OKActions.member.{}", i + 1), action.clone());
         }
         for (i, dim) in input.dimensions.iter().enumerate() {
-            params.insert(format!("Dimensions.member.{}.Name", i + 1), dim.name.clone());
-            params.insert(format!("Dimensions.member.{}.Value", i + 1), dim.value.clone());
+            params.insert(
+                format!("Dimensions.member.{}.Name", i + 1),
+                dim.name.clone(),
+            );
+            params.insert(
+                format!("Dimensions.member.{}.Value", i + 1),
+                dim.value.clone(),
+            );
         }
         self.client.query_request(SERVICE, &params).await?;
         Ok(())
@@ -365,7 +424,12 @@ impl CloudWatchClient {
         Ok(())
     }
 
-    pub async fn set_alarm_state(&self, alarm_name: &str, state_value: &str, state_reason: &str) -> AwsResult<()> {
+    pub async fn set_alarm_state(
+        &self,
+        alarm_name: &str,
+        state_value: &str,
+        state_reason: &str,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("SetAlarmState", METRICS_API_VERSION);
         params.insert("AlarmName".to_string(), alarm_name.to_string());
         params.insert("StateValue".to_string(), state_value.to_string());
@@ -376,7 +440,11 @@ impl CloudWatchClient {
 
     // ── CloudWatch Logs ─────────────────────────────────────────────
 
-    pub async fn describe_log_groups(&self, prefix: Option<&str>, limit: Option<u32>) -> AwsResult<Vec<LogGroup>> {
+    pub async fn describe_log_groups(
+        &self,
+        prefix: Option<&str>,
+        limit: Option<u32>,
+    ) -> AwsResult<Vec<LogGroup>> {
         let mut body = serde_json::json!({});
         if let Some(p) = prefix {
             body["logGroupNamePrefix"] = serde_json::Value::String(p.to_string());
@@ -384,30 +452,61 @@ impl CloudWatchClient {
         if let Some(l) = limit {
             body["limit"] = serde_json::json!(l);
         }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.DescribeLogGroups", &body.to_string()).await?;
-        let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("logGroups")
+        let response = self
+            .client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.DescribeLogGroups",
+                &body.to_string(),
+            )
+            .await?;
+        let result: serde_json::Value = serde_json::from_str(&response.body).map_err(|e| {
+            AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status)
+        })?;
+        Ok(result
+            .get("logGroups")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn create_log_group(&self, log_group_name: &str, retention_in_days: Option<i32>) -> AwsResult<()> {
+    pub async fn create_log_group(
+        &self,
+        log_group_name: &str,
+        retention_in_days: Option<i32>,
+    ) -> AwsResult<()> {
         let mut body = serde_json::json!({ "logGroupName": log_group_name });
         if let Some(r) = retention_in_days {
             body["retentionInDays"] = serde_json::json!(r);
         }
-        self.client.json_request(LOGS_SERVICE, "Logs_20140328.CreateLogGroup", &body.to_string()).await?;
+        self.client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.CreateLogGroup",
+                &body.to_string(),
+            )
+            .await?;
         Ok(())
     }
 
     pub async fn delete_log_group(&self, log_group_name: &str) -> AwsResult<()> {
         let body = serde_json::json!({ "logGroupName": log_group_name });
-        self.client.json_request(LOGS_SERVICE, "Logs_20140328.DeleteLogGroup", &body.to_string()).await?;
+        self.client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.DeleteLogGroup",
+                &body.to_string(),
+            )
+            .await?;
         Ok(())
     }
 
-    pub async fn describe_log_streams(&self, log_group_name: &str, prefix: Option<&str>, order_by: Option<&str>, limit: Option<u32>) -> AwsResult<Vec<LogStream>> {
+    pub async fn describe_log_streams(
+        &self,
+        log_group_name: &str,
+        prefix: Option<&str>,
+        order_by: Option<&str>,
+        limit: Option<u32>,
+    ) -> AwsResult<Vec<LogStream>> {
         let mut body = serde_json::json!({ "logGroupName": log_group_name });
         if let Some(p) = prefix {
             body["logStreamNamePrefix"] = serde_json::Value::String(p.to_string());
@@ -419,35 +518,81 @@ impl CloudWatchClient {
             body["limit"] = serde_json::json!(l);
         }
         body["descending"] = serde_json::json!(true);
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.DescribeLogStreams", &body.to_string()).await?;
-        let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("logStreams")
+        let response = self
+            .client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.DescribeLogStreams",
+                &body.to_string(),
+            )
+            .await?;
+        let result: serde_json::Value = serde_json::from_str(&response.body).map_err(|e| {
+            AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status)
+        })?;
+        Ok(result
+            .get("logStreams")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn get_log_events(&self, log_group_name: &str, log_stream_name: &str, start_time: Option<i64>, end_time: Option<i64>, limit: Option<u32>, start_from_head: Option<bool>) -> AwsResult<(Vec<OutputLogEvent>, Option<String>, Option<String>)> {
+    pub async fn get_log_events(
+        &self,
+        log_group_name: &str,
+        log_stream_name: &str,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        limit: Option<u32>,
+        start_from_head: Option<bool>,
+    ) -> AwsResult<(Vec<OutputLogEvent>, Option<String>, Option<String>)> {
         let mut body = serde_json::json!({
             "logGroupName": log_group_name,
             "logStreamName": log_stream_name,
         });
-        if let Some(st) = start_time { body["startTime"] = serde_json::json!(st); }
-        if let Some(et) = end_time { body["endTime"] = serde_json::json!(et); }
-        if let Some(l) = limit { body["limit"] = serde_json::json!(l); }
-        if let Some(sfh) = start_from_head { body["startFromHead"] = serde_json::json!(sfh); }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.GetLogEvents", &body.to_string()).await?;
-        let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
-        let events: Vec<OutputLogEvent> = result.get("events")
+        if let Some(st) = start_time {
+            body["startTime"] = serde_json::json!(st);
+        }
+        if let Some(et) = end_time {
+            body["endTime"] = serde_json::json!(et);
+        }
+        if let Some(l) = limit {
+            body["limit"] = serde_json::json!(l);
+        }
+        if let Some(sfh) = start_from_head {
+            body["startFromHead"] = serde_json::json!(sfh);
+        }
+        let response = self
+            .client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.GetLogEvents",
+                &body.to_string(),
+            )
+            .await?;
+        let result: serde_json::Value = serde_json::from_str(&response.body).map_err(|e| {
+            AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status)
+        })?;
+        let events: Vec<OutputLogEvent> = result
+            .get("events")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        let forward_token = result.get("nextForwardToken").and_then(|v| v.as_str()).map(String::from);
-        let backward_token = result.get("nextBackwardToken").and_then(|v| v.as_str()).map(String::from);
+        let forward_token = result
+            .get("nextForwardToken")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let backward_token = result
+            .get("nextBackwardToken")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         Ok((events, forward_token, backward_token))
     }
 
-    pub async fn put_log_events(&self, log_group_name: &str, log_stream_name: &str, events: &[InputLogEvent], sequence_token: Option<&str>) -> AwsResult<Option<String>> {
+    pub async fn put_log_events(
+        &self,
+        log_group_name: &str,
+        log_stream_name: &str,
+        events: &[InputLogEvent],
+        sequence_token: Option<&str>,
+    ) -> AwsResult<Option<String>> {
         let mut body = serde_json::json!({
             "logGroupName": log_group_name,
             "logStreamName": log_stream_name,
@@ -456,71 +601,123 @@ impl CloudWatchClient {
         if let Some(st) = sequence_token {
             body["sequenceToken"] = serde_json::Value::String(st.to_string());
         }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.PutLogEvents", &body.to_string()).await?;
-        let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("nextSequenceToken").and_then(|v| v.as_str()).map(String::from))
+        let response = self
+            .client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.PutLogEvents",
+                &body.to_string(),
+            )
+            .await?;
+        let result: serde_json::Value = serde_json::from_str(&response.body).map_err(|e| {
+            AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status)
+        })?;
+        Ok(result
+            .get("nextSequenceToken")
+            .and_then(|v| v.as_str())
+            .map(String::from))
     }
 
-    pub async fn filter_log_events(&self, log_group_name: &str, filter_pattern: Option<&str>, start_time: Option<i64>, end_time: Option<i64>, limit: Option<u32>) -> AwsResult<Vec<FilteredLogEvent>> {
+    pub async fn filter_log_events(
+        &self,
+        log_group_name: &str,
+        filter_pattern: Option<&str>,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        limit: Option<u32>,
+    ) -> AwsResult<Vec<FilteredLogEvent>> {
         let mut body = serde_json::json!({ "logGroupName": log_group_name });
         if let Some(fp) = filter_pattern {
             body["filterPattern"] = serde_json::Value::String(fp.to_string());
         }
-        if let Some(st) = start_time { body["startTime"] = serde_json::json!(st); }
-        if let Some(et) = end_time { body["endTime"] = serde_json::json!(et); }
-        if let Some(l) = limit { body["limit"] = serde_json::json!(l); }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.FilterLogEvents", &body.to_string()).await?;
-        let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("events")
+        if let Some(st) = start_time {
+            body["startTime"] = serde_json::json!(st);
+        }
+        if let Some(et) = end_time {
+            body["endTime"] = serde_json::json!(et);
+        }
+        if let Some(l) = limit {
+            body["limit"] = serde_json::json!(l);
+        }
+        let response = self
+            .client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.FilterLogEvents",
+                &body.to_string(),
+            )
+            .await?;
+        let result: serde_json::Value = serde_json::from_str(&response.body).map_err(|e| {
+            AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status)
+        })?;
+        Ok(result
+            .get("events")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn put_retention_policy(&self, log_group_name: &str, retention_in_days: i32) -> AwsResult<()> {
+    pub async fn put_retention_policy(
+        &self,
+        log_group_name: &str,
+        retention_in_days: i32,
+    ) -> AwsResult<()> {
         let body = serde_json::json!({
             "logGroupName": log_group_name,
             "retentionInDays": retention_in_days,
         });
-        self.client.json_request(LOGS_SERVICE, "Logs_20140328.PutRetentionPolicy", &body.to_string()).await?;
+        self.client
+            .json_request(
+                LOGS_SERVICE,
+                "Logs_20140328.PutRetentionPolicy",
+                &body.to_string(),
+            )
+            .await?;
         Ok(())
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
 
     fn parse_dimensions(&self, xml: &str) -> Vec<Dimension> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(Dimension {
-                name: client::xml_text(b, "Name")?,
-                value: client::xml_text(b, "Value")?,
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(Dimension {
+                    name: client::xml_text(b, "Name")?,
+                    value: client::xml_text(b, "Value")?,
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_alarms(&self, xml: &str) -> Vec<MetricAlarm> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(MetricAlarm {
-                alarm_name: client::xml_text(b, "AlarmName")?,
-                alarm_arn: client::xml_text(b, "AlarmArn"),
-                alarm_description: client::xml_text(b, "AlarmDescription"),
-                state_value: client::xml_text(b, "StateValue").unwrap_or_default(),
-                state_reason: client::xml_text(b, "StateReason"),
-                state_updated_timestamp: client::xml_text(b, "StateUpdatedTimestamp"),
-                metric_name: client::xml_text(b, "MetricName"),
-                namespace: client::xml_text(b, "Namespace"),
-                statistic: client::xml_text(b, "Statistic"),
-                period: client::xml_text(b, "Period").and_then(|v| v.parse().ok()),
-                evaluation_periods: client::xml_text(b, "EvaluationPeriods").and_then(|v| v.parse().ok()),
-                threshold: client::xml_text(b, "Threshold").and_then(|v| v.parse().ok()),
-                comparison_operator: client::xml_text(b, "ComparisonOperator"),
-                actions_enabled: client::xml_text(b, "ActionsEnabled").map(|v| v == "true").unwrap_or(true),
-                alarm_actions: client::xml_text_all(b, "AlarmActions"),
-                ok_actions: client::xml_text_all(b, "OKActions"),
-                insufficient_data_actions: client::xml_text_all(b, "InsufficientDataActions"),
-                dimensions: self.parse_dimensions(b),
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(MetricAlarm {
+                    alarm_name: client::xml_text(b, "AlarmName")?,
+                    alarm_arn: client::xml_text(b, "AlarmArn"),
+                    alarm_description: client::xml_text(b, "AlarmDescription"),
+                    state_value: client::xml_text(b, "StateValue").unwrap_or_default(),
+                    state_reason: client::xml_text(b, "StateReason"),
+                    state_updated_timestamp: client::xml_text(b, "StateUpdatedTimestamp"),
+                    metric_name: client::xml_text(b, "MetricName"),
+                    namespace: client::xml_text(b, "Namespace"),
+                    statistic: client::xml_text(b, "Statistic"),
+                    period: client::xml_text(b, "Period").and_then(|v| v.parse().ok()),
+                    evaluation_periods: client::xml_text(b, "EvaluationPeriods")
+                        .and_then(|v| v.parse().ok()),
+                    threshold: client::xml_text(b, "Threshold").and_then(|v| v.parse().ok()),
+                    comparison_operator: client::xml_text(b, "ComparisonOperator"),
+                    actions_enabled: client::xml_text(b, "ActionsEnabled")
+                        .map(|v| v == "true")
+                        .unwrap_or(true),
+                    alarm_actions: client::xml_text_all(b, "AlarmActions"),
+                    ok_actions: client::xml_text_all(b, "OKActions"),
+                    insufficient_data_actions: client::xml_text_all(b, "InsufficientDataActions"),
+                    dimensions: self.parse_dimensions(b),
+                })
             })
-        }).collect()
+            .collect()
     }
 }
 
@@ -548,7 +745,10 @@ mod tests {
             alarm_actions: vec!["arn:aws:sns:us-east-1:123:alerts".to_string()],
             ok_actions: vec![],
             insufficient_data_actions: vec![],
-            dimensions: vec![Dimension { name: "InstanceId".to_string(), value: "i-abc123".to_string() }],
+            dimensions: vec![Dimension {
+                name: "InstanceId".to_string(),
+                value: "i-abc123".to_string(),
+            }],
         };
         let json = serde_json::to_string(&alarm).unwrap();
         let back: MetricAlarm = serde_json::from_str(&json).unwrap();
@@ -560,7 +760,9 @@ mod tests {
     fn log_group_serde() {
         let lg = LogGroup {
             log_group_name: "/aws/lambda/my-func".to_string(),
-            log_group_arn: Some("arn:aws:logs:us-east-1:123:log-group:/aws/lambda/my-func:*".to_string()),
+            log_group_arn: Some(
+                "arn:aws:logs:us-east-1:123:log-group:/aws/lambda/my-func:*".to_string(),
+            ),
             creation_time: Some(1704067200000),
             retention_in_days: Some(14),
             metric_filter_count: Some(0),

@@ -125,7 +125,12 @@ impl SecretsManagerClient {
         Self { client }
     }
 
-    pub async fn get_secret_value(&self, secret_id: &str, version_id: Option<&str>, version_stage: Option<&str>) -> AwsResult<SecretValue> {
+    pub async fn get_secret_value(
+        &self,
+        secret_id: &str,
+        version_id: Option<&str>,
+        version_stage: Option<&str>,
+    ) -> AwsResult<SecretValue> {
         let mut body = serde_json::json!({ "SecretId": secret_id });
         if let Some(vid) = version_id {
             body["VersionId"] = serde_json::Value::String(vid.to_string());
@@ -133,12 +138,23 @@ impl SecretsManagerClient {
         if let Some(vs) = version_stage {
             body["VersionStage"] = serde_json::Value::String(vs.to_string());
         }
-        let response = self.client.json_request(SERVICE, "secretsmanager.GetSecretValue", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.GetSecretValue", &body.to_string())
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
-    pub async fn create_secret(&self, name: &str, secret_string: Option<&str>, secret_binary: Option<&str>, description: Option<&str>, kms_key_id: Option<&str>, tags: &[SecretTag]) -> AwsResult<String> {
+    pub async fn create_secret(
+        &self,
+        name: &str,
+        secret_string: Option<&str>,
+        secret_binary: Option<&str>,
+        description: Option<&str>,
+        kms_key_id: Option<&str>,
+        tags: &[SecretTag],
+    ) -> AwsResult<String> {
         let mut body = serde_json::json!({ "Name": name });
         if let Some(ss) = secret_string {
             body["SecretString"] = serde_json::Value::String(ss.to_string());
@@ -155,13 +171,26 @@ impl SecretsManagerClient {
         if !tags.is_empty() {
             body["Tags"] = serde_json::to_value(tags).unwrap_or_default();
         }
-        let response = self.client.json_request(SERVICE, "secretsmanager.CreateSecret", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.CreateSecret", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("ARN").and_then(|v| v.as_str()).unwrap_or_default().to_string())
+        Ok(result
+            .get("ARN")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 
-    pub async fn update_secret(&self, secret_id: &str, secret_string: Option<&str>, secret_binary: Option<&str>, description: Option<&str>) -> AwsResult<String> {
+    pub async fn update_secret(
+        &self,
+        secret_id: &str,
+        secret_string: Option<&str>,
+        secret_binary: Option<&str>,
+        description: Option<&str>,
+    ) -> AwsResult<String> {
         let mut body = serde_json::json!({ "SecretId": secret_id });
         if let Some(ss) = secret_string {
             body["SecretString"] = serde_json::Value::String(ss.to_string());
@@ -172,13 +201,26 @@ impl SecretsManagerClient {
         if let Some(desc) = description {
             body["Description"] = serde_json::Value::String(desc.to_string());
         }
-        let response = self.client.json_request(SERVICE, "secretsmanager.UpdateSecret", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.UpdateSecret", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("ARN").and_then(|v| v.as_str()).unwrap_or_default().to_string())
+        Ok(result
+            .get("ARN")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 
-    pub async fn put_secret_value(&self, secret_id: &str, secret_string: Option<&str>, secret_binary: Option<&str>, version_stages: Option<&[String]>) -> AwsResult<String> {
+    pub async fn put_secret_value(
+        &self,
+        secret_id: &str,
+        secret_string: Option<&str>,
+        secret_binary: Option<&str>,
+        version_stages: Option<&[String]>,
+    ) -> AwsResult<String> {
         let mut body = serde_json::json!({ "SecretId": secret_id });
         if let Some(ss) = secret_string {
             body["SecretString"] = serde_json::Value::String(ss.to_string());
@@ -189,13 +231,25 @@ impl SecretsManagerClient {
         if let Some(vs) = version_stages {
             body["VersionStages"] = serde_json::to_value(vs).unwrap_or_default();
         }
-        let response = self.client.json_request(SERVICE, "secretsmanager.PutSecretValue", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.PutSecretValue", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("VersionId").and_then(|v| v.as_str()).unwrap_or_default().to_string())
+        Ok(result
+            .get("VersionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 
-    pub async fn delete_secret(&self, secret_id: &str, force_delete: bool, recovery_window_in_days: Option<u32>) -> AwsResult<()> {
+    pub async fn delete_secret(
+        &self,
+        secret_id: &str,
+        force_delete: bool,
+        recovery_window_in_days: Option<u32>,
+    ) -> AwsResult<()> {
         let mut body = serde_json::json!({ "SecretId": secret_id });
         if force_delete {
             body["ForceDeleteWithoutRecovery"] = serde_json::json!(true);
@@ -203,19 +257,32 @@ impl SecretsManagerClient {
         if let Some(rw) = recovery_window_in_days {
             body["RecoveryWindowInDays"] = serde_json::json!(rw);
         }
-        self.client.json_request(SERVICE, "secretsmanager.DeleteSecret", &body.to_string()).await?;
+        self.client
+            .json_request(SERVICE, "secretsmanager.DeleteSecret", &body.to_string())
+            .await?;
         Ok(())
     }
 
     pub async fn restore_secret(&self, secret_id: &str) -> AwsResult<String> {
         let body = serde_json::json!({ "SecretId": secret_id });
-        let response = self.client.json_request(SERVICE, "secretsmanager.RestoreSecret", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.RestoreSecret", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Name").and_then(|v| v.as_str()).unwrap_or_default().to_string())
+        Ok(result
+            .get("Name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 
-    pub async fn list_secrets(&self, max_results: Option<u32>, next_token: Option<&str>) -> AwsResult<(Vec<SecretListEntry>, Option<String>)> {
+    pub async fn list_secrets(
+        &self,
+        max_results: Option<u32>,
+        next_token: Option<&str>,
+    ) -> AwsResult<(Vec<SecretListEntry>, Option<String>)> {
         let mut body = serde_json::json!({});
         if let Some(mr) = max_results {
             body["MaxResults"] = serde_json::json!(mr);
@@ -223,24 +290,39 @@ impl SecretsManagerClient {
         if let Some(nt) = next_token {
             body["NextToken"] = serde_json::Value::String(nt.to_string());
         }
-        let response = self.client.json_request(SERVICE, "secretsmanager.ListSecrets", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.ListSecrets", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        let entries: Vec<SecretListEntry> = result.get("SecretList")
+        let entries: Vec<SecretListEntry> = result
+            .get("SecretList")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
-        let next = result.get("NextToken").and_then(|v| v.as_str()).map(String::from);
+        let next = result
+            .get("NextToken")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         Ok((entries, next))
     }
 
     pub async fn describe_secret(&self, secret_id: &str) -> AwsResult<SecretMetadata> {
         let body = serde_json::json!({ "SecretId": secret_id });
-        let response = self.client.json_request(SERVICE, "secretsmanager.DescribeSecret", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.DescribeSecret", &body.to_string())
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
-    pub async fn rotate_secret(&self, secret_id: &str, rotation_lambda_arn: Option<&str>, rotation_rules: Option<&RotationRules>) -> AwsResult<String> {
+    pub async fn rotate_secret(
+        &self,
+        secret_id: &str,
+        rotation_lambda_arn: Option<&str>,
+        rotation_rules: Option<&RotationRules>,
+    ) -> AwsResult<String> {
         let mut body = serde_json::json!({ "SecretId": secret_id });
         if let Some(arn) = rotation_lambda_arn {
             body["RotationLambdaARN"] = serde_json::Value::String(arn.to_string());
@@ -248,10 +330,17 @@ impl SecretsManagerClient {
         if let Some(rules) = rotation_rules {
             body["RotationRules"] = serde_json::to_value(rules).unwrap_or_default();
         }
-        let response = self.client.json_request(SERVICE, "secretsmanager.RotateSecret", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "secretsmanager.RotateSecret", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("VersionId").and_then(|v| v.as_str()).unwrap_or_default().to_string())
+        Ok(result
+            .get("VersionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 
     pub async fn tag_resource(&self, secret_id: &str, tags: &[SecretTag]) -> AwsResult<()> {
@@ -259,7 +348,9 @@ impl SecretsManagerClient {
             "SecretId": secret_id,
             "Tags": tags,
         });
-        self.client.json_request(SERVICE, "secretsmanager.TagResource", &body.to_string()).await?;
+        self.client
+            .json_request(SERVICE, "secretsmanager.TagResource", &body.to_string())
+            .await?;
         Ok(())
     }
 
@@ -268,22 +359,39 @@ impl SecretsManagerClient {
             "SecretId": secret_id,
             "TagKeys": tag_keys,
         });
-        self.client.json_request(SERVICE, "secretsmanager.UntagResource", &body.to_string()).await?;
+        self.client
+            .json_request(SERVICE, "secretsmanager.UntagResource", &body.to_string())
+            .await?;
         Ok(())
     }
 
-    pub async fn list_secret_version_ids(&self, secret_id: &str) -> AwsResult<Vec<SecretVersionInfo>> {
+    pub async fn list_secret_version_ids(
+        &self,
+        secret_id: &str,
+    ) -> AwsResult<Vec<SecretVersionInfo>> {
         let body = serde_json::json!({ "SecretId": secret_id });
-        let response = self.client.json_request(SERVICE, "secretsmanager.ListSecretVersionIds", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                "secretsmanager.ListSecretVersionIds",
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Versions")
+        Ok(result
+            .get("Versions")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     /// Gets a random password from Secrets Manager (useful for generating credentials).
-    pub async fn get_random_password(&self, length: Option<u32>, exclude_characters: Option<&str>) -> AwsResult<String> {
+    pub async fn get_random_password(
+        &self,
+        length: Option<u32>,
+        exclude_characters: Option<&str>,
+    ) -> AwsResult<String> {
         let mut body = serde_json::json!({});
         if let Some(l) = length {
             body["PasswordLength"] = serde_json::json!(l);
@@ -291,10 +399,21 @@ impl SecretsManagerClient {
         if let Some(ec) = exclude_characters {
             body["ExcludeCharacters"] = serde_json::Value::String(ec.to_string());
         }
-        let response = self.client.json_request(SERVICE, "secretsmanager.GetRandomPassword", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                "secretsmanager.GetRandomPassword",
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("RandomPassword").and_then(|v| v.as_str()).unwrap_or_default().to_string())
+        Ok(result
+            .get("RandomPassword")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 }
 

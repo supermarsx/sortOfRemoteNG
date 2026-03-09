@@ -166,7 +166,11 @@ impl SigV4Signer {
 
         format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
-            method, canonical_uri, canonical_querystring, canonical_headers, signed_headers,
+            method,
+            canonical_uri,
+            canonical_querystring,
+            canonical_headers,
+            signed_headers,
             payload_hash
         )
     }
@@ -315,7 +319,7 @@ pub fn uri_encode(input: &str) -> String {
 /// URI-encode a URL path, preserving forward slashes.
 fn uri_encode_path(path: &str) -> String {
     path.split('/')
-        .map(|segment| uri_encode(segment))
+        .map(uri_encode)
         .collect::<Vec<String>>()
         .join("/")
 }
@@ -388,8 +392,9 @@ mod tests {
 
     #[test]
     fn parse_url_with_query() {
-        let (path, query) =
-            parse_url_components("https://example.com/?Action=DescribeInstances&Version=2016-11-15");
+        let (path, query) = parse_url_components(
+            "https://example.com/?Action=DescribeInstances&Version=2016-11-15",
+        );
         assert_eq!(path, "/");
         assert!(query.contains("Action"));
         assert!(query.contains("Version"));
@@ -397,8 +402,7 @@ mod tests {
 
     #[test]
     fn parse_url_query_sorted() {
-        let (_, query) =
-            parse_url_components("https://example.com/?Z=1&A=2&M=3");
+        let (_, query) = parse_url_components("https://example.com/?Z=1&A=2&M=3");
         // Should be sorted: A=2&M=3&Z=1
         assert_eq!(query, "A=2&M=3&Z=1");
     }
@@ -407,10 +411,19 @@ mod tests {
     fn sign_request_has_authorization() {
         let signer = test_signer();
         let mut headers = BTreeMap::new();
-        headers.insert("host".to_string(), "service.us-east-1.amazonaws.com".to_string());
+        headers.insert(
+            "host".to_string(),
+            "service.us-east-1.amazonaws.com".to_string(),
+        );
 
         let ts = chrono::Utc::now();
-        let signed = signer.sign_request("GET", "https://service.us-east-1.amazonaws.com/", &headers, "", ts);
+        let signed = signer.sign_request(
+            "GET",
+            "https://service.us-east-1.amazonaws.com/",
+            &headers,
+            "",
+            ts,
+        );
 
         assert!(signed.headers.contains_key("authorization"));
         let auth = &signed.headers["authorization"];
@@ -424,10 +437,19 @@ mod tests {
     fn sign_request_has_amz_date() {
         let signer = test_signer();
         let mut headers = BTreeMap::new();
-        headers.insert("host".to_string(), "service.us-east-1.amazonaws.com".to_string());
+        headers.insert(
+            "host".to_string(),
+            "service.us-east-1.amazonaws.com".to_string(),
+        );
 
         let ts = chrono::Utc::now();
-        let signed = signer.sign_request("GET", "https://service.us-east-1.amazonaws.com/", &headers, "", ts);
+        let signed = signer.sign_request(
+            "GET",
+            "https://service.us-east-1.amazonaws.com/",
+            &headers,
+            "",
+            ts,
+        );
         assert!(signed.headers.contains_key("x-amz-date"));
     }
 
@@ -444,9 +466,18 @@ mod tests {
         headers.insert("host".to_string(), "sts.amazonaws.com".to_string());
 
         let ts = chrono::Utc::now();
-        let signed = signer.sign_request("POST", "https://sts.amazonaws.com/", &headers, "Action=GetCallerIdentity&Version=2011-06-15", ts);
+        let signed = signer.sign_request(
+            "POST",
+            "https://sts.amazonaws.com/",
+            &headers,
+            "Action=GetCallerIdentity&Version=2011-06-15",
+            ts,
+        );
         assert_eq!(
-            signed.headers.get("x-amz-security-token").map(|s| s.as_str()),
+            signed
+                .headers
+                .get("x-amz-security-token")
+                .map(|s| s.as_str()),
             Some("sessiontoken123")
         );
     }
@@ -530,16 +561,12 @@ mod tests {
             .unwrap()
             .and_utc();
 
-        let signed = signer.sign_request(
-            "GET",
-            "https://example.amazonaws.com/",
-            &headers,
-            "",
-            ts,
-        );
+        let signed = signer.sign_request("GET", "https://example.amazonaws.com/", &headers, "", ts);
 
         // Verify the signature is deterministic
         let auth = &signed.headers["authorization"];
-        assert!(auth.starts_with("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request"));
+        assert!(auth.starts_with(
+            "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request"
+        ));
     }
 }

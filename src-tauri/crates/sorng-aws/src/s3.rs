@@ -445,7 +445,11 @@ impl S3Client {
     }
 
     /// GetObject - download an object's contents.
-    pub async fn get_object(&self, bucket: &str, key: &str) -> AwsResult<(Vec<u8>, ObjectMetadata)> {
+    pub async fn get_object(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> AwsResult<(Vec<u8>, ObjectMetadata)> {
         let path = format!("/{}/{}", bucket, key);
         let response = self
             .client
@@ -458,7 +462,10 @@ impl S3Client {
             content_type: response.headers.get("content-type").cloned(),
             etag: response.headers.get("etag").cloned(),
             last_modified: response.headers.get("last-modified").cloned(),
-            server_side_encryption: response.headers.get("x-amz-server-side-encryption").cloned(),
+            server_side_encryption: response
+                .headers
+                .get("x-amz-server-side-encryption")
+                .cloned(),
             storage_class: response.headers.get("x-amz-storage-class").cloned(),
             version_id: response.headers.get("x-amz-version-id").cloned(),
             metadata: HashMap::new(),
@@ -473,11 +480,7 @@ impl S3Client {
     }
 
     /// PutObject - upload an object.
-    pub async fn put_object(
-        &self,
-        input: &PutObjectInput,
-        body: &str,
-    ) -> AwsResult<String> {
+    pub async fn put_object(&self, input: &PutObjectInput, body: &str) -> AwsResult<String> {
         let path = format!("/{}/{}", input.bucket, input.key);
         let mut headers = BTreeMap::new();
 
@@ -514,11 +517,7 @@ impl S3Client {
             .rest_request(SERVICE, "PUT", &path, headers, body)
             .await?;
 
-        Ok(response
-            .headers
-            .get("etag")
-            .cloned()
-            .unwrap_or_default())
+        Ok(response.headers.get("etag").cloned().unwrap_or_default())
     }
 
     /// DeleteObject.
@@ -539,10 +538,7 @@ impl S3Client {
     ) -> AwsResult<String> {
         let path = format!("/{}/{}", dest_bucket, dest_key);
         let mut headers = BTreeMap::new();
-        headers.insert(
-            "x-amz-copy-source".to_string(),
-            source.to_header_value(),
-        );
+        headers.insert("x-amz-copy-source".to_string(), source.to_header_value());
 
         let response = self
             .client
@@ -570,7 +566,10 @@ impl S3Client {
             content_type: response.headers.get("content-type").cloned(),
             etag: response.headers.get("etag").cloned(),
             last_modified: response.headers.get("last-modified").cloned(),
-            server_side_encryption: response.headers.get("x-amz-server-side-encryption").cloned(),
+            server_side_encryption: response
+                .headers
+                .get("x-amz-server-side-encryption")
+                .cloned(),
             storage_class: response.headers.get("x-amz-storage-class").cloned(),
             version_id: response.headers.get("x-amz-version-id").cloned(),
             metadata: HashMap::new(),
@@ -625,11 +624,7 @@ impl S3Client {
             .rest_request(SERVICE, "PUT", &path, BTreeMap::new(), body)
             .await?;
 
-        Ok(response
-            .headers
-            .get("etag")
-            .cloned()
-            .unwrap_or_default())
+        Ok(response.headers.get("etag").cloned().unwrap_or_default())
     }
 
     /// CompleteMultipartUpload.
@@ -757,7 +752,10 @@ impl S3Client {
     }
 
     /// DeleteObjects (bulk delete).
-    pub async fn delete_objects(&self, input: &DeleteObjectsInput) -> AwsResult<Vec<DeletedObject>> {
+    pub async fn delete_objects(
+        &self,
+        input: &DeleteObjectsInput,
+    ) -> AwsResult<Vec<DeletedObject>> {
         let mut xml = String::from("<Delete>");
         if input.quiet {
             xml.push_str("<Quiet>true</Quiet>");
@@ -814,9 +812,10 @@ impl S3Client {
     }
 
     /// Generate a presigned URL for an S3 object.
+    #[allow(clippy::result_large_err)]
     pub fn generate_presigned_url(&self, params: &PresignedUrlParams) -> AwsResult<PresignedUrl> {
-        let expires_at = chrono::Utc::now()
-            + chrono::Duration::seconds(params.expires_in_secs as i64);
+        let expires_at =
+            chrono::Utc::now() + chrono::Duration::seconds(params.expires_in_secs as i64);
 
         // Build the presigned URL using query string authentication
         let endpoint = self.client.endpoint(SERVICE);

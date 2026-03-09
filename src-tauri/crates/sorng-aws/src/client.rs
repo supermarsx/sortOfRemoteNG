@@ -92,7 +92,13 @@ impl AwsClient {
         // Build form body
         let body = params
             .iter()
-            .map(|(k, v)| format!("{}={}", crate::signing::uri_encode(k), crate::signing::uri_encode(v)))
+            .map(|(k, v)| {
+                format!(
+                    "{}={}",
+                    crate::signing::uri_encode(k),
+                    crate::signing::uri_encode(v)
+                )
+            })
             .collect::<Vec<_>>()
             .join("&");
 
@@ -123,7 +129,10 @@ impl AwsClient {
 
         let mut headers = BTreeMap::new();
         headers.insert("host".to_string(), host);
-        headers.insert("content-type".to_string(), "application/x-amz-json-1.1".to_string());
+        headers.insert(
+            "content-type".to_string(),
+            "application/x-amz-json-1.1".to_string(),
+        );
         headers.insert("x-amz-target".to_string(), target.to_string());
 
         self.execute_with_retry(service, "POST", &endpoint, headers, json_body)
@@ -200,7 +209,10 @@ impl AwsClient {
         let max_attempts = self.retry_config.max_attempts;
 
         for attempt in 0..max_attempts {
-            match self.execute_signed(service, method, url, &headers, body).await {
+            match self
+                .execute_signed(service, method, url, &headers, body)
+                .await
+            {
                 Ok(response) => {
                     if response.status >= 200 && response.status < 300 {
                         return Ok(response);
@@ -395,7 +407,7 @@ pub fn xml_text(xml: &str, tag: &str) -> Option<String> {
         }
     }
     // Try with namespace prefix
-    let open_ns = format!("<{}:", tag.split(':').last().unwrap_or(tag));
+    let open_ns = format!("<{}:", tag.split(':').next_back().unwrap_or(tag));
     if let Some(start) = xml.find(&open_ns) {
         if let Some(gt) = xml[start..].find('>') {
             let content_start = start + gt + 1;
@@ -521,9 +533,10 @@ mod tests {
     #[test]
     fn add_filters_to_params() {
         let mut params = BTreeMap::new();
-        let filters = vec![
-            crate::config::Filter::new("instance-state-name", vec!["running".into()]),
-        ];
+        let filters = vec![crate::config::Filter::new(
+            "instance-state-name",
+            vec!["running".into()],
+        )];
         add_filters(&mut params, &filters);
         assert_eq!(params["Filter.1.Name"], "instance-state-name");
         assert_eq!(params["Filter.1.Value.1"], "running");

@@ -148,13 +148,16 @@ impl StsClient {
     }
 
     /// Assumes a role, returning temporary credentials for the assumed role.
-    /// 
+    ///
     /// This is the most commonly used STS operation, enabling cross-account
     /// access and privilege escalation patterns.
     pub async fn assume_role(&self, input: &AssumeRoleInput) -> AwsResult<AssumeRoleOutput> {
         let mut params = client::build_query_params("AssumeRole", API_VERSION);
         params.insert("RoleArn".to_string(), input.role_arn.clone());
-        params.insert("RoleSessionName".to_string(), input.role_session_name.clone());
+        params.insert(
+            "RoleSessionName".to_string(),
+            input.role_session_name.clone(),
+        );
         if let Some(dur) = input.duration_seconds {
             params.insert("DurationSeconds".to_string(), dur.to_string());
         }
@@ -178,11 +181,20 @@ impl StsClient {
     }
 
     /// Assumes a role using a web identity token from an OIDC provider (Cognito, Google, etc.).
-    pub async fn assume_role_with_web_identity(&self, input: &AssumeRoleWithWebIdentityInput) -> AwsResult<AssumeRoleOutput> {
+    pub async fn assume_role_with_web_identity(
+        &self,
+        input: &AssumeRoleWithWebIdentityInput,
+    ) -> AwsResult<AssumeRoleOutput> {
         let mut params = client::build_query_params("AssumeRoleWithWebIdentity", API_VERSION);
         params.insert("RoleArn".to_string(), input.role_arn.clone());
-        params.insert("RoleSessionName".to_string(), input.role_session_name.clone());
-        params.insert("WebIdentityToken".to_string(), input.web_identity_token.clone());
+        params.insert(
+            "RoleSessionName".to_string(),
+            input.role_session_name.clone(),
+        );
+        params.insert(
+            "WebIdentityToken".to_string(),
+            input.web_identity_token.clone(),
+        );
         if let Some(dur) = input.duration_seconds {
             params.insert("DurationSeconds".to_string(), dur.to_string());
         }
@@ -197,7 +209,10 @@ impl StsClient {
     }
 
     /// Assumes a role using a SAML authentication response.
-    pub async fn assume_role_with_saml(&self, input: &AssumeRoleWithSamlInput) -> AwsResult<AssumeRoleOutput> {
+    pub async fn assume_role_with_saml(
+        &self,
+        input: &AssumeRoleWithSamlInput,
+    ) -> AwsResult<AssumeRoleOutput> {
         let mut params = client::build_query_params("AssumeRoleWithSAML", API_VERSION);
         params.insert("RoleArn".to_string(), input.role_arn.clone());
         params.insert("PrincipalArn".to_string(), input.principal_arn.clone());
@@ -241,7 +256,12 @@ impl StsClient {
     }
 
     /// Returns temporary credentials for a federated user.
-    pub async fn get_federation_token(&self, name: &str, duration_seconds: Option<u32>, policy: Option<&str>) -> AwsResult<GetFederationTokenOutput> {
+    pub async fn get_federation_token(
+        &self,
+        name: &str,
+        duration_seconds: Option<u32>,
+        policy: Option<&str>,
+    ) -> AwsResult<GetFederationTokenOutput> {
         let mut params = client::build_query_params("GetFederationToken", API_VERSION);
         params.insert("Name".to_string(), name.to_string());
         if let Some(dur) = duration_seconds {
@@ -251,12 +271,14 @@ impl StsClient {
             params.insert("Policy".to_string(), p.to_string());
         }
         let response = self.client.query_request(SERVICE, &params).await?;
-        let creds = self.parse_credentials(&response.body)
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "Failed to parse credentials", 200))?;
+        let creds = self.parse_credentials(&response.body).ok_or_else(|| {
+            AwsError::new(SERVICE, "ParseError", "Failed to parse credentials", 200)
+        })?;
         Ok(GetFederationTokenOutput {
             credentials: creds,
             federated_user: FederatedUser {
-                federated_user_id: client::xml_text(&response.body, "FederatedUserId").unwrap_or_default(),
+                federated_user_id: client::xml_text(&response.body, "FederatedUserId")
+                    .unwrap_or_default(),
                 arn: client::xml_text(&response.body, "Arn").unwrap_or_default(),
             },
             packed_policy_size: client::xml_text(&response.body, "PackedPolicySize")
@@ -266,9 +288,16 @@ impl StsClient {
 
     // ── XML Parsers ─────────────────────────────────────────────────
 
+    #[allow(clippy::result_large_err)]
     fn parse_assume_role_response(&self, xml: &str) -> AwsResult<AssumeRoleOutput> {
-        let creds = self.parse_credentials(xml)
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "Failed to parse credentials in AssumeRole response", 200))?;
+        let creds = self.parse_credentials(xml).ok_or_else(|| {
+            AwsError::new(
+                SERVICE,
+                "ParseError",
+                "Failed to parse credentials in AssumeRole response",
+                200,
+            )
+        })?;
         Ok(AssumeRoleOutput {
             credentials: creds,
             assumed_role_user: AssumedRoleUser {

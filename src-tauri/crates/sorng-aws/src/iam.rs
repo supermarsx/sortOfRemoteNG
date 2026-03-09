@@ -196,7 +196,12 @@ impl IamClient {
 
     // ── Users ───────────────────────────────────────────────────────
 
-    pub async fn list_users(&self, path_prefix: Option<&str>, max_items: Option<u32>, marker: Option<&str>) -> AwsResult<(Vec<User>, Option<String>)> {
+    pub async fn list_users(
+        &self,
+        path_prefix: Option<&str>,
+        max_items: Option<u32>,
+        marker: Option<&str>,
+    ) -> AwsResult<(Vec<User>, Option<String>)> {
         let mut params = client::build_query_params("ListUsers", API_VERSION);
         if let Some(p) = path_prefix {
             params.insert("PathPrefix".to_string(), p.to_string());
@@ -220,7 +225,14 @@ impl IamClient {
         self.parse_users(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "NoSuchEntity", &format!("User {} not found", user_name), 404))
+            .ok_or_else(|| {
+                AwsError::new(
+                    SERVICE,
+                    "NoSuchEntity",
+                    &format!("User {} not found", user_name),
+                    404,
+                )
+            })
     }
 
     pub async fn create_user(&self, input: &CreateUserInput) -> AwsResult<User> {
@@ -232,13 +244,19 @@ impl IamClient {
         if let Some(ref pb) = input.permissions_boundary {
             params.insert("PermissionsBoundary".to_string(), pb.clone());
         }
-        let tags: Vec<crate::config::Tag> = input.tags.iter().map(|(k, v)| crate::config::Tag::new(k, v)).collect();
+        let tags: Vec<crate::config::Tag> = input
+            .tags
+            .iter()
+            .map(|(k, v)| crate::config::Tag::new(k, v))
+            .collect();
         client::add_tags(&mut params, &tags, "Tags.member");
         let response = self.client.query_request(SERVICE, &params).await?;
         self.parse_users(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No user in CreateUser response", 200))
+            .ok_or_else(|| {
+                AwsError::new(SERVICE, "ParseError", "No user in CreateUser response", 200)
+            })
     }
 
     pub async fn delete_user(&self, user_name: &str) -> AwsResult<()> {
@@ -266,7 +284,14 @@ impl IamClient {
         self.parse_groups(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No group in CreateGroup response", 200))
+            .ok_or_else(|| {
+                AwsError::new(
+                    SERVICE,
+                    "ParseError",
+                    "No group in CreateGroup response",
+                    200,
+                )
+            })
     }
 
     pub async fn delete_group(&self, group_name: &str) -> AwsResult<()> {
@@ -307,13 +332,23 @@ impl IamClient {
         self.parse_roles(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "NoSuchEntity", &format!("Role {} not found", role_name), 404))
+            .ok_or_else(|| {
+                AwsError::new(
+                    SERVICE,
+                    "NoSuchEntity",
+                    &format!("Role {} not found", role_name),
+                    404,
+                )
+            })
     }
 
     pub async fn create_role(&self, input: &CreateRoleInput) -> AwsResult<Role> {
         let mut params = client::build_query_params("CreateRole", API_VERSION);
         params.insert("RoleName".to_string(), input.role_name.clone());
-        params.insert("AssumeRolePolicyDocument".to_string(), input.assume_role_policy_document.clone());
+        params.insert(
+            "AssumeRolePolicyDocument".to_string(),
+            input.assume_role_policy_document.clone(),
+        );
         if let Some(ref desc) = input.description {
             params.insert("Description".to_string(), desc.clone());
         }
@@ -327,7 +362,9 @@ impl IamClient {
         self.parse_roles(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No role in CreateRole response", 200))
+            .ok_or_else(|| {
+                AwsError::new(SERVICE, "ParseError", "No role in CreateRole response", 200)
+            })
     }
 
     pub async fn delete_role(&self, role_name: &str) -> AwsResult<()> {
@@ -339,7 +376,11 @@ impl IamClient {
 
     // ── Policies ────────────────────────────────────────────────────
 
-    pub async fn list_policies(&self, scope: Option<&str>, only_attached: Option<bool>) -> AwsResult<Vec<Policy>> {
+    pub async fn list_policies(
+        &self,
+        scope: Option<&str>,
+        only_attached: Option<bool>,
+    ) -> AwsResult<Vec<Policy>> {
         let mut params = client::build_query_params("ListPolicies", API_VERSION);
         if let Some(s) = scope {
             params.insert("Scope".to_string(), s.to_string());
@@ -365,7 +406,14 @@ impl IamClient {
         self.parse_policies(&response.body)
             .into_iter()
             .next()
-            .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No policy in CreatePolicy response", 200))
+            .ok_or_else(|| {
+                AwsError::new(
+                    SERVICE,
+                    "ParseError",
+                    "No policy in CreatePolicy response",
+                    200,
+                )
+            })
     }
 
     pub async fn delete_policy(&self, policy_arn: &str) -> AwsResult<()> {
@@ -375,7 +423,11 @@ impl IamClient {
         Ok(())
     }
 
-    pub async fn get_policy_version(&self, policy_arn: &str, version_id: &str) -> AwsResult<PolicyVersion> {
+    pub async fn get_policy_version(
+        &self,
+        policy_arn: &str,
+        version_id: &str,
+    ) -> AwsResult<PolicyVersion> {
         let mut params = client::build_query_params("GetPolicyVersion", API_VERSION);
         params.insert("PolicyArn".to_string(), policy_arn.to_string());
         params.insert("VersionId".to_string(), version_id.to_string());
@@ -384,7 +436,8 @@ impl IamClient {
             version_id: client::xml_text(&response.body, "VersionId").unwrap_or_default(),
             document: client::xml_text(&response.body, "Document").unwrap_or_default(),
             is_default_version: client::xml_text(&response.body, "IsDefaultVersion")
-                .map(|v| v == "true").unwrap_or(false),
+                .map(|v| v == "true")
+                .unwrap_or(false),
             create_date: client::xml_text(&response.body, "CreateDate").unwrap_or_default(),
         })
     }
@@ -431,14 +484,20 @@ impl IamClient {
         Ok(())
     }
 
-    pub async fn list_attached_user_policies(&self, user_name: &str) -> AwsResult<Vec<AttachedPolicy>> {
+    pub async fn list_attached_user_policies(
+        &self,
+        user_name: &str,
+    ) -> AwsResult<Vec<AttachedPolicy>> {
         let mut params = client::build_query_params("ListAttachedUserPolicies", API_VERSION);
         params.insert("UserName".to_string(), user_name.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
         Ok(self.parse_attached_policies(&response.body))
     }
 
-    pub async fn list_attached_role_policies(&self, role_name: &str) -> AwsResult<Vec<AttachedPolicy>> {
+    pub async fn list_attached_role_policies(
+        &self,
+        role_name: &str,
+    ) -> AwsResult<Vec<AttachedPolicy>> {
         let mut params = client::build_query_params("ListAttachedRolePolicies", API_VERSION);
         params.insert("RoleName".to_string(), role_name.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
@@ -482,13 +541,16 @@ impl IamClient {
         params.insert("UserName".to_string(), user_name.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
         let blocks = client::xml_blocks(&response.body, "member");
-        Ok(blocks.iter().filter_map(|block| {
-            Some(MfaDevice {
-                user_name: client::xml_text(block, "UserName")?,
-                serial_number: client::xml_text(block, "SerialNumber")?,
-                enable_date: client::xml_text(block, "EnableDate").unwrap_or_default(),
+        Ok(blocks
+            .iter()
+            .filter_map(|block| {
+                Some(MfaDevice {
+                    user_name: client::xml_text(block, "UserName")?,
+                    serial_number: client::xml_text(block, "SerialNumber")?,
+                    enable_date: client::xml_text(block, "EnableDate").unwrap_or_default(),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     // ── Instance Profiles ───────────────────────────────────────────
@@ -509,7 +571,11 @@ impl IamClient {
                 .iter()
                 .find_map(|block| {
                     let k = client::xml_text(block, "key")?;
-                    if k == key { client::xml_text(block, "value")?.parse().ok() } else { None }
+                    if k == key {
+                        client::xml_text(block, "value")?.parse().ok()
+                    } else {
+                        None
+                    }
                 })
                 .unwrap_or(0)
         };
@@ -532,107 +598,138 @@ impl IamClient {
 
     fn parse_users(&self, xml: &str) -> Vec<User> {
         let blocks = client::xml_blocks(xml, "member");
-        blocks.iter().filter_map(|block| {
-            let user_name = client::xml_text(block, "UserName")?;
-            Some(User {
-                user_name,
-                user_id: client::xml_text(block, "UserId").unwrap_or_default(),
-                arn: client::xml_text(block, "Arn").unwrap_or_default(),
-                path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
-                create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
-                password_last_used: client::xml_text(block, "PasswordLastUsed"),
-                permissions_boundary: client::xml_text(block, "PermissionsBoundary"),
-                tags: HashMap::new(),
+        blocks
+            .iter()
+            .filter_map(|block| {
+                let user_name = client::xml_text(block, "UserName")?;
+                Some(User {
+                    user_name,
+                    user_id: client::xml_text(block, "UserId").unwrap_or_default(),
+                    arn: client::xml_text(block, "Arn").unwrap_or_default(),
+                    path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
+                    create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
+                    password_last_used: client::xml_text(block, "PasswordLastUsed"),
+                    permissions_boundary: client::xml_text(block, "PermissionsBoundary"),
+                    tags: HashMap::new(),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_groups(&self, xml: &str) -> Vec<Group> {
         let blocks = client::xml_blocks(xml, "member");
-        blocks.iter().filter_map(|block| {
-            let group_name = client::xml_text(block, "GroupName")?;
-            Some(Group {
-                group_name,
-                group_id: client::xml_text(block, "GroupId").unwrap_or_default(),
-                arn: client::xml_text(block, "Arn").unwrap_or_default(),
-                path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
-                create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
+        blocks
+            .iter()
+            .filter_map(|block| {
+                let group_name = client::xml_text(block, "GroupName")?;
+                Some(Group {
+                    group_name,
+                    group_id: client::xml_text(block, "GroupId").unwrap_or_default(),
+                    arn: client::xml_text(block, "Arn").unwrap_or_default(),
+                    path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
+                    create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_roles(&self, xml: &str) -> Vec<Role> {
         let blocks = client::xml_blocks(xml, "member");
-        blocks.iter().filter_map(|block| {
-            let role_name = client::xml_text(block, "RoleName")?;
-            Some(Role {
-                role_name,
-                role_id: client::xml_text(block, "RoleId").unwrap_or_default(),
-                arn: client::xml_text(block, "Arn").unwrap_or_default(),
-                path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
-                create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
-                assume_role_policy_document: client::xml_text(block, "AssumeRolePolicyDocument"),
-                description: client::xml_text(block, "Description"),
-                max_session_duration: client::xml_text(block, "MaxSessionDuration").and_then(|v| v.parse().ok()),
-                tags: HashMap::new(),
+        blocks
+            .iter()
+            .filter_map(|block| {
+                let role_name = client::xml_text(block, "RoleName")?;
+                Some(Role {
+                    role_name,
+                    role_id: client::xml_text(block, "RoleId").unwrap_or_default(),
+                    arn: client::xml_text(block, "Arn").unwrap_or_default(),
+                    path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
+                    create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
+                    assume_role_policy_document: client::xml_text(
+                        block,
+                        "AssumeRolePolicyDocument",
+                    ),
+                    description: client::xml_text(block, "Description"),
+                    max_session_duration: client::xml_text(block, "MaxSessionDuration")
+                        .and_then(|v| v.parse().ok()),
+                    tags: HashMap::new(),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_policies(&self, xml: &str) -> Vec<Policy> {
         let blocks = client::xml_blocks(xml, "member");
-        blocks.iter().filter_map(|block| {
-            let policy_name = client::xml_text(block, "PolicyName")?;
-            Some(Policy {
-                policy_name,
-                policy_id: client::xml_text(block, "PolicyId").unwrap_or_default(),
-                arn: client::xml_text(block, "Arn").unwrap_or_default(),
-                path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
-                default_version_id: client::xml_text(block, "DefaultVersionId"),
-                attachment_count: client::xml_text(block, "AttachmentCount").and_then(|v| v.parse().ok()).unwrap_or(0),
-                is_attachable: client::xml_text(block, "IsAttachable").map(|v| v == "true").unwrap_or(true),
-                description: client::xml_text(block, "Description"),
-                create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
-                update_date: client::xml_text(block, "UpdateDate"),
+        blocks
+            .iter()
+            .filter_map(|block| {
+                let policy_name = client::xml_text(block, "PolicyName")?;
+                Some(Policy {
+                    policy_name,
+                    policy_id: client::xml_text(block, "PolicyId").unwrap_or_default(),
+                    arn: client::xml_text(block, "Arn").unwrap_or_default(),
+                    path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
+                    default_version_id: client::xml_text(block, "DefaultVersionId"),
+                    attachment_count: client::xml_text(block, "AttachmentCount")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0),
+                    is_attachable: client::xml_text(block, "IsAttachable")
+                        .map(|v| v == "true")
+                        .unwrap_or(true),
+                    description: client::xml_text(block, "Description"),
+                    create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
+                    update_date: client::xml_text(block, "UpdateDate"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_attached_policies(&self, xml: &str) -> Vec<AttachedPolicy> {
         let blocks = client::xml_blocks(xml, "member");
-        blocks.iter().filter_map(|block| {
-            Some(AttachedPolicy {
-                policy_name: client::xml_text(block, "PolicyName")?,
-                policy_arn: client::xml_text(block, "PolicyArn")?,
+        blocks
+            .iter()
+            .filter_map(|block| {
+                Some(AttachedPolicy {
+                    policy_name: client::xml_text(block, "PolicyName")?,
+                    policy_arn: client::xml_text(block, "PolicyArn")?,
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_access_keys(&self, xml: &str) -> Vec<AccessKey> {
         let blocks = client::xml_blocks(xml, "member");
-        blocks.iter().filter_map(|block| {
-            Some(AccessKey {
-                access_key_id: client::xml_text(block, "AccessKeyId")?,
-                user_name: client::xml_text(block, "UserName").unwrap_or_default(),
-                status: client::xml_text(block, "Status").unwrap_or_else(|| "Active".to_string()),
-                create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
-                secret_access_key: None,
+        blocks
+            .iter()
+            .filter_map(|block| {
+                Some(AccessKey {
+                    access_key_id: client::xml_text(block, "AccessKeyId")?,
+                    user_name: client::xml_text(block, "UserName").unwrap_or_default(),
+                    status: client::xml_text(block, "Status")
+                        .unwrap_or_else(|| "Active".to_string()),
+                    create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
+                    secret_access_key: None,
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_instance_profiles(&self, xml: &str) -> Vec<InstanceProfile> {
         let blocks = client::xml_blocks(xml, "member");
-        blocks.iter().filter_map(|block| {
-            Some(InstanceProfile {
-                instance_profile_name: client::xml_text(block, "InstanceProfileName")?,
-                instance_profile_id: client::xml_text(block, "InstanceProfileId").unwrap_or_default(),
-                arn: client::xml_text(block, "Arn").unwrap_or_default(),
-                path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
-                create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
-                roles: self.parse_roles(block),
+        blocks
+            .iter()
+            .filter_map(|block| {
+                Some(InstanceProfile {
+                    instance_profile_name: client::xml_text(block, "InstanceProfileName")?,
+                    instance_profile_id: client::xml_text(block, "InstanceProfileId")
+                        .unwrap_or_default(),
+                    arn: client::xml_text(block, "Arn").unwrap_or_default(),
+                    path: client::xml_text(block, "Path").unwrap_or_else(|| "/".to_string()),
+                    create_date: client::xml_text(block, "CreateDate").unwrap_or_default(),
+                    roles: self.parse_roles(block),
+                })
             })
-        }).collect()
+            .collect()
     }
 }
 

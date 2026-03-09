@@ -178,7 +178,8 @@ impl AwsError {
     /// ```
     pub fn parse_xml_error(service: &str, status_code: u16, body: &str) -> Self {
         // Try to extract <Code> and <Message> from XML error
-        let code = Self::extract_xml_tag(body, "Code").unwrap_or_else(|| "UnknownError".to_string());
+        let code =
+            Self::extract_xml_tag(body, "Code").unwrap_or_else(|| "UnknownError".to_string());
         let message = Self::extract_xml_tag(body, "Message")
             .unwrap_or_else(|| format!("HTTP {} from {}", status_code, service));
         let request_id = Self::extract_xml_tag(body, "RequestId")
@@ -224,7 +225,10 @@ impl AwsError {
             Self::new(
                 service,
                 "ParseError",
-                &format!("Failed to parse error response: {}", &body[..body.len().min(200)]),
+                &format!(
+                    "Failed to parse error response: {}",
+                    &body[..body.len().min(200)]
+                ),
                 status_code,
             )
         }
@@ -274,7 +278,12 @@ mod tests {
 
     #[test]
     fn error_display() {
-        let err = AwsError::new("ec2", "InvalidInstanceID.NotFound", "Instance not found", 400);
+        let err = AwsError::new(
+            "ec2",
+            "InvalidInstanceID.NotFound",
+            "Instance not found",
+            400,
+        );
         let s = err.to_string();
         assert!(s.contains("ec2"));
         assert!(s.contains("InvalidInstanceID.NotFound"));

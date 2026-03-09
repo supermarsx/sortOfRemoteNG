@@ -8,9 +8,7 @@
 use crate::client::AwsClient;
 use crate::cloudformation::CloudFormationClient;
 use crate::cloudwatch::CloudWatchClient;
-use crate::config::{
-    AwsConnectionConfig, AwsRegion, AwsServiceInfo, AwsSession, SdkConfig,
-};
+use crate::config::{AwsConnectionConfig, AwsRegion, AwsServiceInfo, AwsSession, SdkConfig};
 use crate::ec2::{self, Ec2Client};
 use crate::ecs::EcsClient;
 use crate::iam::IamClient;
@@ -252,10 +250,7 @@ impl AwsService {
 
     // ── EC2 ─────────────────────────────────────────────────────────
 
-    pub async fn list_ec2_instances(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<ec2::Instance>, String> {
+    pub async fn list_ec2_instances(&self, session_id: &str) -> Result<Vec<ec2::Instance>, String> {
         let clients = self.require_clients(session_id)?;
         let (reservations, _) = clients
             .ec2
@@ -312,16 +307,9 @@ impl AwsService {
 
     // ── S3 ──────────────────────────────────────────────────────────
 
-    pub async fn list_s3_buckets(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<s3::Bucket>, String> {
+    pub async fn list_s3_buckets(&self, session_id: &str) -> Result<Vec<s3::Bucket>, String> {
         let clients = self.require_clients(session_id)?;
-        clients
-            .s3
-            .list_buckets()
-            .await
-            .map_err(|e| e.to_string())
+        clients.s3.list_buckets().await.map_err(|e| e.to_string())
     }
 
     pub async fn list_s3_objects(
@@ -400,9 +388,7 @@ impl AwsService {
             .invoke(function_name, &payload_bytes, None)
             .await
             .map_err(|e| e.to_string())?;
-        let body = result
-            .payload
-            .unwrap_or_default();
+        let body = result.payload.unwrap_or_default();
         Ok(body)
     }
 
@@ -424,10 +410,7 @@ impl AwsService {
 
     // ── IAM ─────────────────────────────────────────────────────────
 
-    pub async fn list_iam_users(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<crate::iam::User>, String> {
+    pub async fn list_iam_users(&self, session_id: &str) -> Result<Vec<crate::iam::User>, String> {
         let clients = self.require_clients(session_id)?;
         let (users, _) = clients
             .iam
@@ -437,16 +420,9 @@ impl AwsService {
         Ok(users)
     }
 
-    pub async fn list_iam_roles(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<crate::iam::Role>, String> {
+    pub async fn list_iam_roles(&self, session_id: &str) -> Result<Vec<crate::iam::Role>, String> {
         let clients = self.require_clients(session_id)?;
-        clients
-            .iam
-            .list_roles()
-            .await
-            .map_err(|e| e.to_string())
+        clients.iam.list_roles().await.map_err(|e| e.to_string())
     }
 
     // ── STS ─────────────────────────────────────────────────────────
@@ -509,16 +485,9 @@ impl AwsService {
 
     // ── ECS ─────────────────────────────────────────────────────────
 
-    pub async fn list_ecs_clusters(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<String>, String> {
+    pub async fn list_ecs_clusters(&self, session_id: &str) -> Result<Vec<String>, String> {
         let clients = self.require_clients(session_id)?;
-        clients
-            .ecs
-            .list_clusters()
-            .await
-            .map_err(|e| e.to_string())
+        clients.ecs.list_clusters().await.map_err(|e| e.to_string())
     }
 
     pub async fn list_ecs_services(

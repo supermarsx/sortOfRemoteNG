@@ -101,7 +101,11 @@ impl SqsClient {
         Ok(client::xml_text_all(&response.body, "QueueUrl"))
     }
 
-    pub async fn create_queue(&self, queue_name: &str, attributes: &HashMap<String, String>) -> AwsResult<String> {
+    pub async fn create_queue(
+        &self,
+        queue_name: &str,
+        attributes: &HashMap<String, String>,
+    ) -> AwsResult<String> {
         let mut params = client::build_query_params("CreateQueue", API_VERSION);
         params.insert("QueueName".to_string(), queue_name.to_string());
         for (i, (k, v)) in attributes.iter().enumerate() {
@@ -126,7 +130,11 @@ impl SqsClient {
         Ok(client::xml_text(&response.body, "QueueUrl").unwrap_or_default())
     }
 
-    pub async fn get_queue_attributes(&self, queue_url: &str, attribute_names: &[String]) -> AwsResult<QueueAttributes> {
+    pub async fn get_queue_attributes(
+        &self,
+        queue_url: &str,
+        attribute_names: &[String],
+    ) -> AwsResult<QueueAttributes> {
         let mut params = client::build_query_params("GetQueueAttributes", API_VERSION);
         params.insert("QueueUrl".to_string(), queue_url.to_string());
         if attribute_names.is_empty() {
@@ -140,23 +148,39 @@ impl SqsClient {
         let attrs = self.parse_attributes(&response.body);
         Ok(QueueAttributes {
             queue_arn: attrs.get("QueueArn").cloned(),
-            approximate_number_of_messages: attrs.get("ApproximateNumberOfMessages").and_then(|v| v.parse().ok()),
-            approximate_number_of_messages_not_visible: attrs.get("ApproximateNumberOfMessagesNotVisible").and_then(|v| v.parse().ok()),
-            approximate_number_of_messages_delayed: attrs.get("ApproximateNumberOfMessagesDelayed").and_then(|v| v.parse().ok()),
+            approximate_number_of_messages: attrs
+                .get("ApproximateNumberOfMessages")
+                .and_then(|v| v.parse().ok()),
+            approximate_number_of_messages_not_visible: attrs
+                .get("ApproximateNumberOfMessagesNotVisible")
+                .and_then(|v| v.parse().ok()),
+            approximate_number_of_messages_delayed: attrs
+                .get("ApproximateNumberOfMessagesDelayed")
+                .and_then(|v| v.parse().ok()),
             visibility_timeout: attrs.get("VisibilityTimeout").and_then(|v| v.parse().ok()),
             maximum_message_size: attrs.get("MaximumMessageSize").and_then(|v| v.parse().ok()),
-            message_retention_period: attrs.get("MessageRetentionPeriod").and_then(|v| v.parse().ok()),
+            message_retention_period: attrs
+                .get("MessageRetentionPeriod")
+                .and_then(|v| v.parse().ok()),
             delay_seconds: attrs.get("DelaySeconds").and_then(|v| v.parse().ok()),
-            receive_message_wait_time_seconds: attrs.get("ReceiveMessageWaitTimeSeconds").and_then(|v| v.parse().ok()),
+            receive_message_wait_time_seconds: attrs
+                .get("ReceiveMessageWaitTimeSeconds")
+                .and_then(|v| v.parse().ok()),
             created_timestamp: attrs.get("CreatedTimestamp").cloned(),
             last_modified_timestamp: attrs.get("LastModifiedTimestamp").cloned(),
             fifo_queue: attrs.get("FifoQueue").map(|v| v == "true"),
-            content_based_deduplication: attrs.get("ContentBasedDeduplication").map(|v| v == "true"),
+            content_based_deduplication: attrs
+                .get("ContentBasedDeduplication")
+                .map(|v| v == "true"),
             redrive_policy: attrs.get("RedrivePolicy").cloned(),
         })
     }
 
-    pub async fn set_queue_attributes(&self, queue_url: &str, attributes: &HashMap<String, String>) -> AwsResult<()> {
+    pub async fn set_queue_attributes(
+        &self,
+        queue_url: &str,
+        attributes: &HashMap<String, String>,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("SetQueueAttributes", API_VERSION);
         params.insert("QueueUrl".to_string(), queue_url.to_string());
         for (i, (k, v)) in attributes.iter().enumerate() {
@@ -169,7 +193,15 @@ impl SqsClient {
 
     // ── Messages ────────────────────────────────────────────────────
 
-    pub async fn send_message(&self, queue_url: &str, message_body: &str, delay_seconds: Option<u32>, message_attributes: &HashMap<String, MessageAttributeValue>, message_group_id: Option<&str>, message_dedup_id: Option<&str>) -> AwsResult<SendMessageResult> {
+    pub async fn send_message(
+        &self,
+        queue_url: &str,
+        message_body: &str,
+        delay_seconds: Option<u32>,
+        message_attributes: &HashMap<String, MessageAttributeValue>,
+        message_group_id: Option<&str>,
+        message_dedup_id: Option<&str>,
+    ) -> AwsResult<SendMessageResult> {
         let mut params = client::build_query_params("SendMessage", API_VERSION);
         params.insert("QueueUrl".to_string(), queue_url.to_string());
         params.insert("MessageBody".to_string(), message_body.to_string());
@@ -198,7 +230,14 @@ impl SqsClient {
         })
     }
 
-    pub async fn receive_message(&self, queue_url: &str, max_number_of_messages: Option<u32>, wait_time_seconds: Option<u32>, visibility_timeout: Option<u32>, attribute_names: &[String]) -> AwsResult<Vec<Message>> {
+    pub async fn receive_message(
+        &self,
+        queue_url: &str,
+        max_number_of_messages: Option<u32>,
+        wait_time_seconds: Option<u32>,
+        visibility_timeout: Option<u32>,
+        attribute_names: &[String],
+    ) -> AwsResult<Vec<Message>> {
         let mut params = client::build_query_params("ReceiveMessage", API_VERSION);
         params.insert("QueueUrl".to_string(), queue_url.to_string());
         if let Some(mn) = max_number_of_messages {
@@ -226,11 +265,19 @@ impl SqsClient {
         Ok(())
     }
 
-    pub async fn change_message_visibility(&self, queue_url: &str, receipt_handle: &str, visibility_timeout: u32) -> AwsResult<()> {
+    pub async fn change_message_visibility(
+        &self,
+        queue_url: &str,
+        receipt_handle: &str,
+        visibility_timeout: u32,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("ChangeMessageVisibility", API_VERSION);
         params.insert("QueueUrl".to_string(), queue_url.to_string());
         params.insert("ReceiptHandle".to_string(), receipt_handle.to_string());
-        params.insert("VisibilityTimeout".to_string(), visibility_timeout.to_string());
+        params.insert(
+            "VisibilityTimeout".to_string(),
+            visibility_timeout.to_string(),
+        );
         self.client.query_request(SERVICE, &params).await?;
         Ok(())
     }
@@ -242,13 +289,20 @@ impl SqsClient {
         Ok(())
     }
 
-    pub async fn send_message_batch(&self, queue_url: &str, entries: &[SendMessageBatchEntry]) -> AwsResult<Vec<SendMessageBatchResult>> {
+    pub async fn send_message_batch(
+        &self,
+        queue_url: &str,
+        entries: &[SendMessageBatchEntry],
+    ) -> AwsResult<Vec<SendMessageBatchResult>> {
         let mut params = client::build_query_params("SendMessageBatch", API_VERSION);
         params.insert("QueueUrl".to_string(), queue_url.to_string());
         for (i, entry) in entries.iter().enumerate() {
             let prefix = format!("SendMessageBatchRequestEntry.{}", i + 1);
             params.insert(format!("{}.Id", prefix), entry.id.clone());
-            params.insert(format!("{}.MessageBody", prefix), entry.message_body.clone());
+            params.insert(
+                format!("{}.MessageBody", prefix),
+                entry.message_body.clone(),
+            );
             if let Some(ds) = entry.delay_seconds {
                 params.insert(format!("{}.DelaySeconds", prefix), ds.to_string());
             }
@@ -260,13 +314,18 @@ impl SqsClient {
             }
         }
         let response = self.client.query_request(SERVICE, &params).await?;
-        Ok(client::xml_blocks(&response.body, "SendMessageBatchResultEntry").iter().filter_map(|b| {
-            Some(SendMessageBatchResult {
-                id: client::xml_text(b, "Id")?,
-                message_id: client::xml_text(b, "MessageId")?,
-                md5_of_message_body: client::xml_text(b, "MD5OfMessageBody"),
-            })
-        }).collect())
+        Ok(
+            client::xml_blocks(&response.body, "SendMessageBatchResultEntry")
+                .iter()
+                .filter_map(|b| {
+                    Some(SendMessageBatchResult {
+                        id: client::xml_text(b, "Id")?,
+                        message_id: client::xml_text(b, "MessageId")?,
+                        md5_of_message_body: client::xml_text(b, "MD5OfMessageBody"),
+                    })
+                })
+                .collect(),
+        )
     }
 
     // ── Dead Letter Queues ──────────────────────────────────────────
@@ -281,22 +340,28 @@ impl SqsClient {
     // ── Helpers ─────────────────────────────────────────────────────
 
     fn parse_messages(&self, xml: &str) -> Vec<Message> {
-        client::xml_blocks(xml, "Message").iter().filter_map(|b| {
-            Some(Message {
-                message_id: client::xml_text(b, "MessageId")?,
-                receipt_handle: client::xml_text(b, "ReceiptHandle")?,
-                body: client::xml_text(b, "Body").unwrap_or_default(),
-                md5_of_body: client::xml_text(b, "MD5OfBody"),
-                attributes: HashMap::new(),
-                message_attributes: HashMap::new(),
+        client::xml_blocks(xml, "Message")
+            .iter()
+            .filter_map(|b| {
+                Some(Message {
+                    message_id: client::xml_text(b, "MessageId")?,
+                    receipt_handle: client::xml_text(b, "ReceiptHandle")?,
+                    body: client::xml_text(b, "Body").unwrap_or_default(),
+                    md5_of_body: client::xml_text(b, "MD5OfBody"),
+                    attributes: HashMap::new(),
+                    message_attributes: HashMap::new(),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_attributes(&self, xml: &str) -> HashMap<String, String> {
         let mut attrs = HashMap::new();
         for entry in client::xml_blocks(xml, "Attribute") {
-            if let (Some(name), Some(value)) = (client::xml_text(&entry, "Name"), client::xml_text(&entry, "Value")) {
+            if let (Some(name), Some(value)) = (
+                client::xml_text(&entry, "Name"),
+                client::xml_text(&entry, "Value"),
+            ) {
                 attrs.insert(name, value);
             }
         }

@@ -184,28 +184,46 @@ impl SsmClient {
             "Name": name,
             "WithDecryption": with_decryption,
         });
-        let response = self.client.json_request(SERVICE, "AmazonSSM.GetParameter", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.GetParameter", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("Parameter")
+        result
+            .get("Parameter")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No Parameter in response", 200))
     }
 
-    pub async fn get_parameters(&self, names: &[String], with_decryption: bool) -> AwsResult<Vec<Parameter>> {
+    pub async fn get_parameters(
+        &self,
+        names: &[String],
+        with_decryption: bool,
+    ) -> AwsResult<Vec<Parameter>> {
         let body = serde_json::json!({
             "Names": names,
             "WithDecryption": with_decryption,
         });
-        let response = self.client.json_request(SERVICE, "AmazonSSM.GetParameters", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.GetParameters", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Parameters")
+        Ok(result
+            .get("Parameters")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn get_parameters_by_path(&self, path: &str, recursive: bool, with_decryption: bool, max_results: Option<u32>) -> AwsResult<Vec<Parameter>> {
+    pub async fn get_parameters_by_path(
+        &self,
+        path: &str,
+        recursive: bool,
+        with_decryption: bool,
+        max_results: Option<u32>,
+    ) -> AwsResult<Vec<Parameter>> {
         let mut body = serde_json::json!({
             "Path": path,
             "Recursive": recursive,
@@ -214,15 +232,26 @@ impl SsmClient {
         if let Some(mr) = max_results {
             body["MaxResults"] = serde_json::json!(mr);
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.GetParametersByPath", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.GetParametersByPath", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Parameters")
+        Ok(result
+            .get("Parameters")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn put_parameter(&self, name: &str, value: &str, parameter_type: ParameterType, description: Option<&str>, overwrite: bool) -> AwsResult<i64> {
+    pub async fn put_parameter(
+        &self,
+        name: &str,
+        value: &str,
+        parameter_type: ParameterType,
+        description: Option<&str>,
+        overwrite: bool,
+    ) -> AwsResult<i64> {
         let mut body = serde_json::json!({
             "Name": name,
             "Value": value,
@@ -232,7 +261,10 @@ impl SsmClient {
         if let Some(desc) = description {
             body["Description"] = serde_json::Value::String(desc.to_string());
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.PutParameter", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.PutParameter", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
         Ok(result.get("Version").and_then(|v| v.as_i64()).unwrap_or(1))
@@ -240,26 +272,41 @@ impl SsmClient {
 
     pub async fn delete_parameter(&self, name: &str) -> AwsResult<()> {
         let body = serde_json::json!({ "Name": name });
-        self.client.json_request(SERVICE, "AmazonSSM.DeleteParameter", &body.to_string()).await?;
+        self.client
+            .json_request(SERVICE, "AmazonSSM.DeleteParameter", &body.to_string())
+            .await?;
         Ok(())
     }
 
-    pub async fn describe_parameters(&self, max_results: Option<u32>) -> AwsResult<Vec<ParameterMetadata>> {
+    pub async fn describe_parameters(
+        &self,
+        max_results: Option<u32>,
+    ) -> AwsResult<Vec<ParameterMetadata>> {
         let mut body = serde_json::json!({});
         if let Some(mr) = max_results {
             body["MaxResults"] = serde_json::json!(mr);
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.DescribeParameters", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.DescribeParameters", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Parameters")
+        Ok(result
+            .get("Parameters")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     // ── Run Command ─────────────────────────────────────────────────
 
-    pub async fn send_command(&self, document_name: &str, instance_ids: &[String], parameters: &HashMap<String, Vec<String>>, comment: Option<&str>) -> AwsResult<Command> {
+    pub async fn send_command(
+        &self,
+        document_name: &str,
+        instance_ids: &[String],
+        parameters: &HashMap<String, Vec<String>>,
+        comment: Option<&str>,
+    ) -> AwsResult<Command> {
         let mut body = serde_json::json!({
             "DocumentName": document_name,
             "InstanceIds": instance_ids,
@@ -268,15 +315,23 @@ impl SsmClient {
         if let Some(c) = comment {
             body["Comment"] = serde_json::Value::String(c.to_string());
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.SendCommand", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.SendCommand", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("Command")
+        result
+            .get("Command")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No Command in response", 200))
     }
 
-    pub async fn list_commands(&self, command_id: Option<&str>, instance_id: Option<&str>) -> AwsResult<Vec<Command>> {
+    pub async fn list_commands(
+        &self,
+        command_id: Option<&str>,
+        instance_id: Option<&str>,
+    ) -> AwsResult<Vec<Command>> {
         let mut body = serde_json::json!({});
         if let Some(cid) = command_id {
             body["CommandId"] = serde_json::Value::String(cid.to_string());
@@ -284,55 +339,82 @@ impl SsmClient {
         if let Some(iid) = instance_id {
             body["InstanceId"] = serde_json::Value::String(iid.to_string());
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.ListCommands", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.ListCommands", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Commands")
+        Ok(result
+            .get("Commands")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
-    pub async fn get_command_invocation(&self, command_id: &str, instance_id: &str) -> AwsResult<CommandInvocation> {
+    pub async fn get_command_invocation(
+        &self,
+        command_id: &str,
+        instance_id: &str,
+    ) -> AwsResult<CommandInvocation> {
         let body = serde_json::json!({
             "CommandId": command_id,
             "InstanceId": instance_id,
         });
-        let response = self.client.json_request(SERVICE, "AmazonSSM.GetCommandInvocation", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.GetCommandInvocation", &body.to_string())
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     // ── Sessions ────────────────────────────────────────────────────
 
-    pub async fn start_session(&self, target: &str, document_name: Option<&str>) -> AwsResult<SessionInfo> {
+    pub async fn start_session(
+        &self,
+        target: &str,
+        document_name: Option<&str>,
+    ) -> AwsResult<SessionInfo> {
         let mut body = serde_json::json!({ "Target": target });
         if let Some(dn) = document_name {
             body["DocumentName"] = serde_json::Value::String(dn.to_string());
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.StartSession", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.StartSession", &body.to_string())
+            .await?;
         serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))
     }
 
     pub async fn terminate_session(&self, session_id: &str) -> AwsResult<()> {
         let body = serde_json::json!({ "SessionId": session_id });
-        self.client.json_request(SERVICE, "AmazonSSM.TerminateSession", &body.to_string()).await?;
+        self.client
+            .json_request(SERVICE, "AmazonSSM.TerminateSession", &body.to_string())
+            .await?;
         Ok(())
     }
 
     pub async fn describe_sessions(&self, state: &str) -> AwsResult<Vec<SessionInfo>> {
         let body = serde_json::json!({ "State": state });
-        let response = self.client.json_request(SERVICE, "AmazonSSM.DescribeSessions", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.DescribeSessions", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("Sessions")
+        Ok(result
+            .get("Sessions")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     // ── Documents ───────────────────────────────────────────────────
 
-    pub async fn list_documents(&self, document_type: Option<&str>) -> AwsResult<Vec<DocumentDescription>> {
+    pub async fn list_documents(
+        &self,
+        document_type: Option<&str>,
+    ) -> AwsResult<Vec<DocumentDescription>> {
         let mut body = serde_json::json!({});
         if let Some(dt) = document_type {
             body["Filters"] = serde_json::json!([{
@@ -340,35 +422,54 @@ impl SsmClient {
                 "Values": [dt],
             }]);
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.ListDocuments", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.ListDocuments", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("DocumentIdentifiers")
+        Ok(result
+            .get("DocumentIdentifiers")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }
 
     pub async fn describe_document(&self, name: &str) -> AwsResult<DocumentDescription> {
         let body = serde_json::json!({ "Name": name });
-        let response = self.client.json_request(SERVICE, "AmazonSSM.DescribeDocument", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(SERVICE, "AmazonSSM.DescribeDocument", &body.to_string())
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        result.get("Document")
+        result
+            .get("Document")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No Document in response", 200))
     }
 
     // ── Managed Instances ───────────────────────────────────────────
 
-    pub async fn describe_instance_information(&self, max_results: Option<u32>) -> AwsResult<Vec<InstanceInformation>> {
+    pub async fn describe_instance_information(
+        &self,
+        max_results: Option<u32>,
+    ) -> AwsResult<Vec<InstanceInformation>> {
         let mut body = serde_json::json!({});
         if let Some(mr) = max_results {
             body["MaxResults"] = serde_json::json!(mr);
         }
-        let response = self.client.json_request(SERVICE, "AmazonSSM.DescribeInstanceInformation", &body.to_string()).await?;
+        let response = self
+            .client
+            .json_request(
+                SERVICE,
+                "AmazonSSM.DescribeInstanceInformation",
+                &body.to_string(),
+            )
+            .await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
             .map_err(|e| AwsError::new(SERVICE, "ParseError", &e.to_string(), response.status))?;
-        Ok(result.get("InstanceInformationList")
+        Ok(result
+            .get("InstanceInformationList")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
     }

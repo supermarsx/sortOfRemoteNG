@@ -60,7 +60,9 @@ impl From<&str> for StackStatus {
             "UPDATE_FAILED" => Self::UpdateFailed,
             "UPDATE_ROLLBACK_IN_PROGRESS" => Self::UpdateRollbackInProgress,
             "UPDATE_ROLLBACK_FAILED" => Self::UpdateRollbackFailed,
-            "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS" => Self::UpdateRollbackCompleteCleanupInProgress,
+            "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS" => {
+                Self::UpdateRollbackCompleteCleanupInProgress
+            }
             "UPDATE_ROLLBACK_COMPLETE" => Self::UpdateRollbackComplete,
             "REVIEW_IN_PROGRESS" => Self::ReviewInProgress,
             "IMPORT_IN_PROGRESS" => Self::ImportInProgress,
@@ -244,7 +246,10 @@ impl CloudFormationClient {
     pub async fn list_stacks(&self, status_filter: &[String]) -> AwsResult<Vec<StackSummary>> {
         let mut params = client::build_query_params("ListStacks", API_VERSION);
         for (i, status) in status_filter.iter().enumerate() {
-            params.insert(format!("StackStatusFilter.member.{}", i + 1), status.clone());
+            params.insert(
+                format!("StackStatusFilter.member.{}", i + 1),
+                status.clone(),
+            );
         }
         let response = self.client.query_request(SERVICE, &params).await?;
         Ok(self.parse_stack_summaries(&response.body))
@@ -270,8 +275,14 @@ impl CloudFormationClient {
         }
         for (i, param) in input.parameters.iter().enumerate() {
             let prefix = format!("Parameters.member.{}", i + 1);
-            params.insert(format!("{}.ParameterKey", prefix), param.parameter_key.clone());
-            params.insert(format!("{}.ParameterValue", prefix), param.parameter_value.clone());
+            params.insert(
+                format!("{}.ParameterKey", prefix),
+                param.parameter_key.clone(),
+            );
+            params.insert(
+                format!("{}.ParameterValue", prefix),
+                param.parameter_value.clone(),
+            );
         }
         for (i, tag) in input.tags.iter().enumerate() {
             let prefix = format!("Tags.member.{}", i + 1);
@@ -314,8 +325,14 @@ impl CloudFormationClient {
         }
         for (i, param) in input.parameters.iter().enumerate() {
             let prefix = format!("Parameters.member.{}", i + 1);
-            params.insert(format!("{}.ParameterKey", prefix), param.parameter_key.clone());
-            params.insert(format!("{}.ParameterValue", prefix), param.parameter_value.clone());
+            params.insert(
+                format!("{}.ParameterKey", prefix),
+                param.parameter_key.clone(),
+            );
+            params.insert(
+                format!("{}.ParameterValue", prefix),
+                param.parameter_value.clone(),
+            );
         }
         for (i, tag) in input.tags.iter().enumerate() {
             let prefix = format!("Tags.member.{}", i + 1);
@@ -329,11 +346,18 @@ impl CloudFormationClient {
         Ok(client::xml_text(&response.body, "StackId").unwrap_or_default())
     }
 
-    pub async fn delete_stack(&self, stack_name: &str, retain_resources: &[String]) -> AwsResult<()> {
+    pub async fn delete_stack(
+        &self,
+        stack_name: &str,
+        retain_resources: &[String],
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("DeleteStack", API_VERSION);
         params.insert("StackName".to_string(), stack_name.to_string());
         for (i, resource) in retain_resources.iter().enumerate() {
-            params.insert(format!("RetainResources.member.{}", i + 1), resource.clone());
+            params.insert(
+                format!("RetainResources.member.{}", i + 1),
+                resource.clone(),
+            );
         }
         self.client.query_request(SERVICE, &params).await?;
         Ok(())
@@ -350,17 +374,27 @@ impl CloudFormationClient {
 
     // ── Stack Resources ─────────────────────────────────────────────
 
-    pub async fn describe_stack_resources(&self, stack_name: &str) -> AwsResult<Vec<StackResource>> {
+    pub async fn describe_stack_resources(
+        &self,
+        stack_name: &str,
+    ) -> AwsResult<Vec<StackResource>> {
         let mut params = client::build_query_params("DescribeStackResources", API_VERSION);
         params.insert("StackName".to_string(), stack_name.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
         Ok(self.parse_stack_resources(&response.body))
     }
 
-    pub async fn describe_stack_resource(&self, stack_name: &str, logical_resource_id: &str) -> AwsResult<Option<StackResource>> {
+    pub async fn describe_stack_resource(
+        &self,
+        stack_name: &str,
+        logical_resource_id: &str,
+    ) -> AwsResult<Option<StackResource>> {
         let mut params = client::build_query_params("DescribeStackResource", API_VERSION);
         params.insert("StackName".to_string(), stack_name.to_string());
-        params.insert("LogicalResourceId".to_string(), logical_resource_id.to_string());
+        params.insert(
+            "LogicalResourceId".to_string(),
+            logical_resource_id.to_string(),
+        );
         let response = self.client.query_request(SERVICE, &params).await?;
         let resources = self.parse_stack_resources(&response.body);
         Ok(resources.into_iter().next())
@@ -375,21 +409,31 @@ impl CloudFormationClient {
         Ok(client::xml_text(&response.body, "TemplateBody").unwrap_or_default())
     }
 
-    pub async fn validate_template(&self, template_body: &str) -> AwsResult<Vec<TemplateParameter>> {
+    pub async fn validate_template(
+        &self,
+        template_body: &str,
+    ) -> AwsResult<Vec<TemplateParameter>> {
         let mut params = client::build_query_params("ValidateTemplate", API_VERSION);
         params.insert("TemplateBody".to_string(), template_body.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
-        Ok(client::xml_blocks(&response.body, "member").iter().filter_map(|b| {
-            Some(TemplateParameter {
-                parameter_key: client::xml_text(b, "ParameterKey")?,
-                default_value: client::xml_text(b, "DefaultValue"),
-                description: client::xml_text(b, "Description"),
-                no_echo: client::xml_text(b, "NoEcho").map_or(false, |v| v == "true"),
+        Ok(client::xml_blocks(&response.body, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(TemplateParameter {
+                    parameter_key: client::xml_text(b, "ParameterKey")?,
+                    default_value: client::xml_text(b, "DefaultValue"),
+                    description: client::xml_text(b, "Description"),
+                    no_echo: client::xml_text(b, "NoEcho").is_some_and(|v| v == "true"),
+                })
             })
-        }).collect())
+            .collect())
     }
 
-    pub async fn get_template_summary(&self, stack_name: Option<&str>, template_body: Option<&str>) -> AwsResult<Vec<TemplateParameter>> {
+    pub async fn get_template_summary(
+        &self,
+        stack_name: Option<&str>,
+        template_body: Option<&str>,
+    ) -> AwsResult<Vec<TemplateParameter>> {
         let mut params = client::build_query_params("GetTemplateSummary", API_VERSION);
         if let Some(name) = stack_name {
             params.insert("StackName".to_string(), name.to_string());
@@ -398,19 +442,32 @@ impl CloudFormationClient {
             params.insert("TemplateBody".to_string(), body.to_string());
         }
         let response = self.client.query_request(SERVICE, &params).await?;
-        Ok(client::xml_blocks(&response.body, "member").iter().filter_map(|b| {
-            Some(TemplateParameter {
-                parameter_key: client::xml_text(b, "ParameterKey")?,
-                default_value: client::xml_text(b, "DefaultValue"),
-                description: client::xml_text(b, "Description"),
-                no_echo: client::xml_text(b, "NoEcho").map_or(false, |v| v == "true"),
+        Ok(client::xml_blocks(&response.body, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(TemplateParameter {
+                    parameter_key: client::xml_text(b, "ParameterKey")?,
+                    default_value: client::xml_text(b, "DefaultValue"),
+                    description: client::xml_text(b, "Description"),
+                    no_echo: client::xml_text(b, "NoEcho").is_some_and(|v| v == "true"),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     // ── Change Sets ─────────────────────────────────────────────────
 
-    pub async fn create_change_set(&self, stack_name: &str, change_set_name: &str, template_body: Option<&str>, template_url: Option<&str>, parameters: &[Parameter], capabilities: &[String], description: Option<&str>) -> AwsResult<String> {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_change_set(
+        &self,
+        stack_name: &str,
+        change_set_name: &str,
+        template_body: Option<&str>,
+        template_url: Option<&str>,
+        parameters: &[Parameter],
+        capabilities: &[String],
+        description: Option<&str>,
+    ) -> AwsResult<String> {
         let mut params = client::build_query_params("CreateChangeSet", API_VERSION);
         params.insert("StackName".to_string(), stack_name.to_string());
         params.insert("ChangeSetName".to_string(), change_set_name.to_string());
@@ -422,8 +479,14 @@ impl CloudFormationClient {
         }
         for (i, param) in parameters.iter().enumerate() {
             let prefix = format!("Parameters.member.{}", i + 1);
-            params.insert(format!("{}.ParameterKey", prefix), param.parameter_key.clone());
-            params.insert(format!("{}.ParameterValue", prefix), param.parameter_value.clone());
+            params.insert(
+                format!("{}.ParameterKey", prefix),
+                param.parameter_key.clone(),
+            );
+            params.insert(
+                format!("{}.ParameterValue", prefix),
+                param.parameter_value.clone(),
+            );
         }
         for (i, cap) in capabilities.iter().enumerate() {
             params.insert(format!("Capabilities.member.{}", i + 1), cap.clone());
@@ -435,26 +498,35 @@ impl CloudFormationClient {
         Ok(client::xml_text(&response.body, "Id").unwrap_or_default())
     }
 
-    pub async fn describe_change_set(&self, change_set_name: &str, stack_name: &str) -> AwsResult<ChangeSet> {
+    pub async fn describe_change_set(
+        &self,
+        change_set_name: &str,
+        stack_name: &str,
+    ) -> AwsResult<ChangeSet> {
         let mut params = client::build_query_params("DescribeChangeSet", API_VERSION);
         params.insert("ChangeSetName".to_string(), change_set_name.to_string());
         params.insert("StackName".to_string(), stack_name.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
         let body = &response.body;
-        let changes = client::xml_blocks(body, "member").iter().filter_map(|b| {
-            let rc_block = client::xml_block(b, "ResourceChange")?;
-            Some(Change {
-                change_type: client::xml_text(b, "Type").unwrap_or_default(),
-                resource_change: Some(ResourceChange {
-                    action: client::xml_text(&rc_block, "Action").unwrap_or_default(),
-                    logical_resource_id: client::xml_text(&rc_block, "LogicalResourceId").unwrap_or_default(),
-                    physical_resource_id: client::xml_text(&rc_block, "PhysicalResourceId"),
-                    resource_type: client::xml_text(&rc_block, "ResourceType").unwrap_or_default(),
-                    replacement: client::xml_text(&rc_block, "Replacement"),
-                    scope: client::xml_text_all(&rc_block, "member"),
-                }),
+        let changes = client::xml_blocks(body, "member")
+            .iter()
+            .filter_map(|b| {
+                let rc_block = client::xml_block(b, "ResourceChange")?;
+                Some(Change {
+                    change_type: client::xml_text(b, "Type").unwrap_or_default(),
+                    resource_change: Some(ResourceChange {
+                        action: client::xml_text(&rc_block, "Action").unwrap_or_default(),
+                        logical_resource_id: client::xml_text(&rc_block, "LogicalResourceId")
+                            .unwrap_or_default(),
+                        physical_resource_id: client::xml_text(&rc_block, "PhysicalResourceId"),
+                        resource_type: client::xml_text(&rc_block, "ResourceType")
+                            .unwrap_or_default(),
+                        replacement: client::xml_text(&rc_block, "Replacement"),
+                        scope: client::xml_text_all(&rc_block, "member"),
+                    }),
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(ChangeSet {
             change_set_id: client::xml_text(body, "ChangeSetId").unwrap_or_default(),
@@ -470,7 +542,11 @@ impl CloudFormationClient {
         })
     }
 
-    pub async fn execute_change_set(&self, change_set_name: &str, stack_name: &str) -> AwsResult<()> {
+    pub async fn execute_change_set(
+        &self,
+        change_set_name: &str,
+        stack_name: &str,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("ExecuteChangeSet", API_VERSION);
         params.insert("ChangeSetName".to_string(), change_set_name.to_string());
         params.insert("StackName".to_string(), stack_name.to_string());
@@ -478,7 +554,11 @@ impl CloudFormationClient {
         Ok(())
     }
 
-    pub async fn delete_change_set(&self, change_set_name: &str, stack_name: &str) -> AwsResult<()> {
+    pub async fn delete_change_set(
+        &self,
+        change_set_name: &str,
+        stack_name: &str,
+    ) -> AwsResult<()> {
         let mut params = client::build_query_params("DeleteChangeSet", API_VERSION);
         params.insert("ChangeSetName".to_string(), change_set_name.to_string());
         params.insert("StackName".to_string(), stack_name.to_string());
@@ -490,20 +570,23 @@ impl CloudFormationClient {
         let mut params = client::build_query_params("ListChangeSets", API_VERSION);
         params.insert("StackName".to_string(), stack_name.to_string());
         let response = self.client.query_request(SERVICE, &params).await?;
-        Ok(client::xml_blocks(&response.body, "member").iter().filter_map(|b| {
-            Some(ChangeSet {
-                change_set_id: client::xml_text(b, "ChangeSetId")?,
-                change_set_name: client::xml_text(b, "ChangeSetName")?,
-                stack_id: client::xml_text(b, "StackId"),
-                stack_name: client::xml_text(b, "StackName"),
-                status: client::xml_text(b, "Status").unwrap_or_default(),
-                status_reason: client::xml_text(b, "StatusReason"),
-                execution_status: client::xml_text(b, "ExecutionStatus"),
-                creation_time: client::xml_text(b, "CreationTime"),
-                description: client::xml_text(b, "Description"),
-                changes: vec![],
+        Ok(client::xml_blocks(&response.body, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(ChangeSet {
+                    change_set_id: client::xml_text(b, "ChangeSetId")?,
+                    change_set_name: client::xml_text(b, "ChangeSetName")?,
+                    stack_id: client::xml_text(b, "StackId"),
+                    stack_name: client::xml_text(b, "StackName"),
+                    status: client::xml_text(b, "Status").unwrap_or_default(),
+                    status_reason: client::xml_text(b, "StatusReason"),
+                    execution_status: client::xml_text(b, "ExecutionStatus"),
+                    creation_time: client::xml_text(b, "CreationTime"),
+                    description: client::xml_text(b, "Description"),
+                    changes: vec![],
+                })
             })
-        }).collect())
+            .collect())
     }
 
     // ── Exports ─────────────────────────────────────────────────────
@@ -511,118 +594,154 @@ impl CloudFormationClient {
     pub async fn list_exports(&self) -> AwsResult<Vec<Export>> {
         let params = client::build_query_params("ListExports", API_VERSION);
         let response = self.client.query_request(SERVICE, &params).await?;
-        Ok(client::xml_blocks(&response.body, "member").iter().filter_map(|b| {
-            Some(Export {
-                name: client::xml_text(b, "Name")?,
-                value: client::xml_text(b, "Value")?,
-                exporting_stack_id: client::xml_text(b, "ExportingStackId").unwrap_or_default(),
+        Ok(client::xml_blocks(&response.body, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(Export {
+                    name: client::xml_text(b, "Name")?,
+                    value: client::xml_text(b, "Value")?,
+                    exporting_stack_id: client::xml_text(b, "ExportingStackId").unwrap_or_default(),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
 
     fn parse_stacks(&self, xml: &str) -> Vec<Stack> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(Stack {
-                stack_id: client::xml_text(b, "StackId")?,
-                stack_name: client::xml_text(b, "StackName")?,
-                description: client::xml_text(b, "Description"),
-                stack_status: client::xml_text(b, "StackStatus").map_or(StackStatus::Other("UNKNOWN".into()), |s| StackStatus::from(s.as_str())),
-                stack_status_reason: client::xml_text(b, "StackStatusReason"),
-                creation_time: client::xml_text(b, "CreationTime"),
-                last_updated_time: client::xml_text(b, "LastUpdatedTime"),
-                deletion_time: client::xml_text(b, "DeletionTime"),
-                outputs: self.parse_outputs(b),
-                parameters: self.parse_parameters(b),
-                tags: self.parse_tags(b),
-                capabilities: client::xml_text_all(b, "member"),
-                role_arn: client::xml_text(b, "RoleARN"),
-                enable_termination_protection: client::xml_text(b, "EnableTerminationProtection").map_or(false, |v| v == "true"),
-                parent_id: client::xml_text(b, "ParentId"),
-                root_id: client::xml_text(b, "RootId"),
-                timeout_in_minutes: client::xml_text(b, "TimeoutInMinutes").and_then(|v| v.parse().ok()),
-                notification_arns: client::xml_text_all(b, "member"),
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(Stack {
+                    stack_id: client::xml_text(b, "StackId")?,
+                    stack_name: client::xml_text(b, "StackName")?,
+                    description: client::xml_text(b, "Description"),
+                    stack_status: client::xml_text(b, "StackStatus")
+                        .map_or(StackStatus::Other("UNKNOWN".into()), |s| {
+                            StackStatus::from(s.as_str())
+                        }),
+                    stack_status_reason: client::xml_text(b, "StackStatusReason"),
+                    creation_time: client::xml_text(b, "CreationTime"),
+                    last_updated_time: client::xml_text(b, "LastUpdatedTime"),
+                    deletion_time: client::xml_text(b, "DeletionTime"),
+                    outputs: self.parse_outputs(b),
+                    parameters: self.parse_parameters(b),
+                    tags: self.parse_tags(b),
+                    capabilities: client::xml_text_all(b, "member"),
+                    role_arn: client::xml_text(b, "RoleARN"),
+                    enable_termination_protection: client::xml_text(
+                        b,
+                        "EnableTerminationProtection",
+                    )
+                    .is_some_and(|v| v == "true"),
+                    parent_id: client::xml_text(b, "ParentId"),
+                    root_id: client::xml_text(b, "RootId"),
+                    timeout_in_minutes: client::xml_text(b, "TimeoutInMinutes")
+                        .and_then(|v| v.parse().ok()),
+                    notification_arns: client::xml_text_all(b, "member"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_stack_summaries(&self, xml: &str) -> Vec<StackSummary> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(StackSummary {
-                stack_id: client::xml_text(b, "StackId")?,
-                stack_name: client::xml_text(b, "StackName")?,
-                stack_status: client::xml_text(b, "StackStatus").map_or(StackStatus::Other("UNKNOWN".into()), |s| StackStatus::from(s.as_str())),
-                stack_status_reason: client::xml_text(b, "StackStatusReason"),
-                creation_time: client::xml_text(b, "CreationTime"),
-                last_updated_time: client::xml_text(b, "LastUpdatedTime"),
-                deletion_time: client::xml_text(b, "DeletionTime"),
-                template_description: client::xml_text(b, "TemplateDescription"),
-                parent_id: client::xml_text(b, "ParentId"),
-                root_id: client::xml_text(b, "RootId"),
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(StackSummary {
+                    stack_id: client::xml_text(b, "StackId")?,
+                    stack_name: client::xml_text(b, "StackName")?,
+                    stack_status: client::xml_text(b, "StackStatus")
+                        .map_or(StackStatus::Other("UNKNOWN".into()), |s| {
+                            StackStatus::from(s.as_str())
+                        }),
+                    stack_status_reason: client::xml_text(b, "StackStatusReason"),
+                    creation_time: client::xml_text(b, "CreationTime"),
+                    last_updated_time: client::xml_text(b, "LastUpdatedTime"),
+                    deletion_time: client::xml_text(b, "DeletionTime"),
+                    template_description: client::xml_text(b, "TemplateDescription"),
+                    parent_id: client::xml_text(b, "ParentId"),
+                    root_id: client::xml_text(b, "RootId"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_stack_events(&self, xml: &str) -> Vec<StackEvent> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(StackEvent {
-                stack_id: client::xml_text(b, "StackId")?,
-                event_id: client::xml_text(b, "EventId")?,
-                stack_name: client::xml_text(b, "StackName")?,
-                logical_resource_id: client::xml_text(b, "LogicalResourceId"),
-                physical_resource_id: client::xml_text(b, "PhysicalResourceId"),
-                resource_type: client::xml_text(b, "ResourceType"),
-                resource_status: client::xml_text(b, "ResourceStatus"),
-                resource_status_reason: client::xml_text(b, "ResourceStatusReason"),
-                timestamp: client::xml_text(b, "Timestamp"),
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(StackEvent {
+                    stack_id: client::xml_text(b, "StackId")?,
+                    event_id: client::xml_text(b, "EventId")?,
+                    stack_name: client::xml_text(b, "StackName")?,
+                    logical_resource_id: client::xml_text(b, "LogicalResourceId"),
+                    physical_resource_id: client::xml_text(b, "PhysicalResourceId"),
+                    resource_type: client::xml_text(b, "ResourceType"),
+                    resource_status: client::xml_text(b, "ResourceStatus"),
+                    resource_status_reason: client::xml_text(b, "ResourceStatusReason"),
+                    timestamp: client::xml_text(b, "Timestamp"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_stack_resources(&self, xml: &str) -> Vec<StackResource> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(StackResource {
-                logical_resource_id: client::xml_text(b, "LogicalResourceId")?,
-                physical_resource_id: client::xml_text(b, "PhysicalResourceId"),
-                resource_type: client::xml_text(b, "ResourceType")?,
-                resource_status: client::xml_text(b, "ResourceStatus")?,
-                resource_status_reason: client::xml_text(b, "ResourceStatusReason"),
-                timestamp: client::xml_text(b, "Timestamp"),
-                description: client::xml_text(b, "Description"),
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(StackResource {
+                    logical_resource_id: client::xml_text(b, "LogicalResourceId")?,
+                    physical_resource_id: client::xml_text(b, "PhysicalResourceId"),
+                    resource_type: client::xml_text(b, "ResourceType")?,
+                    resource_status: client::xml_text(b, "ResourceStatus")?,
+                    resource_status_reason: client::xml_text(b, "ResourceStatusReason"),
+                    timestamp: client::xml_text(b, "Timestamp"),
+                    description: client::xml_text(b, "Description"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_outputs(&self, xml: &str) -> Vec<Output> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(Output {
-                output_key: client::xml_text(b, "OutputKey")?,
-                output_value: client::xml_text(b, "OutputValue")?,
-                description: client::xml_text(b, "Description"),
-                export_name: client::xml_text(b, "ExportName"),
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(Output {
+                    output_key: client::xml_text(b, "OutputKey")?,
+                    output_value: client::xml_text(b, "OutputValue")?,
+                    description: client::xml_text(b, "Description"),
+                    export_name: client::xml_text(b, "ExportName"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_parameters(&self, xml: &str) -> Vec<Parameter> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(Parameter {
-                parameter_key: client::xml_text(b, "ParameterKey")?,
-                parameter_value: client::xml_text(b, "ParameterValue")?,
-                use_previous_value: client::xml_text(b, "UsePreviousValue").map(|v| v == "true"),
-                resolved_value: client::xml_text(b, "ResolvedValue"),
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(Parameter {
+                    parameter_key: client::xml_text(b, "ParameterKey")?,
+                    parameter_value: client::xml_text(b, "ParameterValue")?,
+                    use_previous_value: client::xml_text(b, "UsePreviousValue")
+                        .map(|v| v == "true"),
+                    resolved_value: client::xml_text(b, "ResolvedValue"),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_tags(&self, xml: &str) -> Vec<StackTag> {
-        client::xml_blocks(xml, "member").iter().filter_map(|b| {
-            Some(StackTag {
-                key: client::xml_text(b, "Key")?,
-                value: client::xml_text(b, "Value")?,
+        client::xml_blocks(xml, "member")
+            .iter()
+            .filter_map(|b| {
+                Some(StackTag {
+                    key: client::xml_text(b, "Key")?,
+                    value: client::xml_text(b, "Value")?,
+                })
             })
-        }).collect()
+            .collect()
     }
 }
 
@@ -632,10 +751,22 @@ mod tests {
 
     #[test]
     fn stack_status_from_str() {
-        assert!(matches!(StackStatus::from("CREATE_COMPLETE"), StackStatus::CreateComplete));
-        assert!(matches!(StackStatus::from("DELETE_IN_PROGRESS"), StackStatus::DeleteInProgress));
-        assert!(matches!(StackStatus::from("UPDATE_ROLLBACK_COMPLETE"), StackStatus::UpdateRollbackComplete));
-        assert!(matches!(StackStatus::from("CUSTOM_STATUS"), StackStatus::Other(_)));
+        assert!(matches!(
+            StackStatus::from("CREATE_COMPLETE"),
+            StackStatus::CreateComplete
+        ));
+        assert!(matches!(
+            StackStatus::from("DELETE_IN_PROGRESS"),
+            StackStatus::DeleteInProgress
+        ));
+        assert!(matches!(
+            StackStatus::from("UPDATE_ROLLBACK_COMPLETE"),
+            StackStatus::UpdateRollbackComplete
+        ));
+        assert!(matches!(
+            StackStatus::from("CUSTOM_STATUS"),
+            StackStatus::Other(_)
+        ));
     }
 
     #[test]
@@ -661,7 +792,10 @@ mod tests {
                 use_previous_value: None,
                 resolved_value: None,
             }],
-            tags: vec![StackTag { key: "env".into(), value: "prod".into() }],
+            tags: vec![StackTag {
+                key: "env".into(),
+                value: "prod".into(),
+            }],
             capabilities: vec!["CAPABILITY_IAM".into()],
             role_arn: None,
             enable_termination_protection: false,
