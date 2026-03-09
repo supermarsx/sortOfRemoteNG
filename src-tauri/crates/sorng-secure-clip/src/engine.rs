@@ -20,6 +20,12 @@ pub struct ClipEngine {
     total_manual_clears: u64,
 }
 
+impl Default for ClipEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClipEngine {
     pub fn new() -> Self {
         Self {
@@ -85,7 +91,9 @@ impl ClipEngine {
 
         log::info!(
             "Copied {:?} to secure clipboard (clear in {}s, max_pastes={})",
-            entry.kind, clear_secs, max_pastes
+            entry.kind,
+            clear_secs,
+            max_pastes
         );
 
         (entry, previous)
@@ -96,7 +104,9 @@ impl ClipEngine {
     /// Read the current clipboard value (for paste).
     /// Increments paste count and may auto-clear if limits are reached.
     pub fn paste(&mut self) -> Result<String, String> {
-        let entry = self.current.as_mut()
+        let entry = self
+            .current
+            .as_mut()
             .ok_or_else(|| "Secure clipboard is empty".to_string())?;
 
         if !entry.is_valid() {
@@ -120,11 +130,16 @@ impl ClipEngine {
 
     /// Read the current entry value by ID (for targeted paste-to-terminal).
     pub fn paste_by_id(&mut self, entry_id: &str) -> Result<String, String> {
-        let entry = self.current.as_mut()
+        let entry = self
+            .current
+            .as_mut()
             .ok_or_else(|| "Secure clipboard is empty".to_string())?;
 
         if entry.id != entry_id {
-            return Err(format!("Entry '{}' is no longer the current entry", entry_id));
+            return Err(format!(
+                "Entry '{}' is no longer the current entry",
+                entry_id
+            ));
         }
 
         self.paste()
@@ -156,7 +171,9 @@ impl ClipEngine {
 
     /// Check if auto-clear should fire now and do it.
     pub fn tick_auto_clear(&mut self) -> Option<ClipEntry> {
-        let should_clear = self.current.as_ref()
+        let should_clear = self
+            .current
+            .as_ref()
             .map(|e| !e.is_valid())
             .unwrap_or(false);
 
@@ -269,7 +286,8 @@ fn write_clipboard_windows(text: &str) -> Result<(), String> {
 
         if let Some(ref mut stdin) = child.stdin {
             use std::io::Write;
-            stdin.write_all(text.as_bytes())
+            stdin
+                .write_all(text.as_bytes())
                 .map_err(|e| format!("Failed to write to clipboard stdin: {}", e))?;
         }
         // Drop stdin so the process can finish.
@@ -295,8 +313,8 @@ fn write_clipboard_windows(text: &str) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn write_clipboard_macos(text: &str) -> Result<(), String> {
-    use std::process::Command;
     use std::io::Write;
+    use std::process::Command;
 
     let mut child = Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())
@@ -306,18 +324,23 @@ fn write_clipboard_macos(text: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to spawn pbcopy: {}", e))?;
 
     if let Some(ref mut stdin) = child.stdin {
-        stdin.write_all(text.as_bytes())
+        stdin
+            .write_all(text.as_bytes())
             .map_err(|e| format!("Failed to write to pbcopy: {}", e))?;
     }
     drop(child.stdin.take());
 
-    let output = child.wait_with_output()
+    let output = child
+        .wait_with_output()
         .map_err(|e| format!("pbcopy failed: {}", e))?;
 
     if output.status.success() {
         Ok(())
     } else {
-        Err(format!("pbcopy returned: {}", String::from_utf8_lossy(&output.stderr)))
+        Err(format!(
+            "pbcopy returned: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ))
     }
 }
 
@@ -325,8 +348,8 @@ fn write_clipboard_macos(text: &str) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 fn write_clipboard_linux(text: &str) -> Result<(), String> {
-    use std::process::Command;
     use std::io::Write;
+    use std::process::Command;
 
     // Try xclip first, fall back to xsel, then wl-copy for Wayland.
     let programs = [

@@ -74,9 +74,7 @@ pub async fn secure_clip_copy_api_key(
 // ═══════════════════════════════════════════════════════════════════
 
 #[tauri::command]
-pub async fn secure_clip_paste(
-    state: State<'_, SecureClipServiceState>,
-) -> Result<String, String> {
+pub async fn secure_clip_paste(state: State<'_, SecureClipServiceState>) -> Result<String, String> {
     let mut svc = state.write().await;
     svc.paste().await
 }
@@ -117,9 +115,7 @@ pub async fn secure_clip_record_terminal_paste(
 // ═══════════════════════════════════════════════════════════════════
 
 #[tauri::command]
-pub async fn secure_clip_clear(
-    state: State<'_, SecureClipServiceState>,
-) -> Result<bool, String> {
+pub async fn secure_clip_clear(state: State<'_, SecureClipServiceState>) -> Result<bool, String> {
     let mut svc = state.write().await;
     Ok(svc.clear().await)
 }

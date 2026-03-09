@@ -21,7 +21,8 @@ pub fn spawn_auto_clear_task(
                 eng.tick_auto_clear()
             };
             if let Some(entry) = cleared {
-                let mut hist: tokio::sync::RwLockWriteGuard<'_, ClipHistory> = history.write().await;
+                let mut hist: tokio::sync::RwLockWriteGuard<'_, ClipHistory> =
+                    history.write().await;
                 hist.record_clear(&entry, ClearReason::AutoClear);
             }
         }

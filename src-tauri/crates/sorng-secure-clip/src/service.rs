@@ -177,7 +177,8 @@ impl SecureClipService {
     /// the paste counter (the SSH module will call `record_terminal_paste` after).
     pub async fn get_for_terminal(&self) -> Result<(String, String), String> {
         let eng = self.engine.read().await;
-        let entry = eng.current_entry()
+        let entry = eng
+            .current_entry()
             .ok_or_else(|| "Secure clipboard is empty".to_string())?;
         if !entry.is_valid() {
             return Err("Clipboard entry has expired or been cleared".to_string());
@@ -269,7 +270,10 @@ impl SecureClipService {
     /// Get history for a specific connection.
     pub async fn get_connection_history(&self, connection_id: &str) -> Vec<ClipHistoryEntry> {
         let hist = self.history.read().await;
-        hist.for_connection(connection_id).into_iter().cloned().collect()
+        hist.for_connection(connection_id)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Clear all history.

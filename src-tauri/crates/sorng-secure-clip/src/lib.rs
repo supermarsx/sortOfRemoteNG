@@ -1,8 +1,8 @@
-pub mod types;
+pub mod commands;
 pub mod engine;
 pub mod guard;
 pub mod history;
 pub mod service;
-pub mod commands;
+pub mod types;
 
-pub use service::{SecureClipService, SecureClipServiceState, create_secure_clip_state};
+pub use service::{create_secure_clip_state, SecureClipService, SecureClipServiceState};

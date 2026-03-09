@@ -242,10 +242,18 @@ pub struct SecureClipConfig {
     pub kind_clear_overrides: std::collections::HashMap<SecretKind, u64>,
 }
 
-fn default_clear_secs() -> u64 { 12 }
-fn default_max_pastes() -> u32 { 0 }
-fn default_true() -> bool { true }
-fn default_history_max() -> usize { 200 }
+fn default_clear_secs() -> u64 {
+    12
+}
+fn default_max_pastes() -> u32 {
+    0
+}
+fn default_true() -> bool {
+    true
+}
+fn default_history_max() -> usize {
+    200
+}
 
 impl Default for SecureClipConfig {
     fn default() -> Self {
@@ -310,7 +318,9 @@ pub struct PasteToTerminalRequest {
     pub typing_delay_ms: u64,
 }
 
-fn default_typing_delay() -> u64 { 15 }
+fn default_typing_delay() -> u64 {
+    15
+}
 
 /// Response returned by the `paste_to_terminal` command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
