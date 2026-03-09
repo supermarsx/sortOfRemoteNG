@@ -42,7 +42,10 @@ pub struct FreeIpaError {
 
 impl FreeIpaError {
     pub fn new(kind: FreeIpaErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected(msg: impl Into<String>) -> Self {
@@ -114,11 +117,15 @@ impl fmt::Display for FreeIpaError {
             FreeIpaErrorKind::ValidationError => "FreeIPA validation error",
             FreeIpaErrorKind::PermissionDenied => "FreeIPA permission denied",
             FreeIpaErrorKind::SessionExpired => "FreeIPA session expired",
-            FreeIpaErrorKind::HttpError(code) => return write!(f, "FreeIPA HTTP error ({}): {}", code, self.message),
+            FreeIpaErrorKind::HttpError(code) => {
+                return write!(f, "FreeIPA HTTP error ({}): {}", code, self.message)
+            }
             FreeIpaErrorKind::ParseError => "FreeIPA parse error",
             FreeIpaErrorKind::Timeout => "FreeIPA timeout",
             FreeIpaErrorKind::InternalError => "FreeIPA internal error",
-            FreeIpaErrorKind::IpaError(code) => return write!(f, "FreeIPA API error ({}): {}", code, self.message),
+            FreeIpaErrorKind::IpaError(code) => {
+                return write!(f, "FreeIPA API error ({}): {}", code, self.message)
+            }
         };
         write!(f, "{}: {}", prefix, self.message)
     }

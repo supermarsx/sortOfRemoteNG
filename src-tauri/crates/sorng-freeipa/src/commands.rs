@@ -1,13 +1,15 @@
 // ── sorng-freeipa/src/commands.rs ─────────────────────────────────────────────
 //! Tauri commands – thin wrappers around `FreeIpaServiceHolder`.
 
-use tauri::State;
 use crate::service::FreeIpaServiceState;
 use crate::types::*;
+use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 
-fn map_err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
+fn map_err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 // ── Connection ────────────────────────────────────────────────────
 
@@ -17,7 +19,12 @@ pub async fn freeipa_connect(
     id: String,
     config: FreeIpaConnectionConfig,
 ) -> CmdResult<FreeIpaConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -59,7 +66,12 @@ pub async fn freeipa_get_user(
     id: String,
     uid: String,
 ) -> CmdResult<IpaUser> {
-    state.lock().await.get_user(&id, &uid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_user(&id, &uid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -68,7 +80,12 @@ pub async fn freeipa_create_user(
     id: String,
     request: CreateUserRequest,
 ) -> CmdResult<IpaUser> {
-    state.lock().await.create_user(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_user(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -78,7 +95,12 @@ pub async fn freeipa_update_user(
     uid: String,
     request: ModifyUserRequest,
 ) -> CmdResult<IpaUser> {
-    state.lock().await.update_user(&id, &uid, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_user(&id, &uid, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -87,7 +109,12 @@ pub async fn freeipa_delete_user(
     id: String,
     uid: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_user(&id, &uid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_user(&id, &uid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -96,7 +123,12 @@ pub async fn freeipa_enable_user(
     id: String,
     uid: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_user(&id, &uid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_user(&id, &uid)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -105,7 +137,12 @@ pub async fn freeipa_disable_user(
     id: String,
     uid: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_user(&id, &uid).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_user(&id, &uid)
+        .await
+        .map_err(map_err)
 }
 
 // ── Groups ────────────────────────────────────────────────────────
@@ -124,7 +161,12 @@ pub async fn freeipa_get_group(
     id: String,
     cn: String,
 ) -> CmdResult<IpaGroup> {
-    state.lock().await.get_group(&id, &cn).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_group(&id, &cn)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -133,7 +175,12 @@ pub async fn freeipa_create_group(
     id: String,
     request: CreateGroupRequest,
 ) -> CmdResult<IpaGroup> {
-    state.lock().await.create_group(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_group(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -142,7 +189,12 @@ pub async fn freeipa_delete_group(
     id: String,
     cn: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_group(&id, &cn).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_group(&id, &cn)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -152,7 +204,12 @@ pub async fn freeipa_add_group_member(
     cn: String,
     user: String,
 ) -> CmdResult<MemberResult> {
-    state.lock().await.add_group_member(&id, &cn, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .add_group_member(&id, &cn, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -162,7 +219,12 @@ pub async fn freeipa_remove_group_member(
     cn: String,
     user: String,
 ) -> CmdResult<MemberResult> {
-    state.lock().await.remove_group_member(&id, &cn, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .remove_group_member(&id, &cn, &user)
+        .await
+        .map_err(map_err)
 }
 
 // ── Hosts ─────────────────────────────────────────────────────────
@@ -181,7 +243,12 @@ pub async fn freeipa_get_host(
     id: String,
     fqdn: String,
 ) -> CmdResult<IpaHost> {
-    state.lock().await.get_host(&id, &fqdn).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_host(&id, &fqdn)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -190,7 +257,12 @@ pub async fn freeipa_create_host(
     id: String,
     request: CreateHostRequest,
 ) -> CmdResult<IpaHost> {
-    state.lock().await.create_host(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_host(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -199,7 +271,12 @@ pub async fn freeipa_delete_host(
     id: String,
     fqdn: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_host(&id, &fqdn).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_host(&id, &fqdn)
+        .await
+        .map_err(map_err)
 }
 
 // ── Services ──────────────────────────────────────────────────────
@@ -218,7 +295,12 @@ pub async fn freeipa_get_service(
     id: String,
     principal: String,
 ) -> CmdResult<IpaService> {
-    state.lock().await.get_service(&id, &principal).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_service(&id, &principal)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -227,7 +309,12 @@ pub async fn freeipa_create_service(
     id: String,
     request: CreateServiceRequest,
 ) -> CmdResult<IpaService> {
-    state.lock().await.create_service(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_service(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -236,7 +323,12 @@ pub async fn freeipa_delete_service(
     id: String,
     principal: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_service(&id, &principal).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_service(&id, &principal)
+        .await
+        .map_err(map_err)
 }
 
 // ── DNS ───────────────────────────────────────────────────────────
@@ -246,7 +338,12 @@ pub async fn freeipa_list_dns_zones(
     state: State<'_, FreeIpaServiceState>,
     id: String,
 ) -> CmdResult<Vec<DnsZone>> {
-    state.lock().await.list_dns_zones(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_dns_zones(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -255,7 +352,12 @@ pub async fn freeipa_get_dns_zone(
     id: String,
     zone: String,
 ) -> CmdResult<DnsZone> {
-    state.lock().await.get_dns_zone(&id, &zone).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_dns_zone(&id, &zone)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -264,7 +366,12 @@ pub async fn freeipa_create_dns_zone(
     id: String,
     request: CreateDnsZoneRequest,
 ) -> CmdResult<DnsZone> {
-    state.lock().await.create_dns_zone(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_dns_zone(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -273,7 +380,12 @@ pub async fn freeipa_delete_dns_zone(
     id: String,
     zone: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_dns_zone(&id, &zone).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_dns_zone(&id, &zone)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -282,7 +394,12 @@ pub async fn freeipa_list_dns_records(
     id: String,
     zone: String,
 ) -> CmdResult<Vec<DnsRecord>> {
-    state.lock().await.list_dns_records(&id, &zone).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_dns_records(&id, &zone)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -291,7 +408,12 @@ pub async fn freeipa_add_dns_record(
     id: String,
     request: AddDnsRecordRequest,
 ) -> CmdResult<DnsRecord> {
-    state.lock().await.add_dns_record(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .add_dns_record(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -303,7 +425,12 @@ pub async fn freeipa_delete_dns_record(
     record_type: String,
     record_data: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_dns_record(&id, &zone, &name, &record_type, &record_data).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_dns_record(&id, &zone, &name, &record_type, &record_data)
+        .await
+        .map_err(map_err)
 }
 
 // ── RBAC ──────────────────────────────────────────────────────────
@@ -321,7 +448,12 @@ pub async fn freeipa_list_privileges(
     state: State<'_, FreeIpaServiceState>,
     id: String,
 ) -> CmdResult<Vec<IpaPrivilege>> {
-    state.lock().await.list_privileges(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_privileges(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -329,7 +461,12 @@ pub async fn freeipa_list_permissions(
     state: State<'_, FreeIpaServiceState>,
     id: String,
 ) -> CmdResult<Vec<IpaPermission>> {
-    state.lock().await.list_permissions(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_permissions(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Certificates ──────────────────────────────────────────────────
@@ -339,7 +476,12 @@ pub async fn freeipa_list_certificates(
     state: State<'_, FreeIpaServiceState>,
     id: String,
 ) -> CmdResult<Vec<IpaCertificate>> {
-    state.lock().await.list_certificates(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_certificates(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -348,7 +490,12 @@ pub async fn freeipa_request_certificate(
     id: String,
     request: CertRequestParams,
 ) -> CmdResult<IpaCertificate> {
-    state.lock().await.request_certificate(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .request_certificate(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -358,7 +505,12 @@ pub async fn freeipa_revoke_certificate(
     serial: u64,
     reason: u32,
 ) -> CmdResult<()> {
-    state.lock().await.revoke_certificate(&id, serial, reason).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .revoke_certificate(&id, serial, reason)
+        .await
+        .map_err(map_err)
 }
 
 // ── Sudo ──────────────────────────────────────────────────────────
@@ -368,7 +520,12 @@ pub async fn freeipa_list_sudo_rules(
     state: State<'_, FreeIpaServiceState>,
     id: String,
 ) -> CmdResult<Vec<IpaSudoRule>> {
-    state.lock().await.list_sudo_rules(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_sudo_rules(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -377,7 +534,12 @@ pub async fn freeipa_create_sudo_rule(
     id: String,
     request: CreateSudoRuleRequest,
 ) -> CmdResult<IpaSudoRule> {
-    state.lock().await.create_sudo_rule(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_sudo_rule(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -386,7 +548,12 @@ pub async fn freeipa_delete_sudo_rule(
     id: String,
     cn: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_sudo_rule(&id, &cn).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_sudo_rule(&id, &cn)
+        .await
+        .map_err(map_err)
 }
 
 // ── HBAC ──────────────────────────────────────────────────────────
@@ -396,7 +563,12 @@ pub async fn freeipa_list_hbac_rules(
     state: State<'_, FreeIpaServiceState>,
     id: String,
 ) -> CmdResult<Vec<IpaHbacRule>> {
-    state.lock().await.list_hbac_rules(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_hbac_rules(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -405,7 +577,12 @@ pub async fn freeipa_create_hbac_rule(
     id: String,
     request: CreateHbacRuleRequest,
 ) -> CmdResult<IpaHbacRule> {
-    state.lock().await.create_hbac_rule(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_hbac_rule(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -414,7 +591,12 @@ pub async fn freeipa_delete_hbac_rule(
     id: String,
     cn: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_hbac_rule(&id, &cn).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_hbac_rule(&id, &cn)
+        .await
+        .map_err(map_err)
 }
 
 // ── Trusts ────────────────────────────────────────────────────────
@@ -433,7 +615,12 @@ pub async fn freeipa_create_trust(
     id: String,
     request: CreateTrustRequest,
 ) -> CmdResult<IpaTrust> {
-    state.lock().await.create_trust(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_trust(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -442,5 +629,10 @@ pub async fn freeipa_delete_trust(
     id: String,
     realm: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_trust(&id, &realm).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_trust(&id, &realm)
+        .await
+        .map_err(map_err)
 }

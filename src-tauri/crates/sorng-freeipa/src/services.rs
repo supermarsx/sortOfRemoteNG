@@ -10,7 +10,11 @@ pub struct ServiceManager;
 impl ServiceManager {
     pub async fn list_services(client: &FreeIpaClient) -> FreeIpaResult<Vec<IpaService>> {
         let result = client
-            .rpc::<Vec<IpaService>>("service_find", vec![], serde_json::json!({"version": "2.251", "sizelimit": 0}))
+            .rpc::<Vec<IpaService>>(
+                "service_find",
+                vec![],
+                serde_json::json!({"version": "2.251", "sizelimit": 0}),
+            )
             .await?;
         Ok(result.result)
     }
@@ -26,10 +30,15 @@ impl ServiceManager {
         Ok(result.result)
     }
 
-    pub async fn create_service(client: &FreeIpaClient, req: &CreateServiceRequest) -> FreeIpaResult<IpaService> {
+    pub async fn create_service(
+        client: &FreeIpaClient,
+        req: &CreateServiceRequest,
+    ) -> FreeIpaResult<IpaService> {
         let mut opts = serde_json::json!({"version": "2.251"});
         if let Some(v) = req.force {
-            opts.as_object_mut().unwrap().insert("force".into(), serde_json::json!(v));
+            opts.as_object_mut()
+                .unwrap()
+                .insert("force".into(), serde_json::json!(v));
         }
         let result = client
             .rpc::<IpaService>(
@@ -63,7 +72,11 @@ impl ServiceManager {
         Ok(())
     }
 
-    pub async fn add_host(client: &FreeIpaClient, principal: &str, host: &str) -> FreeIpaResult<MemberResult> {
+    pub async fn add_host(
+        client: &FreeIpaClient,
+        principal: &str,
+        host: &str,
+    ) -> FreeIpaResult<MemberResult> {
         let result = client
             .rpc::<MemberResult>(
                 "service_add_host",
@@ -74,7 +87,11 @@ impl ServiceManager {
         Ok(result.result)
     }
 
-    pub async fn remove_host(client: &FreeIpaClient, principal: &str, host: &str) -> FreeIpaResult<MemberResult> {
+    pub async fn remove_host(
+        client: &FreeIpaClient,
+        principal: &str,
+        host: &str,
+    ) -> FreeIpaResult<MemberResult> {
         let result = client
             .rpc::<MemberResult>(
                 "service_remove_host",

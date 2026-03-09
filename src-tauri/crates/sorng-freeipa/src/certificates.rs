@@ -19,7 +19,10 @@ impl CertManager {
         Ok(result.result)
     }
 
-    pub async fn get_certificate(client: &FreeIpaClient, serial: u64) -> FreeIpaResult<IpaCertificate> {
+    pub async fn get_certificate(
+        client: &FreeIpaClient,
+        serial: u64,
+    ) -> FreeIpaResult<IpaCertificate> {
         let result = client
             .rpc::<IpaCertificate>(
                 "cert_show",
@@ -30,15 +33,22 @@ impl CertManager {
         Ok(result.result)
     }
 
-    pub async fn request_certificate(client: &FreeIpaClient, req: &CertRequestParams) -> FreeIpaResult<IpaCertificate> {
+    pub async fn request_certificate(
+        client: &FreeIpaClient,
+        req: &CertRequestParams,
+    ) -> FreeIpaResult<IpaCertificate> {
         let mut opts = serde_json::json!({
             "version": "2.251",
             "principal": req.principal,
             "csr": req.csr,
         });
         let map = opts.as_object_mut().unwrap();
-        if let Some(ref v) = req.profile_id { map.insert("cacn".into(), serde_json::json!(v)); }
-        if let Some(v) = req.add_principal { map.insert("add".into(), serde_json::json!(v)); }
+        if let Some(ref v) = req.profile_id {
+            map.insert("cacn".into(), serde_json::json!(v));
+        }
+        if let Some(v) = req.add_principal {
+            map.insert("add".into(), serde_json::json!(v));
+        }
 
         let result = client
             .rpc::<IpaCertificate>("cert_request", vec![], opts)
@@ -46,7 +56,11 @@ impl CertManager {
         Ok(result.result)
     }
 
-    pub async fn revoke_certificate(client: &FreeIpaClient, serial: u64, reason: u32) -> FreeIpaResult<()> {
+    pub async fn revoke_certificate(
+        client: &FreeIpaClient,
+        serial: u64,
+        reason: u32,
+    ) -> FreeIpaResult<()> {
         client
             .rpc::<serde_json::Value>(
                 "cert_revoke",

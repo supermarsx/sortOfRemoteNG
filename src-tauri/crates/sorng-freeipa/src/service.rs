@@ -85,8 +85,14 @@ impl FreeIpaServiceHolder {
     pub async fn get_dashboard(&self, id: &str) -> FreeIpaResult<FreeIpaDashboard> {
         let c = self.client(id)?;
         let users = UserManager::list_users(c).await.unwrap_or_default();
-        let active = users.iter().filter(|u| u.nsaccountlock != Some(true)).count() as u64;
-        let disabled = users.iter().filter(|u| u.nsaccountlock == Some(true)).count() as u64;
+        let active = users
+            .iter()
+            .filter(|u| u.nsaccountlock != Some(true))
+            .count() as u64;
+        let disabled = users
+            .iter()
+            .filter(|u| u.nsaccountlock == Some(true))
+            .count() as u64;
         let groups = GroupManager::list_groups(c).await.unwrap_or_default();
         let hosts = HostManager::list_hosts(c).await.unwrap_or_default();
         let services = ServiceManager::list_services(c).await.unwrap_or_default();
@@ -96,7 +102,10 @@ impl FreeIpaServiceHolder {
         let roles = RbacManager::list_roles(c).await.unwrap_or_default();
         let trusts = TrustManager::list_trusts(c).await.unwrap_or_default();
         let certs = CertManager::list_certificates(c).await.unwrap_or_default();
-        let expired = certs.iter().filter(|cert| cert.revoked == Some(true)).count() as u64;
+        let expired = certs
+            .iter()
+            .filter(|cert| cert.revoked == Some(true))
+            .count() as u64;
 
         Ok(FreeIpaDashboard {
             total_users: users.len() as u64,
@@ -200,11 +209,7 @@ impl FreeIpaServiceHolder {
         HostManager::get_host(self.client(id)?, fqdn).await
     }
 
-    pub async fn create_host(
-        &self,
-        id: &str,
-        req: &CreateHostRequest,
-    ) -> FreeIpaResult<IpaHost> {
+    pub async fn create_host(&self, id: &str, req: &CreateHostRequest) -> FreeIpaResult<IpaHost> {
         HostManager::create_host(self.client(id)?, req).await
     }
 
@@ -256,11 +261,7 @@ impl FreeIpaServiceHolder {
         DnsManager::delete_zone(self.client(id)?, zone).await
     }
 
-    pub async fn list_dns_records(
-        &self,
-        id: &str,
-        zone: &str,
-    ) -> FreeIpaResult<Vec<DnsRecord>> {
+    pub async fn list_dns_records(&self, id: &str, zone: &str) -> FreeIpaResult<Vec<DnsRecord>> {
         DnsManager::list_records(self.client(id)?, zone).await
     }
 

@@ -12,7 +12,11 @@ impl RbacManager {
 
     pub async fn list_roles(client: &FreeIpaClient) -> FreeIpaResult<Vec<IpaRole>> {
         let result = client
-            .rpc::<Vec<IpaRole>>("role_find", vec![], serde_json::json!({"version": "2.251", "sizelimit": 0}))
+            .rpc::<Vec<IpaRole>>(
+                "role_find",
+                vec![],
+                serde_json::json!({"version": "2.251", "sizelimit": 0}),
+            )
             .await?;
         Ok(result.result)
     }
@@ -28,10 +32,15 @@ impl RbacManager {
         Ok(result.result)
     }
 
-    pub async fn create_role(client: &FreeIpaClient, req: &CreateRoleRequest) -> FreeIpaResult<IpaRole> {
+    pub async fn create_role(
+        client: &FreeIpaClient,
+        req: &CreateRoleRequest,
+    ) -> FreeIpaResult<IpaRole> {
         let mut opts = serde_json::json!({"version": "2.251"});
         if let Some(ref d) = req.description {
-            opts.as_object_mut().unwrap().insert("description".into(), serde_json::json!(d));
+            opts.as_object_mut()
+                .unwrap()
+                .insert("description".into(), serde_json::json!(d));
         }
         let result = client
             .rpc::<IpaRole>("role_add", vec![serde_json::json!(req.cn)], opts)
@@ -41,7 +50,11 @@ impl RbacManager {
 
     pub async fn delete_role(client: &FreeIpaClient, cn: &str) -> FreeIpaResult<()> {
         client
-            .rpc::<serde_json::Value>("role_del", vec![serde_json::json!(cn)], serde_json::json!({"version": "2.251"}))
+            .rpc::<serde_json::Value>(
+                "role_del",
+                vec![serde_json::json!(cn)],
+                serde_json::json!({"version": "2.251"}),
+            )
             .await?;
         Ok(())
     }
@@ -78,7 +91,11 @@ impl RbacManager {
         Ok(result.result)
     }
 
-    pub async fn add_role_privilege(client: &FreeIpaClient, cn: &str, privilege: &str) -> FreeIpaResult<MemberResult> {
+    pub async fn add_role_privilege(
+        client: &FreeIpaClient,
+        cn: &str,
+        privilege: &str,
+    ) -> FreeIpaResult<MemberResult> {
         let result = client
             .rpc::<MemberResult>(
                 "role_add_privilege",
@@ -89,7 +106,11 @@ impl RbacManager {
         Ok(result.result)
     }
 
-    pub async fn remove_role_privilege(client: &FreeIpaClient, cn: &str, privilege: &str) -> FreeIpaResult<MemberResult> {
+    pub async fn remove_role_privilege(
+        client: &FreeIpaClient,
+        cn: &str,
+        privilege: &str,
+    ) -> FreeIpaResult<MemberResult> {
         let result = client
             .rpc::<MemberResult>(
                 "role_remove_privilege",
@@ -104,7 +125,11 @@ impl RbacManager {
 
     pub async fn list_privileges(client: &FreeIpaClient) -> FreeIpaResult<Vec<IpaPrivilege>> {
         let result = client
-            .rpc::<Vec<IpaPrivilege>>("privilege_find", vec![], serde_json::json!({"version": "2.251", "sizelimit": 0}))
+            .rpc::<Vec<IpaPrivilege>>(
+                "privilege_find",
+                vec![],
+                serde_json::json!({"version": "2.251", "sizelimit": 0}),
+            )
             .await?;
         Ok(result.result)
     }
@@ -120,10 +145,16 @@ impl RbacManager {
         Ok(result.result)
     }
 
-    pub async fn create_privilege(client: &FreeIpaClient, cn: &str, description: Option<&str>) -> FreeIpaResult<IpaPrivilege> {
+    pub async fn create_privilege(
+        client: &FreeIpaClient,
+        cn: &str,
+        description: Option<&str>,
+    ) -> FreeIpaResult<IpaPrivilege> {
         let mut opts = serde_json::json!({"version": "2.251"});
         if let Some(d) = description {
-            opts.as_object_mut().unwrap().insert("description".into(), serde_json::json!(d));
+            opts.as_object_mut()
+                .unwrap()
+                .insert("description".into(), serde_json::json!(d));
         }
         let result = client
             .rpc::<IpaPrivilege>("privilege_add", vec![serde_json::json!(cn)], opts)
@@ -133,12 +164,20 @@ impl RbacManager {
 
     pub async fn delete_privilege(client: &FreeIpaClient, cn: &str) -> FreeIpaResult<()> {
         client
-            .rpc::<serde_json::Value>("privilege_del", vec![serde_json::json!(cn)], serde_json::json!({"version": "2.251"}))
+            .rpc::<serde_json::Value>(
+                "privilege_del",
+                vec![serde_json::json!(cn)],
+                serde_json::json!({"version": "2.251"}),
+            )
             .await?;
         Ok(())
     }
 
-    pub async fn add_privilege_permission(client: &FreeIpaClient, cn: &str, permission: &str) -> FreeIpaResult<MemberResult> {
+    pub async fn add_privilege_permission(
+        client: &FreeIpaClient,
+        cn: &str,
+        permission: &str,
+    ) -> FreeIpaResult<MemberResult> {
         let result = client
             .rpc::<MemberResult>(
                 "privilege_add_permission",
@@ -149,7 +188,11 @@ impl RbacManager {
         Ok(result.result)
     }
 
-    pub async fn remove_privilege_permission(client: &FreeIpaClient, cn: &str, permission: &str) -> FreeIpaResult<MemberResult> {
+    pub async fn remove_privilege_permission(
+        client: &FreeIpaClient,
+        cn: &str,
+        permission: &str,
+    ) -> FreeIpaResult<MemberResult> {
         let result = client
             .rpc::<MemberResult>(
                 "privilege_remove_permission",
@@ -164,7 +207,11 @@ impl RbacManager {
 
     pub async fn list_permissions(client: &FreeIpaClient) -> FreeIpaResult<Vec<IpaPermission>> {
         let result = client
-            .rpc::<Vec<IpaPermission>>("permission_find", vec![], serde_json::json!({"version": "2.251", "sizelimit": 0}))
+            .rpc::<Vec<IpaPermission>>(
+                "permission_find",
+                vec![],
+                serde_json::json!({"version": "2.251", "sizelimit": 0}),
+            )
             .await?;
         Ok(result.result)
     }
@@ -180,10 +227,16 @@ impl RbacManager {
         Ok(result.result)
     }
 
-    pub async fn create_permission(client: &FreeIpaClient, cn: &str, description: Option<&str>) -> FreeIpaResult<IpaPermission> {
+    pub async fn create_permission(
+        client: &FreeIpaClient,
+        cn: &str,
+        description: Option<&str>,
+    ) -> FreeIpaResult<IpaPermission> {
         let mut opts = serde_json::json!({"version": "2.251"});
         if let Some(d) = description {
-            opts.as_object_mut().unwrap().insert("description".into(), serde_json::json!(d));
+            opts.as_object_mut()
+                .unwrap()
+                .insert("description".into(), serde_json::json!(d));
         }
         let result = client
             .rpc::<IpaPermission>("permission_add", vec![serde_json::json!(cn)], opts)
@@ -193,7 +246,11 @@ impl RbacManager {
 
     pub async fn delete_permission(client: &FreeIpaClient, cn: &str) -> FreeIpaResult<()> {
         client
-            .rpc::<serde_json::Value>("permission_del", vec![serde_json::json!(cn)], serde_json::json!({"version": "2.251"}))
+            .rpc::<serde_json::Value>(
+                "permission_del",
+                vec![serde_json::json!(cn)],
+                serde_json::json!({"version": "2.251"}),
+            )
             .await?;
         Ok(())
     }

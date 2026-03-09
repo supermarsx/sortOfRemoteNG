@@ -5,7 +5,6 @@ use crate::error::{FreeIpaError, FreeIpaResult};
 use crate::types::*;
 use log::{debug, info};
 use reqwest::Client;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// HTTP client for communicating with a FreeIPA server.
@@ -113,7 +112,9 @@ impl FreeIpaClient {
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(FreeIpaError::session_expired("Session expired, re-login required"));
+            return Err(FreeIpaError::session_expired(
+                "Session expired, re-login required",
+            ));
         }
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -138,11 +139,10 @@ impl FreeIpaClient {
 
     /// Ping the FreeIPA server.
     pub async fn ping(&self) -> FreeIpaResult<String> {
-        let result: IpaResult<serde_json::Value> =
-            self.rpc("ping", vec![], serde_json::json!({"version": "2.251"})).await?;
-        Ok(result
-            .summary
-            .unwrap_or_else(|| "pong".into()))
+        let result: IpaResult<serde_json::Value> = self
+            .rpc("ping", vec![], serde_json::json!({"version": "2.251"}))
+            .await?;
+        Ok(result.summary.unwrap_or_else(|| "pong".into()))
     }
 
     /// Check if the session is still authenticated.

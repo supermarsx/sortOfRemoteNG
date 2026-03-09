@@ -706,8 +706,7 @@ mod tests {
             "error": null,
             "id": 0
         }"#;
-        let resp: IpaResponse<Vec<serde_json::Value>> =
-            serde_json::from_str(json).unwrap();
+        let resp: IpaResponse<Vec<serde_json::Value>> = serde_json::from_str(json).unwrap();
         assert!(resp.error.is_none());
         let envelope = resp.result.unwrap();
         assert_eq!(envelope.count, Some(1));
