@@ -42,13 +42,13 @@
 //! - [`service`] — Top-level orchestration service with Tauri state
 //! - [`commands`] — Tauri IPC command handlers
 
-pub mod types;
-pub mod error;
-pub mod rules;
 pub mod channels;
-pub mod templates;
-pub mod throttle;
+pub mod commands;
+pub mod error;
 pub mod escalation;
 pub mod history;
+pub mod rules;
 pub mod service;
-pub mod commands;
+pub mod templates;
+pub mod throttle;
+pub mod types;

@@ -44,6 +44,12 @@ pub struct EscalationManager {
     pending: HashMap<String, PendingEscalation>,
 }
 
+impl Default for EscalationManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EscalationManager {
     /// Create a new, empty escalation manager.
     pub fn new() -> Self {
@@ -112,10 +118,12 @@ impl EscalationManager {
                     let should_fire = match &level.condition {
                         Some(field) => {
                             let val = resolve_field(&esc.event_data, field);
-                            match val {
-                                Some(serde_json::Value::Bool(false)) | Some(serde_json::Value::Null) | None => false,
-                                _ => true,
-                            }
+                            !matches!(
+                                val,
+                                Some(serde_json::Value::Bool(false))
+                                    | Some(serde_json::Value::Null)
+                                    | None
+                            )
                         }
                         None => true,
                     };
@@ -136,9 +144,8 @@ impl EscalationManager {
         }
 
         // Clean up fully-escalated or acknowledged chains.
-        self.pending.retain(|_, esc| {
-            !esc.acknowledged && esc.next_level < esc.config.levels.len()
-        });
+        self.pending
+            .retain(|_, esc| !esc.acknowledged && esc.next_level < esc.config.levels.len());
 
         due
     }
@@ -175,7 +182,7 @@ fn resolve_field<'a>(data: &'a serde_json::Value, path: &str) -> Option<&'a serd
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{EscalationConfig, EscalationLevel, ChannelConfig};
+    use crate::types::{ChannelConfig, EscalationConfig, EscalationLevel};
 
     fn make_config() -> EscalationConfig {
         EscalationConfig {

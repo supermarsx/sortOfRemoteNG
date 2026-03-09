@@ -51,7 +51,16 @@ pub async fn deliver_notification(
             subject_template,
             body_template,
             html,
-        } => deliver_email_stub(to, cc, bcc, subject_template, body_template, html, title, body),
+        } => deliver_email_stub(
+            to,
+            cc,
+            bcc,
+            subject_template,
+            body_template,
+            html,
+            title,
+            body,
+        ),
         ChannelConfig::Slack {
             webhook_url,
             channel: chan,
@@ -163,6 +172,7 @@ fn deliver_desktop(
 // ── Webhook ─────────────────────────────────────────────────────────
 
 /// Deliver via a generic HTTP webhook.
+#[allow(clippy::too_many_arguments)]
 async fn deliver_webhook(
     url: &str,
     method: Option<&str>,
@@ -252,6 +262,7 @@ async fn deliver_webhook(
 // ── Slack ───────────────────────────────────────────────────────────
 
 /// Deliver a Slack notification via incoming webhook.
+#[allow(clippy::too_many_arguments)]
 async fn deliver_slack(
     webhook_url: &str,
     channel: Option<&str>,
@@ -446,6 +457,7 @@ async fn deliver_pagerduty(
 
 /// Email delivery is delegated to an external SMTP relay (e.g. `sorng-smtp`).
 /// This function logs the intent and returns success.
+#[allow(clippy::too_many_arguments)]
 fn deliver_email_stub(
     to: &[String],
     _cc: &Option<Vec<String>>,
@@ -469,11 +481,7 @@ fn deliver_email_stub(
 // ── Shared helpers ──────────────────────────────────────────────────
 
 /// POST a JSON payload and return a delivery result.
-async fn post_json(
-    url: &str,
-    payload: &str,
-    channel_name: &str,
-) -> Result<(), NotificationError> {
+async fn post_json(url: &str, payload: &str, channel_name: &str) -> Result<(), NotificationError> {
     let client = reqwest::Client::new();
     let resp = client
         .post(url)
@@ -500,12 +508,7 @@ async fn post_json(
 
 /// Simple inline template rendering: replaces `{{title}}`, `{{body}}`, and
 /// `{{data}}` (JSON-encoded) in the template string.
-fn render_inline(
-    template: &str,
-    title: &str,
-    body: &str,
-    data: &serde_json::Value,
-) -> String {
+fn render_inline(template: &str, title: &str, body: &str, data: &serde_json::Value) -> String {
     template
         .replace("{{title}}", title)
         .replace("{{body}}", body)

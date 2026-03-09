@@ -68,9 +68,7 @@ pub async fn notif_disable_rule(
     rule_id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.rules
-        .disable_rule(&rule_id)
-        .map_err(|e| e.to_string())
+    svc.rules.disable_rule(&rule_id).map_err(|e| e.to_string())
 }
 
 /// Update an existing notification rule (full replacement).
@@ -114,7 +112,12 @@ pub async fn notif_list_templates(
     state: State<'_, NotificationServiceState>,
 ) -> Result<Vec<NotificationTemplate>, String> {
     let svc = state.lock().await;
-    Ok(svc.templates.list_templates().into_iter().cloned().collect())
+    Ok(svc
+        .templates
+        .list_templates()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 // ── Event Processing ────────────────────────────────────────────────
@@ -158,9 +161,7 @@ pub async fn notif_get_recent_history(
 
 /// Clear all notification history.
 #[tauri::command]
-pub async fn notif_clear_history(
-    state: State<'_, NotificationServiceState>,
-) -> Result<(), String> {
+pub async fn notif_clear_history(state: State<'_, NotificationServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.history.clear();
     Ok(())

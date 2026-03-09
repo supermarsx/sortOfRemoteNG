@@ -14,6 +14,12 @@ pub struct ThrottleManager {
     seen_hashes: HashMap<String, Vec<u64>>,
 }
 
+impl Default for ThrottleManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThrottleManager {
     /// Create a new, empty throttle manager.
     pub fn new() -> Self {
@@ -26,12 +32,7 @@ impl ThrottleManager {
     /// Check whether a notification for the given rule/group should be throttled.
     ///
     /// Returns `true` if the notification should be **suppressed**.
-    pub fn should_throttle(
-        &self,
-        rule_id: &str,
-        group_key: &str,
-        config: &ThrottleConfig,
-    ) -> bool {
+    pub fn should_throttle(&self, rule_id: &str, group_key: &str, config: &ThrottleConfig) -> bool {
         let key = Self::bucket_key(rule_id, group_key);
         let now = current_epoch_secs();
         let window_start = now.saturating_sub(config.window_seconds);
@@ -95,8 +96,7 @@ impl ThrottleManager {
         // Since we don't track individual hash timestamps, we clear buckets
         // that have no corresponding send timestamps.
         let active_keys: Vec<String> = self.buckets.keys().cloned().collect();
-        self.seen_hashes
-            .retain(|key, _| active_keys.contains(key));
+        self.seen_hashes.retain(|key, _| active_keys.contains(key));
     }
 
     /// Reset all throttle state for a specific rule.
@@ -128,10 +128,7 @@ pub fn content_hash(title: &str, body: &str) -> u64 {
 }
 
 /// Derive a group key from event data and the configured `group_by` fields.
-pub fn derive_group_key(
-    data: &serde_json::Value,
-    group_by: &Option<Vec<String>>,
-) -> String {
+pub fn derive_group_key(data: &serde_json::Value, group_by: &Option<Vec<String>>) -> String {
     match group_by {
         Some(fields) if !fields.is_empty() => {
             let parts: Vec<String> = fields
@@ -213,10 +210,7 @@ mod tests {
     #[test]
     fn group_key_derivation() {
         let data = serde_json::json!({"host": "srv1", "region": "us-east"});
-        let key = derive_group_key(
-            &data,
-            &Some(vec!["host".into(), "region".into()]),
-        );
+        let key = derive_group_key(&data, &Some(vec!["host".into(), "region".into()]));
         assert_eq!(key, "srv1::us-east");
     }
 }

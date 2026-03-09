@@ -16,6 +16,12 @@ pub struct RuleEngine {
     rules: HashMap<String, NotificationRule>,
 }
 
+impl Default for RuleEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RuleEngine {
     /// Create a new, empty rule engine.
     pub fn new() -> Self {
@@ -143,8 +149,12 @@ impl RuleEngine {
                     ConditionOperator::NotEquals => !json_eq(field_val, &cond.value),
                     ConditionOperator::Contains => string_contains(field_val, &cond.value),
                     ConditionOperator::NotContains => !string_contains(field_val, &cond.value),
-                    ConditionOperator::GreaterThan => numeric_cmp(field_val, &cond.value, |a, b| a > b),
-                    ConditionOperator::LessThan => numeric_cmp(field_val, &cond.value, |a, b| a < b),
+                    ConditionOperator::GreaterThan => {
+                        numeric_cmp(field_val, &cond.value, |a, b| a > b)
+                    }
+                    ConditionOperator::LessThan => {
+                        numeric_cmp(field_val, &cond.value, |a, b| a < b)
+                    }
                     ConditionOperator::Matches => regex_matches(field_val, &cond.value),
                     ConditionOperator::In => value_in_array(field_val, &cond.value),
                     ConditionOperator::NotIn => !value_in_array(field_val, &cond.value),
@@ -257,10 +267,7 @@ mod tests {
     #[test]
     fn resolve_nested_field() {
         let data = json!({"host": {"status": "down", "code": 503}});
-        assert_eq!(
-            resolve_field(&data, "host.status"),
-            Some(&json!("down"))
-        );
+        assert_eq!(resolve_field(&data, "host.status"), Some(&json!("down")));
         assert_eq!(resolve_field(&data, "host.code"), Some(&json!(503)));
         assert_eq!(resolve_field(&data, "host.missing"), None);
     }

@@ -128,10 +128,7 @@ impl NotificationService {
 
             // Also obey the global throttle if set.
             if let Some(ref gt) = self.config.global_throttle {
-                if self
-                    .throttle
-                    .should_throttle("__global__", &group_key, gt)
-                {
+                if self.throttle.should_throttle("__global__", &group_key, gt) {
                     info!("global throttle exceeded for group '{}'", group_key);
                     continue;
                 }
@@ -291,14 +288,12 @@ impl NotificationService {
         let now = Utc::now();
         let current_minutes = now.format("%H:%M").to_string();
 
-        let in_window = if qh.start_time <= qh.end_time {
+        if qh.start_time <= qh.end_time {
             // Same-day window: e.g. 22:00–06:00 does NOT satisfy this branch.
             current_minutes >= qh.start_time && current_minutes < qh.end_time
         } else {
             // Overnight window: e.g. 22:00–06:00.
             current_minutes >= qh.start_time || current_minutes < qh.end_time
-        };
-
-        in_window
+        }
     }
 }

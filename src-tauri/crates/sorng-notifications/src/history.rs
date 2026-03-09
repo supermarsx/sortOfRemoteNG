@@ -41,7 +41,10 @@ impl NotificationHistory {
 
     /// Return all records produced by a specific rule.
     pub fn get_by_rule(&self, rule_id: &str) -> Vec<&NotificationRecord> {
-        self.records.iter().filter(|r| r.rule_id == rule_id).collect()
+        self.records
+            .iter()
+            .filter(|r| r.rule_id == rule_id)
+            .collect()
     }
 
     /// Return the most recent `count` records.
@@ -51,7 +54,10 @@ impl NotificationHistory {
 
     /// Return all records delivered through a specific channel.
     pub fn get_by_channel(&self, channel: &str) -> Vec<&NotificationRecord> {
-        self.records.iter().filter(|r| r.channel == channel).collect()
+        self.records
+            .iter()
+            .filter(|r| r.channel == channel)
+            .collect()
     }
 
     /// Return all records that failed to deliver.
@@ -81,9 +87,7 @@ impl NotificationHistory {
 
         for record in &self.records {
             *by_channel.entry(record.channel.clone()).or_default() += 1;
-            *by_priority
-                .entry(record.priority.to_string())
-                .or_default() += 1;
+            *by_priority.entry(record.priority.to_string()).or_default() += 1;
             *by_rule.entry(record.rule_id.clone()).or_default() += 1;
         }
 
@@ -124,7 +128,11 @@ mod tests {
             body: "Test body".into(),
             sent_at: Utc::now(),
             delivered,
-            error: if delivered { None } else { Some("failed".into()) },
+            error: if delivered {
+                None
+            } else {
+                Some("failed".into())
+            },
             event_data: None,
         }
     }

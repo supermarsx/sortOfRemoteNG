@@ -13,6 +13,12 @@ pub struct TemplateEngine {
     templates: HashMap<String, NotificationTemplate>,
 }
 
+impl Default for TemplateEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TemplateEngine {
     /// Create a new template engine pre-loaded with built-in templates.
     pub fn new() -> Self {
