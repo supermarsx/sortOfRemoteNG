@@ -42,10 +42,7 @@ pub async fn create_folder_recursive(client: &NextcloudClient, path: &str) -> Re
 
 /// List folder contents (depth 1). Returns a `PropfindResult` with the
 /// folder itself (`folder`) and its children (`children`).
-pub async fn list_folder(
-    client: &NextcloudClient,
-    path: &str,
-) -> Result<PropfindResult, String> {
+pub async fn list_folder(client: &NextcloudClient, path: &str) -> Result<PropfindResult, String> {
     let items = client.propfind(path, PropfindDepth::One, None).await?;
     if items.is_empty() {
         return Err(format!("empty PROPFIND response for {}", path));
@@ -58,10 +55,7 @@ pub async fn list_folder(
 }
 
 /// List only files in a folder (no sub-folders).
-pub async fn list_files(
-    client: &NextcloudClient,
-    path: &str,
-) -> Result<Vec<DavResource>, String> {
+pub async fn list_files(client: &NextcloudClient, path: &str) -> Result<Vec<DavResource>, String> {
     let result = list_folder(client, path).await?;
     Ok(filter_files(&result.children))
 }
@@ -168,9 +162,11 @@ pub fn sort_folders_first(resources: &mut [DavResource]) {
     resources.sort_by(|a, b| {
         let a_folder = a.resource_type == DavResourceType::Folder;
         let b_folder = b.resource_type == DavResourceType::Folder;
-        b_folder
-            .cmp(&a_folder)
-            .then_with(|| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()))
+        b_folder.cmp(&a_folder).then_with(|| {
+            a.display_name
+                .to_lowercase()
+                .cmp(&b.display_name.to_lowercase())
+        })
     });
 }
 
@@ -237,11 +233,7 @@ pub fn parent_path(path: &str) -> String {
 /// Extract the filename from a path.
 pub fn filename(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
-    trimmed
-        .rsplit('/')
-        .next()
-        .unwrap_or(trimmed)
-        .to_string()
+    trimmed.rsplit('/').next().unwrap_or(trimmed).to_string()
 }
 
 /// Join two paths.
@@ -275,10 +267,7 @@ pub fn dav_href_to_path(href: &str, username: &str) -> String {
 
 /// Compute folder "size" by summing child content lengths.
 pub fn folder_size(children: &[DavResource]) -> u64 {
-    children
-        .iter()
-        .filter_map(|r| r.content_length)
-        .sum()
+    children.iter().filter_map(|r| r.content_length).sum()
 }
 
 /// Count files and folders in a list.

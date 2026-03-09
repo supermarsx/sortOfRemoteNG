@@ -83,10 +83,7 @@ impl BackupManager {
     }
 
     pub fn last_backup(&self, config_id: &str) -> Option<&BackupResult> {
-        self.history
-            .iter()
-            .rev()
-            .find(|h| h.config_id == config_id)
+        self.history.iter().rev().find(|h| h.config_id == config_id)
     }
 
     fn record_result(&mut self, result: BackupResult) {
@@ -157,7 +154,10 @@ impl BackupManager {
                         .await;
                 }
 
-                info!("Backup {} complete: {} bytes → {}", config.id, size, remote_path);
+                info!(
+                    "Backup {} complete: {} bytes → {}",
+                    config.id, size, remote_path
+                );
                 Ok(result)
             }
             Err(e) => {
@@ -177,10 +177,7 @@ impl BackupManager {
     }
 
     /// Run all enabled backups.
-    pub async fn run_all_backups(
-        &mut self,
-        client: &NextcloudClient,
-    ) -> Vec<BackupResult> {
+    pub async fn run_all_backups(&mut self, client: &NextcloudClient) -> Vec<BackupResult> {
         let ids: Vec<String> = self
             .configs
             .values()
@@ -262,13 +259,15 @@ pub fn build_backup_config(label: &str, remote_dir: &str) -> BackupConfig {
 fn generate_backup_filename(label: &str, timestamp: &chrono::DateTime<Utc>) -> String {
     let sanitized: String = label
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
-    format!(
-        "backup_{}_{}",
-        sanitized,
-        timestamp.format("%Y%m%d_%H%M%S")
-    )
+    format!("backup_{}_{}", sanitized, timestamp.format("%Y%m%d_%H%M%S"))
 }
 
 /// Calculate the total size of backup history for a config.

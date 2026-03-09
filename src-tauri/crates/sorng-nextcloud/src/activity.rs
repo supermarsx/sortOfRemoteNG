@@ -177,8 +177,9 @@ pub fn classify_activity_action(activity_type: &str) -> ActivityAction {
         "shared_user_self" | "shared_group_self" | "shared_link_self" | "shared_with_by" => {
             ActivityAction::Shared
         }
-        "unshared_user_self" | "unshared_group_self" | "unshared_link_self"
-        | "unshared_by" => ActivityAction::Unshared,
+        "unshared_user_self" | "unshared_group_self" | "unshared_link_self" | "unshared_by" => {
+            ActivityAction::Unshared
+        }
         "file_restored" | "restored_self" | "restored_by" => ActivityAction::Restored,
         s if s.contains("comment") => ActivityAction::Commented,
         s if s.contains("tag") => ActivityAction::Tagged,

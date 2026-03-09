@@ -18,8 +18,7 @@ use serde::{Deserialize, Serialize};
 // ── Configuration ────────────────────────────────────────────────────────────
 
 /// Account-level Nextcloud configuration persisted by the front-end.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NextcloudAccountConfig {
     /// Human-readable label for this account.
     pub name: String,
@@ -32,7 +31,6 @@ pub struct NextcloudAccountConfig {
     /// Whether this account is enabled.
     pub enabled: bool,
 }
-
 
 // ── Authentication ──────────────────────────────────────────────────────────
 
@@ -81,8 +79,7 @@ pub struct OAuthTokenResponse {
 }
 
 /// Tracks current auth method.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum AuthMethod {
     /// Basic auth with app password / regular password.
     AppPassword,
@@ -92,7 +89,6 @@ pub enum AuthMethod {
     #[default]
     None,
 }
-
 
 // ── Generic OCS envelope ─────────────────────────────────────────────────────
 
@@ -284,8 +280,7 @@ pub struct FileVersion {
 }
 
 /// Search query for Nextcloud unified search or WebDAV SEARCH.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SearchQuery {
     /// Search term.
     pub term: String,
@@ -310,7 +305,6 @@ pub struct SearchQuery {
     /// Favorite only.
     pub favorite_only: bool,
 }
-
 
 /// A single search result item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -618,8 +612,7 @@ pub struct ActivityPreview {
 }
 
 /// Parameters for querying the activity feed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ActivityQuery {
     /// Filter by type ("all", "self", "by", "filter").
     pub filter: Option<String>,
@@ -634,7 +627,6 @@ pub struct ActivityQuery {
     /// Sort order ("asc" or "desc").
     pub sort: Option<String>,
 }
-
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
@@ -869,8 +861,7 @@ pub struct FileChange {
 // ── Statistics ────────────────────────────────────────────────────────────────
 
 /// Cumulative account usage statistics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AccountStats {
     pub total_api_calls: u64,
     pub total_bytes_uploaded: u64,
@@ -881,7 +872,6 @@ pub struct AccountStats {
     pub total_backup_runs: u64,
     pub last_activity: Option<DateTime<Utc>>,
 }
-
 
 // ── Activity Log ─────────────────────────────────────────────────────────────
 

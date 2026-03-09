@@ -18,10 +18,7 @@ use log::{debug, info};
 /// Initiate Login Flow v2. Returns the state object containing the URL the user
 /// should open in their browser and the poll endpoint for the client.
 pub async fn start_login_flow_v2(base_url: &str) -> Result<LoginFlowV2State, String> {
-    let url = format!(
-        "{}/index.php/login/v2",
-        base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/index.php/login/v2", base_url.trim_end_matches('/'));
 
     let http = reqwest::Client::new();
     let resp = http
@@ -102,7 +99,10 @@ pub async fn await_login_flow_v2(
         match poll_login_flow_v2(state).await? {
             Some(creds) => return Ok(creds),
             None => {
-                debug!("login flow v2 still pending, waiting {}ms", poll_interval_ms);
+                debug!(
+                    "login flow v2 still pending, waiting {}ms",
+                    poll_interval_ms
+                );
                 tokio::time::sleep(std::time::Duration::from_millis(poll_interval_ms)).await;
             }
         }
@@ -162,7 +162,10 @@ pub async fn exchange_oauth2_code(
     let status = resp.status();
     if !status.is_success() {
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("oauth2 token exchange {} → {}: {}", url, status, text));
+        return Err(format!(
+            "oauth2 token exchange {} → {}: {}",
+            url, status, text
+        ));
     }
 
     resp.json::<OAuthTokenResponse>()
@@ -211,9 +214,8 @@ pub async fn refresh_oauth2_token(
 /// Validate credentials by calling the OCS user endpoint.
 /// Returns the user id on success.
 pub async fn validate_credentials(client: &NextcloudClient) -> Result<String, String> {
-    let resp: OcsResponse<serde_json::Value> = client
-        .ocs_get("ocs/v2.php/cloud/user?format=json")
-        .await?;
+    let resp: OcsResponse<serde_json::Value> =
+        client.ocs_get("ocs/v2.php/cloud/user?format=json").await?;
 
     let user_id = resp
         .ocs
@@ -229,9 +231,8 @@ pub async fn validate_credentials(client: &NextcloudClient) -> Result<String, St
 
 /// Delete / revoke an app password via the OCS API.
 pub async fn revoke_app_password(client: &NextcloudClient) -> Result<(), String> {
-    let _: OcsResponse<serde_json::Value> = client
-        .ocs_delete("ocs/v2.php/core/apppassword")
-        .await?;
+    let _: OcsResponse<serde_json::Value> =
+        client.ocs_delete("ocs/v2.php/core/apppassword").await?;
     info!("App password revoked");
     Ok(())
 }
@@ -269,7 +270,9 @@ mod tests {
     fn code_verifier_length() {
         let v = generate_code_verifier();
         assert_eq!(v.len(), 128);
-        assert!(v.chars().all(|c| c.is_ascii_alphanumeric() || "-._~".contains(c)));
+        assert!(v
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-._~".contains(c)));
     }
 
     #[test]
@@ -278,7 +281,9 @@ mod tests {
         let c = generate_code_challenge(&v);
         // S256 → 32 bytes → 43 base64url chars (no padding)
         assert_eq!(c.len(), 43);
-        assert!(c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'));
+        assert!(c
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'));
     }
 
     #[test]

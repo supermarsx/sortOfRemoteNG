@@ -12,9 +12,7 @@ use crate::types::*;
 
 /// Get info about the currently authenticated user.
 pub async fn get_current_user(client: &NextcloudClient) -> Result<UserInfo, String> {
-    let resp: OcsResponse<UserInfo> = client
-        .ocs_get("ocs/v2.php/cloud/user?format=json")
-        .await?;
+    let resp: OcsResponse<UserInfo> = client.ocs_get("ocs/v2.php/cloud/user?format=json").await?;
     Ok(resp.ocs.data)
 }
 
@@ -98,9 +96,7 @@ pub async fn list_groups(
 // ── Server Capabilities ──────────────────────────────────────────────────────
 
 /// Fetch server capabilities.
-pub async fn get_capabilities(
-    client: &NextcloudClient,
-) -> Result<ServerCapabilities, String> {
+pub async fn get_capabilities(client: &NextcloudClient) -> Result<ServerCapabilities, String> {
     let resp: OcsResponse<ServerCapabilities> = client
         .ocs_get("ocs/v1.php/cloud/capabilities?format=json")
         .await?;
@@ -172,9 +168,7 @@ pub async fn is_in_maintenance(base_url: &str) -> Result<bool, String> {
 // ── Notifications ────────────────────────────────────────────────────────────
 
 /// List all notifications for the current user.
-pub async fn list_notifications(
-    client: &NextcloudClient,
-) -> Result<Vec<Notification>, String> {
+pub async fn list_notifications(client: &NextcloudClient) -> Result<Vec<Notification>, String> {
     let resp: OcsResponse<Vec<Notification>> = client
         .ocs_get("ocs/v2.php/apps/notifications/api/v2/notifications?format=json")
         .await?;

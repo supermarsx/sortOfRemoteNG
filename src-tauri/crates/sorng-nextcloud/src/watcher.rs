@@ -94,17 +94,12 @@ impl WatchManager {
         let listing = folders::list_folder(client, &config.remote_path).await?;
         let new_snapshot = build_snapshot(&listing.children);
 
-        let old_snapshot = self
-            .snapshots
-            .get(config_id)
-            .cloned()
-            .unwrap_or_default();
+        let old_snapshot = self.snapshots.get(config_id).cloned().unwrap_or_default();
 
         let detected = diff_snapshots(&old_snapshot, &new_snapshot, &listing.children, &config);
 
         // Update snapshot
-        self.snapshots
-            .insert(config_id.to_string(), new_snapshot);
+        self.snapshots.insert(config_id.to_string(), new_snapshot);
 
         // Buffer changes
         for change in &detected {
@@ -127,10 +122,7 @@ impl WatchManager {
     }
 
     /// Poll all enabled watches.
-    pub async fn poll_all(
-        &mut self,
-        client: &NextcloudClient,
-    ) -> Vec<FileChange> {
+    pub async fn poll_all(&mut self, client: &NextcloudClient) -> Vec<FileChange> {
         let ids: Vec<String> = self
             .configs
             .values()
@@ -170,10 +162,7 @@ impl WatchManager {
 
     /// Get changes for a specific path.
     pub fn changes_for_path(&self, path: &str) -> Vec<&FileChange> {
-        self.changes
-            .iter()
-            .filter(|c| c.path == path)
-            .collect()
+        self.changes.iter().filter(|c| c.path == path).collect()
     }
 
     // ── Snapshot management ──────────────────────────────────────────────
@@ -233,11 +222,7 @@ pub fn build_watch_config(remote_path: &str, poll_interval_secs: u64) -> WatchCo
 fn build_snapshot(resources: &[DavResource]) -> HashMap<String, String> {
     resources
         .iter()
-        .filter_map(|r| {
-            r.etag
-                .as_ref()
-                .map(|e| (r.display_name.clone(), e.clone()))
-        })
+        .filter_map(|r| r.etag.as_ref().map(|e| (r.display_name.clone(), e.clone())))
         .collect()
 }
 
@@ -486,9 +471,21 @@ mod tests {
         new_snap.insert("real.txt".to_string(), "etag3".to_string());
 
         let resources = vec![
-            DavResource { display_name: ".DS_Store".into(), etag: Some("etag1".into()), ..DavResource::default() },
-            DavResource { display_name: "file.tmp".into(), etag: Some("etag2".into()), ..DavResource::default() },
-            DavResource { display_name: "real.txt".into(), etag: Some("etag3".into()), ..DavResource::default() },
+            DavResource {
+                display_name: ".DS_Store".into(),
+                etag: Some("etag1".into()),
+                ..DavResource::default()
+            },
+            DavResource {
+                display_name: "file.tmp".into(),
+                etag: Some("etag2".into()),
+                ..DavResource::default()
+            },
+            DavResource {
+                display_name: "real.txt".into(),
+                etag: Some("etag3".into()),
+                ..DavResource::default()
+            },
         ];
 
         let config = build_watch_config("/test", 30);

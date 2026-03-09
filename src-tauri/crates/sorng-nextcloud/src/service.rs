@@ -64,12 +64,7 @@ impl NextcloudService {
     // ━━━━━━━━━━━━━━  Configuration  ━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /// Configure server and app-password credentials.
-    pub fn configure(
-        &mut self,
-        server_url: &str,
-        username: &str,
-        app_password: &str,
-    ) {
+    pub fn configure(&mut self, server_url: &str, username: &str, app_password: &str) {
         self.server_url = Some(server_url.trim_end_matches('/').to_string());
         self.username = Some(username.to_string());
         self.app_password = Some(app_password.to_string());
@@ -79,12 +74,16 @@ impl NextcloudService {
     }
 
     /// Set a bearer token directly (e.g. from OAuth2).
-    pub fn set_bearer_token(&mut self, token: &str, refresh: Option<&str>, expires_in: Option<i64>) {
+    pub fn set_bearer_token(
+        &mut self,
+        token: &str,
+        refresh: Option<&str>,
+        expires_in: Option<i64>,
+    ) {
         self.bearer_token = Some(token.to_string());
         self.oauth2_refresh_token = refresh.map(|r| r.to_string());
         if let Some(secs) = expires_in {
-            self.oauth2_token_expires_at =
-                Some(Utc::now() + chrono::Duration::seconds(secs));
+            self.oauth2_token_expires_at = Some(Utc::now() + chrono::Duration::seconds(secs));
         }
         self.auth_method = AuthMethod::OAuth2;
         self.connected = true;
@@ -172,8 +171,7 @@ impl NextcloudService {
 
     /// Check whether the service is connected.
     pub fn is_connected(&self) -> bool {
-        self.connected
-            && (self.app_password.is_some() || self.bearer_token.is_some())
+        self.connected && (self.app_password.is_some() || self.bearer_token.is_some())
     }
 
     /// Get the server URL.
@@ -378,7 +376,11 @@ mod tests {
     #[test]
     fn configure_oauth2_settings() {
         let mut svc = service();
-        svc.configure_oauth2("my_client_id", Some("my_secret"), Some("http://localhost:9999"));
+        svc.configure_oauth2(
+            "my_client_id",
+            Some("my_secret"),
+            Some("http://localhost:9999"),
+        );
         assert_eq!(svc.oauth2_client_id.as_deref(), Some("my_client_id"));
         assert_eq!(svc.oauth2_client_secret.as_deref(), Some("my_secret"));
         assert_eq!(svc.oauth2_redirect_uri, "http://localhost:9999");

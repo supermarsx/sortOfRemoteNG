@@ -31,10 +31,7 @@ fn get_client(state: &State<'_, NextcloudServiceState>) -> Result<NextcloudClien
 
     match svc.auth_method {
         AuthMethod::AppPassword => {
-            let user = svc
-                .username
-                .as_deref()
-                .ok_or("Username not configured")?;
+            let user = svc.username.as_deref().ok_or("Username not configured")?;
             let pass = svc
                 .app_password
                 .as_deref()
@@ -42,10 +39,7 @@ fn get_client(state: &State<'_, NextcloudServiceState>) -> Result<NextcloudClien
             Ok(NextcloudClient::with_credentials(server, user, pass))
         }
         AuthMethod::OAuth2 => {
-            let token = svc
-                .bearer_token
-                .as_deref()
-                .ok_or("Bearer token not set")?;
+            let token = svc.bearer_token.as_deref().ok_or("Bearer token not set")?;
             Ok(NextcloudClient::with_bearer(server, token))
         }
         AuthMethod::None => Err("Not connected to Nextcloud".to_string()),
@@ -88,7 +82,11 @@ pub fn nextcloud_configure_oauth2(
     redirect_uri: Option<String>,
 ) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
-    svc.configure_oauth2(&client_id, client_secret.as_deref(), redirect_uri.as_deref());
+    svc.configure_oauth2(
+        &client_id,
+        client_secret.as_deref(),
+        redirect_uri.as_deref(),
+    );
     Ok("oauth2_configured".into())
 }
 
@@ -153,9 +151,7 @@ pub async fn nextcloud_poll_login_flow(
 ) -> Result<serde_json::Value, String> {
     let flow = {
         let svc = state.lock().map_err(|e| e.to_string())?;
-        svc.login_flow
-            .clone()
-            .ok_or("No pending Login Flow v2")?
+        svc.login_flow.clone().ok_or("No pending Login Flow v2")?
     };
 
     let creds = auth::poll_login_flow_v2(&flow).await?;
@@ -194,7 +190,9 @@ pub async fn nextcloud_exchange_oauth2_code(
         let svc = state.lock().map_err(|e| e.to_string())?;
         (
             svc.server_url.clone().ok_or("Server URL not configured")?,
-            svc.oauth2_client_id.clone().ok_or("OAuth2 client_id not configured")?,
+            svc.oauth2_client_id
+                .clone()
+                .ok_or("OAuth2 client_id not configured")?,
             svc.oauth2_client_secret.clone().unwrap_or_default(),
             svc.oauth2_redirect_uri.clone(),
             svc.pending_code_verifier.clone().unwrap_or_default(),
@@ -233,7 +231,9 @@ pub async fn nextcloud_refresh_oauth2_token(
         let svc = state.lock().map_err(|e| e.to_string())?;
         (
             svc.server_url.clone().ok_or("Server URL not configured")?,
-            svc.oauth2_client_id.clone().ok_or("OAuth2 client_id not configured")?,
+            svc.oauth2_client_id
+                .clone()
+                .ok_or("OAuth2 client_id not configured")?,
             svc.oauth2_client_secret.clone().unwrap_or_default(),
             svc.oauth2_refresh_token
                 .clone()
@@ -241,13 +241,7 @@ pub async fn nextcloud_refresh_oauth2_token(
         )
     };
 
-    let resp = auth::refresh_oauth2_token(
-        &server,
-        &client_id,
-        &client_secret,
-        &refresh,
-    )
-    .await?;
+    let resp = auth::refresh_oauth2_token(&server, &client_id, &client_secret, &refresh).await?;
 
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     svc.bearer_token = Some(resp.access_token.clone());
@@ -859,9 +853,7 @@ pub async fn nextcloud_get_server_status(
 ) -> Result<serde_json::Value, String> {
     let server_url = {
         let svc = state.lock().map_err(|e| e.to_string())?;
-        svc.server_url
-            .clone()
-            .ok_or("Server URL not configured")?
+        svc.server_url.clone().ok_or("Server URL not configured")?
     };
     let status = users::get_server_status(&server_url).await?;
     serde_json::to_value(&status).map_err(|e| e.to_string())
@@ -1169,11 +1161,14 @@ pub fn nextcloud_backup_get_history(
 }
 
 #[tauri::command]
-pub fn nextcloud_backup_total_size(
-    state: State<'_, NextcloudServiceState>,
-) -> Result<u64, String> {
+pub fn nextcloud_backup_total_size(state: State<'_, NextcloudServiceState>) -> Result<u64, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
-    let total: u64 = svc.backup_manager.history().iter().map(|r| r.size_bytes).sum();
+    let total: u64 = svc
+        .backup_manager
+        .history()
+        .iter()
+        .map(|r| r.size_bytes)
+        .sum();
     Ok(total)
 }
 
@@ -1189,7 +1184,8 @@ pub fn nextcloud_watch_add(
     recursive: Option<bool>,
 ) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
-    let mut config = crate::watcher::build_watch_config(&remote_path, poll_interval_secs.unwrap_or(60));
+    let mut config =
+        crate::watcher::build_watch_config(&remote_path, poll_interval_secs.unwrap_or(60));
     config.recursive = recursive.unwrap_or(false);
     let id = config.id.clone();
     svc.watch_manager.add_config(config);
@@ -1287,9 +1283,7 @@ pub fn nextcloud_get_stats(
 }
 
 #[tauri::command]
-pub fn nextcloud_reset_stats(
-    state: State<'_, NextcloudServiceState>,
-) -> Result<String, String> {
+pub fn nextcloud_reset_stats(state: State<'_, NextcloudServiceState>) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     svc.reset_stats();
     Ok("reset".into())

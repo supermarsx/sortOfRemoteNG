@@ -14,7 +14,9 @@
 //  • Thumbnails / previews
 // ──────────────────────────────────────────────────────────────────────────────
 
-use crate::client::{encode_dav_path, proppatch_favorite_body, proppatch_tags_body, NextcloudClient};
+use crate::client::{
+    encode_dav_path, proppatch_favorite_body, proppatch_tags_body, NextcloudClient,
+};
 use crate::types::*;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -81,10 +83,7 @@ pub async fn delete_file(client: &NextcloudClient, path: &str) -> Result<(), Str
 // ── Metadata ─────────────────────────────────────────────────────────────────
 
 /// Get metadata for a single resource (depth-0 PROPFIND).
-pub async fn get_metadata(
-    client: &NextcloudClient,
-    path: &str,
-) -> Result<DavResource, String> {
+pub async fn get_metadata(client: &NextcloudClient, path: &str) -> Result<DavResource, String> {
     let items = client.propfind(path, PropfindDepth::Zero, None).await?;
     items
         .into_iter()
@@ -107,15 +106,15 @@ pub async fn chunked_upload_start(
     // MKCOL to create the chunked-upload directory
     let http = reqwest::Client::new();
     let req = http
-        .request(
-            reqwest::Method::from_bytes(b"MKCOL").unwrap(),
-            &upload_dir,
-        )
+        .request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &upload_dir)
         .basic_auth(client.username(), Some(&String::new()))
         .header("OCS-APIRequest", "true");
 
     // We use a direct call here because uploads_base already returns an absolute URL
-    let _resp = req.send().await.map_err(|e| format!("MKCOL upload dir: {}", e))?;
+    let _resp = req
+        .send()
+        .await
+        .map_err(|e| format!("MKCOL upload dir: {}", e))?;
 
     Ok(ChunkedUploadSession {
         session_id,
@@ -172,11 +171,7 @@ pub async fn chunked_upload_finish(
     client: &NextcloudClient,
     session: &mut ChunkedUploadSession,
 ) -> Result<(), String> {
-    let src_url = format!(
-        "{}/{}/.file",
-        client.uploads_base(),
-        session.session_id
-    );
+    let src_url = format!("{}/{}/.file", client.uploads_base(), session.session_id);
     let dst_url = format!(
         "{}/{}",
         client.dav_base(),
@@ -195,7 +190,10 @@ pub async fn chunked_upload_finish(
         .map_err(|e| format!("chunked finish MOVE: {}", e))?;
 
     let status = resp.status();
-    if status.is_success() || status == reqwest::StatusCode::CREATED || status == reqwest::StatusCode::NO_CONTENT {
+    if status.is_success()
+        || status == reqwest::StatusCode::CREATED
+        || status == reqwest::StatusCode::NO_CONTENT
+    {
         session.complete = true;
         Ok(())
     } else {
@@ -281,11 +279,17 @@ pub async fn restore_version(
         .map_err(|e| format!("restore version: {}", e))?;
 
     let status = resp.status();
-    if status.is_success() || status == reqwest::StatusCode::CREATED || status == reqwest::StatusCode::NO_CONTENT {
+    if status.is_success()
+        || status == reqwest::StatusCode::CREATED
+        || status == reqwest::StatusCode::NO_CONTENT
+    {
         Ok(())
     } else {
         let text = resp.text().await.unwrap_or_default();
-        Err(format!("restore version {} → {}: {}", src_url, status, text))
+        Err(format!(
+            "restore version {} → {}: {}",
+            src_url, status, text
+        ))
     }
 }
 
@@ -332,7 +336,11 @@ pub async fn restore_trash_item(
     trash_item_name: &str,
     destination_path: &str,
 ) -> Result<(), String> {
-    let src_url = format!("{}/{}", client.trashbin_base(), encode_dav_path(trash_item_name));
+    let src_url = format!(
+        "{}/{}",
+        client.trashbin_base(),
+        encode_dav_path(trash_item_name)
+    );
     let dst_url = format!(
         "{}/{}",
         client.dav_base(),
@@ -351,7 +359,10 @@ pub async fn restore_trash_item(
         .map_err(|e| format!("restore trash: {}", e))?;
 
     let status = resp.status();
-    if status.is_success() || status == reqwest::StatusCode::CREATED || status == reqwest::StatusCode::NO_CONTENT {
+    if status.is_success()
+        || status == reqwest::StatusCode::CREATED
+        || status == reqwest::StatusCode::NO_CONTENT
+    {
         Ok(())
     } else {
         let text = resp.text().await.unwrap_or_default();
@@ -364,7 +375,11 @@ pub async fn delete_trash_item(
     client: &NextcloudClient,
     trash_item_name: &str,
 ) -> Result<(), String> {
-    let url = format!("{}/{}", client.trashbin_base(), encode_dav_path(trash_item_name));
+    let url = format!(
+        "{}/{}",
+        client.trashbin_base(),
+        encode_dav_path(trash_item_name)
+    );
 
     let http = reqwest::Client::new();
     let resp = http
@@ -419,11 +434,7 @@ pub async fn set_favorite(
 }
 
 /// Set system tags on a resource.
-pub async fn set_tags(
-    client: &NextcloudClient,
-    path: &str,
-    tags: &[String],
-) -> Result<(), String> {
+pub async fn set_tags(client: &NextcloudClient, path: &str, tags: &[String]) -> Result<(), String> {
     let body = proppatch_tags_body(tags);
     client.proppatch(path, &body).await
 }
@@ -549,10 +560,7 @@ pub fn guess_mime(filename: &str) -> &'static str {
 // ── Preview / Thumbnail ──────────────────────────────────────────────────────
 
 /// Get a file preview / thumbnail. Returns raw image bytes.
-pub async fn get_preview(
-    client: &NextcloudClient,
-    args: &PreviewArgs,
-) -> Result<Vec<u8>, String> {
+pub async fn get_preview(client: &NextcloudClient, args: &PreviewArgs) -> Result<Vec<u8>, String> {
     let mut url = format!(
         "{}/index.php/core/preview?file={}&x={}&y={}",
         client.base_url(),
@@ -658,7 +666,10 @@ mod tests {
         assert_eq!(guess_mime("test.pdf"), "application/pdf");
         assert_eq!(guess_mime("photo.jpg"), "image/jpeg");
         assert_eq!(guess_mime("video.mp4"), "video/mp4");
-        assert_eq!(guess_mime("doc.docx"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        assert_eq!(
+            guess_mime("doc.docx"),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
         assert_eq!(guess_mime("archive.zip"), "application/zip");
     }
 

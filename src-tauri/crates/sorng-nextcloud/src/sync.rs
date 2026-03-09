@@ -87,7 +87,11 @@ impl SyncManager {
             return Err(format!("sync config {} is disabled", config_id));
         }
 
-        info!("Starting sync: {} ({})", config.id, config.direction_label());
+        info!(
+            "Starting sync: {} ({})",
+            config.id,
+            config.direction_label()
+        );
         let started_at = Utc::now();
         let mut result = SyncRunResult {
             config_id: config.id.clone(),
@@ -123,12 +127,7 @@ impl SyncManager {
         };
 
         // Plan sync actions
-        let plan = plan_sync(
-            &config,
-            &local_files,
-            &remote_items,
-            &self.etag_cache,
-        );
+        let plan = plan_sync(&config, &local_files, &remote_items, &self.etag_cache);
 
         // Execute planned actions
         for action in plan {
@@ -184,10 +183,7 @@ impl SyncManager {
     }
 
     /// Run all enabled syncs.
-    pub async fn run_all_syncs(
-        &mut self,
-        client: &NextcloudClient,
-    ) -> Vec<SyncRunResult> {
+    pub async fn run_all_syncs(&mut self, client: &NextcloudClient) -> Vec<SyncRunResult> {
         let ids: Vec<String> = self
             .configs
             .values()
@@ -212,7 +208,8 @@ impl SyncManager {
     }
 
     pub fn cached_etag(&self, config_id: &str, path: &str) -> Option<&String> {
-        self.etag_cache.get(&(config_id.to_string(), path.to_string()))
+        self.etag_cache
+            .get(&(config_id.to_string(), path.to_string()))
     }
 }
 
@@ -288,8 +285,7 @@ pub struct LocalFile {
 
 /// List local files in a directory (non-recursive, flat).
 fn list_local_files(path: &str) -> Result<Vec<LocalFile>, String> {
-    let entries =
-        std::fs::read_dir(path).map_err(|e| format!("read dir {}: {}", path, e))?;
+    let entries = std::fs::read_dir(path).map_err(|e| format!("read dir {}: {}", path, e))?;
 
     let mut files = Vec::new();
     for entry in entries {
@@ -446,8 +442,8 @@ async fn execute_sync_action(
         SyncDirection::Upload => {
             let local_path = format!("{}/{}", config.local_path, action.path);
             let remote_path = folders::join_path(&config.remote_path, &action.path);
-            let data = std::fs::read(&local_path)
-                .map_err(|e| format!("read {}: {}", local_path, e))?;
+            let data =
+                std::fs::read(&local_path).map_err(|e| format!("read {}: {}", local_path, e))?;
             let size = data.len() as u64;
 
             let args = files::build_upload_args(&remote_path, true);
@@ -625,9 +621,24 @@ mod tests {
         };
 
         let local_files = vec![
-            LocalFile { relative_path: "ok.txt".into(), size: 100, modified: None, is_dir: false },
-            LocalFile { relative_path: "skip.tmp".into(), size: 50, modified: None, is_dir: false },
-            LocalFile { relative_path: "subdir".into(), size: 0, modified: None, is_dir: true },
+            LocalFile {
+                relative_path: "ok.txt".into(),
+                size: 100,
+                modified: None,
+                is_dir: false,
+            },
+            LocalFile {
+                relative_path: "skip.tmp".into(),
+                size: 50,
+                modified: None,
+                is_dir: false,
+            },
+            LocalFile {
+                relative_path: "subdir".into(),
+                size: 0,
+                modified: None,
+                is_dir: true,
+            },
         ];
 
         let actions = plan_sync(&config, &local_files, &[], &HashMap::new());
@@ -652,9 +663,23 @@ mod tests {
         };
 
         let remote = vec![
-            DavResource { display_name: "file.txt".into(), resource_type: DavResourceType::File, content_length: Some(200), ..DavResource::default() },
-            DavResource { display_name: "Thumbs.db".into(), resource_type: DavResourceType::File, content_length: Some(10), ..DavResource::default() },
-            DavResource { display_name: "subdir".into(), resource_type: DavResourceType::Folder, ..DavResource::default() },
+            DavResource {
+                display_name: "file.txt".into(),
+                resource_type: DavResourceType::File,
+                content_length: Some(200),
+                ..DavResource::default()
+            },
+            DavResource {
+                display_name: "Thumbs.db".into(),
+                resource_type: DavResourceType::File,
+                content_length: Some(10),
+                ..DavResource::default()
+            },
+            DavResource {
+                display_name: "subdir".into(),
+                resource_type: DavResourceType::Folder,
+                ..DavResource::default()
+            },
         ];
 
         let actions = plan_sync(&config, &[], &remote, &HashMap::new());
@@ -679,13 +704,33 @@ mod tests {
         };
 
         let local = vec![
-            LocalFile { relative_path: "both.txt".into(), size: 100, modified: None, is_dir: false },
-            LocalFile { relative_path: "local_only.txt".into(), size: 50, modified: None, is_dir: false },
+            LocalFile {
+                relative_path: "both.txt".into(),
+                size: 100,
+                modified: None,
+                is_dir: false,
+            },
+            LocalFile {
+                relative_path: "local_only.txt".into(),
+                size: 50,
+                modified: None,
+                is_dir: false,
+            },
         ];
 
         let remote = vec![
-            DavResource { display_name: "both.txt".into(), resource_type: DavResourceType::File, content_length: Some(200), ..DavResource::default() },
-            DavResource { display_name: "remote_only.txt".into(), resource_type: DavResourceType::File, content_length: Some(300), ..DavResource::default() },
+            DavResource {
+                display_name: "both.txt".into(),
+                resource_type: DavResourceType::File,
+                content_length: Some(200),
+                ..DavResource::default()
+            },
+            DavResource {
+                display_name: "remote_only.txt".into(),
+                resource_type: DavResourceType::File,
+                content_length: Some(300),
+                ..DavResource::default()
+            },
         ];
 
         let actions = plan_sync(&config, &local, &remote, &HashMap::new());
@@ -695,7 +740,10 @@ mod tests {
         let upload = actions.iter().find(|a| a.path == "local_only.txt").unwrap();
         assert_eq!(upload.direction, SyncDirection::Upload);
 
-        let download = actions.iter().find(|a| a.path == "remote_only.txt").unwrap();
+        let download = actions
+            .iter()
+            .find(|a| a.path == "remote_only.txt")
+            .unwrap();
         assert_eq!(download.direction, SyncDirection::Download);
 
         let conflict = actions.iter().find(|a| a.path == "both.txt").unwrap();
@@ -719,8 +767,18 @@ mod tests {
         };
 
         let local = vec![
-            LocalFile { relative_path: "small.txt".into(), size: 50, modified: None, is_dir: false },
-            LocalFile { relative_path: "big.bin".into(), size: 200, modified: None, is_dir: false },
+            LocalFile {
+                relative_path: "small.txt".into(),
+                size: 50,
+                modified: None,
+                is_dir: false,
+            },
+            LocalFile {
+                relative_path: "big.bin".into(),
+                size: 200,
+                modified: None,
+                is_dir: false,
+            },
         ];
 
         let actions = plan_sync(&config, &local, &[], &HashMap::new());
@@ -732,8 +790,12 @@ mod tests {
     #[test]
     fn etag_cache_operations() {
         let mut mgr = SyncManager::new();
-        mgr.etag_cache.insert(("cfg1".into(), "/file.txt".into()), "etag1".into());
-        assert_eq!(mgr.cached_etag("cfg1", "/file.txt"), Some(&"etag1".to_string()));
+        mgr.etag_cache
+            .insert(("cfg1".into(), "/file.txt".into()), "etag1".into());
+        assert_eq!(
+            mgr.cached_etag("cfg1", "/file.txt"),
+            Some(&"etag1".to_string())
+        );
         assert_eq!(mgr.cached_etag("cfg1", "/other.txt"), None);
 
         mgr.clear_etag_cache();

@@ -80,11 +80,7 @@ pub fn build_public_link_share(
 }
 
 /// Convenience: create a user share.
-pub fn build_user_share(
-    path: &str,
-    share_with: &str,
-    permissions: Option<u32>,
-) -> CreateShareArgs {
+pub fn build_user_share(path: &str, share_with: &str, permissions: Option<u32>) -> CreateShareArgs {
     CreateShareArgs {
         path: path.to_string(),
         share_type: ShareType::User.as_i32(),
@@ -100,11 +96,7 @@ pub fn build_user_share(
 }
 
 /// Convenience: create a group share.
-pub fn build_group_share(
-    path: &str,
-    group: &str,
-    permissions: Option<u32>,
-) -> CreateShareArgs {
+pub fn build_group_share(path: &str, group: &str, permissions: Option<u32>) -> CreateShareArgs {
     CreateShareArgs {
         path: path.to_string(),
         share_type: ShareType::Group.as_i32(),
@@ -120,11 +112,7 @@ pub fn build_group_share(
 }
 
 /// Convenience: create an email share.
-pub fn build_email_share(
-    path: &str,
-    email: &str,
-    permissions: Option<u32>,
-) -> CreateShareArgs {
+pub fn build_email_share(path: &str, email: &str, permissions: Option<u32>) -> CreateShareArgs {
     CreateShareArgs {
         path: path.to_string(),
         share_type: ShareType::Email.as_i32(),
@@ -207,10 +195,7 @@ pub async fn list_pending_shares(client: &NextcloudClient) -> Result<Vec<ShareIn
 // ── Get / Update / Delete ────────────────────────────────────────────────────
 
 /// Get a single share by ID.
-pub async fn get_share(
-    client: &NextcloudClient,
-    share_id: &str,
-) -> Result<ShareInfo, String> {
+pub async fn get_share(client: &NextcloudClient, share_id: &str) -> Result<ShareInfo, String> {
     let url = format!("{}/{}?format=json", SHARES_API, share_id);
     // OCS wraps single shares in an array
     let resp: OcsResponse<Vec<ShareInfo>> = client.ocs_get(&url).await?;
@@ -256,10 +241,7 @@ pub async fn update_share(
 }
 
 /// Delete a share.
-pub async fn delete_share(
-    client: &NextcloudClient,
-    share_id: &str,
-) -> Result<(), String> {
+pub async fn delete_share(client: &NextcloudClient, share_id: &str) -> Result<(), String> {
     let url = format!("{}/{}?format=json", SHARES_API, share_id);
     let _: OcsResponse<serde_json::Value> = client.ocs_delete(&url).await?;
     Ok(())
@@ -268,10 +250,7 @@ pub async fn delete_share(
 // ── Accept / Decline remote shares ──────────────────────────────────────────
 
 /// Accept a pending remote share.
-pub async fn accept_remote_share(
-    client: &NextcloudClient,
-    share_id: &str,
-) -> Result<(), String> {
+pub async fn accept_remote_share(client: &NextcloudClient, share_id: &str) -> Result<(), String> {
     let url = format!(
         "ocs/v2.php/apps/files_sharing/api/v1/remote_shares/pending/{}?format=json",
         share_id
@@ -281,10 +260,7 @@ pub async fn accept_remote_share(
 }
 
 /// Decline a pending remote share.
-pub async fn decline_remote_share(
-    client: &NextcloudClient,
-    share_id: &str,
-) -> Result<(), String> {
+pub async fn decline_remote_share(client: &NextcloudClient, share_id: &str) -> Result<(), String> {
     let url = format!(
         "ocs/v2.php/apps/files_sharing/api/v1/remote_shares/pending/{}?format=json",
         share_id
@@ -326,7 +302,13 @@ mod tests {
 
     #[test]
     fn build_public_link_share_basic() {
-        let args = build_public_link_share("/Documents/report.pdf", Some("secret"), None, None, Some("Report"));
+        let args = build_public_link_share(
+            "/Documents/report.pdf",
+            Some("secret"),
+            None,
+            None,
+            Some("Report"),
+        );
         assert_eq!(args.share_type, 3);
         assert_eq!(args.password.as_deref(), Some("secret"));
         assert_eq!(args.label.as_deref(), Some("Report"));

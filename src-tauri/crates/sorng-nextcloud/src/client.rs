@@ -101,8 +101,7 @@ impl NextcloudClient {
     }
 
     pub fn is_configured(&self) -> bool {
-        !self.base_url.is_empty()
-            && (!self.username.is_empty() || self.bearer_token.is_some())
+        !self.base_url.is_empty() && (!self.username.is_empty() || self.bearer_token.is_some())
     }
 
     pub fn auth_method(&self) -> AuthMethod {
@@ -255,10 +254,7 @@ impl NextcloudClient {
     /// WebDAV GET (download file). Returns raw bytes.
     pub async fn get(&self, path: &str) -> Result<Vec<u8>, String> {
         let url = format!("{}/{}", self.dav_base(), encode_dav_path(path));
-        let req = self
-            .http
-            .get(&url)
-            .header("OCS-APIRequest", "true");
+        let req = self.http.get(&url).header("OCS-APIRequest", "true");
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         let status = resp.status();
         if status.is_success() {
@@ -275,10 +271,7 @@ impl NextcloudClient {
     /// WebDAV DELETE.
     pub async fn delete(&self, path: &str) -> Result<(), String> {
         let url = format!("{}/{}", self.dav_base(), encode_dav_path(path));
-        let req = self
-            .http
-            .delete(&url)
-            .header("OCS-APIRequest", "true");
+        let req = self.http.delete(&url).header("OCS-APIRequest", "true");
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         check_dav_success(resp, "DELETE").await
     }
@@ -507,7 +500,10 @@ impl NextcloudClient {
             }
         }
 
-        Err(format!("request failed after {} attempts: {}", MAX_RETRIES, last_err))
+        Err(format!(
+            "request failed after {} attempts: {}",
+            MAX_RETRIES, last_err
+        ))
     }
 }
 
@@ -531,9 +527,7 @@ pub fn encode_dav_path(path: &str) -> String {
     let trimmed = path.trim_start_matches('/');
     trimmed
         .split('/')
-        .map(|seg| {
-            url::form_urlencoded::byte_serialize(seg.as_bytes()).collect::<String>()
-        })
+        .map(|seg| url::form_urlencoded::byte_serialize(seg.as_bytes()).collect::<String>())
         .collect::<Vec<_>>()
         .join("/")
 }
@@ -592,10 +586,19 @@ async fn parse_ocs_json<T: serde::de::DeserializeOwned>(
     let text = resp.text().await.map_err(|e| format!("read body: {}", e))?;
 
     if status.is_success() {
-        serde_json::from_str::<OcsResponse<T>>(&text)
-            .map_err(|e| format!("OCS JSON parse error: {} – body: {}", e, &text[..text.len().min(500)]))
+        serde_json::from_str::<OcsResponse<T>>(&text).map_err(|e| {
+            format!(
+                "OCS JSON parse error: {} – body: {}",
+                e,
+                &text[..text.len().min(500)]
+            )
+        })
     } else {
-        Err(format!("OCS request failed {}: {}", status, &text[..text.len().min(500)]))
+        Err(format!(
+            "OCS request failed {}: {}",
+            status,
+            &text[..text.len().min(500)]
+        ))
     }
 }
 
@@ -631,10 +634,10 @@ pub fn parse_multistatus_xml(xml: &str) -> Result<Vec<DavResource>, String> {
                     "propstat" => _in_propstat = true,
                     "resourcetype" => in_resourcetype = true,
                     "collection" if in_resourcetype => is_collection = true,
-                    "href" | "displayname" | "getcontenttype" | "getcontentlength"
-                    | "getetag" | "getlastmodified" | "fileid" | "owner-id"
-                    | "owner-display-name" | "permissions" | "checksums" | "has-preview"
-                    | "favorite" | "comments-count" | "size" => {
+                    "href" | "displayname" | "getcontenttype" | "getcontentlength" | "getetag"
+                    | "getlastmodified" | "fileid" | "owner-id" | "owner-display-name"
+                    | "permissions" | "checksums" | "has-preview" | "favorite"
+                    | "comments-count" | "size" => {
                         current_tag = Some(local);
                     }
                     _ => {}
@@ -649,10 +652,7 @@ pub fn parse_multistatus_xml(xml: &str) -> Result<Vec<DavResource>, String> {
             Ok(Event::Text(ref e)) => {
                 if let Some(ref tag) = current_tag {
                     if let Some(ref mut res) = current {
-                        let text = e
-                            .unescape()
-                            .unwrap_or_default()
-                            .to_string();
+                        let text = e.unescape().unwrap_or_default().to_string();
                         match tag.as_str() {
                             "href" => res.href = text,
                             "displayname" => res.display_name = text,
@@ -745,11 +745,7 @@ fn display_name_from_href(href: &str) -> String {
         .collect::<String>();
 
     let trimmed = decoded.trim_end_matches('/');
-    trimmed
-        .rsplit('/')
-        .next()
-        .unwrap_or(trimmed)
-        .to_string()
+    trimmed.rsplit('/').next().unwrap_or(trimmed).to_string()
 }
 
 /// Build a PROPPATCH XML body for setting the favorite flag.
@@ -798,7 +794,10 @@ mod tests {
 
     #[test]
     fn encode_dav_path_basic() {
-        assert_eq!(encode_dav_path("Documents/hello world.pdf"), "Documents/hello+world.pdf");
+        assert_eq!(
+            encode_dav_path("Documents/hello world.pdf"),
+            "Documents/hello+world.pdf"
+        );
     }
 
     #[test]
