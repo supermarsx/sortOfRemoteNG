@@ -33,25 +33,19 @@ pub async fn vmware_connect(
 }
 
 #[tauri::command]
-pub async fn vmware_disconnect(
-    state: State<'_, VmwareServiceState>,
-) -> Result<(), String> {
+pub async fn vmware_disconnect(state: State<'_, VmwareServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn vmware_check_session(
-    state: State<'_, VmwareServiceState>,
-) -> Result<bool, String> {
+pub async fn vmware_check_session(state: State<'_, VmwareServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     svc.check_session().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn vmware_is_connected(
-    state: State<'_, VmwareServiceState>,
-) -> Result<bool, String> {
+pub async fn vmware_is_connected(state: State<'_, VmwareServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_connected())
 }
@@ -247,9 +241,7 @@ pub async fn vmware_list_snapshots(
     vm_id: String,
 ) -> Result<Vec<SnapshotSummary>, String> {
     let svc = state.lock().await;
-    svc.list_snapshots(&vm_id)
-        .await
-        .map_err(|e| e.to_string())
+    svc.list_snapshots(&vm_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -412,9 +404,7 @@ pub async fn vmware_list_resource_pools(
     state: State<'_, VmwareServiceState>,
 ) -> Result<Vec<ResourcePoolSummary>, String> {
     let svc = state.lock().await;
-    svc.list_resource_pools()
-        .await
-        .map_err(|e| e.to_string())
+    svc.list_resource_pools().await.map_err(|e| e.to_string())
 }
 
 // ── Metrics ─────────────────────────────────────────────────────────
@@ -443,9 +433,7 @@ pub async fn vmware_get_inventory_summary(
     state: State<'_, VmwareServiceState>,
 ) -> Result<InventorySummary, String> {
     let svc = state.lock().await;
-    svc.get_inventory_summary()
-        .await
-        .map_err(|e| e.to_string())
+    svc.get_inventory_summary().await.map_err(|e| e.to_string())
 }
 
 // ── Console (cross-platform, WebSocket) ─────────────────────────

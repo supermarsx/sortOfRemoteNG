@@ -27,8 +27,12 @@ pub struct VsphereConfig {
     pub timeout_secs: u64,
 }
 
-fn default_port() -> u16 { 443 }
-fn default_timeout() -> u64 { 30 }
+fn default_port() -> u16 {
+    443
+}
+fn default_timeout() -> u64 {
+    30
+}
 
 impl Default for VsphereConfig {
     fn default() -> Self {
@@ -63,16 +67,14 @@ pub struct VsphereSession {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Default)]
 pub enum VmPowerState {
     PoweredOn,
     PoweredOff,
     Suspended,
     #[serde(other)]
+    #[default]
     Unknown,
-}
-
-impl Default for VmPowerState {
-    fn default() -> Self { Self::Unknown }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -560,30 +562,26 @@ pub struct CreateSnapshotSpec {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Default)]
 pub enum HostConnectionState {
     Connected,
     Disconnected,
     NotResponding,
     #[serde(other)]
+    #[default]
     Unknown,
-}
-
-impl Default for HostConnectionState {
-    fn default() -> Self { Self::Unknown }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Default)]
 pub enum HostPowerState {
     PoweredOn,
     PoweredOff,
     Standby,
     #[serde(other)]
+    #[default]
     Unknown,
-}
-
-impl Default for HostPowerState {
-    fn default() -> Self { Self::Unknown }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -804,10 +802,11 @@ pub struct TaskInfo {
 ///   This is the primary cross-platform mode.
 /// - **Vnc** — Standard VNC / RFB protocol.
 /// - **Mks** — Legacy VMware MKS (binary, not WebSocket-based).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ConsoleTicketType {
     /// HTML5 WebSocket console (preferred, cross-platform).
     #[serde(rename = "WEBMKS")]
+    #[default]
     WebMks,
     /// Standard VNC protocol.
     #[serde(rename = "VNC")]
@@ -825,12 +824,6 @@ impl ConsoleTicketType {
             Self::Vnc => "VNC",
             Self::Mks => "MKS",
         }
-    }
-}
-
-impl Default for ConsoleTicketType {
-    fn default() -> Self {
-        Self::WebMks
     }
 }
 

@@ -67,11 +67,7 @@ impl<'a> SnapshotManager<'a> {
     }
 
     /// Revert to a specific snapshot.
-    pub async fn revert_to_snapshot(
-        &self,
-        vm_id: &str,
-        snapshot_id: &str,
-    ) -> VmwareResult<()> {
+    pub async fn revert_to_snapshot(&self, vm_id: &str, snapshot_id: &str) -> VmwareResult<()> {
         let path = format!("/api/vcenter/vm/{vm_id}/snapshots/{snapshot_id}?action=revert");
         self.client.post_empty(&path).await
     }
@@ -84,9 +80,7 @@ impl<'a> SnapshotManager<'a> {
         children: bool,
     ) -> VmwareResult<()> {
         let path = if children {
-            format!(
-                "/api/vcenter/vm/{vm_id}/snapshots/{snapshot_id}?remove_children=true"
-            )
+            format!("/api/vcenter/vm/{vm_id}/snapshots/{snapshot_id}?remove_children=true")
         } else {
             format!("/api/vcenter/vm/{vm_id}/snapshots/{snapshot_id}")
         };
@@ -100,18 +94,15 @@ impl<'a> SnapshotManager<'a> {
         let snapshots = self.list_snapshots(vm_id).await?;
 
         // Find root snapshots (those whose parent is not in the list)
-        let _ids: std::collections::HashSet<String> = snapshots
-            .iter()
-            .map(|s| s.snapshot.clone())
-            .collect();
+        let _ids: std::collections::HashSet<String> =
+            snapshots.iter().map(|s| s.snapshot.clone()).collect();
 
-        for snap in &snapshots {
+        if let Some(snap) = snapshots.first() {
             // Delete with children flag so the tree is cleaned in one pass
             if let Err(e) = self.delete_snapshot(vm_id, &snap.snapshot, true).await {
                 log::warn!("Error deleting snapshot {}: {}", snap.snapshot, e);
             }
-            // After first root delete, subsequent may 404 (already gone). That's fine.
-            break; // first root nukes everything when children=true
+            // first root nukes everything when children=true
         }
 
         Ok(())
@@ -126,7 +117,12 @@ impl<'a> SnapshotManager<'a> {
         let all = self.list_snapshots(vm_id).await?;
         Ok(all
             .into_iter()
-            .filter(|s| s.name.as_deref().unwrap_or_default().eq_ignore_ascii_case(name))
+            .filter(|s| {
+                s.name
+                    .as_deref()
+                    .unwrap_or_default()
+                    .eq_ignore_ascii_case(name)
+            })
             .collect())
     }
 

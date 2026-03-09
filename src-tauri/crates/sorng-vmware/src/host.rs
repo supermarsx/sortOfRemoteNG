@@ -24,10 +24,7 @@ impl<'a> HostManager<'a> {
     }
 
     /// List hosts in a specific cluster.
-    pub async fn list_hosts_in_cluster(
-        &self,
-        cluster_id: &str,
-    ) -> VmwareResult<Vec<HostSummary>> {
+    pub async fn list_hosts_in_cluster(&self, cluster_id: &str) -> VmwareResult<Vec<HostSummary>> {
         self.client
             .get_with_params::<Vec<HostSummary>>(
                 "/api/vcenter/host",

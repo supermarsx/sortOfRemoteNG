@@ -84,9 +84,10 @@ impl VsphereClient {
         }
 
         // Session ID comes back as a quoted JSON string
-        let session_id: String = resp.json().await.map_err(|e| {
-            VmwareError::parse(format!("Failed to parse session response: {e}"))
-        })?;
+        let session_id: String = resp
+            .json()
+            .await
+            .map_err(|e| VmwareError::parse(format!("Failed to parse session response: {e}")))?;
 
         self.session_id = Some(session_id.clone());
         Ok(session_id)
@@ -156,7 +157,10 @@ impl VsphereClient {
     ) -> VmwareResult<T> {
         let sid = self.require_session()?;
         let url = format!("{}{}", self.base_url, path);
-        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         let resp = self
             .client
             .get(&url)
@@ -211,11 +215,7 @@ impl VsphereClient {
     }
 
     /// PATCH with JSON body.
-    pub async fn patch<B: serde::Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> VmwareResult<()> {
+    pub async fn patch<B: serde::Serialize>(&self, path: &str, body: &B) -> VmwareResult<()> {
         let sid = self.require_session()?;
         let url = format!("{}{}", self.base_url, path);
         let resp = self
@@ -230,11 +230,7 @@ impl VsphereClient {
     }
 
     /// PUT with JSON body.
-    pub async fn put<B: serde::Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> VmwareResult<()> {
+    pub async fn put<B: serde::Serialize>(&self, path: &str, body: &B) -> VmwareResult<()> {
         let sid = self.require_session()?;
         let url = format!("{}{}", self.base_url, path);
         let resp = self
@@ -274,20 +270,25 @@ impl VsphereClient {
         let body = resp.text().await.unwrap_or_default();
 
         match status {
-            StatusCode::UNAUTHORIZED => Err(VmwareError::auth(format!("Session expired or invalid: {body}"))),
+            StatusCode::UNAUTHORIZED => Err(VmwareError::auth(format!(
+                "Session expired or invalid: {body}"
+            ))),
             StatusCode::FORBIDDEN => Err(VmwareError::new(
                 crate::error::VmwareErrorKind::AccessDenied,
                 format!("Access denied: {body}"),
             )),
-            StatusCode::NOT_FOUND => Err(VmwareError::not_found(format!("Resource not found: {body}"))),
+            StatusCode::NOT_FOUND => Err(VmwareError::not_found(format!(
+                "Resource not found: {body}"
+            ))),
             _ => Err(VmwareError::api(code, format!("API error {code}: {body}"))),
         }
     }
 
     async fn parse_response<T: DeserializeOwned>(resp: Response) -> VmwareResult<T> {
-        let text = resp.text().await.map_err(|e| {
-            VmwareError::parse(format!("Failed to read response body: {e}"))
-        })?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| VmwareError::parse(format!("Failed to read response body: {e}")))?;
 
         if text.is_empty() {
             // Some vSphere endpoints return empty body for success
@@ -297,7 +298,10 @@ impl VsphereClient {
         }
 
         serde_json::from_str(&text).map_err(|e| {
-            VmwareError::parse(format!("JSON parse error: {e} — body: {}", &text[..text.len().min(500)]))
+            VmwareError::parse(format!(
+                "JSON parse error: {e} — body: {}",
+                &text[..text.len().min(500)]
+            ))
         })
     }
 }

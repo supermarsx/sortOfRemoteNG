@@ -28,6 +28,12 @@ pub struct VmwareService {
     config: Option<VsphereConfig>,
 }
 
+impl Default for VmwareService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VmwareService {
     /// Create a new (disconnected) service.
     pub fn new() -> Self {
@@ -61,10 +67,7 @@ impl VmwareService {
     pub async fn connect(&mut self, config: VsphereConfig) -> VmwareResult<String> {
         let mut client = VsphereClient::new(&config)?;
         client.login().await?;
-        let session = client
-            .session_id()
-            .unwrap_or_default()
-            .to_string();
+        let session = client.session_id().unwrap_or_default().to_string();
         self.config = Some(config);
         self.client = Some(client);
         Ok(session)
@@ -166,11 +169,7 @@ impl VmwareService {
         VmManager::new(c).update_cpu(vm_id, spec).await
     }
 
-    pub async fn update_vm_memory(
-        &self,
-        vm_id: &str,
-        spec: &VmMemoryUpdate,
-    ) -> VmwareResult<()> {
+    pub async fn update_vm_memory(&self, vm_id: &str, spec: &VmMemoryUpdate) -> VmwareResult<()> {
         let c = self.require_client()?;
         VmManager::new(c).update_memory(vm_id, spec).await
     }
@@ -180,11 +179,7 @@ impl VmwareService {
         VmManager::new(c).clone_vm(spec).await
     }
 
-    pub async fn relocate_vm(
-        &self,
-        vm_id: &str,
-        spec: &VmRelocateSpec,
-    ) -> VmwareResult<()> {
+    pub async fn relocate_vm(&self, vm_id: &str, spec: &VmRelocateSpec) -> VmwareResult<()> {
         let c = self.require_client()?;
         VmManager::new(c).relocate_vm(vm_id, spec).await
     }
@@ -215,11 +210,7 @@ impl VmwareService {
         SnapshotManager::new(c).create_snapshot(vm_id, spec).await
     }
 
-    pub async fn revert_to_snapshot(
-        &self,
-        vm_id: &str,
-        snapshot_id: &str,
-    ) -> VmwareResult<()> {
+    pub async fn revert_to_snapshot(&self, vm_id: &str, snapshot_id: &str) -> VmwareResult<()> {
         let c = self.require_client()?;
         SnapshotManager::new(c)
             .revert_to_snapshot(vm_id, snapshot_id)
@@ -240,9 +231,7 @@ impl VmwareService {
 
     pub async fn delete_all_snapshots(&self, vm_id: &str) -> VmwareResult<()> {
         let c = self.require_client()?;
-        SnapshotManager::new(c)
-            .delete_all_snapshots(vm_id)
-            .await
+        SnapshotManager::new(c).delete_all_snapshots(vm_id).await
     }
 
     // ── Network operations ──────────────────────────────────────────
@@ -323,9 +312,7 @@ impl VmwareService {
         MetricsManager::new(c).get_all_vm_stats().await
     }
 
-    pub async fn get_inventory_summary(
-        &self,
-    ) -> VmwareResult<crate::metrics::InventorySummary> {
+    pub async fn get_inventory_summary(&self) -> VmwareResult<crate::metrics::InventorySummary> {
         let c = self.require_client()?;
         MetricsManager::new(c).get_inventory_summary().await
     }
@@ -342,17 +329,16 @@ impl VmwareService {
         ticket_type: ConsoleTicketType,
     ) -> VmwareResult<ConsoleTicket> {
         let client = self.require_client()?;
-        self.vmrc.acquire_console_ticket(client, vm_id, ticket_type).await
+        self.vmrc
+            .acquire_console_ticket(client, vm_id, ticket_type)
+            .await
     }
 
     /// Open a cross-platform console for a VM.
     ///
     /// Acquires a console ticket and starts a local TCP proxy that
     /// bridges the Tauri webview (plain WS) to the ESXi host (TLS).
-    pub async fn open_console(
-        &self,
-        req: &OpenConsoleRequest,
-    ) -> VmwareResult<ConsoleSession> {
+    pub async fn open_console(&self, req: &OpenConsoleRequest) -> VmwareResult<ConsoleSession> {
         let client = self.require_client()?;
         self.vmrc.open_console(client, req).await
     }
@@ -373,19 +359,13 @@ impl VmwareService {
     }
 
     /// Get a specific console session.
-    pub async fn get_console_session(
-        &self,
-        session_id: &str,
-    ) -> VmwareResult<ConsoleSession> {
+    pub async fn get_console_session(&self, session_id: &str) -> VmwareResult<ConsoleSession> {
         self.vmrc.get_console_session(session_id).await
     }
 
     // ── VMRC / Horizon (binary fallback) ────────────────────────────
 
-    pub async fn launch_vmrc(
-        &self,
-        config: &VmrcConnectionConfig,
-    ) -> VmwareResult<VmrcSession> {
+    pub async fn launch_vmrc(&self, config: &VmrcConnectionConfig) -> VmwareResult<VmrcSession> {
         self.vmrc.launch(config).await
     }
 

@@ -22,6 +22,7 @@ impl<'a> VmManager<'a> {
     // ── List / Get ──────────────────────────────────────────────────
 
     /// List VMs, optionally filtered.
+    #[allow(clippy::too_many_arguments)]
     pub async fn list_vms(
         &self,
         filter_names: Option<&[&str]>,
@@ -218,11 +219,7 @@ impl<'a> VmManager<'a> {
     }
 
     /// Relocate (migrate) a VM to a different host/datastore.
-    pub async fn relocate_vm(
-        &self,
-        vm_id: &str,
-        spec: &VmRelocateSpec,
-    ) -> VmwareResult<()> {
+    pub async fn relocate_vm(&self, vm_id: &str, spec: &VmRelocateSpec) -> VmwareResult<()> {
         let path = format!("/api/vcenter/vm/{vm_id}?action=relocate");
         self.client.post_raw(&path, spec).await?;
         Ok(())

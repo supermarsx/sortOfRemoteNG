@@ -96,17 +96,13 @@ impl<'a> NetworkManager<'a> {
 
     /// Connect a NIC.
     pub async fn connect_vm_nic(&self, vm_id: &str, nic_id: &str) -> VmwareResult<()> {
-        let path = format!(
-            "/api/vcenter/vm/{vm_id}/hardware/ethernet/{nic_id}?action=connect"
-        );
+        let path = format!("/api/vcenter/vm/{vm_id}/hardware/ethernet/{nic_id}?action=connect");
         self.client.post_empty(&path).await
     }
 
     /// Disconnect a NIC.
     pub async fn disconnect_vm_nic(&self, vm_id: &str, nic_id: &str) -> VmwareResult<()> {
-        let path = format!(
-            "/api/vcenter/vm/{vm_id}/hardware/ethernet/{nic_id}?action=disconnect"
-        );
+        let path = format!("/api/vcenter/vm/{vm_id}/hardware/ethernet/{nic_id}?action=disconnect");
         self.client.post_empty(&path).await
     }
 

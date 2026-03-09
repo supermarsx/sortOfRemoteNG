@@ -18,15 +18,15 @@
 //! - **service** — Aggregate facade + Tauri state alias
 //! - **commands** — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
-pub mod vsphere;
-pub mod vmrc;
-pub mod vm;
-pub mod snapshot;
-pub mod network;
-pub mod storage;
-pub mod metrics;
-pub mod host;
-pub mod service;
 pub mod commands;
+pub mod error;
+pub mod host;
+pub mod metrics;
+pub mod network;
+pub mod service;
+pub mod snapshot;
+pub mod storage;
+pub mod types;
+pub mod vm;
+pub mod vmrc;
+pub mod vsphere;

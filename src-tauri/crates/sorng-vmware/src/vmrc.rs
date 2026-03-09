@@ -32,8 +32,8 @@
 
 use crate::error::{VmwareError, VmwareResult};
 use crate::types::{
-    ConsoleSession, ConsoleTicket, ConsoleTicketType,
-    OpenConsoleRequest, VmrcConnectionConfig, VmrcSession,
+    ConsoleSession, ConsoleTicket, ConsoleTicketType, OpenConsoleRequest, VmrcConnectionConfig,
+    VmrcSession,
 };
 use crate::vsphere::VsphereClient;
 
@@ -125,6 +125,12 @@ pub struct VmrcManager {
     consoles: Arc<Mutex<HashMap<String, ProxySessionInner>>>,
     /// Active binary-launcher sessions.
     binaries: Arc<Mutex<HashMap<String, BinarySessionInner>>>,
+}
+
+impl Default for VmrcManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VmrcManager {
@@ -309,19 +315,13 @@ impl VmrcManager {
     }
 
     /// Get a specific console session.
-    pub async fn get_console_session(
-        &self,
-        session_id: &str,
-    ) -> VmwareResult<ConsoleSession> {
+    pub async fn get_console_session(&self, session_id: &str) -> VmwareResult<ConsoleSession> {
         let consoles = self.consoles.lock().await;
         consoles
             .get(session_id)
             .map(|s| s.info.clone())
             .ok_or_else(|| {
-                VmwareError::not_found(format!(
-                    "Console session '{}' not found",
-                    session_id
-                ))
+                VmwareError::not_found(format!("Console session '{}' not found", session_id))
             })
     }
 
@@ -365,10 +365,7 @@ impl VmrcManager {
         self.spawn_and_track(cmd, config, false).await
     }
 
-    async fn launch_horizon(
-        &self,
-        config: &VmrcConnectionConfig,
-    ) -> VmwareResult<VmrcSession> {
+    async fn launch_horizon(&self, config: &VmrcConnectionConfig) -> VmwareResult<VmrcSession> {
         let exe = Self::find_horizon().ok_or_else(|| {
             VmwareError::vmrc(
                 "VMware Horizon Client not found. Install VMware Horizon Client \
@@ -448,10 +445,7 @@ impl VmrcManager {
             .get(session_id)
             .map(|s| s.info.clone())
             .ok_or_else(|| {
-                VmwareError::not_found(format!(
-                    "VMRC session '{}' not found",
-                    session_id
-                ))
+                VmwareError::not_found(format!("VMRC session '{}' not found", session_id))
             })
     }
 
@@ -571,12 +565,7 @@ impl VmrcManager {
     }
 
     /// Build a `vmrc://` URI for a given VM.
-    pub fn build_vmrc_uri(
-        host: &str,
-        port: u16,
-        moid: &str,
-        username: Option<&str>,
-    ) -> String {
+    pub fn build_vmrc_uri(host: &str, port: u16, moid: &str, username: Option<&str>) -> String {
         if let Some(user) = username {
             format!("vmrc://{}@{}:{}/?moid={}", user, host, port, moid)
         } else {
@@ -658,15 +647,24 @@ async fn relay_connection(
     let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
 
     // Connect to remote ESXi host
-    let remote_tcp =
-        tokio::net::TcpStream::connect((remote_host, remote_port))
-            .await
-            .map_err(|e| format!("Failed to connect to {}:{}: {}", remote_host, remote_port, e))?;
+    let remote_tcp = tokio::net::TcpStream::connect((remote_host, remote_port))
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to connect to {}:{}: {}",
+                remote_host, remote_port, e
+            )
+        })?;
 
     let remote_tls = tls_connector
         .connect(remote_host, remote_tcp)
         .await
-        .map_err(|e| format!("TLS handshake with {}:{} failed: {}", remote_host, remote_port, e))?;
+        .map_err(|e| {
+            format!(
+                "TLS handshake with {}:{} failed: {}",
+                remote_host, remote_port, e
+            )
+        })?;
 
     // Split both streams and relay
     let (mut local_read, mut local_write) = tokio::io::split(local_stream);

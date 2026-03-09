@@ -50,10 +50,7 @@ impl<'a> MetricsManager<'a> {
 
     /// Get quick stats for all VMs.
     pub async fn get_all_vm_stats(&self) -> VmwareResult<Vec<VmQuickStats>> {
-        let vms: Vec<VmSummary> = self
-            .client
-            .get("/api/vcenter/vm")
-            .await?;
+        let vms: Vec<VmSummary> = self.client.get("/api/vcenter/vm").await?;
 
         let mut stats = Vec::with_capacity(vms.len());
         for vm in &vms {
@@ -127,11 +124,7 @@ impl<'a> MetricsManager<'a> {
             .get("/api/vcenter/host")
             .await
             .unwrap_or_default();
-        let vms: Vec<VmSummary> = self
-            .client
-            .get("/api/vcenter/vm")
-            .await
-            .unwrap_or_default();
+        let vms: Vec<VmSummary> = self.client.get("/api/vcenter/vm").await.unwrap_or_default();
         let datastores: Vec<DatastoreSummary> = self
             .client
             .get("/api/vcenter/datastore")
