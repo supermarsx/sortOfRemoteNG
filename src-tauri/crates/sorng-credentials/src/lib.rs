@@ -21,12 +21,12 @@
 //!   credential values.
 //! - **Tauri commands** — Complete IPC command surface for front-end integration.
 
-pub mod types;
-pub mod error;
-pub mod tracker;
-pub mod policies;
-pub mod groups;
-pub mod audit;
 pub mod alerts;
-pub mod service;
+pub mod audit;
 pub mod commands;
+pub mod error;
+pub mod groups;
+pub mod policies;
+pub mod service;
+pub mod tracker;
+pub mod types;

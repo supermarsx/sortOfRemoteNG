@@ -217,7 +217,9 @@ mod tests {
         let policy = make_policy();
         let record = make_record(100, PasswordStrength::Strong);
         let violations = engine.evaluate_policy(&record, &policy);
-        assert!(violations.iter().any(|v| v.violation_type == ViolationType::TooOld));
+        assert!(violations
+            .iter()
+            .any(|v| v.violation_type == ViolationType::TooOld));
     }
 
     #[test]
@@ -226,7 +228,9 @@ mod tests {
         let policy = make_policy();
         let record = make_record(10, PasswordStrength::VeryWeak);
         let violations = engine.evaluate_policy(&record, &policy);
-        assert!(violations.iter().any(|v| v.violation_type == ViolationType::TooWeak));
+        assert!(violations
+            .iter()
+            .any(|v| v.violation_type == ViolationType::TooWeak));
     }
 
     #[test]
@@ -236,6 +240,8 @@ mod tests {
         let mut record = make_record(10, PasswordStrength::Strong);
         record.expires_at = Some(Utc::now() - Duration::days(3));
         let violations = engine.evaluate_policy(&record, &policy);
-        assert!(violations.iter().any(|v| v.violation_type == ViolationType::Expired));
+        assert!(violations
+            .iter()
+            .any(|v| v.violation_type == ViolationType::Expired));
     }
 }

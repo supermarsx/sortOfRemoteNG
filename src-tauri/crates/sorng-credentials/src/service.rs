@@ -111,7 +111,7 @@ impl CredentialService {
             .filter(|rec| {
                 rec.strength
                     .as_ref()
-                    .map_or(false, |s| *s <= PasswordStrength::Weak)
+                    .is_some_and(|s| *s <= PasswordStrength::Weak)
             })
             .count();
 

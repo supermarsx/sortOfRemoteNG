@@ -19,7 +19,9 @@ pub async fn cred_add(
     record: CredentialRecord,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.tracker.add_credential(record.clone()).map_err(|e| e.to_string())?;
+    svc.tracker
+        .add_credential(record.clone())
+        .map_err(|e| e.to_string())?;
     svc.audit.log_action(CredentialAuditEntry {
         id: Uuid::new_v4().to_string(),
         credential_id: record.id.clone(),
@@ -38,7 +40,10 @@ pub async fn cred_remove(
     id: String,
 ) -> Result<CredentialRecord, String> {
     let mut svc = state.lock().await;
-    let removed = svc.tracker.remove_credential(&id).map_err(|e| e.to_string())?;
+    let removed = svc
+        .tracker
+        .remove_credential(&id)
+        .map_err(|e| e.to_string())?;
     svc.audit.log_action(CredentialAuditEntry {
         id: Uuid::new_v4().to_string(),
         credential_id: id.clone(),
@@ -57,7 +62,9 @@ pub async fn cred_update(
     record: CredentialRecord,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.tracker.update_credential(record).map_err(|e| e.to_string())
+    svc.tracker
+        .update_credential(record)
+        .map_err(|e| e.to_string())
 }
 
 /// Get a credential record by ID.
@@ -79,7 +86,12 @@ pub async fn cred_list(
     state: State<'_, CredentialServiceState>,
 ) -> Result<Vec<CredentialRecord>, String> {
     let svc = state.lock().await;
-    Ok(svc.tracker.list_credentials().into_iter().cloned().collect())
+    Ok(svc
+        .tracker
+        .list_credentials()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 // ── Rotation ────────────────────────────────────────────────────────
@@ -91,7 +103,9 @@ pub async fn cred_record_rotation(
     id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.tracker.record_rotation(&id).map_err(|e| e.to_string())?;
+    svc.tracker
+        .record_rotation(&id)
+        .map_err(|e| e.to_string())?;
     svc.audit.log_action(CredentialAuditEntry {
         id: Uuid::new_v4().to_string(),
         credential_id: id.clone(),
@@ -216,9 +230,7 @@ pub async fn cred_check_compliance(
 
 /// Estimate password strength.
 #[tauri::command]
-pub async fn cred_check_strength(
-    password: String,
-) -> Result<PasswordStrength, String> {
+pub async fn cred_check_strength(password: String) -> Result<PasswordStrength, String> {
     Ok(CredentialTracker::calculate_password_strength(&password))
 }
 
@@ -298,7 +310,12 @@ pub async fn cred_get_alerts(
     state: State<'_, CredentialServiceState>,
 ) -> Result<Vec<CredentialAlert>, String> {
     let svc = state.lock().await;
-    Ok(svc.alerts.get_active_alerts().into_iter().cloned().collect())
+    Ok(svc
+        .alerts
+        .get_active_alerts()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 /// Acknowledge an alert by ID.

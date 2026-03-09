@@ -18,9 +18,7 @@ pub struct AlertManager {
 impl AlertManager {
     /// Create an empty alert manager.
     pub fn new() -> Self {
-        Self {
-            alerts: Vec::new(),
-        }
+        Self { alerts: Vec::new() }
     }
 
     /// Scan all credentials against their associated policies and generate
@@ -65,10 +63,7 @@ impl AlertManager {
                         new_alerts.push(Self::make_alert(
                             record,
                             alert_type,
-                            format!(
-                                "{} expires in {} days",
-                                record.label, remaining
-                            ),
+                            format!("{} expires in {} days", record.label, remaining),
                             AlertSeverity::Warning,
                         ));
                     }
@@ -273,7 +268,9 @@ mod tests {
         rec.expires_at = Some(Utc::now() - Duration::days(5));
         creds.insert(rec.id.clone(), rec);
         let alerts = mgr.generate_alerts(&creds, &HashMap::new(), &make_config());
-        assert!(alerts.iter().any(|a| a.alert_type == AlertType::RotationOverdue));
+        assert!(alerts
+            .iter()
+            .any(|a| a.alert_type == AlertType::RotationOverdue));
     }
 
     #[test]
@@ -284,7 +281,9 @@ mod tests {
         rec.created_at = Utc::now() - Duration::days(100);
         creds.insert(rec.id.clone(), rec);
         let alerts = mgr.generate_alerts(&creds, &HashMap::new(), &make_config());
-        assert!(alerts.iter().any(|a| a.alert_type == AlertType::StalePassword));
+        assert!(alerts
+            .iter()
+            .any(|a| a.alert_type == AlertType::StalePassword));
     }
 
     #[test]
@@ -295,7 +294,9 @@ mod tests {
         rec.strength = Some(PasswordStrength::VeryWeak);
         creds.insert(rec.id.clone(), rec);
         let alerts = mgr.generate_alerts(&creds, &HashMap::new(), &make_config());
-        assert!(alerts.iter().any(|a| a.alert_type == AlertType::WeakPassword));
+        assert!(alerts
+            .iter()
+            .any(|a| a.alert_type == AlertType::WeakPassword));
     }
 
     #[test]
@@ -310,7 +311,9 @@ mod tests {
         creds.insert(r1.id.clone(), r1);
         creds.insert(r2.id.clone(), r2);
         let alerts = mgr.generate_alerts(&creds, &HashMap::new(), &make_config());
-        assert!(alerts.iter().any(|a| a.alert_type == AlertType::DuplicatePassword));
+        assert!(alerts
+            .iter()
+            .any(|a| a.alert_type == AlertType::DuplicatePassword));
     }
 
     #[test]
@@ -326,6 +329,9 @@ mod tests {
         let alert_id = mgr.alerts[0].id.clone();
         mgr.acknowledge_alert(&alert_id).unwrap();
         mgr.clear_acknowledged();
-        assert!(mgr.get_alerts_for_credential("c1").is_empty() || mgr.get_active_alerts().len() < mgr.alerts.len() + 1);
+        assert!(
+            mgr.get_alerts_for_credential("c1").is_empty()
+                || mgr.get_active_alerts().len() < mgr.alerts.len() + 1
+        );
     }
 }

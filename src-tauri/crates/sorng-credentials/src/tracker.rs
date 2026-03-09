@@ -155,7 +155,7 @@ impl CredentialTracker {
         let now = Utc::now();
         self.credentials
             .values()
-            .filter(|rec| rec.expires_at.map_or(false, |exp| exp <= now))
+            .filter(|rec| rec.expires_at.is_some_and(|exp| exp <= now))
             .collect()
     }
 
@@ -194,7 +194,10 @@ impl CredentialTracker {
 
     /// Check a single credential against its assigned rotation policy.
     /// Returns a list of human-readable violation descriptions.
-    pub fn check_policy_compliance(&self, credential_id: &str) -> Result<Vec<String>, CredentialError> {
+    pub fn check_policy_compliance(
+        &self,
+        credential_id: &str,
+    ) -> Result<Vec<String>, CredentialError> {
         let record = self.get_credential(credential_id)?;
         let policy_id = match &record.rotation_policy_id {
             Some(pid) => pid.clone(),
@@ -295,9 +298,8 @@ impl CredentialTracker {
         // Penalize common patterns
         let lower = password.to_ascii_lowercase();
         let common = [
-            "password", "123456", "qwerty", "letmein", "admin", "welcome",
-            "monkey", "abc123", "111111", "iloveyou", "sunshine", "master",
-            "trustno1", "passw0rd",
+            "password", "123456", "qwerty", "letmein", "admin", "welcome", "monkey", "abc123",
+            "111111", "iloveyou", "sunshine", "master", "trustno1", "passw0rd",
         ];
         for c in &common {
             if lower.contains(c) {
@@ -416,7 +418,10 @@ mod tests {
             t.add_credential(sample_record("cred-1")).unwrap();
             t
         };
-        assert_eq!(tracker.check_expiry("cred-1").unwrap(), ExpiryStatus::NeverExpires);
+        assert_eq!(
+            tracker.check_expiry("cred-1").unwrap(),
+            ExpiryStatus::NeverExpires
+        );
     }
 
     #[test]
@@ -445,7 +450,10 @@ mod tests {
 
     #[test]
     fn strength_estimation() {
-        assert_eq!(CredentialTracker::calculate_password_strength("ab"), PasswordStrength::VeryWeak);
+        assert_eq!(
+            CredentialTracker::calculate_password_strength("ab"),
+            PasswordStrength::VeryWeak
+        );
         assert!(CredentialTracker::calculate_password_strength("Str0ng!Pass#2024").score() >= 3);
     }
 
@@ -476,9 +484,17 @@ mod tests {
     fn record_rotation_updates_timestamp() {
         let mut tracker = CredentialTracker::new();
         tracker.add_credential(sample_record("cred-1")).unwrap();
-        assert!(tracker.get_credential("cred-1").unwrap().last_rotated_at.is_none());
+        assert!(tracker
+            .get_credential("cred-1")
+            .unwrap()
+            .last_rotated_at
+            .is_none());
         tracker.record_rotation("cred-1").unwrap();
-        assert!(tracker.get_credential("cred-1").unwrap().last_rotated_at.is_some());
+        assert!(tracker
+            .get_credential("cred-1")
+            .unwrap()
+            .last_rotated_at
+            .is_some());
     }
 
     #[test]

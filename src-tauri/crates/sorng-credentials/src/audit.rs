@@ -54,10 +54,7 @@ impl AuditLog {
 
     /// Return all entries with the specified action.
     pub fn get_by_action(&self, action: AuditAction) -> Vec<&CredentialAuditEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.action == action)
-            .collect()
+        self.entries.iter().filter(|e| e.action == action).collect()
     }
 
     /// Drop all entries.
