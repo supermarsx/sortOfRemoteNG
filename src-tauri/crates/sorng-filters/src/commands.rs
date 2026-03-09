@@ -38,9 +38,7 @@ pub async fn filter_get(
     id: String,
 ) -> Result<SmartFilter, String> {
     let svc = state.lock().await;
-    svc.get_filter(&id)
-        .map(|f| f.clone())
-        .map_err(|e| e.to_string())
+    svc.get_filter(&id).cloned().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

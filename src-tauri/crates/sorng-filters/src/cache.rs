@@ -44,10 +44,7 @@ impl FilterCache {
         }
 
         // Check and possibly evict expired entry
-        let expired = self
-            .entries
-            .get(filter_id)
-            .map_or(false, |c| c.is_expired());
+        let expired = self.entries.get(filter_id).is_some_and(|c| c.is_expired());
         if expired {
             self.entries.remove(filter_id);
             self.misses += 1;

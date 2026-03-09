@@ -163,10 +163,7 @@ pub fn get_built_in_presets() -> Vec<FilterPreset> {
             vec![FilterCondition {
                 field: FilterField::Protocol,
                 operator: FilterOperator::In,
-                value: FilterValue::StringList(vec![
-                    "http".into(),
-                    "https".into(),
-                ]),
+                value: FilterValue::StringList(vec!["http".into(), "https".into()]),
                 negate: false,
             }],
             Some(SortField::Name),
@@ -181,11 +178,7 @@ pub fn get_built_in_presets() -> Vec<FilterPreset> {
             vec![FilterCondition {
                 field: FilterField::Protocol,
                 operator: FilterOperator::In,
-                value: FilterValue::StringList(vec![
-                    "ftp".into(),
-                    "sftp".into(),
-                    "scp".into(),
-                ]),
+                value: FilterValue::StringList(vec!["ftp".into(), "sftp".into(), "scp".into()]),
                 negate: false,
             }],
             Some(SortField::Name),
@@ -253,10 +246,7 @@ pub fn get_built_in_presets() -> Vec<FilterPreset> {
             vec![FilterCondition {
                 field: FilterField::AuthType,
                 operator: FilterOperator::In,
-                value: FilterValue::StringList(vec![
-                    "none".into(),
-                    "".into(),
-                ]),
+                value: FilterValue::StringList(vec!["none".into(), "".into()]),
                 negate: false,
             }],
             Some(SortField::Name),
@@ -286,7 +276,9 @@ pub fn get_built_in_presets() -> Vec<FilterPreset> {
             vec![FilterCondition {
                 field: FilterField::Hostname,
                 operator: FilterOperator::Matches,
-                value: FilterValue::String(r"^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)".into()),
+                value: FilterValue::String(
+                    r"^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)".into(),
+                ),
                 negate: false,
             }],
             Some(SortField::Hostname),
@@ -343,7 +335,11 @@ mod tests {
     #[test]
     fn test_built_in_presets_count() {
         let presets = get_built_in_presets();
-        assert!(presets.len() >= 15, "Expected at least 15 presets, got {}", presets.len());
+        assert!(
+            presets.len() >= 15,
+            "Expected at least 15 presets, got {}",
+            presets.len()
+        );
     }
 
     #[test]

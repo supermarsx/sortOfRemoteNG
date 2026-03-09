@@ -236,15 +236,11 @@ impl SortField {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum SortOrder {
+    #[default]
     Ascending,
     Descending,
-}
-
-impl Default for SortOrder {
-    fn default() -> Self {
-        SortOrder::Ascending
-    }
 }
 
 // ── SmartGroup ──────────────────────────────────────────────────

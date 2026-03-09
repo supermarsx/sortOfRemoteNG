@@ -11,10 +11,7 @@ use crate::types::*;
 // ═══════════════════════════════════════════════════════════════════
 
 /// Evaluate a [`SmartFilter`] against a slice of connection JSON objects.
-pub fn evaluate_filter(
-    filter: &SmartFilter,
-    connections: &[Value],
-) -> Result<FilterResult> {
+pub fn evaluate_filter(filter: &SmartFilter, connections: &[Value]) -> Result<FilterResult> {
     let start = std::time::Instant::now();
 
     let mut matching_ids: Vec<String> = Vec::new();
@@ -72,10 +69,7 @@ pub fn evaluate_filter(
 // ═══════════════════════════════════════════════════════════════════
 
 /// Evaluate a single condition against one connection JSON object.
-pub fn evaluate_condition(
-    condition: &FilterCondition,
-    connection: &Value,
-) -> Result<bool> {
+pub fn evaluate_condition(condition: &FilterCondition, connection: &Value) -> Result<bool> {
     let field_value = extract_field_value(&condition.field, connection);
 
     let result = match field_value {
@@ -116,29 +110,41 @@ pub fn compare_values(
         FilterOperator::NotEquals => Ok(!values_equal(field_value, filter_value)),
 
         FilterOperator::Contains => {
-            let haystack = value_to_string(field_value).unwrap_or_default().to_lowercase();
+            let haystack = value_to_string(field_value)
+                .unwrap_or_default()
+                .to_lowercase();
             let needle = filter_value_to_string(filter_value).to_lowercase();
             Ok(haystack.contains(&needle))
         }
         FilterOperator::NotContains => {
-            let haystack = value_to_string(field_value).unwrap_or_default().to_lowercase();
+            let haystack = value_to_string(field_value)
+                .unwrap_or_default()
+                .to_lowercase();
             let needle = filter_value_to_string(filter_value).to_lowercase();
             Ok(!haystack.contains(&needle))
         }
 
         FilterOperator::StartsWith => {
-            let haystack = value_to_string(field_value).unwrap_or_default().to_lowercase();
+            let haystack = value_to_string(field_value)
+                .unwrap_or_default()
+                .to_lowercase();
             let prefix = filter_value_to_string(filter_value).to_lowercase();
             Ok(haystack.starts_with(&prefix))
         }
         FilterOperator::EndsWith => {
-            let haystack = value_to_string(field_value).unwrap_or_default().to_lowercase();
+            let haystack = value_to_string(field_value)
+                .unwrap_or_default()
+                .to_lowercase();
             let suffix = filter_value_to_string(filter_value).to_lowercase();
             Ok(haystack.ends_with(&suffix))
         }
 
-        FilterOperator::GreaterThan => Ok(compare_numeric(field_value, filter_value) == Some(Ordering::Greater)),
-        FilterOperator::LessThan => Ok(compare_numeric(field_value, filter_value) == Some(Ordering::Less)),
+        FilterOperator::GreaterThan => {
+            Ok(compare_numeric(field_value, filter_value) == Some(Ordering::Greater))
+        }
+        FilterOperator::LessThan => {
+            Ok(compare_numeric(field_value, filter_value) == Some(Ordering::Less))
+        }
         FilterOperator::GreaterOrEqual => {
             let ord = compare_numeric(field_value, filter_value);
             Ok(ord == Some(Ordering::Greater) || ord == Some(Ordering::Equal))
@@ -150,12 +156,16 @@ pub fn compare_values(
 
         FilterOperator::In => {
             let list = filter_value_to_string_list(filter_value);
-            let val = value_to_string(field_value).unwrap_or_default().to_lowercase();
+            let val = value_to_string(field_value)
+                .unwrap_or_default()
+                .to_lowercase();
             Ok(list.iter().any(|s| s.to_lowercase() == val))
         }
         FilterOperator::NotIn => {
             let list = filter_value_to_string_list(filter_value);
-            let val = value_to_string(field_value).unwrap_or_default().to_lowercase();
+            let val = value_to_string(field_value)
+                .unwrap_or_default()
+                .to_lowercase();
             Ok(!list.iter().any(|s| s.to_lowercase() == val))
         }
 
@@ -167,11 +177,9 @@ pub fn compare_values(
         }
 
         FilterOperator::Exists => Ok(!field_value.is_null()),
-        FilterOperator::IsEmpty => {
-            Ok(field_value.is_null()
-                || field_value.as_str().map_or(false, |s| s.is_empty())
-                || field_value.as_array().map_or(false, |a| a.is_empty()))
-        }
+        FilterOperator::IsEmpty => Ok(field_value.is_null()
+            || field_value.as_str().is_some_and(|s| s.is_empty())
+            || field_value.as_array().is_some_and(|a| a.is_empty())),
 
         FilterOperator::Between => {
             // Expects FilterValue::StringList with exactly two elements (low, high)
@@ -197,9 +205,11 @@ pub fn compare_values(
         FilterOperator::OlderThan => {
             let duration = match filter_value {
                 FilterValue::Duration(d) => d.to_chrono_duration(),
-                _ => return Err(FilterError::InvalidCondition(
-                    "OlderThan requires a Duration value".into(),
-                )),
+                _ => {
+                    return Err(FilterError::InvalidCondition(
+                        "OlderThan requires a Duration value".into(),
+                    ))
+                }
             };
             let date_str = value_to_string(field_value).unwrap_or_default();
             let parsed = chrono::DateTime::parse_from_rfc3339(&date_str)
@@ -217,9 +227,11 @@ pub fn compare_values(
         FilterOperator::NewerThan => {
             let duration = match filter_value {
                 FilterValue::Duration(d) => d.to_chrono_duration(),
-                _ => return Err(FilterError::InvalidCondition(
-                    "NewerThan requires a Duration value".into(),
-                )),
+                _ => {
+                    return Err(FilterError::InvalidCondition(
+                        "NewerThan requires a Duration value".into(),
+                    ))
+                }
             };
             let date_str = value_to_string(field_value).unwrap_or_default();
             let parsed = chrono::DateTime::parse_from_rfc3339(&date_str)
@@ -311,9 +323,9 @@ fn tokenize(expr: &str) -> Result<Vec<Token>> {
                         break;
                     }
                 }
-                let idx: usize = num.parse().map_err(|_| {
-                    FilterError::InvalidExpression(format!("Invalid index: {num}"))
-                })?;
+                let idx: usize = num
+                    .parse()
+                    .map_err(|_| FilterError::InvalidExpression(format!("Invalid index: {num}")))?;
                 tokens.push(Token::Index(idx));
             }
             'A' | 'a' => {
@@ -435,7 +447,7 @@ fn parse_factor(tokens: &[Token], pos: &mut usize, results: &[bool]) -> Result<b
 // ═══════════════════════════════════════════════════════════════════
 
 /// Sort a mutable slice of connection JSON objects by the given field and order.
-pub fn apply_sort(connections: &mut Vec<Value>, sort_by: &SortField, order: &SortOrder) {
+pub fn apply_sort(connections: &mut [Value], sort_by: &SortField, order: &SortOrder) {
     let key = sort_by.json_key();
     connections.sort_by(|a, b| {
         let va = a.get(key);
@@ -476,17 +488,17 @@ fn compare_json_vals(a: Option<&Value>, b: Option<&Value>) -> Ordering {
 
 fn values_equal(field_value: &Value, filter_value: &FilterValue) -> bool {
     match filter_value {
-        FilterValue::String(s) => {
-            value_to_string(field_value)
-                .map(|fv| fv.to_lowercase() == s.to_lowercase())
-                .unwrap_or(false)
-        }
-        FilterValue::Number(n) => value_to_f64(field_value).map(|fv| (fv - n).abs() < f64::EPSILON).unwrap_or(false),
+        FilterValue::String(s) => value_to_string(field_value)
+            .map(|fv| fv.to_lowercase() == s.to_lowercase())
+            .unwrap_or(false),
+        FilterValue::Number(n) => value_to_f64(field_value)
+            .map(|fv| (fv - n).abs() < f64::EPSILON)
+            .unwrap_or(false),
         FilterValue::Boolean(b) => field_value.as_bool().map(|fv| fv == *b).unwrap_or(false),
         FilterValue::Null => field_value.is_null(),
-        FilterValue::Date(d) => {
-            value_to_string(field_value).map(|fv| fv == *d).unwrap_or(false)
-        }
+        FilterValue::Date(d) => value_to_string(field_value)
+            .map(|fv| fv == *d)
+            .unwrap_or(false),
         FilterValue::StringList(list) => {
             // Equal if field is an array with the same elements
             if let Some(arr) = field_value.as_array() {
@@ -510,7 +522,7 @@ fn value_to_string(v: &Value) -> Option<String> {
         Value::Number(n) => Some(n.to_string()),
         Value::Bool(b) => Some(b.to_string()),
         Value::Array(arr) => {
-            let parts: Vec<String> = arr.iter().filter_map(|e| value_to_string(e)).collect();
+            let parts: Vec<String> = arr.iter().filter_map(value_to_string).collect();
             Some(parts.join(","))
         }
         Value::Null => None,
