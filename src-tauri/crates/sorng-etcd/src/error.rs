@@ -38,7 +38,10 @@ impl std::error::Error for EtcdError {}
 
 impl EtcdError {
     pub fn new(kind: EtcdErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(EtcdErrorKind::NotConnected, msg)

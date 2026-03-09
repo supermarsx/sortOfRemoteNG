@@ -70,6 +70,7 @@ struct DeleteRangeRequestWire {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct DeleteRangeResponseWire {
     #[serde(default)]
     deleted: Option<String>,
@@ -112,7 +113,11 @@ fn wire_to_kv(w: &KvWire) -> EtcdKeyValue {
         version: parse_i64(&w.version),
         lease: {
             let v = parse_i64(&w.lease);
-            if v == 0 { None } else { Some(v) }
+            if v == 0 {
+                None
+            } else {
+                Some(v)
+            }
         },
     }
 }
@@ -185,8 +190,7 @@ impl KvManager {
             range_end: range_end.map(encode_key),
             prev_kv: None,
         };
-        let resp: DeleteRangeResponseWire =
-            client.post_json("/v3/kv/deleterange", &req).await?;
+        let resp: DeleteRangeResponseWire = client.post_json("/v3/kv/deleterange", &req).await?;
         Ok(parse_i64(&resp.deleted))
     }
 
@@ -228,10 +232,7 @@ impl KvManager {
     }
 
     /// Get key history by fetching multiple past revisions.
-    pub async fn get_history(
-        client: &EtcdClient,
-        key: &str,
-    ) -> EtcdResult<Vec<EtcdKeyValue>> {
+    pub async fn get_history(client: &EtcdClient, key: &str) -> EtcdResult<Vec<EtcdKeyValue>> {
         // Get the current value to learn its revision range.
         let current = Self::get(client, key).await?;
         let Some(kv) = current else {

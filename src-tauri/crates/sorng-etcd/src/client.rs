@@ -38,7 +38,9 @@ impl EtcdClient {
 
         // If username/password provided but no token, authenticate.
         if client.auth_token.is_none() {
-            if let (Some(ref user), Some(ref pass)) = (&client.config.username, &client.config.password) {
+            if let (Some(ref user), Some(ref pass)) =
+                (&client.config.username, &client.config.password)
+            {
                 let token = client.authenticate(user, pass).await?;
                 client.auth_token = Some(token);
             }
@@ -109,19 +111,15 @@ impl EtcdClient {
         self.handle_response(resp).await
     }
 
-    async fn handle_response<T: DeserializeOwned>(
-        &self,
-        resp: reqwest::Response,
-    ) -> EtcdResult<T> {
+    async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> EtcdResult<T> {
         let status = resp.status();
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
             return Err(self.map_http_error(status.as_u16(), &text));
         }
         let body = resp.text().await?;
-        serde_json::from_str(&body).map_err(|e| {
-            EtcdError::internal(format!("Failed to parse response: {e}"))
-        })
+        serde_json::from_str(&body)
+            .map_err(|e| EtcdError::internal(format!("Failed to parse response: {e}")))
     }
 
     fn map_http_error(&self, status: u16, body: &str) -> EtcdError {

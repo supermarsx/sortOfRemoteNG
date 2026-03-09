@@ -36,6 +36,7 @@ struct WatchCancelInner {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct WatchResponseWire {
     #[serde(default)]
     watch_id: Option<String>,
@@ -48,7 +49,7 @@ struct WatchResponseWire {
 }
 
 #[derive(Debug, Deserialize)]
-struct EventWire {
+pub(crate) struct EventWire {
     #[serde(rename = "type", default)]
     event_type: Option<String>,
     kv: Option<KvWire>,
@@ -97,7 +98,11 @@ fn wire_to_kv(w: &KvWire) -> EtcdKeyValue {
         version: parse_i64(&w.version),
         lease: {
             let v = parse_i64(&w.lease);
-            if v == 0 { None } else { Some(v) }
+            if v == 0 {
+                None
+            } else {
+                Some(v)
+            }
         },
     }
 }
@@ -108,10 +113,7 @@ pub struct WatchManager;
 
 impl WatchManager {
     /// Create a watch request. Returns the initial response (with watch_id).
-    pub async fn create_watch(
-        client: &EtcdClient,
-        config: &EtcdWatchConfig,
-    ) -> EtcdResult<String> {
+    pub async fn create_watch(client: &EtcdClient, config: &EtcdWatchConfig) -> EtcdResult<String> {
         let req = WatchCreateRequestWire {
             create_request: WatchCreateInner {
                 key: encode_key(&config.key),
@@ -120,16 +122,12 @@ impl WatchManager {
                 prev_kv: config.prev_kv,
             },
         };
-        let resp: WatchResponseWire =
-            client.post_json("/v3/watch", &req).await?;
+        let resp: WatchResponseWire = client.post_json("/v3/watch", &req).await?;
         Ok(resp.watch_id.unwrap_or_default())
     }
 
     /// Cancel an active watch.
-    pub async fn cancel_watch(
-        client: &EtcdClient,
-        watch_id: &str,
-    ) -> EtcdResult<()> {
+    pub async fn cancel_watch(client: &EtcdClient, watch_id: &str) -> EtcdResult<()> {
         let req = WatchCancelRequestWire {
             cancel_request: WatchCancelInner {
                 watch_id: watch_id.to_string(),
@@ -140,16 +138,13 @@ impl WatchManager {
     }
 
     /// Parse watch events from a wire response.
-    pub fn parse_events(events: &[EventWire]) -> Vec<EtcdWatchEvent> {
+    pub(crate) fn parse_events(events: &[EventWire]) -> Vec<EtcdWatchEvent> {
         events
             .iter()
             .filter_map(|e| {
                 let kv_wire = e.kv.as_ref()?;
                 Some(EtcdWatchEvent {
-                    event_type: e
-                        .event_type
-                        .clone()
-                        .unwrap_or_else(|| "PUT".to_string()),
+                    event_type: e.event_type.clone().unwrap_or_else(|| "PUT".to_string()),
                     kv: wire_to_kv(kv_wire),
                     prev_kv: e.prev_kv.as_ref().map(wire_to_kv),
                 })

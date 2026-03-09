@@ -114,6 +114,7 @@ struct RoleRevokePermissionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct AuthStatusResponseWire {
     #[serde(rename = "authRevision", default)]
     auth_revision: Option<String>,
@@ -168,18 +169,13 @@ impl AuthManager {
     }
 
     pub async fn auth_status(client: &EtcdClient) -> EtcdResult<bool> {
-        let resp: AuthStatusResponseWire =
-            client.post_empty("/v3/auth/status").await?;
+        let resp: AuthStatusResponseWire = client.post_empty("/v3/auth/status").await?;
         Ok(resp.enabled.unwrap_or(false))
     }
 
     // ── Users ────────────────────────────────────────────────────────
 
-    pub async fn user_add(
-        client: &EtcdClient,
-        name: &str,
-        password: &str,
-    ) -> EtcdResult<()> {
+    pub async fn user_add(client: &EtcdClient, name: &str, password: &str) -> EtcdResult<()> {
         let req = UserAddRequest {
             name: name.to_string(),
             password: password.to_string(),
@@ -192,14 +188,12 @@ impl AuthManager {
         let req = UserDeleteRequest {
             name: name.to_string(),
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/auth/user/delete", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/auth/user/delete", &req).await?;
         Ok(())
     }
 
     pub async fn user_list(client: &EtcdClient) -> EtcdResult<Vec<EtcdUser>> {
-        let resp: UserListResponseWire =
-            client.post_empty("/v3/auth/user/list").await?;
+        let resp: UserListResponseWire = client.post_empty("/v3/auth/user/list").await?;
         let mut users = Vec::new();
         for name in &resp.users {
             match Self::user_get(client, name).await {
@@ -217,8 +211,7 @@ impl AuthManager {
         let req = UserGetRequest {
             name: name.to_string(),
         };
-        let resp: UserGetResponseWire =
-            client.post_json("/v3/auth/user/get", &req).await?;
+        let resp: UserGetResponseWire = client.post_json("/v3/auth/user/get", &req).await?;
         Ok(EtcdUser {
             name: name.to_string(),
             roles: resp.roles,
@@ -234,36 +227,25 @@ impl AuthManager {
             name: name.to_string(),
             password: password.to_string(),
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/auth/user/changepw", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/auth/user/changepw", &req).await?;
         Ok(())
     }
 
-    pub async fn user_grant_role(
-        client: &EtcdClient,
-        user: &str,
-        role: &str,
-    ) -> EtcdResult<()> {
+    pub async fn user_grant_role(client: &EtcdClient, user: &str, role: &str) -> EtcdResult<()> {
         let req = UserGrantRoleRequest {
             user: user.to_string(),
             role: role.to_string(),
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/auth/user/grant", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/auth/user/grant", &req).await?;
         Ok(())
     }
 
-    pub async fn user_revoke_role(
-        client: &EtcdClient,
-        user: &str,
-        role: &str,
-    ) -> EtcdResult<()> {
+    pub async fn user_revoke_role(client: &EtcdClient, user: &str, role: &str) -> EtcdResult<()> {
         let req = UserRevokeRoleRequest {
             name: user.to_string(),
             role: role.to_string(),
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/auth/user/revoke", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/auth/user/revoke", &req).await?;
         Ok(())
     }
 
@@ -281,14 +263,12 @@ impl AuthManager {
         let req = RoleDeleteRequest {
             role: name.to_string(),
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/auth/role/delete", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/auth/role/delete", &req).await?;
         Ok(())
     }
 
     pub async fn role_list(client: &EtcdClient) -> EtcdResult<Vec<EtcdRole>> {
-        let resp: RoleListResponseWire =
-            client.post_empty("/v3/auth/role/list").await?;
+        let resp: RoleListResponseWire = client.post_empty("/v3/auth/role/list").await?;
         let mut roles = Vec::new();
         for name in &resp.roles {
             match Self::role_get(client, name).await {
@@ -306,8 +286,7 @@ impl AuthManager {
         let req = RoleGetRequest {
             role: name.to_string(),
         };
-        let resp: RoleGetResponseWire =
-            client.post_json("/v3/auth/role/get", &req).await?;
+        let resp: RoleGetResponseWire = client.post_json("/v3/auth/role/get", &req).await?;
         Ok(EtcdRole {
             name: name.to_string(),
             permissions: resp
@@ -335,8 +314,7 @@ impl AuthManager {
                 range_end: encode_key(&permission.range_end),
             },
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/auth/role/grant", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/auth/role/grant", &req).await?;
         Ok(())
     }
 
@@ -351,8 +329,7 @@ impl AuthManager {
             key: encode_key(key),
             range_end: encode_key(range_end),
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/auth/role/revoke", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/auth/role/revoke", &req).await?;
         Ok(())
     }
 }

@@ -92,14 +92,9 @@ pub struct LeaseManager;
 
 impl LeaseManager {
     /// Grant a new lease.
-    pub async fn grant(
-        client: &EtcdClient,
-        ttl: i64,
-        id: Option<i64>,
-    ) -> EtcdResult<EtcdLease> {
+    pub async fn grant(client: &EtcdClient, ttl: i64, id: Option<i64>) -> EtcdResult<EtcdLease> {
         let req = LeaseGrantRequest { ttl, id };
-        let resp: LeaseGrantResponseWire =
-            client.post_json("/v3/lease/grant", &req).await?;
+        let resp: LeaseGrantResponseWire = client.post_json("/v3/lease/grant", &req).await?;
         let lease_id = parse_i64(&resp.id);
         let lease_ttl = parse_i64(&resp.ttl);
         Ok(EtcdLease {
@@ -139,8 +134,7 @@ impl LeaseManager {
 
     /// List all active leases.
     pub async fn list(client: &EtcdClient) -> EtcdResult<Vec<EtcdLease>> {
-        let resp: LeaseLeasesResponseWire =
-            client.post_empty("/v3/lease/leases").await?;
+        let resp: LeaseLeasesResponseWire = client.post_empty("/v3/lease/leases").await?;
         let mut leases = Vec::new();
         for l in &resp.leases {
             let lid = parse_i64(&l.id);
@@ -166,8 +160,7 @@ impl LeaseManager {
     /// Send a keep-alive for a lease.
     pub async fn keep_alive(client: &EtcdClient, id: i64) -> EtcdResult<()> {
         let req = LeaseKeepAliveRequest { id };
-        let _: serde_json::Value =
-            client.post_json("/v3/lease/keepalive", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/lease/keepalive", &req).await?;
         Ok(())
     }
 }

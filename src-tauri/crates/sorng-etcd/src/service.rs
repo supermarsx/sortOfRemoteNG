@@ -119,11 +119,7 @@ impl EtcdService {
         .await
     }
 
-    pub async fn kv_get_history(
-        &self,
-        id: &str,
-        key: &str,
-    ) -> EtcdResult<Vec<EtcdKeyValue>> {
+    pub async fn kv_get_history(&self, id: &str, key: &str) -> EtcdResult<Vec<EtcdKeyValue>> {
         KvManager::get_history(self.client(id)?, key).await
     }
 
@@ -145,11 +141,7 @@ impl EtcdService {
         LeaseManager::list(self.client(id)?).await
     }
 
-    pub async fn lease_ttl(
-        &self,
-        id: &str,
-        lease_id: i64,
-    ) -> EtcdResult<EtcdLeaseTimeToLive> {
+    pub async fn lease_ttl(&self, id: &str, lease_id: i64) -> EtcdResult<EtcdLeaseTimeToLive> {
         LeaseManager::time_to_live(self.client(id)?, lease_id, true).await
     }
 
@@ -193,10 +185,7 @@ impl EtcdService {
         ClusterManager::cluster_health(self.client(id)?).await
     }
 
-    pub async fn endpoint_status(
-        &self,
-        id: &str,
-    ) -> EtcdResult<Vec<EtcdEndpointStatus>> {
+    pub async fn endpoint_status(&self, id: &str) -> EtcdResult<Vec<EtcdEndpointStatus>> {
         ClusterManager::endpoint_status(self.client(id)?).await
     }
 
@@ -235,21 +224,11 @@ impl EtcdService {
         AuthManager::user_change_password(self.client(id)?, name, password).await
     }
 
-    pub async fn user_grant_role(
-        &self,
-        id: &str,
-        user: &str,
-        role: &str,
-    ) -> EtcdResult<()> {
+    pub async fn user_grant_role(&self, id: &str, user: &str, role: &str) -> EtcdResult<()> {
         AuthManager::user_grant_role(self.client(id)?, user, role).await
     }
 
-    pub async fn user_revoke_role(
-        &self,
-        id: &str,
-        user: &str,
-        role: &str,
-    ) -> EtcdResult<()> {
+    pub async fn user_revoke_role(&self, id: &str, user: &str, role: &str) -> EtcdResult<()> {
         AuthManager::user_revoke_role(self.client(id)?, user, role).await
     }
 
@@ -298,11 +277,7 @@ impl EtcdService {
         MaintenanceManager::alarm_disarm(self.client(id)?, member_id, "NOSPACE").await
     }
 
-    pub async fn defragment(
-        &self,
-        id: &str,
-        endpoint: &str,
-    ) -> EtcdResult<EtcdDefragResult> {
+    pub async fn defragment(&self, id: &str, endpoint: &str) -> EtcdResult<EtcdDefragResult> {
         MaintenanceManager::defragment(self.client(id)?, endpoint).await
     }
 

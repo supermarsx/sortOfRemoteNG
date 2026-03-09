@@ -87,8 +87,7 @@ pub struct ClusterManager;
 impl ClusterManager {
     /// List all cluster members.
     pub async fn member_list(client: &EtcdClient) -> EtcdResult<Vec<EtcdMember>> {
-        let resp: MemberListResponseWire =
-            client.post_empty("/v3/cluster/member/list").await?;
+        let resp: MemberListResponseWire = client.post_empty("/v3/cluster/member/list").await?;
         Ok(resp.members.iter().map(wire_to_member).collect())
     }
 
@@ -102,8 +101,7 @@ impl ClusterManager {
             peer_urls,
             is_learner,
         };
-        let resp: MemberAddResponseWire =
-            client.post_json("/v3/cluster/member/add", &req).await?;
+        let resp: MemberAddResponseWire = client.post_json("/v3/cluster/member/add", &req).await?;
         let member = resp
             .member
             .as_ref()
@@ -122,8 +120,7 @@ impl ClusterManager {
     /// Remove a member from the cluster.
     pub async fn member_remove(client: &EtcdClient, id: u64) -> EtcdResult<()> {
         let req = MemberRemoveRequest { id };
-        let _: serde_json::Value =
-            client.post_json("/v3/cluster/member/remove", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/cluster/member/remove", &req).await?;
         Ok(())
     }
 
@@ -134,16 +131,14 @@ impl ClusterManager {
         peer_urls: Vec<String>,
     ) -> EtcdResult<()> {
         let req = MemberUpdateRequest { id, peer_urls };
-        let _: serde_json::Value =
-            client.post_json("/v3/cluster/member/update", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/cluster/member/update", &req).await?;
         Ok(())
     }
 
     /// Promote a learner member to a voting member.
     pub async fn member_promote(client: &EtcdClient, id: u64) -> EtcdResult<()> {
         let req = MemberPromoteRequest { id };
-        let _: serde_json::Value =
-            client.post_json("/v3/cluster/member/promote", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/cluster/member/promote", &req).await?;
         Ok(())
     }
 
@@ -197,9 +192,7 @@ impl ClusterManager {
     }
 
     /// Get status for each known endpoint.
-    pub async fn endpoint_status(
-        client: &EtcdClient,
-    ) -> EtcdResult<Vec<EtcdEndpointStatus>> {
+    pub async fn endpoint_status(client: &EtcdClient) -> EtcdResult<Vec<EtcdEndpointStatus>> {
         // Use the primary connection status; for full multi-endpoint we would
         // iterate, but the gateway only exposes the connected node.
         let status = client.get_status().await?;

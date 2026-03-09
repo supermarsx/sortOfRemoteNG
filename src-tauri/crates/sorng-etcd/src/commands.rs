@@ -20,21 +20,21 @@ pub async fn etcd_connect(
     id: String,
     config: EtcdConnectionConfig,
 ) -> CmdResult<EtcdConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn etcd_disconnect(
-    state: State<'_, EtcdServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn etcd_disconnect(state: State<'_, EtcdServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn etcd_list_connections(
-    state: State<'_, EtcdServiceState>,
-) -> CmdResult<Vec<String>> {
+pub async fn etcd_list_connections(state: State<'_, EtcdServiceState>) -> CmdResult<Vec<String>> {
     Ok(state.lock().await.list_connections())
 }
 
@@ -81,7 +81,12 @@ pub async fn etcd_kv_delete(
     id: String,
     key: String,
 ) -> CmdResult<i64> {
-    state.lock().await.kv_delete(&id, &key).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .kv_delete(&id, &key)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -122,7 +127,12 @@ pub async fn etcd_lease_grant(
     id: String,
     ttl: i64,
 ) -> CmdResult<EtcdLease> {
-    state.lock().await.lease_grant(&id, ttl).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .lease_grant(&id, ttl)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -272,18 +282,12 @@ pub async fn etcd_endpoint_status(
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn etcd_auth_enable(
-    state: State<'_, EtcdServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn etcd_auth_enable(state: State<'_, EtcdServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.auth_enable(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn etcd_auth_disable(
-    state: State<'_, EtcdServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn etcd_auth_disable(state: State<'_, EtcdServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.auth_disable(&id).await.map_err(map_err)
 }
 

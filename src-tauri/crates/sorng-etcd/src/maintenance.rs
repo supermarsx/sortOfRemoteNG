@@ -52,8 +52,7 @@ impl MaintenanceManager {
     /// List all active alarms.
     pub async fn alarm_list(client: &EtcdClient) -> EtcdResult<Vec<EtcdAlarm>> {
         let req = serde_json::json!({ "action": "GET", "memberID": 0, "alarm": "NONE" });
-        let resp: AlarmListResponseWire =
-            client.post_json("/v3/maintenance/alarm", &req).await?;
+        let resp: AlarmListResponseWire = client.post_json("/v3/maintenance/alarm", &req).await?;
         Ok(resp
             .alarms
             .iter()
@@ -65,26 +64,18 @@ impl MaintenanceManager {
     }
 
     /// Disarm an alarm on a specific member.
-    pub async fn alarm_disarm(
-        client: &EtcdClient,
-        member_id: u64,
-        alarm: &str,
-    ) -> EtcdResult<()> {
+    pub async fn alarm_disarm(client: &EtcdClient, member_id: u64, alarm: &str) -> EtcdResult<()> {
         let req = AlarmRequest {
             action: "DEACTIVATE".to_string(),
             member_id,
             alarm: alarm.to_string(),
         };
-        let _: serde_json::Value =
-            client.post_json("/v3/maintenance/alarm", &req).await?;
+        let _: serde_json::Value = client.post_json("/v3/maintenance/alarm", &req).await?;
         Ok(())
     }
 
     /// Defragment a specific endpoint.
-    pub async fn defragment(
-        client: &EtcdClient,
-        endpoint: &str,
-    ) -> EtcdResult<EtcdDefragResult> {
+    pub async fn defragment(client: &EtcdClient, endpoint: &str) -> EtcdResult<EtcdDefragResult> {
         // The gRPC-gateway defrag endpoint works on the connected node.
         // For remote endpoints, a dedicated client would be needed.
         let result: Result<serde_json::Value, _> =
@@ -119,13 +110,11 @@ impl MaintenanceManager {
     }
 
     /// Transfer leadership to a target member.
-    pub async fn move_leader(
-        client: &EtcdClient,
-        target_id: u64,
-    ) -> EtcdResult<()> {
+    pub async fn move_leader(client: &EtcdClient, target_id: u64) -> EtcdResult<()> {
         let req = MoveLeaderRequest { target_id };
-        let _: serde_json::Value =
-            client.post_json("/v3/maintenance/transfer-leadership", &req).await?;
+        let _: serde_json::Value = client
+            .post_json("/v3/maintenance/transfer-leadership", &req)
+            .await?;
         Ok(())
     }
 }
