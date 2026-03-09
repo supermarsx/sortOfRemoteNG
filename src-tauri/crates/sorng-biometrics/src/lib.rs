@@ -21,3 +21,6 @@ pub mod availability;
 pub mod commands;
 pub mod platform;
 pub mod types;
+
+#[cfg(target_os = "windows")]
+mod windows_registry;

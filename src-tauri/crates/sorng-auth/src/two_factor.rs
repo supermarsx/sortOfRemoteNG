@@ -19,7 +19,6 @@
 //!
 
 use base64::{engine::general_purpose, Engine as _};
-use image::Rgb;
 use qrcode::QrCode;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -65,6 +64,48 @@ pub struct TwoFactorService {
     totp_instances: HashMap<String, TOTP>,
 }
 
+const QR_MODULE_PX: u32 = 8;
+const QR_QUIET_ZONE: u32 = 4;
+
+fn render_qr_png(content: &str) -> Result<Vec<u8>, String> {
+    let code = QrCode::new(content.as_bytes())
+        .map_err(|e| format!("Failed to generate QR code: {}", e))?;
+
+    let matrix = code.to_colors();
+    let width = code.width() as u32;
+    let img_size = (width + QR_QUIET_ZONE * 2) * QR_MODULE_PX;
+    let mut pixels = vec![255u8; (img_size * img_size) as usize];
+
+    for y in 0..width {
+        for x in 0..width {
+            if matrix[(y * width + x) as usize] != qrcode::Color::Dark {
+                continue;
+            }
+
+            let px_x = (x + QR_QUIET_ZONE) * QR_MODULE_PX;
+            let px_y = (y + QR_QUIET_ZONE) * QR_MODULE_PX;
+            for dy in 0..QR_MODULE_PX {
+                let row = (px_y + dy) * img_size;
+                for dx in 0..QR_MODULE_PX {
+                    pixels[(row + px_x + dx) as usize] = 0;
+                }
+            }
+        }
+    }
+
+    let mut png_data = Vec::new();
+    let mut encoder = png::Encoder::new(&mut png_data, img_size, img_size);
+    encoder.set_color(png::ColorType::Grayscale);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .map_err(|e| format!("Failed to prepare PNG encoder: {}", e))?
+        .write_image_data(&pixels)
+        .map_err(|e| format!("Failed to encode QR code: {}", e))?;
+
+    Ok(png_data)
+}
+
 impl TwoFactorService {
     /// Creates a new 2FA service
     pub fn new() -> TwoFactorServiceState {
@@ -108,17 +149,7 @@ impl TwoFactorService {
             "otpauth://totp/SortOfRemote NG:{}?secret={}&issuer=SortOfRemote NG",
             username, secret
         );
-        let code = QrCode::new(url.as_bytes())
-            .map_err(|e| format!("Failed to generate QR code: {}", e))?;
-
-        let image = code.render::<Rgb<u8>>().build();
-        let mut png_data = Vec::new();
-        image
-            .write_to(
-                &mut std::io::Cursor::new(&mut png_data),
-                image::ImageFormat::Png,
-            )
-            .map_err(|e| format!("Failed to encode QR code: {}", e))?;
+        let png_data = render_qr_png(&url)?;
 
         let qr_base64 = general_purpose::STANDARD.encode(&png_data);
 

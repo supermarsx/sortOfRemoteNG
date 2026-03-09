@@ -258,26 +258,31 @@ impl PasskeyService {
     /// Get Windows machine GUID from registry
     #[cfg(target_os = "windows")]
     fn get_windows_machine_id(&self) -> Result<String, String> {
-        use windows::core::{HSTRING, PCWSTR};
-        use windows::Win32::System::Registry::{
-            RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ,
+        use windows_sys::Win32::System::Registry::{
+            RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,
             REG_VALUE_TYPE,
         };
 
         unsafe {
-            let key_path = HSTRING::from("SOFTWARE\\Microsoft\\Cryptography");
-            let value_name = HSTRING::from("MachineGuid");
-            let mut hkey = windows::Win32::System::Registry::HKEY::default();
+            let key_path: Vec<u16> = "SOFTWARE\\Microsoft\\Cryptography"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let value_name: Vec<u16> = "MachineGuid"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let mut hkey: HKEY = std::ptr::null_mut();
 
             let result = RegOpenKeyExW(
                 HKEY_LOCAL_MACHINE,
-                PCWSTR(key_path.as_ptr()),
-                Some(0),
+                key_path.as_ptr(),
+                0,
                 KEY_READ,
                 &mut hkey,
             );
 
-            if result.is_err() {
+            if result != 0 {
                 return Ok(hostname::get()
                     .map(|h| h.to_string_lossy().to_string())
                     .unwrap_or_else(|_| "default-machine".to_string()));
@@ -289,16 +294,16 @@ impl PasskeyService {
 
             let result = RegQueryValueExW(
                 hkey,
-                PCWSTR(value_name.as_ptr()),
-                None,
-                Some(&mut value_type),
-                Some(buffer.as_mut_ptr() as *mut u8),
-                Some(&mut size),
+                value_name.as_ptr(),
+                std::ptr::null(),
+                &mut value_type,
+                buffer.as_mut_ptr() as *mut u8,
+                &mut size,
             );
 
             let _ = RegCloseKey(hkey);
 
-            if result.is_ok() {
+            if result == 0 {
                 let len = (size as usize / 2).saturating_sub(1);
                 let guid = String::from_utf16_lossy(&buffer[..len]);
                 return Ok(guid);

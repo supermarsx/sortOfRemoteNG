@@ -122,30 +122,5 @@ fn detect_kinds() -> Vec<BiometricKind> {
 
 /// Check the WBF registry for a biometric sensor type.
 fn check_wbf_sensor(sensor_type: &str) -> bool {
-    use windows::core::HSTRING;
-    use windows::core::PCWSTR;
-    use windows::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_READ,
-    };
-
-    let path = format!(
-        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WinBio\\Sensor Types\\{sensor_type}"
-    );
-    let key_path = HSTRING::from(path);
-
-    unsafe {
-        let mut hkey = windows::Win32::System::Registry::HKEY::default();
-        let result = RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(key_path.as_ptr()),
-            Some(0),
-            KEY_READ,
-            &mut hkey,
-        );
-        if result.is_ok() {
-            let _ = RegCloseKey(hkey);
-            return true;
-        }
-    }
-    false
+    crate::windows_registry::has_wbf_sensor(sensor_type)
 }

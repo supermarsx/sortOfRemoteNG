@@ -1,24 +1,12 @@
-//! Windows Credential Manager + DPAPI back-end.
-//!
-//! Uses `CredWriteW` / `CredReadW` / `CredDeleteW` from
-//! `Win32_Security_Credentials` to store secrets in the Windows
-//! Credential Manager.  Secrets are additionally protected by DPAPI
-//! (`CryptProtectData` / `CryptUnprotectData`) so they are bound to
-//! the current user's Windows login session.
-
-use crate::types::*;
-
-/// Store a secret in Windows Credential Manager (DPAPI-protected).
-pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
+#[cfg(target_os = "windows")]
+pub fn store_secret(service: &str, account: &str, secret: &[u8]) -> Result<(), String> {
     use windows::core::HSTRING;
     use windows::Win32::Foundation::FILETIME;
     use windows::Win32::Security::Credentials::{
         CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
     };
 
-    // DPAPI-protect the secret first
     let protected = dpapi_protect(secret)?;
-
     let target = format!("{service}/{account}");
     let target_h = HSTRING::from(&target);
 
@@ -38,15 +26,14 @@ pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> Vault
     };
 
     unsafe {
-        CredWriteW(&cred, 0)
-            .map_err(|e| VaultError::platform(format!("CredWriteW failed: {e}")))?;
+        CredWriteW(&cred, 0).map_err(|e| format!("CredWriteW failed: {e}"))?;
     }
 
     Ok(())
 }
 
-/// Read a secret from Windows Credential Manager (DPAPI-unprotected).
-pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> {
+#[cfg(target_os = "windows")]
+pub fn read_secret(service: &str, account: &str) -> Result<Vec<u8>, String> {
     use windows::core::HSTRING;
     use windows::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
@@ -63,7 +50,7 @@ pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> 
             Some(0),
             &mut pcred,
         )
-        .map_err(|e| VaultError::not_found(format!("CredReadW failed: {e}")))?;
+        .map_err(|e| format!("CredReadW failed: {e}"))?;
 
         let cred = &*pcred;
         let blob =
@@ -71,13 +58,12 @@ pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> 
         let protected = blob.to_vec();
         CredFree(pcred as *const _ as *const std::ffi::c_void);
 
-        // DPAPI-unprotect
         dpapi_unprotect(&protected)
     }
 }
 
-/// Delete a secret from Windows Credential Manager.
-pub(crate) fn delete_secret(service: &str, account: &str) -> VaultResult<()> {
+#[cfg(target_os = "windows")]
+pub fn delete_secret(service: &str, account: &str) -> Result<(), String> {
     use windows::core::HSTRING;
     use windows::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
 
@@ -90,25 +76,24 @@ pub(crate) fn delete_secret(service: &str, account: &str) -> VaultResult<()> {
             CRED_TYPE_GENERIC,
             Some(0),
         )
-        .map_err(|e| VaultError::not_found(format!("CredDeleteW failed: {e}")))?;
+        .map_err(|e| format!("CredDeleteW failed: {e}"))?;
     }
 
     Ok(())
 }
 
-pub(crate) fn is_available() -> bool {
-    // Credential Manager is always available on Windows Vista+
+#[cfg(target_os = "windows")]
+pub fn is_available() -> bool {
     true
 }
 
-pub(crate) fn backend_name() -> &'static str {
+#[cfg(target_os = "windows")]
+pub fn backend_name() -> &'static str {
     "Windows Credential Manager + DPAPI"
 }
 
-// ── DPAPI helpers ───────────────────────────────────────────────────
-
-/// Protect data with DPAPI (bound to current user).
-fn dpapi_protect(plaintext: &[u8]) -> VaultResult<Vec<u8>> {
+#[cfg(target_os = "windows")]
+fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::LocalFree;
     use windows::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
 
@@ -122,20 +107,11 @@ fn dpapi_protect(plaintext: &[u8]) -> VaultResult<Vec<u8>> {
     };
 
     unsafe {
-        CryptProtectData(
-            &data_in,
-            None, // description
-            None, // optional entropy
-            None, // reserved
-            None, // prompt struct
-            0,    // flags
-            &mut data_out,
-        )
-        .map_err(|e| VaultError::crypto(format!("CryptProtectData failed: {e}")))?;
+        CryptProtectData(&data_in, None, None, None, None, 0, &mut data_out)
+            .map_err(|e| format!("CryptProtectData failed: {e}"))?;
 
         let result = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
 
-        // Free the buffer allocated by DPAPI
         let _ = LocalFree(Some(windows::Win32::Foundation::HLOCAL(
             data_out.pbData as *mut _,
         )));
@@ -144,8 +120,8 @@ fn dpapi_protect(plaintext: &[u8]) -> VaultResult<Vec<u8>> {
     }
 }
 
-/// Unprotect DPAPI-protected data.
-fn dpapi_unprotect(protected: &[u8]) -> VaultResult<Vec<u8>> {
+#[cfg(target_os = "windows")]
+fn dpapi_unprotect(protected: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::LocalFree;
     use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
@@ -159,16 +135,8 @@ fn dpapi_unprotect(protected: &[u8]) -> VaultResult<Vec<u8>> {
     };
 
     unsafe {
-        CryptUnprotectData(
-            &data_in,
-            None, // description
-            None, // optional entropy
-            None, // reserved
-            None, // prompt struct
-            0,    // flags
-            &mut data_out,
-        )
-        .map_err(|e| VaultError::crypto(format!("CryptUnprotectData failed: {e}")))?;
+        CryptUnprotectData(&data_in, None, None, None, None, 0, &mut data_out)
+            .map_err(|e| format!("CryptUnprotectData failed: {e}"))?;
 
         let result = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
 

@@ -1,0 +1,13 @@
+[package]
+name = "sorng-vault-windows"
+version = "0.1.0"
+edition = "2021"
+description = "Windows Credential Manager + DPAPI leaf backend for sorng-vault"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_Security_Credentials",
+  "Win32_Security_Cryptography",
+  "Win32_System_Memory",
+] }

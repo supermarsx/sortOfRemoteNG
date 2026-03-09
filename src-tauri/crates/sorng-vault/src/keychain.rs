@@ -10,7 +10,7 @@ use crate::types::*;
 fn plat_store(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
     #[cfg(target_os = "windows")]
     {
-        crate::platform::windows::store_secret(service, account, secret)
+        sorng_vault_windows::store_secret(service, account, secret).map_err(VaultError::platform)
     }
     #[cfg(target_os = "macos")]
     {
@@ -29,7 +29,7 @@ fn plat_store(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
 fn plat_read(service: &str, account: &str) -> VaultResult<Vec<u8>> {
     #[cfg(target_os = "windows")]
     {
-        crate::platform::windows::read_secret(service, account)
+        sorng_vault_windows::read_secret(service, account).map_err(VaultError::platform)
     }
     #[cfg(target_os = "macos")]
     {
@@ -48,7 +48,7 @@ fn plat_read(service: &str, account: &str) -> VaultResult<Vec<u8>> {
 fn plat_delete(service: &str, account: &str) -> VaultResult<()> {
     #[cfg(target_os = "windows")]
     {
-        crate::platform::windows::delete_secret(service, account)
+        sorng_vault_windows::delete_secret(service, account).map_err(VaultError::platform)
     }
     #[cfg(target_os = "macos")]
     {
@@ -67,7 +67,7 @@ fn plat_delete(service: &str, account: &str) -> VaultResult<()> {
 fn plat_available() -> bool {
     #[cfg(target_os = "windows")]
     {
-        crate::platform::windows::is_available()
+        sorng_vault_windows::is_available()
     }
     #[cfg(target_os = "macos")]
     {
@@ -86,7 +86,7 @@ fn plat_available() -> bool {
 fn plat_backend_name() -> &'static str {
     #[cfg(target_os = "windows")]
     {
-        crate::platform::windows::backend_name()
+        sorng_vault_windows::backend_name()
     }
     #[cfg(target_os = "macos")]
     {

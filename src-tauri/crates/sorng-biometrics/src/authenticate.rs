@@ -83,50 +83,7 @@ fn get_machine_id() -> String {
 
 #[cfg(target_os = "windows")]
 fn get_windows_machine_id() -> String {
-    use windows::core::{HSTRING, PCWSTR};
-    use windows::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ, REG_VALUE_TYPE,
-    };
-
-    unsafe {
-        let key_path = HSTRING::from("SOFTWARE\\Microsoft\\Cryptography");
-        let value_name = HSTRING::from("MachineGuid");
-        let mut hkey = windows::Win32::System::Registry::HKEY::default();
-
-        let result = RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(key_path.as_ptr()),
-            Some(0),
-            KEY_READ,
-            &mut hkey,
-        );
-
-        if result.is_err() {
-            return fallback_hostname();
-        }
-
-        let mut buffer = [0u16; 256];
-        let mut size = (buffer.len() * 2) as u32;
-        let mut value_type = REG_VALUE_TYPE::default();
-
-        let result = RegQueryValueExW(
-            hkey,
-            PCWSTR(value_name.as_ptr()),
-            None,
-            Some(&mut value_type),
-            Some(buffer.as_mut_ptr() as *mut u8),
-            Some(&mut size),
-        );
-
-        let _ = RegCloseKey(hkey);
-
-        if result.is_ok() {
-            let len = (size as usize / 2).saturating_sub(1);
-            return String::from_utf16_lossy(&buffer[..len]);
-        }
-
-        fallback_hostname()
-    }
+    crate::windows_registry::machine_guid().unwrap_or_else(fallback_hostname)
 }
 
 #[cfg(target_os = "macos")]

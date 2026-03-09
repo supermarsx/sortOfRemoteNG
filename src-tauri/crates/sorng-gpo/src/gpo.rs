@@ -31,11 +31,9 @@ use std::ffi::OsStr;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(windows)]
-use windows::core::{PCWSTR, PWSTR};
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS};
 #[cfg(windows)]
-use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS};
-#[cfg(windows)]
-use windows::Win32::System::Registry::{
+use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
     HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_BINARY, REG_CREATE_KEY_DISPOSITION, REG_DWORD,
     REG_OPTION_NON_VOLATILE, REG_QWORD, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD,
@@ -328,31 +326,31 @@ impl GpoService {
                 let status = unsafe {
                     RegGetValueW(
                         HKEY_CURRENT_USER,
-                        PCWSTR(wide_key.as_ptr()),
-                        PCWSTR(wide_value.as_ptr()),
+                        wide_key.as_ptr(),
+                        wide_value.as_ptr(),
                         RRF_RT_REG_SZ,
-                        None,
-                        None,
-                        Some(&mut data_len),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        &mut data_len,
                     )
                 };
                 if status != ERROR_SUCCESS {
-                    return Err(format!("Failed to read registry value: {}", status.0));
+                    return Err(format!("Failed to read registry value: {}", status));
                 }
                 let mut buffer = vec![0u16; (data_len as usize) / 2];
                 let status = unsafe {
                     RegGetValueW(
                         HKEY_CURRENT_USER,
-                        PCWSTR(wide_key.as_ptr()),
-                        PCWSTR(wide_value.as_ptr()),
+                        wide_key.as_ptr(),
+                        wide_value.as_ptr(),
                         RRF_RT_REG_SZ,
-                        None,
-                        Some(buffer.as_mut_ptr() as *mut c_void),
-                        Some(&mut data_len),
+                        std::ptr::null_mut(),
+                        buffer.as_mut_ptr() as *mut c_void,
+                        &mut data_len,
                     )
                 };
                 if status != ERROR_SUCCESS {
-                    return Err(format!("Failed to read registry value: {}", status.0));
+                    return Err(format!("Failed to read registry value: {}", status));
                 }
                 let value = String::from_utf16_lossy(&buffer)
                     .trim_end_matches('\0')
@@ -365,16 +363,16 @@ impl GpoService {
                 let status = unsafe {
                     RegGetValueW(
                         HKEY_CURRENT_USER,
-                        PCWSTR(wide_key.as_ptr()),
-                        PCWSTR(wide_value.as_ptr()),
+                        wide_key.as_ptr(),
+                        wide_value.as_ptr(),
                         RRF_RT_REG_DWORD,
-                        None,
-                        Some((&mut value as *mut u32) as *mut c_void),
-                        Some(&mut data_len),
+                        std::ptr::null_mut(),
+                        (&mut value as *mut u32) as *mut c_void,
+                        &mut data_len,
                     )
                 };
                 if status != ERROR_SUCCESS {
-                    return Err(format!("Failed to read registry value: {}", status.0));
+                    return Err(format!("Failed to read registry value: {}", status));
                 }
                 Ok(PolicyValue::Dword(value))
             }
@@ -384,16 +382,16 @@ impl GpoService {
                 let status = unsafe {
                     RegGetValueW(
                         HKEY_CURRENT_USER,
-                        PCWSTR(wide_key.as_ptr()),
-                        PCWSTR(wide_value.as_ptr()),
+                        wide_key.as_ptr(),
+                        wide_value.as_ptr(),
                         RRF_RT_REG_QWORD,
-                        None,
-                        Some((&mut value as *mut u64) as *mut c_void),
-                        Some(&mut data_len),
+                        std::ptr::null_mut(),
+                        (&mut value as *mut u64) as *mut c_void,
+                        &mut data_len,
                     )
                 };
                 if status != ERROR_SUCCESS {
-                    return Err(format!("Failed to read registry value: {}", status.0));
+                    return Err(format!("Failed to read registry value: {}", status));
                 }
                 Ok(PolicyValue::Qword(value))
             }
@@ -402,31 +400,31 @@ impl GpoService {
                 let status = unsafe {
                     RegGetValueW(
                         HKEY_CURRENT_USER,
-                        PCWSTR(wide_key.as_ptr()),
-                        PCWSTR(wide_value.as_ptr()),
+                        wide_key.as_ptr(),
+                        wide_value.as_ptr(),
                         RRF_RT_REG_BINARY,
-                        None,
-                        None,
-                        Some(&mut data_len),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        &mut data_len,
                     )
                 };
                 if status != ERROR_SUCCESS {
-                    return Err(format!("Failed to read registry value: {}", status.0));
+                    return Err(format!("Failed to read registry value: {}", status));
                 }
                 let mut buffer = vec![0u8; data_len as usize];
                 let status = unsafe {
                     RegGetValueW(
                         HKEY_CURRENT_USER,
-                        PCWSTR(wide_key.as_ptr()),
-                        PCWSTR(wide_value.as_ptr()),
+                        wide_key.as_ptr(),
+                        wide_value.as_ptr(),
                         RRF_RT_REG_BINARY,
-                        None,
-                        Some(buffer.as_mut_ptr() as *mut c_void),
-                        Some(&mut data_len),
+                        std::ptr::null_mut(),
+                        buffer.as_mut_ptr() as *mut c_void,
+                        &mut data_len,
                     )
                 };
                 if status != ERROR_SUCCESS {
-                    return Err(format!("Failed to read registry value: {}", status.0));
+                    return Err(format!("Failed to read registry value: {}", status));
                 }
                 Ok(PolicyValue::Binary(buffer))
             }
@@ -441,67 +439,77 @@ impl GpoService {
         value: &PolicyValue,
     ) -> Result<(), String> {
         let wide_key = Self::to_wide(key_path);
-        let mut key = HKEY::default();
-        let mut disposition = REG_CREATE_KEY_DISPOSITION::default();
+        let mut key: HKEY = std::ptr::null_mut();
+        let mut disposition: REG_CREATE_KEY_DISPOSITION = 0;
         let status = unsafe {
             RegCreateKeyExW(
                 HKEY_CURRENT_USER,
-                PCWSTR(wide_key.as_ptr()),
-                None,
-                PWSTR::null(),
+                wide_key.as_ptr(),
+                0,
+                std::ptr::null(),
                 REG_OPTION_NON_VOLATILE,
                 KEY_SET_VALUE,
-                None,
+                std::ptr::null(),
                 &mut key,
-                Some(&mut disposition),
+                &mut disposition,
             )
         };
         if status != ERROR_SUCCESS {
-            return Err(format!("Failed to create registry key: {}", status.0));
+            return Err(format!("Failed to create registry key: {}", status));
         }
 
         let wide_value = Self::to_wide(value_name);
         let status = match value {
             PolicyValue::String(text) => {
                 let wide_text = Self::to_wide(text);
+                let wide_text_bytes = unsafe {
+                    std::slice::from_raw_parts(wide_text.as_ptr() as *const u8, wide_text.len() * 2)
+                };
                 unsafe {
                     RegSetValueExW(
                         key,
-                        PCWSTR(wide_value.as_ptr()),
-                        None,
+                        wide_value.as_ptr(),
+                        0,
                         REG_SZ,
-                        Some(std::slice::from_raw_parts(
-                            wide_text.as_ptr() as *const u8,
-                            wide_text.len() * 2,
-                        )),
+                        wide_text_bytes.as_ptr(),
+                        (wide_text.len() * 2) as u32,
                     )
                 }
             }
-            PolicyValue::Dword(number) => unsafe {
-                RegSetValueExW(
-                    key,
-                    PCWSTR(wide_value.as_ptr()),
-                    None,
-                    REG_DWORD,
-                    Some(&number.to_le_bytes()),
-                )
-            },
-            PolicyValue::Qword(number) => unsafe {
-                RegSetValueExW(
-                    key,
-                    PCWSTR(wide_value.as_ptr()),
-                    None,
-                    REG_QWORD,
-                    Some(&number.to_le_bytes()),
-                )
-            },
+            PolicyValue::Dword(number) => {
+                let bytes = number.to_le_bytes();
+                unsafe {
+                    RegSetValueExW(
+                        key,
+                        wide_value.as_ptr(),
+                        0,
+                        REG_DWORD,
+                        bytes.as_ptr(),
+                        std::mem::size_of::<u32>() as u32,
+                    )
+                }
+            }
+            PolicyValue::Qword(number) => {
+                let bytes = number.to_le_bytes();
+                unsafe {
+                    RegSetValueExW(
+                        key,
+                        wide_value.as_ptr(),
+                        0,
+                        REG_QWORD,
+                        bytes.as_ptr(),
+                        std::mem::size_of::<u64>() as u32,
+                    )
+                }
+            }
             PolicyValue::Binary(data) => unsafe {
                 RegSetValueExW(
                     key,
-                    PCWSTR(wide_value.as_ptr()),
-                    None,
+                    wide_value.as_ptr(),
+                    0,
                     REG_BINARY,
-                    Some(data),
+                    data.as_ptr(),
+                    data.len() as u32,
                 )
             },
         };
@@ -513,19 +521,19 @@ impl GpoService {
         if status == ERROR_SUCCESS {
             Ok(())
         } else {
-            Err(format!("Failed to write registry value: {}", status.0))
+            Err(format!("Failed to write registry value: {}", status))
         }
     }
 
     #[cfg(windows)]
     fn delete_registry_value(&self, key_path: &str, value_name: &str) -> Result<(), String> {
         let wide_key = Self::to_wide(key_path);
-        let mut key = HKEY::default();
+        let mut key: HKEY = std::ptr::null_mut();
         let status = unsafe {
             RegOpenKeyExW(
                 HKEY_CURRENT_USER,
-                PCWSTR(wide_key.as_ptr()),
-                None,
+                wide_key.as_ptr(),
+                0,
                 KEY_SET_VALUE,
                 &mut key,
             )
@@ -534,11 +542,11 @@ impl GpoService {
             return Ok(());
         }
         if status != ERROR_SUCCESS {
-            return Err(format!("Failed to open registry key: {}", status.0));
+            return Err(format!("Failed to open registry key: {}", status));
         }
 
         let wide_value = Self::to_wide(value_name);
-        let delete_status = unsafe { RegDeleteValueW(key, PCWSTR(wide_value.as_ptr())) };
+        let delete_status = unsafe { RegDeleteValueW(key, wide_value.as_ptr()) };
         unsafe {
             let _ = RegCloseKey(key);
         };
@@ -548,7 +556,7 @@ impl GpoService {
         } else {
             Err(format!(
                 "Failed to delete registry value: {}",
-                delete_status.0
+                delete_status
             ))
         }
     }

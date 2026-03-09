@@ -24,12 +24,7 @@ dirs = { workspace = true }
 sorng-biometrics = { path = "../sorng-biometrics" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = [
-  "Win32_Foundation",
-  "Win32_Security_Credentials",
-  "Win32_Security_Cryptography",
-  "Win32_System_Memory",
-] }
+sorng-vault-windows = { path = "../sorng-vault-windows" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "2.11"
