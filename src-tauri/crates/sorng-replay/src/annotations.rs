@@ -38,8 +38,7 @@ impl AnnotationManager {
             color,
             icon,
         });
-        self.annotations
-            .sort_by_key(|a| a.position_ms);
+        self.annotations.sort_by_key(|a| a.position_ms);
         id
     }
 

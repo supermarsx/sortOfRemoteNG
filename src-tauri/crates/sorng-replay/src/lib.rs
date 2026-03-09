@@ -4,18 +4,18 @@
 // searchable transcripts, bookmarks/annotations, speed control,
 // frame-accurate seeking, and export.
 
-pub mod types;
-pub mod error;
-pub mod player;
-pub mod timeline;
-pub mod terminal_replay;
-pub mod video_replay;
-pub mod har_replay;
-pub mod search;
 pub mod annotations;
-pub mod export;
-pub mod service;
 pub mod commands;
+pub mod error;
+pub mod export;
+pub mod har_replay;
+pub mod player;
+pub mod search;
+pub mod service;
+pub mod terminal_replay;
+pub mod timeline;
+pub mod types;
+pub mod video_replay;
 
 // Convenience re-exports
 pub use service::{ReplayService, ReplayServiceState};

@@ -27,19 +27,15 @@ pub enum RecordingType {
 /// Current state of the replay player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum PlaybackState {
+    #[default]
     Stopped,
     Playing,
     Paused,
     Seeking,
     Buffering,
     Finished,
-}
-
-impl Default for PlaybackState {
-    fn default() -> Self {
-        Self::Stopped
-    }
 }
 
 /// Top-level session descriptor.

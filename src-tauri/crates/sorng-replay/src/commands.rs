@@ -19,12 +19,19 @@ pub async fn replay_load_terminal(
     format: Option<String>,
 ) -> Result<String, String> {
     let frames = match format.as_deref() {
-        Some("script") => terminal_replay::parse_script_recording(&data).map_err(|e| e.to_string())?,
+        Some("script") => {
+            terminal_replay::parse_script_recording(&data).map_err(|e| e.to_string())?
+        }
         _ => terminal_replay::parse_asciicast(&data).map_err(|e| e.to_string())?,
     };
     let mut svc = state.lock().await;
     svc.load_terminal(frames);
-    let id = svc.player_ref().map_err(|e| e.to_string())?.session.id.clone();
+    let id = svc
+        .player_ref()
+        .map_err(|e| e.to_string())?
+        .session
+        .id
+        .clone();
     log::info!("replay_load_terminal: loaded session {id}");
     Ok(id)
 }
@@ -36,7 +43,12 @@ pub async fn replay_load_video(
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
     svc.load_video(frames);
-    let id = svc.player_ref().map_err(|e| e.to_string())?.session.id.clone();
+    let id = svc
+        .player_ref()
+        .map_err(|e| e.to_string())?
+        .session
+        .id
+        .clone();
     log::info!("replay_load_video: loaded session {id}");
     Ok(id)
 }
@@ -49,7 +61,12 @@ pub async fn replay_load_har(
     let entries = har_replay::parse_har(&data).map_err(|e| e.to_string())?;
     let mut svc = state.lock().await;
     svc.load_har(entries);
-    let id = svc.player_ref().map_err(|e| e.to_string())?.session.id.clone();
+    let id = svc
+        .player_ref()
+        .map_err(|e| e.to_string())?
+        .session
+        .id
+        .clone();
     log::info!("replay_load_har: loaded session {id}");
     Ok(id)
 }
@@ -59,27 +76,21 @@ pub async fn replay_load_har(
 // ═══════════════════════════════════════════════════════════════════════
 
 #[tauri::command]
-pub async fn replay_play(
-    state: tauri::State<'_, ReplayServiceState>,
-) -> Result<(), String> {
+pub async fn replay_play(state: tauri::State<'_, ReplayServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.player_mut().map_err(|e| e.to_string())?.play();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn replay_pause(
-    state: tauri::State<'_, ReplayServiceState>,
-) -> Result<(), String> {
+pub async fn replay_pause(state: tauri::State<'_, ReplayServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.player_mut().map_err(|e| e.to_string())?.pause();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn replay_stop(
-    state: tauri::State<'_, ReplayServiceState>,
-) -> Result<(), String> {
+pub async fn replay_stop(state: tauri::State<'_, ReplayServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.player_mut().map_err(|e| e.to_string())?.stop();
     Ok(())
@@ -103,7 +114,9 @@ pub async fn replay_set_speed(
     speed: f64,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.player_mut().map_err(|e| e.to_string())?.set_speed(speed);
+    svc.player_mut()
+        .map_err(|e| e.to_string())?
+        .set_speed(speed);
     Ok(())
 }
 
@@ -124,7 +137,10 @@ pub async fn replay_get_position(
     state: tauri::State<'_, ReplayServiceState>,
 ) -> Result<u64, String> {
     let svc = state.lock().await;
-    Ok(svc.player_ref().map_err(|e| e.to_string())?.get_current_position())
+    Ok(svc
+        .player_ref()
+        .map_err(|e| e.to_string())?
+        .get_current_position())
 }
 
 #[tauri::command]
@@ -147,9 +163,7 @@ pub async fn replay_get_terminal_state_at(
     let svc = state.lock().await;
     let player = svc.player_ref().map_err(|e| e.to_string())?;
     match &player.frames {
-        FrameData::Terminal(frames) => {
-            Ok(terminal_replay::render_terminal_at(frames, position_ms))
-        }
+        FrameData::Terminal(frames) => Ok(terminal_replay::render_terminal_at(frames, position_ms)),
         _ => Err("not a terminal recording".into()),
     }
 }
@@ -338,10 +352,7 @@ pub async fn replay_get_stats(
     state: tauri::State<'_, ReplayServiceState>,
 ) -> Result<PlaybackStats, String> {
     let svc = state.lock().await;
-    Ok(svc
-        .player_ref()
-        .map_err(|e| e.to_string())?
-        .get_stats())
+    Ok(svc.player_ref().map_err(|e| e.to_string())?.get_stats())
 }
 
 // ═══════════════════════════════════════════════════════════════════════

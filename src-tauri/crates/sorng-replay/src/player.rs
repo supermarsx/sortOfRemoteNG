@@ -23,10 +23,7 @@ impl ReplayPlayer {
 
     /// Create a player for terminal-type recordings.
     pub fn new_terminal(recording_data: Vec<TerminalFrame>, config: ReplayConfig) -> Self {
-        let total_duration_ms = recording_data
-            .last()
-            .map(|f| f.timestamp_ms)
-            .unwrap_or(0);
+        let total_duration_ms = recording_data.last().map(|f| f.timestamp_ms).unwrap_or(0);
         let total_frames = recording_data.len();
         Self {
             session: ReplaySession {
@@ -205,7 +202,7 @@ impl ReplayPlayer {
     /// For terminal recordings the result is the accumulated terminal text;
     /// for video, the frame closest to the timestamp; for HAR, active entries.
     pub fn get_frame_at(&self, position_ms: u64) -> ReplayResult<serde_json::Value> {
-        self.stats.clone(); // touched – in a real impl we'd track cache misses
+        let _ = self.stats.clone(); // touched – in a real impl we'd track cache misses
         match &self.frames {
             FrameData::Terminal(frames) => {
                 let text = crate::terminal_replay::render_terminal_at(frames, position_ms);

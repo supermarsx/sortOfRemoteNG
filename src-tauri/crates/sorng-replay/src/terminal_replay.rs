@@ -162,8 +162,7 @@ pub fn render_terminal_at(frames: &[TerminalFrame], position_ms: u64) -> String 
 /// command (text before a newline in input events, or after common
 /// prompt characters like `$`, `#`, `>` in output).
 pub fn get_command_events(frames: &[TerminalFrame]) -> Vec<(u64, String)> {
-    let prompt_re =
-        regex::Regex::new(r"[$#>]\s+(.+)").expect("built-in regex must compile");
+    let prompt_re = regex::Regex::new(r"[$#>]\s+(.+)").expect("built-in regex must compile");
 
     let mut commands: Vec<(u64, String)> = Vec::new();
 

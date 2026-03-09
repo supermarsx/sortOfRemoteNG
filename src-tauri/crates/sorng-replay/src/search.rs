@@ -44,9 +44,8 @@ pub fn search_terminal(
             let context = frame.data[ctx_start..ctx_end].to_string();
 
             // Extract actual match text from the original data
-            let match_text = frame.data
-                [hit_pos..((hit_pos + query.len()).min(frame.data.len()))]
-                .to_string();
+            let match_text =
+                frame.data[hit_pos..((hit_pos + query.len()).min(frame.data.len()))].to_string();
 
             results.push(SearchResult {
                 position_ms: frame.timestamp_ms,

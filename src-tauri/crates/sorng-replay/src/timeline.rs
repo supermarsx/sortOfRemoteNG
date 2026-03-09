@@ -182,11 +182,9 @@ pub fn get_overview_thumbnails(player: &ReplayPlayer, count: usize) -> Vec<(u64,
                 let preview_start = text.len().saturating_sub(200);
                 text[preview_start..].to_string()
             }
-            FrameData::Video(frames) => {
-                crate::video_replay::get_frame_at_position(frames, pos)
-                    .map(|f| f.data_base64.clone())
-                    .unwrap_or_default()
-            }
+            FrameData::Video(frames) => crate::video_replay::get_frame_at_position(frames, pos)
+                .map(|f| f.data_base64.clone())
+                .unwrap_or_default(),
             FrameData::Har(entries) => {
                 let active = crate::har_replay::get_entries_at_time(entries, pos);
                 serde_json::to_string(&active).unwrap_or_default()

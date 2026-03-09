@@ -90,7 +90,9 @@ pub fn export_to_asciicast(
         };
         let escaped_data =
             serde_json::to_string(&data).map_err(|e| ReplayError::ExportError(e.to_string()))?;
-        out.push_str(&format!("[{time_secs:.6}, \"{event_code}\", {escaped_data}]\n"));
+        out.push_str(&format!(
+            "[{time_secs:.6}, \"{event_code}\", {escaped_data}]\n"
+        ));
     }
 
     Ok(out)
@@ -182,11 +184,11 @@ pub fn export_to_srt(annotations: &[Annotation], options: &ExportOptions) -> Rep
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-fn filter_frames<'a>(
-    frames: &'a [TerminalFrame],
+fn filter_frames(
+    frames: &[TerminalFrame],
     start_ms: Option<u64>,
     end_ms: Option<u64>,
-) -> Vec<&'a TerminalFrame> {
+) -> Vec<&TerminalFrame> {
     let s = start_ms.unwrap_or(0);
     let e = end_ms.unwrap_or(u64::MAX);
     frames
@@ -195,11 +197,7 @@ fn filter_frames<'a>(
         .collect()
 }
 
-fn export_frame_data_json(
-    frames: &FrameData,
-    start_ms: u64,
-    end_ms: u64,
-) -> serde_json::Value {
+fn export_frame_data_json(frames: &FrameData, start_ms: u64, end_ms: u64) -> serde_json::Value {
     match frames {
         FrameData::Terminal(f) => {
             let filtered: Vec<&TerminalFrame> = f

@@ -170,7 +170,7 @@ pub fn build_waterfall(entries: &[HarEntry]) -> Vec<WaterfallBar> {
 
 /// Return all entries that are "in progress" at `position_ms`, meaning
 /// the entry started before or at that time and hasn't finished yet.
-pub fn get_entries_at_time<'a>(entries: &'a [HarEntry], position_ms: u64) -> Vec<&'a HarEntry> {
+pub fn get_entries_at_time(entries: &[HarEntry], position_ms: u64) -> Vec<&HarEntry> {
     entries
         .iter()
         .filter(|e| e.timestamp_ms <= position_ms && e.timestamp_ms + e.duration_ms >= position_ms)
@@ -180,7 +180,10 @@ pub fn get_entries_at_time<'a>(entries: &'a [HarEntry], position_ms: u64) -> Vec
 /// Compute summary statistics for a set of HAR entries.
 pub fn get_stats(entries: &[HarEntry]) -> HarStats {
     let total_requests = entries.len();
-    let total_size: u64 = entries.iter().map(|e| e.request_size + e.response_size).sum();
+    let total_size: u64 = entries
+        .iter()
+        .map(|e| e.request_size + e.response_size)
+        .sum();
 
     let avg_duration_ms = if total_requests > 0 {
         entries.iter().map(|e| e.duration_ms).sum::<u64>() as f64 / total_requests as f64
@@ -193,11 +196,7 @@ pub fn get_stats(entries: &[HarEntry]) -> HarStats {
 
     for e in entries {
         *by_status.entry(e.status).or_insert(0) += 1;
-        let ct = e
-            .content_type
-            .as_deref()
-            .unwrap_or("unknown")
-            .to_string();
+        let ct = e.content_type.as_deref().unwrap_or("unknown").to_string();
         *by_content_type.entry(ct).or_insert(0) += 1;
     }
 
