@@ -138,7 +138,10 @@ pub async fn log_info(
     log_path: Option<&str>,
 ) -> Result<LogFileInfo, Fail2banError> {
     let path = log_path.unwrap_or(DEFAULT_LOG_PATH);
-    let cmd = build_read_cmd(host, &format!("wc -l {path} && stat -c %s {path} 2>/dev/null || stat -f %z {path} 2>/dev/null"));
+    let cmd = build_read_cmd(
+        host,
+        &format!("wc -l {path} && stat -c %s {path} 2>/dev/null || stat -f %z {path} 2>/dev/null"),
+    );
 
     let output = run_cmd(host, &cmd).await?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -185,10 +188,7 @@ fn build_read_cmd(host: &Fail2banHost, cmd: &str) -> String {
 }
 
 /// Execute a command on the host.
-async fn run_cmd(
-    host: &Fail2banHost,
-    cmd: &str,
-) -> Result<std::process::Output, Fail2banError> {
+async fn run_cmd(host: &Fail2banHost, cmd: &str) -> Result<std::process::Output, Fail2banError> {
     let output = if let Some(ssh) = &host.ssh {
         let ssh_args = ssh.ssh_command();
         let mut command = tokio::process::Command::new(&ssh_args[0]);
@@ -220,7 +220,7 @@ pub fn parse_log_lines(content: &str) -> Vec<LogEntry> {
         \[\d+\]:\s+                                             # PID
         (\w+)\s+                                                # level
         (.+)$                                                   # message
-        "
+        ",
     )
     .expect("valid regex");
 
@@ -229,7 +229,7 @@ pub fn parse_log_lines(content: &str) -> Vec<LogEntry> {
         \[(\S+)\]\s+                 # jail name
         (Ban|Unban|Found|Restore\s+Ban|Already\s+banned)\s+  # action
         (\S+)                        # IP address
-        "
+        ",
     )
     .expect("valid regex");
 

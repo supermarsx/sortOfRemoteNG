@@ -44,10 +44,7 @@ pub async fn exec(
 }
 
 /// Execute a fail2ban-client command and expect success, returning stdout.
-pub async fn exec_ok(
-    host: &Fail2banHost,
-    args: &[&str],
-) -> Result<String, Fail2banError> {
+pub async fn exec_ok(host: &Fail2banHost, args: &[&str]) -> Result<String, Fail2banError> {
     let (stdout, stderr, exit_code) = exec(host, args).await?;
     if exit_code != 0 {
         return Err(Fail2banError::ClientFailed {
@@ -77,10 +74,7 @@ async fn exec_local(
 
     output.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            Fail2banError::ClientNotFound(format!(
-                "{} not found (sudo={})",
-                client_bin, use_sudo
-            ))
+            Fail2banError::ClientNotFound(format!("{} not found (sudo={})", client_bin, use_sudo))
         } else {
             Fail2banError::ProcessError(format!("failed to execute {client_bin}: {e}"))
         }
@@ -119,9 +113,7 @@ async fn exec_remote(
 /// Check if fail2ban server is running on the host.
 pub async fn ping(host: &Fail2banHost) -> Result<bool, Fail2banError> {
     match exec(host, &["ping"]).await {
-        Ok((stdout, _, code)) => {
-            Ok(code == 0 && stdout.trim().contains("pong"))
-        }
+        Ok((stdout, _, code)) => Ok(code == 0 && stdout.trim().contains("pong")),
         Err(Fail2banError::ServerNotRunning) => Ok(false),
         Err(e) => Err(e),
     }
@@ -182,9 +174,10 @@ pub async fn restart_server(host: &Fail2banHost) -> Result<(), Fail2banError> {
             cmd.arg(arg);
         }
         cmd.arg(restart_cmd);
-        let output = cmd.output().await.map_err(|e| {
-            Fail2banError::SshError(format!("SSH restart failed: {e}"))
-        })?;
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| Fail2banError::SshError(format!("SSH restart failed: {e}")))?;
         if !output.status.success() {
             return Err(Fail2banError::ProcessError(format!(
                 "restart failed: {}",

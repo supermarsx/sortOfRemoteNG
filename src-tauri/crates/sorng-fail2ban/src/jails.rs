@@ -12,10 +12,7 @@ pub async fn list_jails(host: &Fail2banHost) -> Result<Vec<String>, Fail2banErro
 }
 
 /// Get detailed status of a specific jail.
-pub async fn jail_status(
-    host: &Fail2banHost,
-    jail_name: &str,
-) -> Result<Jail, Fail2banError> {
+pub async fn jail_status(host: &Fail2banHost, jail_name: &str) -> Result<Jail, Fail2banError> {
     let stdout = client::exec_ok(host, &["status", jail_name]).await?;
     parse_jail_status(jail_name, &stdout)
 }
@@ -74,10 +71,7 @@ pub async fn stop_jail(host: &Fail2banHost, jail_name: &str) -> Result<(), Fail2
 }
 
 /// Restart a jail (stop + start).
-pub async fn restart_jail(
-    host: &Fail2banHost,
-    jail_name: &str,
-) -> Result<(), Fail2banError> {
+pub async fn restart_jail(host: &Fail2banHost, jail_name: &str) -> Result<(), Fail2banError> {
     // Some fail2ban versions support direct restart, try that first
     match client::exec(host, &["restart", jail_name]).await {
         Ok((_, _, 0)) => {
@@ -98,7 +92,8 @@ pub async fn get_jail_setting(
     jail_name: &str,
     setting: &str,
 ) -> Result<String, Fail2banError> {
-    client::exec_ok(host, &["get", jail_name, setting]).await
+    client::exec_ok(host, &["get", jail_name, setting])
+        .await
         .map(|s| s.trim().to_string())
 }
 
@@ -155,11 +150,7 @@ fn parse_jail_list(output: &str) -> Result<Vec<String>, Fail2banError> {
     for line in output.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("`- Jail list:") || trimmed.starts_with("|- Jail list:") {
-            let list_part = trimmed
-                .split(':')
-                .nth(1)
-                .unwrap_or("")
-                .trim();
+            let list_part = trimmed.split(':').nth(1).unwrap_or("").trim();
             if list_part.is_empty() {
                 return Ok(Vec::new());
             }
@@ -196,17 +187,17 @@ fn parse_jail_status(name: &str, output: &str) -> Result<Jail, Fail2banError> {
     let mut banned_ips = Vec::new();
 
     for line in output.lines() {
-        let trimmed = line.trim().trim_start_matches("|- ").trim_start_matches("`- ");
+        let trimmed = line
+            .trim()
+            .trim_start_matches("|- ")
+            .trim_start_matches("`- ");
 
         if let Some(val) = extract_value(trimmed, "Currently failed:") {
             currently_failed = val.parse().unwrap_or(0);
         } else if let Some(val) = extract_value(trimmed, "Total failed:") {
             total_failed = val.parse().unwrap_or(0);
         } else if let Some(val) = extract_value(trimmed, "File list:") {
-            logfiles = val
-                .split_whitespace()
-                .map(|s| s.to_string())
-                .collect();
+            logfiles = val.split_whitespace().map(|s| s.to_string()).collect();
         } else if let Some(val) = extract_value(trimmed, "Currently banned:") {
             currently_banned = val.parse().unwrap_or(0);
         } else if let Some(val) = extract_value(trimmed, "Total banned:") {
@@ -247,8 +238,8 @@ fn parse_jail_status(name: &str, output: &str) -> Result<Jail, Fail2banError> {
 }
 
 fn extract_value<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
-    if line.starts_with(prefix) {
-        Some(line[prefix.len()..].trim())
+    if let Some(stripped) = line.strip_prefix(prefix) {
+        Some(stripped.trim())
     } else {
         None
     }

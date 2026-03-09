@@ -102,10 +102,7 @@ pub async fn host_jails(host: &Fail2banHost) -> Result<Vec<String>, Fail2banErro
 }
 
 /// Get jail details on a host.
-pub async fn host_jail_status(
-    host: &Fail2banHost,
-    jail_name: &str,
-) -> Result<Jail, Fail2banError> {
+pub async fn host_jail_status(host: &Fail2banHost, jail_name: &str) -> Result<Jail, Fail2banError> {
     crate::jails::jail_status(host, jail_name).await
 }
 

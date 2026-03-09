@@ -3,9 +3,7 @@
 use crate::error::Fail2banError;
 use crate::jails;
 use crate::logs;
-use crate::types::{
-    BannedIpSummary, Fail2banHost, Fail2banStats, JailStats, LogAction,
-};
+use crate::types::{BannedIpSummary, Fail2banHost, Fail2banStats, JailStats, LogAction};
 use chrono::Utc;
 use std::collections::HashMap;
 
@@ -61,16 +59,13 @@ pub async fn top_banned_ips(
     let mut ip_counts: HashMap<String, Vec<String>> = HashMap::new();
 
     for jail_name in &jails_list {
-        match jails::jail_status(host, jail_name).await {
-            Ok(jail) => {
-                for ip in &jail.banned_ips {
-                    ip_counts
-                        .entry(ip.clone())
-                        .or_default()
-                        .push(jail_name.clone());
-                }
+        if let Ok(jail) = jails::jail_status(host, jail_name).await {
+            for ip in &jail.banned_ips {
+                ip_counts
+                    .entry(ip.clone())
+                    .or_default()
+                    .push(jail_name.clone());
             }
-            Err(_) => {}
         }
     }
 
@@ -150,7 +145,10 @@ pub async fn ban_frequency(
     let mut hourly: HashMap<String, u64> = HashMap::new();
 
     for entry in &entries {
-        if matches!(&entry.action, Some(LogAction::Ban) | Some(LogAction::Restore)) {
+        if matches!(
+            &entry.action,
+            Some(LogAction::Ban) | Some(LogAction::Restore)
+        ) {
             if let Some(ts) = &entry.timestamp {
                 // Extract "YYYY-MM-DD HH" from the DateTime
                 let hour_key = ts.format("%Y-%m-%d %H").to_string();
@@ -161,7 +159,10 @@ pub async fn ban_frequency(
 
     let mut result: Vec<HourlyBanCount> = hourly
         .into_iter()
-        .map(|(hour, count)| HourlyBanCount { hour, ban_count: count })
+        .map(|(hour, count)| HourlyBanCount {
+            hour,
+            ban_count: count,
+        })
         .collect();
 
     result.sort_by(|a, b| a.hour.cmp(&b.hour));

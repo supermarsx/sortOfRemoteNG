@@ -107,9 +107,7 @@ pub async fn f2b_restart_server(
     host_id: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::client::restart_server(&host)
-        .await
-        .map_err(err_str)
+    crate::client::restart_server(&host).await.map_err(err_str)
 }
 
 // ─── Jails ──────────────────────────────────────────────────────────

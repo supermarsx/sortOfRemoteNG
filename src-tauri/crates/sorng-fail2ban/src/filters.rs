@@ -92,12 +92,19 @@ pub async fn test_filter(
         command.output().await
     } else if host.use_sudo {
         tokio::process::Command::new("sudo")
-            .args([tool, log_file, &format!("/etc/fail2ban/filter.d/{filter_name}.conf")])
+            .args([
+                tool,
+                log_file,
+                &format!("/etc/fail2ban/filter.d/{filter_name}.conf"),
+            ])
             .output()
             .await
     } else {
         tokio::process::Command::new(tool)
-            .args([log_file, &format!("/etc/fail2ban/filter.d/{filter_name}.conf")])
+            .args([
+                log_file,
+                &format!("/etc/fail2ban/filter.d/{filter_name}.conf"),
+            ])
             .output()
             .await
     };
@@ -241,10 +248,7 @@ fn parse_filter_conf(
 }
 
 /// Parse fail2ban-regex test output.
-fn parse_regex_test_output(
-    stdout: &str,
-    stderr: &str,
-) -> Result<FilterTestResult, Fail2banError> {
+fn parse_regex_test_output(stdout: &str, stderr: &str) -> Result<FilterTestResult, Fail2banError> {
     let combined = format!("{stdout}\n{stderr}");
     let mut total_lines: u64 = 0;
     let mut matched_lines: u64 = 0;
@@ -252,15 +256,17 @@ fn parse_regex_test_output(
     let mut ignored_lines: u64 = 0;
     let mut sample_matches = Vec::new();
 
+    let lines_re = regex::Regex::new(
+        r"Lines:\s*(\d+)\s*lines?,\s*(\d+)\s*ignored,\s*(\d+)\s*matched,\s*(\d+)\s*missed",
+    )
+    .ok();
+
     for line in combined.lines() {
         let trimmed = line.trim();
 
         if trimmed.starts_with("Lines: ") {
             // "Lines: 1000 lines, 0 ignored, 50 matched, 950 missed"
-            let re =
-                regex::Regex::new(r"Lines:\s*(\d+)\s*lines?,\s*(\d+)\s*ignored,\s*(\d+)\s*matched,\s*(\d+)\s*missed")
-                    .ok();
-            if let Some(caps) = re.and_then(|r| r.captures(trimmed)) {
+            if let Some(caps) = lines_re.as_ref().and_then(|r| r.captures(trimmed)) {
                 total_lines = caps[1].parse().unwrap_or(0);
                 ignored_lines = caps[2].parse().unwrap_or(0);
                 matched_lines = caps[3].parse().unwrap_or(0);
@@ -269,10 +275,8 @@ fn parse_regex_test_output(
         }
 
         // Collect sample match lines
-        if trimmed.starts_with("|-") && trimmed.contains("[") {
-            if sample_matches.len() < 20 {
-                sample_matches.push(trimmed.to_string());
-            }
+        if trimmed.starts_with("|-") && trimmed.contains("[") && sample_matches.len() < 20 {
+            sample_matches.push(trimmed.to_string());
         }
     }
 

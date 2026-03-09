@@ -57,7 +57,10 @@ impl fmt::Display for Fail2banError {
                 command,
                 exit_code,
                 stderr,
-            } => write!(f, "fail2ban-client `{command}` failed (exit {exit_code}): {stderr}"),
+            } => write!(
+                f,
+                "fail2ban-client `{command}` failed (exit {exit_code}): {stderr}"
+            ),
             Self::SshError(e) => write!(f, "SSH error: {e}"),
             Self::AuthError(e) => write!(f, "authentication error: {e}"),
             Self::JailNotFound(j) => write!(f, "jail not found: {j}"),

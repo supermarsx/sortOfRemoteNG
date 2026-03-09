@@ -6,11 +6,7 @@ use crate::types::{BanRecord, Fail2banHost};
 use log::info;
 
 /// Ban an IP in a specific jail.
-pub async fn ban_ip(
-    host: &Fail2banHost,
-    jail: &str,
-    ip: &str,
-) -> Result<(), Fail2banError> {
+pub async fn ban_ip(host: &Fail2banHost, jail: &str, ip: &str) -> Result<(), Fail2banError> {
     let (stdout, stderr, code) = client::exec(host, &["set", jail, "banip", ip]).await?;
 
     if code != 0 {
@@ -32,11 +28,7 @@ pub async fn ban_ip(
 }
 
 /// Unban an IP from a specific jail.
-pub async fn unban_ip(
-    host: &Fail2banHost,
-    jail: &str,
-    ip: &str,
-) -> Result<(), Fail2banError> {
+pub async fn unban_ip(host: &Fail2banHost, jail: &str, ip: &str) -> Result<(), Fail2banError> {
     let (stdout, stderr, code) = client::exec(host, &["set", jail, "unbanip", ip]).await?;
 
     if code != 0 {
@@ -58,13 +50,9 @@ pub async fn unban_ip(
 }
 
 /// Unban an IP from all jails.
-pub async fn unban_ip_all(
-    host: &Fail2banHost,
-    ip: &str,
-) -> Result<Vec<String>, Fail2banError> {
+pub async fn unban_ip_all(host: &Fail2banHost, ip: &str) -> Result<Vec<String>, Fail2banError> {
     // Try the global unban first (fail2ban 0.10+)
-    let (_stdout, _stderr, code) =
-        client::exec(host, &["unban", ip]).await?;
+    let (_stdout, _stderr, code) = client::exec(host, &["unban", ip]).await?;
 
     if code == 0 {
         info!("Unbanned IP {ip} from all jails");
@@ -89,10 +77,7 @@ pub async fn unban_ip_all(
 }
 
 /// List all currently banned IPs in a jail.
-pub async fn list_banned(
-    host: &Fail2banHost,
-    jail: &str,
-) -> Result<Vec<BanRecord>, Fail2banError> {
+pub async fn list_banned(host: &Fail2banHost, jail: &str) -> Result<Vec<BanRecord>, Fail2banError> {
     // Get jail status — banned IPs are in the output
     let jail_info = crate::jails::jail_status(host, jail).await?;
 
@@ -115,15 +100,10 @@ pub async fn list_banned(
 }
 
 /// List all currently banned IPs across all jails.
-pub async fn list_all_banned(
-    host: &Fail2banHost,
-) -> Result<Vec<BanRecord>, Fail2banError> {
+pub async fn list_all_banned(host: &Fail2banHost) -> Result<Vec<BanRecord>, Fail2banError> {
     // Try fail2ban 0.11+ `banned` command
-    match client::exec(host, &["banned"]).await {
-        Ok((stdout, _, 0)) => {
-            return parse_banned_output(&stdout);
-        }
-        _ => {}
+    if let Ok((stdout, _, 0)) = client::exec(host, &["banned"]).await {
+        return parse_banned_output(&stdout);
     }
 
     // Fallback: iterate jails
@@ -153,10 +133,7 @@ pub async fn ban_ip_with_time(
 }
 
 /// Check if an IP is currently banned in any jail.
-pub async fn is_banned(
-    host: &Fail2banHost,
-    ip: &str,
-) -> Result<Vec<String>, Fail2banError> {
+pub async fn is_banned(host: &Fail2banHost, ip: &str) -> Result<Vec<String>, Fail2banError> {
     let all_bans = list_all_banned(host).await?;
     let jails: Vec<String> = all_bans
         .iter()
@@ -182,11 +159,12 @@ fn parse_banned_output(output: &str) -> Result<Vec<BanRecord>, Fail2banError> {
     let re = regex::Regex::new(r"'(\w[\w-]*)'\s*:\s*\[([^\]]*)\]")
         .map_err(|e| Fail2banError::Other(format!("regex error: {e}")))?;
 
+    let ip_re = regex::Regex::new(r"'([^']+)'")
+        .map_err(|e| Fail2banError::Other(format!("regex error: {e}")))?;
+
     for caps in re.captures_iter(trimmed) {
         let jail = caps[1].to_string();
         let ips_str = &caps[2];
-        let ip_re = regex::Regex::new(r"'([^']+)'")
-            .map_err(|e| Fail2banError::Other(format!("regex error: {e}")))?;
 
         for ip_cap in ip_re.captures_iter(ips_str) {
             records.push(BanRecord {

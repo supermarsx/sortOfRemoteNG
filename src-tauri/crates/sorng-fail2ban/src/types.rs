@@ -223,11 +223,7 @@ pub struct SshConfig {
 impl SshConfig {
     /// Build SSH command prefix for remote command execution.
     pub fn ssh_command(&self) -> Vec<String> {
-        let mut args = vec![
-            "ssh".to_string(),
-            "-p".to_string(),
-            self.port.to_string(),
-        ];
+        let mut args = vec!["ssh".to_string(), "-p".to_string(), self.port.to_string()];
         if let Some(key) = &self.private_key_path {
             args.push("-i".into());
             args.push(key.clone());
