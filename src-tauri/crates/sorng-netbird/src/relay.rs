@@ -48,9 +48,18 @@ fn avg_latency(relays: &[TurnRelay]) -> Option<f64> {
 
 fn protocol_counts(relays: &[TurnRelay]) -> ProtocolCounts {
     ProtocolCounts {
-        udp: relays.iter().filter(|r| r.protocol == TurnProtocol::Udp).count() as u32,
-        tcp: relays.iter().filter(|r| r.protocol == TurnProtocol::Tcp).count() as u32,
-        tls: relays.iter().filter(|r| r.protocol == TurnProtocol::Tls).count() as u32,
+        udp: relays
+            .iter()
+            .filter(|r| r.protocol == TurnProtocol::Udp)
+            .count() as u32,
+        tcp: relays
+            .iter()
+            .filter(|r| r.protocol == TurnProtocol::Tcp)
+            .count() as u32,
+        tls: relays
+            .iter()
+            .filter(|r| r.protocol == TurnProtocol::Tls)
+            .count() as u32,
     }
 }
 
@@ -68,8 +77,11 @@ pub fn best_relay(relays: &[TurnRelay]) -> Option<&TurnRelay> {
 }
 
 /// Group relays by region.
-pub fn relays_by_region(relays: &[TurnRelay]) -> std::collections::HashMap<String, Vec<&TurnRelay>> {
-    let mut map: std::collections::HashMap<String, Vec<&TurnRelay>> = std::collections::HashMap::new();
+pub fn relays_by_region(
+    relays: &[TurnRelay],
+) -> std::collections::HashMap<String, Vec<&TurnRelay>> {
+    let mut map: std::collections::HashMap<String, Vec<&TurnRelay>> =
+        std::collections::HashMap::new();
     for r in relays {
         let region = r.region.clone().unwrap_or_else(|| "unknown".to_string());
         map.entry(region).or_default().push(r);

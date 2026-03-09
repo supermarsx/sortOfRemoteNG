@@ -38,10 +38,7 @@ pub fn detect_installation() -> DaemonInfo {
             r"C:\ProgramData\NetBird\netbird.exe",
         ]
     } else if cfg!(target_os = "macos") {
-        vec![
-            "/usr/local/bin/netbird",
-            "/opt/homebrew/bin/netbird",
-        ]
+        vec!["/usr/local/bin/netbird", "/opt/homebrew/bin/netbird"]
     } else {
         vec![
             "/usr/bin/netbird",
@@ -81,9 +78,17 @@ pub fn version_command() -> Vec<String> {
 /// Build command to start the NetBird service/daemon.
 pub fn service_start_command() -> Vec<String> {
     if cfg!(target_os = "windows") {
-        vec!["net".to_string(), "start".to_string(), "NetBird".to_string()]
+        vec![
+            "net".to_string(),
+            "start".to_string(),
+            "NetBird".to_string(),
+        ]
     } else {
-        vec!["systemctl".to_string(), "start".to_string(), "netbird".to_string()]
+        vec![
+            "systemctl".to_string(),
+            "start".to_string(),
+            "netbird".to_string(),
+        ]
     }
 }
 
@@ -92,18 +97,30 @@ pub fn service_stop_command() -> Vec<String> {
     if cfg!(target_os = "windows") {
         vec!["net".to_string(), "stop".to_string(), "NetBird".to_string()]
     } else {
-        vec!["systemctl".to_string(), "stop".to_string(), "netbird".to_string()]
+        vec![
+            "systemctl".to_string(),
+            "stop".to_string(),
+            "netbird".to_string(),
+        ]
     }
 }
 
 /// Build command to install the NetBird service.
 pub fn service_install_command() -> Vec<String> {
-    vec!["netbird".to_string(), "service".to_string(), "install".to_string()]
+    vec![
+        "netbird".to_string(),
+        "service".to_string(),
+        "install".to_string(),
+    ]
 }
 
 /// Build command to uninstall the NetBird service.
 pub fn service_uninstall_command() -> Vec<String> {
-    vec!["netbird".to_string(), "service".to_string(), "uninstall".to_string()]
+    vec![
+        "netbird".to_string(),
+        "service".to_string(),
+        "uninstall".to_string(),
+    ]
 }
 
 /// Build the `netbird up` command from config.

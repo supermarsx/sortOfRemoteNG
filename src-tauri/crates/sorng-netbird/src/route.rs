@@ -22,7 +22,10 @@ pub fn validate_cidr(cidr: &str) -> Result<(), String> {
         .map_err(|e| format!("Invalid prefix length: {}", e))?;
     let max = if parts[0].contains(':') { 128 } else { 32 };
     if prefix > max {
-        return Err(format!("Prefix length {} exceeds maximum {} for address family", prefix, max));
+        return Err(format!(
+            "Prefix length {} exceeds maximum {} for address family",
+            prefix, max
+        ));
     }
     Ok(())
 }
@@ -64,7 +67,9 @@ pub enum ConflictType {
 pub fn ha_route_groups(routes: &[&NetBirdRoute]) -> HashMap<String, Vec<String>> {
     let mut map: HashMap<String, Vec<String>> = HashMap::new();
     for r in routes {
-        map.entry(r.network_id.clone()).or_default().push(r.id.clone());
+        map.entry(r.network_id.clone())
+            .or_default()
+            .push(r.id.clone());
     }
     // Only keep groups with >1 route (actual HA)
     map.retain(|_, v| v.len() > 1);
@@ -91,8 +96,14 @@ pub fn summarize_routes(routes: &[&NetBirdRoute]) -> RouteSummary {
         total: routes.len() as u32,
         enabled: routes.iter().filter(|r| r.enabled).count() as u32,
         disabled: routes.iter().filter(|r| !r.enabled).count() as u32,
-        ipv4: routes.iter().filter(|r| r.network_type == RouteNetworkType::IPv4).count() as u32,
-        ipv6: routes.iter().filter(|r| r.network_type == RouteNetworkType::IPv6).count() as u32,
+        ipv4: routes
+            .iter()
+            .filter(|r| r.network_type == RouteNetworkType::IPv4)
+            .count() as u32,
+        ipv6: routes
+            .iter()
+            .filter(|r| r.network_type == RouteNetworkType::IPv6)
+            .count() as u32,
         domain_routes: routes
             .iter()
             .filter(|r| r.network_type == RouteNetworkType::DomainRoute)
@@ -163,8 +174,16 @@ mod tests {
             groups: vec![],
             keep_route: false,
         };
-        let r2 = NetBirdRoute { id: "r2".into(), peer: Some("p2".into()), ..r1.clone() };
-        let r3 = NetBirdRoute { id: "r3".into(), network_id: "n2".into(), ..r1.clone() };
+        let r2 = NetBirdRoute {
+            id: "r2".into(),
+            peer: Some("p2".into()),
+            ..r1.clone()
+        };
+        let r3 = NetBirdRoute {
+            id: "r3".into(),
+            network_id: "n2".into(),
+            ..r1.clone()
+        };
         let ha = ha_route_groups(&[&r1, &r2, &r3]);
         assert_eq!(ha.len(), 1); // only n1 has >1 route
         assert!(ha.contains_key("n1"));

@@ -46,7 +46,7 @@ pub enum NetBirdStatus {
 }
 
 /// Configuration for establishing or reconfiguring a NetBird connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NetBirdConfig {
     /// Management server URL (default: `https://api.netbird.io`).
     pub management_url: Option<String>,
@@ -76,27 +76,6 @@ pub struct NetBirdConfig {
     pub disable_firewall: Option<bool>,
     /// Extra labels to tag this peer with.
     pub extra_labels: HashMap<String, String>,
-}
-
-impl Default for NetBirdConfig {
-    fn default() -> Self {
-        Self {
-            management_url: None,
-            setup_key: None,
-            preshared_key: None,
-            wireguard_port: None,
-            disable_auto_connect: None,
-            interface_name: None,
-            log_level: None,
-            admin_api_token: None,
-            rosenpass_enabled: None,
-            rosenpass_permissive: None,
-            hostname: None,
-            disable_dns: None,
-            disable_firewall: None,
-            extra_labels: HashMap::new(),
-        }
-    }
 }
 
 // ── Peer ────────────────────────────────────────────────────────
@@ -523,18 +502,44 @@ pub enum HealthStatus {
 /// Events emitted by the NetBird integration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NetBirdEvent {
-    PeerConnected { peer_id: String, direct: bool },
-    PeerDisconnected { peer_id: String },
-    ConnectionEstablished { connection_id: String, ip: String },
-    ConnectionLost { connection_id: String, reason: String },
-    LoginRequired { auth_url: String },
+    PeerConnected {
+        peer_id: String,
+        direct: bool,
+    },
+    PeerDisconnected {
+        peer_id: String,
+    },
+    ConnectionEstablished {
+        connection_id: String,
+        ip: String,
+    },
+    ConnectionLost {
+        connection_id: String,
+        reason: String,
+    },
+    LoginRequired {
+        auth_url: String,
+    },
     LoginExpired,
-    RouteAdded { route_id: String, network: String },
-    RouteRemoved { route_id: String },
+    RouteAdded {
+        route_id: String,
+        network: String,
+    },
+    RouteRemoved {
+        route_id: String,
+    },
     DnsUpdated,
-    SetupKeyUsed { key_id: String, peer_id: String },
-    RelayFallback { peer_id: String, relay_uri: String },
-    HealthChanged { new_status: HealthStatus },
+    SetupKeyUsed {
+        key_id: String,
+        peer_id: String,
+    },
+    RelayFallback {
+        peer_id: String,
+        relay_uri: String,
+    },
+    HealthChanged {
+        new_status: HealthStatus,
+    },
 }
 
 // ── Service State Alias ─────────────────────────────────────────

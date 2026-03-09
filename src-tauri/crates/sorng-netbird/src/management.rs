@@ -47,22 +47,34 @@ pub enum HttpMethod {
 
 /// List all peers.
 pub fn peers_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/peers".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/peers".to_string(),
+    }
 }
 
 /// Get a single peer.
 pub fn peer_get(peer_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: format!("/api/peers/{}", peer_id) }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: format!("/api/peers/{}", peer_id),
+    }
 }
 
 /// Update a peer.
 pub fn peer_update(peer_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/peers/{}", peer_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/peers/{}", peer_id),
+    }
 }
 
 /// Delete a peer.
 pub fn peer_delete(peer_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Delete, path: format!("/api/peers/{}", peer_id) }
+    ApiEndpoint {
+        method: HttpMethod::Delete,
+        path: format!("/api/peers/{}", peer_id),
+    }
 }
 
 /// List accessible peers for a given peer.
@@ -75,182 +87,290 @@ pub fn peer_accessible(peer_id: &str) -> ApiEndpoint {
 
 /// List all groups.
 pub fn groups_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/groups".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/groups".to_string(),
+    }
 }
 
 /// Create a group.
 pub fn group_create() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Post, path: "/api/groups".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Post,
+        path: "/api/groups".to_string(),
+    }
 }
 
 /// Get a group.
 pub fn group_get(group_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: format!("/api/groups/{}", group_id) }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: format!("/api/groups/{}", group_id),
+    }
 }
 
 /// Update a group.
 pub fn group_update(group_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/groups/{}", group_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/groups/{}", group_id),
+    }
 }
 
 /// Delete a group.
 pub fn group_delete(group_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Delete, path: format!("/api/groups/{}", group_id) }
+    ApiEndpoint {
+        method: HttpMethod::Delete,
+        path: format!("/api/groups/{}", group_id),
+    }
 }
 
 /// List all routes.
 pub fn routes_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/routes".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/routes".to_string(),
+    }
 }
 
 /// Create a route.
 pub fn route_create() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Post, path: "/api/routes".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Post,
+        path: "/api/routes".to_string(),
+    }
 }
 
 /// Get a route.
 pub fn route_get(route_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: format!("/api/routes/{}", route_id) }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: format!("/api/routes/{}", route_id),
+    }
 }
 
 /// Update a route.
 pub fn route_update(route_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/routes/{}", route_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/routes/{}", route_id),
+    }
 }
 
 /// Delete a route.
 pub fn route_delete(route_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Delete, path: format!("/api/routes/{}", route_id) }
+    ApiEndpoint {
+        method: HttpMethod::Delete,
+        path: format!("/api/routes/{}", route_id),
+    }
 }
 
 /// List all policies.
 pub fn policies_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/policies".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/policies".to_string(),
+    }
 }
 
 /// Create a policy.
 pub fn policy_create() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Post, path: "/api/policies".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Post,
+        path: "/api/policies".to_string(),
+    }
 }
 
 /// Get a policy.
 pub fn policy_get(policy_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: format!("/api/policies/{}", policy_id) }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: format!("/api/policies/{}", policy_id),
+    }
 }
 
 /// Update a policy.
 pub fn policy_update(policy_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/policies/{}", policy_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/policies/{}", policy_id),
+    }
 }
 
 /// Delete a policy.
 pub fn policy_delete(policy_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Delete, path: format!("/api/policies/{}", policy_id) }
+    ApiEndpoint {
+        method: HttpMethod::Delete,
+        path: format!("/api/policies/{}", policy_id),
+    }
 }
 
 /// List DNS nameserver groups.
 pub fn dns_nameservers_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/dns/nameservers".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/dns/nameservers".to_string(),
+    }
 }
 
 /// Create a DNS nameserver group.
 pub fn dns_nameserver_create() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Post, path: "/api/dns/nameservers".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Post,
+        path: "/api/dns/nameservers".to_string(),
+    }
 }
 
 /// Get a DNS nameserver group.
 pub fn dns_nameserver_get(ns_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: format!("/api/dns/nameservers/{}", ns_id) }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: format!("/api/dns/nameservers/{}", ns_id),
+    }
 }
 
 /// Update a DNS nameserver group.
 pub fn dns_nameserver_update(ns_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/dns/nameservers/{}", ns_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/dns/nameservers/{}", ns_id),
+    }
 }
 
 /// Delete a DNS nameserver group.
 pub fn dns_nameserver_delete(ns_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Delete, path: format!("/api/dns/nameservers/{}", ns_id) }
+    ApiEndpoint {
+        method: HttpMethod::Delete,
+        path: format!("/api/dns/nameservers/{}", ns_id),
+    }
 }
 
 /// List setup keys.
 pub fn setup_keys_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/setup-keys".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/setup-keys".to_string(),
+    }
 }
 
 /// Create a setup key.
 pub fn setup_key_create() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Post, path: "/api/setup-keys".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Post,
+        path: "/api/setup-keys".to_string(),
+    }
 }
 
 /// Get a setup key.
 pub fn setup_key_get(key_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: format!("/api/setup-keys/{}", key_id) }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: format!("/api/setup-keys/{}", key_id),
+    }
 }
 
 /// Update a setup key.
 pub fn setup_key_update(key_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/setup-keys/{}", key_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/setup-keys/{}", key_id),
+    }
 }
 
 /// List posture checks.
 pub fn posture_checks_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/posture-checks".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/posture-checks".to_string(),
+    }
 }
 
 /// Create a posture check.
 pub fn posture_check_create() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Post, path: "/api/posture-checks".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Post,
+        path: "/api/posture-checks".to_string(),
+    }
 }
 
 /// Get a posture check.
 pub fn posture_check_get(check_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: format!("/api/posture-checks/{}", check_id) }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: format!("/api/posture-checks/{}", check_id),
+    }
 }
 
 /// Update a posture check.
 pub fn posture_check_update(check_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/posture-checks/{}", check_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/posture-checks/{}", check_id),
+    }
 }
 
 /// Delete a posture check.
 pub fn posture_check_delete(check_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Delete, path: format!("/api/posture-checks/{}", check_id) }
+    ApiEndpoint {
+        method: HttpMethod::Delete,
+        path: format!("/api/posture-checks/{}", check_id),
+    }
 }
 
 /// List users.
 pub fn users_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/users".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/users".to_string(),
+    }
 }
 
 /// Create a service user.
 pub fn user_create() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Post, path: "/api/users".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Post,
+        path: "/api/users".to_string(),
+    }
 }
 
 /// Update a user.
 pub fn user_update(user_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/users/{}", user_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/users/{}", user_id),
+    }
 }
 
 /// Delete a user.
 pub fn user_delete(user_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Delete, path: format!("/api/users/{}", user_id) }
+    ApiEndpoint {
+        method: HttpMethod::Delete,
+        path: format!("/api/users/{}", user_id),
+    }
 }
 
 /// List account events.
 pub fn events_list() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/events".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/events".to_string(),
+    }
 }
 
 /// Get account info.
 pub fn account_get() -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Get, path: "/api/accounts".to_string() }
+    ApiEndpoint {
+        method: HttpMethod::Get,
+        path: "/api/accounts".to_string(),
+    }
 }
 
 /// Update account settings.
 pub fn account_update(account_id: &str) -> ApiEndpoint {
-    ApiEndpoint { method: HttpMethod::Put, path: format!("/api/accounts/{}", account_id) }
+    ApiEndpoint {
+        method: HttpMethod::Put,
+        path: format!("/api/accounts/{}", account_id),
+    }
 }
 
 // ── Request / Response types for the API ────────────────────────
@@ -346,7 +466,10 @@ mod tests {
             token: "tok".into(),
             timeout_secs: 30,
         };
-        assert_eq!(build_url(&config, &peers_list()), "https://api.netbird.io/api/peers");
+        assert_eq!(
+            build_url(&config, &peers_list()),
+            "https://api.netbird.io/api/peers"
+        );
     }
 
     #[test]

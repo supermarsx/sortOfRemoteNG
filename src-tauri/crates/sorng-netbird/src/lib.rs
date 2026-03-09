@@ -28,20 +28,20 @@
 //! - **user** — User/identity management from IdP integration
 //! - **diagnostics** — Health checks, signal/relay connectivity, debug bundle
 
-pub mod types;
-pub mod service;
+pub mod acl;
 pub mod daemon;
+pub mod diagnostics;
+pub mod dns;
+pub mod group;
 pub mod management;
 pub mod peer;
-pub mod group;
-pub mod route;
-pub mod acl;
-pub mod dns;
-pub mod setup_key;
-pub mod relay;
 pub mod posture;
+pub mod relay;
+pub mod route;
+pub mod service;
+pub mod setup_key;
+pub mod types;
 pub mod user;
-pub mod diagnostics;
 
-pub use types::*;
 pub use service::{NetBirdService, NetBirdServiceState};
+pub use types::*;

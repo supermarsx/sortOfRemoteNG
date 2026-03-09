@@ -107,7 +107,12 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
-    fn make_peer(id: &str, connected: bool, ct: PeerConnectionType, latency: Option<f64>) -> NetBirdPeer {
+    fn make_peer(
+        id: &str,
+        connected: bool,
+        ct: PeerConnectionType,
+        latency: Option<f64>,
+    ) -> NetBirdPeer {
         NetBirdPeer {
             id: id.to_string(),
             name: id.to_string(),

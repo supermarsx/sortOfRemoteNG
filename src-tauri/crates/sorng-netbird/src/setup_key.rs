@@ -57,12 +57,30 @@ pub fn summarize_keys(keys: &[&SetupKey]) -> SetupKeySummary {
     let day = Duration::hours(24);
     SetupKeySummary {
         total: keys.len() as u32,
-        valid: keys.iter().filter(|k| compute_state(k) == SetupKeyState::Valid).count() as u32,
-        expired: keys.iter().filter(|k| compute_state(k) == SetupKeyState::Expired).count() as u32,
-        revoked: keys.iter().filter(|k| compute_state(k) == SetupKeyState::Revoked).count() as u32,
-        overused: keys.iter().filter(|k| compute_state(k) == SetupKeyState::Overused).count() as u32,
-        reusable: keys.iter().filter(|k| k.key_type == SetupKeyType::Reusable).count() as u32,
-        one_off: keys.iter().filter(|k| k.key_type == SetupKeyType::OneOff).count() as u32,
+        valid: keys
+            .iter()
+            .filter(|k| compute_state(k) == SetupKeyState::Valid)
+            .count() as u32,
+        expired: keys
+            .iter()
+            .filter(|k| compute_state(k) == SetupKeyState::Expired)
+            .count() as u32,
+        revoked: keys
+            .iter()
+            .filter(|k| compute_state(k) == SetupKeyState::Revoked)
+            .count() as u32,
+        overused: keys
+            .iter()
+            .filter(|k| compute_state(k) == SetupKeyState::Overused)
+            .count() as u32,
+        reusable: keys
+            .iter()
+            .filter(|k| k.key_type == SetupKeyType::Reusable)
+            .count() as u32,
+        one_off: keys
+            .iter()
+            .filter(|k| k.key_type == SetupKeyType::OneOff)
+            .count() as u32,
         ephemeral: keys.iter().filter(|k| k.ephemeral).count() as u32,
         expiring_within_24h: expiring_soon(keys, day).len() as u32,
     }

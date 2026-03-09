@@ -70,7 +70,9 @@ mod tests {
             is_blocked: blocked,
             last_login: None,
             issued: None,
-            permissions: UserPermissions { dashboard_view: None },
+            permissions: UserPermissions {
+                dashboard_view: None,
+            },
         }
     }
 

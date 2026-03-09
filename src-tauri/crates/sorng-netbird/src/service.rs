@@ -57,7 +57,11 @@ impl NetBirdService {
 
     // ── Connection Management ──────────────────────────────────
 
-    pub fn create_connection(&mut self, name: &str, config: NetBirdConfig) -> Result<String, String> {
+    pub fn create_connection(
+        &mut self,
+        name: &str,
+        config: NetBirdConfig,
+    ) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let connection = NetBirdConnection {
             id: id.clone(),
@@ -248,7 +252,10 @@ impl NetBirdService {
     }
 
     pub fn valid_setup_keys(&self) -> Vec<&SetupKey> {
-        self.setup_keys.values().filter(|k| k.valid && !k.revoked).collect()
+        self.setup_keys
+            .values()
+            .filter(|k| k.valid && !k.revoked)
+            .collect()
     }
 
     // ── Posture Checks ─────────────────────────────────────────
@@ -414,7 +421,9 @@ mod tests {
     #[test]
     fn test_create_connection() {
         let mut svc = NetBirdService::new();
-        let id = svc.create_connection("test", NetBirdConfig::default()).unwrap();
+        let id = svc
+            .create_connection("test", NetBirdConfig::default())
+            .unwrap();
         assert!(svc.get_connection(&id).is_some());
         assert_eq!(svc.list_connections().len(), 1);
     }
@@ -422,7 +431,9 @@ mod tests {
     #[test]
     fn test_delete_connection() {
         let mut svc = NetBirdService::new();
-        let id = svc.create_connection("test", NetBirdConfig::default()).unwrap();
+        let id = svc
+            .create_connection("test", NetBirdConfig::default())
+            .unwrap();
         assert!(svc.delete_connection(&id));
         assert!(svc.get_connection(&id).is_none());
     }
@@ -430,7 +441,9 @@ mod tests {
     #[test]
     fn test_update_connection_status() {
         let mut svc = NetBirdService::new();
-        let id = svc.create_connection("test", NetBirdConfig::default()).unwrap();
+        let id = svc
+            .create_connection("test", NetBirdConfig::default())
+            .unwrap();
         svc.update_connection_status(&id, NetBirdStatus::Connected);
         let conn = svc.get_connection(&id).unwrap();
         assert_eq!(conn.status, NetBirdStatus::Connected);

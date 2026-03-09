@@ -36,7 +36,8 @@ pub fn validate_posture_check(check: &PostureCheck) -> Vec<String> {
     }
     if let Some(ref net) = d.peer_network_range_check {
         if net.ranges.is_empty() {
-            issues.push("Peer network range check must specify at least one CIDR range".to_string());
+            issues
+                .push("Peer network range check must specify at least one CIDR range".to_string());
         }
     }
     if let Some(ref proc) = d.process_check {
@@ -113,14 +114,26 @@ pub struct PostureSummary {
 pub fn summarize_posture_checks(checks: &[&PostureCheck]) -> PostureSummary {
     PostureSummary {
         total: checks.len() as u32,
-        with_version_check: checks.iter().filter(|c| c.checks.nb_version_check.is_some()).count() as u32,
-        with_os_check: checks.iter().filter(|c| c.checks.os_version_check.is_some()).count() as u32,
-        with_geo_check: checks.iter().filter(|c| c.checks.geo_location_check.is_some()).count() as u32,
+        with_version_check: checks
+            .iter()
+            .filter(|c| c.checks.nb_version_check.is_some())
+            .count() as u32,
+        with_os_check: checks
+            .iter()
+            .filter(|c| c.checks.os_version_check.is_some())
+            .count() as u32,
+        with_geo_check: checks
+            .iter()
+            .filter(|c| c.checks.geo_location_check.is_some())
+            .count() as u32,
         with_network_check: checks
             .iter()
             .filter(|c| c.checks.peer_network_range_check.is_some())
             .count() as u32,
-        with_process_check: checks.iter().filter(|c| c.checks.process_check.is_some()).count() as u32,
+        with_process_check: checks
+            .iter()
+            .filter(|c| c.checks.process_check.is_some())
+            .count() as u32,
     }
 }
 
@@ -154,7 +167,11 @@ mod tests {
 
     #[test]
     fn test_geo_location_check_builder() {
-        let check = geo_location_check("geo", GeoAction::Allow, vec![("US", Some("New York")), ("DE", None)]);
+        let check = geo_location_check(
+            "geo",
+            GeoAction::Allow,
+            vec![("US", Some("New York")), ("DE", None)],
+        );
         let geo = check.checks.geo_location_check.unwrap();
         assert_eq!(geo.locations.len(), 2);
         assert_eq!(geo.action, GeoAction::Allow);
