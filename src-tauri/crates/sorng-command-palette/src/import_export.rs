@@ -80,8 +80,7 @@ pub fn export_history(
             .map_err(|e| format!("JSON serialise error: {}", e)),
         ExportFormat::Markdown => Ok(history_to_markdown(&sorted)),
         ExportFormat::Base64 => {
-            let json = serde_json::to_string(&sorted)
-                .map_err(|e| format!("JSON error: {}", e))?;
+            let json = serde_json::to_string(&sorted).map_err(|e| format!("JSON error: {}", e))?;
             Ok(base64_encode(json.as_bytes()))
         }
     }
@@ -145,8 +144,8 @@ pub fn deserialise_share_package(json: &str) -> Result<SharePackage, String> {
         serde_json::from_str(json).map_err(|e| format!("Invalid share package: {}", e))?;
 
     // Verify checksum.
-    let data_json = serde_json::to_string(&pkg.data)
-        .map_err(|e| format!("Re-serialise error: {}", e))?;
+    let data_json =
+        serde_json::to_string(&pkg.data).map_err(|e| format!("Re-serialise error: {}", e))?;
     let computed = sha256_hex(data_json.as_bytes());
     if computed != pkg.checksum {
         return Err(format!(
@@ -273,7 +272,10 @@ pub fn validate_import(content: &str) -> ValidationResult {
                             if let Ok(data) = serde_json::from_str::<PersistentData>(&json) {
                                 summary = count_persistent_data(&data);
                             } else {
-                                errors.push(format!("Base64 decodes but is not valid palette data: {}", e));
+                                errors.push(format!(
+                                    "Base64 decodes but is not valid palette data: {}",
+                                    e
+                                ));
                             }
                         }
                         Err(e2) => errors.push(format!("Base64 decode failed: {}", e2)),
@@ -283,7 +285,7 @@ pub fn validate_import(content: &str) -> ValidationResult {
         }
         Some(ExportFormat::Csv) => {
             let lines = content.lines().count();
-            summary.history_entries = if lines > 1 { lines - 1 } else { 0 };
+            summary.history_entries = lines.saturating_sub(1);
             if lines < 2 {
                 warnings.push("CSV file appears empty".into());
             }
@@ -341,24 +343,30 @@ pub fn parse_import_data(content: &str) -> Result<PersistentData, String> {
 
     // 4. Try SnippetCollection JSON.
     if let Ok(coll) = serde_json::from_str::<SnippetCollection>(trimmed) {
-        let mut data = PersistentData::default();
-        data.snippets = coll.snippets;
+        let data = PersistentData {
+            snippets: coll.snippets,
+            ..Default::default()
+        };
         return Ok(data);
     }
 
     // 5. Try CSV.
     if trimmed.starts_with("command,") || trimmed.contains(",\"command\"") {
         let entries = parse_csv_history(trimmed)?;
-        let mut data = PersistentData::default();
-        data.history = entries;
+        let data = PersistentData {
+            history: entries,
+            ..Default::default()
+        };
         return Ok(data);
     }
 
     // 6. Try shell script.
     if trimmed.starts_with("#!/") || (trimmed.starts_with("# ") && trimmed.lines().count() > 1) {
         let entries = parse_shell_script_history(trimmed);
-        let mut data = PersistentData::default();
-        data.history = entries;
+        let data = PersistentData {
+            history: entries,
+            ..Default::default()
+        };
         return Ok(data);
     }
 
@@ -716,14 +724,14 @@ pub fn import_file_with_options(
 
 fn serialise(data: &PersistentData, format: ExportFormat) -> Result<String, String> {
     match format {
-        ExportFormat::Json => serde_json::to_string_pretty(data)
-            .map_err(|e| format!("JSON serialise error: {}", e)),
+        ExportFormat::Json => {
+            serde_json::to_string_pretty(data).map_err(|e| format!("JSON serialise error: {}", e))
+        }
         ExportFormat::ShellScript => Ok(persistent_data_to_shell(data)),
         ExportFormat::Csv => Ok(persistent_data_to_csv(data)),
         ExportFormat::Markdown => Ok(persistent_data_to_markdown(data)),
         ExportFormat::Base64 => {
-            let json = serde_json::to_string(data)
-                .map_err(|e| format!("JSON error: {}", e))?;
+            let json = serde_json::to_string(data).map_err(|e| format!("JSON error: {}", e))?;
             Ok(base64_encode(json.as_bytes()))
         }
     }
@@ -761,7 +769,10 @@ fn persistent_data_to_shell(data: &PersistentData) -> String {
     if !data.snippets.is_empty() {
         out.push_str("# ── Snippets ──\n");
         for snippet in &data.snippets {
-            out.push_str(&format!("# snippet: {} — {}\n", snippet.name, snippet.description));
+            out.push_str(&format!(
+                "# snippet: {} — {}\n",
+                snippet.name, snippet.description
+            ));
             if let Some(ref trigger) = snippet.trigger {
                 out.push_str(&format!("# trigger: {}\n", trigger));
             }
@@ -787,7 +798,10 @@ fn history_to_shell_script(entries: &[HistoryEntry], opts: &HistoryExportOptions
     let mut out = String::new();
     out.push_str("#!/bin/bash\n");
     out.push_str("# SortOfRemoteNG — History Export\n");
-    out.push_str(&format!("# Exported at: {}\n", Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
+    out.push_str(&format!(
+        "# Exported at: {}\n",
+        Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    ));
     if let Some(ref host) = opts.host {
         out.push_str(&format!("# Host filter: {}\n", host));
     }
@@ -863,7 +877,10 @@ fn parse_csv_history(content: &str) -> Result<Vec<HistoryEntry>, String> {
     for (line_num, line) in lines.iter().enumerate().skip(1) {
         let cols = parse_csv_line(line);
         if cols.len() < 9 {
-            log::warn!("CSV line {} has fewer than 9 columns, skipping", line_num + 1);
+            log::warn!(
+                "CSV line {} has fewer than 9 columns, skipping",
+                line_num + 1
+            );
             continue;
         }
 
@@ -877,9 +894,21 @@ fn parse_csv_history(content: &str) -> Result<Vec<HistoryEntry>, String> {
         entries.push(HistoryEntry {
             command: cols[0].clone(),
             session_id: String::new(),
-            host: if cols[1].is_empty() { None } else { Some(cols[1].clone()) },
-            username: if cols[2].is_empty() { None } else { Some(cols[2].clone()) },
-            cwd: if cols[3].is_empty() { None } else { Some(cols[3].clone()) },
+            host: if cols[1].is_empty() {
+                None
+            } else {
+                Some(cols[1].clone())
+            },
+            username: if cols[2].is_empty() {
+                None
+            } else {
+                Some(cols[2].clone())
+            },
+            cwd: if cols[3].is_empty() {
+                None
+            } else {
+                Some(cols[3].clone())
+            },
             exit_code: cols[4].parse().ok(),
             duration_ms: cols[5].parse().ok(),
             first_used,
@@ -1000,10 +1029,7 @@ fn persistent_data_to_markdown(data: &PersistentData) -> String {
                 "| `{}` | `{}` | {} |\n",
                 alias.trigger,
                 alias.expansion,
-                alias
-                    .description
-                    .as_deref()
-                    .unwrap_or(""),
+                alias.description.as_deref().unwrap_or(""),
             ));
         }
         out.push('\n');
@@ -1030,7 +1056,10 @@ fn history_to_markdown(entries: &[HistoryEntry]) -> String {
             entry.host.as_deref().unwrap_or("—"),
             entry.use_count,
             entry.last_used.format("%Y-%m-%d"),
-            entry.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "—".into()),
+            entry
+                .exit_code
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "—".into()),
         ));
     }
     out
@@ -1376,7 +1405,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     if input.is_empty() {
         return Err("Empty base64 input".into());
     }
-    if input.len() % 4 != 0 {
+    if !input.len().is_multiple_of(4) {
         return Err("Invalid base64 length".into());
     }
 
@@ -1387,8 +1416,10 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
             .map(|&b| b64_val(b))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let triple =
-            ((vals[0] as u32) << 18) | ((vals[1] as u32) << 12) | ((vals[2] as u32) << 6) | (vals[3] as u32);
+        let triple = ((vals[0] as u32) << 18)
+            | ((vals[1] as u32) << 12)
+            | ((vals[2] as u32) << 6)
+            | (vals[3] as u32);
 
         output.push(((triple >> 16) & 0xFF) as u8);
         if chunk[2] != b'=' {
@@ -1871,7 +1902,10 @@ mod tests {
     #[test]
     fn test_detect_format() {
         assert_eq!(detect_format("{\"version\": 1}"), Some(ExportFormat::Json));
-        assert_eq!(detect_format("#!/bin/bash\nls"), Some(ExportFormat::ShellScript));
+        assert_eq!(
+            detect_format("#!/bin/bash\nls"),
+            Some(ExportFormat::ShellScript)
+        );
         assert_eq!(
             detect_format("command,host,username\nls,srv,root"),
             Some(ExportFormat::Csv)

@@ -35,7 +35,10 @@ pub async fn palette_search_history(
 ) -> Result<Vec<HistoryEntryWithScore>, String> {
     let svc = state.read().await;
     let results = svc.search_history(&query, max.unwrap_or(25));
-    Ok(results.into_iter().map(|(e, s)| HistoryEntryWithScore { entry: e, score: s }).collect())
+    Ok(results
+        .into_iter()
+        .map(|(e, s)| HistoryEntryWithScore { entry: e, score: s })
+        .collect())
 }
 
 #[tauri::command]
@@ -153,7 +156,13 @@ pub async fn palette_search_snippets(
 ) -> Result<Vec<SnippetWithScore>, String> {
     let svc = state.read().await;
     let results = svc.search_snippets(&query, max.unwrap_or(25));
-    Ok(results.into_iter().map(|(s, score)| SnippetWithScore { snippet: s.clone(), score }).collect())
+    Ok(results
+        .into_iter()
+        .map(|(s, score)| SnippetWithScore {
+            snippet: s.clone(),
+            score,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -309,17 +318,37 @@ pub async fn palette_list_os_families() -> Result<Vec<OsFamily>, String> {
 #[tauri::command]
 pub async fn palette_list_os_distros() -> Result<Vec<OsDistro>, String> {
     Ok(vec![
-        OsDistro::Debian, OsDistro::Ubuntu, OsDistro::LinuxMint, OsDistro::Pop,
-        OsDistro::Kali, OsDistro::Raspbian,
-        OsDistro::Rhel, OsDistro::CentOs, OsDistro::Fedora, OsDistro::Rocky,
-        OsDistro::Alma, OsDistro::Oracle, OsDistro::Amazon,
-        OsDistro::OpenSuse, OsDistro::Sles,
-        OsDistro::Arch, OsDistro::Manjaro, OsDistro::EndeavourOs,
-        OsDistro::Gentoo, OsDistro::Alpine,
-        OsDistro::Void, OsDistro::NixOs, OsDistro::Slackware, OsDistro::ClearLinux,
-        OsDistro::WindowsDesktop, OsDistro::WindowsServer, OsDistro::WindowsCore,
+        OsDistro::Debian,
+        OsDistro::Ubuntu,
+        OsDistro::LinuxMint,
+        OsDistro::Pop,
+        OsDistro::Kali,
+        OsDistro::Raspbian,
+        OsDistro::Rhel,
+        OsDistro::CentOs,
+        OsDistro::Fedora,
+        OsDistro::Rocky,
+        OsDistro::Alma,
+        OsDistro::Oracle,
+        OsDistro::Amazon,
+        OsDistro::OpenSuse,
+        OsDistro::Sles,
+        OsDistro::Arch,
+        OsDistro::Manjaro,
+        OsDistro::EndeavourOs,
+        OsDistro::Gentoo,
+        OsDistro::Alpine,
+        OsDistro::Void,
+        OsDistro::NixOs,
+        OsDistro::Slackware,
+        OsDistro::ClearLinux,
+        OsDistro::WindowsDesktop,
+        OsDistro::WindowsServer,
+        OsDistro::WindowsCore,
         OsDistro::MacOsDesktop,
-        OsDistro::FreeBsd, OsDistro::OpenBsd, OsDistro::NetBsd,
+        OsDistro::FreeBsd,
+        OsDistro::OpenBsd,
+        OsDistro::NetBsd,
     ])
 }
 
@@ -445,8 +474,8 @@ pub async fn palette_validate_import_file(
     state: tauri::State<'_, CommandPaletteServiceState>,
     path: String,
 ) -> Result<ValidationResult, String> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))?;
     let svc = state.read().await;
     Ok(svc.validate_import(&content))
 }
@@ -469,8 +498,8 @@ pub async fn palette_preview_import_file(
     path: String,
     options: ImportOptions,
 ) -> Result<ImportResult, String> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))?;
     let svc = state.read().await;
     svc.preview_import(&content, &options)
 }
@@ -510,11 +539,7 @@ pub async fn palette_create_share_package(
     filter: Option<ExportFilter>,
 ) -> Result<String, String> {
     let svc = state.read().await;
-    let pkg = svc.create_share_package(
-        metadata,
-        scope.as_ref(),
-        filter.as_ref(),
-    )?;
+    let pkg = svc.create_share_package(metadata, scope.as_ref(), filter.as_ref())?;
     crate::import_export::serialise_share_package(&pkg)
 }
 
@@ -563,14 +588,9 @@ pub async fn palette_save_share_package(
     filter: Option<ExportFilter>,
 ) -> Result<(), String> {
     let svc = state.read().await;
-    let pkg = svc.create_share_package(
-        metadata,
-        scope.as_ref(),
-        filter.as_ref(),
-    )?;
+    let pkg = svc.create_share_package(metadata, scope.as_ref(), filter.as_ref())?;
     let json = crate::import_export::serialise_share_package(&pkg)?;
-    std::fs::write(&path, json)
-        .map_err(|e| format!("Failed to write share package: {}", e))
+    std::fs::write(&path, json).map_err(|e| format!("Failed to write share package: {}", e))
 }
 
 /// Load and import a share package from a file path.

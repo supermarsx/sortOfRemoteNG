@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use chrono::Utc;
+use std::path::{Path, PathBuf};
 
 use crate::types::PersistentData;
 
@@ -22,23 +22,24 @@ impl PersistenceManager {
     /// does not exist or cannot be parsed.
     pub fn load(&self) -> PersistentData {
         match std::fs::read_to_string(&self.file_path) {
-            Ok(contents) => {
-                match serde_json::from_str::<PersistentData>(&contents) {
-                    Ok(data) => {
-                        log::info!(
-                            "Loaded command palette data: {} history, {} snippets, {} aliases",
-                            data.history.len(),
-                            data.snippets.len(),
-                            data.aliases.len(),
-                        );
-                        data
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to parse command_palette.json, using defaults: {}", e);
-                        PersistentData::default()
-                    }
+            Ok(contents) => match serde_json::from_str::<PersistentData>(&contents) {
+                Ok(data) => {
+                    log::info!(
+                        "Loaded command palette data: {} history, {} snippets, {} aliases",
+                        data.history.len(),
+                        data.snippets.len(),
+                        data.aliases.len(),
+                    );
+                    data
                 }
-            }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to parse command_palette.json, using defaults: {}",
+                        e
+                    );
+                    PersistentData::default()
+                }
+            },
             Err(_) => {
                 log::info!("No existing command_palette.json, using defaults");
                 PersistentData::default()
@@ -74,8 +75,7 @@ impl PersistenceManager {
     pub fn export_to(&self, path: &Path, data: &PersistentData) -> Result<(), String> {
         let json = serde_json::to_string_pretty(data)
             .map_err(|e| format!("Failed to serialize export data: {}", e))?;
-        std::fs::write(path, json)
-            .map_err(|e| format!("Failed to write export file: {}", e))?;
+        std::fs::write(path, json).map_err(|e| format!("Failed to write export file: {}", e))?;
         Ok(())
     }
 
@@ -83,8 +83,7 @@ impl PersistenceManager {
     pub fn import_from(&self, path: &Path) -> Result<PersistentData, String> {
         let contents = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read import file: {}", e))?;
-        serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse import file: {}", e))
+        serde_json::from_str(&contents).map_err(|e| format!("Failed to parse import file: {}", e))
     }
 
     /// Return the file path (for debugging / UI display).

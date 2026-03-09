@@ -6,11 +6,11 @@ use tokio::sync::RwLock;
 use chrono::Utc;
 use sorng_llm::LlmServiceState;
 
-use crate::types::*;
-use crate::persistence::PersistenceManager;
 use crate::history::HistoryEngine;
-use crate::snippets::SnippetEngine;
+use crate::persistence::PersistenceManager;
 use crate::search::SearchEngine;
+use crate::snippets::SnippetEngine;
+use crate::types::*;
 
 /// Thread-safe state type for Tauri managed state.
 pub type CommandPaletteServiceState = Arc<RwLock<CommandPaletteService>>;
@@ -110,7 +110,8 @@ impl CommandPaletteService {
     /// Build a `PaletteStats` from history + snippets + aliases.
     pub fn stats(&self) -> PaletteStats {
         let (total_history, unique_commands, top_commands, commands_by_host) = self.history.stats();
-        let (total_snippets, builtin_snippets, custom_snippets, top_snippets) = self.snippets.stats();
+        let (total_snippets, builtin_snippets, custom_snippets, top_snippets) =
+            self.snippets.stats();
         PaletteStats {
             total_history_entries: total_history,
             unique_commands,
@@ -174,7 +175,9 @@ impl CommandPaletteService {
 
     pub fn import_snippets(&mut self, collection: SnippetCollection) -> usize {
         let count = self.snippets.import_collection(collection, false);
-        if count > 0 { self.dirty = true; }
+        if count > 0 {
+            self.dirty = true;
+        }
         count
     }
 
@@ -195,7 +198,11 @@ impl CommandPaletteService {
 
     /// Return snippets for a family (including universal).
     pub fn snippets_by_os_family(&self, family: &OsFamily) -> Vec<Snippet> {
-        self.snippets.by_os_family(family).into_iter().cloned().collect()
+        self.snippets
+            .by_os_family(family)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Return only universal snippets.
@@ -205,7 +212,9 @@ impl CommandPaletteService {
 
     /// Set the OS target on an existing snippet.
     pub fn set_snippet_os_target(&mut self, id: &str, os_target: OsTarget) -> Result<(), String> {
-        let snippet = self.snippets.get(id)
+        let snippet = self
+            .snippets
+            .get(id)
             .ok_or_else(|| format!("Snippet '{}' not found", id))?
             .clone();
         let mut updated = snippet;
@@ -216,8 +225,14 @@ impl CommandPaletteService {
     }
 
     /// Set the OS target on an existing alias.
-    pub fn set_alias_os_target(&mut self, trigger: &str, os_target: OsTarget) -> Result<(), String> {
-        let alias = self.aliases.iter_mut()
+    pub fn set_alias_os_target(
+        &mut self,
+        trigger: &str,
+        os_target: OsTarget,
+    ) -> Result<(), String> {
+        let alias = self
+            .aliases
+            .iter_mut()
             .find(|a| a.trigger == trigger)
             .ok_or_else(|| format!("Alias '{}' not found", trigger))?;
         alias.os_target = os_target;
@@ -237,7 +252,10 @@ impl CommandPaletteService {
     }
 
     pub fn remove_alias(&mut self, trigger: &str) -> Result<(), String> {
-        let idx = self.aliases.iter().position(|a| a.trigger == trigger)
+        let idx = self
+            .aliases
+            .iter()
+            .position(|a| a.trigger == trigger)
             .ok_or_else(|| format!("Alias '{}' not found", trigger))?;
         self.aliases.remove(idx);
         self.dirty = true;
@@ -276,7 +294,9 @@ impl CommandPaletteService {
 
     /// Save all state to disk if there are unsaved changes.
     pub fn save(&mut self) -> Result<(), String> {
-        if !self.dirty { return Ok(()); }
+        if !self.dirty {
+            return Ok(());
+        }
         let mut data = self.to_persistent_data();
         self.persistence.save(&mut data)?;
         self.dirty = false;
@@ -338,7 +358,9 @@ impl CommandPaletteService {
         let existing = self.to_persistent_data();
         let mut opts = options.clone();
         opts.dry_run = true;
-        Ok(crate::import_export::import_with_options(&existing, &incoming, &opts))
+        Ok(crate::import_export::import_with_options(
+            &existing, &incoming, &opts,
+        ))
     }
 
     /// Execute an import, applying conflict resolution and mutating state.
@@ -459,18 +481,16 @@ impl CommandPaletteService {
 
         let collection = SnippetCollection {
             name: "Filtered Snippets Export".into(),
-            description: Some(format!(
-                "Exported {} snippets",
-                filtered.len()
-            )),
+            description: Some(format!("Exported {} snippets", filtered.len())),
             snippets: filtered,
             exported_at: Utc::now(),
             version: Some("1".into()),
         };
 
         match format {
-            ExportFormat::Json => serde_json::to_string_pretty(&collection)
-                .map_err(|e| format!("JSON error: {}", e)),
+            ExportFormat::Json => {
+                serde_json::to_string_pretty(&collection).map_err(|e| format!("JSON error: {}", e))
+            }
             ExportFormat::Markdown => {
                 let data = PersistentData {
                     snippets: collection.snippets,
@@ -488,8 +508,7 @@ impl CommandPaletteService {
                     filter: ExportFilter::default(),
                     output_path: None,
                 };
-                crate::import_export::export(&data, &req)
-                    .map(|r| r.content.unwrap_or_default())
+                crate::import_export::export(&data, &req).map(|r| r.content.unwrap_or_default())
             }
             ExportFormat::ShellScript => {
                 let data = PersistentData {
@@ -508,11 +527,11 @@ impl CommandPaletteService {
                     filter: ExportFilter::default(),
                     output_path: None,
                 };
-                crate::import_export::export(&data, &req)
-                    .map(|r| r.content.unwrap_or_default())
+                crate::import_export::export(&data, &req).map(|r| r.content.unwrap_or_default())
             }
-            _ => serde_json::to_string_pretty(&collection)
-                .map_err(|e| format!("JSON error: {}", e)),
+            _ => {
+                serde_json::to_string_pretty(&collection).map_err(|e| format!("JSON error: {}", e))
+            }
         }
     }
 
@@ -539,6 +558,9 @@ impl CommandPaletteService {
 }
 
 /// Create the Tauri-managed state, loading persisted data from disk.
-pub fn create_palette_state(data_dir: &Path, llm: Option<LlmServiceState>) -> CommandPaletteServiceState {
+pub fn create_palette_state(
+    data_dir: &Path,
+    llm: Option<LlmServiceState>,
+) -> CommandPaletteServiceState {
     Arc::new(RwLock::new(CommandPaletteService::new(data_dir, llm)))
 }

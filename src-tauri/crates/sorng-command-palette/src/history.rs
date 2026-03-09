@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use chrono::Utc;
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+use std::collections::HashMap;
 
 use crate::types::*;
 
@@ -47,6 +47,7 @@ impl HistoryEngine {
 
     /// Record a command execution.  Deduplicates by normalised command string,
     /// incrementing `use_count` and updating timestamps for existing entries.
+    #[allow(clippy::too_many_arguments)]
     pub fn record(
         &mut self,
         command: &str,
@@ -65,13 +66,23 @@ impl HistoryEngine {
         let now = Utc::now();
 
         // Try to find an existing entry for this exact command.
-        if let Some(entry) = self.entries.iter_mut().find(|e| normalise_command(&e.command) == normalised) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|e| normalise_command(&e.command) == normalised)
+        {
             entry.use_count += 1;
             entry.last_used = now;
             entry.session_id = session_id.to_string();
-            if let Some(h) = host { entry.host = Some(h.to_string()); }
-            if let Some(u) = username { entry.username = Some(u.to_string()); }
-            if let Some(c) = cwd { entry.cwd = Some(c.to_string()); }
+            if let Some(h) = host {
+                entry.host = Some(h.to_string());
+            }
+            if let Some(u) = username {
+                entry.username = Some(u.to_string());
+            }
+            if let Some(c) = cwd {
+                entry.cwd = Some(c.to_string());
+            }
             entry.exit_code = exit_code;
             entry.duration_ms = duration_ms;
         } else {
@@ -118,7 +129,7 @@ impl HistoryEngine {
             + pin_bonus;
 
         // Clamp to 0..1 range.
-        score.min(1.0).max(0.0)
+        score.clamp(0.0, 1.0)
     }
 
     // ───────── Querying ─────────
@@ -136,7 +147,7 @@ impl HistoryEngine {
         for entry in &self.entries {
             if let Some(fuzzy_score) = self.matcher.fuzzy_match(&entry.command, query) {
                 // Normalise skim score (typically 0..200+) to 0..1 range.
-                let norm_fuzzy = (fuzzy_score as f64 / 200.0).min(1.0).max(0.0);
+                let norm_fuzzy = (fuzzy_score as f64 / 200.0).clamp(0.0, 1.0);
                 let frecency = self.frecency_score(entry);
                 let combined = 0.5 * norm_fuzzy + 0.5 * frecency;
                 results.push((entry.clone(), combined));
@@ -150,7 +161,9 @@ impl HistoryEngine {
 
     /// Return entries sorted by frecency (no fuzzy filter).
     pub fn top_frecency(&self, max: usize) -> Vec<(HistoryEntry, f64)> {
-        let mut scored: Vec<(HistoryEntry, f64)> = self.entries.iter()
+        let mut scored: Vec<(HistoryEntry, f64)> = self
+            .entries
+            .iter()
             .map(|e| (e.clone(), self.frecency_score(e)))
             .collect();
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -160,7 +173,9 @@ impl HistoryEngine {
 
     /// Get entries filtered by host.
     pub fn by_host(&self, host: &str, max: usize) -> Vec<(HistoryEntry, f64)> {
-        let mut scored: Vec<(HistoryEntry, f64)> = self.entries.iter()
+        let mut scored: Vec<(HistoryEntry, f64)> = self
+            .entries
+            .iter()
             .filter(|e| e.host.as_deref() == Some(host))
             .map(|e| (e.clone(), self.frecency_score(e)))
             .collect();
@@ -171,7 +186,9 @@ impl HistoryEngine {
 
     /// Get entries filtered by session.
     pub fn by_session(&self, session_id: &str, max: usize) -> Vec<(HistoryEntry, f64)> {
-        let mut scored: Vec<(HistoryEntry, f64)> = self.entries.iter()
+        let mut scored: Vec<(HistoryEntry, f64)> = self
+            .entries
+            .iter()
             .filter(|e| e.session_id == session_id)
             .map(|e| (e.clone(), self.frecency_score(e)))
             .collect();
@@ -197,9 +214,12 @@ impl HistoryEngine {
         }
 
         let total: u64 = followers.values().sum();
-        if total == 0 { return Vec::new(); }
+        if total == 0 {
+            return Vec::new();
+        }
 
-        let mut pairs: Vec<(String, f64)> = followers.into_iter()
+        let mut pairs: Vec<(String, f64)> = followers
+            .into_iter()
             .map(|(cmd, count)| (cmd, count as f64 / total as f64))
             .collect();
         pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -212,7 +232,11 @@ impl HistoryEngine {
     /// Pin / unpin a command.
     pub fn set_pinned(&mut self, command: &str, pinned: bool) -> bool {
         let norm = normalise_command(command);
-        if let Some(entry) = self.entries.iter_mut().find(|e| normalise_command(&e.command) == norm) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|e| normalise_command(&e.command) == norm)
+        {
             entry.pinned = pinned;
             self.dirty = true;
             true
@@ -224,7 +248,11 @@ impl HistoryEngine {
     /// Tag a history entry.
     pub fn add_tag(&mut self, command: &str, tag: &str) -> bool {
         let norm = normalise_command(command);
-        if let Some(entry) = self.entries.iter_mut().find(|e| normalise_command(&e.command) == norm) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|e| normalise_command(&e.command) == norm)
+        {
             if !entry.tags.contains(&tag.to_string()) {
                 entry.tags.push(tag.to_string());
                 self.dirty = true;
@@ -239,9 +267,12 @@ impl HistoryEngine {
     pub fn remove(&mut self, command: &str) -> bool {
         let norm = normalise_command(command);
         let before = self.entries.len();
-        self.entries.retain(|e| normalise_command(&e.command) != norm);
+        self.entries
+            .retain(|e| normalise_command(&e.command) != norm);
         let removed = self.entries.len() < before;
-        if removed { self.dirty = true; }
+        if removed {
+            self.dirty = true;
+        }
         removed
     }
 
@@ -254,6 +285,7 @@ impl HistoryEngine {
     // ───────── Analytics ─────────
 
     /// Return high-level stats.
+    #[allow(clippy::type_complexity)]
     pub fn stats(&self) -> (usize, usize, Vec<(String, u64)>, HashMap<String, usize>) {
         let total = self.entries.len();
 
@@ -280,8 +312,14 @@ impl HistoryEngine {
     /// with the higher use_count and the more recent last_used.
     pub fn import_entry(&mut self, entry: HistoryEntry) {
         let norm = normalise_command(&entry.command);
-        if norm.is_empty() { return; }
-        if let Some(existing) = self.entries.iter_mut().find(|e| normalise_command(&e.command) == norm) {
+        if norm.is_empty() {
+            return;
+        }
+        if let Some(existing) = self
+            .entries
+            .iter_mut()
+            .find(|e| normalise_command(&e.command) == norm)
+        {
             if entry.use_count > existing.use_count {
                 existing.use_count = entry.use_count;
             }
@@ -318,11 +356,17 @@ impl HistoryEngine {
         if self.entries.len() > self.config.max_entries {
             // Pre-compute scores to avoid borrowing self inside the closure.
             let config = self.config.clone();
-            let scores: Vec<f64> = self.entries.iter()
+            let scores: Vec<f64> = self
+                .entries
+                .iter()
                 .map(|e| Self::frecency_score_static(e, &config))
                 .collect();
             let mut indices: Vec<usize> = (0..self.entries.len()).collect();
-            indices.sort_by(|&a, &b| scores[b].partial_cmp(&scores[a]).unwrap_or(std::cmp::Ordering::Equal));
+            indices.sort_by(|&a, &b| {
+                scores[b]
+                    .partial_cmp(&scores[a])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             indices.truncate(self.config.max_entries);
             indices.sort_unstable(); // Restore order.
             let mut new_entries = Vec::with_capacity(indices.len());
@@ -346,5 +390,8 @@ impl HistoryEngine {
 /// Normalise a command for deduplication: trim whitespace, collapse multiple
 /// spaces, lowercase.
 fn normalise_command(cmd: &str) -> String {
-    cmd.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+    cmd.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }

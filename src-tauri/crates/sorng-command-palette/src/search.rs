@@ -2,10 +2,10 @@ use std::time::Instant;
 
 use sorng_llm::LlmServiceState;
 
-use crate::types::*;
+use crate::ai::AiEngine;
 use crate::history::HistoryEngine;
 use crate::snippets::SnippetEngine;
-use crate::ai::AiEngine;
+use crate::types::*;
 
 /// The unified search/ranking engine that federates results from multiple
 /// sources (history, snippets, aliases, AI) and merges them into a single
@@ -34,7 +34,9 @@ impl SearchEngine {
 
         // Resolve effective OS context for filtering.
         let os_ctx = if query.filter_by_os {
-            query.os_filter.as_ref()
+            query
+                .os_filter
+                .as_ref()
                 .or(query.context.os_context.as_ref())
         } else {
             None
@@ -53,7 +55,7 @@ impl SearchEngine {
         if config.auto_expand_triggers {
             if let Some((trigger, snippet)) = snippets.try_expand_trigger(input) {
                 // OS filter: skip trigger if snippet doesn't match the session OS.
-                let os_ok = os_ctx.map_or(true, |ctx| snippet.os_target.matches(ctx));
+                let os_ok = os_ctx.is_none_or(|ctx| snippet.os_target.matches(ctx));
                 if os_ok {
                     items.push(PaletteItem {
                         id: format!("trigger-{}", snippet.id),
@@ -64,7 +66,7 @@ impl SearchEngine {
                         kind: PaletteItemKind::Snippet,
                         source: PaletteSource::Snippet,
                         score: 1.0, // Trigger matches are top priority.
-                        risk_level: snippet.risk_level.clone(),
+                        risk_level: snippet.risk_level,
                         tags: snippet.tags.clone(),
                         documentation: Some(format!("Template: {}", snippet.template)),
                         icon: Some("snippet-trigger".to_string()),
@@ -82,13 +84,19 @@ impl SearchEngine {
             let history_results = if let Some(ref ctx) = query.context.session_id {
                 // Prefer session-specific history, fall back to global.
                 let session = history.by_session(ctx, max);
-                if session.is_empty() { history.search(input, max) } else { session }
+                if session.is_empty() {
+                    history.search(input, max)
+                } else {
+                    session
+                }
             } else {
                 history.search(input, max)
             };
 
             for (entry, score) in history_results {
-                if score < config.min_score { continue; }
+                if score < config.min_score {
+                    continue;
+                }
                 // OS filter: if the history entry has an os_context, use it;
                 // otherwise treat as universal and include it.
                 if let Some(ctx) = os_ctx {
@@ -116,7 +124,11 @@ impl SearchEngine {
                         entry.host.as_deref().unwrap_or("unknown host"),
                     )),
                     insert_text: entry.command.clone(),
-                    category: if entry.pinned { PaletteCategory::Recent } else { PaletteCategory::History },
+                    category: if entry.pinned {
+                        PaletteCategory::Recent
+                    } else {
+                        PaletteCategory::History
+                    },
                     kind: PaletteItemKind::HistoryRecall,
                     source: PaletteSource::History,
                     score,
@@ -126,11 +138,15 @@ impl SearchEngine {
                     icon: Some(if entry.pinned { "pin" } else { "history" }.to_string()),
                     shortcut: None,
                     pinned: entry.pinned,
-                    os_target: entry.os_context.as_ref().map(|oc| OsTarget {
-                        families: oc.family.iter().cloned().collect(),
-                        distros: oc.distro.iter().cloned().collect(),
-                        ..Default::default()
-                    }).unwrap_or_default(),
+                    os_target: entry
+                        .os_context
+                        .as_ref()
+                        .map(|oc| OsTarget {
+                            families: oc.family.iter().cloned().collect(),
+                            distros: oc.distro.iter().cloned().collect(),
+                            ..Default::default()
+                        })
+                        .unwrap_or_default(),
                 });
             }
         }
@@ -139,10 +155,14 @@ impl SearchEngine {
         if query.include_snippets {
             let snippet_results = snippets.search(input, max);
             for (snippet, score) in snippet_results {
-                if score < config.min_score { continue; }
+                if score < config.min_score {
+                    continue;
+                }
                 // OS filter: skip snippets that don't match the session OS.
                 if let Some(ctx) = os_ctx {
-                    if !snippet.os_target.matches(ctx) { continue; }
+                    if !snippet.os_target.matches(ctx) {
+                        continue;
+                    }
                 }
                 items.push(PaletteItem {
                     id: format!("snip-{}", snippet.id),
@@ -153,7 +173,7 @@ impl SearchEngine {
                     kind: PaletteItemKind::Snippet,
                     source: PaletteSource::Snippet,
                     score,
-                    risk_level: snippet.risk_level.clone(),
+                    risk_level: snippet.risk_level,
                     tags: snippet.tags.clone(),
                     documentation: Some(format!("Template: {}", snippet.template)),
                     icon: Some("snippet".to_string()),
@@ -166,14 +186,21 @@ impl SearchEngine {
 
         // ── 4. Alias matches ────────────────────────────────────────
         for alias in aliases {
-            if !alias.enabled { continue; }
+            if !alias.enabled {
+                continue;
+            }
             // OS filter: skip aliases that don't match the session OS.
             if let Some(ctx) = os_ctx {
-                if !alias.os_target.matches(ctx) { continue; }
+                if !alias.os_target.matches(ctx) {
+                    continue;
+                }
             }
-            if input.is_empty() || alias.trigger.contains(input) || alias.expansion.contains(input) {
+            if input.is_empty() || alias.trigger.contains(input) || alias.expansion.contains(input)
+            {
                 let score = if alias.trigger == input { 1.0 } else { 0.5 };
-                if score < config.min_score { continue; }
+                if score < config.min_score {
+                    continue;
+                }
                 items.push(PaletteItem {
                     id: format!("alias-{}", alias.trigger),
                     label: format!("{} → {}", alias.trigger, alias.expansion),
@@ -200,9 +227,13 @@ impl SearchEngine {
                 let predictions = history.predict_next(last, 5);
                 for (cmd, prob) in predictions {
                     let score = prob * 0.8; // Slight discount vs direct matches.
-                    if score < config.min_score { continue; }
+                    if score < config.min_score {
+                        continue;
+                    }
                     // Avoid duplicates.
-                    if items.iter().any(|i| i.insert_text == cmd) { continue; }
+                    if items.iter().any(|i| i.insert_text == cmd) {
+                        continue;
+                    }
                     items.push(PaletteItem {
                         id: format!("pred-{}", hash_string(&cmd)),
                         label: cmd.clone(),
@@ -227,7 +258,9 @@ impl SearchEngine {
         // ── 6. AI suggestions (if enabled and input is non-trivial) ─
         if query.include_ai && config.ai_enabled && input.len() >= 2 {
             if let Some(llm_state) = llm {
-                let snippet_triggers: Vec<String> = snippets.list().iter()
+                let snippet_triggers: Vec<String> = snippets
+                    .list()
+                    .iter()
                     .filter_map(|s| s.trigger.clone())
                     .collect();
 
@@ -247,7 +280,9 @@ impl SearchEngine {
                         let ai_items = AiEngine::into_palette_items(suggestions);
                         for item in ai_items {
                             // Avoid duplicate commands.
-                            if items.iter().any(|i| i.insert_text == item.insert_text) { continue; }
+                            if items.iter().any(|i| i.insert_text == item.insert_text) {
+                                continue;
+                            }
                             items.push(item);
                         }
                     }
@@ -261,8 +296,11 @@ impl SearchEngine {
         // ── 7. Sort by score (descending) with pinned items first ───
         items.sort_by(|a, b| {
             // Pinned first.
-            b.pinned.cmp(&a.pinned)
-                .then(b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal))
+            b.pinned.cmp(&a.pinned).then(
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
         });
 
         let total_matches = items.len();

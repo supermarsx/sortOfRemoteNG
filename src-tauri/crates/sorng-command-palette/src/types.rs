@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  OS / platform classification
@@ -35,22 +35,22 @@ pub enum OsDistro {
     Debian,
     Ubuntu,
     LinuxMint,
-    Pop,       // Pop!_OS
+    Pop, // Pop!_OS
     Kali,
     Raspbian,
 
     // ── Red Hat family ───────────────────
-    Rhel,      // Red Hat Enterprise Linux
+    Rhel, // Red Hat Enterprise Linux
     CentOs,
     Fedora,
     Rocky,
     Alma,
-    Oracle,    // Oracle Linux
-    Amazon,    // Amazon Linux
+    Oracle, // Oracle Linux
+    Amazon, // Amazon Linux
 
     // ── SUSE family ─────────────────────
     OpenSuse,
-    Sles,      // SUSE Linux Enterprise Server
+    Sles, // SUSE Linux Enterprise Server
 
     // ── Arch family ─────────────────────
     Arch,
@@ -183,12 +183,18 @@ impl OsTarget {
 
     /// Convenience: target a single OS family.
     pub fn family(family: OsFamily) -> Self {
-        Self { families: vec![family], ..Default::default() }
+        Self {
+            families: vec![family],
+            ..Default::default()
+        }
     }
 
     /// Convenience: target one or more distros.
     pub fn distros(distros: Vec<OsDistro>) -> Self {
-        Self { distros, ..Default::default() }
+        Self {
+            distros,
+            ..Default::default()
+        }
     }
 
     /// Returns true when the given `OsContext` satisfies all constraints.
@@ -209,19 +215,27 @@ impl OsTarget {
         }
         // 3. Family blacklist.
         if let Some(f) = &ctx.family {
-            if self.excluded_families.contains(f) { return false; }
+            if self.excluded_families.contains(f) {
+                return false;
+            }
         }
         // 4. Distro blacklist.
         if let Some(d) = &ctx.distro {
-            if self.excluded_distros.contains(d) { return false; }
+            if self.excluded_distros.contains(d) {
+                return false;
+            }
         }
         // 5. Version range (lexical comparison).
         if let Some(ref v) = ctx.version {
             if let Some(ref min) = self.min_version {
-                if v.as_str() < min.as_str() { return false; }
+                if v.as_str() < min.as_str() {
+                    return false;
+                }
             }
             if let Some(ref max) = self.max_version {
-                if v.as_str() > max.as_str() { return false; }
+                if v.as_str() > max.as_str() {
+                    return false;
+                }
             }
         }
         // 6. Shell requirement.
@@ -247,14 +261,30 @@ impl OsDistro {
     /// Return the `OsFamily` this distro belongs to.
     pub fn family(&self) -> OsFamily {
         match self {
-            Self::Debian | Self::Ubuntu | Self::LinuxMint | Self::Pop
-            | Self::Kali | Self::Raspbian
-            | Self::Rhel | Self::CentOs | Self::Fedora | Self::Rocky
-            | Self::Alma | Self::Oracle | Self::Amazon
-            | Self::OpenSuse | Self::Sles
-            | Self::Arch | Self::Manjaro | Self::EndeavourOs
-            | Self::Gentoo | Self::Alpine
-            | Self::Void | Self::NixOs | Self::Slackware | Self::ClearLinux => OsFamily::Linux,
+            Self::Debian
+            | Self::Ubuntu
+            | Self::LinuxMint
+            | Self::Pop
+            | Self::Kali
+            | Self::Raspbian
+            | Self::Rhel
+            | Self::CentOs
+            | Self::Fedora
+            | Self::Rocky
+            | Self::Alma
+            | Self::Oracle
+            | Self::Amazon
+            | Self::OpenSuse
+            | Self::Sles
+            | Self::Arch
+            | Self::Manjaro
+            | Self::EndeavourOs
+            | Self::Gentoo
+            | Self::Alpine
+            | Self::Void
+            | Self::NixOs
+            | Self::Slackware
+            | Self::ClearLinux => OsFamily::Linux,
 
             Self::WindowsDesktop | Self::WindowsServer | Self::WindowsCore => OsFamily::Windows,
 
@@ -268,14 +298,24 @@ impl OsDistro {
 
     /// True if this distro uses `apt` / `dpkg`.
     pub fn is_apt_based(&self) -> bool {
-        matches!(self, Self::Debian | Self::Ubuntu | Self::LinuxMint
-            | Self::Pop | Self::Kali | Self::Raspbian)
+        matches!(
+            self,
+            Self::Debian | Self::Ubuntu | Self::LinuxMint | Self::Pop | Self::Kali | Self::Raspbian
+        )
     }
 
     /// True if this distro uses `dnf` or `yum`.
     pub fn is_rpm_based(&self) -> bool {
-        matches!(self, Self::Rhel | Self::CentOs | Self::Fedora
-            | Self::Rocky | Self::Alma | Self::Oracle | Self::Amazon)
+        matches!(
+            self,
+            Self::Rhel
+                | Self::CentOs
+                | Self::Fedora
+                | Self::Rocky
+                | Self::Alma
+                | Self::Oracle
+                | Self::Amazon
+        )
     }
 
     /// True if this distro uses `zypper`.
@@ -344,17 +384,25 @@ pub enum PaletteSource {
 }
 
 /// Risk level for a palette item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+)]
 pub enum PaletteRiskLevel {
+    #[default]
     Safe,
     Low,
     Medium,
     High,
     Critical,
-}
-
-impl Default for PaletteRiskLevel {
-    fn default() -> Self { Self::Safe }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -465,10 +513,18 @@ pub struct FrecencyConfig {
     pub max_entries: usize,
 }
 
-fn default_recency_weight() -> f64 { 0.6 }
-fn default_frequency_weight() -> f64 { 0.4 }
-fn default_half_life_hours() -> f64 { 72.0 }
-fn default_max_entries() -> usize { 10_000 }
+fn default_recency_weight() -> f64 {
+    0.6
+}
+fn default_frequency_weight() -> f64 {
+    0.4
+}
+fn default_half_life_hours() -> f64 {
+    72.0
+}
+fn default_max_entries() -> usize {
+    10_000
+}
 
 impl Default for FrecencyConfig {
     fn default() -> Self {
@@ -486,7 +542,7 @@ impl Default for FrecencyConfig {
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Full snippet category (superset of sorng-ai-assist's SnippetCategory).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default)]
 pub enum SnippetCategory {
     FileOperations,
     Networking,
@@ -506,11 +562,8 @@ pub enum SnippetCategory {
     Tunnels,
     FileTransfer,
     Scripting,
+    #[default]
     Custom,
-}
-
-impl Default for SnippetCategory {
-    fn default() -> Self { Self::Custom }
 }
 
 /// A command snippet with full template support.
@@ -640,7 +693,9 @@ pub struct Alias {
     pub os_target: OsTarget,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Session context
@@ -724,7 +779,9 @@ pub struct PaletteQuery {
     pub os_filter: Option<OsContext>,
 }
 
-fn default_max_results() -> usize { 25 }
+fn default_max_results() -> usize {
+    25
+}
 
 /// Response returned from unifiedsearch.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -778,9 +835,15 @@ pub struct PaletteConfig {
     pub recent_context_size: usize,
 }
 
-fn default_min_score() -> f64 { 0.1 }
-fn default_ai_timeout_ms() -> u64 { 3000 }
-fn default_recent_context_size() -> usize { 20 }
+fn default_min_score() -> f64 {
+    0.1
+}
+fn default_ai_timeout_ms() -> u64 {
+    3000
+}
+fn default_recent_context_size() -> usize {
+    20
+}
 
 impl Default for PaletteConfig {
     fn default() -> Self {
@@ -919,7 +982,9 @@ pub struct ExportScope {
     pub config: bool,
 }
 
-fn bool_true() -> bool { true }
+fn bool_true() -> bool {
+    true
+}
 
 impl Default for ExportScope {
     fn default() -> Self {
@@ -1071,16 +1136,22 @@ pub struct SharePackageMetadata {
     pub format_version: u32,
 }
 
-fn default_share_version() -> String { "1.0.0".to_string() }
-fn default_package_format_version() -> u32 { 1 }
+fn default_share_version() -> String {
+    "1.0.0".to_string()
+}
+fn default_package_format_version() -> u32 {
+    1
+}
 
 // ────────── Import / Conflict Resolution ──────────
 
 /// Strategy for resolving conflicts when an imported item already exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ConflictStrategy {
     /// Skip conflicting items (keep existing).
+    #[default]
     Skip,
     /// Overwrite existing with imported data.
     Overwrite,
@@ -1090,10 +1161,6 @@ pub enum ConflictStrategy {
     Merge,
     /// Keep the entry with the most-recent timestamp.
     NewestWins,
-}
-
-impl Default for ConflictStrategy {
-    fn default() -> Self { Self::Skip }
 }
 
 /// Options controlling an import operation.

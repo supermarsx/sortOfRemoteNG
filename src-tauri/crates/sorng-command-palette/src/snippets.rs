@@ -1,16 +1,21 @@
-use std::collections::HashMap;
 use chrono::Utc;
-use uuid::Uuid;
-use regex::Regex;
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+use regex::Regex;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 use crate::types::*;
 
 /// Helper to build an OsTarget for Linux / macOS / BSD (i.e. any Unix-like).
 fn unix_target() -> OsTarget {
     OsTarget {
-        families: vec![OsFamily::Linux, OsFamily::MacOs, OsFamily::Bsd, OsFamily::Unix],
+        families: vec![
+            OsFamily::Linux,
+            OsFamily::MacOs,
+            OsFamily::Bsd,
+            OsFamily::Unix,
+        ],
         ..Default::default()
     }
 }
@@ -29,6 +34,12 @@ pub struct SnippetEngine {
     matcher: SkimMatcherV2,
     /// Whether data has been modified since last save.
     dirty: bool,
+}
+
+impl Default for SnippetEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SnippetEngine {
@@ -51,8 +62,12 @@ impl SnippetEngine {
         self.dirty = false;
     }
 
-    pub fn is_dirty(&self) -> bool { self.dirty }
-    pub fn mark_clean(&mut self) { self.dirty = false; }
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+    pub fn mark_clean(&mut self) {
+        self.dirty = false;
+    }
 
     // ───────── CRUD ─────────
 
@@ -88,7 +103,9 @@ impl SnippetEngine {
     /// Remove a snippet by ID.
     pub fn remove(&mut self, id: &str) -> Option<Snippet> {
         let removed = self.snippets.remove(id);
-        if removed.is_some() { self.dirty = true; }
+        if removed.is_some() {
+            self.dirty = true;
+        }
         removed
     }
 
@@ -99,24 +116,34 @@ impl SnippetEngine {
 
     /// List snippets in a category.
     pub fn by_category(&self, category: &SnippetCategory) -> Vec<&Snippet> {
-        self.snippets.values().filter(|s| &s.category == category).collect()
+        self.snippets
+            .values()
+            .filter(|s| &s.category == category)
+            .collect()
     }
 
     /// List snippets compatible with a given OS context.
     pub fn by_os(&self, ctx: &OsContext) -> Vec<&Snippet> {
-        self.snippets.values().filter(|s| s.os_target.matches(ctx)).collect()
+        self.snippets
+            .values()
+            .filter(|s| s.os_target.matches(ctx))
+            .collect()
     }
 
     /// List snippets that are universal (no OS constraints).
     pub fn universal(&self) -> Vec<&Snippet> {
-        self.snippets.values().filter(|s| s.os_target.is_universal()).collect()
+        self.snippets
+            .values()
+            .filter(|s| s.os_target.is_universal())
+            .collect()
     }
 
     /// List snippets targeting a specific OS family.
     pub fn by_os_family(&self, family: &OsFamily) -> Vec<&Snippet> {
-        self.snippets.values().filter(|s| {
-            s.os_target.is_universal() || s.os_target.families.contains(family)
-        }).collect()
+        self.snippets
+            .values()
+            .filter(|s| s.os_target.is_universal() || s.os_target.families.contains(family))
+            .collect()
     }
 
     /// Record that a snippet was used (increments counter, updates last_used).
@@ -137,7 +164,9 @@ impl SnippetEngine {
     pub fn search(&self, query: &str, max: usize) -> Vec<(&Snippet, f64)> {
         if query.is_empty() {
             // Return all sorted by usage.
-            let mut all: Vec<(&Snippet, f64)> = self.snippets.values()
+            let mut all: Vec<(&Snippet, f64)> = self
+                .snippets
+                .values()
                 .map(|s| (s, s.use_count as f64))
                 .collect();
             all.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -176,7 +205,7 @@ impl SnippetEngine {
             }
 
             if best_score > 0 {
-                let norm = (best_score as f64 / 200.0).min(1.0).max(0.0);
+                let norm = (best_score as f64 / 200.0).clamp(0.0, 1.0);
                 results.push((snippet, norm));
             }
         }
@@ -207,7 +236,9 @@ impl SnippetEngine {
         id: &str,
         params: &HashMap<String, String>,
     ) -> Result<SnippetRenderResult, String> {
-        let snippet = self.snippets.get(id)
+        let snippet = self
+            .snippets
+            .get(id)
             .ok_or_else(|| format!("Snippet '{}' not found", id))?;
 
         self.render_template(&snippet.template, &snippet.parameters, params)
@@ -226,8 +257,8 @@ impl SnippetEngine {
         let mut missing = Vec::new();
 
         // Find all {{param}} placeholders.
-        let placeholder_re = Regex::new(r"\{\{(\w+)\}\}")
-            .map_err(|e| format!("Regex error: {}", e))?;
+        let placeholder_re =
+            Regex::new(r"\{\{(\w+)\}\}").map_err(|e| format!("Regex error: {}", e))?;
 
         for cap in placeholder_re.captures_iter(template) {
             let full_match = cap.get(0).unwrap().as_str();
@@ -237,8 +268,9 @@ impl SnippetEngine {
                 // Validate if a regex is specified.
                 if let Some(declared) = declared_params.iter().find(|p| p.name == param_name) {
                     if let Some(ref vr) = declared.validation_regex {
-                        let re = Regex::new(vr)
-                            .map_err(|e| format!("Invalid validation regex for '{}': {}", param_name, e))?;
+                        let re = Regex::new(vr).map_err(|e| {
+                            format!("Invalid validation regex for '{}': {}", param_name, e)
+                        })?;
                         if !re.is_match(value) {
                             return Err(format!(
                                 "Parameter '{}' value '{}' does not match validation pattern '{}'",
@@ -268,14 +300,20 @@ impl SnippetEngine {
 
         if !missing.is_empty() {
             // Check if any are required.
-            let required_missing: Vec<&str> = missing.iter()
+            let required_missing: Vec<&str> = missing
+                .iter()
                 .filter(|name| {
-                    declared_params.iter().any(|p| p.name == **name && p.required)
+                    declared_params
+                        .iter()
+                        .any(|p| p.name == **name && p.required)
                 })
                 .map(|s| s.as_str())
                 .collect();
             if !required_missing.is_empty() {
-                return Err(format!("Missing required parameters: {}", required_missing.join(", ")));
+                return Err(format!(
+                    "Missing required parameters: {}",
+                    required_missing.join(", ")
+                ));
             }
         }
 
@@ -294,7 +332,9 @@ impl SnippetEngine {
         SnippetCollection {
             name: "Custom Snippets Export".to_string(),
             description: Some("Exported from command palette".to_string()),
-            snippets: self.snippets.values()
+            snippets: self
+                .snippets
+                .values()
                 .filter(|s| !s.is_builtin)
                 .cloned()
                 .collect(),
@@ -308,7 +348,9 @@ impl SnippetEngine {
         SnippetCollection {
             name: format!("{:?} Snippets", category),
             description: None,
-            snippets: self.snippets.values()
+            snippets: self
+                .snippets
+                .values()
                 .filter(|s| &s.category == category)
                 .cloned()
                 .collect(),
@@ -326,7 +368,9 @@ impl SnippetEngine {
                 count += 1;
             }
         }
-        if count > 0 { self.dirty = true; }
+        if count > 0 {
+            self.dirty = true;
+        }
         count
     }
 
@@ -337,7 +381,8 @@ impl SnippetEngine {
 
     /// Return all user (non-builtin) snippets for persistence.
     pub fn user_snippets(&self) -> Vec<Snippet> {
-        self.snippets.values()
+        self.snippets
+            .values()
             .filter(|s| !s.is_builtin)
             .cloned()
             .collect()
@@ -349,7 +394,9 @@ impl SnippetEngine {
         let total = self.snippets.len();
         let builtin = self.snippets.values().filter(|s| s.is_builtin).count();
         let custom = total - builtin;
-        let mut top: Vec<(String, u64)> = self.snippets.values()
+        let mut top: Vec<(String, u64)> = self
+            .snippets
+            .values()
             .map(|s| (s.name.clone(), s.use_count))
             .collect();
         top.sort_by(|a, b| b.1.cmp(&a.1));

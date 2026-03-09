@@ -1,8 +1,6 @@
 use uuid::Uuid;
 
-use sorng_llm::{
-    ChatMessage, ChatCompletionRequest, LlmServiceState,
-};
+use sorng_llm::{ChatCompletionRequest, ChatMessage, LlmServiceState};
 
 use crate::types::*;
 
@@ -40,7 +38,10 @@ impl AiEngine {
             prompt.push_str(&format!("\nHost: {}", host));
         }
         if !ctx.installed_tools.is_empty() {
-            prompt.push_str(&format!("\nAvailable tools: {}", ctx.installed_tools.join(", ")));
+            prompt.push_str(&format!(
+                "\nAvailable tools: {}",
+                ctx.installed_tools.join(", ")
+            ));
         }
 
         prompt
@@ -52,7 +53,10 @@ impl AiEngine {
         recent_history: &[String],
         available_snippets: &[String],
     ) -> String {
-        let mut prompt = format!("The user is typing in their SSH terminal and has entered: \"{}\"\n", input);
+        let mut prompt = format!(
+            "The user is typing in their SSH terminal and has entered: \"{}\"\n",
+            input
+        );
 
         if !recent_history.is_empty() {
             prompt.push_str("\nRecent commands in this session:\n");
@@ -62,7 +66,8 @@ impl AiEngine {
         }
 
         if !available_snippets.is_empty() {
-            prompt.push_str("\nAvailable snippet triggers (for context, not to suggest directly):\n");
+            prompt
+                .push_str("\nAvailable snippet triggers (for context, not to suggest directly):\n");
             for trigger in available_snippets.iter().take(10) {
                 prompt.push_str(&format!("  - {}\n", trigger));
             }
@@ -89,7 +94,11 @@ impl AiEngine {
         }
 
         let system = ChatMessage::system(&Self::system_prompt(context));
-        let user = ChatMessage::user(&Self::user_prompt(input, recent_history, available_snippets));
+        let user = ChatMessage::user(&Self::user_prompt(
+            input,
+            recent_history,
+            available_snippets,
+        ));
 
         let request = ChatCompletionRequest {
             model: String::new(), // Use default from provider config.
@@ -158,33 +167,36 @@ impl AiEngine {
 
     /// Convert AI suggestions into PaletteItems.
     pub fn into_palette_items(suggestions: Vec<AiSuggestion>) -> Vec<PaletteItem> {
-        suggestions.into_iter().map(|s| {
-            let risk = match s.risk.as_deref() {
-                Some("safe") => PaletteRiskLevel::Safe,
-                Some("low") => PaletteRiskLevel::Low,
-                Some("medium") => PaletteRiskLevel::Medium,
-                Some("high") => PaletteRiskLevel::High,
-                Some("critical") => PaletteRiskLevel::Critical,
-                _ => PaletteRiskLevel::Safe,
-            };
+        suggestions
+            .into_iter()
+            .map(|s| {
+                let risk = match s.risk.as_deref() {
+                    Some("safe") => PaletteRiskLevel::Safe,
+                    Some("low") => PaletteRiskLevel::Low,
+                    Some("medium") => PaletteRiskLevel::Medium,
+                    Some("high") => PaletteRiskLevel::High,
+                    Some("critical") => PaletteRiskLevel::Critical,
+                    _ => PaletteRiskLevel::Safe,
+                };
 
-            PaletteItem {
-                id: format!("ai-{}", Uuid::new_v4()),
-                label: s.command.clone(),
-                description: Some(s.description.clone()),
-                insert_text: s.command,
-                category: PaletteCategory::AiSuggestion,
-                kind: PaletteItemKind::AiCompletion,
-                source: PaletteSource::Ai,
-                score: s.confidence,
-                risk_level: risk,
-                tags: Vec::new(),
-                documentation: s.explanation,
-                icon: Some("ai".to_string()),
-                shortcut: None,
-                pinned: false,
-                os_target: OsTarget::default(), // AI suggestions are context-aware already.
-            }
-        }).collect()
+                PaletteItem {
+                    id: format!("ai-{}", Uuid::new_v4()),
+                    label: s.command.clone(),
+                    description: Some(s.description.clone()),
+                    insert_text: s.command,
+                    category: PaletteCategory::AiSuggestion,
+                    kind: PaletteItemKind::AiCompletion,
+                    source: PaletteSource::Ai,
+                    score: s.confidence,
+                    risk_level: risk,
+                    tags: Vec::new(),
+                    documentation: s.explanation,
+                    icon: Some("ai".to_string()),
+                    shortcut: None,
+                    pinned: false,
+                    os_target: OsTarget::default(), // AI suggestions are context-aware already.
+                }
+            })
+            .collect()
     }
 }
