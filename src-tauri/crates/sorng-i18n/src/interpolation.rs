@@ -119,10 +119,7 @@ pub fn cldr_category(locale_language: &str, count: i64) -> &'static str {
                 "one"
             } else if (2..=4).contains(&mod10) && !(12..=14).contains(&mod100) {
                 "few"
-            } else if mod10 == 0
-                || (5..=9).contains(&mod10)
-                || (12..=14).contains(&mod100)
-            {
+            } else if mod10 == 0 || (5..=9).contains(&mod10) || (12..=14).contains(&mod100) {
                 "many"
             } else {
                 "other"
@@ -175,10 +172,7 @@ mod tests {
     #[test]
     fn missing_variable_preserved() {
         let vars = HashMap::new();
-        assert_eq!(
-            interpolate("Hello {{name}}!", &vars),
-            "Hello {{name}}!"
-        );
+        assert_eq!(interpolate("Hello {{name}}!", &vars), "Hello {{name}}!");
     }
 
     #[test]

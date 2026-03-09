@@ -52,9 +52,7 @@ impl Default for SsrOptions {
 pub fn build_ssr_payload(engine: &I18nEngine, opts: &SsrOptions) -> SsrTranslationPayload {
     let mut map = if opts.include_fallback {
         // Start with default locale as base
-        engine
-            .full_map(engine.default_locale())
-            .unwrap_or_default()
+        engine.full_map(engine.default_locale()).unwrap_or_default()
     } else {
         FlatMap::new()
     };

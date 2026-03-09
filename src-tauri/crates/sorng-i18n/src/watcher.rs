@@ -54,11 +54,14 @@ impl I18nWatcher {
         // Spawn the notify debouncer on its own thread (notify is sync).
         let debouncer = {
             let tx = tx.clone();
-            new_debouncer(config.debounce, move |result: Result<Vec<DebouncedEvent>, _>| {
-                if let Ok(events) = result {
-                    let _ = tx.blocking_send(events);
-                }
-            })
+            new_debouncer(
+                config.debounce,
+                move |result: Result<Vec<DebouncedEvent>, _>| {
+                    if let Ok(events) = result {
+                        let _ = tx.blocking_send(events);
+                    }
+                },
+            )
             .map_err(|e| crate::error::I18nError::WatcherError(e.to_string()))?
         };
 
@@ -81,12 +84,9 @@ impl I18nWatcher {
         let task = tokio::spawn(async move {
             while let Some(events) = rx.recv().await {
                 // Only react to JSON file changes
-                let any_json = events.iter().any(|ev| {
-                    ev.path
-                        .extension()
-                        .map(|e| e == "json")
-                        .unwrap_or(false)
-                });
+                let any_json = events
+                    .iter()
+                    .any(|ev| ev.path.extension().map(|e| e == "json").unwrap_or(false));
 
                 if !any_json {
                     continue;

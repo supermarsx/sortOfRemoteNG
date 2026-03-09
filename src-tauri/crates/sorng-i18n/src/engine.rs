@@ -114,7 +114,10 @@ pub struct I18nEngine {
 
 impl I18nEngine {
     /// Create a new engine and eager-load all locale files from `locales_dir`.
-    pub fn new(locales_dir: impl Into<PathBuf>, default_locale: impl Into<String>) -> I18nResult<Self> {
+    pub fn new(
+        locales_dir: impl Into<PathBuf>,
+        default_locale: impl Into<String>,
+    ) -> I18nResult<Self> {
         let locales_dir = locales_dir.into();
         let default_locale = default_locale.into();
         let engine = Self {
@@ -143,7 +146,10 @@ impl I18nEngine {
     /// Reload all locale files from the configured directory.
     pub fn reload_all(&self) -> I18nResult<()> {
         if !self.locales_dir.exists() {
-            log::warn!("i18n: locales directory does not exist: {:?}", self.locales_dir);
+            log::warn!(
+                "i18n: locales directory does not exist: {:?}",
+                self.locales_dir
+            );
             return Ok(());
         }
 
@@ -196,8 +202,7 @@ impl I18nEngine {
                 existing.store(Arc::new(bundle));
             }
             None => {
-                self.bundles
-                    .insert(tag, ArcSwap::from_pointee(bundle));
+                self.bundles.insert(tag, ArcSwap::from_pointee(bundle));
             }
         }
     }
@@ -226,11 +231,7 @@ impl I18nEngine {
     ///
     /// Each file in `dir` (e.g. `en.json`) is loaded and its keys are
     /// prefixed with `namespace.` before merging into the main bundle.
-    pub fn register_namespace(
-        &self,
-        namespace: &str,
-        dir: impl Into<PathBuf>,
-    ) -> I18nResult<()> {
+    pub fn register_namespace(&self, namespace: &str, dir: impl Into<PathBuf>) -> I18nResult<()> {
         let dir = dir.into();
         self.load_namespace_from_dir(namespace, &dir)?;
         self.namespaces.insert(namespace.to_string(), dir);
@@ -340,18 +341,14 @@ impl I18nEngine {
             }
         }
 
-        self.default_bundle()
-            .map_or(false, |b| b.get(key).is_some())
+        self.default_bundle().is_some_and(|b| b.get(key).is_some())
     }
 
     // ── Introspection ────────────────────────────────────────────────
 
     /// List all loaded locale tags.
     pub fn available_locales(&self) -> Vec<String> {
-        self.bundles
-            .iter()
-            .map(|e| e.key().clone())
-            .collect()
+        self.bundles.iter().map(|e| e.key().clone()).collect()
     }
 
     /// Get the default locale tag.
@@ -391,14 +388,12 @@ impl I18nEngine {
     /// Return a full translation map for a locale (useful for SSR / bulk
     /// transfer to the frontend).
     pub fn full_map(&self, locale_tag: &str) -> Option<FlatMap> {
-        self.bundle(locale_tag)
-            .map(|b| b.translations.clone())
+        self.bundle(locale_tag).map(|b| b.translations.clone())
     }
 
     /// Export a bundle as nested JSON (matching the frontend file format).
     pub fn export_nested_json(&self, locale_tag: &str) -> Option<serde_json::Value> {
-        self.full_map(locale_tag)
-            .map(|m| loader::unflatten(&m))
+        self.full_map(locale_tag).map(|m| loader::unflatten(&m))
     }
 
     /// Return keys for a namespace prefix within a locale.

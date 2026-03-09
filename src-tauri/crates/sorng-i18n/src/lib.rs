@@ -19,6 +19,7 @@
 //! - **Thread-safe & zero-copy reads** — `DashMap` + `ArcSwap` means
 //!   translation lookups never block writers.
 
+pub mod commands;
 pub mod engine;
 pub mod error;
 pub mod interpolation;
@@ -26,10 +27,9 @@ pub mod loader;
 pub mod locale;
 pub mod ssr;
 pub mod watcher;
-pub mod commands;
 
 // Re-exports for convenience
+pub use commands::I18nServiceState;
 pub use engine::{I18nEngine, TranslationBundle};
 pub use error::I18nError;
 pub use locale::Locale;
-pub use commands::I18nServiceState;

@@ -80,12 +80,9 @@ pub fn i18n_translate_plural(
     state: State<'_, I18nServiceState>,
     request: TranslatePluralRequest,
 ) -> Result<String, I18nError> {
-    Ok(state.engine.t_plural(
-        &request.locale,
-        &request.key,
-        request.count,
-        &request.vars,
-    ))
+    Ok(state
+        .engine
+        .t_plural(&request.locale, &request.key, request.count, &request.vars))
 }
 
 /// Translate a batch of keys at once (reduces IPC round-trips).
@@ -118,7 +115,7 @@ pub fn i18n_get_bundle(
     state
         .engine
         .export_nested_json(&locale)
-        .ok_or_else(|| I18nError::LocaleNotFound(locale))
+        .ok_or(I18nError::LocaleNotFound(locale))
 }
 
 /// Get a bundle scoped to a namespace.
@@ -145,19 +142,13 @@ pub fn i18n_available_locales(
 
 /// Get i18n engine status / diagnostics.
 #[tauri::command]
-pub fn i18n_status(
-    state: State<'_, I18nServiceState>,
-) -> Result<I18nStatus, I18nError> {
+pub fn i18n_status(state: State<'_, I18nServiceState>) -> Result<I18nStatus, I18nError> {
     let locales: Vec<LocaleInfo> = state
         .engine
         .available_locales()
         .into_iter()
         .map(|tag| {
-            let key_count = state
-                .engine
-                .bundle(&tag)
-                .map(|b| b.len())
-                .unwrap_or(0);
+            let key_count = state.engine.bundle(&tag).map(|b| b.len()).unwrap_or(0);
             LocaleInfo { tag, key_count }
         })
         .collect();
@@ -200,9 +191,7 @@ pub fn i18n_missing_keys(
 
 /// Force a full reload of all locale files from disk.
 #[tauri::command]
-pub fn i18n_reload(
-    state: State<'_, I18nServiceState>,
-) -> Result<(), I18nError> {
+pub fn i18n_reload(state: State<'_, I18nServiceState>) -> Result<(), I18nError> {
     state.engine.reload_all()
 }
 
