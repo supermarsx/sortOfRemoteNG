@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use crate::builtin::all_builtin_themes;
 use crate::types::*;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 /// The core theme engine managing a registry of themes, the global active theme,
 /// and per-session theme overrides.
@@ -16,6 +16,12 @@ pub struct ThemeEngine {
     recent: Vec<String>,
     /// Maximum number of recent entries to keep.
     max_recent: usize,
+}
+
+impl Default for ThemeEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ThemeEngine {
@@ -38,7 +44,8 @@ impl ThemeEngine {
 
     /// List all themes as lightweight summaries.
     pub fn list_themes(&self) -> Vec<ThemeSummary> {
-        let mut summaries: Vec<ThemeSummary> = self.themes.values().map(ThemeSummary::from).collect();
+        let mut summaries: Vec<ThemeSummary> =
+            self.themes.values().map(ThemeSummary::from).collect();
         summaries.sort_by(|a, b| a.name.cmp(&b.name));
         summaries
     }
@@ -54,12 +61,20 @@ impl ThemeEngine {
 
     /// List only dark themes.
     pub fn list_dark(&self) -> Vec<ThemeSummary> {
-        self.themes.values().filter(|t| t.is_dark).map(ThemeSummary::from).collect()
+        self.themes
+            .values()
+            .filter(|t| t.is_dark)
+            .map(ThemeSummary::from)
+            .collect()
     }
 
     /// List only light themes.
     pub fn list_light(&self) -> Vec<ThemeSummary> {
-        self.themes.values().filter(|t| !t.is_dark).map(ThemeSummary::from).collect()
+        self.themes
+            .values()
+            .filter(|t| !t.is_dark)
+            .map(ThemeSummary::from)
+            .collect()
     }
 
     /// Get a theme by id.
@@ -141,11 +156,16 @@ impl ThemeEngine {
     }
 
     /// Set a per-session theme override.
-    pub fn set_session_theme(&mut self, session_id: &str, theme_id: &str) -> Result<(), ThemeError> {
+    pub fn set_session_theme(
+        &mut self,
+        session_id: &str,
+        theme_id: &str,
+    ) -> Result<(), ThemeError> {
         if !self.themes.contains_key(theme_id) {
             return Err(ThemeError::not_found(theme_id));
         }
-        self.session_themes.insert(session_id.to_string(), theme_id.to_string());
+        self.session_themes
+            .insert(session_id.to_string(), theme_id.to_string());
         self.add_to_recent(theme_id);
         Ok(())
     }
@@ -192,11 +212,18 @@ impl ThemeEngine {
         }
         // Remove from session overrides
         self.session_themes.retain(|_, v| v != id);
-        self.themes.remove(id).ok_or_else(|| ThemeError::not_found(id))
+        self.themes
+            .remove(id)
+            .ok_or_else(|| ThemeError::not_found(id))
     }
 
     /// Duplicate a theme with a new id and name (creates a custom copy).
-    pub fn duplicate_theme(&mut self, source_id: &str, new_id: &str, new_name: &str) -> Result<(), ThemeError> {
+    pub fn duplicate_theme(
+        &mut self,
+        source_id: &str,
+        new_id: &str,
+        new_name: &str,
+    ) -> Result<(), ThemeError> {
         let source = self.get_theme(source_id)?.clone();
         if self.themes.contains_key(new_id) {
             return Err(ThemeError::duplicate(new_id));

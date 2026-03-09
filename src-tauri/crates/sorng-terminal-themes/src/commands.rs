@@ -3,28 +3,34 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::ansi;
 use crate::custom;
 use crate::engine::ThemeEngineState;
 use crate::export;
 use crate::types::*;
-use crate::ansi;
 
 // ─── List / Query ────────────────────────────────────────────
 
 #[tauri::command]
-pub fn terminal_themes_list(state: State<'_, ThemeEngineState>) -> Result<Vec<ThemeSummary>, String> {
+pub fn terminal_themes_list(
+    state: State<'_, ThemeEngineState>,
+) -> Result<Vec<ThemeSummary>, String> {
     let engine = state.read().map_err(|e| format!("Lock error: {}", e))?;
     Ok(engine.list_themes())
 }
 
 #[tauri::command]
-pub fn terminal_themes_list_dark(state: State<'_, ThemeEngineState>) -> Result<Vec<ThemeSummary>, String> {
+pub fn terminal_themes_list_dark(
+    state: State<'_, ThemeEngineState>,
+) -> Result<Vec<ThemeSummary>, String> {
     let engine = state.read().map_err(|e| format!("Lock error: {}", e))?;
     Ok(engine.list_dark())
 }
 
 #[tauri::command]
-pub fn terminal_themes_list_light(state: State<'_, ThemeEngineState>) -> Result<Vec<ThemeSummary>, String> {
+pub fn terminal_themes_list_light(
+    state: State<'_, ThemeEngineState>,
+) -> Result<Vec<ThemeSummary>, String> {
     let engine = state.read().map_err(|e| format!("Lock error: {}", e))?;
     Ok(engine.list_light())
 }
@@ -57,7 +63,9 @@ pub fn terminal_themes_get(
 }
 
 #[tauri::command]
-pub fn terminal_themes_get_active(state: State<'_, ThemeEngineState>) -> Result<TerminalTheme, String> {
+pub fn terminal_themes_get_active(
+    state: State<'_, ThemeEngineState>,
+) -> Result<TerminalTheme, String> {
     let engine = state.read().map_err(|e| format!("Lock error: {}", e))?;
     engine.get_active_theme().cloned().map_err(|e| e.message)
 }
@@ -74,7 +82,10 @@ pub fn terminal_themes_get_session_theme(
     session_id: String,
 ) -> Result<TerminalTheme, String> {
     let engine = state.read().map_err(|e| format!("Lock error: {}", e))?;
-    engine.get_session_theme(&session_id).cloned().map_err(|e| e.message)
+    engine
+        .get_session_theme(&session_id)
+        .cloned()
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -96,7 +107,9 @@ pub fn terminal_themes_get_css_vars(
 }
 
 #[tauri::command]
-pub fn terminal_themes_recent(state: State<'_, ThemeEngineState>) -> Result<Vec<ThemeSummary>, String> {
+pub fn terminal_themes_recent(
+    state: State<'_, ThemeEngineState>,
+) -> Result<Vec<ThemeSummary>, String> {
     let engine = state.read().map_err(|e| format!("Lock error: {}", e))?;
     Ok(engine.recent_themes())
 }
@@ -125,7 +138,9 @@ pub fn terminal_themes_set_session(
     theme_id: String,
 ) -> Result<(), String> {
     let mut engine = state.write().map_err(|e| format!("Lock error: {}", e))?;
-    engine.set_session_theme(&session_id, &theme_id).map_err(|e| e.message)
+    engine
+        .set_session_theme(&session_id, &theme_id)
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -164,7 +179,9 @@ pub fn terminal_themes_remove(
     id: String,
 ) -> Result<(), String> {
     let mut engine = state.write().map_err(|e| format!("Lock error: {}", e))?;
-    engine.remove_theme(&id).map_err(|_e| "Theme not found or cannot be removed".to_string())?;
+    engine
+        .remove_theme(&id)
+        .map_err(|_e| "Theme not found or cannot be removed".to_string())?;
     Ok(())
 }
 
@@ -176,7 +193,9 @@ pub fn terminal_themes_duplicate(
     new_name: String,
 ) -> Result<(), String> {
     let mut engine = state.write().map_err(|e| format!("Lock error: {}", e))?;
-    engine.duplicate_theme(&source_id, &new_id, &new_name).map_err(|e| e.message)
+    engine
+        .duplicate_theme(&source_id, &new_id, &new_name)
+        .map_err(|e| e.message)
 }
 
 // ─── Custom Theme Creation ──────────────────────────────────
@@ -203,7 +222,10 @@ pub fn terminal_themes_create_custom(
     if request.ansi_colors.len() != 16 {
         return Err("ansi_colors must have exactly 16 entries".to_string());
     }
-    let colors: [String; 16] = request.ansi_colors.try_into().map_err(|_| "Failed to convert colors array".to_string())?;
+    let colors: [String; 16] = request
+        .ansi_colors
+        .try_into()
+        .map_err(|_| "Failed to convert colors array".to_string())?;
     let theme = custom::create_custom_theme(
         request.id,
         request.name,
@@ -218,7 +240,9 @@ pub fn terminal_themes_create_custom(
     )
     .map_err(|e| e.message)?;
     let mut engine = state.write().map_err(|e| format!("Lock error: {}", e))?;
-    engine.register_theme(theme.clone()).map_err(|e| e.message)?;
+    engine
+        .register_theme(theme.clone())
+        .map_err(|e| e.message)?;
     Ok(theme)
 }
 
@@ -231,11 +255,17 @@ pub fn terminal_themes_derive_hue(
     hue_shift: f64,
 ) -> Result<TerminalTheme, String> {
     let engine = state.read().map_err(|e| format!("Lock error: {}", e))?;
-    let source = engine.get_theme(&source_id).cloned().map_err(|e| e.message)?;
+    let source = engine
+        .get_theme(&source_id)
+        .cloned()
+        .map_err(|e| e.message)?;
     drop(engine);
-    let derived = custom::derive_hue_shifted(&source, &new_id, &new_name, hue_shift).map_err(|e| e.message)?;
+    let derived = custom::derive_hue_shifted(&source, &new_id, &new_name, hue_shift)
+        .map_err(|e| e.message)?;
     let mut engine = state.write().map_err(|e| format!("Lock error: {}", e))?;
-    engine.register_theme(derived.clone()).map_err(|e| e.message)?;
+    engine
+        .register_theme(derived.clone())
+        .map_err(|e| e.message)?;
     Ok(derived)
 }
 
@@ -251,7 +281,9 @@ pub fn terminal_themes_generate_from_accent(
     let theme = custom::generate_from_accent(&id, &name, &accent_primary, &accent_secondary, dark)
         .map_err(|e| e.message)?;
     let mut engine = state.write().map_err(|e| format!("Lock error: {}", e))?;
-    engine.register_theme(theme.clone()).map_err(|e| e.message)?;
+    engine
+        .register_theme(theme.clone())
+        .map_err(|e| e.message)?;
     Ok(theme)
 }
 
@@ -314,7 +346,9 @@ pub fn terminal_themes_import(
 ) -> Result<TerminalTheme, String> {
     let theme = export::import_theme(&content).map_err(|e| e.message)?;
     let mut engine = state.write().map_err(|e| format!("Lock error: {}", e))?;
-    engine.register_theme(theme.clone()).map_err(|e| e.message)?;
+    engine
+        .register_theme(theme.clone())
+        .map_err(|e| e.message)?;
     Ok(theme)
 }
 

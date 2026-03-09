@@ -111,12 +111,19 @@ impl TerminalTheme {
 
     /// Generate CSS custom properties from this theme.
     pub fn to_css_variables(&self, prefix: &str) -> String {
-        let p = if prefix.is_empty() { "--terminal" } else { prefix };
+        let p = if prefix.is_empty() {
+            "--terminal"
+        } else {
+            prefix
+        };
         let mut lines: Vec<String> = Vec::new();
         lines.push(format!("{}-foreground: {};", p, self.foreground));
         lines.push(format!("{}-background: {};", p, self.background));
         lines.push(format!("{}-cursor: {};", p, self.cursor));
-        lines.push(format!("{}-selection-bg: {};", p, self.selection_background));
+        lines.push(format!(
+            "{}-selection-bg: {};",
+            p, self.selection_background
+        ));
         lines.push(format!("{}-black: {};", p, self.black));
         lines.push(format!("{}-red: {};", p, self.red));
         lines.push(format!("{}-green: {};", p, self.green));
@@ -144,7 +151,9 @@ impl TerminalTheme {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ThemeCategory {
+    #[default]
     Dark,
     Light,
     HighContrast,
@@ -157,24 +166,14 @@ pub enum ThemeCategory {
     Custom,
 }
 
-impl Default for ThemeCategory {
-    fn default() -> Self {
-        Self::Dark
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum CursorStyle {
+    #[default]
     Block,
     Underline,
     Bar,
-}
-
-impl Default for CursorStyle {
-    fn default() -> Self {
-        Self::Block
-    }
 }
 
 /// Lightweight summary for listing themes.
@@ -216,7 +215,10 @@ pub struct ThemeError {
 
 impl ThemeError {
     pub fn new(code: &str, msg: &str) -> Self {
-        Self { code: code.to_string(), message: msg.to_string() }
+        Self {
+            code: code.to_string(),
+            message: msg.to_string(),
+        }
     }
     pub fn not_found(id: &str) -> Self {
         Self::new("NOT_FOUND", &format!("Theme '{}' not found", id))

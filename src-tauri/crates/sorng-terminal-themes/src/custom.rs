@@ -28,10 +28,16 @@ pub fn validate_theme(theme: &TerminalTheme) -> Result<(), ThemeError> {
 
     for (name, value) in &required_colors {
         if value.is_empty() {
-            return Err(ThemeError::invalid(&format!("Color '{}' is required", name)));
+            return Err(ThemeError::invalid(&format!(
+                "Color '{}' is required",
+                name
+            )));
         }
         if !ansi::is_valid_hex(value) {
-            return Err(ThemeError::invalid(&format!("Color '{}' has invalid hex value: {}", name, value)));
+            return Err(ThemeError::invalid(&format!(
+                "Color '{}' has invalid hex value: {}",
+                name, value
+            )));
         }
     }
 
@@ -39,7 +45,10 @@ pub fn validate_theme(theme: &TerminalTheme) -> Result<(), ThemeError> {
     let optional_colors: Vec<(&str, &Option<String>)> = vec![
         ("cursor_accent", &theme.cursor_accent),
         ("selection_foreground", &theme.selection_foreground),
-        ("selection_inactive_background", &theme.selection_inactive_background),
+        (
+            "selection_inactive_background",
+            &theme.selection_inactive_background,
+        ),
         ("scrollbar_thumb", &theme.scrollbar_thumb),
         ("scrollbar_track", &theme.scrollbar_track),
         ("tab_active_background", &theme.tab_active_background),
@@ -48,13 +57,19 @@ pub fn validate_theme(theme: &TerminalTheme) -> Result<(), ThemeError> {
         ("tab_inactive_foreground", &theme.tab_inactive_foreground),
         ("border_color", &theme.border_color),
         ("find_match_background", &theme.find_match_background),
-        ("find_match_highlight_background", &theme.find_match_highlight_background),
+        (
+            "find_match_highlight_background",
+            &theme.find_match_highlight_background,
+        ),
     ];
 
     for (name, value) in &optional_colors {
         if let Some(v) = value {
             if !v.is_empty() && !ansi::is_valid_hex(v) {
-                return Err(ThemeError::invalid(&format!("Optional color '{}' has invalid hex value: {}", name, v)));
+                return Err(ThemeError::invalid(&format!(
+                    "Optional color '{}' has invalid hex value: {}",
+                    name, v
+                )));
             }
         }
     }
@@ -69,7 +84,7 @@ pub fn validate_theme(theme: &TerminalTheme) -> Result<(), ThemeError> {
 
     // Validate font size if provided
     if let Some(size) = theme.font_size {
-        if size < 6.0 || size > 72.0 {
+        if !(6.0..=72.0).contains(&size) {
             return Err(ThemeError::invalid("Font size must be between 6 and 72"));
         }
     }
@@ -77,23 +92,29 @@ pub fn validate_theme(theme: &TerminalTheme) -> Result<(), ThemeError> {
     // Validate font weight if provided
     if let Some(ref weight_str) = theme.font_weight {
         if let Ok(weight) = weight_str.parse::<u32>() {
-            if weight < 100 || weight > 900 {
-                return Err(ThemeError::invalid("Font weight must be between 100 and 900"));
+            if !(100..=900).contains(&weight) {
+                return Err(ThemeError::invalid(
+                    "Font weight must be between 100 and 900",
+                ));
             }
         }
     }
     if let Some(ref weight_str) = theme.font_weight_bold {
         if let Ok(weight) = weight_str.parse::<u32>() {
-            if weight < 100 || weight > 900 {
-                return Err(ThemeError::invalid("Bold font weight must be between 100 and 900"));
+            if !(100..=900).contains(&weight) {
+                return Err(ThemeError::invalid(
+                    "Bold font weight must be between 100 and 900",
+                ));
             }
         }
     }
 
     // Validate contrast ratio
     if let Some(ratio) = theme.minimum_contrast_ratio {
-        if ratio < 1.0 || ratio > 21.0 {
-            return Err(ThemeError::invalid("Minimum contrast ratio must be between 1.0 and 21.0"));
+        if !(1.0..=21.0).contains(&ratio) {
+            return Err(ThemeError::invalid(
+                "Minimum contrast ratio must be between 1.0 and 21.0",
+            ));
         }
     }
 
@@ -101,6 +122,7 @@ pub fn validate_theme(theme: &TerminalTheme) -> Result<(), ThemeError> {
 }
 
 /// Create a new custom theme from a base set of parameters.
+#[allow(clippy::too_many_arguments)]
 pub fn create_custom_theme(
     id: String,
     name: String,
@@ -180,9 +202,7 @@ pub fn derive_hue_shifted(
     let shift = |hex: &str| -> String {
         ansi::adjust_hue(hex, hue_shift).unwrap_or_else(|| hex.to_string())
     };
-    let shift_opt = |hex: &Option<String>| -> Option<String> {
-        hex.as_ref().map(|h| shift(h))
-    };
+    let shift_opt = |hex: &Option<String>| -> Option<String> { hex.as_ref().map(|h| shift(h)) };
 
     let mut t = source.clone();
     t.id = new_id.to_string();
@@ -243,10 +263,22 @@ pub fn generate_from_accent(
     let adj1 = ansi::adjust_hue(accent_primary, 60.0).unwrap_or_else(|| "#ffff00".to_string());
     let adj2 = ansi::adjust_hue(accent_primary, -60.0).unwrap_or_else(|| "#0000ff".to_string());
 
-    let black = if dark { "#1a1a2e".to_string() } else { "#2d2d2d".to_string() };
-    let white_c = if dark { "#e0e0e0".to_string() } else { "#fafafa".to_string() };
-    let bright_black = if dark { "#555555".to_string() } else { "#888888".to_string() };
-    let bright_white = if dark { "#ffffff".to_string() } else { "#ffffff".to_string() };
+    let black = if dark {
+        "#1a1a2e".to_string()
+    } else {
+        "#2d2d2d".to_string()
+    };
+    let white_c = if dark {
+        "#e0e0e0".to_string()
+    } else {
+        "#fafafa".to_string()
+    };
+    let bright_black = if dark {
+        "#555555".to_string()
+    } else {
+        "#888888".to_string()
+    };
+    let bright_white = "#ffffff".to_string();
 
     let ansi_colors: [String; 16] = [
         black.clone(),
@@ -271,7 +303,10 @@ pub fn generate_from_accent(
         id.to_string(),
         name.to_string(),
         "Auto-generated".to_string(),
-        format!("Generated from accents {} and {}", accent_primary, accent_secondary),
+        format!(
+            "Generated from accents {} and {}",
+            accent_primary, accent_secondary
+        ),
         dark,
         fg,
         bg,

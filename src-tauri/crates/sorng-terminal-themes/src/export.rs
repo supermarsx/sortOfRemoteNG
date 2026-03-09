@@ -12,12 +12,14 @@ pub enum ExportFormat {
 
 /// Export a theme to JSON.
 pub fn export_json(theme: &TerminalTheme) -> Result<String, ThemeError> {
-    serde_json::to_string_pretty(theme).map_err(|e| ThemeError::invalid(&format!("JSON serialization failed: {}", e)))
+    serde_json::to_string_pretty(theme)
+        .map_err(|e| ThemeError::invalid(&format!("JSON serialization failed: {}", e)))
 }
 
 /// Import a theme from JSON.
 pub fn import_json(json: &str) -> Result<TerminalTheme, ThemeError> {
-    serde_json::from_str(json).map_err(|e| ThemeError::invalid(&format!("JSON parse failed: {}", e)))
+    serde_json::from_str(json)
+        .map_err(|e| ThemeError::invalid(&format!("JSON parse failed: {}", e)))
 }
 
 /// Export a theme to iTerm2 .itermcolors XML format.
@@ -54,9 +56,18 @@ pub fn export_iterm2(theme: &TerminalTheme) -> Result<String, ThemeError> {
             xml.push_str(&format!("\t<key>{}</key>\n", name));
             xml.push_str("\t<dict>\n");
             xml.push_str("\t\t<key>Color Space</key>\n\t\t<string>sRGB</string>\n");
-            xml.push_str(&format!("\t\t<key>Red Component</key>\n\t\t<real>{:.6}</real>\n", rgb.r as f64 / 255.0));
-            xml.push_str(&format!("\t\t<key>Green Component</key>\n\t\t<real>{:.6}</real>\n", rgb.g as f64 / 255.0));
-            xml.push_str(&format!("\t\t<key>Blue Component</key>\n\t\t<real>{:.6}</real>\n", rgb.b as f64 / 255.0));
+            xml.push_str(&format!(
+                "\t\t<key>Red Component</key>\n\t\t<real>{:.6}</real>\n",
+                rgb.r as f64 / 255.0
+            ));
+            xml.push_str(&format!(
+                "\t\t<key>Green Component</key>\n\t\t<real>{:.6}</real>\n",
+                rgb.g as f64 / 255.0
+            ));
+            xml.push_str(&format!(
+                "\t\t<key>Blue Component</key>\n\t\t<real>{:.6}</real>\n",
+                rgb.b as f64 / 255.0
+            ));
             xml.push_str("\t\t<key>Alpha Component</key>\n\t\t<real>1.000000</real>\n");
             xml.push_str("\t</dict>\n");
         }
@@ -91,7 +102,8 @@ pub fn export_windows_terminal(theme: &TerminalTheme) -> Result<String, ThemeErr
         "brightCyan": theme.bright_cyan,
         "brightWhite": theme.bright_white,
     });
-    serde_json::to_string_pretty(&scheme).map_err(|e| ThemeError::invalid(&format!("Serialization failed: {}", e)))
+    serde_json::to_string_pretty(&scheme)
+        .map_err(|e| ThemeError::invalid(&format!("Serialization failed: {}", e)))
 }
 
 /// Export a theme to Alacritty YAML color scheme.
@@ -105,8 +117,11 @@ pub fn export_alacritty(theme: &TerminalTheme) -> Result<String, ThemeError> {
     yaml.push_str(&format!("    text: '{}'\n", theme.background));
     yaml.push_str(&format!("    cursor: '{}'\n", theme.cursor));
     yaml.push_str("  selection:\n");
-    yaml.push_str(&format!("    text: CellForeground\n"));
-    yaml.push_str(&format!("    background: '{}'\n", theme.selection_background));
+    yaml.push_str("    text: CellForeground\n");
+    yaml.push_str(&format!(
+        "    background: '{}'\n",
+        theme.selection_background
+    ));
     yaml.push_str("  normal:\n");
     yaml.push_str(&format!("    black:   '{}'\n", theme.black));
     yaml.push_str(&format!("    red:     '{}'\n", theme.red));
@@ -174,9 +189,8 @@ pub fn import_iterm2(xml: &str) -> Result<TerminalTheme, ThemeError> {
         Some(crate::ansi::Rgb::new(r, g, b).to_hex())
     }
 
-    let get = |key: &str| -> String {
-        extract_color(xml, key).unwrap_or_else(|| "#000000".to_string())
-    };
+    let get =
+        |key: &str| -> String { extract_color(xml, key).unwrap_or_else(|| "#000000".to_string()) };
 
     let id = format!("imported-iterm-{}", uuid::Uuid::new_v4());
     let theme = TerminalTheme {
@@ -241,10 +255,16 @@ pub fn import_windows_terminal(json: &str) -> Result<TerminalTheme, ThemeError> 
         .map_err(|e| ThemeError::invalid(&format!("Invalid JSON: {}", e)))?;
 
     let get = |key: &str| -> String {
-        v.get(key).and_then(|v| v.as_str()).unwrap_or("#000000").to_string()
+        v.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("#000000")
+            .to_string()
     };
 
-    let name = v.get("name").and_then(|v| v.as_str()).unwrap_or("Imported Windows Terminal Theme");
+    let name = v
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Imported Windows Terminal Theme");
     let id = format!("imported-wt-{}", uuid::Uuid::new_v4());
 
     let theme = TerminalTheme {
@@ -306,7 +326,10 @@ pub fn import_windows_terminal(json: &str) -> Result<TerminalTheme, ThemeError> 
 /// Import a theme - auto-detect format.
 pub fn import_theme(content: &str) -> Result<TerminalTheme, ThemeError> {
     let trimmed = content.trim();
-    if trimmed.starts_with("<?xml") || trimmed.starts_with("<!DOCTYPE plist") || trimmed.contains("<plist") {
+    if trimmed.starts_with("<?xml")
+        || trimmed.starts_with("<!DOCTYPE plist")
+        || trimmed.contains("<plist")
+    {
         import_iterm2(content)
     } else if trimmed.starts_with('{') {
         // Try our JSON format first, then Windows Terminal
@@ -316,6 +339,8 @@ pub fn import_theme(content: &str) -> Result<TerminalTheme, ThemeError> {
             import_windows_terminal(content)
         }
     } else {
-        Err(ThemeError::invalid("Unrecognized theme format. Supported: JSON, iTerm2 XML, Windows Terminal JSON"))
+        Err(ThemeError::invalid(
+            "Unrecognized theme format. Supported: JSON, iTerm2 XML, Windows Terminal JSON",
+        ))
     }
 }

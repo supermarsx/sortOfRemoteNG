@@ -131,10 +131,16 @@ pub fn hex_to_hsl(hex: &str) -> Option<(f64, f64, f64)> {
         return Some((0.0, 0.0, l * 100.0));
     }
     let d = max - min;
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
     let h = if (max - r).abs() < f64::EPSILON {
         let mut h = (g - b) / d;
-        if g < b { h += 6.0; }
+        if g < b {
+            h += 6.0;
+        }
         h
     } else if (max - g).abs() < f64::EPSILON {
         (b - r) / d + 2.0
@@ -211,7 +217,9 @@ pub fn generate_ansi_256(colors_16: &[String; 16]) -> Vec<String> {
     for r in 0..6u8 {
         for g in 0..6u8 {
             for b in 0..6u8 {
-                palette.push(Rgb::new(levels[r as usize], levels[g as usize], levels[b as usize]).to_hex());
+                palette.push(
+                    Rgb::new(levels[r as usize], levels[g as usize], levels[b as usize]).to_hex(),
+                );
             }
         }
     }

@@ -49,7 +49,14 @@ pub fn all_builtin_themes() -> Vec<TerminalTheme> {
     ]
 }
 
-fn base(id: &str, name: &str, author: &str, desc: &str, cat: ThemeCategory, dark: bool) -> TerminalTheme {
+fn base(
+    id: &str,
+    name: &str,
+    author: &str,
+    desc: &str,
+    cat: ThemeCategory,
+    dark: bool,
+) -> TerminalTheme {
     TerminalTheme {
         id: id.to_string(),
         name: name.to_string(),
@@ -106,7 +113,14 @@ fn base(id: &str, name: &str, author: &str, desc: &str, cat: ThemeCategory, dark
 }
 
 pub fn dracula() -> TerminalTheme {
-    let mut t = base("dracula", "Dracula", "Zeno Rocha", "A dark theme for code editors and terminals", ThemeCategory::Dark, true);
+    let mut t = base(
+        "dracula",
+        "Dracula",
+        "Zeno Rocha",
+        "A dark theme for code editors and terminals",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#f8f8f2".to_string();
     t.background = "#282a36".to_string();
     t.cursor = "#f8f8f2".to_string();
@@ -135,7 +149,14 @@ pub fn dracula() -> TerminalTheme {
 }
 
 pub fn solarized_dark() -> TerminalTheme {
-    let mut t = base("solarized-dark", "Solarized Dark", "Ethan Schoonover", "Precision colors for the terminal", ThemeCategory::Dark, true);
+    let mut t = base(
+        "solarized-dark",
+        "Solarized Dark",
+        "Ethan Schoonover",
+        "Precision colors for the terminal",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#839496".to_string();
     t.background = "#002b36".to_string();
     t.cursor = "#839496".to_string();
@@ -156,12 +177,23 @@ pub fn solarized_dark() -> TerminalTheme {
     t.bright_magenta = "#6c71c4".to_string();
     t.bright_cyan = "#93a1a1".to_string();
     t.bright_white = "#fdf6e3".to_string();
-    t.tags = vec!["popular".to_string(), "classic".to_string(), "eye-care".to_string()];
+    t.tags = vec![
+        "popular".to_string(),
+        "classic".to_string(),
+        "eye-care".to_string(),
+    ];
     t
 }
 
 pub fn solarized_light() -> TerminalTheme {
-    let mut t = base("solarized-light", "Solarized Light", "Ethan Schoonover", "Light variant of Solarized", ThemeCategory::Light, false);
+    let mut t = base(
+        "solarized-light",
+        "Solarized Light",
+        "Ethan Schoonover",
+        "Light variant of Solarized",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#657b83".to_string();
     t.background = "#fdf6e3".to_string();
     t.cursor = "#657b83".to_string();
@@ -182,12 +214,23 @@ pub fn solarized_light() -> TerminalTheme {
     t.bright_magenta = "#6c71c4".to_string();
     t.bright_cyan = "#93a1a1".to_string();
     t.bright_white = "#fdf6e3".to_string();
-    t.tags = vec!["light".to_string(), "classic".to_string(), "eye-care".to_string()];
+    t.tags = vec![
+        "light".to_string(),
+        "classic".to_string(),
+        "eye-care".to_string(),
+    ];
     t
 }
 
 pub fn monokai() -> TerminalTheme {
-    let mut t = base("monokai", "Monokai", "Wimer Hazenberg", "Iconic warm dark theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "monokai",
+        "Monokai",
+        "Wimer Hazenberg",
+        "Iconic warm dark theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#f8f8f2".to_string();
     t.background = "#272822".to_string();
     t.cursor = "#f8f8f0".to_string();
@@ -213,7 +256,14 @@ pub fn monokai() -> TerminalTheme {
 }
 
 pub fn nord() -> TerminalTheme {
-    let mut t = base("nord", "Nord", "Arctic Ice Studio", "An arctic, north-bluish color palette", ThemeCategory::Dark, true);
+    let mut t = base(
+        "nord",
+        "Nord",
+        "Arctic Ice Studio",
+        "An arctic, north-bluish color palette",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#d8dee9".to_string();
     t.background = "#2e3440".to_string();
     t.cursor = "#d8dee9".to_string();
@@ -235,12 +285,23 @@ pub fn nord() -> TerminalTheme {
     t.bright_cyan = "#8fbcbb".to_string();
     t.bright_white = "#eceff4".to_string();
     t.border_color = Some("#4c566a".to_string());
-    t.tags = vec!["popular".to_string(), "calm".to_string(), "arctic".to_string()];
+    t.tags = vec![
+        "popular".to_string(),
+        "calm".to_string(),
+        "arctic".to_string(),
+    ];
     t
 }
 
 pub fn tokyo_night() -> TerminalTheme {
-    let mut t = base("tokyo-night", "Tokyo Night", "enkia", "A dark theme inspired by Tokyo city lights", ThemeCategory::Dark, true);
+    let mut t = base(
+        "tokyo-night",
+        "Tokyo Night",
+        "enkia",
+        "A dark theme inspired by Tokyo city lights",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#a9b1d6".to_string();
     t.background = "#1a1b26".to_string();
     t.cursor = "#c0caf5".to_string();
@@ -261,7 +322,11 @@ pub fn tokyo_night() -> TerminalTheme {
     t.bright_magenta = "#bb9af7".to_string();
     t.bright_cyan = "#7dcfff".to_string();
     t.bright_white = "#c0caf5".to_string();
-    t.tags = vec!["popular".to_string(), "neon".to_string(), "city".to_string()];
+    t.tags = vec![
+        "popular".to_string(),
+        "neon".to_string(),
+        "city".to_string(),
+    ];
     t
 }
 
@@ -275,7 +340,14 @@ pub fn tokyo_night_storm() -> TerminalTheme {
 }
 
 pub fn one_dark() -> TerminalTheme {
-    let mut t = base("one-dark", "One Dark", "Atom", "Dark theme from Atom editor", ThemeCategory::Dark, true);
+    let mut t = base(
+        "one-dark",
+        "One Dark",
+        "Atom",
+        "Dark theme from Atom editor",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#abb2bf".to_string();
     t.background = "#282c34".to_string();
     t.cursor = "#528bff".to_string();
@@ -301,7 +373,14 @@ pub fn one_dark() -> TerminalTheme {
 }
 
 pub fn one_light() -> TerminalTheme {
-    let mut t = base("one-light", "One Light", "Atom", "Light theme from Atom editor", ThemeCategory::Light, false);
+    let mut t = base(
+        "one-light",
+        "One Light",
+        "Atom",
+        "Light theme from Atom editor",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#383a42".to_string();
     t.background = "#fafafa".to_string();
     t.cursor = "#526fff".to_string();
@@ -327,7 +406,14 @@ pub fn one_light() -> TerminalTheme {
 }
 
 pub fn gruvbox_dark() -> TerminalTheme {
-    let mut t = base("gruvbox-dark", "Gruvbox Dark", "morhetz", "Retro groove color scheme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "gruvbox-dark",
+        "Gruvbox Dark",
+        "morhetz",
+        "Retro groove color scheme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#ebdbb2".to_string();
     t.background = "#282828".to_string();
     t.cursor = "#ebdbb2".to_string();
@@ -348,12 +434,23 @@ pub fn gruvbox_dark() -> TerminalTheme {
     t.bright_magenta = "#d3869b".to_string();
     t.bright_cyan = "#8ec07c".to_string();
     t.bright_white = "#ebdbb2".to_string();
-    t.tags = vec!["popular".to_string(), "retro".to_string(), "warm".to_string()];
+    t.tags = vec![
+        "popular".to_string(),
+        "retro".to_string(),
+        "warm".to_string(),
+    ];
     t
 }
 
 pub fn gruvbox_light() -> TerminalTheme {
-    let mut t = base("gruvbox-light", "Gruvbox Light", "morhetz", "Light variant of Gruvbox", ThemeCategory::Light, false);
+    let mut t = base(
+        "gruvbox-light",
+        "Gruvbox Light",
+        "morhetz",
+        "Light variant of Gruvbox",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#3c3836".to_string();
     t.background = "#fbf1c7".to_string();
     t.cursor = "#3c3836".to_string();
@@ -379,7 +476,14 @@ pub fn gruvbox_light() -> TerminalTheme {
 }
 
 pub fn catppuccin_mocha() -> TerminalTheme {
-    let mut t = base("catppuccin-mocha", "Catppuccin Mocha", "Catppuccin", "Soothing dark pastel theme", ThemeCategory::Pastel, true);
+    let mut t = base(
+        "catppuccin-mocha",
+        "Catppuccin Mocha",
+        "Catppuccin",
+        "Soothing dark pastel theme",
+        ThemeCategory::Pastel,
+        true,
+    );
     t.foreground = "#cdd6f4".to_string();
     t.background = "#1e1e2e".to_string();
     t.cursor = "#f5e0dc".to_string();
@@ -400,12 +504,23 @@ pub fn catppuccin_mocha() -> TerminalTheme {
     t.bright_magenta = "#f5c2e7".to_string();
     t.bright_cyan = "#94e2d5".to_string();
     t.bright_white = "#a6adc8".to_string();
-    t.tags = vec!["popular".to_string(), "pastel".to_string(), "soothing".to_string()];
+    t.tags = vec![
+        "popular".to_string(),
+        "pastel".to_string(),
+        "soothing".to_string(),
+    ];
     t
 }
 
 pub fn catppuccin_latte() -> TerminalTheme {
-    let mut t = base("catppuccin-latte", "Catppuccin Latte", "Catppuccin", "Light pastel theme", ThemeCategory::Pastel, false);
+    let mut t = base(
+        "catppuccin-latte",
+        "Catppuccin Latte",
+        "Catppuccin",
+        "Light pastel theme",
+        ThemeCategory::Pastel,
+        false,
+    );
     t.foreground = "#4c4f69".to_string();
     t.background = "#eff1f5".to_string();
     t.cursor = "#dc8a78".to_string();
@@ -431,7 +546,14 @@ pub fn catppuccin_latte() -> TerminalTheme {
 }
 
 pub fn catppuccin_frappe() -> TerminalTheme {
-    let mut t = base("catppuccin-frappe", "Catppuccin Frappé", "Catppuccin", "Medium dark pastel theme", ThemeCategory::Pastel, true);
+    let mut t = base(
+        "catppuccin-frappe",
+        "Catppuccin Frappé",
+        "Catppuccin",
+        "Medium dark pastel theme",
+        ThemeCategory::Pastel,
+        true,
+    );
     t.foreground = "#c6d0f5".to_string();
     t.background = "#303446".to_string();
     t.cursor = "#f2d5cf".to_string();
@@ -457,7 +579,14 @@ pub fn catppuccin_frappe() -> TerminalTheme {
 }
 
 pub fn catppuccin_macchiato() -> TerminalTheme {
-    let mut t = base("catppuccin-macchiato", "Catppuccin Macchiato", "Catppuccin", "Warm dark pastel theme", ThemeCategory::Pastel, true);
+    let mut t = base(
+        "catppuccin-macchiato",
+        "Catppuccin Macchiato",
+        "Catppuccin",
+        "Warm dark pastel theme",
+        ThemeCategory::Pastel,
+        true,
+    );
     t.foreground = "#cad3f5".to_string();
     t.background = "#24273a".to_string();
     t.cursor = "#f4dbd6".to_string();
@@ -483,7 +612,14 @@ pub fn catppuccin_macchiato() -> TerminalTheme {
 }
 
 pub fn github_dark() -> TerminalTheme {
-    let mut t = base("github-dark", "GitHub Dark", "GitHub", "GitHub's dark theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "github-dark",
+        "GitHub Dark",
+        "GitHub",
+        "GitHub's dark theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#c9d1d9".to_string();
     t.background = "#0d1117".to_string();
     t.cursor = "#c9d1d9".to_string();
@@ -509,7 +645,14 @@ pub fn github_dark() -> TerminalTheme {
 }
 
 pub fn github_light() -> TerminalTheme {
-    let mut t = base("github-light", "GitHub Light", "GitHub", "GitHub's light theme", ThemeCategory::Light, false);
+    let mut t = base(
+        "github-light",
+        "GitHub Light",
+        "GitHub",
+        "GitHub's light theme",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#24292f".to_string();
     t.background = "#ffffff".to_string();
     t.cursor = "#044289".to_string();
@@ -535,7 +678,14 @@ pub fn github_light() -> TerminalTheme {
 }
 
 pub fn material_dark() -> TerminalTheme {
-    let mut t = base("material-dark", "Material Dark", "Material Theme", "Material Design dark theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "material-dark",
+        "Material Dark",
+        "Material Theme",
+        "Material Design dark theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#eeffff".to_string();
     t.background = "#212121".to_string();
     t.cursor = "#ffcc00".to_string();
@@ -561,7 +711,14 @@ pub fn material_dark() -> TerminalTheme {
 }
 
 pub fn material_ocean() -> TerminalTheme {
-    let mut t = base("material-ocean", "Material Ocean", "Material Theme", "Deep ocean Material variant", ThemeCategory::Dark, true);
+    let mut t = base(
+        "material-ocean",
+        "Material Ocean",
+        "Material Theme",
+        "Deep ocean Material variant",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#8f93a2".to_string();
     t.background = "#0f111a".to_string();
     t.cursor = "#ffcc00".to_string();
@@ -587,7 +744,14 @@ pub fn material_ocean() -> TerminalTheme {
 }
 
 pub fn rose_pine() -> TerminalTheme {
-    let mut t = base("rose-pine", "Rosé Pine", "Rosé Pine", "All natural pine, faux fur and a bit of soho vibes", ThemeCategory::Dark, true);
+    let mut t = base(
+        "rose-pine",
+        "Rosé Pine",
+        "Rosé Pine",
+        "All natural pine, faux fur and a bit of soho vibes",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#e0def4".to_string();
     t.background = "#191724".to_string();
     t.cursor = "#524f67".to_string();
@@ -613,7 +777,14 @@ pub fn rose_pine() -> TerminalTheme {
 }
 
 pub fn rose_pine_moon() -> TerminalTheme {
-    let mut t = base("rose-pine-moon", "Rosé Pine Moon", "Rosé Pine", "Moon variant of Rosé Pine", ThemeCategory::Dark, true);
+    let mut t = base(
+        "rose-pine-moon",
+        "Rosé Pine Moon",
+        "Rosé Pine",
+        "Moon variant of Rosé Pine",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#e0def4".to_string();
     t.background = "#232136".to_string();
     t.cursor = "#56526e".to_string();
@@ -639,7 +810,14 @@ pub fn rose_pine_moon() -> TerminalTheme {
 }
 
 pub fn rose_pine_dawn() -> TerminalTheme {
-    let mut t = base("rose-pine-dawn", "Rosé Pine Dawn", "Rosé Pine", "Light variant of Rosé Pine", ThemeCategory::Light, false);
+    let mut t = base(
+        "rose-pine-dawn",
+        "Rosé Pine Dawn",
+        "Rosé Pine",
+        "Light variant of Rosé Pine",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#575279".to_string();
     t.background = "#faf4ed".to_string();
     t.cursor = "#9893a5".to_string();
@@ -665,7 +843,14 @@ pub fn rose_pine_dawn() -> TerminalTheme {
 }
 
 pub fn night_owl() -> TerminalTheme {
-    let mut t = base("night-owl", "Night Owl", "Sarah Drasner", "A theme for night owls", ThemeCategory::Dark, true);
+    let mut t = base(
+        "night-owl",
+        "Night Owl",
+        "Sarah Drasner",
+        "A theme for night owls",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#d6deeb".to_string();
     t.background = "#011627".to_string();
     t.cursor = "#80a4c2".to_string();
@@ -691,7 +876,14 @@ pub fn night_owl() -> TerminalTheme {
 }
 
 pub fn synthwave_84() -> TerminalTheme {
-    let mut t = base("synthwave-84", "SynthWave '84", "Robb Owen", "Retro synthwave-inspired neon theme", ThemeCategory::Synthwave, true);
+    let mut t = base(
+        "synthwave-84",
+        "SynthWave '84",
+        "Robb Owen",
+        "Retro synthwave-inspired neon theme",
+        ThemeCategory::Synthwave,
+        true,
+    );
     t.foreground = "#f0eff1".to_string();
     t.background = "#262335".to_string();
     t.cursor = "#ff7edb".to_string();
@@ -712,12 +904,24 @@ pub fn synthwave_84() -> TerminalTheme {
     t.bright_magenta = "#ff7edb".to_string();
     t.bright_cyan = "#36f9f6".to_string();
     t.bright_white = "#ffffff".to_string();
-    t.tags = vec!["neon".to_string(), "retro".to_string(), "synthwave".to_string(), "80s".to_string()];
+    t.tags = vec![
+        "neon".to_string(),
+        "retro".to_string(),
+        "synthwave".to_string(),
+        "80s".to_string(),
+    ];
     t
 }
 
 pub fn cyberpunk() -> TerminalTheme {
-    let mut t = base("cyberpunk", "Cyberpunk", "Community", "Neon-futuristic cyberpunk aesthetic", ThemeCategory::Synthwave, true);
+    let mut t = base(
+        "cyberpunk",
+        "Cyberpunk",
+        "Community",
+        "Neon-futuristic cyberpunk aesthetic",
+        ThemeCategory::Synthwave,
+        true,
+    );
     t.foreground = "#00ff9c".to_string();
     t.background = "#000b1e".to_string();
     t.cursor = "#ff0055".to_string();
@@ -738,12 +942,23 @@ pub fn cyberpunk() -> TerminalTheme {
     t.bright_magenta = "#ff55ff".to_string();
     t.bright_cyan = "#55ffff".to_string();
     t.bright_white = "#ffffff".to_string();
-    t.tags = vec!["neon".to_string(), "futuristic".to_string(), "hacker".to_string()];
+    t.tags = vec![
+        "neon".to_string(),
+        "futuristic".to_string(),
+        "hacker".to_string(),
+    ];
     t
 }
 
 pub fn kanagawa() -> TerminalTheme {
-    let mut t = base("kanagawa", "Kanagawa", "rebelot", "Dark theme inspired by Katsushika Hokusai", ThemeCategory::Dark, true);
+    let mut t = base(
+        "kanagawa",
+        "Kanagawa",
+        "rebelot",
+        "Dark theme inspired by Katsushika Hokusai",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#dcd7ba".to_string();
     t.background = "#1f1f28".to_string();
     t.cursor = "#c8c093".to_string();
@@ -769,7 +984,14 @@ pub fn kanagawa() -> TerminalTheme {
 }
 
 pub fn everforest_dark() -> TerminalTheme {
-    let mut t = base("everforest-dark", "Everforest Dark", "sainnhe", "Comfortable green-based dark theme", ThemeCategory::Nature, true);
+    let mut t = base(
+        "everforest-dark",
+        "Everforest Dark",
+        "sainnhe",
+        "Comfortable green-based dark theme",
+        ThemeCategory::Nature,
+        true,
+    );
     t.foreground = "#d3c6aa".to_string();
     t.background = "#2d353b".to_string();
     t.cursor = "#d3c6aa".to_string();
@@ -790,12 +1012,23 @@ pub fn everforest_dark() -> TerminalTheme {
     t.bright_magenta = "#d699b6".to_string();
     t.bright_cyan = "#83c092".to_string();
     t.bright_white = "#d3c6aa".to_string();
-    t.tags = vec!["nature".to_string(), "green".to_string(), "eye-care".to_string()];
+    t.tags = vec![
+        "nature".to_string(),
+        "green".to_string(),
+        "eye-care".to_string(),
+    ];
     t
 }
 
 pub fn everforest_light() -> TerminalTheme {
-    let mut t = base("everforest-light", "Everforest Light", "sainnhe", "Comfortable green-based light theme", ThemeCategory::Nature, false);
+    let mut t = base(
+        "everforest-light",
+        "Everforest Light",
+        "sainnhe",
+        "Comfortable green-based light theme",
+        ThemeCategory::Nature,
+        false,
+    );
     t.foreground = "#5c6a72".to_string();
     t.background = "#fdf6e3".to_string();
     t.cursor = "#5c6a72".to_string();
@@ -816,12 +1049,23 @@ pub fn everforest_light() -> TerminalTheme {
     t.bright_magenta = "#df69ba".to_string();
     t.bright_cyan = "#35a77c".to_string();
     t.bright_white = "#5c6a72".to_string();
-    t.tags = vec!["light".to_string(), "nature".to_string(), "green".to_string()];
+    t.tags = vec![
+        "light".to_string(),
+        "nature".to_string(),
+        "green".to_string(),
+    ];
     t
 }
 
 pub fn tokyonight_day() -> TerminalTheme {
-    let mut t = base("tokyonight-day", "Tokyo Night Day", "enkia", "Light variant of Tokyo Night", ThemeCategory::Light, false);
+    let mut t = base(
+        "tokyonight-day",
+        "Tokyo Night Day",
+        "enkia",
+        "Light variant of Tokyo Night",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#3760bf".to_string();
     t.background = "#e1e2e7".to_string();
     t.cursor = "#3760bf".to_string();
@@ -847,7 +1091,14 @@ pub fn tokyonight_day() -> TerminalTheme {
 }
 
 pub fn ayu_dark() -> TerminalTheme {
-    let mut t = base("ayu-dark", "Ayu Dark", "dempfi", "Simple dark theme with bright colors", ThemeCategory::Dark, true);
+    let mut t = base(
+        "ayu-dark",
+        "Ayu Dark",
+        "dempfi",
+        "Simple dark theme with bright colors",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#bfbdb6".to_string();
     t.background = "#0d1017".to_string();
     t.cursor = "#e6b450".to_string();
@@ -873,7 +1124,14 @@ pub fn ayu_dark() -> TerminalTheme {
 }
 
 pub fn ayu_mirage() -> TerminalTheme {
-    let mut t = base("ayu-mirage", "Ayu Mirage", "dempfi", "Medium-dark warm Ayu variant", ThemeCategory::Dark, true);
+    let mut t = base(
+        "ayu-mirage",
+        "Ayu Mirage",
+        "dempfi",
+        "Medium-dark warm Ayu variant",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#cbccc6".to_string();
     t.background = "#1f2430".to_string();
     t.cursor = "#ffcc66".to_string();
@@ -899,7 +1157,14 @@ pub fn ayu_mirage() -> TerminalTheme {
 }
 
 pub fn ayu_light() -> TerminalTheme {
-    let mut t = base("ayu-light", "Ayu Light", "dempfi", "Clean light Ayu variant", ThemeCategory::Light, false);
+    let mut t = base(
+        "ayu-light",
+        "Ayu Light",
+        "dempfi",
+        "Clean light Ayu variant",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#5c6166".to_string();
     t.background = "#fafafa".to_string();
     t.cursor = "#ff6a00".to_string();
@@ -925,7 +1190,14 @@ pub fn ayu_light() -> TerminalTheme {
 }
 
 pub fn palenight() -> TerminalTheme {
-    let mut t = base("palenight", "Palenight", "Material Theme", "Elegant purple-tinted dark theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "palenight",
+        "Palenight",
+        "Material Theme",
+        "Elegant purple-tinted dark theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#a6accd".to_string();
     t.background = "#292d3e".to_string();
     t.cursor = "#ffcc00".to_string();
@@ -951,7 +1223,14 @@ pub fn palenight() -> TerminalTheme {
 }
 
 pub fn horizon() -> TerminalTheme {
-    let mut t = base("horizon", "Horizon", "jolaleye", "Warm dark theme with vivid colors", ThemeCategory::Dark, true);
+    let mut t = base(
+        "horizon",
+        "Horizon",
+        "jolaleye",
+        "Warm dark theme with vivid colors",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#e0e0e0".to_string();
     t.background = "#1c1e26".to_string();
     t.cursor = "#e95678".to_string();
@@ -977,7 +1256,14 @@ pub fn horizon() -> TerminalTheme {
 }
 
 pub fn nova() -> TerminalTheme {
-    let mut t = base("nova", "Nova", "George Mandis", "Modern flat terminal theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "nova",
+        "Nova",
+        "George Mandis",
+        "Modern flat terminal theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#c5d4dd".to_string();
     t.background = "#3c4c55".to_string();
     t.cursor = "#7fc1ca".to_string();
@@ -1003,7 +1289,14 @@ pub fn nova() -> TerminalTheme {
 }
 
 pub fn snazzy() -> TerminalTheme {
-    let mut t = base("snazzy", "Snazzy", "sindresorhus", "Elegant dark theme with vivid colors", ThemeCategory::Dark, true);
+    let mut t = base(
+        "snazzy",
+        "Snazzy",
+        "sindresorhus",
+        "Elegant dark theme with vivid colors",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#eff0eb".to_string();
     t.background = "#282a36".to_string();
     t.cursor = "#97979b".to_string();
@@ -1029,7 +1322,14 @@ pub fn snazzy() -> TerminalTheme {
 }
 
 pub fn tomorrow_night() -> TerminalTheme {
-    let mut t = base("tomorrow-night", "Tomorrow Night", "Chris Kempson", "Classic dark theme with muted colors", ThemeCategory::Dark, true);
+    let mut t = base(
+        "tomorrow-night",
+        "Tomorrow Night",
+        "Chris Kempson",
+        "Classic dark theme with muted colors",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#c5c8c6".to_string();
     t.background = "#1d1f21".to_string();
     t.cursor = "#c5c8c6".to_string();
@@ -1055,7 +1355,14 @@ pub fn tomorrow_night() -> TerminalTheme {
 }
 
 pub fn tango_dark() -> TerminalTheme {
-    let mut t = base("tango-dark", "Tango Dark", "GNOME", "GNOME Terminal default dark", ThemeCategory::Dark, true);
+    let mut t = base(
+        "tango-dark",
+        "Tango Dark",
+        "GNOME",
+        "GNOME Terminal default dark",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#d3d7cf".to_string();
     t.background = "#2e3436".to_string();
     t.cursor = "#d3d7cf".to_string();
@@ -1081,7 +1388,14 @@ pub fn tango_dark() -> TerminalTheme {
 }
 
 pub fn tango_light() -> TerminalTheme {
-    let mut t = base("tango-light", "Tango Light", "GNOME", "GNOME Terminal default light", ThemeCategory::Light, false);
+    let mut t = base(
+        "tango-light",
+        "Tango Light",
+        "GNOME",
+        "GNOME Terminal default light",
+        ThemeCategory::Light,
+        false,
+    );
     t.foreground = "#2e3436".to_string();
     t.background = "#eeeeec".to_string();
     t.cursor = "#2e3436".to_string();
@@ -1102,12 +1416,23 @@ pub fn tango_light() -> TerminalTheme {
     t.bright_magenta = "#ad7fa8".to_string();
     t.bright_cyan = "#34e2e2".to_string();
     t.bright_white = "#eeeeec".to_string();
-    t.tags = vec!["light".to_string(), "gnome".to_string(), "classic".to_string()];
+    t.tags = vec![
+        "light".to_string(),
+        "gnome".to_string(),
+        "classic".to_string(),
+    ];
     t
 }
 
 pub fn cobalt2() -> TerminalTheme {
-    let mut t = base("cobalt2", "Cobalt2", "Wes Bos", "Vibrant blue-based dark theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "cobalt2",
+        "Cobalt2",
+        "Wes Bos",
+        "Vibrant blue-based dark theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#ffffff".to_string();
     t.background = "#193549".to_string();
     t.cursor = "#ffc600".to_string();
@@ -1133,7 +1458,14 @@ pub fn cobalt2() -> TerminalTheme {
 }
 
 pub fn ubuntu() -> TerminalTheme {
-    let mut t = base("ubuntu", "Ubuntu", "Canonical", "Default Ubuntu terminal theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "ubuntu",
+        "Ubuntu",
+        "Canonical",
+        "Default Ubuntu terminal theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#eeeeec".to_string();
     t.background = "#300a24".to_string();
     t.cursor = "#bbbbbb".to_string();
@@ -1159,7 +1491,14 @@ pub fn ubuntu() -> TerminalTheme {
 }
 
 pub fn andromeda() -> TerminalTheme {
-    let mut t = base("andromeda", "Andromeda", "EliverLara", "Dark theme with vivid colors", ThemeCategory::Dark, true);
+    let mut t = base(
+        "andromeda",
+        "Andromeda",
+        "EliverLara",
+        "Dark theme with vivid colors",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#e5e5e5".to_string();
     t.background = "#23262e".to_string();
     t.cursor = "#f8f8f0".to_string();
@@ -1185,7 +1524,14 @@ pub fn andromeda() -> TerminalTheme {
 }
 
 pub fn panda() -> TerminalTheme {
-    let mut t = base("panda", "Panda", "Siamak Mokhtari", "A minimal dark syntax theme", ThemeCategory::Dark, true);
+    let mut t = base(
+        "panda",
+        "Panda",
+        "Siamak Mokhtari",
+        "A minimal dark syntax theme",
+        ThemeCategory::Dark,
+        true,
+    );
     t.foreground = "#e6e6e6".to_string();
     t.background = "#292a2b".to_string();
     t.cursor = "#f0c674".to_string();
