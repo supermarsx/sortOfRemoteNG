@@ -16,7 +16,9 @@ impl BatteryManager {
         Ok(BatteryInfo {
             charge_percent: v.get("battery.charge").and_then(|s| s.parse().ok()),
             voltage: v.get("battery.voltage").and_then(|s| s.parse().ok()),
-            voltage_nominal: v.get("battery.voltage.nominal").and_then(|s| s.parse().ok()),
+            voltage_nominal: v
+                .get("battery.voltage.nominal")
+                .and_then(|s| s.parse().ok()),
             voltage_low: v.get("battery.voltage.low").and_then(|s| s.parse().ok()),
             voltage_high: v.get("battery.voltage.high").and_then(|s| s.parse().ok()),
             runtime_seconds: v.get("battery.runtime").and_then(|s| s.parse().ok()),

@@ -2,7 +2,7 @@
 //! Discover and interact with UPS devices via NUT.
 
 use crate::client::UpsClient;
-use crate::error::{UpsError, UpsResult};
+use crate::error::UpsResult;
 use crate::types::*;
 
 pub struct DeviceManager;
@@ -49,10 +49,16 @@ impl DeviceManager {
             name: name.to_string(),
             driver: vars.get("driver.name").cloned(),
             port: vars.get("driver.parameter.port").cloned(),
-            description: vars.get("ups.description").or(vars.get("device.description")).cloned(),
+            description: vars
+                .get("ups.description")
+                .or(vars.get("device.description"))
+                .cloned(),
             manufacturer: vars.get("device.mfr").or(vars.get("ups.mfr")).cloned(),
             model: vars.get("device.model").or(vars.get("ups.model")).cloned(),
-            serial: vars.get("device.serial").or(vars.get("ups.serial")).cloned(),
+            serial: vars
+                .get("device.serial")
+                .or(vars.get("ups.serial"))
+                .cloned(),
             firmware: vars.get("ups.firmware").cloned(),
             status: vars.get("ups.status").cloned(),
         })
@@ -65,7 +71,15 @@ impl DeviceManager {
 
         // Get writable variables via `upsrw <name>@host`
         let rw_out = client
-            .exec_ssh(&format!("{} {}", client.upsrw_bin(), client.upsc_cmd(name).split_whitespace().last().unwrap_or(name)))
+            .exec_ssh(&format!(
+                "{} {}",
+                client.upsrw_bin(),
+                client
+                    .upsc_cmd(name)
+                    .split_whitespace()
+                    .last()
+                    .unwrap_or(name)
+            ))
             .await
             .ok();
         let writable_set: std::collections::HashSet<String> = rw_out
@@ -101,11 +115,7 @@ impl DeviceManager {
     }
 
     /// Get a single variable value.
-    pub async fn get_variable(
-        client: &UpsClient,
-        name: &str,
-        var: &str,
-    ) -> UpsResult<UpsVariable> {
+    pub async fn get_variable(client: &UpsClient, name: &str, var: &str) -> UpsResult<UpsVariable> {
         let raw = client.exec_upsc(name, Some(var)).await?;
         let value = raw.trim().to_string();
         Ok(UpsVariable {
@@ -165,11 +175,7 @@ impl DeviceManager {
     }
 
     /// Run an instant command via `upscmd`.
-    pub async fn run_command(
-        client: &UpsClient,
-        name: &str,
-        cmd: &str,
-    ) -> UpsResult<String> {
+    pub async fn run_command(client: &UpsClient, name: &str, cmd: &str) -> UpsResult<String> {
         client.exec_upscmd(name, cmd).await
     }
 }

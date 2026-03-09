@@ -32,8 +32,16 @@ impl ThresholdManager {
                 thresholds.push(UpsThreshold {
                     name: var.to_string(),
                     variable: var.to_string(),
-                    low: if var.contains("low") { val.parse().ok() } else { None },
-                    high: if var.contains("high") { val.parse().ok() } else { None },
+                    low: if var.contains("low") {
+                        val.parse().ok()
+                    } else {
+                        None
+                    },
+                    high: if var.contains("high") {
+                        val.parse().ok()
+                    } else {
+                        None
+                    },
                     current_value: vars.get(current_var).and_then(|s| s.parse().ok()),
                     unit: Some(unit.to_string()),
                 });
@@ -43,11 +51,7 @@ impl ThresholdManager {
     }
 
     /// Get a single threshold.
-    pub async fn get(
-        client: &UpsClient,
-        device: &str,
-        var: &str,
-    ) -> UpsResult<UpsThreshold> {
+    pub async fn get(client: &UpsClient, device: &str, var: &str) -> UpsResult<UpsThreshold> {
         let thresholds = Self::list(client, device).await?;
         thresholds
             .into_iter()
@@ -69,9 +73,7 @@ impl ThresholdManager {
             } else {
                 format!("{}.low", var)
             };
-            client
-                .exec_upsrw(device, &low_var, &lo.to_string())
-                .await?;
+            client.exec_upsrw(device, &low_var, &lo.to_string()).await?;
         }
         if let Some(hi) = high {
             let high_var = if var.ends_with(".high") {
@@ -88,20 +90,14 @@ impl ThresholdManager {
 
     /// Get the low battery charge threshold (battery.charge.low).
     pub async fn get_low_battery(client: &UpsClient, device: &str) -> UpsResult<f64> {
-        let val = client
-            .exec_upsc(device, Some("battery.charge.low"))
-            .await?;
+        let val = client.exec_upsc(device, Some("battery.charge.low")).await?;
         val.trim()
             .parse::<f64>()
             .map_err(|e| UpsError::parse(e.to_string()))
     }
 
     /// Set the low battery charge threshold.
-    pub async fn set_low_battery(
-        client: &UpsClient,
-        device: &str,
-        value: f64,
-    ) -> UpsResult<()> {
+    pub async fn set_low_battery(client: &UpsClient, device: &str, value: f64) -> UpsResult<()> {
         client
             .exec_upsrw(device, "battery.charge.low", &value.to_string())
             .await?;
@@ -119,11 +115,7 @@ impl ThresholdManager {
     }
 
     /// Set the low runtime threshold in seconds.
-    pub async fn set_low_runtime(
-        client: &UpsClient,
-        device: &str,
-        value: u64,
-    ) -> UpsResult<()> {
+    pub async fn set_low_runtime(client: &UpsClient, device: &str, value: u64) -> UpsResult<()> {
         client
             .exec_upsrw(device, "battery.runtime.low", &value.to_string())
             .await?;

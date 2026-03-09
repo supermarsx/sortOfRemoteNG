@@ -41,7 +41,10 @@ impl std::error::Error for UpsError {}
 
 impl UpsError {
     pub fn new(kind: UpsErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(UpsErrorKind::NotConnected, msg)
@@ -56,22 +59,40 @@ impl UpsError {
         Self::new(UpsErrorKind::AuthenticationFailed, msg)
     }
     pub fn device_not_found(name: &str) -> Self {
-        Self::new(UpsErrorKind::DeviceNotFound, format!("UPS device not found: {name}"))
+        Self::new(
+            UpsErrorKind::DeviceNotFound,
+            format!("UPS device not found: {name}"),
+        )
     }
     pub fn driver_not_found(name: &str) -> Self {
-        Self::new(UpsErrorKind::DriverNotFound, format!("Driver not found: {name}"))
+        Self::new(
+            UpsErrorKind::DriverNotFound,
+            format!("Driver not found: {name}"),
+        )
     }
     pub fn outlet_not_found(id: &str) -> Self {
-        Self::new(UpsErrorKind::OutletNotFound, format!("Outlet not found: {id}"))
+        Self::new(
+            UpsErrorKind::OutletNotFound,
+            format!("Outlet not found: {id}"),
+        )
     }
     pub fn schedule_not_found(id: &str) -> Self {
-        Self::new(UpsErrorKind::ScheduleNotFound, format!("Schedule not found: {id}"))
+        Self::new(
+            UpsErrorKind::ScheduleNotFound,
+            format!("Schedule not found: {id}"),
+        )
     }
     pub fn variable_not_found(name: &str) -> Self {
-        Self::new(UpsErrorKind::VariableNotFound, format!("Variable not found: {name}"))
+        Self::new(
+            UpsErrorKind::VariableNotFound,
+            format!("Variable not found: {name}"),
+        )
     }
     pub fn command_not_supported(cmd: &str) -> Self {
-        Self::new(UpsErrorKind::CommandNotSupported, format!("Command not supported: {cmd}"))
+        Self::new(
+            UpsErrorKind::CommandNotSupported,
+            format!("Command not supported: {cmd}"),
+        )
     }
     pub fn test_failed(msg: impl Into<String>) -> Self {
         Self::new(UpsErrorKind::TestFailed, msg)

@@ -45,7 +45,10 @@ impl EventManager {
         let mut events = Self::parse_syslog_events(&out.stdout);
         if let Some(d) = device {
             events.retain(|e| {
-                e.device.as_deref().map(|dev| dev.contains(d)).unwrap_or(false)
+                e.device
+                    .as_deref()
+                    .map(|dev| dev.contains(d))
+                    .unwrap_or(false)
                     || e.message.contains(d)
             });
         }
@@ -141,7 +144,10 @@ impl EventManager {
             UpsEventType::TestCompleted
         } else if lower.contains("test fail") {
             UpsEventType::TestFailed
-        } else if lower.contains("comm lost") || lower.contains("commlost") || lower.contains("data stale") {
+        } else if lower.contains("comm lost")
+            || lower.contains("commlost")
+            || lower.contains("data stale")
+        {
             UpsEventType::CommLost
         } else if lower.contains("comm ok") || lower.contains("commok") {
             UpsEventType::CommOk

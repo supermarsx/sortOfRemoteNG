@@ -23,8 +23,12 @@ impl StatusManager {
             "{}: status={} load={}% battery={}%",
             s.device_name,
             s.status.as_deref().unwrap_or("unknown"),
-            s.load_percent.map(|v| format!("{v:.1}")).unwrap_or_else(|| "?".into()),
-            s.battery_charge.map(|v| format!("{v:.1}")).unwrap_or_else(|| "?".into()),
+            s.load_percent
+                .map(|v| format!("{v:.1}"))
+                .unwrap_or_else(|| "?".into()),
+            s.battery_charge
+                .map(|v| format!("{v:.1}"))
+                .unwrap_or_else(|| "?".into()),
         ))
     }
 
@@ -43,25 +47,33 @@ impl StatusManager {
     /// Current load percentage.
     pub async fn get_load(client: &UpsClient, name: &str) -> UpsResult<f64> {
         let val = client.exec_upsc(name, Some("ups.load")).await?;
-        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
+        val.trim()
+            .parse::<f64>()
+            .map_err(|e| crate::error::UpsError::parse(e.to_string()))
     }
 
     /// Current input voltage.
     pub async fn get_input_voltage(client: &UpsClient, name: &str) -> UpsResult<f64> {
         let val = client.exec_upsc(name, Some("input.voltage")).await?;
-        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
+        val.trim()
+            .parse::<f64>()
+            .map_err(|e| crate::error::UpsError::parse(e.to_string()))
     }
 
     /// Current output voltage.
     pub async fn get_output_voltage(client: &UpsClient, name: &str) -> UpsResult<f64> {
         let val = client.exec_upsc(name, Some("output.voltage")).await?;
-        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
+        val.trim()
+            .parse::<f64>()
+            .map_err(|e| crate::error::UpsError::parse(e.to_string()))
     }
 
     /// UPS temperature (°C).
     pub async fn get_temperature(client: &UpsClient, name: &str) -> UpsResult<f64> {
         let val = client.exec_upsc(name, Some("ups.temperature")).await?;
-        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
+        val.trim()
+            .parse::<f64>()
+            .map_err(|e| crate::error::UpsError::parse(e.to_string()))
     }
 
     /// Get status for every device on the server.

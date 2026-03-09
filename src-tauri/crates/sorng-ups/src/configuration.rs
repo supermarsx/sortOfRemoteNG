@@ -20,8 +20,14 @@ impl ConfigManager {
     pub async fn get_nut_config(client: &UpsClient) -> UpsResult<NutConfig> {
         let nut_raw = client.read_remote_file(NUT_CONF).await.unwrap_or_default();
         let ups_raw = client.read_remote_file(UPS_CONF).await.unwrap_or_default();
-        let users_raw = client.read_remote_file(UPSD_USERS).await.unwrap_or_default();
-        let upsmon_raw = client.read_remote_file(UPSMON_CONF).await.unwrap_or_default();
+        let users_raw = client
+            .read_remote_file(UPSD_USERS)
+            .await
+            .unwrap_or_default();
+        let upsmon_raw = client
+            .read_remote_file(UPSMON_CONF)
+            .await
+            .unwrap_or_default();
 
         let mode = Self::parse_nut_mode(&nut_raw);
         let ups_configs = Self::parse_ups_conf(&ups_raw);
@@ -177,7 +183,9 @@ impl ConfigManager {
                     "driver" => driver = value,
                     "port" => port = value,
                     "desc" => desc = Some(value),
-                    _ => { extra.insert(key.to_string(), value); }
+                    _ => {
+                        extra.insert(key.to_string(), value);
+                    }
                 }
             }
         }

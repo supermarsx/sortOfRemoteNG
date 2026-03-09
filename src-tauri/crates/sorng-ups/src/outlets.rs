@@ -52,11 +52,7 @@ impl OutletManager {
     }
 
     /// Get a single outlet by ID.
-    pub async fn get(
-        client: &UpsClient,
-        device: &str,
-        outlet_id: &str,
-    ) -> UpsResult<UpsOutlet> {
+    pub async fn get(client: &UpsClient, device: &str, outlet_id: &str) -> UpsResult<UpsOutlet> {
         let outlets = Self::list(client, device).await?;
         outlets
             .into_iter()
@@ -65,22 +61,14 @@ impl OutletManager {
     }
 
     /// Switch an outlet on via `upscmd outlet.N.load.on`.
-    pub async fn switch_on(
-        client: &UpsClient,
-        device: &str,
-        outlet_id: &str,
-    ) -> UpsResult<()> {
+    pub async fn switch_on(client: &UpsClient, device: &str, outlet_id: &str) -> UpsResult<()> {
         let cmd = format!("outlet.{}.load.on", outlet_id);
         client.exec_upscmd(device, &cmd).await?;
         Ok(())
     }
 
     /// Switch an outlet off via `upscmd outlet.N.load.off`.
-    pub async fn switch_off(
-        client: &UpsClient,
-        device: &str,
-        outlet_id: &str,
-    ) -> UpsResult<()> {
+    pub async fn switch_off(client: &UpsClient, device: &str, outlet_id: &str) -> UpsResult<()> {
         let cmd = format!("outlet.{}.load.off", outlet_id);
         client.exec_upscmd(device, &cmd).await?;
         Ok(())

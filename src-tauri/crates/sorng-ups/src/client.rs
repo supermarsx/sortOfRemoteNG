@@ -96,12 +96,7 @@ impl UpsClient {
     }
 
     /// Run `upsrw -s <var>=<value> -u <user> -p <pass> <ups>@<host>:<port>`.
-    pub async fn exec_upsrw(
-        &self,
-        ups_name: &str,
-        var: &str,
-        value: &str,
-    ) -> UpsResult<String> {
+    pub async fn exec_upsrw(&self, ups_name: &str, var: &str, value: &str) -> UpsResult<String> {
         let nut_user = self.config.nut_user.as_deref().unwrap_or("admin");
         let nut_pass = self.config.nut_password.as_deref().unwrap_or("");
         let full = format!(
@@ -120,7 +115,9 @@ impl UpsClient {
     // ── File helpers ─────────────────────────────────────────────
 
     pub async fn read_remote_file(&self, path: &str) -> UpsResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 

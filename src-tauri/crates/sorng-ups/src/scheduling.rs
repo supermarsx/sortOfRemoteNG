@@ -12,7 +12,10 @@ pub struct ScheduleManager;
 impl ScheduleManager {
     /// List configured schedules by parsing upssched.conf and cron entries.
     pub async fn list(client: &UpsClient) -> UpsResult<Vec<UpsSchedule>> {
-        let raw = client.read_remote_file(UPSSCHED_CONF).await.unwrap_or_default();
+        let raw = client
+            .read_remote_file(UPSSCHED_CONF)
+            .await
+            .unwrap_or_default();
         Ok(Self::parse_schedules(&raw))
     }
 
@@ -26,10 +29,7 @@ impl ScheduleManager {
     }
 
     /// Create a new schedule entry (appends to crontab + upssched).
-    pub async fn create(
-        client: &UpsClient,
-        schedule: &UpsSchedule,
-    ) -> UpsResult<UpsSchedule> {
+    pub async fn create(client: &UpsClient, schedule: &UpsSchedule) -> UpsResult<UpsSchedule> {
         let cron_entry = Self::to_cron_entry(schedule);
         let cmd = format!(
             "(crontab -l 2>/dev/null; echo {}) | crontab -",
@@ -85,10 +85,7 @@ impl ScheduleManager {
     }
 
     /// Overwrite upssched.conf.
-    pub async fn update_upssched_config(
-        client: &UpsClient,
-        content: &str,
-    ) -> UpsResult<()> {
+    pub async fn update_upssched_config(client: &UpsClient, content: &str) -> UpsResult<()> {
         client.write_remote_file(UPSSCHED_CONF, content).await
     }
 

@@ -32,10 +32,7 @@ impl TestManager {
     }
 
     /// Get the last test result from `ups.test.result` and `ups.test.date`.
-    pub async fn get_last_result(
-        client: &UpsClient,
-        device: &str,
-    ) -> UpsResult<UpsTestResult> {
+    pub async fn get_last_result(client: &UpsClient, device: &str) -> UpsResult<UpsTestResult> {
         let raw = client.exec_upsc(device, None).await?;
         let vars = parse_upsc_output(&raw);
         let result_str = vars.get("ups.test.result").cloned();
@@ -59,10 +56,7 @@ impl TestManager {
     }
 
     /// Run a battery calibration (`calibrate.start`).
-    pub async fn calibrate_battery(
-        client: &UpsClient,
-        device: &str,
-    ) -> UpsResult<UpsTestResult> {
+    pub async fn calibrate_battery(client: &UpsClient, device: &str) -> UpsResult<UpsTestResult> {
         client.exec_upscmd(device, "calibrate.start").await?;
         Ok(UpsTestResult {
             test_type: UpsTestType::BatteryCalibration,
@@ -74,10 +68,7 @@ impl TestManager {
     }
 
     /// Run a front-panel test (`test.panel.start`).
-    pub async fn panel_test(
-        client: &UpsClient,
-        device: &str,
-    ) -> UpsResult<UpsTestResult> {
+    pub async fn panel_test(client: &UpsClient, device: &str) -> UpsResult<UpsTestResult> {
         client.exec_upscmd(device, "test.panel.start").await?;
         Ok(UpsTestResult {
             test_type: UpsTestType::PanelTest,

@@ -28,6 +28,12 @@ pub struct UpsService {
     connections: HashMap<String, UpsClient>,
 }
 
+impl Default for UpsService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpsService {
     pub fn new() -> Self {
         Self {
@@ -74,11 +80,22 @@ impl UpsService {
         devices::DeviceManager::list_variables(self.client(id)?, name).await
     }
 
-    pub async fn get_device_variable(&self, id: &str, name: &str, var: &str) -> UpsResult<UpsVariable> {
+    pub async fn get_device_variable(
+        &self,
+        id: &str,
+        name: &str,
+        var: &str,
+    ) -> UpsResult<UpsVariable> {
         devices::DeviceManager::get_variable(self.client(id)?, name, var).await
     }
 
-    pub async fn set_device_variable(&self, id: &str, name: &str, var: &str, value: &str) -> UpsResult<()> {
+    pub async fn set_device_variable(
+        &self,
+        id: &str,
+        name: &str,
+        var: &str,
+        value: &str,
+    ) -> UpsResult<()> {
         devices::DeviceManager::set_variable(self.client(id)?, name, var, value).await
     }
 
@@ -156,11 +173,21 @@ impl UpsService {
 
     // ── Events ───────────────────────────────────────────────────
 
-    pub async fn list_events(&self, id: &str, device: Option<&str>, limit: Option<usize>) -> UpsResult<Vec<UpsEvent>> {
+    pub async fn list_events(
+        &self,
+        id: &str,
+        device: Option<&str>,
+        limit: Option<usize>,
+    ) -> UpsResult<Vec<UpsEvent>> {
         events::EventManager::list(self.client(id)?, device, limit).await
     }
 
-    pub async fn get_recent_events(&self, id: &str, device: Option<&str>, hours: u64) -> UpsResult<Vec<UpsEvent>> {
+    pub async fn get_recent_events(
+        &self,
+        id: &str,
+        device: Option<&str>,
+        hours: u64,
+    ) -> UpsResult<Vec<UpsEvent>> {
         events::EventManager::get_recent(self.client(id)?, device, hours).await
     }
 
@@ -174,7 +201,12 @@ impl UpsService {
         outlets::OutletManager::list(self.client(id)?, device).await
     }
 
-    pub async fn get_outlet(&self, id: &str, device: &str, outlet_id: &str) -> UpsResult<UpsOutlet> {
+    pub async fn get_outlet(
+        &self,
+        id: &str,
+        device: &str,
+        outlet_id: &str,
+    ) -> UpsResult<UpsOutlet> {
         outlets::OutletManager::get(self.client(id)?, device, outlet_id).await
     }
 
@@ -182,16 +214,40 @@ impl UpsService {
         outlets::OutletManager::switch_on(self.client(id)?, device, outlet_id).await
     }
 
-    pub async fn switch_outlet_off(&self, id: &str, device: &str, outlet_id: &str) -> UpsResult<()> {
+    pub async fn switch_outlet_off(
+        &self,
+        id: &str,
+        device: &str,
+        outlet_id: &str,
+    ) -> UpsResult<()> {
         outlets::OutletManager::switch_off(self.client(id)?, device, outlet_id).await
     }
 
-    pub async fn get_outlet_delay(&self, id: &str, device: &str, outlet_id: &str) -> UpsResult<(u64, u64)> {
+    pub async fn get_outlet_delay(
+        &self,
+        id: &str,
+        device: &str,
+        outlet_id: &str,
+    ) -> UpsResult<(u64, u64)> {
         outlets::OutletManager::get_delay(self.client(id)?, device, outlet_id).await
     }
 
-    pub async fn set_outlet_delay(&self, id: &str, device: &str, outlet_id: &str, shutdown_delay: u64, start_delay: u64) -> UpsResult<()> {
-        outlets::OutletManager::set_delay(self.client(id)?, device, outlet_id, shutdown_delay, start_delay).await
+    pub async fn set_outlet_delay(
+        &self,
+        id: &str,
+        device: &str,
+        outlet_id: &str,
+        shutdown_delay: u64,
+        start_delay: u64,
+    ) -> UpsResult<()> {
+        outlets::OutletManager::set_delay(
+            self.client(id)?,
+            device,
+            outlet_id,
+            shutdown_delay,
+            start_delay,
+        )
+        .await
     }
 
     // ── Scheduling ───────────────────────────────────────────────
@@ -204,11 +260,20 @@ impl UpsService {
         scheduling::ScheduleManager::get(self.client(id)?, sched_id).await
     }
 
-    pub async fn create_schedule(&self, id: &str, schedule: &UpsSchedule) -> UpsResult<UpsSchedule> {
+    pub async fn create_schedule(
+        &self,
+        id: &str,
+        schedule: &UpsSchedule,
+    ) -> UpsResult<UpsSchedule> {
         scheduling::ScheduleManager::create(self.client(id)?, schedule).await
     }
 
-    pub async fn update_schedule(&self, id: &str, sched_id: &str, schedule: &UpsSchedule) -> UpsResult<UpsSchedule> {
+    pub async fn update_schedule(
+        &self,
+        id: &str,
+        sched_id: &str,
+        schedule: &UpsSchedule,
+    ) -> UpsResult<UpsSchedule> {
         scheduling::ScheduleManager::update(self.client(id)?, sched_id, schedule).await
     }
 
@@ -230,11 +295,23 @@ impl UpsService {
         thresholds::ThresholdManager::list(self.client(id)?, device).await
     }
 
-    pub async fn get_threshold(&self, id: &str, device: &str, var: &str) -> UpsResult<UpsThreshold> {
+    pub async fn get_threshold(
+        &self,
+        id: &str,
+        device: &str,
+        var: &str,
+    ) -> UpsResult<UpsThreshold> {
         thresholds::ThresholdManager::get(self.client(id)?, device, var).await
     }
 
-    pub async fn set_threshold(&self, id: &str, device: &str, var: &str, low: Option<f64>, high: Option<f64>) -> UpsResult<()> {
+    pub async fn set_threshold(
+        &self,
+        id: &str,
+        device: &str,
+        var: &str,
+        low: Option<f64>,
+        high: Option<f64>,
+    ) -> UpsResult<()> {
         thresholds::ThresholdManager::set(self.client(id)?, device, var, low, high).await
     }
 
@@ -242,7 +319,12 @@ impl UpsService {
         thresholds::ThresholdManager::get_low_battery(self.client(id)?, device).await
     }
 
-    pub async fn set_low_battery_threshold(&self, id: &str, device: &str, value: f64) -> UpsResult<()> {
+    pub async fn set_low_battery_threshold(
+        &self,
+        id: &str,
+        device: &str,
+        value: f64,
+    ) -> UpsResult<()> {
         thresholds::ThresholdManager::set_low_battery(self.client(id)?, device, value).await
     }
 
@@ -324,7 +406,12 @@ impl UpsService {
         notifications::NotificationManager::get_flags(self.client(id)?, event_type).await
     }
 
-    pub async fn set_notify_flags(&self, id: &str, event_type: &str, flags: &NotifyFlags) -> UpsResult<()> {
+    pub async fn set_notify_flags(
+        &self,
+        id: &str,
+        event_type: &str,
+        flags: &NotifyFlags,
+    ) -> UpsResult<()> {
         notifications::NotificationManager::set_flags(self.client(id)?, event_type, flags).await
     }
 
@@ -332,7 +419,12 @@ impl UpsService {
         notifications::NotificationManager::get_message(self.client(id)?, event_type).await
     }
 
-    pub async fn set_notify_message(&self, id: &str, event_type: &str, message: &str) -> UpsResult<()> {
+    pub async fn set_notify_message(
+        &self,
+        id: &str,
+        event_type: &str,
+        message: &str,
+    ) -> UpsResult<()> {
         notifications::NotificationManager::set_message(self.client(id)?, event_type, message).await
     }
 
