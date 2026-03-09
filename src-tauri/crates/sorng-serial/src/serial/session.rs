@@ -53,23 +53,15 @@ pub enum SessionCommand {
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
     /// Data received from the port.
-    DataReceived {
-        data: Vec<u8>,
-        text: String,
-    },
+    DataReceived { data: Vec<u8>, text: String },
     /// Echo data for local display.
     Echo(Vec<u8>),
     /// Error occurred.
-    Error {
-        message: String,
-        recoverable: bool,
-    },
+    Error { message: String, recoverable: bool },
     /// Control lines changed.
     ControlLineChange(ControlLines),
     /// Session disconnected.
-    Disconnected {
-        reason: String,
-    },
+    Disconnected { reason: String },
     /// Statistics update.
     StatsUpdate(SessionStats),
 }
@@ -417,14 +409,7 @@ pub async fn create_session(
         bytes_tx: bytes_tx.clone(),
     });
 
-    let runner = SessionRunner::new(
-        transport,
-        config,
-        event_tx,
-        bytes_rx,
-        bytes_tx,
-        connected,
-    );
+    let runner = SessionRunner::new(transport, config, event_tx, bytes_rx, bytes_tx, connected);
 
     // Spawn the session task
     tokio::spawn(async move {

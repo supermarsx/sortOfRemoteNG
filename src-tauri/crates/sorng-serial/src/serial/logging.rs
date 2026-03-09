@@ -172,35 +172,46 @@ impl LogWriter {
     }
 
     /// Write header to the log file.
-    pub fn write_header(&mut self, session_id: &str, port_name: &str, config_shorthand: &str) -> Result<(), String> {
+    pub fn write_header(
+        &mut self,
+        session_id: &str,
+        port_name: &str,
+        config_shorthand: &str,
+    ) -> Result<(), String> {
         if let Some(ref mut file) = self.file {
             match self.config.format {
                 LogFormat::Csv => {
-                    writeln!(file, "# Session: {} Port: {} Config: {}", session_id, port_name, config_shorthand)
-                        .map_err(|e| e.to_string())?;
-                    writeln!(file, "{}", csv_header())
-                        .map_err(|e| e.to_string())?;
-                }
-                LogFormat::Timestamped => {
                     writeln!(
                         file,
-                        "=== Serial Session Log ==="
+                        "# Session: {} Port: {} Config: {}",
+                        session_id, port_name, config_shorthand
                     )
                     .map_err(|e| e.to_string())?;
+                    writeln!(file, "{}", csv_header()).map_err(|e| e.to_string())?;
+                }
+                LogFormat::Timestamped => {
+                    writeln!(file, "=== Serial Session Log ===").map_err(|e| e.to_string())?;
                     writeln!(
                         file,
                         "Session: {} | Port: {} | Config: {}",
                         session_id, port_name, config_shorthand
                     )
                     .map_err(|e| e.to_string())?;
-                    writeln!(file, "Started: {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC"))
-                        .map_err(|e| e.to_string())?;
-                    writeln!(file, "===========================")
-                        .map_err(|e| e.to_string())?;
+                    writeln!(
+                        file,
+                        "Started: {}",
+                        Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+                    )
+                    .map_err(|e| e.to_string())?;
+                    writeln!(file, "===========================").map_err(|e| e.to_string())?;
                 }
                 LogFormat::HexDump => {
-                    writeln!(file, "--- Hex Dump Log: {} on {} ({}) ---", session_id, port_name, config_shorthand)
-                        .map_err(|e| e.to_string())?;
+                    writeln!(
+                        file,
+                        "--- Hex Dump Log: {} on {} ({}) ---",
+                        session_id, port_name, config_shorthand
+                    )
+                    .map_err(|e| e.to_string())?;
                 }
                 _ => {}
             }
@@ -229,7 +240,8 @@ impl LogWriter {
                 LogFormat::PlainText => format_plain(&entry, self.config.direction_markers),
                 LogFormat::Timestamped => format_timestamped(&entry, self.config.direction_markers),
                 LogFormat::HexDump => {
-                    let s = format_hex_dump(&entry, self.byte_offset, self.config.direction_markers);
+                    let s =
+                        format_hex_dump(&entry, self.byte_offset, self.config.direction_markers);
                     self.byte_offset += entry.data.len();
                     s
                 }
@@ -278,14 +290,8 @@ impl LogWriter {
         }
 
         let path = Path::new(&self.config.file_path);
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("log");
-        let ext = path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("log");
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("log");
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("log");
         let parent = path.parent().unwrap_or(Path::new("."));
         let new_name = parent.join(format!("{}_{}.{}", stem, self.rotation_count, ext));
 
@@ -387,14 +393,8 @@ pub fn export_hex_dump(entries: &[LogEntry], direction_markers: bool) -> String 
 /// Generate a rotated file path.
 pub fn rotated_path(base_path: &str, index: u32) -> PathBuf {
     let path = Path::new(base_path);
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("log");
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("log");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("log");
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("log");
     let parent = path.parent().unwrap_or(Path::new("."));
     parent.join(format!("{}_{}.{}", stem, index, ext))
 }

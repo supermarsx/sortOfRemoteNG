@@ -408,13 +408,16 @@ pub fn printable_char(byte: u8) -> char {
 
 /// Convert bytes to a hex string.
 pub fn bytes_to_hex(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ")
+    data.iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Convert a hex string back to bytes.
 pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
     let cleaned: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-    if cleaned.len() % 2 != 0 {
+    if !cleaned.len().is_multiple_of(2) {
         return Err("Odd number of hex digits".to_string());
     }
     (0..cleaned.len())

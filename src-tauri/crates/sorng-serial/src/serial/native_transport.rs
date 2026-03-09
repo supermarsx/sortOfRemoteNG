@@ -122,40 +122,42 @@ impl SerialTransport for NativeTransport {
         let dtr_on_open = config.dtr_on_open;
         let rts_on_open = config.rts_on_open;
 
-        let port = tokio::task::spawn_blocking(move || -> Result<Box<dyn serialport::SerialPort>, String> {
-            let mut builder = serialport::new(&port_name, baud)
-                .data_bits(data_bits)
-                .parity(parity)
-                .stop_bits(stop_bits)
-                .flow_control(flow);
+        let port = tokio::task::spawn_blocking(
+            move || -> Result<Box<dyn serialport::SerialPort>, String> {
+                let mut builder = serialport::new(&port_name, baud)
+                    .data_bits(data_bits)
+                    .parity(parity)
+                    .stop_bits(stop_bits)
+                    .flow_control(flow);
 
-            if read_timeout > 0 {
-                builder = builder.timeout(Duration::from_millis(read_timeout));
-            } else {
-                // Short timeout to avoid blocking forever on reads
-                builder = builder.timeout(Duration::from_millis(50));
-            }
+                if read_timeout > 0 {
+                    builder = builder.timeout(Duration::from_millis(read_timeout));
+                } else {
+                    // Short timeout to avoid blocking forever on reads
+                    builder = builder.timeout(Duration::from_millis(50));
+                }
 
-            let mut port = builder
-                .open()
-                .map_err(|e| format!("Failed to open {}: {}", &port_name, e))?;
+                let mut port = builder
+                    .open()
+                    .map_err(|e| format!("Failed to open {}: {}", &port_name, e))?;
 
-            // Apply write timeout
-            if write_timeout > 0 {
-                port.set_timeout(Duration::from_millis(write_timeout))
-                    .map_err(|e| format!("Failed to set timeout: {}", e))?;
-            }
+                // Apply write timeout
+                if write_timeout > 0 {
+                    port.set_timeout(Duration::from_millis(write_timeout))
+                        .map_err(|e| format!("Failed to set timeout: {}", e))?;
+                }
 
-            // Set initial control line states
-            if dtr_on_open {
-                let _ = port.write_data_terminal_ready(true);
-            }
-            if rts_on_open {
-                let _ = port.write_request_to_send(true);
-            }
+                // Set initial control line states
+                if dtr_on_open {
+                    let _ = port.write_data_terminal_ready(true);
+                }
+                if rts_on_open {
+                    let _ = port.write_request_to_send(true);
+                }
 
-            Ok(port)
-        })
+                Ok(port)
+            },
+        )
         .await
         .map_err(|e| format!("spawn_blocking join error: {}", e))??;
 
@@ -325,18 +327,10 @@ impl SerialTransport for NativeTransport {
             Ok(ControlLines {
                 dtr: false, // DTR is an output — we don't read it back
                 rts: false, // RTS is an output — we don't read it back
-                cts: port
-                    .read_clear_to_send()
-                    .unwrap_or(false),
-                dsr: port
-                    .read_data_set_ready()
-                    .unwrap_or(false),
-                ri: port
-                    .read_ring_indicator()
-                    .unwrap_or(false),
-                dcd: port
-                    .read_carrier_detect()
-                    .unwrap_or(false),
+                cts: port.read_clear_to_send().unwrap_or(false),
+                dsr: port.read_data_set_ready().unwrap_or(false),
+                ri: port.read_ring_indicator().unwrap_or(false),
+                dcd: port.read_carrier_detect().unwrap_or(false),
             })
         })
         .await
@@ -514,8 +508,14 @@ mod tests {
 
     #[test]
     fn test_to_sp_data_bits() {
-        assert_eq!(to_sp_data_bits(&DataBits::Five) as u8, serialport::DataBits::Five as u8);
-        assert_eq!(to_sp_data_bits(&DataBits::Eight) as u8, serialport::DataBits::Eight as u8);
+        assert_eq!(
+            to_sp_data_bits(&DataBits::Five) as u8,
+            serialport::DataBits::Five as u8
+        );
+        assert_eq!(
+            to_sp_data_bits(&DataBits::Eight) as u8,
+            serialport::DataBits::Eight as u8
+        );
     }
 
     #[test]

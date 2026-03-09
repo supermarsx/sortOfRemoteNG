@@ -24,45 +24,219 @@ pub struct KnownAdapter {
 pub fn known_adapters() -> Vec<KnownAdapter> {
     vec![
         // FTDI
-        KnownAdapter { vid: 0x0403, pid: 0x6001, manufacturer: "FTDI", product: "FT232R", chipset: "FT232R" },
-        KnownAdapter { vid: 0x0403, pid: 0x6010, manufacturer: "FTDI", product: "FT2232", chipset: "FT2232" },
-        KnownAdapter { vid: 0x0403, pid: 0x6011, manufacturer: "FTDI", product: "FT4232H", chipset: "FT4232H" },
-        KnownAdapter { vid: 0x0403, pid: 0x6014, manufacturer: "FTDI", product: "FT232H", chipset: "FT232H" },
-        KnownAdapter { vid: 0x0403, pid: 0x6015, manufacturer: "FTDI", product: "FT-X Series", chipset: "FT230X" },
+        KnownAdapter {
+            vid: 0x0403,
+            pid: 0x6001,
+            manufacturer: "FTDI",
+            product: "FT232R",
+            chipset: "FT232R",
+        },
+        KnownAdapter {
+            vid: 0x0403,
+            pid: 0x6010,
+            manufacturer: "FTDI",
+            product: "FT2232",
+            chipset: "FT2232",
+        },
+        KnownAdapter {
+            vid: 0x0403,
+            pid: 0x6011,
+            manufacturer: "FTDI",
+            product: "FT4232H",
+            chipset: "FT4232H",
+        },
+        KnownAdapter {
+            vid: 0x0403,
+            pid: 0x6014,
+            manufacturer: "FTDI",
+            product: "FT232H",
+            chipset: "FT232H",
+        },
+        KnownAdapter {
+            vid: 0x0403,
+            pid: 0x6015,
+            manufacturer: "FTDI",
+            product: "FT-X Series",
+            chipset: "FT230X",
+        },
         // Silicon Labs (CP210x)
-        KnownAdapter { vid: 0x10C4, pid: 0xEA60, manufacturer: "Silicon Labs", product: "CP2102", chipset: "CP2102" },
-        KnownAdapter { vid: 0x10C4, pid: 0xEA61, manufacturer: "Silicon Labs", product: "CP2102N", chipset: "CP2102N" },
-        KnownAdapter { vid: 0x10C4, pid: 0xEA70, manufacturer: "Silicon Labs", product: "CP2105", chipset: "CP2105" },
-        KnownAdapter { vid: 0x10C4, pid: 0xEA80, manufacturer: "Silicon Labs", product: "CP2108", chipset: "CP2108" },
+        KnownAdapter {
+            vid: 0x10C4,
+            pid: 0xEA60,
+            manufacturer: "Silicon Labs",
+            product: "CP2102",
+            chipset: "CP2102",
+        },
+        KnownAdapter {
+            vid: 0x10C4,
+            pid: 0xEA61,
+            manufacturer: "Silicon Labs",
+            product: "CP2102N",
+            chipset: "CP2102N",
+        },
+        KnownAdapter {
+            vid: 0x10C4,
+            pid: 0xEA70,
+            manufacturer: "Silicon Labs",
+            product: "CP2105",
+            chipset: "CP2105",
+        },
+        KnownAdapter {
+            vid: 0x10C4,
+            pid: 0xEA80,
+            manufacturer: "Silicon Labs",
+            product: "CP2108",
+            chipset: "CP2108",
+        },
         // Prolific (PL2303)
-        KnownAdapter { vid: 0x067B, pid: 0x2303, manufacturer: "Prolific", product: "PL2303", chipset: "PL2303" },
-        KnownAdapter { vid: 0x067B, pid: 0x23A3, manufacturer: "Prolific", product: "PL2303GS", chipset: "PL2303GS" },
-        KnownAdapter { vid: 0x067B, pid: 0x23B3, manufacturer: "Prolific", product: "PL2303GL", chipset: "PL2303GL" },
-        KnownAdapter { vid: 0x067B, pid: 0x23C3, manufacturer: "Prolific", product: "PL2303GT", chipset: "PL2303GT" },
+        KnownAdapter {
+            vid: 0x067B,
+            pid: 0x2303,
+            manufacturer: "Prolific",
+            product: "PL2303",
+            chipset: "PL2303",
+        },
+        KnownAdapter {
+            vid: 0x067B,
+            pid: 0x23A3,
+            manufacturer: "Prolific",
+            product: "PL2303GS",
+            chipset: "PL2303GS",
+        },
+        KnownAdapter {
+            vid: 0x067B,
+            pid: 0x23B3,
+            manufacturer: "Prolific",
+            product: "PL2303GL",
+            chipset: "PL2303GL",
+        },
+        KnownAdapter {
+            vid: 0x067B,
+            pid: 0x23C3,
+            manufacturer: "Prolific",
+            product: "PL2303GT",
+            chipset: "PL2303GT",
+        },
         // WCH (CH340 / CH341)
-        KnownAdapter { vid: 0x1A86, pid: 0x7523, manufacturer: "WCH", product: "CH340", chipset: "CH340" },
-        KnownAdapter { vid: 0x1A86, pid: 0x5523, manufacturer: "WCH", product: "CH341A", chipset: "CH341A" },
-        KnownAdapter { vid: 0x1A86, pid: 0x7522, manufacturer: "WCH", product: "CH340K", chipset: "CH340K" },
-        KnownAdapter { vid: 0x1A86, pid: 0x55D4, manufacturer: "WCH", product: "CH9102", chipset: "CH9102" },
+        KnownAdapter {
+            vid: 0x1A86,
+            pid: 0x7523,
+            manufacturer: "WCH",
+            product: "CH340",
+            chipset: "CH340",
+        },
+        KnownAdapter {
+            vid: 0x1A86,
+            pid: 0x5523,
+            manufacturer: "WCH",
+            product: "CH341A",
+            chipset: "CH341A",
+        },
+        KnownAdapter {
+            vid: 0x1A86,
+            pid: 0x7522,
+            manufacturer: "WCH",
+            product: "CH340K",
+            chipset: "CH340K",
+        },
+        KnownAdapter {
+            vid: 0x1A86,
+            pid: 0x55D4,
+            manufacturer: "WCH",
+            product: "CH9102",
+            chipset: "CH9102",
+        },
         // MCP2200
-        KnownAdapter { vid: 0x04D8, pid: 0x00DF, manufacturer: "Microchip", product: "MCP2200", chipset: "MCP2200" },
+        KnownAdapter {
+            vid: 0x04D8,
+            pid: 0x00DF,
+            manufacturer: "Microchip",
+            product: "MCP2200",
+            chipset: "MCP2200",
+        },
         // Arduino
-        KnownAdapter { vid: 0x2341, pid: 0x0043, manufacturer: "Arduino", product: "Uno R3", chipset: "ATmega16U2" },
-        KnownAdapter { vid: 0x2341, pid: 0x0042, manufacturer: "Arduino", product: "Mega 2560 R3", chipset: "ATmega16U2" },
-        KnownAdapter { vid: 0x2341, pid: 0x0001, manufacturer: "Arduino", product: "Uno", chipset: "ATmega8U2" },
-        KnownAdapter { vid: 0x2341, pid: 0x8036, manufacturer: "Arduino", product: "Leonardo", chipset: "Native USB" },
-        KnownAdapter { vid: 0x1B4F, pid: 0x9205, manufacturer: "SparkFun", product: "Pro Micro", chipset: "ATmega32U4" },
+        KnownAdapter {
+            vid: 0x2341,
+            pid: 0x0043,
+            manufacturer: "Arduino",
+            product: "Uno R3",
+            chipset: "ATmega16U2",
+        },
+        KnownAdapter {
+            vid: 0x2341,
+            pid: 0x0042,
+            manufacturer: "Arduino",
+            product: "Mega 2560 R3",
+            chipset: "ATmega16U2",
+        },
+        KnownAdapter {
+            vid: 0x2341,
+            pid: 0x0001,
+            manufacturer: "Arduino",
+            product: "Uno",
+            chipset: "ATmega8U2",
+        },
+        KnownAdapter {
+            vid: 0x2341,
+            pid: 0x8036,
+            manufacturer: "Arduino",
+            product: "Leonardo",
+            chipset: "Native USB",
+        },
+        KnownAdapter {
+            vid: 0x1B4F,
+            pid: 0x9205,
+            manufacturer: "SparkFun",
+            product: "Pro Micro",
+            chipset: "ATmega32U4",
+        },
         // Espressif
-        KnownAdapter { vid: 0x303A, pid: 0x1001, manufacturer: "Espressif", product: "ESP32-S2", chipset: "ESP32-S2 USB-JTAG" },
-        KnownAdapter { vid: 0x303A, pid: 0x1002, manufacturer: "Espressif", product: "ESP32-S3", chipset: "ESP32-S3 USB-JTAG" },
+        KnownAdapter {
+            vid: 0x303A,
+            pid: 0x1001,
+            manufacturer: "Espressif",
+            product: "ESP32-S2",
+            chipset: "ESP32-S2 USB-JTAG",
+        },
+        KnownAdapter {
+            vid: 0x303A,
+            pid: 0x1002,
+            manufacturer: "Espressif",
+            product: "ESP32-S3",
+            chipset: "ESP32-S3 USB-JTAG",
+        },
         // Cypress
-        KnownAdapter { vid: 0x04B4, pid: 0x0002, manufacturer: "Cypress", product: "CY7C65213", chipset: "CY7C65213" },
+        KnownAdapter {
+            vid: 0x04B4,
+            pid: 0x0002,
+            manufacturer: "Cypress",
+            product: "CY7C65213",
+            chipset: "CY7C65213",
+        },
         // Segger J-Link
-        KnownAdapter { vid: 0x1366, pid: 0x0105, manufacturer: "Segger", product: "J-Link", chipset: "J-Link VCOM" },
+        KnownAdapter {
+            vid: 0x1366,
+            pid: 0x0105,
+            manufacturer: "Segger",
+            product: "J-Link",
+            chipset: "J-Link VCOM",
+        },
         // STMicroelectronics
-        KnownAdapter { vid: 0x0483, pid: 0x5740, manufacturer: "STMicroelectronics", product: "STM32 VCP", chipset: "STM32 CDC" },
+        KnownAdapter {
+            vid: 0x0483,
+            pid: 0x5740,
+            manufacturer: "STMicroelectronics",
+            product: "STM32 VCP",
+            chipset: "STM32 CDC",
+        },
         // Raspberry Pi Pico
-        KnownAdapter { vid: 0x2E8A, pid: 0x000A, manufacturer: "Raspberry Pi", product: "Pico", chipset: "RP2040 CDC" },
+        KnownAdapter {
+            vid: 0x2E8A,
+            pid: 0x000A,
+            manufacturer: "Raspberry Pi",
+            product: "Pico",
+            chipset: "RP2040 CDC",
+        },
     ]
 }
 
@@ -75,7 +249,10 @@ pub fn lookup_adapter(vid: u16, pid: u16) -> Option<KnownAdapter> {
 
 /// Build a VID/PID lookup map for fast access.
 pub fn adapter_lookup_map() -> HashMap<(u16, u16), KnownAdapter> {
-    known_adapters().into_iter().map(|a| ((a.vid, a.pid), a)).collect()
+    known_adapters()
+        .into_iter()
+        .map(|a| ((a.vid, a.pid), a))
+        .collect()
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -139,7 +316,10 @@ pub fn generate_display_name(port: &SerialPortInfo) -> String {
     let adapter_map = adapter_lookup_map();
     if let (Some(vid), Some(pid)) = (port.vid, port.pid) {
         if let Some(adapter) = adapter_map.get(&(vid, pid)) {
-            return format!("{} - {} {}", port.port_name, adapter.manufacturer, adapter.product);
+            return format!(
+                "{} - {} {}",
+                port.port_name, adapter.manufacturer, adapter.product
+            );
         }
     }
     if let Some(ref desc) = port.description {
@@ -193,45 +373,46 @@ pub fn enumerate_unix_ports() -> Vec<String> {
 /// crate reports an error.
 pub fn enumerate_native_ports() -> Vec<SerialPortInfo> {
     match serialport::available_ports() {
-        Ok(sp_ports) => {
-            sp_ports
-                .into_iter()
-                .map(|sp| {
-                    let (vid, pid, manufacturer, product, serial_number) = match &sp.port_type {
-                        serialport::SerialPortType::UsbPort(usb) => (
-                            Some(usb.vid),
-                            Some(usb.pid),
-                            usb.manufacturer.clone(),
-                            usb.product.clone(),
-                            usb.serial_number.clone(),
-                        ),
-                        _ => (None, None, None, None, None),
-                    };
-                    let port_type = match &sp.port_type {
-                        serialport::SerialPortType::UsbPort(_) => PortType::UsbSerial,
-                        serialport::SerialPortType::PciPort => PortType::Pci,
-                        serialport::SerialPortType::BluetoothPort => PortType::Bluetooth,
-                        serialport::SerialPortType::Unknown => classify_port(&sp.port_name),
-                    };
-                    let description = product;
-                    let mut info = SerialPortInfo {
-                        port_name: sp.port_name.clone(),
-                        port_type,
-                        description: description.clone(),
-                        manufacturer,
-                        vid,
-                        pid,
-                        serial_number,
-                        display_name: String::new(),
-                        in_use: false,
-                    };
-                    info.display_name = generate_display_name(&info);
-                    info
-                })
-                .collect()
-        }
+        Ok(sp_ports) => sp_ports
+            .into_iter()
+            .map(|sp| {
+                let (vid, pid, manufacturer, product, serial_number) = match &sp.port_type {
+                    serialport::SerialPortType::UsbPort(usb) => (
+                        Some(usb.vid),
+                        Some(usb.pid),
+                        usb.manufacturer.clone(),
+                        usb.product.clone(),
+                        usb.serial_number.clone(),
+                    ),
+                    _ => (None, None, None, None, None),
+                };
+                let port_type = match &sp.port_type {
+                    serialport::SerialPortType::UsbPort(_) => PortType::UsbSerial,
+                    serialport::SerialPortType::PciPort => PortType::Pci,
+                    serialport::SerialPortType::BluetoothPort => PortType::Bluetooth,
+                    serialport::SerialPortType::Unknown => classify_port(&sp.port_name),
+                };
+                let description = product;
+                let mut info = SerialPortInfo {
+                    port_name: sp.port_name.clone(),
+                    port_type,
+                    description: description.clone(),
+                    manufacturer,
+                    vid,
+                    pid,
+                    serial_number,
+                    display_name: String::new(),
+                    in_use: false,
+                };
+                info.display_name = generate_display_name(&info);
+                info
+            })
+            .collect(),
         Err(e) => {
-            log::warn!("serialport::available_ports() failed: {}; using fallback", e);
+            log::warn!(
+                "serialport::available_ports() failed: {}; using fallback",
+                e
+            );
             // Fallback to stub-based enumeration
             #[cfg(target_os = "windows")]
             let names = enumerate_windows_ports();
@@ -279,7 +460,11 @@ pub fn scan_native_ports(options: &ScanOptions) -> ScanResult {
 /// Classify a port name into a PortType.
 pub fn classify_port(port_name: &str) -> PortType {
     let lower = port_name.to_lowercase();
-    if lower.contains("usb") || lower.contains("acm") || lower.contains("usbmodem") || lower.contains("usbserial") {
+    if lower.contains("usb")
+        || lower.contains("acm")
+        || lower.contains("usbmodem")
+        || lower.contains("usbserial")
+    {
         PortType::UsbSerial
     } else if lower.contains("bluetooth") || lower.contains("rfcomm") || lower.contains("bth") {
         PortType::Bluetooth
@@ -324,27 +509,30 @@ pub fn build_port_info(
 
 /// Apply scan filters to a list of ports.
 pub fn apply_filters(ports: Vec<SerialPortInfo>, options: &ScanOptions) -> Vec<SerialPortInfo> {
-    ports.into_iter().filter(|p| {
-        if let Some(ref filter) = options.name_filter {
-            if !p.port_name.to_lowercase().contains(&filter.to_lowercase()) {
+    ports
+        .into_iter()
+        .filter(|p| {
+            if let Some(ref filter) = options.name_filter {
+                if !p.port_name.to_lowercase().contains(&filter.to_lowercase()) {
+                    return false;
+                }
+            }
+            if let Some(vid) = options.vid_filter {
+                if p.vid != Some(vid) {
+                    return false;
+                }
+            }
+            if let Some(pid) = options.pid_filter {
+                if p.pid != Some(pid) {
+                    return false;
+                }
+            }
+            if !options.include_virtual && p.port_type == PortType::Virtual {
                 return false;
             }
-        }
-        if let Some(vid) = options.vid_filter {
-            if p.vid != Some(vid) {
-                return false;
-            }
-        }
-        if let Some(pid) = options.pid_filter {
-            if p.pid != Some(pid) {
-                return false;
-            }
-        }
-        if !options.include_virtual && p.port_type == PortType::Virtual {
-            return false;
-        }
-        true
-    }).collect()
+            true
+        })
+        .collect()
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

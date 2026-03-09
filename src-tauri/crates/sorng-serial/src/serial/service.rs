@@ -39,11 +39,9 @@ impl SerialService {
         // Use native enumeration via the serialport crate.
         // This runs blocking I/O, so offload to a blocking thread.
         let opts = options.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            port_scanner::scan_native_ports(&opts)
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking join error: {}", e))?;
+        let result = tokio::task::spawn_blocking(move || port_scanner::scan_native_ports(&opts))
+            .await
+            .map_err(|e| format!("spawn_blocking join error: {}", e))?;
 
         // Mark ports that are currently in use by our sessions
         let sessions = self.sessions.read().await;
@@ -67,10 +65,7 @@ impl SerialService {
     // ── Session management ────────────────────────────────────────
 
     /// Open a new serial session.
-    pub async fn connect(
-        &self,
-        config: SerialConfig,
-    ) -> Result<SerialSession, String> {
+    pub async fn connect(&self, config: SerialConfig) -> Result<SerialSession, String> {
         let session_id = uuid::Uuid::new_v4().to_string();
 
         // Check for duplicate port
@@ -78,7 +73,10 @@ impl SerialService {
             let sessions = self.sessions.read().await;
             for (_, handle) in sessions.iter() {
                 if handle.port_name == config.port_name && handle.is_connected() {
-                    return Err(format!("Port {} is already in use by session {}", config.port_name, handle.id));
+                    return Err(format!(
+                        "Port {} is already in use by session {}",
+                        config.port_name, handle.id
+                    ));
                 }
             }
         }
@@ -86,8 +84,7 @@ impl SerialService {
         // Create a real native transport for hardware COM / tty ports
         let transport = NativeTransport::new(&config.port_name);
 
-        let handle = session::create_session(session_id.clone(), transport, config.clone())
-            .await?;
+        let handle = session::create_session(session_id.clone(), transport, config.clone()).await?;
 
         let info = handle.info().await;
 
@@ -102,10 +99,7 @@ impl SerialService {
 
     /// Open a new serial session using a simulated transport (for testing).
     #[cfg(test)]
-    pub async fn connect_simulated(
-        &self,
-        config: SerialConfig,
-    ) -> Result<SerialSession, String> {
+    pub async fn connect_simulated(&self, config: SerialConfig) -> Result<SerialSession, String> {
         use crate::serial::transport::SimulatedTransport;
         let session_id = uuid::Uuid::new_v4().to_string();
 
@@ -114,14 +108,16 @@ impl SerialService {
             let sessions = self.sessions.read().await;
             for (_, handle) in sessions.iter() {
                 if handle.port_name == config.port_name && handle.is_connected() {
-                    return Err(format!("Port {} is already in use by session {}", config.port_name, handle.id));
+                    return Err(format!(
+                        "Port {} is already in use by session {}",
+                        config.port_name, handle.id
+                    ));
                 }
             }
         }
 
         let transport = SimulatedTransport::new(&config.port_name);
-        let handle = session::create_session(session_id.clone(), transport, config.clone())
-            .await?;
+        let handle = session::create_session(session_id.clone(), transport, config.clone()).await?;
 
         let info = handle.info().await;
         {
@@ -184,7 +180,8 @@ impl SerialService {
     pub async fn send_line(&self, session_id: &str, line: String) -> Result<(), String> {
         let handle = self.get_session(session_id).await?;
 
-        self.log_data(session_id, DataDirection::Tx, line.as_bytes()).await;
+        self.log_data(session_id, DataDirection::Tx, line.as_bytes())
+            .await;
 
         handle.send_command(SessionCommand::SendLine(line)).await
     }
@@ -198,7 +195,9 @@ impl SerialService {
     /// Send a break signal.
     pub async fn send_break(&self, session_id: &str, duration_ms: u32) -> Result<(), String> {
         let handle = self.get_session(session_id).await?;
-        handle.send_command(SessionCommand::SendBreak(duration_ms)).await
+        handle
+            .send_command(SessionCommand::SendBreak(duration_ms))
+            .await
     }
 
     /// Set DTR line.
@@ -217,26 +216,39 @@ impl SerialService {
     pub async fn read_control_lines(&self, session_id: &str) -> Result<ControlLines, String> {
         let handle = self.get_session(session_id).await?;
         let (tx, rx) = tokio::sync::oneshot::channel();
-        handle.send_command(SessionCommand::ReadControlLines(tx)).await?;
-        rx.await.map_err(|_| "Failed to read control lines".to_string())?
+        handle
+            .send_command(SessionCommand::ReadControlLines(tx))
+            .await?;
+        rx.await
+            .map_err(|_| "Failed to read control lines".to_string())?
     }
 
     /// Reconfigure a session on the fly.
     pub async fn reconfigure(&self, session_id: &str, config: SerialConfig) -> Result<(), String> {
         let handle = self.get_session(session_id).await?;
-        handle.send_command(SessionCommand::Reconfigure(config)).await
+        handle
+            .send_command(SessionCommand::Reconfigure(config))
+            .await
     }
 
     /// Set line ending for a session.
-    pub async fn set_line_ending(&self, session_id: &str, line_ending: LineEnding) -> Result<(), String> {
+    pub async fn set_line_ending(
+        &self,
+        session_id: &str,
+        line_ending: LineEnding,
+    ) -> Result<(), String> {
         let handle = self.get_session(session_id).await?;
-        handle.send_command(SessionCommand::SetLineEnding(line_ending)).await
+        handle
+            .send_command(SessionCommand::SetLineEnding(line_ending))
+            .await
     }
 
     /// Set local echo for a session.
     pub async fn set_local_echo(&self, session_id: &str, echo: bool) -> Result<(), String> {
         let handle = self.get_session(session_id).await?;
-        handle.send_command(SessionCommand::SetLocalEcho(echo)).await
+        handle
+            .send_command(SessionCommand::SetLocalEcho(echo))
+            .await
     }
 
     /// Flush output for a session.
@@ -279,39 +291,23 @@ impl SerialService {
         timeout_ms: u64,
     ) -> Result<AtCommandResult, String> {
         let handle = self.get_session(session_id).await?;
-        crate::serial::modem::execute_at_command(
-            handle.transport.as_ref(),
-            command,
-            timeout_ms,
-        )
-        .await
+        crate::serial::modem::execute_at_command(handle.transport.as_ref(), command, timeout_ms)
+            .await
     }
 
     /// Get modem info.
-    pub async fn get_modem_info(
-        &self,
-        session_id: &str,
-    ) -> Result<ModemInfo, String> {
+    pub async fn get_modem_info(&self, session_id: &str) -> Result<ModemInfo, String> {
         let handle = self.get_session(session_id).await?;
-        let controller = ModemController::new(
-            handle.transport.clone(),
-            ModemProfile::default(),
-            5000,
-        );
+        let controller =
+            ModemController::new(handle.transport.clone(), ModemProfile::default(), 5000);
         controller.get_info().await
     }
 
     /// Get modem signal quality.
-    pub async fn get_signal_quality(
-        &self,
-        session_id: &str,
-    ) -> Result<SignalQuality, String> {
+    pub async fn get_signal_quality(&self, session_id: &str) -> Result<SignalQuality, String> {
         let handle = self.get_session(session_id).await?;
-        let controller = ModemController::new(
-            handle.transport.clone(),
-            ModemProfile::default(),
-            5000,
-        );
+        let controller =
+            ModemController::new(handle.transport.clone(), ModemProfile::default(), 5000);
         controller.get_signal_quality().await
     }
 
@@ -334,33 +330,23 @@ impl SerialService {
         number: &str,
     ) -> Result<AtCommandResult, String> {
         let handle = self.get_session(session_id).await?;
-        let controller = ModemController::new(
-            handle.transport.clone(),
-            ModemProfile::default(),
-            60000,
-        );
+        let controller =
+            ModemController::new(handle.transport.clone(), ModemProfile::default(), 60000);
         controller.dial(number).await
     }
 
     /// Hang up.
     pub async fn modem_hangup(&self, session_id: &str) -> Result<AtCommandResult, String> {
         let handle = self.get_session(session_id).await?;
-        let controller = ModemController::new(
-            handle.transport.clone(),
-            ModemProfile::default(),
-            5000,
-        );
+        let controller =
+            ModemController::new(handle.transport.clone(), ModemProfile::default(), 5000);
         controller.hangup().await
     }
 
     // ── Logging ───────────────────────────────────────────────────
 
     /// Start logging for a session.
-    pub async fn start_logging(
-        &self,
-        session_id: &str,
-        config: LogConfig,
-    ) -> Result<(), String> {
+    pub async fn start_logging(&self, session_id: &str, config: LogConfig) -> Result<(), String> {
         let handle = self.get_session(session_id).await?;
         let mut writer = LogWriter::new(config)?;
         let info = handle.info().await;
@@ -427,7 +413,10 @@ impl SerialService {
                         };
                         let _ = app.emit("serial:echo", &payload);
                     }
-                    SessionEvent::Error { message, recoverable } => {
+                    SessionEvent::Error {
+                        message,
+                        recoverable,
+                    } => {
                         let payload = SerialErrorEvent {
                             session_id: session_id.clone(),
                             message,
@@ -548,10 +537,7 @@ mod tests {
             ..Default::default()
         };
         let info = service.connect_simulated(config).await.unwrap();
-        service
-            .send_line(&info.id, "AT".to_string())
-            .await
-            .unwrap();
+        service.send_line(&info.id, "AT".to_string()).await.unwrap();
         service.disconnect(&info.id).await.unwrap();
     }
 

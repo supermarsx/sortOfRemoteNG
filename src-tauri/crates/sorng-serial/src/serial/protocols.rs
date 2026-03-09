@@ -145,11 +145,7 @@ impl XmodemMode {
 }
 
 /// Build an XMODEM data block.
-pub fn build_xmodem_block(
-    block_num: u8,
-    data: &[u8],
-    mode: XmodemMode,
-) -> Vec<u8> {
+pub fn build_xmodem_block(block_num: u8, data: &[u8], mode: XmodemMode) -> Vec<u8> {
     let block_size = mode.block_size();
     let mut block = Vec::with_capacity(block_size + 5);
 
@@ -212,11 +208,15 @@ pub fn verify_xmodem_block(block: &[u8], mode: XmodemMode) -> Result<(u8, Vec<u8
             let expected = block[3 + block_size];
             let actual = xmodem_checksum(data);
             if expected != actual {
-                return Err(format!("Checksum mismatch: {:02X} ≠ {:02X}", expected, actual));
+                return Err(format!(
+                    "Checksum mismatch: {:02X} ≠ {:02X}",
+                    expected, actual
+                ));
             }
         }
         XmodemMode::Crc | XmodemMode::OneK => {
-            let expected = ((block[3 + block_size] as u16) << 8) | (block[3 + block_size + 1] as u16);
+            let expected =
+                ((block[3 + block_size] as u16) << 8) | (block[3 + block_size + 1] as u16);
             let actual = crc16_xmodem(data);
             if expected != actual {
                 return Err(format!("CRC mismatch: {:04X} ≠ {:04X}", expected, actual));
@@ -402,6 +402,7 @@ pub fn zmodem_escape_block(data: &[u8]) -> Vec<u8> {
 pub type ProgressCallback = Box<dyn Fn(&TransferProgress) + Send + Sync>;
 
 /// Build transfer progress info.
+#[allow(clippy::too_many_arguments)]
 pub fn build_progress(
     transfer_id: &str,
     session_id: &str,
@@ -461,7 +462,7 @@ pub fn calculate_total_blocks(file_size: u64, protocol: TransferProtocol) -> u32
     if block_size == 0 {
         return 0;
     }
-    ((file_size + block_size - 1) / block_size) as u32
+    file_size.div_ceil(block_size) as u32
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -493,11 +494,7 @@ pub mod kermit {
     /// Build a Kermit packet.
     pub fn build_packet(seq: u8, ptype: u8, data: &[u8]) -> Vec<u8> {
         let len = data.len() as u8 + 3; // data + seq + type + checksum
-        let mut packet = Vec::new();
-        packet.push(MARK);
-        packet.push(to_char(len));
-        packet.push(to_char(seq & 63));
-        packet.push(ptype);
+        let mut packet = vec![MARK, to_char(len), to_char(seq & 63), ptype];
         packet.extend_from_slice(data);
 
         // Type-1 checksum

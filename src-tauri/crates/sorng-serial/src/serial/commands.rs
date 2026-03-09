@@ -2,10 +2,10 @@
 //!
 //! Each command is a thin wrapper that delegates to the `SerialService`.
 
-use crate::serial::types::LogConfig;
 use crate::serial::modem::{ModemInfo, SignalQuality};
 use crate::serial::port_scanner::ScanOptions;
 use crate::serial::service::SerialServiceState;
+use crate::serial::types::LogConfig;
 use crate::serial::types::*;
 use tauri::State;
 

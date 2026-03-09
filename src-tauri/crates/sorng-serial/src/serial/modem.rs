@@ -700,11 +700,7 @@ mod tests {
         // Inject a response
         transport.inject_rx(b"AT\r\nOK\r\n").await;
 
-        let controller = ModemController::new(
-            transport.clone(),
-            ModemProfile::default(),
-            2000,
-        );
+        let controller = ModemController::new(transport.clone(), ModemProfile::default(), 2000);
         let result = controller.ping().await.unwrap();
         assert!(result);
     }
@@ -715,7 +711,9 @@ mod tests {
 
         let transport = SimulatedTransport::new("COM1");
         transport.open(&SerialConfig::default()).await.unwrap();
-        transport.inject_rx(b"AT+CGMI\r\nTestManufacturer\r\nOK\r\n").await;
+        transport
+            .inject_rx(b"AT+CGMI\r\nTestManufacturer\r\nOK\r\n")
+            .await;
 
         let result = execute_at_command(transport.as_ref(), "AT+CGMI", 2000)
             .await

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Standard baud rates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum BaudRate {
     #[serde(rename = "300")]
     Baud300,
@@ -22,6 +22,7 @@ pub enum BaudRate {
     #[serde(rename = "4800")]
     Baud4800,
     #[serde(rename = "9600")]
+    #[default]
     Baud9600,
     #[serde(rename = "14400")]
     Baud14400,
@@ -41,12 +42,6 @@ pub enum BaudRate {
     Baud921600,
     /// Custom / non-standard baud rate.
     Custom(u32),
-}
-
-impl Default for BaudRate {
-    fn default() -> Self {
-        Self::Baud9600
-    }
 }
 
 impl BaudRate {
@@ -93,14 +88,13 @@ impl BaudRate {
     /// All standard baud rate values.
     pub fn standard_rates() -> Vec<u32> {
         vec![
-            300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200,
-            230400, 460800, 921600,
+            300, 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
         ]
     }
 }
 
 /// Number of data bits per character.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum DataBits {
     #[serde(rename = "5")]
     Five,
@@ -109,13 +103,8 @@ pub enum DataBits {
     #[serde(rename = "7")]
     Seven,
     #[serde(rename = "8")]
+    #[default]
     Eight,
-}
-
-impl Default for DataBits {
-    fn default() -> Self {
-        Self::Eight
-    }
 }
 
 impl DataBits {
@@ -142,18 +131,14 @@ impl DataBits {
 /// Parity checking mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum Parity {
+    #[default]
     None,
     Odd,
     Even,
     Mark,
     Space,
-}
-
-impl Default for Parity {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl Parity {
@@ -169,20 +154,15 @@ impl Parity {
 }
 
 /// Number of stop bits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum StopBits {
     #[serde(rename = "1")]
+    #[default]
     One,
     #[serde(rename = "1.5")]
     OnePointFive,
     #[serde(rename = "2")]
     Two,
-}
-
-impl Default for StopBits {
-    fn default() -> Self {
-        Self::One
-    }
 }
 
 impl StopBits {
@@ -198,7 +178,9 @@ impl StopBits {
 /// Flow control mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum FlowControl {
+    #[default]
     None,
     /// Software flow control (XON/XOFF).
     XonXoff,
@@ -208,15 +190,10 @@ pub enum FlowControl {
     DtrDsr,
 }
 
-impl Default for FlowControl {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// RS-232 control line state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct ControlLines {
     /// Data Terminal Ready (output).
     pub dtr: bool,
@@ -230,19 +207,6 @@ pub struct ControlLines {
     pub ri: bool,
     /// Data Carrier Detect (input).
     pub dcd: bool,
-}
-
-impl Default for ControlLines {
-    fn default() -> Self {
-        Self {
-            dtr: false,
-            rts: false,
-            cts: false,
-            dsr: false,
-            ri: false,
-            dcd: false,
-        }
-    }
 }
 
 /// Complete serial port configuration.
@@ -368,6 +332,7 @@ impl SerialConfig {
 /// Line ending style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum LineEnding {
     /// No line ending appended.
     None,
@@ -376,13 +341,8 @@ pub enum LineEnding {
     /// Line Feed (`\n`).
     Lf,
     /// Carriage Return + Line Feed (`\r\n`).
+    #[default]
     CrLf,
-}
-
-impl Default for LineEnding {
-    fn default() -> Self {
-        Self::CrLf
-    }
 }
 
 impl LineEnding {
@@ -505,6 +465,7 @@ pub struct SerialSession {
 /// Statistics for a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct SessionStats {
     pub bytes_rx: u64,
     pub bytes_tx: u64,
@@ -517,24 +478,6 @@ pub struct SessionStats {
     pub framing_errors: u64,
     pub break_count: u64,
     pub uptime_seconds: u64,
-}
-
-impl Default for SessionStats {
-    fn default() -> Self {
-        Self {
-            bytes_rx: 0,
-            bytes_tx: 0,
-            frames_rx: 0,
-            frames_tx: 0,
-            errors_rx: 0,
-            errors_tx: 0,
-            overruns: 0,
-            parity_errors: 0,
-            framing_errors: 0,
-            break_count: 0,
-            uptime_seconds: 0,
-        }
-    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -645,22 +588,18 @@ pub struct AtCommandResult {
 /// File transfer protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum TransferProtocol {
     Xmodem,
     XmodemCrc,
     Xmodem1k,
     Ymodem,
     YmodemG,
+    #[default]
     Zmodem,
     Ascii,
     Kermit,
     Raw,
-}
-
-impl Default for TransferProtocol {
-    fn default() -> Self {
-        Self::Zmodem
-    }
 }
 
 impl TransferProtocol {
@@ -759,8 +698,10 @@ fn default_timeout_ms() -> u64 {
 /// Format for session logging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum LogFormat {
     /// Plain text (decoded data only).
+    #[default]
     PlainText,
     /// Hex dump format (offset + hex + ASCII).
     HexDump,
@@ -770,12 +711,6 @@ pub enum LogFormat {
     RawBinary,
     /// CSV format (timestamp, direction, hex, ascii).
     Csv,
-}
-
-impl Default for LogFormat {
-    fn default() -> Self {
-        Self::PlainText
-    }
 }
 
 /// Configuration for session logging.
