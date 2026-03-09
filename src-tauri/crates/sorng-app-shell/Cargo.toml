@@ -1,0 +1,11 @@
+[package]
+name = "sorng-app-shell"
+version = "0.1.0"
+edition = "2021"
+description = "Tauri shell and desktop integration commands for the app crate"
+
+[dependencies]
+serde = { workspace = true }
+tauri = { workspace = true }
+dirs = { workspace = true }
+tauri-plugin-autostart = "2"

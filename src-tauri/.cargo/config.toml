@@ -1,6 +1,21 @@
 # Cargo configuration
 # Using crates.io with sparse protocol (fast, default since Rust 1.70)
 
+[build]
+# Limit parallel rustc processes.  With 32 GB RAM and 20 logical cores,
+# even 2 concurrent rustc instances OOM during a clean build of the
+# 178-crate workspace (the `windows` crate alone consumes ~20 GB during
+# typeck when compiled with all its Win32 feature flags).  1 job ensures
+# only one rustc process is active at a time, keeping peak memory within
+# 32 GB.  Bump to 2-4 after the first build populates the incremental
+# cache (incremental rebuilds only recompile one or two crates).
+jobs = 1
+# `sccache` is installed on this machine, but wrapper-enabled builds were
+# failing nondeterministically in this workspace (`h2` / `tauri-utils`
+# exiting without a Rust diagnostic). Keep the default build path reliable.
+# Re-enable locally once the wrapper issue is understood.
+# rustc-wrapper = "sccache"
+
 [net]
 # Retry failed downloads up to 3 times
 retry = 3
@@ -54,13 +69,32 @@ low-speed-limit = 5
 #   +adx               -> big-integer multiply    (RSA key gen/signing)
 #   +popcnt, +lzcnt    -> general bit ops         (compression, search)
 #
+# ═══════════════════════════════════════════════════════════════════════
+# Linker + target feature flags
+# ═══════════════════════════════════════════════════════════════════════
+#
+# We use the platform-native fast linker for each OS:
+#   Windows → rust-lld  (ships with Rust, ~2-5× faster than link.exe)
+#   Linux   → mold      (install via `apt install mold` or from GitHub)
+#   macOS   → default   (Apple ld is already fast; lld has issues on macOS)
+#
+# Combined with the x86-64-v3 target features for crypto / SIMD.
+
 [target.x86_64-pc-windows-msvc]
+# NOTE: We intentionally do NOT set linker = "rust-lld.exe" here.
+# While rust-lld ships with the toolchain, it hangs when linking this
+# project's 178-crate binary (~7 GB of rlibs).  The default MSVC link.exe
+# handles it reliably.  If link times become a bottleneck, consider:
+#   1. Upgrading to a Rust nightly that supports -Clinker-flavor=msvc-lld
+#   2. Using `cargo-nextest` to reduce relink frequency
 rustflags = [
   "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
 ]
 
 [target.x86_64-unknown-linux-gnu]
+linker = "clang"
 rustflags = [
+  "-C", "link-arg=-fuse-ld=mold",
   "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
 ]
 

@@ -1,5 +1,15 @@
 [workspace]
+resolver = "2"
+default-members = ["."]
 members = [
+  "crates/sorng-app-auth",
+  "crates/sorng-app-domains",
+  "crates/sorng-app-domains-cloud",
+  "crates/sorng-app-domains-collab",
+  "crates/sorng-app-domains-core",
+  "crates/sorng-app-domains-ops",
+  "crates/sorng-app-domains-platform",
+  "crates/sorng-app-shell",
   "crates/sorng-core",
   "crates/sorng-auth",
   "crates/sorng-storage",
@@ -180,18 +190,50 @@ members = [
 ]
 
 [workspace.dependencies]
+# ── Serialisation ─────────────────────────────────────────────────────
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
+
+# ── Async runtime ─────────────────────────────────────────────────────
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+async-trait = "0.1"
+
+# ── Framework ─────────────────────────────────────────────────────────
 tauri = { version = "2.9.5", features = ["devtools"] }
+
+# ── HTTP / networking ─────────────────────────────────────────────────
+# Minimal base — crates add features via { workspace = true, features = [...] }
+reqwest = { version = "0.11", features = ["json", "cookies", "stream", "multipart"] }
+url = "2.5"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+bytes = "1"
+ssh2 = "0.9"
+
+# ── Cryptography ──────────────────────────────────────────────────────
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", features = ["simple"] }
+
+# ── Common utilities ──────────────────────────────────────────────────
 log = "0.4"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.21"
 rand = "0.8"
-reqwest = { version = "0.11", features = ["json", "cookies", "blocking"] }
-sha2 = "0.10"
 dirs = "5.0"
+regex = "1.10"
+lazy_static = "1.4"
+thiserror = "1.0"
+
+# ── Testing ───────────────────────────────────────────────────────────
+tokio-test = "0.4"
+tempfile = "3.0"
 
 [package]
 name = "app"
@@ -213,202 +255,128 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.3", features = [] }
 
 [dependencies]
-# ── Workspace crates ──────────────────────────────────────────────────
-sorng-core = { path = "crates/sorng-core" }
-sorng-auth = { path = "crates/sorng-auth" }
-sorng-storage = { path = "crates/sorng-storage" }
-sorng-network = { path = "crates/sorng-network" }
-sorng-ssh = { path = "crates/sorng-ssh" }
-sorng-rdp = { path = "crates/sorng-rdp" }
-sorng-protocols = { path = "crates/sorng-protocols" }
-sorng-vpn = { path = "crates/sorng-vpn" }
-sorng-cloud = { path = "crates/sorng-cloud" }
-sorng-aws = { path = "crates/sorng-aws" }
-sorng-remote-mgmt = { path = "crates/sorng-remote-mgmt" }
-sorng-gpo = { path = "crates/sorng-gpo" }
-sorng-ard = { path = "crates/sorng-ard" }
-sorng-ftp = { path = "crates/sorng-ftp" }
-sorng-sftp = { path = "crates/sorng-sftp" }
-sorng-telnet = { path = "crates/sorng-telnet" }
-sorng-vnc = { path = "crates/sorng-vnc" }
-sorng-rustdesk = { path = "crates/sorng-rustdesk" }
-sorng-bitwarden = { path = "crates/sorng-bitwarden" }
-sorng-keepass = { path = "crates/sorng-keepass" }
-sorng-scp = { path = "crates/sorng-scp" }
-sorng-mysql = { path = "crates/sorng-mysql" }
-sorng-postgres = { path = "crates/sorng-postgres" }
-sorng-mssql = { path = "crates/sorng-mssql" }
-sorng-sqlite = { path = "crates/sorng-sqlite" }
-sorng-mongodb = { path = "crates/sorng-mongodb" }
-sorng-redis = { path = "crates/sorng-redis" }
-sorng-passbolt = { path = "crates/sorng-passbolt" }
-sorng-ai-agent = { path = "crates/sorng-ai-agent" }
-sorng-powershell = { path = "crates/sorng-powershell" }
-sorng-1password = { path = "crates/sorng-1password" }
-sorng-lastpass = { path = "crates/sorng-lastpass" }
-sorng-google-passwords = { path = "crates/sorng-google-passwords" }
-sorng-dashlane = { path = "crates/sorng-dashlane" }
-sorng-winmgmt = { path = "crates/sorng-winmgmt" }
-sorng-serial = { path = "crates/sorng-serial" }
-sorng-hyperv = { path = "crates/sorng-hyperv" }
-sorng-meshcentral = { path = "crates/sorng-meshcentral" }
-sorng-openvpn = { path = "crates/sorng-openvpn" }
-sorng-vmware = { path = "crates/sorng-vmware" }
-sorng-proxmox = { path = "crates/sorng-proxmox" }
-sorng-idrac = { path = "crates/sorng-idrac" }
-sorng-totp = { path = "crates/sorng-totp" }
-sorng-mremoteng = { path = "crates/sorng-mremoteng" }
-sorng-termserv = { path = "crates/sorng-termserv" }
-sorng-whatsapp = { path = "crates/sorng-whatsapp" }
-sorng-telegram = { path = "crates/sorng-telegram" }
-sorng-onedrive = { path = "crates/sorng-onedrive" }
-sorng-dropbox = { path = "crates/sorng-dropbox" }
-sorng-nextcloud = { path = "crates/sorng-nextcloud" }
-sorng-gdrive = { path = "crates/sorng-gdrive" }
-sorng-recording = { path = "crates/sorng-recording" }
-sorng-gcp = { path = "crates/sorng-gcp" }
-sorng-azure = { path = "crates/sorng-azure" }
-sorng-exchange = { path = "crates/sorng-exchange" }
-sorng-smtp = { path = "crates/sorng-smtp" }
-sorng-llm = { path = "crates/sorng-llm" }
-sorng-ai-assist = { path = "crates/sorng-ai-assist" }
-sorng-terminal-themes = { path = "crates/sorng-terminal-themes" }
-sorng-extensions = { path = "crates/sorng-extensions" }
-sorng-collaboration = { path = "crates/sorng-collaboration" }
-sorng-gateway = { path = "crates/sorng-gateway" }
-sorng-biometrics = { path = "crates/sorng-biometrics" }
-sorng-vault = { path = "crates/sorng-vault" }
-sorng-p2p = { path = "crates/sorng-p2p" }
-sorng-tailscale = { path = "crates/sorng-tailscale" }
-sorng-zerotier = { path = "crates/sorng-zerotier" }
-sorng-wireguard = { path = "crates/sorng-wireguard" }
-sorng-dns = { path = "crates/sorng-dns" }
-sorng-k8s = { path = "crates/sorng-k8s" }
-sorng-docker = { path = "crates/sorng-docker" }
-sorng-docker-compose = { path = "crates/sorng-docker-compose" }
-sorng-ansible = { path = "crates/sorng-ansible" }
-sorng-terraform = { path = "crates/sorng-terraform" }
-sorng-i18n = { path = "crates/sorng-i18n" }
-sorng-command-palette = { path = "crates/sorng-command-palette" }
-sorng-fonts = { path = "crates/sorng-fonts" }
-sorng-secure-clip = { path = "crates/sorng-secure-clip" }
-sorng-budibase = { path = "crates/sorng-budibase" }
-sorng-osticket = { path = "crates/sorng-osticket" }
-sorng-jira = { path = "crates/sorng-jira" }
-sorng-letsencrypt = { path = "crates/sorng-letsencrypt" }
-sorng-ssh-agent = { path = "crates/sorng-ssh-agent" }
-sorng-opkssh = { path = "crates/sorng-opkssh" }
-sorng-warpgate = { path = "crates/sorng-warpgate" }
-sorng-ssh-scripts = { path = "crates/sorng-ssh-scripts" }
-sorng-mcp = { path = "crates/sorng-mcp" }
-sorng-snmp = { path = "crates/sorng-snmp" }
-sorng-bmc-common = { path = "crates/sorng-bmc-common" }
-sorng-ilo = { path = "crates/sorng-ilo" }
-sorng-lenovo = { path = "crates/sorng-lenovo" }
-sorng-supermicro = { path = "crates/sorng-supermicro" }
-sorng-synology = { path = "crates/sorng-synology" }
-sorng-notifications = { path = "crates/sorng-notifications" }
-sorng-filters = { path = "crates/sorng-filters" }
-sorng-hooks = { path = "crates/sorng-hooks" }
-sorng-scheduler = { path = "crates/sorng-scheduler" }
-sorng-credentials = { path = "crates/sorng-credentials" }
-sorng-topology = { path = "crates/sorng-topology" }
-sorng-replay = { path = "crates/sorng-replay" }
-sorng-marketplace = { path = "crates/sorng-marketplace" }
-sorng-updater = { path = "crates/sorng-updater" }
-sorng-rdpfile = { path = "crates/sorng-rdpfile" }
-sorng-portable = { path = "crates/sorng-portable" }
-sorng-dashboard = { path = "crates/sorng-dashboard" }
-sorng-lxd = { path = "crates/sorng-lxd" }
-sorng-netbird = { path = "crates/sorng-netbird" }
-sorng-teleport = { path = "crates/sorng-teleport" }
-sorng-vmware-desktop = { path = "crates/sorng-vmware-desktop" }
-sorng-spice = { path = "crates/sorng-spice" }
-sorng-nx = { path = "crates/sorng-nx" }
-sorng-xdmcp = { path = "crates/sorng-xdmcp" }
-sorng-x2go = { path = "crates/sorng-x2go" }
-sorng-nginx = { path = "crates/sorng-nginx" }
-sorng-traefik = { path = "crates/sorng-traefik" }
-sorng-haproxy = { path = "crates/sorng-haproxy" }
-sorng-apache = { path = "crates/sorng-apache" }
-sorng-caddy = { path = "crates/sorng-caddy" }
-sorng-consul = { path = "crates/sorng-consul" }
-sorng-nginx-proxy-mgr = { path = "crates/sorng-nginx-proxy-mgr" }
-sorng-postfix = { path = "crates/sorng-postfix" }
-sorng-gpg-agent = { path = "crates/sorng-gpg-agent" }
-sorng-yubikey = { path = "crates/sorng-yubikey" }
-sorng-opendkim = { path = "crates/sorng-opendkim" }
-sorng-dovecot = { path = "crates/sorng-dovecot" }
-sorng-ddns = { path = "crates/sorng-ddns" }
-sorng-netmgr = { path = "crates/sorng-netmgr" }
-sorng-netutils = { path = "crates/sorng-netutils" }
-sorng-spamassassin = { path = "crates/sorng-spamassassin" }
-sorng-clamav = { path = "crates/sorng-clamav" }
-sorng-rspamd = { path = "crates/sorng-rspamd" }
-sorng-roundcube = { path = "crates/sorng-roundcube" }
-sorng-cyrus-sasl = { path = "crates/sorng-cyrus-sasl" }
-sorng-proc = { path = "crates/sorng-proc" }
-sorng-procmail = { path = "crates/sorng-procmail" }
-sorng-mailcow = { path = "crates/sorng-mailcow" }
-sorng-amavis = { path = "crates/sorng-amavis" }
-sorng-remote-backup = { path = "crates/sorng-remote-backup" }
-sorng-fail2ban = { path = "crates/sorng-fail2ban" }
-sorng-cron = { path = "crates/sorng-cron" }
-sorng-bootloader = { path = "crates/sorng-bootloader" }
-sorng-time-ntp = { path = "crates/sorng-time-ntp" }
-sorng-os-detect = { path = "crates/sorng-os-detect" }
-sorng-kernel = { path = "crates/sorng-kernel" }
-sorng-pam = { path = "crates/sorng-pam" }
-sorng-cpanel = { path = "crates/sorng-cpanel" }
-sorng-php = { path = "crates/sorng-php" }
-sorng-port-knock = { path = "crates/sorng-port-knock" }
-sorng-about = { path = "crates/sorng-about" }
-sorng-mac = { path = "crates/sorng-mac" }
-sorng-cicd = { path = "crates/sorng-cicd" }
-sorng-oracle-cloud = { path = "crates/sorng-oracle-cloud" }
-sorng-ipmi = { path = "crates/sorng-ipmi" }
-sorng-cups = { path = "crates/sorng-cups" }
-sorng-backup-verify = { path = "crates/sorng-backup-verify" }
-sorng-ceph = { path = "crates/sorng-ceph" }
-sorng-rabbitmq = { path = "crates/sorng-rabbitmq" }
-sorng-kafka = { path = "crates/sorng-kafka" }
-sorng-pfsense = { path = "crates/sorng-pfsense" }
-sorng-mysql-admin = { path = "crates/sorng-mysql-admin" }
-sorng-postgres-admin = { path = "crates/sorng-postgres-admin" }
-sorng-prometheus = { path = "crates/sorng-prometheus" }
-sorng-grafana = { path = "crates/sorng-grafana" }
-sorng-ups = { path = "crates/sorng-ups" }
-sorng-netbox = { path = "crates/sorng-netbox" }
+sorng-app-auth = { path = "crates/sorng-app-auth" }
+sorng-app-domains = { path = "crates/sorng-app-domains", default-features = false }
+sorng-app-shell = { path = "crates/sorng-app-shell" }
+sorng-kafka = { path = "crates/sorng-kafka", optional = true }
 
-# ── Shared / app-level dependencies ──────────────────────────────────
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
-tauri = { version = "2.9.5", features = ["devtools"] }
+serde_json = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }
+tauri = { workspace = true }
 tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true }
 dirs = { workspace = true }
 tauri-plugin-window-state = "2"
 axum = "0.7"
-tower = "0.4"
-tower-http = "0.5"
-hyper = "1.0"
-hostname = "0.3"
 
 [dev-dependencies]
-tokio-test = "0.4"
-tempfile = "3.0"
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
 mockall = "0.11"
 serial_test = "2.0"
 chrono = { workspace = true }
 uuid = { workspace = true }
 
-# Reduce memory usage during debug builds — wgpu-core and openh264-sys2 OOM with full debuginfo
+[features]
+default = ["rdp"]
+full = ["kafka", "rdp"]
+kafka = ["dep:sorng-kafka"]
+rdp = ["sorng-app-domains/rdp"]
+
+# ═══════════════════════════════════════════════════════════════════════
+# Build performance profiles
+# ═══════════════════════════════════════════════════════════════════════
+
+[profile.dev]
+# Keep codegen-units at 8 for the root app crate.  The app crate is
+# huge (9000+ lines, 170+ extern imports) but 8 CGUs is still needed
+# for reasonable incremental rebuild speed.  The heavy third-party crates
+# are individually pinned to codegen-units=1 below so they don't OOM.
+codegen-units = 256
+# Enable incremental compilation (default, but be explicit).
+incremental = true
+# "unpacked" avoids generating a monolithic .pdb on Windows, which
+# speeds up linking significantly.  Stabilised since Rust 1.73.
+split-debuginfo = "unpacked"
+# Line-tables-only for first-party code — full debuginfo (level 2)
+# causes OOM on machines with limited paging file when compiling 178
+# workspace crates in parallel.  Level 1 still gives usable backtraces.
+debug = 0
+
+# Reduce debuginfo for third-party crates — wgpu-core and openh264-sys2
+# OOM with full debuginfo.  Level 0 = no debuginfo for deps, freeing
+# significant memory during a 178-crate workspace build.
 [profile.dev.package."*"]
-debug = 1
+debug = 0
+# Optimise third-party crates in dev builds.  opt-level 1 gives the
+# majority of the performance benefit of -O2 but uses significantly
+# less memory during LLVM codegen.  With a 178-crate workspace,
+# -O2 caused OOM on heavy crates (mongodb, sqlx-postgres, naga, etc.)
+# because LLVM's pass pipeline at -O2 allocates ~2× more arena memory.
+opt-level = 1
+
+# ── Per-crate overrides for memory-hungry deps ───────────────────────
+# These crates have extreme generic expansion during typeck/codegen.
+# A single codegen unit forces sequential LLVM work on one thread,
+# which caps peak memory.  debug=0 avoids emitting debug info for
+# crates we'll never step into.
+[profile.dev.package.mongodb]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.bson]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.sqlx-postgres]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.sqlx-mysql]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.naga]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.rustls]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+# The `windows` crate (v0.61+) with Win32 features is enormous — hundreds
+# of thousands of generated bindings.  Compiling with 8 CGUs + debuginfo
+# exhausts 32 GB during typeck.
+[profile.dev.package.windows]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.wgpu-core]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.dev.package.wgpu-hal]
+codegen-units = 1
+opt-level = 1
+debug = 0
+
+[profile.release]
+# LTO = thin gives ~90% of full LTO speed-up at a fraction of the cost.
+lto = "thin"
+codegen-units = 1
+strip = true
 
 [patch.crates-io]
 ironrdp-connector = { path = "patches/ironrdp-connector" }
