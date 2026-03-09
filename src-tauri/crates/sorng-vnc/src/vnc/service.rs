@@ -133,11 +133,7 @@ impl VncService {
     }
 
     /// Send clipboard text to a session.
-    pub async fn send_clipboard(
-        &self,
-        session_id: &str,
-        text: String,
-    ) -> Result<(), VncError> {
+    pub async fn send_clipboard(&self, session_id: &str, text: String) -> Result<(), VncError> {
         let session = self
             .sessions
             .get(session_id)
@@ -425,21 +421,19 @@ mod tests {
     #[tokio::test]
     async fn set_pixel_format_missing() {
         let svc = VncService::new();
-        assert!(
-            svc.set_pixel_format("none", PixelFormat::rgba32())
-                .await
-                .is_err()
-        );
+        assert!(svc
+            .set_pixel_format("none", PixelFormat::rgba32())
+            .await
+            .is_err());
     }
 
     #[tokio::test]
     async fn set_encodings_missing() {
         let svc = VncService::new();
-        assert!(
-            svc.set_encodings("none", vec![EncodingType::Raw])
-                .await
-                .is_err()
-        );
+        assert!(svc
+            .set_encodings("none", vec![EncodingType::Raw])
+            .await
+            .is_err());
     }
 
     #[test]

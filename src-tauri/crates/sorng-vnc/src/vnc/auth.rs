@@ -426,7 +426,10 @@ mod tests {
         let plaintext = [0x4E, 0x6F, 0x77, 0x20, 0x69, 0x73, 0x20, 0x74];
         let expected = [0x3F, 0xA4, 0x0E, 0x8A, 0x98, 0x4D, 0x48, 0x15];
         let result = des_encrypt_block(&key, &plaintext);
-        assert_eq!(result, expected, "DES encryption does not match known vector");
+        assert_eq!(
+            result, expected,
+            "DES encryption does not match known vector"
+        );
     }
 
     #[test]
@@ -435,10 +438,7 @@ mod tests {
         let plaintext = [0u8; 8];
         let result = des_encrypt_block(&key, &plaintext);
         // DES(0,0) = 0x8CA64DE9C1B123A7
-        assert_eq!(
-            result,
-            [0x8C, 0xA6, 0x4D, 0xE9, 0xC1, 0xB1, 0x23, 0xA7]
-        );
+        assert_eq!(result, [0x8C, 0xA6, 0x4D, 0xE9, 0xC1, 0xB1, 0x23, 0xA7]);
     }
 
     #[test]
@@ -447,10 +447,7 @@ mod tests {
         let plaintext = [0xFF; 8];
         let result = des_encrypt_block(&key, &plaintext);
         // DES(FF..FF, FF..FF) = 0x7359B2163E4EDC58
-        assert_eq!(
-            result,
-            [0x73, 0x59, 0xB2, 0x16, 0x3E, 0x4E, 0xDC, 0x58]
-        );
+        assert_eq!(result, [0x73, 0x59, 0xB2, 0x16, 0x3E, 0x4E, 0xDC, 0x58]);
     }
 
     // ── handle_vnc_auth ─────────────────────────────────────────────

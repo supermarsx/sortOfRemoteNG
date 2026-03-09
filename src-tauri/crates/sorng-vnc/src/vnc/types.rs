@@ -213,7 +213,7 @@ impl PixelFormat {
 
     /// Bytes per pixel (1, 2, or 4).
     pub fn bytes_per_pixel(&self) -> usize {
-        (self.bits_per_pixel as usize + 7) / 8
+        (self.bits_per_pixel as usize).div_ceil(8)
     }
 }
 
@@ -480,12 +480,24 @@ pub struct VncConfig {
     pub keepalive_interval_secs: u64,
 }
 
-fn default_vnc_port() -> u16 { 5900 }
-fn default_true() -> bool { true }
-fn default_connect_timeout() -> u64 { 15 }
-fn default_update_interval() -> u64 { 33 } // ~30 fps
-fn default_jpeg_quality() -> u8 { 6 }
-fn default_compression() -> u8 { 2 }
+fn default_vnc_port() -> u16 {
+    5900
+}
+fn default_true() -> bool {
+    true
+}
+fn default_connect_timeout() -> u64 {
+    15
+}
+fn default_update_interval() -> u64 {
+    33
+} // ~30 fps
+fn default_jpeg_quality() -> u8 {
+    6
+}
+fn default_compression() -> u8 {
+    2
+}
 fn default_encodings() -> Vec<String> {
     vec![
         "ZRLE".into(),
@@ -671,10 +683,16 @@ impl std::error::Error for VncError {}
 
 impl VncError {
     pub fn new(kind: VncErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(VncErrorKind::SessionNotFound, format!("Session '{}' not found", id))
+        Self::new(
+            VncErrorKind::SessionNotFound,
+            format!("Session '{}' not found", id),
+        )
     }
     pub fn protocol(msg: impl Into<String>) -> Self {
         Self::new(VncErrorKind::ProtocolViolation, msg)
@@ -696,9 +714,7 @@ impl From<std::io::Error> for VncError {
             std::io::ErrorKind::ConnectionRefused => {
                 Self::new(VncErrorKind::ConnectionRefused, e.to_string())
             }
-            std::io::ErrorKind::TimedOut => {
-                Self::new(VncErrorKind::Timeout, e.to_string())
-            }
+            std::io::ErrorKind::TimedOut => Self::new(VncErrorKind::Timeout, e.to_string()),
             _ => Self::new(VncErrorKind::Io, e.to_string()),
         }
     }
@@ -771,10 +787,16 @@ mod tests {
     #[test]
     fn security_type_from_byte() {
         assert_eq!(SecurityType::from_byte(1), Some(SecurityType::None));
-        assert_eq!(SecurityType::from_byte(2), Some(SecurityType::VncAuthentication));
+        assert_eq!(
+            SecurityType::from_byte(2),
+            Some(SecurityType::VncAuthentication)
+        );
         assert_eq!(SecurityType::from_byte(16), Some(SecurityType::Tight));
         assert_eq!(SecurityType::from_byte(19), Some(SecurityType::VeNCrypt));
-        assert_eq!(SecurityType::from_byte(30), Some(SecurityType::AppleRemoteDesktop));
+        assert_eq!(
+            SecurityType::from_byte(30),
+            Some(SecurityType::AppleRemoteDesktop)
+        );
         assert!(SecurityType::from_byte(99).is_none());
     }
 
@@ -882,8 +904,14 @@ mod tests {
 
     #[test]
     fn server_msg_type_from_byte() {
-        assert_eq!(ServerMessageType::from_byte(0), Some(ServerMessageType::FramebufferUpdate));
-        assert_eq!(ServerMessageType::from_byte(2), Some(ServerMessageType::Bell));
+        assert_eq!(
+            ServerMessageType::from_byte(0),
+            Some(ServerMessageType::FramebufferUpdate)
+        );
+        assert_eq!(
+            ServerMessageType::from_byte(2),
+            Some(ServerMessageType::Bell)
+        );
         assert!(ServerMessageType::from_byte(99).is_none());
     }
 
@@ -949,7 +977,10 @@ mod tests {
 
     #[test]
     fn session_serde_roundtrip() {
-        let cfg = VncConfig { host: "10.0.0.1".into(), ..Default::default() };
+        let cfg = VncConfig {
+            host: "10.0.0.1".into(),
+            ..Default::default()
+        };
         let s = VncSession::from_config("s1".into(), &cfg);
         let json = serde_json::to_string(&s).unwrap();
         let de: VncSession = serde_json::from_str(&json).unwrap();
@@ -963,7 +994,10 @@ mod tests {
         let ev = VncFrameEvent {
             session_id: "x".into(),
             data: "AAAA".into(),
-            x: 0, y: 0, width: 100, height: 100,
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
         };
         let json = serde_json::to_string(&ev).unwrap();
         let de: VncFrameEvent = serde_json::from_str(&json).unwrap();
@@ -972,14 +1006,19 @@ mod tests {
 
     #[test]
     fn bell_event_serde() {
-        let ev = VncBellEvent { session_id: "x".into() };
+        let ev = VncBellEvent {
+            session_id: "x".into(),
+        };
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("session_id"));
     }
 
     #[test]
     fn clipboard_event_serde() {
-        let ev = VncClipboardEvent { session_id: "x".into(), text: "hello".into() };
+        let ev = VncClipboardEvent {
+            session_id: "x".into(),
+            text: "hello".into(),
+        };
         let json = serde_json::to_string(&ev).unwrap();
         let de: VncClipboardEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(de.text, "hello");
@@ -987,7 +1026,11 @@ mod tests {
 
     #[test]
     fn resize_event_serde() {
-        let ev = VncResizeEvent { session_id: "x".into(), width: 1920, height: 1080 };
+        let ev = VncResizeEvent {
+            session_id: "x".into(),
+            width: 1920,
+            height: 1080,
+        };
         let json = serde_json::to_string(&ev).unwrap();
         let de: VncResizeEvent = serde_json::from_str(&json).unwrap();
         assert_eq!(de.width, 1920);

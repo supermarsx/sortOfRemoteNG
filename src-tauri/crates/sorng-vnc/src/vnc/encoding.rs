@@ -117,7 +117,13 @@ pub fn decode_rre(
         offset += subrect_size;
     }
 
-    Ok(DecodedRect { x, y, width, height, pixels })
+    Ok(DecodedRect {
+        x,
+        y,
+        width,
+        height,
+        pixels,
+    })
 }
 
 /// Decode Hextile-encoded rectangle.
@@ -148,8 +154,8 @@ pub fn decode_hextile(
     let mut fg_rgba = [0u8; 4];
     let mut offset = 0;
 
-    let tiles_x = (w + 15) / 16;
-    let tiles_y = (h + 15) / 16;
+    let tiles_x = w.div_ceil(16);
+    let tiles_y = h.div_ceil(16);
 
     for ty in 0..tiles_y {
         for tx in 0..tiles_x {
@@ -246,7 +252,13 @@ pub fn decode_hextile(
         }
     }
 
-    Ok(DecodedRect { x, y, width, height, pixels })
+    Ok(DecodedRect {
+        x,
+        y,
+        width,
+        height,
+        pixels,
+    })
 }
 
 /// Calculate the expected raw data size for a rectangle.
@@ -346,7 +358,7 @@ fn blit_tile(
 pub fn base64_encode_pixels(data: &[u8]) -> String {
     // Simple base64 implementation for pixel data.
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
 
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -392,8 +404,8 @@ mod tests {
         let data = [0x00, 0x00, 0xFF, 0x00]; // LE: byte[0]=low, byte[3]=high
         let rgba = pixel_to_rgba(&data, &pf);
         assert_eq!(rgba[0], 255); // R
-        assert_eq!(rgba[1], 0);   // G
-        assert_eq!(rgba[2], 0);   // B
+        assert_eq!(rgba[1], 0); // G
+        assert_eq!(rgba[2], 0); // B
         assert_eq!(rgba[3], 255); // A always 255
     }
 
@@ -495,7 +507,7 @@ mod tests {
         let rect = decode_rre(0, 0, 2, 2, &data, &pf).unwrap();
         assert_eq!(rect.pixels.len(), 2 * 2 * 4);
         // All pixels should be the background.
-        assert_eq!(rect.pixels[0], 0);   // R
+        assert_eq!(rect.pixels[0], 0); // R
         assert_eq!(rect.pixels[2], 255); // B
     }
 
@@ -505,7 +517,7 @@ mod tests {
         let mut data = Vec::new();
         data.extend_from_slice(&1u32.to_be_bytes()); // 1 subrect
         data.extend_from_slice(&[0, 0, 0, 0]); // black bg
-        // Subrect: white pixel, x=0 y=0, w=1 h=1
+                                               // Subrect: white pixel, x=0 y=0, w=1 h=1
         data.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0x00]); // white pixel
         data.extend_from_slice(&0u16.to_be_bytes()); // x
         data.extend_from_slice(&0u16.to_be_bytes()); // y
@@ -516,7 +528,7 @@ mod tests {
         assert_eq!(rect.pixels[0], 255); // R
         assert_eq!(rect.pixels[1], 255); // G
         assert_eq!(rect.pixels[2], 255); // B
-        // Second pixel should be black bg.
+                                         // Second pixel should be black bg.
         assert_eq!(rect.pixels[4], 0);
     }
 

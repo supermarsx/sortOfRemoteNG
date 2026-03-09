@@ -137,7 +137,15 @@ impl VncSessionHandle {
         let task_id = id.clone();
 
         tokio::spawn(async move {
-            let result = session_task(task_id, task_config, stream, cmd_rx, event_tx.clone(), task_state).await;
+            let result = session_task(
+                task_id,
+                task_config,
+                stream,
+                cmd_rx,
+                event_tx.clone(),
+                task_state,
+            )
+            .await;
             if let Err(e) = result {
                 let _ = event_tx
                     .send(SessionEvent::Disconnected(Some(e.message)))
@@ -189,8 +197,7 @@ async fn session_task(
     }
 
     let version_str = String::from_utf8_lossy(&version_buf);
-    let rfb_version = RfbVersion::from_version_string(&version_str)
-        .unwrap_or(RfbVersion::V3_8);
+    let rfb_version = RfbVersion::from_version_string(&version_str).unwrap_or(RfbVersion::V3_8);
 
     // Respond with 3.8 (or the server's version if lower).
     let client_version = match rfb_version {
@@ -217,8 +224,9 @@ async fn session_task(
                 st.bytes_received += 4;
             }
             let type_num = u32::from_be_bytes(buf);
-            SecurityType::from_byte(type_num as u8)
-                .ok_or_else(|| VncError::protocol(format!("Unsupported security type: {}", type_num)))?
+            SecurityType::from_byte(type_num as u8).ok_or_else(|| {
+                VncError::protocol(format!("Unsupported security type: {}", type_num))
+            })?
         }
         _ => {
             // Server sends count + list of security types.
@@ -249,8 +257,9 @@ async fn session_task(
                 .filter_map(SecurityType::from_byte)
                 .collect();
 
-            let selected = auth::select_security_type(&types)
-                .ok_or_else(|| VncError::new(VncErrorKind::AuthUnsupported, "No supported security types"))?;
+            let selected = auth::select_security_type(&types).ok_or_else(|| {
+                VncError::new(VncErrorKind::AuthUnsupported, "No supported security types")
+            })?;
 
             // Tell the server our choice.
             stream.write_all(&[selected.to_byte()]).await?;
@@ -340,7 +349,9 @@ async fn session_task(
             let ard_response = auth::handle_ard_auth(&params, username, password)?;
 
             // Client sends: encrypted_credentials(128) + client_public_key(key_length).
-            stream.write_all(&ard_response.encrypted_credentials).await?;
+            stream
+                .write_all(&ard_response.encrypted_credentials)
+                .await?;
             stream.write_all(&ard_response.client_public_key).await?;
             {
                 let mut st = state.lock().await;
@@ -359,7 +370,10 @@ async fn session_task(
         _ => {
             return Err(VncError::new(
                 VncErrorKind::AuthUnsupported,
-                format!("Authentication type '{}' is not yet implemented", security_type.name()),
+                format!(
+                    "Authentication type '{}' is not yet implemented",
+                    security_type.name()
+                ),
             ));
         }
     }
@@ -376,14 +390,17 @@ async fn session_task(
     // ServerInit: 2(w) + 2(h) + 16(pf) + 4(name_len) + name
     let mut si_header = [0u8; 24]; // 2+2+16+4
     stream.read_exact(&mut si_header).await?;
-    let name_len = u32::from_be_bytes([si_header[20], si_header[21], si_header[22], si_header[23]]) as usize;
+    let name_len =
+        u32::from_be_bytes([si_header[20], si_header[21], si_header[22], si_header[23]]) as usize;
     let mut name_buf = vec![0u8; name_len];
     stream.read_exact(&mut name_buf).await?;
 
     let fb_width = u16::from_be_bytes([si_header[0], si_header[1]]);
     let fb_height = u16::from_be_bytes([si_header[2], si_header[3]]);
     let server_pf = PixelFormat::from_bytes(
-        &si_header[4..20].try_into().map_err(|_| VncError::protocol("Bad PixelFormat in ServerInit"))?,
+        &si_header[4..20]
+            .try_into()
+            .map_err(|_| VncError::protocol("Bad PixelFormat in ServerInit"))?,
     );
     let server_name = String::from_utf8_lossy(&name_buf).into_owned();
 
@@ -566,9 +583,7 @@ async fn session_task(
                     st.bytes_sent += msg.len() as u64;
                 }
                 SessionCommand::Disconnect => {
-                    let _ = cmd_event_tx
-                        .send(SessionEvent::Disconnected(None))
-                        .await;
+                    let _ = cmd_event_tx.send(SessionEvent::Disconnected(None)).await;
                     break;
                 }
             }
@@ -666,7 +681,12 @@ async fn handle_fb_update(
         let y = u16::from_be_bytes([rect_header[2], rect_header[3]]);
         let w = u16::from_be_bytes([rect_header[4], rect_header[5]]);
         let h = u16::from_be_bytes([rect_header[6], rect_header[7]]);
-        let enc_val = i32::from_be_bytes([rect_header[8], rect_header[9], rect_header[10], rect_header[11]]);
+        let enc_val = i32::from_be_bytes([
+            rect_header[8],
+            rect_header[9],
+            rect_header[10],
+            rect_header[11],
+        ]);
         let encoding = EncodingType::from_i32(enc_val);
 
         match encoding {
@@ -710,7 +730,12 @@ async fn handle_fb_update(
                 let bpp = pixel_format.bytes_per_pixel();
                 let mut header_data = vec![0u8; 4 + bpp];
                 reader.read_exact(&mut header_data).await?;
-                let num_sub = u32::from_be_bytes([header_data[0], header_data[1], header_data[2], header_data[3]]) as usize;
+                let num_sub = u32::from_be_bytes([
+                    header_data[0],
+                    header_data[1],
+                    header_data[2],
+                    header_data[3],
+                ]) as usize;
                 let subrect_size = bpp + 8;
                 let remaining = num_sub * subrect_size;
                 let mut sub_data = vec![0u8; remaining];
@@ -750,7 +775,7 @@ async fn handle_fb_update(
                 // Cursor pseudo-encoding: pixel data + bitmask.
                 let bpp = pixel_format.bytes_per_pixel();
                 let pixel_len = w as usize * h as usize * bpp;
-                let mask_len = ((w as usize + 7) / 8) * h as usize;
+                let mask_len = (w as usize).div_ceil(8) * h as usize;
                 let total = pixel_len + mask_len;
                 let mut data = vec![0u8; total];
                 reader.read_exact(&mut data).await?;
@@ -760,7 +785,8 @@ async fn handle_fb_update(
                 }
 
                 // Convert cursor pixels to RGBA.
-                let pixels = crate::vnc::encoding::convert_to_rgba(&data[..pixel_len], &pixel_format);
+                let pixels =
+                    crate::vnc::encoding::convert_to_rgba(&data[..pixel_len], &pixel_format);
                 let _ = event_tx
                     .send(SessionEvent::Cursor {
                         pixels,
@@ -779,7 +805,10 @@ async fn handle_fb_update(
                     st.framebuffer_height = h;
                 }
                 let _ = event_tx
-                    .send(SessionEvent::Resize { width: w, height: h })
+                    .send(SessionEvent::Resize {
+                        width: w,
+                        height: h,
+                    })
                     .await;
             }
             EncodingType::LastRectPseudo => {
@@ -814,8 +843,8 @@ async fn read_hextile_data(
     let bpp = pixel_format.bytes_per_pixel();
     let w = width as usize;
     let h = height as usize;
-    let tiles_x = (w + 15) / 16;
-    let tiles_y = (h + 15) / 16;
+    let tiles_x = w.div_ceil(16);
+    let tiles_y = h.div_ceil(16);
 
     const RAW: u8 = 1;
     const BG_SPECIFIED: u8 = 2;
@@ -1083,7 +1112,9 @@ mod tests {
             y: 20,
             width: 2,
             height: 2,
-            pixels: vec![0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 128, 128, 128, 255],
+            pixels: vec![
+                0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 128, 128, 128, 255,
+            ],
         };
         let ev = frame_to_event("sess1", &rect);
         assert_eq!(ev.session_id, "sess1");

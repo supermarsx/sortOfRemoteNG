@@ -9,6 +9,7 @@ use crate::vnc::types::*;
 // ── Connection management ───────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn connect_vnc(
     state: tauri::State<'_, VncServiceState>,
     host: String,

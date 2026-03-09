@@ -2,9 +2,7 @@
 //!
 //! Client → Server and Server → Client message framing per RFC 6143.
 
-use crate::vnc::types::{
-    ClientMessageType, EncodingType, PixelFormat, ServerMessageType,
-};
+use crate::vnc::types::{ClientMessageType, EncodingType, PixelFormat, ServerMessageType};
 
 // ── Client → Server message builders ────────────────────────────────────
 
@@ -192,10 +190,8 @@ pub fn encoding_from_name(name: &str) -> Option<EncodingType> {
 /// Convert a list of encoding name strings into encoding types,
 /// automatically appending pseudo-encodings.
 pub fn resolve_encodings(names: &[String], local_cursor: bool) -> Vec<EncodingType> {
-    let mut result: Vec<EncodingType> = names
-        .iter()
-        .filter_map(|n| encoding_from_name(n))
-        .collect();
+    let mut result: Vec<EncodingType> =
+        names.iter().filter_map(|n| encoding_from_name(n)).collect();
 
     // Always include CopyRect if not already present.
     if !result.contains(&EncodingType::CopyRect) {
@@ -248,7 +244,11 @@ mod tests {
 
     #[test]
     fn set_encodings_multiple() {
-        let encs = vec![EncodingType::ZRLE, EncodingType::Raw, EncodingType::CopyRect];
+        let encs = vec![
+            EncodingType::ZRLE,
+            EncodingType::Raw,
+            EncodingType::CopyRect,
+        ];
         let msg = build_set_encodings(&encs);
         assert_eq!(msg.len(), 4 + 3 * 4);
         let count = u16::from_be_bytes([msg[2], msg[3]]);
@@ -411,11 +411,11 @@ mod tests {
     #[test]
     fn parse_rect_header_raw() {
         let mut data = Vec::new();
-        data.extend_from_slice(&10u16.to_be_bytes());  // x
-        data.extend_from_slice(&20u16.to_be_bytes());  // y
+        data.extend_from_slice(&10u16.to_be_bytes()); // x
+        data.extend_from_slice(&20u16.to_be_bytes()); // y
         data.extend_from_slice(&100u16.to_be_bytes()); // w
         data.extend_from_slice(&200u16.to_be_bytes()); // h
-        data.extend_from_slice(&0i32.to_be_bytes());   // Raw encoding
+        data.extend_from_slice(&0i32.to_be_bytes()); // Raw encoding
 
         let (x, y, w, h, enc) = parse_rect_header(&data).unwrap();
         assert_eq!(x, 10);
@@ -539,7 +539,10 @@ mod tests {
     fn resolve_encodings_copyrect_not_duplicated() {
         let names = vec!["CopyRect".into(), "Raw".into()];
         let resolved = resolve_encodings(&names, false);
-        let count = resolved.iter().filter(|e| **e == EncodingType::CopyRect).count();
+        let count = resolved
+            .iter()
+            .filter(|e| **e == EncodingType::CopyRect)
+            .count();
         assert_eq!(count, 1);
     }
 
