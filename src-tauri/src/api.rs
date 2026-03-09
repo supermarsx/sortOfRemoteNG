@@ -1,27 +1,27 @@
+use crate::aws::AwsConnectionConfig;
+use crate::cloudflare::CloudflareConnectionConfig;
+use crate::vercel::VercelConnectionConfig;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::aws::AwsConnectionConfig;
-use crate::vercel::VercelConnectionConfig;
-use crate::cloudflare::CloudflareConnectionConfig;
 
 use crate::{
     auth::AuthService,
-    ssh::{SshService, SshConnectionConfig},
     db::DbService,
     ftp::FtpService,
     network::NetworkService,
-    security::SecurityService,
-    wol::WolService,
     qr::QrService,
     rustdesk::RustDeskService,
+    security::SecurityService,
+    ssh::{SshConnectionConfig, SshService},
+    wol::WolService,
 };
 
 #[derive(Clone)]
@@ -86,7 +86,10 @@ impl ApiService {
         }
     }
 
-    pub async fn start_server(self: Arc<Self>, port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_server(
+        self: Arc<Self>,
+        port: u16,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let app = self.create_router();
 
         let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
@@ -118,7 +121,10 @@ impl ApiService {
             // Network
             .route("/network/ping", post(ping_host))
             .route("/network/scan", post(scan_network))
-            .route("/network/scan/comprehensive", post(scan_network_comprehensive))
+            .route(
+                "/network/scan/comprehensive",
+                post(scan_network_comprehensive),
+            )
             // Security
             .route("/security/totp/generate", get(generate_totp_secret))
             .route("/security/totp/verify", post(verify_totp))
@@ -129,12 +135,24 @@ impl ApiService {
             .route("/qr/generate/png", post(generate_qr_code_png))
             // RustDesk
             .route("/rustdesk/connect", post(connect_rustdesk_api))
-            .route("/rustdesk/disconnect/:session_id", post(disconnect_rustdesk_api))
+            .route(
+                "/rustdesk/disconnect/:session_id",
+                post(disconnect_rustdesk_api),
+            )
             .route("/rustdesk/sessions", get(list_rustdesk_sessions_api))
-            .route("/rustdesk/session/:session_id", get(get_rustdesk_session_api))
-            .route("/rustdesk/settings/:session_id", post(update_rustdesk_settings_api))
+            .route(
+                "/rustdesk/session/:session_id",
+                get(get_rustdesk_session_api),
+            )
+            .route(
+                "/rustdesk/settings/:session_id",
+                post(update_rustdesk_settings_api),
+            )
             .route("/rustdesk/input/:session_id", post(send_rustdesk_input_api))
-            .route("/rustdesk/screenshot/:session_id", get(get_rustdesk_screenshot_api))
+            .route(
+                "/rustdesk/screenshot/:session_id",
+                get(get_rustdesk_screenshot_api),
+            )
             .route("/rustdesk/status", get(rustdesk_status_api))
             // WMI
             .route("/wmi/connect", post(connect_wmi_api))
@@ -154,14 +172,35 @@ impl ApiService {
             .route("/rpc/batch/:session_id", post(batch_rpc_calls_api))
             // MeshCentral
             .route("/meshcentral/connect", post(connect_meshcentral_api))
-            .route("/meshcentral/disconnect/:session_id", post(disconnect_meshcentral_api))
+            .route(
+                "/meshcentral/disconnect/:session_id",
+                post(disconnect_meshcentral_api),
+            )
             .route("/meshcentral/sessions", get(list_meshcentral_sessions_api))
-            .route("/meshcentral/session/:session_id", get(get_meshcentral_session_api))
-            .route("/meshcentral/devices/:session_id", get(get_meshcentral_devices_api))
-            .route("/meshcentral/groups/:session_id", get(get_meshcentral_groups_api))
-            .route("/meshcentral/command/:session_id", post(execute_meshcentral_command_api))
-            .route("/meshcentral/command/:session_id/:command_id", get(get_meshcentral_command_result_api))
-            .route("/meshcentral/server/:session_id", get(get_meshcentral_server_info_api))
+            .route(
+                "/meshcentral/session/:session_id",
+                get(get_meshcentral_session_api),
+            )
+            .route(
+                "/meshcentral/devices/:session_id",
+                get(get_meshcentral_devices_api),
+            )
+            .route(
+                "/meshcentral/groups/:session_id",
+                get(get_meshcentral_groups_api),
+            )
+            .route(
+                "/meshcentral/command/:session_id",
+                post(execute_meshcentral_command_api),
+            )
+            .route(
+                "/meshcentral/command/:session_id/:command_id",
+                get(get_meshcentral_command_result_api),
+            )
+            .route(
+                "/meshcentral/server/:session_id",
+                get(get_meshcentral_server_info_api),
+            )
             // Agent
             .route("/agent/connect", post(connect_agent_api))
             .route("/agent/disconnect/:session_id", post(disconnect_agent_api))
@@ -169,67 +208,190 @@ impl ApiService {
             .route("/agent/session/:session_id", get(get_agent_session_api))
             .route("/agent/metrics/:session_id", get(get_agent_metrics_api))
             .route("/agent/logs/:session_id", get(get_agent_logs_api))
-            .route("/agent/command/:session_id", post(execute_agent_command_api))
-            .route("/agent/command/:session_id/:command_id", get(get_agent_command_result_api))
+            .route(
+                "/agent/command/:session_id",
+                post(execute_agent_command_api),
+            )
+            .route(
+                "/agent/command/:session_id/:command_id",
+                get(get_agent_command_result_api),
+            )
             .route("/agent/status/:session_id", post(update_agent_status_api))
             .route("/agent/info/:session_id", get(get_agent_info_api))
             // Commander
             .route("/commander/connect", post(connect_commander_api))
-            .route("/commander/disconnect/:session_id", post(disconnect_commander_api))
+            .route(
+                "/commander/disconnect/:session_id",
+                post(disconnect_commander_api),
+            )
             .route("/commander/sessions", get(list_commander_sessions_api))
-            .route("/commander/session/:session_id", get(get_commander_session_api))
-            .route("/commander/command/:session_id", post(execute_commander_command_api))
-            .route("/commander/command/:session_id/:command_id", get(get_commander_command_result_api))
-            .route("/commander/upload/:session_id", post(upload_commander_file_api))
-            .route("/commander/download/:session_id", post(download_commander_file_api))
-            .route("/commander/transfer/:session_id/:transfer_id", get(get_commander_file_transfer_api))
-            .route("/commander/list/:session_id", get(list_commander_directory_api))
-            .route("/commander/status/:session_id", post(update_commander_status_api))
-            .route("/commander/system/:session_id", get(get_commander_system_info_api))
+            .route(
+                "/commander/session/:session_id",
+                get(get_commander_session_api),
+            )
+            .route(
+                "/commander/command/:session_id",
+                post(execute_commander_command_api),
+            )
+            .route(
+                "/commander/command/:session_id/:command_id",
+                get(get_commander_command_result_api),
+            )
+            .route(
+                "/commander/upload/:session_id",
+                post(upload_commander_file_api),
+            )
+            .route(
+                "/commander/download/:session_id",
+                post(download_commander_file_api),
+            )
+            .route(
+                "/commander/transfer/:session_id/:transfer_id",
+                get(get_commander_file_transfer_api),
+            )
+            .route(
+                "/commander/list/:session_id",
+                get(list_commander_directory_api),
+            )
+            .route(
+                "/commander/status/:session_id",
+                post(update_commander_status_api),
+            )
+            .route(
+                "/commander/system/:session_id",
+                get(get_commander_system_info_api),
+            )
             // AWS
             .route("/aws/connect", post(connect_aws_api))
             .route("/aws/disconnect/:session_id", post(disconnect_aws_api))
             .route("/aws/sessions", get(list_aws_sessions_api))
             .route("/aws/session/:session_id", get(get_aws_session_api))
-            .route("/aws/ec2/instances/:session_id", get(list_ec2_instances_api))
-            .route("/aws/ec2/instance/:session_id/:instance_id", get(get_ec2_instance_api))
-            .route("/aws/ec2/action/:session_id/:instance_id", post(execute_ec2_action_api))
+            .route(
+                "/aws/ec2/instances/:session_id",
+                get(list_ec2_instances_api),
+            )
+            .route(
+                "/aws/ec2/instance/:session_id/:instance_id",
+                get(get_ec2_instance_api),
+            )
+            .route(
+                "/aws/ec2/action/:session_id/:instance_id",
+                post(execute_ec2_action_api),
+            )
             .route("/aws/s3/buckets/:session_id", get(list_s3_buckets_api))
-            .route("/aws/s3/bucket/:session_id/:bucket_name", get(get_s3_bucket_api))
-            .route("/aws/s3/objects/:session_id/:bucket_name", get(list_s3_objects_api))
-            .route("/aws/s3/object/:session_id/:bucket_name/*key", get(get_s3_object_api))
-            .route("/aws/rds/instances/:session_id", get(list_rds_instances_api))
-            .route("/aws/rds/instance/:session_id/:instance_id", get(get_rds_instance_api))
-            .route("/aws/lambda/functions/:session_id", get(list_lambda_functions_api))
-            .route("/aws/lambda/function/:session_id/:function_name", get(get_lambda_function_api))
-            .route("/aws/cloudwatch/metrics/:session_id", get(get_cloudwatch_metrics_api))
+            .route(
+                "/aws/s3/bucket/:session_id/:bucket_name",
+                get(get_s3_bucket_api),
+            )
+            .route(
+                "/aws/s3/objects/:session_id/:bucket_name",
+                get(list_s3_objects_api),
+            )
+            .route(
+                "/aws/s3/object/:session_id/:bucket_name/*key",
+                get(get_s3_object_api),
+            )
+            .route(
+                "/aws/rds/instances/:session_id",
+                get(list_rds_instances_api),
+            )
+            .route(
+                "/aws/rds/instance/:session_id/:instance_id",
+                get(get_rds_instance_api),
+            )
+            .route(
+                "/aws/lambda/functions/:session_id",
+                get(list_lambda_functions_api),
+            )
+            .route(
+                "/aws/lambda/function/:session_id/:function_name",
+                get(get_lambda_function_api),
+            )
+            .route(
+                "/aws/cloudwatch/metrics/:session_id",
+                get(get_cloudwatch_metrics_api),
+            )
             // Vercel
             .route("/vercel/connect", post(connect_vercel_api))
-            .route("/vercel/disconnect/:session_id", post(disconnect_vercel_api))
+            .route(
+                "/vercel/disconnect/:session_id",
+                post(disconnect_vercel_api),
+            )
             .route("/vercel/sessions", get(list_vercel_sessions_api))
             .route("/vercel/session/:session_id", get(get_vercel_session_api))
-            .route("/vercel/projects/:session_id", get(list_vercel_projects_api))
-            .route("/vercel/project/:session_id/:project_id", get(get_vercel_project_api))
-            .route("/vercel/deployments/:session_id/:project_id", get(list_vercel_deployments_api))
-            .route("/vercel/deployment/:session_id/:deployment_id", get(get_vercel_deployment_api))
+            .route(
+                "/vercel/projects/:session_id",
+                get(list_vercel_projects_api),
+            )
+            .route(
+                "/vercel/project/:session_id/:project_id",
+                get(get_vercel_project_api),
+            )
+            .route(
+                "/vercel/deployments/:session_id/:project_id",
+                get(list_vercel_deployments_api),
+            )
+            .route(
+                "/vercel/deployment/:session_id/:deployment_id",
+                get(get_vercel_deployment_api),
+            )
             .route("/vercel/domains/:session_id", get(list_vercel_domains_api))
-            .route("/vercel/domain/:session_id/:domain_name", get(get_vercel_domain_api))
+            .route(
+                "/vercel/domain/:session_id/:domain_name",
+                get(get_vercel_domain_api),
+            )
             .route("/vercel/teams/:session_id", get(list_vercel_teams_api))
-            .route("/vercel/team/:session_id/:team_id", get(get_vercel_team_api))
+            .route(
+                "/vercel/team/:session_id/:team_id",
+                get(get_vercel_team_api),
+            )
             // Cloudflare
             .route("/cloudflare/connect", post(connect_cloudflare_api))
-            .route("/cloudflare/disconnect/:session_id", post(disconnect_cloudflare_api))
+            .route(
+                "/cloudflare/disconnect/:session_id",
+                post(disconnect_cloudflare_api),
+            )
             .route("/cloudflare/sessions", get(list_cloudflare_sessions_api))
-            .route("/cloudflare/session/:session_id", get(get_cloudflare_session_api))
-            .route("/cloudflare/zones/:session_id", get(list_cloudflare_zones_api))
-            .route("/cloudflare/zone/:session_id/:zone_id", get(get_cloudflare_zone_api))
-            .route("/cloudflare/dns/:session_id/:zone_id", get(list_cloudflare_dns_records_api))
-            .route("/cloudflare/dns/:session_id/:zone_id/:record_id", get(get_cloudflare_dns_record_api))
-            .route("/cloudflare/workers/:session_id", get(list_cloudflare_workers_api))
-            .route("/cloudflare/worker/:session_id/:worker_id", get(get_cloudflare_worker_api))
-            .route("/cloudflare/pagerules/:session_id/:zone_id", get(list_cloudflare_page_rules_api))
-            .route("/cloudflare/pagerule/:session_id/:zone_id/:rule_id", get(get_cloudflare_page_rule_api))
-            .route("/cloudflare/analytics/:session_id/:zone_id", get(get_cloudflare_analytics_api))
+            .route(
+                "/cloudflare/session/:session_id",
+                get(get_cloudflare_session_api),
+            )
+            .route(
+                "/cloudflare/zones/:session_id",
+                get(list_cloudflare_zones_api),
+            )
+            .route(
+                "/cloudflare/zone/:session_id/:zone_id",
+                get(get_cloudflare_zone_api),
+            )
+            .route(
+                "/cloudflare/dns/:session_id/:zone_id",
+                get(list_cloudflare_dns_records_api),
+            )
+            .route(
+                "/cloudflare/dns/:session_id/:zone_id/:record_id",
+                get(get_cloudflare_dns_record_api),
+            )
+            .route(
+                "/cloudflare/workers/:session_id",
+                get(list_cloudflare_workers_api),
+            )
+            .route(
+                "/cloudflare/worker/:session_id/:worker_id",
+                get(get_cloudflare_worker_api),
+            )
+            .route(
+                "/cloudflare/pagerules/:session_id/:zone_id",
+                get(list_cloudflare_page_rules_api),
+            )
+            .route(
+                "/cloudflare/pagerule/:session_id/:zone_id/:rule_id",
+                get(get_cloudflare_page_rule_api),
+            )
+            .route(
+                "/cloudflare/analytics/:session_id/:zone_id",
+                get(get_cloudflare_analytics_api),
+            )
             .with_state(self)
     }
 }
@@ -353,7 +515,10 @@ async fn execute_command(
     Json(req): Json<ExecuteCommandRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut ssh = services.ssh_service.lock().await;
-    match ssh.execute_command(&req.session_id, req.command, None).await {
+    match ssh
+        .execute_command(&req.session_id, req.command, None)
+        .await
+    {
         Ok(output) => Ok(Json(serde_json::json!({
             "success": true,
             "output": output
@@ -387,7 +552,19 @@ async fn connect_mysql(
     Json(req): Json<DbConnectRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut db = services.db_service.lock().await;
-    match db.connect_mysql(req.host, req.port, req.username, req.password, req.database.unwrap_or_default(), None, None, None).await {
+    match db
+        .connect_mysql(
+            req.host,
+            req.port,
+            req.username,
+            req.password,
+            req.database.unwrap_or_default(),
+            None,
+            None,
+            None,
+        )
+        .await
+    {
         Ok(connection_id) => Ok(Json(serde_json::json!({
             "success": true,
             "connection_id": connection_id
@@ -557,7 +734,10 @@ async fn wake_on_lan(
     Json(req): Json<WolRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let wol = services.wol_service.lock().await;
-    match wol.wake_on_lan(req.mac_address, req.broadcast_addr, None, None).await {
+    match wol
+        .wake_on_lan(req.mac_address, req.broadcast_addr, None, None)
+        .await
+    {
         Ok(_) => Ok(Json(serde_json::json!({
             "success": true,
             "message": "Wake-on-LAN packet sent"
@@ -1043,7 +1223,10 @@ async fn execute_meshcentral_command_api(
     Json(command): Json<crate::meshcentral::MeshCentralCommand>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let meshcentral = services.meshcentral_service.lock().await;
-    match meshcentral.execute_meshcentral_command(&session_id, command).await {
+    match meshcentral
+        .execute_meshcentral_command(&session_id, command)
+        .await
+    {
         Ok(command_id) => Ok(Json(serde_json::json!({
             "command_id": command_id
         }))),
@@ -1059,7 +1242,10 @@ async fn get_meshcentral_command_result_api(
     Path((session_id, command_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let meshcentral = services.meshcentral_service.lock().await;
-    match meshcentral.get_meshcentral_command_result(&session_id, &command_id).await {
+    match meshcentral
+        .get_meshcentral_command_result(&session_id, &command_id)
+        .await
+    {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
             eprintln!("Failed to get MeshCentral command result: {}", e);
@@ -1156,7 +1342,8 @@ async fn get_agent_logs_api(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let agent = services.agent_service.lock().await;
-    let limit = params.get("limit")
+    let limit = params
+        .get("limit")
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);
     match agent.get_agent_logs(&session_id, Some(limit)).await {
@@ -1192,7 +1379,10 @@ async fn get_agent_command_result_api(
     Path((session_id, command_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let agent = services.agent_service.lock().await;
-    match agent.get_agent_command_result(&session_id, &command_id).await {
+    match agent
+        .get_agent_command_result(&session_id, &command_id)
+        .await
+    {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
             eprintln!("Failed to get agent command result: {}", e);
@@ -1292,7 +1482,10 @@ async fn execute_commander_command_api(
     Json(command): Json<crate::commander::CommanderCommand>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let commander = services.commander_service.lock().await;
-    match commander.execute_commander_command(&session_id, command).await {
+    match commander
+        .execute_commander_command(&session_id, command)
+        .await
+    {
         Ok(command_id) => Ok(Json(serde_json::json!({
             "command_id": command_id
         }))),
@@ -1308,7 +1501,10 @@ async fn get_commander_command_result_api(
     Path((session_id, command_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let commander = services.commander_service.lock().await;
-    match commander.get_commander_command_result(&session_id, &command_id).await {
+    match commander
+        .get_commander_command_result(&session_id, &command_id)
+        .await
+    {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
             eprintln!("Failed to get commander command result: {}", e);
@@ -1323,14 +1519,19 @@ async fn upload_commander_file_api(
     Json(params): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let commander = services.commander_service.lock().await;
-    let local_path = params.get("local_path")
+    let local_path = params
+        .get("local_path")
         .and_then(|v| v.as_str())
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let remote_path = params.get("remote_path")
+    let remote_path = params
+        .get("remote_path")
         .and_then(|v| v.as_str())
         .ok_or(StatusCode::BAD_REQUEST)?;
 
-    match commander.upload_commander_file(&session_id, local_path.to_string(), remote_path.to_string()).await {
+    match commander
+        .upload_commander_file(&session_id, local_path.to_string(), remote_path.to_string())
+        .await
+    {
         Ok(transfer_id) => Ok(Json(serde_json::json!({
             "transfer_id": transfer_id
         }))),
@@ -1347,14 +1548,19 @@ async fn download_commander_file_api(
     Json(params): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let commander = services.commander_service.lock().await;
-    let remote_path = params.get("remote_path")
+    let remote_path = params
+        .get("remote_path")
         .and_then(|v| v.as_str())
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let local_path = params.get("local_path")
+    let local_path = params
+        .get("local_path")
         .and_then(|v| v.as_str())
         .ok_or(StatusCode::BAD_REQUEST)?;
 
-    match commander.download_commander_file(&session_id, remote_path.to_string(), local_path.to_string()).await {
+    match commander
+        .download_commander_file(&session_id, remote_path.to_string(), local_path.to_string())
+        .await
+    {
         Ok(transfer_id) => Ok(Json(serde_json::json!({
             "transfer_id": transfer_id
         }))),
@@ -1370,7 +1576,10 @@ async fn get_commander_file_transfer_api(
     Path((session_id, transfer_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let commander = services.commander_service.lock().await;
-    match commander.get_commander_file_transfer(&session_id, &transfer_id).await {
+    match commander
+        .get_commander_file_transfer(&session_id, &transfer_id)
+        .await
+    {
         Ok(transfer) => Ok(Json(serde_json::json!(transfer))),
         Err(e) => {
             eprintln!("Failed to get commander file transfer: {}", e);
@@ -1484,7 +1693,7 @@ async fn get_aws_session_api(
     let aws = services.aws_service.lock().await;
     match aws.get_aws_session(&session_id).await {
         Some(session) => Ok(Json(serde_json::json!(session))),
-        None => Err(StatusCode::NOT_FOUND)
+        None => Err(StatusCode::NOT_FOUND),
     }
 }
 
@@ -1508,11 +1717,9 @@ async fn get_ec2_instance_api(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let aws = services.aws_service.lock().await;
     match aws.list_ec2_instances(&session_id).await {
-        Ok(instances) => {
-            match instances.into_iter().find(|i| i.instance_id == instance_id) {
-                Some(instance) => Ok(Json(serde_json::json!(instance))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+        Ok(instances) => match instances.into_iter().find(|i| i.instance_id == instance_id) {
+            Some(instance) => Ok(Json(serde_json::json!(instance))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get EC2 instance: {}", e);
@@ -1527,10 +1734,14 @@ async fn execute_ec2_action_api(
     Json(params): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let aws = services.aws_service.lock().await;
-    let action = params.get("action")
+    let action = params
+        .get("action")
         .and_then(|a| a.as_str())
         .unwrap_or("start");
-    match aws.execute_ec2_action(&session_id, &instance_id, action).await {
+    match aws
+        .execute_ec2_action(&session_id, &instance_id, action)
+        .await
+    {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
             eprintln!("Failed to execute EC2 action: {}", e);
@@ -1559,11 +1770,9 @@ async fn get_s3_bucket_api(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let aws = services.aws_service.lock().await;
     match aws.list_s3_buckets(&session_id).await {
-        Ok(buckets) => {
-            match buckets.into_iter().find(|b| b.name == bucket_name) {
-                Some(bucket) => Ok(Json(serde_json::json!(bucket))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+        Ok(buckets) => match buckets.into_iter().find(|b| b.name == bucket_name) {
+            Some(bucket) => Ok(Json(serde_json::json!(bucket))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get S3 bucket: {}", e);
@@ -1609,11 +1818,14 @@ async fn get_rds_instance_api(
     let aws = services.aws_service.lock().await;
     match aws.list_rds_instances(&session_id).await {
         Ok(instances) => {
-            match instances.into_iter().find(|i| i.db_instance_identifier == instance_id) {
+            match instances
+                .into_iter()
+                .find(|i| i.db_instance_identifier == instance_id)
+            {
                 Some(instance) => Ok(Json(serde_json::json!(instance))),
-                None => Err(StatusCode::NOT_FOUND)
+                None => Err(StatusCode::NOT_FOUND),
             }
-        },
+        }
         Err(e) => {
             eprintln!("Failed to get RDS instance: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1642,11 +1854,14 @@ async fn get_lambda_function_api(
     let aws = services.aws_service.lock().await;
     match aws.list_lambda_functions(&session_id).await {
         Ok(functions) => {
-            match functions.into_iter().find(|f| f.function_name == function_name) {
+            match functions
+                .into_iter()
+                .find(|f| f.function_name == function_name)
+            {
                 Some(function) => Ok(Json(serde_json::json!(function))),
-                None => Err(StatusCode::NOT_FOUND)
+                None => Err(StatusCode::NOT_FOUND),
             }
-        },
+        }
         Err(e) => {
             eprintln!("Failed to get Lambda function: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1660,9 +1875,18 @@ async fn get_cloudwatch_metrics_api(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let aws = services.aws_service.lock().await;
-    let namespace = params.get("namespace").unwrap_or(&"AWS/EC2".to_string()).clone();
-    let metric_name = params.get("metric_name").unwrap_or(&"CPUUtilization".to_string()).clone();
-    match aws.get_cloudwatch_metrics(&session_id, &namespace, &metric_name).await {
+    let namespace = params
+        .get("namespace")
+        .unwrap_or(&"AWS/EC2".to_string())
+        .clone();
+    let metric_name = params
+        .get("metric_name")
+        .unwrap_or(&"CPUUtilization".to_string())
+        .clone();
+    match aws
+        .get_cloudwatch_metrics(&session_id, &namespace, &metric_name)
+        .await
+    {
         Ok(metrics) => Ok(Json(serde_json::json!(metrics))),
         Err(e) => {
             eprintln!("Failed to get CloudWatch metrics: {}", e);
@@ -1726,7 +1950,7 @@ async fn get_vercel_session_api(
     let vercel = services.vercel_service.lock().await;
     match vercel.get_vercel_session(&session_id).await {
         Some(session) => Ok(Json(serde_json::json!(session))),
-        None => Err(StatusCode::NOT_FOUND)
+        None => Err(StatusCode::NOT_FOUND),
     }
 }
 
@@ -1750,11 +1974,9 @@ async fn get_vercel_project_api(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let vercel = services.vercel_service.lock().await;
     match vercel.list_vercel_projects(&session_id).await {
-        Ok(projects) => {
-            match projects.into_iter().find(|p| p.id == project_id) {
-                Some(project) => Ok(Json(serde_json::json!(project))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+        Ok(projects) => match projects.into_iter().find(|p| p.id == project_id) {
+            Some(project) => Ok(Json(serde_json::json!(project))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get Vercel project: {}", e);
@@ -1768,7 +1990,10 @@ async fn list_vercel_deployments_api(
     Path((session_id, project_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let vercel = services.vercel_service.lock().await;
-    match vercel.list_vercel_deployments(&session_id, Some(project_id)).await {
+    match vercel
+        .list_vercel_deployments(&session_id, Some(project_id))
+        .await
+    {
         Ok(deployments) => Ok(Json(serde_json::json!(deployments))),
         Err(e) => {
             eprintln!("Failed to list Vercel deployments: {}", e);
@@ -1805,11 +2030,9 @@ async fn get_vercel_domain_api(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let vercel = services.vercel_service.lock().await;
     match vercel.list_vercel_domains(&session_id).await {
-        Ok(domains) => {
-            match domains.into_iter().find(|d| d.name == domain_name) {
-                Some(domain) => Ok(Json(serde_json::json!(domain))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+        Ok(domains) => match domains.into_iter().find(|d| d.name == domain_name) {
+            Some(domain) => Ok(Json(serde_json::json!(domain))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get Vercel domain: {}", e);
@@ -1838,11 +2061,9 @@ async fn get_vercel_team_api(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let vercel = services.vercel_service.lock().await;
     match vercel.list_vercel_teams(&session_id).await {
-        Ok(teams) => {
-            match teams.into_iter().find(|t| t.id == team_id) {
-                Some(team) => Ok(Json(serde_json::json!(team))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+        Ok(teams) => match teams.into_iter().find(|t| t.id == team_id) {
+            Some(team) => Ok(Json(serde_json::json!(team))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get Vercel team: {}", e);
@@ -1906,7 +2127,7 @@ async fn get_cloudflare_session_api(
     let cloudflare = services.cloudflare_service.lock().await;
     match cloudflare.get_cloudflare_session(&session_id).await {
         Some(session) => Ok(Json(serde_json::json!(session))),
-        None => Err(StatusCode::NOT_FOUND)
+        None => Err(StatusCode::NOT_FOUND),
     }
 }
 
@@ -1930,11 +2151,9 @@ async fn get_cloudflare_zone_api(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let cloudflare = services.cloudflare_service.lock().await;
     match cloudflare.list_cloudflare_zones(&session_id).await {
-        Ok(zones) => {
-            match zones.into_iter().find(|z| z.id == zone_id) {
-                Some(zone) => Ok(Json(serde_json::json!(zone))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+        Ok(zones) => match zones.into_iter().find(|z| z.id == zone_id) {
+            Some(zone) => Ok(Json(serde_json::json!(zone))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get Cloudflare zone: {}", e);
@@ -1948,7 +2167,10 @@ async fn list_cloudflare_dns_records_api(
     Path((session_id, zone_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let cloudflare = services.cloudflare_service.lock().await;
-    match cloudflare.list_cloudflare_dns_records(&session_id, &zone_id).await {
+    match cloudflare
+        .list_cloudflare_dns_records(&session_id, &zone_id)
+        .await
+    {
         Ok(records) => Ok(Json(serde_json::json!(records))),
         Err(e) => {
             eprintln!("Failed to list Cloudflare DNS records: {}", e);
@@ -1962,12 +2184,13 @@ async fn get_cloudflare_dns_record_api(
     Path((session_id, zone_id, record_id)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let cloudflare = services.cloudflare_service.lock().await;
-    match cloudflare.list_cloudflare_dns_records(&session_id, &zone_id).await {
-        Ok(records) => {
-            match records.into_iter().find(|r| r.id == record_id) {
-                Some(record) => Ok(Json(serde_json::json!(record))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+    match cloudflare
+        .list_cloudflare_dns_records(&session_id, &zone_id)
+        .await
+    {
+        Ok(records) => match records.into_iter().find(|r| r.id == record_id) {
+            Some(record) => Ok(Json(serde_json::json!(record))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get Cloudflare DNS record: {}", e);
@@ -1982,8 +2205,14 @@ async fn list_cloudflare_workers_api(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let cloudflare = services.cloudflare_service.lock().await;
-    let account_id = params.get("account_id").unwrap_or(&"default".to_string()).clone();
-    match cloudflare.list_cloudflare_workers(&session_id, &account_id).await {
+    let account_id = params
+        .get("account_id")
+        .unwrap_or(&"default".to_string())
+        .clone();
+    match cloudflare
+        .list_cloudflare_workers(&session_id, &account_id)
+        .await
+    {
         Ok(workers) => Ok(Json(serde_json::json!(workers))),
         Err(e) => {
             eprintln!("Failed to list Cloudflare workers: {}", e);
@@ -1998,13 +2227,17 @@ async fn get_cloudflare_worker_api(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let cloudflare = services.cloudflare_service.lock().await;
-    let account_id = params.get("account_id").unwrap_or(&"default".to_string()).clone();
-    match cloudflare.list_cloudflare_workers(&session_id, &account_id).await {
-        Ok(workers) => {
-            match workers.into_iter().find(|w| w.id == worker_id) {
-                Some(worker) => Ok(Json(serde_json::json!(worker))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+    let account_id = params
+        .get("account_id")
+        .unwrap_or(&"default".to_string())
+        .clone();
+    match cloudflare
+        .list_cloudflare_workers(&session_id, &account_id)
+        .await
+    {
+        Ok(workers) => match workers.into_iter().find(|w| w.id == worker_id) {
+            Some(worker) => Ok(Json(serde_json::json!(worker))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get Cloudflare worker: {}", e);
@@ -2018,7 +2251,10 @@ async fn list_cloudflare_page_rules_api(
     Path((session_id, zone_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let cloudflare = services.cloudflare_service.lock().await;
-    match cloudflare.list_cloudflare_page_rules(&session_id, &zone_id).await {
+    match cloudflare
+        .list_cloudflare_page_rules(&session_id, &zone_id)
+        .await
+    {
         Ok(rules) => Ok(Json(serde_json::json!(rules))),
         Err(e) => {
             eprintln!("Failed to list Cloudflare page rules: {}", e);
@@ -2032,12 +2268,13 @@ async fn get_cloudflare_page_rule_api(
     Path((session_id, zone_id, rule_id)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let cloudflare = services.cloudflare_service.lock().await;
-    match cloudflare.list_cloudflare_page_rules(&session_id, &zone_id).await {
-        Ok(rules) => {
-            match rules.into_iter().find(|r| r.id == rule_id) {
-                Some(rule) => Ok(Json(serde_json::json!(rule))),
-                None => Err(StatusCode::NOT_FOUND)
-            }
+    match cloudflare
+        .list_cloudflare_page_rules(&session_id, &zone_id)
+        .await
+    {
+        Ok(rules) => match rules.into_iter().find(|r| r.id == rule_id) {
+            Some(rule) => Ok(Json(serde_json::json!(rule))),
+            None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
             eprintln!("Failed to get Cloudflare page rule: {}", e);
@@ -2054,7 +2291,10 @@ async fn get_cloudflare_analytics_api(
     let cloudflare = services.cloudflare_service.lock().await;
     let since = params.get("since").cloned();
     let until = params.get("until").cloned();
-    match cloudflare.get_cloudflare_analytics(&session_id, &zone_id, since, until).await {
+    match cloudflare
+        .get_cloudflare_analytics(&session_id, &zone_id, since, until)
+        .await
+    {
         Ok(analytics) => Ok(Json(serde_json::json!(analytics))),
         Err(e) => {
             eprintln!("Failed to get Cloudflare analytics: {}", e);
