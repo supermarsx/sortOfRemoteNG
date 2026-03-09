@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Font category taxonomy
@@ -8,8 +8,10 @@ use chrono::{DateTime, Utc};
 /// Top-level font category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum FontCategory {
     /// Monospace — for SSH terminals, code editors, log viewers.
+    #[default]
     Monospace,
     /// Sans-serif — for app UI, menus, dialogs.
     SansSerif,
@@ -19,12 +21,6 @@ pub enum FontCategory {
     Display,
     /// System — platform-specific UI fonts.
     System,
-}
-
-impl Default for FontCategory {
-    fn default() -> Self {
-        Self::Monospace
-    }
 }
 
 /// Sub-category giving finer classification (especially within Monospace).
@@ -133,10 +129,18 @@ pub struct FontMetadata {
     pub popularity_rank: Option<u16>,
 }
 
-fn default_terminal_size() -> f64 { 14.0 }
-fn default_line_height() -> f64 { 1.2 }
-fn default_weights() -> Vec<u16> { vec![400, 700] }
-fn default_true() -> bool { true }
+fn default_terminal_size() -> f64 {
+    14.0
+}
+fn default_line_height() -> f64 {
+    1.2
+}
+fn default_weights() -> Vec<u16> {
+    vec![400, 700]
+}
+fn default_true() -> bool {
+    true
+}
 
 /// Platform availability flags.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -183,13 +187,17 @@ pub struct FontStack {
 impl FontStack {
     /// Render as a CSS `font-family` value.
     pub fn to_css(&self) -> String {
-        self.families.iter().map(|f| {
-            if f.contains(' ') && !f.starts_with('"') && !f.starts_with('\'') {
-                format!("\"{}\"", f)
-            } else {
-                f.clone()
-            }
-        }).collect::<Vec<_>>().join(", ")
+        self.families
+            .iter()
+            .map(|f| {
+                if f.contains(' ') && !f.starts_with('"') && !f.starts_with('\'') {
+                    format!("\"{}\"", f)
+                } else {
+                    f.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -226,7 +234,9 @@ pub enum FontWeight {
 }
 
 impl Default for FontWeight {
-    fn default() -> Self { Self::Named(FontWeightName::Normal) }
+    fn default() -> Self {
+        Self::Named(FontWeightName::Normal)
+    }
 }
 
 impl FontWeight {
@@ -491,10 +501,7 @@ fn default_tab_settings() -> FontSettings {
         text_rendering: TextRendering::OptimizeLegibility,
         font_smoothing: FontSmoothing::Antialiased,
         prefer_nerd_font: false,
-        fallback_families: vec![
-            "system-ui".to_string(),
-            "sans-serif".to_string(),
-        ],
+        fallback_families: vec!["system-ui".to_string(), "sans-serif".to_string()],
     }
 }
 
@@ -629,7 +636,9 @@ pub struct FontSearchQuery {
     pub max_results: usize,
 }
 
-fn default_max() -> usize { 50 }
+fn default_max() -> usize {
+    50
+}
 
 /// Stats about the font registry and configuration.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

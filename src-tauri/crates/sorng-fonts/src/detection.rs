@@ -34,7 +34,11 @@ impl FontDetector {
 
     /// Detect monospace-only system fonts.
     pub async fn detect_monospace() -> Vec<SystemFont> {
-        Self::detect().await.into_iter().filter(|f| f.is_monospace).collect()
+        Self::detect()
+            .await
+            .into_iter()
+            .filter(|f| f.is_monospace)
+            .collect()
     }
 
     // ─── Windows: enumerate via registry ────────────────────────
@@ -115,9 +119,11 @@ impl FontDetector {
                                 in_registry: false,
                             });
                         }
-                        current_family = Some(trimmed.trim_start_matches("Family:").trim().to_string());
+                        current_family =
+                            Some(trimmed.trim_start_matches("Family:").trim().to_string());
                     } else if trimmed.starts_with("Location:") {
-                        current_path = Some(trimmed.trim_start_matches("Location:").trim().to_string());
+                        current_path =
+                            Some(trimmed.trim_start_matches("Location:").trim().to_string());
                     }
                 }
                 // Don't forget the last one.
@@ -159,7 +165,9 @@ impl FontDetector {
                     .filter(|l| !l.trim().is_empty())
                     .filter_map(|line| {
                         let parts: Vec<&str> = line.splitn(3, '|').collect();
-                        if parts.is_empty() { return None; }
+                        if parts.is_empty() {
+                            return None;
+                        }
 
                         // fc-list may return "Family1,Family2" — take the first.
                         let family = parts[0].split(',').next()?.trim().to_string();
@@ -191,9 +199,20 @@ impl FontDetector {
 fn is_likely_monospace(name: &str) -> bool {
     let lower = name.to_lowercase();
     let mono_keywords = [
-        "mono", "consol", "courier", "terminal", "fixed", "code",
-        "hack", "menlo", "iosevka", "proggy", "terminus", "luxi",
-        "nerd font", "powerline",
+        "mono",
+        "consol",
+        "courier",
+        "terminal",
+        "fixed",
+        "code",
+        "hack",
+        "menlo",
+        "iosevka",
+        "proggy",
+        "terminus",
+        "luxi",
+        "nerd font",
+        "powerline",
     ];
     mono_keywords.iter().any(|k| lower.contains(k))
 }

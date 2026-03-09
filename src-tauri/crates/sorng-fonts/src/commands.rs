@@ -67,9 +67,7 @@ pub async fn fonts_list_with_nerd_font(
 }
 
 #[tauri::command]
-pub async fn fonts_get_stats(
-    state: State<'_, FontServiceState>,
-) -> Result<FontStats, String> {
+pub async fn fonts_get_stats(state: State<'_, FontServiceState>) -> Result<FontStats, String> {
     let svc = state.read().await;
     Ok(svc.registry_stats())
 }
@@ -333,27 +331,19 @@ pub async fn fonts_resolve_settings_css(
 // ═══════════════════════════════════════════════════════════════════════
 
 #[tauri::command]
-pub async fn fonts_save(
-    state: State<'_, FontServiceState>,
-) -> Result<(), String> {
+pub async fn fonts_save(state: State<'_, FontServiceState>) -> Result<(), String> {
     let svc = state.read().await;
     svc.save()
 }
 
 #[tauri::command]
-pub async fn fonts_export(
-    path: String,
-    state: State<'_, FontServiceState>,
-) -> Result<(), String> {
+pub async fn fonts_export(path: String, state: State<'_, FontServiceState>) -> Result<(), String> {
     let svc = state.read().await;
     svc.export_to(&path)
 }
 
 #[tauri::command]
-pub async fn fonts_import(
-    path: String,
-    state: State<'_, FontServiceState>,
-) -> Result<(), String> {
+pub async fn fonts_import(path: String, state: State<'_, FontServiceState>) -> Result<(), String> {
     let mut svc = state.write().await;
     svc.import_from(&path)?;
     svc.save()

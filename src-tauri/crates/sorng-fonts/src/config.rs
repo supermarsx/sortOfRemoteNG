@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use serde_json;
+use std::path::{Path, PathBuf};
 
 use crate::types::*;
 
@@ -56,7 +56,11 @@ impl FontConfigManager {
             .map_err(|e| format!("Failed to parse font config: {}", e))?;
 
         self.config = persistent.config;
-        log::info!("Loaded font config from {:?} (v{})", path, persistent.version);
+        log::info!(
+            "Loaded font config from {:?} (v{})",
+            path,
+            persistent.version
+        );
         Ok(())
     }
 
@@ -80,8 +84,7 @@ impl FontConfigManager {
         let json = serde_json::to_string_pretty(&persistent)
             .map_err(|e| format!("Failed to serialize font config: {}", e))?;
 
-        std::fs::write(&path, json)
-            .map_err(|e| format!("Failed to write font config: {}", e))?;
+        std::fs::write(&path, json).map_err(|e| format!("Failed to write font config: {}", e))?;
 
         log::info!("Saved font config to {:?}", path);
         Ok(())
@@ -101,8 +104,7 @@ impl FontConfigManager {
         let json = serde_json::to_string_pretty(&persistent)
             .map_err(|e| format!("Failed to serialize font config for export: {}", e))?;
 
-        std::fs::write(path, json)
-            .map_err(|e| format!("Failed to write font export: {}", e))?;
+        std::fs::write(path, json).map_err(|e| format!("Failed to write font export: {}", e))?;
 
         log::info!("Exported font config to {:?}", path);
         Ok(())
@@ -117,7 +119,11 @@ impl FontConfigManager {
             .map_err(|e| format!("Failed to parse font import file: {}", e))?;
 
         self.config = persistent.config;
-        log::info!("Imported font config from {:?} (v{})", path, persistent.version);
+        log::info!(
+            "Imported font config from {:?} (v{})",
+            path,
+            persistent.version
+        );
         Ok(())
     }
 
@@ -125,17 +131,23 @@ impl FontConfigManager {
 
     /// Set font settings for a specific connection.
     pub fn set_connection_override(&mut self, connection_id: &str, settings: FontSettings) {
-        self.config.connection_overrides.insert(connection_id.to_string(), settings);
+        self.config
+            .connection_overrides
+            .insert(connection_id.to_string(), settings);
     }
 
     /// Remove font override for a connection.
     pub fn remove_connection_override(&mut self, connection_id: &str) -> bool {
-        self.config.connection_overrides.remove(connection_id).is_some()
+        self.config
+            .connection_overrides
+            .remove(connection_id)
+            .is_some()
     }
 
     /// Get font settings for a connection (override or default SSH terminal).
     pub fn settings_for_connection(&self, connection_id: &str) -> &FontSettings {
-        self.config.connection_overrides
+        self.config
+            .connection_overrides
             .get(connection_id)
             .unwrap_or(&self.config.ssh_terminal)
     }
@@ -171,7 +183,11 @@ impl FontConfigManager {
 
     /// Add or update a custom font stack.
     pub fn upsert_custom_stack(&mut self, stack: FontStack) {
-        let idx = self.config.custom_stacks.iter().position(|s| s.id == stack.id);
+        let idx = self
+            .config
+            .custom_stacks
+            .iter()
+            .position(|s| s.id == stack.id);
         match idx {
             Some(i) => self.config.custom_stacks[i] = stack,
             None => self.config.custom_stacks.push(stack),

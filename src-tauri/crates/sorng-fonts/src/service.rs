@@ -44,7 +44,11 @@ impl FontService {
 
     /// Fonts by category.
     pub fn list_by_category(&self, category: FontCategory) -> Vec<FontMetadata> {
-        self.registry.by_category(category).into_iter().cloned().collect()
+        self.registry
+            .by_category(category)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Get a single font by ID.
@@ -64,12 +68,20 @@ impl FontService {
 
     /// Fonts with ligatures.
     pub fn list_with_ligatures(&self) -> Vec<FontMetadata> {
-        self.registry.with_ligatures().into_iter().cloned().collect()
+        self.registry
+            .with_ligatures()
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Fonts with Nerd Font variants.
     pub fn list_with_nerd_font(&self) -> Vec<FontMetadata> {
-        self.registry.with_nerd_font().into_iter().cloned().collect()
+        self.registry
+            .with_nerd_font()
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// Registry statistics.
@@ -94,8 +106,14 @@ impl FontService {
 
     /// Get a font stack by ID.
     pub fn get_stack(&self, id: &str) -> Option<FontStack> {
-        FontStacks::get(id)
-            .or_else(|| self.config_manager.config().custom_stacks.iter().find(|s| s.id == id).cloned())
+        FontStacks::get(id).or_else(|| {
+            self.config_manager
+                .config()
+                .custom_stacks
+                .iter()
+                .find(|s| s.id == id)
+                .cloned()
+        })
     }
 
     /// Create or update a custom font stack.
@@ -146,17 +164,21 @@ impl FontService {
 
     /// Set a per-connection font override.
     pub fn set_connection_override(&mut self, connection_id: &str, settings: FontSettings) {
-        self.config_manager.set_connection_override(connection_id, settings);
+        self.config_manager
+            .set_connection_override(connection_id, settings);
     }
 
     /// Remove a per-connection font override.
     pub fn remove_connection_override(&mut self, connection_id: &str) -> bool {
-        self.config_manager.remove_connection_override(connection_id)
+        self.config_manager
+            .remove_connection_override(connection_id)
     }
 
     /// Resolve font settings for a specific connection.
     pub fn resolve_connection_settings(&self, connection_id: &str) -> FontSettings {
-        self.config_manager.settings_for_connection(connection_id).clone()
+        self.config_manager
+            .settings_for_connection(connection_id)
+            .clone()
     }
 
     // ─── Favourites ─────────────────────────────────────────────
@@ -170,7 +192,10 @@ impl FontService {
     }
 
     pub fn get_favourites(&self) -> Vec<FontMetadata> {
-        self.config_manager.config().favourites.iter()
+        self.config_manager
+            .config()
+            .favourites
+            .iter()
             .filter_map(|id| self.registry.get(id).cloned())
             .collect()
     }
@@ -178,7 +203,10 @@ impl FontService {
     // ─── Recent fonts ───────────────────────────────────────────
 
     pub fn get_recent(&self) -> Vec<FontMetadata> {
-        self.config_manager.config().recent_fonts.iter()
+        self.config_manager
+            .config()
+            .recent_fonts
+            .iter()
             .filter_map(|id| self.registry.get(id).cloned())
             .collect()
     }

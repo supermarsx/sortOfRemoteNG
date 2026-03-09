@@ -57,7 +57,9 @@ impl FontStacks {
         FontStack {
             id: "ssh-coding".to_string(),
             name: "SSH Coding".to_string(),
-            description: Some("Ligature-enabled coding fonts for productive terminal work".to_string()),
+            description: Some(
+                "Ligature-enabled coding fonts for productive terminal work".to_string(),
+            ),
             families: vec![
                 "Fira Code".to_string(),
                 "Cascadia Code".to_string(),
@@ -77,7 +79,9 @@ impl FontStacks {
         FontStack {
             id: "ssh-retro".to_string(),
             name: "SSH Retro".to_string(),
-            description: Some("Bitmap and retro monospace fonts for classic terminal aesthetics".to_string()),
+            description: Some(
+                "Bitmap and retro monospace fonts for classic terminal aesthetics".to_string(),
+            ),
             families: vec![
                 "Terminus".to_string(),
                 "ProggyClean".to_string(),
@@ -138,7 +142,9 @@ impl FontStacks {
         FontStack {
             id: "ui-default".to_string(),
             name: "App UI Default".to_string(),
-            description: Some("Modern, readable UI fonts for the application interface".to_string()),
+            description: Some(
+                "Modern, readable UI fonts for the application interface".to_string(),
+            ),
             families: vec![
                 "Inter".to_string(),
                 "Geist".to_string(),
@@ -199,7 +205,9 @@ impl FontStacks {
         FontStack {
             id: "code-default".to_string(),
             name: "Code Editor Default".to_string(),
-            description: Some("Standard monospace fonts for inline code blocks and editors".to_string()),
+            description: Some(
+                "Standard monospace fonts for inline code blocks and editors".to_string(),
+            ),
             families: vec![
                 "JetBrains Mono".to_string(),
                 "Source Code Pro".to_string(),
