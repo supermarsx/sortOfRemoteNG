@@ -2,8 +2,8 @@
 
 use crate::error::BackupError;
 use crate::types::{
-    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool,
-    UnisonConfig, UnisonConflictPolicy,
+    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, UnisonConfig,
+    UnisonConflictPolicy,
 };
 use chrono::Utc;
 use log::{debug, error, info};
@@ -203,10 +203,7 @@ pub async fn execute(
             let trimmed = line.trim();
             if trimmed.contains("---->") || trimmed.contains("<----") {
                 files_seen += 1;
-                let current_file = trimmed
-                    .split_whitespace()
-                    .last()
-                    .map(String::from);
+                let current_file = trimmed.split_whitespace().last().map(String::from);
                 on_progress(BackupProgress {
                     job_id: job_id.to_string(),
                     bytes_transferred: 0,

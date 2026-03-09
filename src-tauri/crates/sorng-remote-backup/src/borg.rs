@@ -26,7 +26,10 @@ pub fn build_env(cfg: &BorgConfig) -> HashMap<String, String> {
     }
     // Non-interactive
     env.insert("BORG_RELOCATED_REPO_ACCESS_IS_OK".into(), "yes".into());
-    env.insert("BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK".into(), "yes".into());
+    env.insert(
+        "BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK".into(),
+        "yes".into(),
+    );
 
     // SSH command
     if let Some(ssh) = &cfg.ssh {
@@ -207,25 +210,20 @@ pub async fn create(
                         bytes_total: json.get("total").and_then(|v| v.as_u64()),
                         files_transferred: json.get("nfiles").and_then(|v| v.as_u64()).unwrap_or(0),
                         files_total: None,
-                        current_file: json
-                            .get("path")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
+                        current_file: json.get("path").and_then(|v| v.as_str()).map(String::from),
                         speed_bps: 0.0,
                         eta_seconds: None,
-                        percent_complete: json
-                            .get("current")
-                            .and_then(|c| {
-                                json.get("total").and_then(|t| {
-                                    let c = c.as_f64()?;
-                                    let t = t.as_f64()?;
-                                    if t > 0.0 {
-                                        Some(c / t * 100.0)
-                                    } else {
-                                        None
-                                    }
-                                })
-                            }),
+                        percent_complete: json.get("current").and_then(|c| {
+                            json.get("total").and_then(|t| {
+                                let c = c.as_f64()?;
+                                let t = t.as_f64()?;
+                                if t > 0.0 {
+                                    Some(c / t * 100.0)
+                                } else {
+                                    None
+                                }
+                            })
+                        }),
                         phase: BackupPhase::Transferring,
                     };
                     on_progress(progress);
@@ -357,7 +355,10 @@ pub async fn list(cfg: &BorgConfig) -> Result<Vec<SnapshotInfo>, BackupError> {
             tags: Vec::new(),
             size_bytes: None,
             deduplicated_size: None,
-            files_count: a.get("stats").and_then(|s| s.get("nfiles")).and_then(|v| v.as_u64()),
+            files_count: a
+                .get("stats")
+                .and_then(|s| s.get("nfiles"))
+                .and_then(|v| v.as_u64()),
             tool: BackupTool::Borg,
         })
         .collect();

@@ -1,7 +1,9 @@
 //! Rsync wrapper — argument builder, execution, dry-run, output parser.
 
 use crate::error::BackupError;
-use crate::types::{BackupExecutionRecord, BackupJobStatus, BackupProgress, BackupPhase, BackupTool, RsyncConfig};
+use crate::types::{
+    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, RsyncConfig,
+};
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use regex::Regex;
@@ -207,9 +209,8 @@ pub fn parse_stats(output: &str) -> RsyncStats {
             } else {
                 stats.total_files = parse_comma_number(&val);
             }
-        } else if let Some(val) =
-            extract_stat(trimmed, "Number of regular files transferred:")
-                .or_else(|| extract_stat(trimmed, "Number of files transferred:"))
+        } else if let Some(val) = extract_stat(trimmed, "Number of regular files transferred:")
+            .or_else(|| extract_stat(trimmed, "Number of files transferred:"))
         {
             stats.files_transferred = parse_comma_number(&val);
         } else if let Some(val) = extract_stat(trimmed, "Total transferred file size:") {
@@ -282,9 +283,10 @@ pub async fn execute(
         }
     }
 
-    let exit_status = child.wait().await.map_err(|e| {
-        BackupError::ProcessError(format!("failed to wait for rsync: {e}"))
-    })?;
+    let exit_status = child
+        .wait()
+        .await
+        .map_err(|e| BackupError::ProcessError(format!("failed to wait for rsync: {e}")))?;
 
     let exit_code = exit_status.code().unwrap_or(-1);
     let finished_at = Utc::now();
@@ -364,12 +366,9 @@ pub struct RsyncStats {
 
 // ─── Private helpers ────────────────────────────────────────────────
 
-fn extract_stat<'a>(line: &'a str, prefix: &str) -> Option<String> {
-    if line.starts_with(prefix) {
-        Some(line[prefix.len()..].trim().to_string())
-    } else {
-        None
-    }
+fn extract_stat(line: &str, prefix: &str) -> Option<String> {
+    line.strip_prefix(prefix)
+        .map(|stripped| stripped.trim().to_string())
 }
 
 fn parse_comma_number(s: &str) -> u64 {
@@ -378,7 +377,7 @@ fn parse_comma_number(s: &str) -> u64 {
 
 fn parse_byte_value(s: &str) -> u64 {
     // "1,234,567 bytes" or "1,234,567"
-    let num_str = s.trim().split_whitespace().next().unwrap_or("0");
+    let num_str = s.split_whitespace().next().unwrap_or("0");
     parse_comma_number(num_str)
 }
 

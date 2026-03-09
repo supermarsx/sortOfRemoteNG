@@ -1,7 +1,10 @@
 //! SFTP wrapper — bulk file transfer with resume, progress tracking, checksums.
 
 use crate::error::BackupError;
-use crate::types::{BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, SftpConfig, SftpTransferMode};
+use crate::types::{
+    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, SftpConfig,
+    SftpTransferMode,
+};
 use chrono::Utc;
 use log::{debug, error, info};
 use std::process::Stdio;
@@ -38,7 +41,7 @@ pub fn build_batch_commands(cfg: &SftpConfig) -> String {
             }
         }
         SftpTransferMode::Sync | SftpTransferMode::Mirror => {
-            // For sync/mirror we use rsync-like approach with sftp — 
+            // For sync/mirror we use rsync-like approach with sftp —
             // just do a recursive transfer (sftp doesn't natively support sync)
             cmds.push(format!("cd {}", cfg.remote_path));
             for path in &cfg.local_paths {
@@ -212,14 +215,26 @@ pub async fn execute(
         files_transferred: cfg.local_paths.len() as u64,
         files_deleted: 0,
         files_skipped: 0,
-        files_failed: if exit_code != 0 { cfg.local_paths.len() as u64 } else { 0 },
+        files_failed: if exit_code != 0 {
+            cfg.local_paths.len() as u64
+        } else {
+            0
+        },
         speed_bps: None,
         file_records: Vec::new(),
         command: Some(cmd_str),
         stdout: Some(crate::rsync::truncate_output(&stdout_buf, 10_000)),
-        stderr: if stderr_buf.is_empty() { None } else { Some(crate::rsync::truncate_output(&stderr_buf, 5_000)) },
+        stderr: if stderr_buf.is_empty() {
+            None
+        } else {
+            Some(crate::rsync::truncate_output(&stderr_buf, 5_000))
+        },
         exit_code: Some(exit_code),
-        error: if exit_code != 0 { Some(format!("sftp exited with code {exit_code}")) } else { None },
+        error: if exit_code != 0 {
+            Some(format!("sftp exited with code {exit_code}"))
+        } else {
+            None
+        },
         retry_attempt: 0,
         snapshot_id: None,
     };

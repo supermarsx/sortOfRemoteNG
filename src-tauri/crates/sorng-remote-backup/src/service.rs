@@ -3,8 +3,7 @@
 use crate::error::BackupError;
 use crate::progress::ProgressTracker;
 use crate::types::{
-    BackupExecutionRecord, BackupJob, BackupJobStatus, BackupProgress, ToolInfo,
-    BackupTool,
+    BackupExecutionRecord, BackupJob, BackupJobStatus, BackupProgress, BackupTool, ToolInfo,
 };
 use chrono::Utc;
 use log::info;
@@ -184,10 +183,7 @@ impl RemoteBackupService {
 
     /// Get execution history for a job.
     pub fn job_history(&self, job_id: &str) -> Vec<&BackupExecutionRecord> {
-        self.history
-            .iter()
-            .filter(|r| r.job_id == job_id)
-            .collect()
+        self.history.iter().filter(|r| r.job_id == job_id).collect()
     }
 
     /// Get all execution history.
@@ -276,7 +272,11 @@ async fn detect_tool_binary(name: &str) -> (bool, Option<String>, Option<String>
                     let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
                     if s.is_empty() {
                         let s2 = String::from_utf8_lossy(&o.stderr).trim().to_string();
-                        if s2.is_empty() { None } else { Some(s2.lines().next().unwrap_or("").to_string()) }
+                        if s2.is_empty() {
+                            None
+                        } else {
+                            Some(s2.lines().next().unwrap_or("").to_string())
+                        }
                     } else {
                         Some(s.lines().next().unwrap_or("").to_string())
                     }

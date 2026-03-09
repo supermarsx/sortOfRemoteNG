@@ -1,9 +1,7 @@
 //! File integrity verification — checksum generation, manifest creation, verification.
 
 use crate::error::BackupError;
-use crate::types::{
-    ChecksumAlgorithm, IntegrityCheckResult, IntegrityError, IntegrityErrorType,
-};
+use crate::types::{ChecksumAlgorithm, IntegrityCheckResult, IntegrityError, IntegrityErrorType};
 use chrono::Utc;
 use log::{debug, info, warn};
 use sha2::{Digest, Sha256};
@@ -60,9 +58,7 @@ pub async fn checksum_file(
                 .arg(path.as_os_str())
                 .output()
                 .await
-                .map_err(|e| {
-                    BackupError::ProcessError(format!("failed to run {cmd}: {e}"))
-                })?;
+                .map_err(|e| BackupError::ProcessError(format!("failed to run {cmd}: {e}")))?;
             if !output.status.success() {
                 return Err(BackupError::IntegrityError(format!(
                     "{cmd} failed for {}",
@@ -143,7 +139,10 @@ pub async fn verify_manifest(
     base_path: &Path,
     job_id: &str,
 ) -> Result<IntegrityCheckResult, BackupError> {
-    info!("Verifying {} files against manifest", manifest.entries.len());
+    info!(
+        "Verifying {} files against manifest",
+        manifest.entries.len()
+    );
     let start = std::time::Instant::now();
 
     let mut verified_ok: u64 = 0;
@@ -211,10 +210,7 @@ pub async fn verify_manifest(
 }
 
 /// Save a manifest to a JSON file.
-pub async fn save_manifest(
-    manifest: &ChecksumManifest,
-    path: &Path,
-) -> Result<(), BackupError> {
+pub async fn save_manifest(manifest: &ChecksumManifest, path: &Path) -> Result<(), BackupError> {
     let json = serde_json::to_string_pretty(manifest)?;
     fs::write(path, json)
         .await

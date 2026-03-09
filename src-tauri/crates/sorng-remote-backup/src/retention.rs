@@ -67,17 +67,32 @@ pub fn evaluate(
 
     // keep_daily
     if let Some(n) = policy.keep_daily {
-        keep_by_period(&sorted, n, |dt| dt.format("%Y-%m-%d").to_string(), &mut keep_ids);
+        keep_by_period(
+            &sorted,
+            n,
+            |dt| dt.format("%Y-%m-%d").to_string(),
+            &mut keep_ids,
+        );
     }
 
     // keep_weekly
     if let Some(n) = policy.keep_weekly {
-        keep_by_period(&sorted, n, |dt| dt.format("%G-W%V").to_string(), &mut keep_ids);
+        keep_by_period(
+            &sorted,
+            n,
+            |dt| dt.format("%G-W%V").to_string(),
+            &mut keep_ids,
+        );
     }
 
     // keep_monthly
     if let Some(n) = policy.keep_monthly {
-        keep_by_period(&sorted, n, |dt| dt.format("%Y-%m").to_string(), &mut keep_ids);
+        keep_by_period(
+            &sorted,
+            n,
+            |dt| dt.format("%Y-%m").to_string(),
+            &mut keep_ids,
+        );
     }
 
     // keep_yearly

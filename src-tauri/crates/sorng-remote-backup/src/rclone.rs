@@ -2,8 +2,8 @@
 
 use crate::error::BackupError;
 use crate::types::{
-    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool,
-    RcloneConfig, RcloneSyncMode,
+    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, RcloneConfig,
+    RcloneSyncMode,
 };
 use chrono::Utc;
 use log::{debug, error, info};
@@ -372,9 +372,22 @@ fn parse_eta(s: &str) -> Option<u64> {
     // Parse formats like "5m30s", "1h2m", "30s", "2h5m30s"
     let re = Regex::new(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?").ok()?;
     let caps = re.captures(s)?;
-    let h: u64 = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-    let m: u64 = caps.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-    let sec: u64 = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+    let h: u64 = caps
+        .get(1)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
+    let m: u64 = caps
+        .get(2)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
+    let sec: u64 = caps
+        .get(3)
+        .and_then(|m| m.as_str().parse().ok())
+        .unwrap_or(0);
     let total = h * 3600 + m * 60 + sec;
-    if total > 0 { Some(total) } else { None }
+    if total > 0 {
+        Some(total)
+    } else {
+        None
+    }
 }

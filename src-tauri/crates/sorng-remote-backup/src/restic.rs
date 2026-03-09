@@ -2,8 +2,8 @@
 
 use crate::error::BackupError;
 use crate::types::{
-    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool,
-    ResticConfig, ResticRetention, SnapshotInfo,
+    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, ResticConfig,
+    ResticRetention, SnapshotInfo,
 };
 use chrono::Utc;
 use log::{debug, error, info};
@@ -189,9 +189,7 @@ pub async fn backup(
                                 .get("bytes_done")
                                 .and_then(|v| v.as_f64())
                                 .unwrap_or(0.0),
-                            eta_seconds: json
-                                .get("seconds_remaining")
-                                .and_then(|v| v.as_u64()),
+                            eta_seconds: json.get("seconds_remaining").and_then(|v| v.as_u64()),
                             percent_complete: json
                                 .get("percent_done")
                                 .and_then(|v| v.as_f64())
@@ -514,7 +512,5 @@ pub async fn version(restic_binary: Option<&str>) -> Result<String, BackupError>
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic version: {e}")))?;
 
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .to_string())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }

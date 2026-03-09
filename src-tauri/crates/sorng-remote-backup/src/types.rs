@@ -790,11 +790,24 @@ pub struct BackupJob {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BackupSchedule {
-    Cron { expression: String },
-    Interval { every_seconds: u64 },
-    Daily { time: String, timezone: Option<String> },
-    Weekly { day: String, time: String },
-    Monthly { day: u8, time: String },
+    Cron {
+        expression: String,
+    },
+    Interval {
+        every_seconds: u64,
+    },
+    Daily {
+        time: String,
+        timezone: Option<String>,
+    },
+    Weekly {
+        day: String,
+        time: String,
+    },
+    Monthly {
+        day: u8,
+        time: String,
+    },
 }
 
 // ─── Execution Records ──────────────────────────────────────────────

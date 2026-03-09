@@ -70,7 +70,9 @@ impl ProgressTracker {
         if elapsed_secs <= 0.0 {
             return None;
         }
-        let bytes_diff = last.bytes_transferred.saturating_sub(first.bytes_transferred);
+        let bytes_diff = last
+            .bytes_transferred
+            .saturating_sub(first.bytes_transferred);
         if bytes_diff == 0 {
             return None;
         }
@@ -92,7 +94,9 @@ impl ProgressTracker {
         if elapsed <= 0.0 {
             return 0.0;
         }
-        let bytes = last.bytes_transferred.saturating_sub(first.bytes_transferred);
+        let bytes = last
+            .bytes_transferred
+            .saturating_sub(first.bytes_transferred);
         bytes as f64 / elapsed
     }
 

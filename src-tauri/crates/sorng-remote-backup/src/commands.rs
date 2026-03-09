@@ -1,12 +1,10 @@
 //! Tauri commands — thin async handlers that lock service state and delegate.
 
 use crate::error::err_str;
-use crate::service::RemoteBackupServiceState;
-use crate::types::{
-    BackupExecutionRecord, BackupJob, BackupJobStatus, BackupProgress, ToolInfo,
-};
 use crate::progress::AggregateProgress;
 use crate::retention::{RetentionEntry, RetentionResult};
+use crate::service::RemoteBackupServiceState;
+use crate::types::{BackupExecutionRecord, BackupJob, BackupJobStatus, BackupProgress, ToolInfo};
 use tauri::State;
 
 // ─── Job Management ─────────────────────────────────────────────────

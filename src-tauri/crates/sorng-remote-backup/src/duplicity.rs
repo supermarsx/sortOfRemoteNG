@@ -20,7 +20,10 @@ pub fn build_env(cfg: &DuplicityConfig) -> HashMap<String, String> {
         env.insert("PASSPHRASE".into(), pass.clone());
     }
     if let Some(_key) = &cfg.sign_key {
-        env.insert("SIGN_PASSPHRASE".into(), cfg.passphrase.clone().unwrap_or_default());
+        env.insert(
+            "SIGN_PASSPHRASE".into(),
+            cfg.passphrase.clone().unwrap_or_default(),
+        );
     }
     // SSH password for scp/sftp backends
     if let Some(ssh) = &cfg.ssh {
@@ -218,9 +221,17 @@ pub async fn backup(
         file_records: Vec::new(),
         command: Some(cmd_str),
         stdout: Some(crate::rsync::truncate_output(&stdout_buf, 10_000)),
-        stderr: if stderr_buf.is_empty() { None } else { Some(crate::rsync::truncate_output(&stderr_buf, 5_000)) },
+        stderr: if stderr_buf.is_empty() {
+            None
+        } else {
+            Some(crate::rsync::truncate_output(&stderr_buf, 5_000))
+        },
         exit_code: Some(exit_code),
-        error: if exit_code != 0 { Some(format!("duplicity exited with code {exit_code}")) } else { None },
+        error: if exit_code != 0 {
+            Some(format!("duplicity exited with code {exit_code}"))
+        } else {
+            None
+        },
         retry_attempt: 0,
         snapshot_id: None,
     };
@@ -301,7 +312,9 @@ pub async fn collection_status(cfg: &DuplicityConfig) -> Result<String, BackupEr
         .envs(&env)
         .output()
         .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to run duplicity collection-status: {e}")))?;
+        .map_err(|e| {
+            BackupError::ProcessError(format!("failed to run duplicity collection-status: {e}"))
+        })?;
 
     if !output.status.success() {
         return Err(BackupError::ToolFailed {
@@ -350,12 +363,18 @@ pub async fn cleanup(cfg: &DuplicityConfig) -> Result<String, BackupError> {
             .envs(&env)
             .output()
             .await
-            .map_err(|e| BackupError::ProcessError(format!("duplicity remove-all-but-n-full: {e}")))?;
+            .map_err(|e| {
+                BackupError::ProcessError(format!("duplicity remove-all-but-n-full: {e}"))
+            })?;
         results.push(String::from_utf8_lossy(&output.stdout).to_string());
     }
 
     // Always run cleanup to remove orphan files
-    let args = vec!["cleanup".to_string(), "--force".to_string(), cfg.target_url.clone()];
+    let args = vec![
+        "cleanup".to_string(),
+        "--force".to_string(),
+        cfg.target_url.clone(),
+    ];
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
@@ -403,7 +422,9 @@ pub async fn version(duplicity_binary: Option<&str>) -> Result<String, BackupErr
         .args(["--version"])
         .output()
         .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to run duplicity --version: {e}")))?;
+        .map_err(|e| {
+            BackupError::ProcessError(format!("failed to run duplicity --version: {e}"))
+        })?;
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }

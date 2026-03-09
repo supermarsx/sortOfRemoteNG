@@ -25,19 +25,19 @@
 //! | `service`    | Service façade (`RemoteBackupServiceState`)               |
 //! | `commands`   | Tauri `#[command]` handlers                               |
 
-pub mod types;
+pub mod borg;
+pub mod commands;
+pub mod duplicity;
 pub mod error;
-pub mod rsync;
+pub mod integrity;
+pub mod progress;
 pub mod rclone;
 pub mod restic;
-pub mod borg;
-pub mod sftp;
-pub mod scp;
-pub mod unison;
-pub mod duplicity;
-pub mod integrity;
 pub mod retention;
-pub mod progress;
+pub mod rsync;
 pub mod scheduler;
+pub mod scp;
 pub mod service;
-pub mod commands;
+pub mod sftp;
+pub mod types;
+pub mod unison;

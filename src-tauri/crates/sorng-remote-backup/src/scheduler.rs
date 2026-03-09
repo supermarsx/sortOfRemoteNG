@@ -1,4 +1,4 @@
-//! Backup job scheduler — schedule evaluation, next-run calculation. 
+//! Backup job scheduler — schedule evaluation, next-run calculation.
 //!
 //! Note: This is a simple evaluator; for real cron scheduling integration
 //! the caller should use the sorng-scheduler crate alongside this one.
@@ -9,7 +9,10 @@ use chrono::{DateTime, Datelike, NaiveTime, TimeZone, Utc, Weekday};
 use log::debug;
 
 /// Compute the next run time from "now" given a schedule.
-pub fn next_run(schedule: &BackupSchedule, now: &DateTime<Utc>) -> Result<DateTime<Utc>, BackupError> {
+pub fn next_run(
+    schedule: &BackupSchedule,
+    now: &DateTime<Utc>,
+) -> Result<DateTime<Utc>, BackupError> {
     match schedule {
         BackupSchedule::Interval { every_seconds } => {
             let dur = chrono::Duration::seconds(*every_seconds as i64);
@@ -34,8 +37,7 @@ pub fn next_run(schedule: &BackupSchedule, now: &DateTime<Utc>) -> Result<DateTi
                 + 7)
                 % 7;
             let candidate_date = now.date_naive() + chrono::Duration::days(days_ahead);
-            let candidate = Utc
-                .from_utc_datetime(&candidate_date.and_time(t));
+            let candidate = Utc.from_utc_datetime(&candidate_date.and_time(t));
             if candidate > *now {
                 Ok(candidate)
             } else {
@@ -70,7 +72,9 @@ pub fn next_run(schedule: &BackupSchedule, now: &DateTime<Utc>) -> Result<DateTi
         BackupSchedule::Cron { expression } => {
             // Simplified cron evaluation — parse "min hour dom mon dow"
             // For production, integrate with a proper cron library.
-            debug!("Cron scheduling not fully implemented; using interval fallback for: {expression}");
+            debug!(
+                "Cron scheduling not fully implemented; using interval fallback for: {expression}"
+            );
             // Fallback: run in 1 hour
             Ok(*now + chrono::Duration::hours(1))
         }
@@ -95,9 +99,9 @@ pub fn should_run_now(
         }
         _ => {
             // Compute next_run from last_run (or epoch), check if it's within tolerance of now
-            let reference = last_run.copied().unwrap_or_else(|| {
-                Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap()
-            });
+            let reference = last_run
+                .copied()
+                .unwrap_or_else(|| Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap());
             if let Ok(next) = next_run(schedule, &reference) {
                 let diff = (*now - next).num_seconds().abs();
                 diff <= tolerance_secs
