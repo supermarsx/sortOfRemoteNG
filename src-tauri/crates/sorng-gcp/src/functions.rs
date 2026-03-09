@@ -150,10 +150,7 @@ impl FunctionsClient {
         client: &mut GcpClient,
         project: &str,
     ) -> GcpResult<Vec<Function>> {
-        let path = format!(
-            "{}/projects/{}/locations/-/functions",
-            V2, project
-        );
+        let path = format!("{}/projects/{}/locations/-/functions", V2, project);
         let resp: FunctionList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.functions)
     }
@@ -184,8 +181,9 @@ impl FunctionsClient {
             V2, project, location, function_name
         );
         let text = client.delete(SERVICE, &path).await?;
-        serde_json::from_str(&text)
-            .map_err(|e| crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e)))
+        serde_json::from_str(&text).map_err(|e| {
+            crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e))
+        })
     }
 
     /// Call an HTTP-triggered Cloud Function (1st gen style via v1 API).
@@ -211,9 +209,7 @@ impl FunctionsClient {
         function_name: &str,
     ) -> GcpResult<String> {
         let path = format!("{}/{}:generateDownloadUrl", V2, function_name);
-        let resp: serde_json::Value = client
-            .post(SERVICE, &path, &serde_json::json!({}))
-            .await?;
+        let resp: serde_json::Value = client.post(SERVICE, &path, &serde_json::json!({})).await?;
         Ok(resp
             .get("downloadUrl")
             .and_then(|v| v.as_str())

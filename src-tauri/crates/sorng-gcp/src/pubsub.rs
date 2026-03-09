@@ -130,10 +130,7 @@ impl PubSubClient {
     // ── Topics ──────────────────────────────────────────────────────
 
     /// List topics in a project.
-    pub async fn list_topics(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<Topic>> {
+    pub async fn list_topics(client: &mut GcpClient, project: &str) -> GcpResult<Vec<Topic>> {
         let path = format!("{}/projects/{}/topics", V1, project);
         let resp: TopicList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.topics)
@@ -183,10 +180,7 @@ impl PubSubClient {
         topic_name: &str,
         messages: Vec<PubsubMessage>,
     ) -> GcpResult<Vec<String>> {
-        let path = format!(
-            "{}/projects/{}/topics/{}:publish",
-            V1, project, topic_name
-        );
+        let path = format!("{}/projects/{}/topics/{}:publish", V1, project, topic_name);
         let body = serde_json::json!({ "messages": messages });
         let resp: PublishResponse = client.post(SERVICE, &path, &body).await?;
         Ok(resp.message_ids)

@@ -120,10 +120,7 @@ impl TokenManager {
         };
 
         // Normalise PEM line breaks.
-        let pem = self
-            .service_account
-            .private_key
-            .replace("\\n", "\n");
+        let pem = self.service_account.private_key.replace("\\n", "\n");
 
         let encoding_key = EncodingKey::from_rsa_pem(pem.as_bytes())
             .map_err(|e| format!("Failed to load private key: {}", e))?;

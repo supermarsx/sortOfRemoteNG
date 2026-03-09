@@ -281,9 +281,7 @@ impl CloudSqlClient {
             "{}/projects/{}/instances/{}/restart",
             V1, project, instance_name
         );
-        client
-            .post(SERVICE, &path, &serde_json::Value::Null)
-            .await
+        client.post(SERVICE, &path, &serde_json::Value::Null).await
     }
 
     /// Start a stopped instance.
@@ -296,9 +294,7 @@ impl CloudSqlClient {
             "{}/projects/{}/instances/{}/startReplica",
             V1, project, instance_name
         );
-        client
-            .post(SERVICE, &path, &serde_json::Value::Null)
-            .await
+        client.post(SERVICE, &path, &serde_json::Value::Null).await
     }
 
     /// Stop a running replica.
@@ -311,9 +307,7 @@ impl CloudSqlClient {
             "{}/projects/{}/instances/{}/stopReplica",
             V1, project, instance_name
         );
-        client
-            .post(SERVICE, &path, &serde_json::Value::Null)
-            .await
+        client.post(SERVICE, &path, &serde_json::Value::Null).await
     }
 
     /// Delete a Cloud SQL instance.
@@ -324,8 +318,9 @@ impl CloudSqlClient {
     ) -> GcpResult<SqlOperation> {
         let path = format!("{}/projects/{}/instances/{}", V1, project, instance_name);
         let text = client.delete(SERVICE, &path).await?;
-        serde_json::from_str(&text)
-            .map_err(|e| crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e)))
+        serde_json::from_str(&text).map_err(|e| {
+            crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e))
+        })
     }
 
     /// Trigger a manual backup.
@@ -401,8 +396,9 @@ impl CloudSqlClient {
             V1, project, instance_name, db_name
         );
         let text = client.delete(SERVICE, &path).await?;
-        serde_json::from_str(&text)
-            .map_err(|e| crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e)))
+        serde_json::from_str(&text).map_err(|e| {
+            crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e))
+        })
     }
 
     // ── Users ───────────────────────────────────────────────────────
@@ -462,7 +458,8 @@ impl CloudSqlClient {
             path.push_str(&format!("&host={}", h));
         }
         let text = client.delete(SERVICE, &path).await?;
-        serde_json::from_str(&text)
-            .map_err(|e| crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e)))
+        serde_json::from_str(&text).map_err(|e| {
+            crate::error::GcpError::from_str(SERVICE, &format!("Parse operation: {}", e))
+        })
     }
 }

@@ -186,10 +186,7 @@ impl LoggingClient {
     }
 
     /// List available log names.
-    pub async fn list_logs(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<String>> {
+    pub async fn list_logs(client: &mut GcpClient, project: &str) -> GcpResult<Vec<String>> {
         let path = format!("{}/projects/{}/logs", V2, project);
         let resp: LogNameList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.log_names)
@@ -201,11 +198,9 @@ impl LoggingClient {
         project: &str,
         log_name: &str,
     ) -> GcpResult<()> {
-        let encoded_name = percent_encoding::utf8_percent_encode(
-            log_name,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let encoded_name =
+            percent_encoding::utf8_percent_encode(log_name, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
         let path = format!("{}/projects/{}/logs/{}", V2, project, encoded_name);
         client.delete(SERVICE, &path).await?;
         Ok(())
@@ -214,10 +209,7 @@ impl LoggingClient {
     // ── Sinks ───────────────────────────────────────────────────────
 
     /// List sinks.
-    pub async fn list_sinks(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<LogSink>> {
+    pub async fn list_sinks(client: &mut GcpClient, project: &str) -> GcpResult<Vec<LogSink>> {
         let path = format!("{}/projects/{}/sinks", V2, project);
         let resp: SinkList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.sinks)
@@ -264,10 +256,7 @@ impl LoggingClient {
     // ── Log-based metrics ───────────────────────────────────────────
 
     /// List log-based metrics.
-    pub async fn list_metrics(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<LogMetric>> {
+    pub async fn list_metrics(client: &mut GcpClient, project: &str) -> GcpResult<Vec<LogMetric>> {
         let path = format!("{}/projects/{}/metrics", V2, project);
         let resp: MetricList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.metrics)

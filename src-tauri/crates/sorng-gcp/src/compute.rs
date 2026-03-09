@@ -663,10 +663,7 @@ impl ComputeClient {
     // ── Snapshots ───────────────────────────────────────────────────
 
     /// List snapshots.
-    pub async fn list_snapshots(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<Snapshot>> {
+    pub async fn list_snapshots(client: &mut GcpClient, project: &str) -> GcpResult<Vec<Snapshot>> {
         let path = format!("{}/projects/{}/global/snapshots", V1, project);
         let resp: ListResponse<Snapshot> = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.items)
@@ -695,10 +692,7 @@ impl ComputeClient {
         project: &str,
         zone: &str,
     ) -> GcpResult<Vec<MachineType>> {
-        let path = format!(
-            "{}/projects/{}/zones/{}/machineTypes",
-            V1, project, zone
-        );
+        let path = format!("{}/projects/{}/zones/{}/machineTypes", V1, project, zone);
         let resp: ListResponse<MachineType> = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.items)
     }
@@ -706,10 +700,7 @@ impl ComputeClient {
     // ── Firewalls ───────────────────────────────────────────────────
 
     /// List firewall rules.
-    pub async fn list_firewalls(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<Firewall>> {
+    pub async fn list_firewalls(client: &mut GcpClient, project: &str) -> GcpResult<Vec<Firewall>> {
         let path = format!("{}/projects/{}/global/firewalls", V1, project);
         let resp: ListResponse<Firewall> = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.items)
@@ -746,10 +737,7 @@ impl ComputeClient {
     // ── Networks ────────────────────────────────────────────────────
 
     /// List VPC networks.
-    pub async fn list_networks(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<Network>> {
+    pub async fn list_networks(client: &mut GcpClient, project: &str) -> GcpResult<Vec<Network>> {
         let path = format!("{}/projects/{}/global/networks", V1, project);
         let resp: ListResponse<Network> = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.items)
@@ -776,10 +764,7 @@ impl ComputeClient {
         project: &str,
         region: &str,
     ) -> GcpResult<Vec<Subnetwork>> {
-        let path = format!(
-            "{}/projects/{}/regions/{}/subnetworks",
-            V1, project, region
-        );
+        let path = format!("{}/projects/{}/regions/{}/subnetworks", V1, project, region);
         let resp: ListResponse<Subnetwork> = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.items)
     }
@@ -792,10 +777,7 @@ impl ComputeClient {
         project: &str,
         region: &str,
     ) -> GcpResult<Vec<Address>> {
-        let path = format!(
-            "{}/projects/{}/regions/{}/addresses",
-            V1, project, region
-        );
+        let path = format!("{}/projects/{}/regions/{}/addresses", V1, project, region);
         let resp: ListResponse<Address> = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.items)
     }

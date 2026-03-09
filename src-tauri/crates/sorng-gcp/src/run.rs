@@ -359,14 +359,13 @@ impl CloudRunClient {
             V2, project, region, service_name
         );
         let resp_text = client.delete(SERVICE, &path).await?;
-        let op: RunOperation = serde_json::from_str(&resp_text)
-            .unwrap_or(RunOperation {
-                name: String::new(),
-                done: true,
-                metadata: None,
-                response: None,
-                error: None,
-            });
+        let op: RunOperation = serde_json::from_str(&resp_text).unwrap_or(RunOperation {
+            name: String::new(),
+            done: true,
+            metadata: None,
+            response: None,
+            error: None,
+        });
         Ok(op)
     }
 
@@ -416,14 +415,13 @@ impl CloudRunClient {
             V2, project, region, service_name, revision_name
         );
         let resp_text = client.delete(SERVICE, &path).await?;
-        let op: RunOperation = serde_json::from_str(&resp_text)
-            .unwrap_or(RunOperation {
-                name: String::new(),
-                done: true,
-                metadata: None,
-                response: None,
-                error: None,
-            });
+        let op: RunOperation = serde_json::from_str(&resp_text).unwrap_or(RunOperation {
+            name: String::new(),
+            done: true,
+            metadata: None,
+            response: None,
+            error: None,
+        });
         Ok(op)
     }
 
@@ -467,14 +465,13 @@ impl CloudRunClient {
             V2, project, region, job_name
         );
         let resp_text = client.delete(SERVICE, &path).await?;
-        let op: RunOperation = serde_json::from_str(&resp_text)
-            .unwrap_or(RunOperation {
-                name: String::new(),
-                done: true,
-                metadata: None,
-                response: None,
-                error: None,
-            });
+        let op: RunOperation = serde_json::from_str(&resp_text).unwrap_or(RunOperation {
+            name: String::new(),
+            done: true,
+            metadata: None,
+            response: None,
+            error: None,
+        });
         Ok(op)
     }
 
@@ -524,14 +521,13 @@ impl CloudRunClient {
             V2, project, region, job_name, execution_name
         );
         let resp_text = client.delete(SERVICE, &path).await?;
-        let op: RunOperation = serde_json::from_str(&resp_text)
-            .unwrap_or(RunOperation {
-                name: String::new(),
-                done: true,
-                metadata: None,
-                response: None,
-                error: None,
-            });
+        let op: RunOperation = serde_json::from_str(&resp_text).unwrap_or(RunOperation {
+            name: String::new(),
+            done: true,
+            metadata: None,
+            response: None,
+            error: None,
+        });
         Ok(op)
     }
 }

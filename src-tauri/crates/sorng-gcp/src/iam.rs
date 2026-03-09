@@ -151,10 +151,7 @@ impl IamClient {
         project: &str,
         email: &str,
     ) -> GcpResult<IamServiceAccount> {
-        let path = format!(
-            "{}/projects/{}/serviceAccounts/{}",
-            V1, project, email
-        );
+        let path = format!("{}/projects/{}/serviceAccounts/{}", V1, project, email);
         client.get(SERVICE, &path, &[]).await
     }
 
@@ -186,10 +183,7 @@ impl IamClient {
         project: &str,
         email: &str,
     ) -> GcpResult<()> {
-        let path = format!(
-            "{}/projects/{}/serviceAccounts/{}",
-            V1, project, email
-        );
+        let path = format!("{}/projects/{}/serviceAccounts/{}", V1, project, email);
         client.delete(SERVICE, &path).await?;
         Ok(())
     }
@@ -232,10 +226,7 @@ impl IamClient {
         project: &str,
         email: &str,
     ) -> GcpResult<Vec<IamServiceAccountKey>> {
-        let path = format!(
-            "{}/projects/{}/serviceAccounts/{}/keys",
-            V1, project, email
-        );
+        let path = format!("{}/projects/{}/serviceAccounts/{}/keys", V1, project, email);
         let resp: KeyList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.keys)
     }
@@ -243,9 +234,7 @@ impl IamClient {
     // ── Roles ───────────────────────────────────────────────────────
 
     /// List predefined roles.
-    pub async fn list_roles(
-        client: &mut GcpClient,
-    ) -> GcpResult<Vec<IamRole>> {
+    pub async fn list_roles(client: &mut GcpClient) -> GcpResult<Vec<IamRole>> {
         let path = format!("{}/roles", V1);
         let resp: RoleList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.roles)
@@ -262,10 +251,7 @@ impl IamClient {
     }
 
     /// Get a role by name.
-    pub async fn get_role(
-        client: &mut GcpClient,
-        role_name: &str,
-    ) -> GcpResult<IamRole> {
+    pub async fn get_role(client: &mut GcpClient, role_name: &str) -> GcpResult<IamRole> {
         let path = format!("{}/{}", V1, role_name);
         client.get(SERVICE, &path, &[]).await
     }
@@ -277,16 +263,9 @@ impl IamClient {
         client: &mut GcpClient,
         project: &str,
     ) -> GcpResult<IamPolicy> {
-        let path = format!(
-            "/v1/projects/{}:getIamPolicy",
-            project
-        );
+        let path = format!("/v1/projects/{}:getIamPolicy", project);
         client
-            .post(
-                "cloudresourcemanager",
-                &path,
-                &serde_json::json!({}),
-            )
+            .post("cloudresourcemanager", &path, &serde_json::json!({}))
             .await
     }
 
@@ -296,14 +275,9 @@ impl IamClient {
         project: &str,
         policy: IamPolicy,
     ) -> GcpResult<IamPolicy> {
-        let path = format!(
-            "/v1/projects/{}:setIamPolicy",
-            project
-        );
+        let path = format!("/v1/projects/{}:setIamPolicy", project);
         let body = serde_json::json!({ "policy": policy });
-        client
-            .post("cloudresourcemanager", &path, &body)
-            .await
+        client.post("cloudresourcemanager", &path, &body).await
     }
 
     /// Test IAM permissions.
@@ -312,19 +286,14 @@ impl IamClient {
         project: &str,
         permissions: Vec<String>,
     ) -> GcpResult<Vec<String>> {
-        let path = format!(
-            "/v1/projects/{}:testIamPermissions",
-            project
-        );
+        let path = format!("/v1/projects/{}:testIamPermissions", project);
         let body = serde_json::json!({ "permissions": permissions });
         #[derive(Deserialize)]
         struct TestResult {
             #[serde(default)]
             permissions: Vec<String>,
         }
-        let resp: TestResult = client
-            .post("cloudresourcemanager", &path, &body)
-            .await?;
+        let resp: TestResult = client.post("cloudresourcemanager", &path, &body).await?;
         Ok(resp.permissions)
     }
 }

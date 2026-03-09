@@ -49,14 +49,11 @@ impl GcpService {
     // ── Session management ──────────────────────────────────────────
 
     /// Connect to GCP and create a new session.
-    pub async fn connect_gcp(
-        &mut self,
-        config: GcpConnectionConfig,
-    ) -> Result<String, String> {
+    pub async fn connect_gcp(&mut self, config: GcpConnectionConfig) -> Result<String, String> {
         config.validate().map_err(|e| e.to_string())?;
 
-        let key = ServiceAccountKey::from_json(&config.service_account_key)
-            .map_err(|e| e.to_string())?;
+        let key =
+            ServiceAccountKey::from_json(&config.service_account_key).map_err(|e| e.to_string())?;
 
         let project_id = key.project_id.clone();
         let scopes: Vec<String> = DEFAULT_SCOPES.iter().map(|s| s.to_string()).collect();
@@ -431,9 +428,10 @@ impl GcpService {
         prefix: Option<String>,
     ) -> Result<Vec<crate::storage::Object>, String> {
         let client = self.require_client(session_id)?;
-        let (objects, _prefixes) = StorageClient::list_objects(client, bucket, prefix.as_deref(), None, None)
-            .await
-            .map_err(|e| e.to_string())?;
+        let (objects, _prefixes) =
+            StorageClient::list_objects(client, bucket, prefix.as_deref(), None, None)
+                .await
+                .map_err(|e| e.to_string())?;
         Ok(objects)
     }
 
@@ -772,11 +770,7 @@ impl GcpService {
             .map_err(|e| e.to_string())
     }
 
-    pub async fn delete_topic(
-        &mut self,
-        session_id: &str,
-        topic_name: &str,
-    ) -> Result<(), String> {
+    pub async fn delete_topic(&mut self, session_id: &str, topic_name: &str) -> Result<(), String> {
         let project = self.session_project(session_id)?;
         let client = self.require_client(session_id)?;
         PubSubClient::delete_topic(client, &project, topic_name)
@@ -872,10 +866,7 @@ impl GcpService {
             .map_err(|e| e.to_string())
     }
 
-    pub async fn list_logs(
-        &mut self,
-        session_id: &str,
-    ) -> Result<Vec<String>, String> {
+    pub async fn list_logs(&mut self, session_id: &str) -> Result<Vec<String>, String> {
         let project = self.session_project(session_id)?;
         let client = self.require_client(session_id)?;
         LoggingClient::list_logs(client, &project)

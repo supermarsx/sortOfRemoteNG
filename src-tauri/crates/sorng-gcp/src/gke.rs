@@ -278,6 +278,7 @@ impl GkeClient {
     }
 
     /// Set node pool autoscaling.
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_node_pool_autoscaling(
         client: &mut GcpClient,
         project: &str,

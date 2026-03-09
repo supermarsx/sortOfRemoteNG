@@ -117,14 +117,16 @@ pub struct ServiceAccountKey {
 impl ServiceAccountKey {
     /// Parse a service account key from a JSON string.
     pub fn from_json(json: &str) -> Result<Self, String> {
-        serde_json::from_str(json)
-            .map_err(|e| format!("Invalid service account key JSON: {}", e))
+        serde_json::from_str(json).map_err(|e| format!("Invalid service account key JSON: {}", e))
     }
 
     /// Validate the key has required fields.
     pub fn validate(&self) -> Result<(), String> {
         if self.r#type != "service_account" {
-            return Err(format!("Expected type 'service_account', got '{}'", self.r#type));
+            return Err(format!(
+                "Expected type 'service_account', got '{}'",
+                self.r#type
+            ));
         }
         if self.project_id.is_empty() {
             return Err("project_id is empty".to_string());

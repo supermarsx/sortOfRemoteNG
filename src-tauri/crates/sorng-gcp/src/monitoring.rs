@@ -258,15 +258,10 @@ impl MonitoringClient {
         project: &str,
         metric_type: &str,
     ) -> GcpResult<MetricDescriptor> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            metric_type,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
-        let path = format!(
-            "{}/projects/{}/metricDescriptors/{}",
-            V3, project, encoded
-        );
+        let encoded =
+            percent_encoding::utf8_percent_encode(metric_type, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
+        let path = format!("{}/projects/{}/metricDescriptors/{}", V3, project, encoded);
         client.get(SERVICE, &path, &[]).await
     }
 
@@ -316,10 +311,7 @@ impl MonitoringClient {
         project: &str,
         policy_id: &str,
     ) -> GcpResult<AlertPolicy> {
-        let path = format!(
-            "{}/projects/{}/alertPolicies/{}",
-            V3, project, policy_id
-        );
+        let path = format!("{}/projects/{}/alertPolicies/{}", V3, project, policy_id);
         client.get(SERVICE, &path, &[]).await
     }
 
@@ -339,10 +331,7 @@ impl MonitoringClient {
         project: &str,
         policy_id: &str,
     ) -> GcpResult<()> {
-        let path = format!(
-            "{}/projects/{}/alertPolicies/{}",
-            V3, project, policy_id
-        );
+        let path = format!("{}/projects/{}/alertPolicies/{}", V3, project, policy_id);
         client.delete(SERVICE, &path).await?;
         Ok(())
     }
@@ -355,8 +344,7 @@ impl MonitoringClient {
         project: &str,
     ) -> GcpResult<Vec<NotificationChannel>> {
         let path = format!("{}/projects/{}/notificationChannels", V3, project);
-        let resp: NotificationChannelList =
-            client.get(SERVICE, &path, &[]).await?;
+        let resp: NotificationChannelList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.notification_channels)
     }
 
@@ -394,12 +382,8 @@ impl MonitoringClient {
         client: &mut GcpClient,
         project: &str,
     ) -> GcpResult<Vec<MonitoredResourceDescriptor>> {
-        let path = format!(
-            "{}/projects/{}/monitoredResourceDescriptors",
-            V3, project
-        );
-        let resp: MonitoredResourceDescriptorList =
-            client.get(SERVICE, &path, &[]).await?;
+        let path = format!("{}/projects/{}/monitoredResourceDescriptors", V3, project);
+        let resp: MonitoredResourceDescriptorList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.resource_descriptors)
     }
 }

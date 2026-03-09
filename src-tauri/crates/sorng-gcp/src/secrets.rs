@@ -98,10 +98,7 @@ pub struct SecretManagerClient;
 
 impl SecretManagerClient {
     /// List secrets in a project.
-    pub async fn list_secrets(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<Secret>> {
+    pub async fn list_secrets(client: &mut GcpClient, project: &str) -> GcpResult<Vec<Secret>> {
         let path = format!("{}/projects/{}/secrets", V1, project);
         let resp: SecretList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.secrets)
@@ -173,10 +170,8 @@ impl SecretManagerClient {
             "{}/projects/{}/secrets/{}:addVersion",
             V1, project, secret_id
         );
-        let encoded = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            data.as_bytes(),
-        );
+        let encoded =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data.as_bytes());
         let body = serde_json::json!({
             "payload": {
                 "data": encoded,
@@ -191,10 +186,7 @@ impl SecretManagerClient {
         project: &str,
         secret_id: &str,
     ) -> GcpResult<Vec<SecretVersion>> {
-        let path = format!(
-            "{}/projects/{}/secrets/{}/versions",
-            V1, project, secret_id
-        );
+        let path = format!("{}/projects/{}/secrets/{}/versions", V1, project, secret_id);
         let resp: VersionList = client.get(SERVICE, &path, &[]).await?;
         Ok(resp.versions)
     }
@@ -212,13 +204,14 @@ impl SecretManagerClient {
         );
         let resp: AccessSecretResponse = client.get(SERVICE, &path, &[]).await?;
         if let Some(payload) = resp.payload {
-            let bytes = base64::Engine::decode(
-                &base64::engine::general_purpose::STANDARD,
-                &payload.data,
-            )
-            .map_err(|e| crate::error::GcpError::from_str(SERVICE, &format!("Base64 decode: {}", e)))?;
-            String::from_utf8(bytes)
-                .map_err(|e| crate::error::GcpError::from_str(SERVICE, &format!("UTF-8 decode: {}", e)))
+            let bytes =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &payload.data)
+                    .map_err(|e| {
+                    crate::error::GcpError::from_str(SERVICE, &format!("Base64 decode: {}", e))
+                })?;
+            String::from_utf8(bytes).map_err(|e| {
+                crate::error::GcpError::from_str(SERVICE, &format!("UTF-8 decode: {}", e))
+            })
         } else {
             Ok(String::new())
         }
@@ -235,9 +228,7 @@ impl SecretManagerClient {
             "{}/projects/{}/secrets/{}/versions/{}:destroy",
             V1, project, secret_id, version
         );
-        client
-            .post(SERVICE, &path, &serde_json::json!({}))
-            .await
+        client.post(SERVICE, &path, &serde_json::json!({})).await
     }
 
     /// Enable a disabled secret version.
@@ -251,9 +242,7 @@ impl SecretManagerClient {
             "{}/projects/{}/secrets/{}/versions/{}:enable",
             V1, project, secret_id, version
         );
-        client
-            .post(SERVICE, &path, &serde_json::json!({}))
-            .await
+        client.post(SERVICE, &path, &serde_json::json!({})).await
     }
 
     /// Disable a secret version.
@@ -267,8 +256,6 @@ impl SecretManagerClient {
             "{}/projects/{}/secrets/{}/versions/{}:disable",
             V1, project, secret_id, version
         );
-        client
-            .post(SERVICE, &path, &serde_json::json!({}))
-            .await
+        client.post(SERVICE, &path, &serde_json::json!({})).await
     }
 }

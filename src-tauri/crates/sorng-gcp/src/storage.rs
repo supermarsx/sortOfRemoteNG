@@ -192,10 +192,7 @@ impl StorageClient {
     // ── Buckets ─────────────────────────────────────────────────────
 
     /// List buckets in a project.
-    pub async fn list_buckets(
-        client: &mut GcpClient,
-        project: &str,
-    ) -> GcpResult<Vec<Bucket>> {
+    pub async fn list_buckets(client: &mut GcpClient, project: &str) -> GcpResult<Vec<Bucket>> {
         let path = format!("{}/b", V1);
         let query = [("project", project)];
         let resp: BucketList = client.get(SERVICE, &path, &query).await?;
@@ -203,10 +200,7 @@ impl StorageClient {
     }
 
     /// Get a bucket by name.
-    pub async fn get_bucket(
-        client: &mut GcpClient,
-        bucket_name: &str,
-    ) -> GcpResult<Bucket> {
+    pub async fn get_bucket(client: &mut GcpClient, bucket_name: &str) -> GcpResult<Bucket> {
         let path = format!("{}/b/{}", V1, bucket_name);
         client.get(SERVICE, &path, &[]).await
     }
@@ -230,10 +224,7 @@ impl StorageClient {
     }
 
     /// Delete a bucket (must be empty).
-    pub async fn delete_bucket(
-        client: &mut GcpClient,
-        bucket_name: &str,
-    ) -> GcpResult<()> {
+    pub async fn delete_bucket(client: &mut GcpClient, bucket_name: &str) -> GcpResult<()> {
         let path = format!("{}/b/{}", V1, bucket_name);
         client.delete(SERVICE, &path).await?;
         Ok(())
@@ -296,11 +287,9 @@ impl StorageClient {
         bucket_name: &str,
         object_name: &str,
     ) -> GcpResult<Object> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            object_name,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let encoded =
+            percent_encoding::utf8_percent_encode(object_name, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
         let path = format!("{}/b/{}/o/{}", V1, bucket_name, encoded);
         client.get(SERVICE, &path, &[]).await
     }
@@ -311,11 +300,9 @@ impl StorageClient {
         bucket_name: &str,
         object_name: &str,
     ) -> GcpResult<String> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            object_name,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let encoded =
+            percent_encoding::utf8_percent_encode(object_name, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
         let path = format!("{}/b/{}/o/{}", V1, bucket_name, encoded);
         let query = [("alt", "media")];
         client.get_text(SERVICE, &path, &query).await
@@ -327,11 +314,9 @@ impl StorageClient {
         bucket_name: &str,
         object_name: &str,
     ) -> GcpResult<()> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            object_name,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let encoded =
+            percent_encoding::utf8_percent_encode(object_name, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
         let path = format!("{}/b/{}/o/{}", V1, bucket_name, encoded);
         client.delete(SERVICE, &path).await?;
         Ok(())
@@ -350,18 +335,14 @@ impl StorageClient {
             percent_encoding::NON_ALPHANUMERIC,
         )
         .to_string();
-        let dst_encoded = percent_encoding::utf8_percent_encode(
-            dest_object,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let dst_encoded =
+            percent_encoding::utf8_percent_encode(dest_object, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
         let path = format!(
             "{}/b/{}/o/{}/copyTo/b/{}/o/{}",
             V1, source_bucket, src_encoded, dest_bucket, dst_encoded
         );
-        client
-            .post(SERVICE, &path, &serde_json::Value::Null)
-            .await
+        client.post(SERVICE, &path, &serde_json::Value::Null).await
     }
 
     /// Update object metadata.
@@ -371,11 +352,9 @@ impl StorageClient {
         object_name: &str,
         metadata: HashMap<String, String>,
     ) -> GcpResult<Object> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            object_name,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let encoded =
+            percent_encoding::utf8_percent_encode(object_name, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
         let path = format!("{}/b/{}/o/{}", V1, bucket_name, encoded);
         let body = serde_json::json!({ "metadata": metadata });
         client.patch(SERVICE, &path, &body, &[]).await

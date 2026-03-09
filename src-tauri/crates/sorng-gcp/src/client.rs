@@ -284,11 +284,7 @@ impl GcpClient {
     }
 
     /// DELETE a resource. Returns the response body as text.
-    pub async fn delete(
-        &mut self,
-        service: &str,
-        path: &str,
-    ) -> GcpResult<String> {
+    pub async fn delete(&mut self, service: &str, path: &str) -> GcpResult<String> {
         let url = format!("{}{}", self.base_url(service), path);
         let token = self.get_token().await?;
 
@@ -337,7 +333,8 @@ impl GcpClient {
             if let Some(ref pt) = page_token {
                 query.push(("pageToken", pt.clone()));
             }
-            let query_pairs: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            let query_pairs: Vec<(&str, &str)> =
+                query.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
             let page: P = self.get(service, path, &query_pairs).await?;
             let (items, next) = extract(&page);
@@ -363,16 +360,11 @@ impl GcpClient {
         poll_interval_ms: u64,
     ) -> GcpResult<serde_json::Value> {
         for _ in 0..max_polls {
-            let op: serde_json::Value = self
-                .get(service, operation_url, &[])
-                .await?;
+            let op: serde_json::Value = self.get(service, operation_url, &[]).await?;
 
             let done = op.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
             // Compute Engine uses "status" = "DONE"
-            let status = op
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let status = op.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
             if done || status == "DONE" {
                 // Check for error
@@ -381,10 +373,7 @@ impl GcpClient {
                         .get("message")
                         .and_then(|v| v.as_str())
                         .unwrap_or("Operation failed");
-                    let code = err
-                        .get("code")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(500) as u16;
+                    let code = err.get("code").and_then(|v| v.as_u64()).unwrap_or(500) as u16;
                     return Err(GcpError::new(service, code, "OPERATION_FAILED", msg));
                 }
                 return Ok(op);
@@ -404,5 +393,8 @@ impl GcpClient {
 
 /// Helper to build query params.
 pub fn query_params(params: &HashMap<String, String>) -> Vec<(&str, &str)> {
-    params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+    params
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect()
 }
