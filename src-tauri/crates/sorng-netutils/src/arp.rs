@@ -23,8 +23,10 @@ pub fn build_flush_args() -> Vec<String> {
 /// Build `arping` arguments for ARP-level probing.
 pub fn build_arping_args(target: &str, interface: &str, count: u32) -> Vec<String> {
     vec![
-        "-c".to_string(), count.to_string(),
-        "-I".to_string(), interface.to_string(),
+        "-c".to_string(),
+        count.to_string(),
+        "-I".to_string(),
+        interface.to_string(),
         target.to_string(),
     ]
 }

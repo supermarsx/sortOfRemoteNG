@@ -9,9 +9,26 @@ use std::collections::HashMap;
 
 /// List of common network utility binaries to check availability for.
 pub const KNOWN_TOOLS: &[&str] = &[
-    "ping", "traceroute", "mtr", "nmap", "ss", "netstat", "arp",
-    "dig", "whois", "ethtool", "tcpdump", "iperf3", "speedtest",
-    "ip", "curl", "nc", "lsof", "nload", "iftop", "arping",
+    "ping",
+    "traceroute",
+    "mtr",
+    "nmap",
+    "ss",
+    "netstat",
+    "arp",
+    "dig",
+    "whois",
+    "ethtool",
+    "tcpdump",
+    "iperf3",
+    "speedtest",
+    "ip",
+    "curl",
+    "nc",
+    "lsof",
+    "nload",
+    "iftop",
+    "arping",
 ];
 
 /// Evaluate overall health of the network utilities subsystem.
@@ -26,7 +43,10 @@ pub fn evaluate_health(
     let available_count = tools_available.values().filter(|v| **v).count();
     let total = tools_available.len();
     if available_count < total / 2 {
-        warnings.push(format!("Only {}/{} tools available", available_count, total));
+        warnings.push(format!(
+            "Only {}/{} tools available",
+            available_count, total
+        ));
     }
     if !ping_ok {
         warnings.push("ping is not functioning".to_string());

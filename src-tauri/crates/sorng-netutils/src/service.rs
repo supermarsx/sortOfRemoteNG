@@ -47,6 +47,12 @@ pub struct NetUtilsService {
     event_log: Vec<NetUtilsEvent>,
 }
 
+impl Default for NetUtilsService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetUtilsService {
     pub fn new() -> Self {
         Self {
@@ -77,7 +83,10 @@ impl NetUtilsService {
     // ── Ping ───────────────────────────────────────────────────
 
     pub fn add_ping_result(&mut self, result: PingResult) {
-        info!("Ping complete: {} → loss={:.1}%, avg={:.2}ms", result.host, result.packet_loss_pct, result.avg_ms);
+        info!(
+            "Ping complete: {} → loss={:.1}%, avg={:.2}ms",
+            result.host, result.packet_loss_pct, result.avg_ms
+        );
         self.event_log.push(NetUtilsEvent::PingComplete {
             host: result.host.clone(),
             loss_pct: result.packet_loss_pct,
@@ -97,7 +106,11 @@ impl NetUtilsService {
     // ── Traceroute ─────────────────────────────────────────────
 
     pub fn add_traceroute_result(&mut self, result: TracerouteResult) {
-        info!("Traceroute complete: {} → {} hops", result.host, result.hops.len());
+        info!(
+            "Traceroute complete: {} → {} hops",
+            result.host,
+            result.hops.len()
+        );
         self.event_log.push(NetUtilsEvent::TracerouteComplete {
             host: result.host.clone(),
             hops: result.hops.len() as u8,
@@ -127,7 +140,10 @@ impl NetUtilsService {
     // ── Nmap ───────────────────────────────────────────────────
 
     pub fn add_nmap_result(&mut self, result: NmapScanResult) {
-        info!("Nmap scan complete: {} → {} hosts up", result.target, result.total_hosts_up);
+        info!(
+            "Nmap scan complete: {} → {} hosts up",
+            result.target, result.total_hosts_up
+        );
         self.event_log.push(NetUtilsEvent::NmapScanComplete {
             target: result.target.clone(),
             hosts_up: result.total_hosts_up,
@@ -170,7 +186,10 @@ impl NetUtilsService {
     // ── Speedtest ──────────────────────────────────────────────
 
     pub fn add_speedtest_result(&mut self, result: SpeedtestResult) {
-        info!("Speedtest: ↓{:.1} Mbps / ↑{:.1} Mbps", result.download_mbps, result.upload_mbps);
+        info!(
+            "Speedtest: ↓{:.1} Mbps / ↑{:.1} Mbps",
+            result.download_mbps, result.upload_mbps
+        );
         self.event_log.push(NetUtilsEvent::SpeedtestComplete {
             download_mbps: result.download_mbps,
             upload_mbps: result.upload_mbps,
@@ -213,11 +232,17 @@ impl NetUtilsService {
     }
 
     pub fn listening_sockets(&self) -> Vec<&SocketEntry> {
-        self.sockets.iter().filter(|s| s.state == SocketState::Listen).collect()
+        self.sockets
+            .iter()
+            .filter(|s| s.state == SocketState::Listen)
+            .collect()
     }
 
     pub fn established_sockets(&self) -> Vec<&SocketEntry> {
-        self.sockets.iter().filter(|s| s.state == SocketState::Established).collect()
+        self.sockets
+            .iter()
+            .filter(|s| s.state == SocketState::Established)
+            .collect()
     }
 
     // ── ARP ────────────────────────────────────────────────────
@@ -245,7 +270,10 @@ impl NetUtilsService {
     }
 
     pub fn default_routes(&self) -> Vec<&RouteEntry> {
-        self.routing_table.iter().filter(|r| r.destination == "default" || r.destination == "0.0.0.0/0").collect()
+        self.routing_table
+            .iter()
+            .filter(|r| r.destination == "default" || r.destination == "0.0.0.0/0")
+            .collect()
     }
 
     // ── Ethtool ────────────────────────────────────────────────
@@ -317,7 +345,8 @@ impl NetUtilsService {
         self.bandwidth_samples.push(sample);
         // Keep last 1000 samples
         if self.bandwidth_samples.len() > 1000 {
-            self.bandwidth_samples.drain(..self.bandwidth_samples.len() - 1000);
+            self.bandwidth_samples
+                .drain(..self.bandwidth_samples.len() - 1000);
         }
     }
 
@@ -348,7 +377,9 @@ impl NetUtilsService {
         if let Some(target) = self.wol_targets.iter_mut().find(|t| t.mac_address == mac) {
             target.status = WolStatus::Sent;
             target.sent_at = Some(Utc::now());
-            self.event_log.push(NetUtilsEvent::WolSent { mac: mac.to_string() });
+            self.event_log.push(NetUtilsEvent::WolSent {
+                mac: mac.to_string(),
+            });
         }
     }
 
@@ -366,7 +397,9 @@ impl NetUtilsService {
 
     pub fn set_tool_available(&mut self, tool: &str, available: bool) {
         if !available {
-            self.event_log.push(NetUtilsEvent::ToolNotFound { tool: tool.to_string() });
+            self.event_log.push(NetUtilsEvent::ToolNotFound {
+                tool: tool.to_string(),
+            });
         }
         self.available_tools.insert(tool.to_string(), available);
     }
@@ -673,7 +706,9 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_events() {
-        let event = NetUtilsEvent::WolSent { mac: "aa:bb:cc:dd:ee:ff".to_string() };
+        let event = NetUtilsEvent::WolSent {
+            mac: "aa:bb:cc:dd:ee:ff".to_string(),
+        };
         let json = serde_json::to_string(&event).unwrap();
         let back: NetUtilsEvent = serde_json::from_str(&json).unwrap();
         match back {
@@ -710,8 +745,12 @@ mod tests {
     #[test]
     fn events() {
         let mut svc = NetUtilsService::new();
-        svc.push_event(NetUtilsEvent::ToolNotFound { tool: "mtr".to_string() });
-        svc.push_event(NetUtilsEvent::WolSent { mac: "aa:bb:cc:dd:ee:ff".to_string() });
+        svc.push_event(NetUtilsEvent::ToolNotFound {
+            tool: "mtr".to_string(),
+        });
+        svc.push_event(NetUtilsEvent::WolSent {
+            mac: "aa:bb:cc:dd:ee:ff".to_string(),
+        });
         assert_eq!(svc.recent_events(10).len(), 2);
         assert_eq!(svc.recent_events(1).len(), 1);
         svc.clear_events();

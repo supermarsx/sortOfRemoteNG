@@ -325,7 +325,7 @@ pub enum NmapScanType {
 }
 
 /// Nmap scan options.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NmapOptions {
     pub scan_type: Option<NmapScanType>,
     pub ports: Option<String>,
@@ -344,30 +344,6 @@ pub struct NmapOptions {
     pub host_timeout_ms: Option<u64>,
     pub min_rate: Option<u32>,
     pub max_rate: Option<u32>,
-}
-
-impl Default for NmapOptions {
-    fn default() -> Self {
-        Self {
-            scan_type: None,
-            ports: None,
-            top_ports: None,
-            service_detection: false,
-            os_detection: false,
-            scripts: Vec::new(),
-            script_args: HashMap::new(),
-            timing: None,
-            source_port: None,
-            decoys: Vec::new(),
-            interface: None,
-            ip_version: None,
-            privileged: false,
-            max_retries: None,
-            host_timeout_ms: None,
-            min_rate: None,
-            max_rate: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -935,16 +911,45 @@ pub struct NetUtilsHealthCheck {
 /// Events emitted by the network utilities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NetUtilsEvent {
-    PingComplete { host: String, loss_pct: f64, avg_ms: f64 },
-    TracerouteComplete { host: String, hops: u8 },
-    MtrComplete { host: String, cycles: u32 },
-    NmapScanComplete { target: String, hosts_up: u32 },
-    CaptureStarted { id: String, interface: String },
-    CaptureStopped { id: String, packets: u64 },
-    IperfComplete { host: String, mbps: f64 },
-    SpeedtestComplete { download_mbps: f64, upload_mbps: f64 },
-    WolSent { mac: String },
-    ToolNotFound { tool: String },
+    PingComplete {
+        host: String,
+        loss_pct: f64,
+        avg_ms: f64,
+    },
+    TracerouteComplete {
+        host: String,
+        hops: u8,
+    },
+    MtrComplete {
+        host: String,
+        cycles: u32,
+    },
+    NmapScanComplete {
+        target: String,
+        hosts_up: u32,
+    },
+    CaptureStarted {
+        id: String,
+        interface: String,
+    },
+    CaptureStopped {
+        id: String,
+        packets: u64,
+    },
+    IperfComplete {
+        host: String,
+        mbps: f64,
+    },
+    SpeedtestComplete {
+        download_mbps: f64,
+        upload_mbps: f64,
+    },
+    WolSent {
+        mac: String,
+    },
+    ToolNotFound {
+        tool: String,
+    },
 }
 
 // ═══════════════════════════════════════════════════════════════════════

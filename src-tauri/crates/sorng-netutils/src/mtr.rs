@@ -17,8 +17,12 @@ pub fn build_mtr_args(target: &str, opts: &MtrOptions) -> Vec<String> {
         args.push(m.to_string());
     }
     match opts.protocol {
-        Some(TracerouteProtocol::Tcp) => { args.push("--tcp".to_string()); }
-        Some(TracerouteProtocol::Udp) => { args.push("--udp".to_string()); }
+        Some(TracerouteProtocol::Tcp) => {
+            args.push("--tcp".to_string());
+        }
+        Some(TracerouteProtocol::Udp) => {
+            args.push("--udp".to_string());
+        }
         _ => {}
     }
     if let Some(IpVersion::V6) = opts.ip_version {

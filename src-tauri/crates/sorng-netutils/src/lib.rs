@@ -76,27 +76,27 @@
 //! - **bandwidth** — Real-time bandwidth monitoring (nload/iftop)
 //! - **diagnostics** — Cross-utility health checks and reporting
 
-pub mod types;
-pub mod service;
-pub mod ping;
-pub mod traceroute;
-pub mod mtr;
-pub mod nmap;
-pub mod netstat;
 pub mod arp;
-pub mod dig;
-pub mod whois;
-pub mod ethtool;
-pub mod tcpdump;
-pub mod iperf;
-pub mod speedtest;
-pub mod route;
-pub mod wake_on_lan;
-pub mod curl;
-pub mod netcat;
-pub mod lsof;
 pub mod bandwidth;
+pub mod curl;
 pub mod diagnostics;
+pub mod dig;
+pub mod ethtool;
+pub mod iperf;
+pub mod lsof;
+pub mod mtr;
+pub mod netcat;
+pub mod netstat;
+pub mod nmap;
+pub mod ping;
+pub mod route;
+pub mod service;
+pub mod speedtest;
+pub mod tcpdump;
+pub mod traceroute;
+pub mod types;
+pub mod wake_on_lan;
+pub mod whois;
 
-pub use types::*;
 pub use service::{NetUtilsService, NetUtilsServiceState};
+pub use types::*;

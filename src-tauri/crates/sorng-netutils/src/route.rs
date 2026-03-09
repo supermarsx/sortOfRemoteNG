@@ -16,8 +16,19 @@ pub fn build_ip_route_args(table: Option<&str>) -> Vec<String> {
 }
 
 /// Build `ip route add` arguments.
-pub fn build_route_add_args(destination: &str, gateway: &str, interface: Option<&str>, metric: Option<u32>) -> Vec<String> {
-    let mut args = vec!["route".to_string(), "add".to_string(), destination.to_string(), "via".to_string(), gateway.to_string()];
+pub fn build_route_add_args(
+    destination: &str,
+    gateway: &str,
+    interface: Option<&str>,
+    metric: Option<u32>,
+) -> Vec<String> {
+    let mut args = vec![
+        "route".to_string(),
+        "add".to_string(),
+        destination.to_string(),
+        "via".to_string(),
+        gateway.to_string(),
+    ];
     if let Some(iface) = interface {
         args.push("dev".to_string());
         args.push(iface.to_string());
@@ -31,7 +42,11 @@ pub fn build_route_add_args(destination: &str, gateway: &str, interface: Option<
 
 /// Build `ip route delete` arguments.
 pub fn build_route_del_args(destination: &str) -> Vec<String> {
-    vec!["route".to_string(), "delete".to_string(), destination.to_string()]
+    vec![
+        "route".to_string(),
+        "delete".to_string(),
+        destination.to_string(),
+    ]
 }
 
 /// Build `route print` (Windows) arguments.

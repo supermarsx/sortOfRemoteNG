@@ -3,21 +3,19 @@
 //! Generates and sends Wake-on-LAN magic packets to wake
 //! remote machines by their MAC address.
 
-use crate::types::*;
-
 /// Build a WoL magic packet (102 bytes) for the given MAC address.
 ///
 /// The magic packet consists of 6 bytes of 0xFF followed by
 /// the target MAC address repeated 16 times.
 pub fn build_magic_packet(mac: &str) -> Result<[u8; 102], String> {
-    let parts: Vec<&str> = mac.split(|c| c == ':' || c == '-').collect();
+    let parts: Vec<&str> = mac.split([':', '-']).collect();
     if parts.len() != 6 {
         return Err(format!("Invalid MAC address: {}", mac));
     }
     let mut mac_bytes = [0u8; 6];
     for (i, part) in parts.iter().enumerate() {
-        mac_bytes[i] = u8::from_str_radix(part, 16)
-            .map_err(|_| format!("Invalid hex byte: {}", part))?;
+        mac_bytes[i] =
+            u8::from_str_radix(part, 16).map_err(|_| format!("Invalid hex byte: {}", part))?;
     }
     let mut packet = [0xFFu8; 102];
     for i in 0..16 {

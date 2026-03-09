@@ -3,8 +3,6 @@
 //! Wraps `nload`, `iftop`, `bmon`, and `/proc/net/dev` for monitoring
 //! per-interface and per-connection bandwidth usage.
 
-use crate::types::*;
-
 /// Read `/proc/net/dev` counters for a given interface.
 /// Returns (rx_bytes, tx_bytes) or None if interface not found.
 pub fn parse_proc_net_dev(content: &str, interface: &str) -> Option<(u64, u64)> {
@@ -24,12 +22,25 @@ pub fn parse_proc_net_dev(content: &str, interface: &str) -> Option<(u64, u64)> 
 
 /// Build `nload -t 1000 -u M <interface>` arguments.
 pub fn build_nload_args(interface: &str) -> Vec<String> {
-    vec!["-t".to_string(), "1000".to_string(), "-u".to_string(), "M".to_string(), interface.to_string()]
+    vec![
+        "-t".to_string(),
+        "1000".to_string(),
+        "-u".to_string(),
+        "M".to_string(),
+        interface.to_string(),
+    ]
 }
 
 /// Build `iftop -n -t -s 1 -i <interface>` arguments.
 pub fn build_iftop_args(interface: &str) -> Vec<String> {
-    vec!["-n".to_string(), "-t".to_string(), "-s".to_string(), "1".to_string(), "-i".to_string(), interface.to_string()]
+    vec![
+        "-n".to_string(),
+        "-t".to_string(),
+        "-s".to_string(),
+        "1".to_string(),
+        "-i".to_string(),
+        interface.to_string(),
+    ]
 }
 
 #[cfg(test)]

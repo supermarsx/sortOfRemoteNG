@@ -17,8 +17,12 @@ pub fn build_traceroute_args(target: &str, opts: &TracerouteOptions) -> Vec<Stri
         args.push(q.to_string());
     }
     match opts.protocol {
-        Some(TracerouteProtocol::Icmp) => { args.push("-I".to_string()); }
-        Some(TracerouteProtocol::Tcp) => { args.push("-T".to_string()); }
+        Some(TracerouteProtocol::Icmp) => {
+            args.push("-I".to_string());
+        }
+        Some(TracerouteProtocol::Tcp) => {
+            args.push("-T".to_string());
+        }
         _ => {}
     }
     if let Some(IpVersion::V6) = opts.ip_version {

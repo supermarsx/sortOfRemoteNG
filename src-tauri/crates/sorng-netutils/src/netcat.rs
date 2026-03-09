@@ -3,8 +3,6 @@
 //! Wraps `nc` (netcat) for TCP/UDP connectivity testing,
 //! port scanning, and banner grabbing.
 
-use crate::types::*;
-
 /// Build `nc` arguments for TCP connection test.
 pub fn build_tcp_test_args(host: &str, port: u16, timeout_secs: Option<u32>) -> Vec<String> {
     let mut args = vec!["-z".to_string(), "-v".to_string()];
@@ -32,7 +30,8 @@ pub fn build_udp_test_args(host: &str, port: u16, timeout_secs: Option<u32>) -> 
 /// Build `nc` arguments for port range scan.
 pub fn build_port_scan_args(host: &str, start_port: u16, end_port: u16) -> Vec<String> {
     vec![
-        "-z".to_string(), "-v".to_string(),
+        "-z".to_string(),
+        "-v".to_string(),
         host.to_string(),
         format!("{}-{}", start_port, end_port),
     ]
@@ -41,8 +40,10 @@ pub fn build_port_scan_args(host: &str, start_port: u16, end_port: u16) -> Vec<S
 /// Build `nc` arguments for banner grabbing.
 pub fn build_banner_grab_args(host: &str, port: u16, timeout_secs: u32) -> Vec<String> {
     vec![
-        "-w".to_string(), timeout_secs.to_string(),
-        host.to_string(), port.to_string(),
+        "-w".to_string(),
+        timeout_secs.to_string(),
+        host.to_string(),
+        port.to_string(),
     ]
 }
 

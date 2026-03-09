@@ -31,8 +31,11 @@ pub fn build_head_args(url: &str) -> Vec<String> {
 /// Build curl arguments for verbose TLS info.
 pub fn build_tls_info_args(url: &str) -> Vec<String> {
     vec![
-        "-v".to_string(), "--head".to_string(),
-        "-s".to_string(), "-o".to_string(), "/dev/null".to_string(),
+        "-v".to_string(),
+        "--head".to_string(),
+        "-s".to_string(),
+        "-o".to_string(),
+        "/dev/null".to_string(),
         url.to_string(),
     ]
 }

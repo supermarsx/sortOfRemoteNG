@@ -7,7 +7,11 @@ use crate::types::*;
 
 /// Build `speedtest-cli --json` arguments (Ookla).
 pub fn build_ookla_args(server_id: Option<u32>) -> Vec<String> {
-    let mut args = vec!["--format=json".to_string(), "--accept-gdpr".to_string(), "--accept-license".to_string()];
+    let mut args = vec![
+        "--format=json".to_string(),
+        "--accept-gdpr".to_string(),
+        "--accept-license".to_string(),
+    ];
     if let Some(id) = server_id {
         args.push(format!("--server-id={}", id));
     }

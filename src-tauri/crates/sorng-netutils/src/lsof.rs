@@ -19,7 +19,12 @@ pub fn build_lsof_inet_args(protocol: Option<&str>, port: Option<u16>) -> Vec<St
 
 /// Build `lsof -p <pid>` arguments for process fd listing.
 pub fn build_lsof_pid_args(pid: u32) -> Vec<String> {
-    vec!["-n".to_string(), "-P".to_string(), "-p".to_string(), pid.to_string()]
+    vec![
+        "-n".to_string(),
+        "-P".to_string(),
+        "-p".to_string(),
+        pid.to_string(),
+    ]
 }
 
 /// Parse lsof output into `NetworkFd` entries.
