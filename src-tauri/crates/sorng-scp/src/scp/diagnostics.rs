@@ -93,8 +93,7 @@ impl ScpService {
 
         // ── SSH handshake timing ─────────────────────────────────────────────
         let handshake_start = Instant::now();
-        let mut session =
-            Session::new().map_err(|e| format!("Session creation failed: {}", e))?;
+        let mut session = Session::new().map_err(|e| format!("Session creation failed: {}", e))?;
 
         if config.compress {
             session.set_compress(true);
@@ -107,20 +106,13 @@ impl ScpService {
         let handshake_ms = handshake_start.elapsed().as_secs_f64() * 1000.0;
 
         let banner = session.banner().map(|b| b.to_string());
-        let fingerprint = session
-            .host_key_hash(ssh2::HashType::Sha256)
-            .map(|bytes| {
-                let encoded = base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    bytes,
-                );
-                format!("SHA256:{}", encoded)
-            });
+        let fingerprint = session.host_key_hash(ssh2::HashType::Sha256).map(|bytes| {
+            let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+            format!("SHA256:{}", encoded)
+        });
 
         // List available auth methods
-        let auth_methods_str = session
-            .auth_methods(&config.username)
-            .unwrap_or("");
+        let auth_methods_str = session.auth_methods(&config.username).unwrap_or("");
         let auth_methods: Vec<String> = auth_methods_str
             .split(',')
             .map(|s| s.trim().to_string())
@@ -133,10 +125,18 @@ impl ScpService {
         let auth_ms = auth_start.elapsed().as_secs_f64() * 1000.0;
 
         // Negotiated algorithms
-        let negotiated_kex = session.methods(ssh2::MethodType::Kex).map(|s| s.to_string());
-        let negotiated_cipher = session.methods(ssh2::MethodType::CryptCs).map(|s| s.to_string());
-        let negotiated_mac = session.methods(ssh2::MethodType::MacCs).map(|s| s.to_string());
-        let negotiated_host_key = session.methods(ssh2::MethodType::HostKey).map(|s| s.to_string());
+        let negotiated_kex = session
+            .methods(ssh2::MethodType::Kex)
+            .map(|s| s.to_string());
+        let negotiated_cipher = session
+            .methods(ssh2::MethodType::CryptCs)
+            .map(|s| s.to_string());
+        let negotiated_mac = session
+            .methods(ssh2::MethodType::MacCs)
+            .map(|s| s.to_string());
+        let negotiated_host_key = session
+            .methods(ssh2::MethodType::HostKey)
+            .map(|s| s.to_string());
 
         // Weak algorithm warnings
         if let Some(ref cipher) = negotiated_cipher {
@@ -172,10 +172,7 @@ impl ScpService {
     }
 
     /// Estimate bandwidth by transferring a small test payload via exec.
-    async fn estimate_bandwidth(
-        &self,
-        session_id: &str,
-    ) -> Result<ScpBandwidthEstimate, String> {
+    async fn estimate_bandwidth(&self, session_id: &str) -> Result<ScpBandwidthEstimate, String> {
         let session = self.get_session(session_id)?;
         let test_size: u64 = 65536; // 64 KiB for quick test
 
@@ -187,7 +184,9 @@ impl ScpService {
         let mut channel = session
             .channel_session()
             .map_err(|e| format!("Channel error: {}", e))?;
-        channel.exec("echo ok").map_err(|e| format!("Exec error: {}", e))?;
+        channel
+            .exec("echo ok")
+            .map_err(|e| format!("Exec error: {}", e))?;
         let mut out = String::new();
         channel.read_to_string(&mut out).ok();
         channel.wait_close().ok();
@@ -202,7 +201,9 @@ impl ScpService {
         channel
             .exec("cat > /dev/null")
             .map_err(|e| format!("Exec error: {}", e))?;
-        channel.write_all(&test_data).map_err(|e| format!("Write error: {}", e))?;
+        channel
+            .write_all(&test_data)
+            .map_err(|e| format!("Write error: {}", e))?;
         channel.send_eof().ok();
         channel.wait_eof().ok();
         channel.close().ok();

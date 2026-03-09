@@ -36,13 +36,11 @@ impl ScpService {
         }
 
         // Check overwrite
-        if !request.overwrite {
-            if self.remote_exists(&request.session_id, &request.remote_path)? {
-                return Err(format!(
-                    "Remote file '{}' already exists and overwrite is disabled",
-                    request.remote_path
-                ));
-            }
+        if !request.overwrite && self.remote_exists(&request.session_id, &request.remote_path)? {
+            return Err(format!(
+                "Remote file '{}' already exists and overwrite is disabled",
+                request.remote_path
+            ));
         }
 
         // Init progress
@@ -91,7 +89,11 @@ impl ScpService {
                     // Optional checksum verification
                     let checksum = if request.verify_checksum {
                         self.update_progress_status(&transfer_id, ScpTransferStatus::Verifying);
-                        match self.verify_checksum(&request.session_id, &request.local_path, &request.remote_path) {
+                        match self.verify_checksum(
+                            &request.session_id,
+                            &request.local_path,
+                            &request.remote_path,
+                        ) {
                             Ok(hash) => Some(hash),
                             Err(e) => {
                                 warn!("Checksum verification failed: {}", e);
@@ -165,23 +167,21 @@ impl ScpService {
 
         // Get local file times for preservation
         let times = if request.preserve_times {
-            std::fs::metadata(&request.local_path)
-                .ok()
-                .and_then(|m| {
-                    let mtime = m
-                        .modified()
-                        .ok()?
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .ok()?
-                        .as_secs();
-                    let atime = m
-                        .accessed()
-                        .ok()
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs())
-                        .unwrap_or(mtime);
-                    Some((mtime, atime))
-                })
+            std::fs::metadata(&request.local_path).ok().and_then(|m| {
+                let mtime = m
+                    .modified()
+                    .ok()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()?
+                    .as_secs();
+                let atime = m
+                    .accessed()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(mtime);
+                Some((mtime, atime))
+            })
         } else {
             None
         };
@@ -274,8 +274,9 @@ impl ScpService {
         // Ensure local parent directory exists
         if let Some(parent) = Path::new(&request.local_path).parent() {
             if !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Cannot create directory '{}': {}", parent.display(), e))?;
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    format!("Cannot create directory '{}': {}", parent.display(), e)
+                })?;
             }
         }
 
@@ -333,7 +334,11 @@ impl ScpService {
                     // Optional checksum verification
                     let checksum = if request.verify_checksum {
                         self.update_progress_status(&transfer_id, ScpTransferStatus::Verifying);
-                        match self.verify_checksum(&request.session_id, &request.local_path, &request.remote_path) {
+                        match self.verify_checksum(
+                            &request.session_id,
+                            &request.local_path,
+                            &request.remote_path,
+                        ) {
                             Ok(hash) => Some(hash),
                             Err(e) => {
                                 warn!("Checksum verification failed: {}", e);
@@ -489,7 +494,11 @@ impl ScpService {
             // Set file times using stat mode from SCP
             // (SCP ScpFileStat doesn't expose mtime/atime directly, so we'll
             //  optionally use the remote stat if available)
-            self.try_preserve_local_times(&request.local_path, &request.session_id, &request.remote_path);
+            self.try_preserve_local_times(
+                &request.local_path,
+                &request.session_id,
+                &request.remote_path,
+            );
         }
 
         info!(
@@ -522,12 +531,7 @@ impl ScpService {
 
     // ── Helper: preserve local file times from remote ────────────────────────
 
-    fn try_preserve_local_times(
-        &self,
-        local_path: &str,
-        session_id: &str,
-        remote_path: &str,
-    ) {
+    fn try_preserve_local_times(&self, local_path: &str, session_id: &str, remote_path: &str) {
         // Best-effort: get remote mtime and apply to local file
         if let Ok(info) = self.remote_stat(session_id, remote_path) {
             if let Some(mtime) = info.mtime {
@@ -536,8 +540,7 @@ impl ScpService {
                 let atime_sys = info
                     .atime
                     .map(|a| {
-                        std::time::UNIX_EPOCH
-                            + std::time::Duration::from_secs(a.timestamp() as u64)
+                        std::time::UNIX_EPOCH + std::time::Duration::from_secs(a.timestamp() as u64)
                     })
                     .unwrap_or(mtime_sys);
                 let _ = filetime::set_file_times(
@@ -582,20 +585,14 @@ impl ScpService {
                     p.status = ScpTransferStatus::Cancelled;
                     return Ok(());
                 }
-                return Err(format!(
-                    "Cannot cancel transfer in {:?} state",
-                    p.status
-                ));
+                return Err(format!("Cannot cancel transfer in {:?} state", p.status));
             }
         }
         Err(format!("Transfer '{}' not found", transfer_id))
     }
 
     /// Get progress for a specific transfer.
-    pub fn get_transfer_progress(
-        &self,
-        transfer_id: &str,
-    ) -> Result<ScpTransferProgress, String> {
+    pub fn get_transfer_progress(&self, transfer_id: &str) -> Result<ScpTransferProgress, String> {
         if let Ok(map) = SCP_TRANSFER_PROGRESS.lock() {
             if let Some(p) = map.get(transfer_id) {
                 return Ok(p.clone());

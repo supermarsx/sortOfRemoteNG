@@ -121,10 +121,7 @@ impl ScpService {
         }
         walker = walker.follow_links(request.follow_symlinks);
 
-        let entries: Vec<walkdir::DirEntry> = walker
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .collect();
+        let entries: Vec<walkdir::DirEntry> = walker.into_iter().filter_map(|e| e.ok()).collect();
 
         // Count files (not directories) for progress
         let file_entries: Vec<&walkdir::DirEntry> = entries
@@ -160,7 +157,11 @@ impl ScpService {
             direction: ScpTransferDirection::Upload,
             local_path: request.local_path.clone(),
             remote_path: request.remote_path.clone(),
-            total_bytes: file_entries.iter().filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum(),
+            total_bytes: file_entries
+                .iter()
+                .filter_map(|e| e.metadata().ok())
+                .map(|m| m.len())
+                .sum(),
             transferred_bytes: 0,
             percent: 0.0,
             speed_bytes_per_sec: 0.0,
@@ -182,10 +183,8 @@ impl ScpService {
         self.remote_mkdir_p(&request.session_id, &request.remote_path)?;
 
         // First, create all directory entries on remote
-        let mut dirs: Vec<&walkdir::DirEntry> = entries
-            .iter()
-            .filter(|e| e.file_type().is_dir())
-            .collect();
+        let mut dirs: Vec<&walkdir::DirEntry> =
+            entries.iter().filter(|e| e.file_type().is_dir()).collect();
         // Sort by depth so parents are created first
         dirs.sort_by_key(|e| e.depth());
 
@@ -197,7 +196,11 @@ impl ScpService {
             if relative.as_os_str().is_empty() {
                 continue;
             }
-            let remote_dir = format!("{}/{}", request.remote_path, relative.to_string_lossy().replace('\\', "/"));
+            let remote_dir = format!(
+                "{}/{}",
+                request.remote_path,
+                relative.to_string_lossy().replace('\\', "/")
+            );
             if let Err(e) = self.remote_mkdir_p(&request.session_id, &remote_dir) {
                 warn!("Failed to create remote dir '{}': {}", remote_dir, e);
                 errors.push(format!("mkdir {}: {}", remote_dir, e));
@@ -219,7 +222,11 @@ impl ScpService {
                 .path()
                 .strip_prefix(&request.local_path)
                 .map_err(|e| format!("Path strip error: {}", e))?;
-            let remote_file = format!("{}/{}", request.remote_path, relative.to_string_lossy().replace('\\', "/"));
+            let remote_file = format!(
+                "{}/{}",
+                request.remote_path,
+                relative.to_string_lossy().replace('\\', "/")
+            );
             let local_file = file_entry.path().to_string_lossy().to_string();
 
             // Update current file in progress
@@ -269,7 +276,9 @@ impl ScpService {
                     p.files_completed = files_transferred + files_failed + files_skipped;
                     p.transferred_bytes = total_bytes;
                     p.percent = if files_total > 0 {
-                        ((files_transferred + files_failed + files_skipped) as f64 / files_total as f64) * 100.0
+                        ((files_transferred + files_failed + files_skipped) as f64
+                            / files_total as f64)
+                            * 100.0
                     } else {
                         100.0
                     };
@@ -321,11 +330,8 @@ impl ScpService {
             .and_then(|p| Pattern::new(p).ok());
 
         // List remote directory recursively using `find`
-        let remote_entries = self.remote_find_files(
-            &request.session_id,
-            &request.remote_path,
-            request.max_depth,
-        )?;
+        let remote_entries =
+            self.remote_find_files(&request.session_id, &request.remote_path, request.max_depth)?;
 
         // Filter entries
         let file_entries: Vec<&(String, bool, u64)> = remote_entries
@@ -474,7 +480,9 @@ impl ScpService {
                     p.files_completed = files_transferred + files_failed + files_skipped;
                     p.transferred_bytes = total_bytes;
                     p.percent = if files_total > 0 {
-                        ((files_transferred + files_failed + files_skipped) as f64 / files_total as f64) * 100.0
+                        ((files_transferred + files_failed + files_skipped) as f64
+                            / files_total as f64)
+                            * 100.0
                     } else {
                         100.0
                     };

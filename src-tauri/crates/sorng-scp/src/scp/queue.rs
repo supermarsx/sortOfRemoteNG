@@ -68,12 +68,36 @@ impl ScpService {
     /// Get a summary of the queue state.
     pub fn queue_status(&self) -> ScpQueueSummary {
         let total = self.queue.len();
-        let pending = self.queue.iter().filter(|e| e.status == ScpQueueStatus::Pending).count();
-        let in_progress = self.queue.iter().filter(|e| e.status == ScpQueueStatus::InProgress).count();
-        let completed = self.queue.iter().filter(|e| e.status == ScpQueueStatus::Completed).count();
-        let failed = self.queue.iter().filter(|e| e.status == ScpQueueStatus::Failed).count();
-        let cancelled = self.queue.iter().filter(|e| e.status == ScpQueueStatus::Cancelled).count();
-        let paused = self.queue.iter().filter(|e| e.status == ScpQueueStatus::Paused).count();
+        let pending = self
+            .queue
+            .iter()
+            .filter(|e| e.status == ScpQueueStatus::Pending)
+            .count();
+        let in_progress = self
+            .queue
+            .iter()
+            .filter(|e| e.status == ScpQueueStatus::InProgress)
+            .count();
+        let completed = self
+            .queue
+            .iter()
+            .filter(|e| e.status == ScpQueueStatus::Completed)
+            .count();
+        let failed = self
+            .queue
+            .iter()
+            .filter(|e| e.status == ScpQueueStatus::Failed)
+            .count();
+        let cancelled = self
+            .queue
+            .iter()
+            .filter(|e| e.status == ScpQueueStatus::Cancelled)
+            .count();
+        let paused = self
+            .queue
+            .iter()
+            .filter(|e| e.status == ScpQueueStatus::Paused)
+            .count();
         let total_bytes: u64 = self.queue.iter().map(|e| e.total_bytes).sum();
         let bytes_transferred: u64 = self.queue.iter().map(|e| e.bytes_transferred).sum();
 
@@ -192,8 +216,7 @@ impl ScpService {
     /// Clear completed entries from the queue.
     pub fn queue_clear_done(&mut self) -> u32 {
         let before = self.queue.len();
-        self.queue
-            .retain(|e| e.status != ScpQueueStatus::Completed);
+        self.queue.retain(|e| e.status != ScpQueueStatus::Completed);
         (before - self.queue.len()) as u32
     }
 
@@ -206,11 +229,7 @@ impl ScpService {
     }
 
     /// Set priority on a queue entry.
-    pub fn queue_set_priority(
-        &mut self,
-        entry_id: &str,
-        priority: u32,
-    ) -> Result<(), String> {
+    pub fn queue_set_priority(&mut self, entry_id: &str, priority: u32) -> Result<(), String> {
         let entry = self
             .queue
             .iter_mut()
@@ -306,8 +325,24 @@ mod tests {
         let state = ScpService::new();
         let mut svc = state.lock().await;
 
-        svc.queue_add("s".into(), "/a".into(), "/b".into(), ScpTransferDirection::Upload, None, None).unwrap();
-        svc.queue_add("s".into(), "/c".into(), "/d".into(), ScpTransferDirection::Download, None, None).unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/a".into(),
+            "/b".into(),
+            ScpTransferDirection::Upload,
+            None,
+            None,
+        )
+        .unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/c".into(),
+            "/d".into(),
+            ScpTransferDirection::Download,
+            None,
+            None,
+        )
+        .unwrap();
 
         let status = svc.queue_status();
         assert_eq!(status.total, 2);
@@ -321,9 +356,33 @@ mod tests {
         let state = ScpService::new();
         let mut svc = state.lock().await;
 
-        svc.queue_add("s".into(), "/low".into(), "/low".into(), ScpTransferDirection::Upload, None, Some(10)).unwrap();
-        svc.queue_add("s".into(), "/high".into(), "/high".into(), ScpTransferDirection::Upload, None, Some(90)).unwrap();
-        svc.queue_add("s".into(), "/mid".into(), "/mid".into(), ScpTransferDirection::Upload, None, Some(50)).unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/low".into(),
+            "/low".into(),
+            ScpTransferDirection::Upload,
+            None,
+            Some(10),
+        )
+        .unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/high".into(),
+            "/high".into(),
+            ScpTransferDirection::Upload,
+            None,
+            Some(90),
+        )
+        .unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/mid".into(),
+            "/mid".into(),
+            ScpTransferDirection::Upload,
+            None,
+            Some(50),
+        )
+        .unwrap();
 
         let list = svc.queue_list();
         assert_eq!(list[0].local_path, "/high");
@@ -336,8 +395,26 @@ mod tests {
         let state = ScpService::new();
         let mut svc = state.lock().await;
 
-        let e1 = svc.queue_add("s".into(), "/a".into(), "/a".into(), ScpTransferDirection::Upload, None, Some(10)).unwrap();
-        let _e2 = svc.queue_add("s".into(), "/b".into(), "/b".into(), ScpTransferDirection::Upload, None, Some(50)).unwrap();
+        let e1 = svc
+            .queue_add(
+                "s".into(),
+                "/a".into(),
+                "/a".into(),
+                ScpTransferDirection::Upload,
+                None,
+                Some(10),
+            )
+            .unwrap();
+        let _e2 = svc
+            .queue_add(
+                "s".into(),
+                "/b".into(),
+                "/b".into(),
+                ScpTransferDirection::Upload,
+                None,
+                Some(50),
+            )
+            .unwrap();
 
         svc.queue_set_priority(&e1.id, 100).unwrap();
         let list = svc.queue_list();
@@ -349,11 +426,27 @@ mod tests {
         let state = ScpService::new();
         let mut svc = state.lock().await;
 
-        svc.queue_add("s".into(), "/a".into(), "/a".into(), ScpTransferDirection::Upload, None, None).unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/a".into(),
+            "/a".into(),
+            ScpTransferDirection::Upload,
+            None,
+            None,
+        )
+        .unwrap();
         // Manually complete the entry
         svc.queue[0].status = ScpQueueStatus::Completed;
 
-        svc.queue_add("s".into(), "/b".into(), "/b".into(), ScpTransferDirection::Upload, None, None).unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/b".into(),
+            "/b".into(),
+            ScpTransferDirection::Upload,
+            None,
+            None,
+        )
+        .unwrap();
 
         let cleared = svc.queue_clear_done();
         assert_eq!(cleared, 1);
@@ -365,7 +458,15 @@ mod tests {
         let state = ScpService::new();
         let mut svc = state.lock().await;
 
-        svc.queue_add("s".into(), "/a".into(), "/a".into(), ScpTransferDirection::Upload, None, None).unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/a".into(),
+            "/a".into(),
+            ScpTransferDirection::Upload,
+            None,
+            None,
+        )
+        .unwrap();
         svc.queue[0].status = ScpQueueStatus::Failed;
         svc.queue[0].error = Some("timeout".into());
 
@@ -380,7 +481,16 @@ mod tests {
         let state = ScpService::new();
         let mut svc = state.lock().await;
 
-        let entry = svc.queue_add("s".into(), "/a".into(), "/a".into(), ScpTransferDirection::Upload, None, None).unwrap();
+        let entry = svc
+            .queue_add(
+                "s".into(),
+                "/a".into(),
+                "/a".into(),
+                ScpTransferDirection::Upload,
+                None,
+                None,
+            )
+            .unwrap();
 
         svc.queue_pause(&entry.id).unwrap();
         assert_eq!(svc.queue[0].status, ScpQueueStatus::Paused);
@@ -402,8 +512,24 @@ mod tests {
         let state = ScpService::new();
         let mut svc = state.lock().await;
 
-        svc.queue_add("s".into(), "/a".into(), "/a".into(), ScpTransferDirection::Upload, None, None).unwrap();
-        svc.queue_add("s".into(), "/b".into(), "/b".into(), ScpTransferDirection::Upload, None, None).unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/a".into(),
+            "/a".into(),
+            ScpTransferDirection::Upload,
+            None,
+            None,
+        )
+        .unwrap();
+        svc.queue_add(
+            "s".into(),
+            "/b".into(),
+            "/b".into(),
+            ScpTransferDirection::Upload,
+            None,
+            None,
+        )
+        .unwrap();
 
         let count = svc.queue_clear_all();
         assert_eq!(count, 2);

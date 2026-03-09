@@ -11,18 +11,18 @@
 //   • Connection diagnostics & bandwidth estimation
 //   • Tauri command bindings for the frontend
 
-pub mod types;
-pub mod service;
-pub mod commands;
-pub mod transfer;
 pub mod batch;
-pub mod queue;
-pub mod history;
+pub mod commands;
 pub mod diagnostics;
+pub mod history;
+pub mod queue;
+pub mod service;
+pub mod transfer;
+pub mod types;
 
-pub use types::*;
-pub use service::ScpService;
 pub use commands::*;
+pub use service::ScpService;
+pub use types::*;
 
 use lazy_static::lazy_static;
 use std::collections::HashMap;

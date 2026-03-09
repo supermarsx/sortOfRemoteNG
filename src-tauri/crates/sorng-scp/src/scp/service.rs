@@ -89,15 +89,10 @@ impl ScpService {
         let banner = session.banner().map(|b| b.to_string());
 
         // Host key fingerprint
-        let fingerprint = session
-            .host_key_hash(ssh2::HashType::Sha256)
-            .map(|bytes| {
-                let encoded = base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    bytes,
-                );
-                format!("SHA256:{}", encoded)
-            });
+        let fingerprint = session.host_key_hash(ssh2::HashType::Sha256).map(|bytes| {
+            let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+            format!("SHA256:{}", encoded)
+        });
 
         // Authenticate
         let auth_method = self
@@ -160,7 +155,9 @@ impl ScpService {
             if let Some(tx) = handle.keepalive_tx.take() {
                 let _ = tx.send(()).await;
             }
-            let _ = handle.session.disconnect(None, "Client disconnecting", None);
+            let _ = handle
+                .session
+                .disconnect(None, "Client disconnecting", None);
             Ok(())
         } else {
             Err(format!("Session '{}' not found", session_id))
@@ -220,7 +217,10 @@ impl ScpService {
             if session.userauth_agent(&config.username).is_ok() && session.authenticated() {
                 return Ok("agent".into());
             }
-            warn!("SCP agent auth failed for {}, trying other methods", config.username);
+            warn!(
+                "SCP agent auth failed for {}, trying other methods",
+                config.username
+            );
         }
 
         // 2. Private key from memory (write to temp file, then use pubkey_file)
@@ -230,12 +230,8 @@ impl ScpService {
             let tmp_dir = std::env::temp_dir();
             let tmp_key = tmp_dir.join(format!("sorng_scp_key_{}", uuid::Uuid::new_v4()));
             if let Ok(()) = std::fs::write(&tmp_key, key_data) {
-                let result = session.userauth_pubkey_file(
-                    &config.username,
-                    None,
-                    &tmp_key,
-                    passphrase,
-                );
+                let result =
+                    session.userauth_pubkey_file(&config.username, None, &tmp_key, passphrase);
                 let _ = std::fs::remove_file(&tmp_key);
                 if result.is_ok() && session.authenticated() {
                     return Ok("publickey-memory".into());
@@ -314,11 +310,7 @@ impl ScpService {
 
     // ── Execute remote command (helper) ──────────────────────────────────────
 
-    pub(crate) fn exec_remote(
-        &self,
-        session_id: &str,
-        command: &str,
-    ) -> Result<String, String> {
+    pub(crate) fn exec_remote(&self, session_id: &str, command: &str) -> Result<String, String> {
         let handle = self
             .sessions
             .get(session_id)
@@ -345,7 +337,10 @@ impl ScpService {
 
     /// Check if a remote path exists.
     pub fn remote_exists(&self, session_id: &str, path: &str) -> Result<bool, String> {
-        let result = self.exec_remote(session_id, &format!("test -e {} && echo yes || echo no", shell_escape(path)));
+        let result = self.exec_remote(
+            session_id,
+            &format!("test -e {} && echo yes || echo no", shell_escape(path)),
+        );
         match result {
             Ok(output) => Ok(output.trim() == "yes"),
             Err(_) => Ok(false),
@@ -354,7 +349,10 @@ impl ScpService {
 
     /// Check if a remote path is a directory.
     pub fn remote_is_dir(&self, session_id: &str, path: &str) -> Result<bool, String> {
-        let result = self.exec_remote(session_id, &format!("test -d {} && echo yes || echo no", shell_escape(path)));
+        let result = self.exec_remote(
+            session_id,
+            &format!("test -d {} && echo yes || echo no", shell_escape(path)),
+        );
         match result {
             Ok(output) => Ok(output.trim() == "yes"),
             Err(_) => Ok(false),
@@ -363,7 +361,14 @@ impl ScpService {
 
     /// Get the size of a remote file.
     pub fn remote_file_size(&self, session_id: &str, path: &str) -> Result<u64, String> {
-        let output = self.exec_remote(session_id, &format!("stat -c %s {} 2>/dev/null || stat -f %z {} 2>/dev/null", shell_escape(path), shell_escape(path)))?;
+        let output = self.exec_remote(
+            session_id,
+            &format!(
+                "stat -c %s {} 2>/dev/null || stat -f %z {} 2>/dev/null",
+                shell_escape(path),
+                shell_escape(path)
+            ),
+        )?;
         output
             .trim()
             .parse::<u64>()
@@ -389,7 +394,11 @@ impl ScpService {
     }
 
     /// List a remote directory.
-    pub fn remote_ls(&self, session_id: &str, path: &str) -> Result<Vec<ScpRemoteDirEntry>, String> {
+    pub fn remote_ls(
+        &self,
+        session_id: &str,
+        path: &str,
+    ) -> Result<Vec<ScpRemoteDirEntry>, String> {
         let output = self.exec_remote(
             session_id,
             &format!(
@@ -478,7 +487,7 @@ impl ScpService {
             ),
         )?;
 
-        let parts: Vec<&str> = output.trim().split_whitespace().collect();
+        let parts: Vec<&str> = output.split_whitespace().collect();
         if parts.len() < 4 {
             return Err(format!("Unexpected stat output: {}", output));
         }
@@ -531,8 +540,8 @@ impl ScpService {
 
     /// Compute SHA-256 checksum of a local file.
     pub fn local_checksum(path: &str) -> Result<String, String> {
-        let mut file = std::fs::File::open(path)
-            .map_err(|e| format!("Cannot open '{}': {}", path, e))?;
+        let mut file =
+            std::fs::File::open(path).map_err(|e| format!("Cannot open '{}': {}", path, e))?;
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; 1_048_576];
         loop {
@@ -548,12 +557,7 @@ impl ScpService {
 
     // ── Update session activity stats ────────────────────────────────────────
 
-    pub(crate) fn update_activity(
-        &mut self,
-        session_id: &str,
-        uploaded: u64,
-        downloaded: u64,
-    ) {
+    pub(crate) fn update_activity(&mut self, session_id: &str, uploaded: u64, downloaded: u64) {
         if let Some(handle) = self.sessions.get_mut(session_id) {
             handle.info.last_activity = Utc::now();
             handle.info.bytes_uploaded += uploaded;
@@ -589,10 +593,7 @@ mod tests {
 
     #[test]
     fn test_shell_escape_single_quotes() {
-        assert_eq!(
-            shell_escape("it's a file"),
-            "'it'\\''s a file'"
-        );
+        assert_eq!(shell_escape("it's a file"), "'it'\\''s a file'");
     }
 
     #[test]
@@ -605,10 +606,7 @@ mod tests {
 
     #[test]
     fn test_shell_escape_special_chars() {
-        assert_eq!(
-            shell_escape("/path/$HOME/file"),
-            "'/path/$HOME/file'"
-        );
+        assert_eq!(shell_escape("/path/$HOME/file"), "'/path/$HOME/file'");
     }
 
     #[tokio::test]

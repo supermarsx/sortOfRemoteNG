@@ -8,11 +8,7 @@ use chrono::Utc;
 const MAX_HISTORY_SIZE: usize = 500;
 
 /// Record a completed or failed transfer in global history.
-pub(crate) fn record_transfer(
-    svc: &ScpService,
-    result: &ScpTransferResult,
-    session_id: &str,
-) {
+pub(crate) fn record_transfer(svc: &ScpService, result: &ScpTransferResult, session_id: &str) {
     let (host, username) = svc
         .sessions
         .get(session_id)
@@ -48,7 +44,11 @@ pub(crate) fn record_transfer(
 
 impl ScpService {
     /// Get transfer history, optionally filtered by session_id.
-    pub fn get_history(&self, session_id: Option<&str>, limit: Option<usize>) -> Vec<ScpTransferRecord> {
+    pub fn get_history(
+        &self,
+        session_id: Option<&str>,
+        limit: Option<usize>,
+    ) -> Vec<ScpTransferRecord> {
         if let Ok(history) = SCP_TRANSFER_HISTORY.lock() {
             let mut filtered: Vec<&ScpTransferRecord> = if let Some(sid) = session_id {
                 history.iter().filter(|r| r.session_id == sid).collect()

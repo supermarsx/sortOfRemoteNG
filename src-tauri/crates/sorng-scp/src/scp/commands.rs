@@ -27,9 +27,7 @@ pub async fn scp_disconnect(
 }
 
 #[tauri::command]
-pub async fn scp_disconnect_all(
-    state: tauri::State<'_, ScpServiceState>,
-) -> Result<u32, String> {
+pub async fn scp_disconnect_all(state: tauri::State<'_, ScpServiceState>) -> Result<u32, String> {
     let mut svc = state.lock().await;
     svc.disconnect_all().await
 }
@@ -153,9 +151,7 @@ pub async fn scp_remote_checksum(
 }
 
 #[tauri::command]
-pub async fn scp_local_checksum(
-    path: String,
-) -> Result<String, String> {
+pub async fn scp_local_checksum(path: String) -> Result<String, String> {
     crate::scp::service::ScpService::local_checksum(&path)
 }
 
@@ -259,7 +255,14 @@ pub async fn scp_queue_add(
     priority: Option<u32>,
 ) -> Result<ScpQueueEntry, String> {
     let mut svc = state.lock().await;
-    svc.queue_add(session_id, local_path, remote_path, direction, file_mode, priority)
+    svc.queue_add(
+        session_id,
+        local_path,
+        remote_path,
+        direction,
+        file_mode,
+        priority,
+    )
 }
 
 #[tauri::command]
@@ -288,17 +291,13 @@ pub async fn scp_queue_status(
 }
 
 #[tauri::command]
-pub async fn scp_queue_start(
-    state: tauri::State<'_, ScpServiceState>,
-) -> Result<(), String> {
+pub async fn scp_queue_start(state: tauri::State<'_, ScpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.queue_start().await
 }
 
 #[tauri::command]
-pub async fn scp_queue_stop(
-    state: tauri::State<'_, ScpServiceState>,
-) -> Result<(), String> {
+pub async fn scp_queue_stop(state: tauri::State<'_, ScpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.queue_stop()
 }
@@ -312,17 +311,13 @@ pub async fn scp_queue_retry_failed(
 }
 
 #[tauri::command]
-pub async fn scp_queue_clear_done(
-    state: tauri::State<'_, ScpServiceState>,
-) -> Result<u32, String> {
+pub async fn scp_queue_clear_done(state: tauri::State<'_, ScpServiceState>) -> Result<u32, String> {
     let mut svc = state.lock().await;
     Ok(svc.queue_clear_done())
 }
 
 #[tauri::command]
-pub async fn scp_queue_clear_all(
-    state: tauri::State<'_, ScpServiceState>,
-) -> Result<u32, String> {
+pub async fn scp_queue_clear_all(state: tauri::State<'_, ScpServiceState>) -> Result<u32, String> {
     let mut svc = state.lock().await;
     Ok(svc.queue_clear_all())
 }
@@ -368,9 +363,7 @@ pub async fn scp_get_history(
 }
 
 #[tauri::command]
-pub async fn scp_clear_history(
-    state: tauri::State<'_, ScpServiceState>,
-) -> Result<u32, String> {
+pub async fn scp_clear_history(state: tauri::State<'_, ScpServiceState>) -> Result<u32, String> {
     let svc = state.lock().await;
     Ok(svc.clear_history())
 }
