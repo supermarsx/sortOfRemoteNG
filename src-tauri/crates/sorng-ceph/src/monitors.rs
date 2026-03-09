@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 use serde_json::Value;
 
 use crate::cluster::{api_get, api_post};
-use crate::error::{CephError, CephErrorKind};
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -15,7 +15,11 @@ pub async fn list_monitors(session: &CephSession) -> Result<Vec<MonitorInfo>, Ce
     let mon_status = api_get(session, "/mon/status").await.unwrap_or(Value::Null);
     let quorum: Vec<u32> = mon_status["quorum"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                .collect()
+        })
         .unwrap_or_default();
 
     let mut monitors = Vec::new();
@@ -36,7 +40,11 @@ pub async fn get_monitor_status(
     let mon_status = api_get(session, "/mon/status").await.unwrap_or(Value::Null);
     let quorum: Vec<u32> = mon_status["quorum"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                .collect()
+        })
         .unwrap_or_default();
 
     Ok(parse_monitor_info(&data, &quorum))
@@ -109,17 +117,29 @@ pub async fn get_quorum_status(session: &CephSession) -> Result<MonStatus, CephE
 
     let quorum: Vec<u32> = data["quorum"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                .collect()
+        })
         .unwrap_or_default();
 
     let quorum_names: Vec<String> = data["quorum_names"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let outside_quorum: Vec<String> = data["outside_quorum"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let state_str = data["state"].as_str().unwrap_or("peon");
@@ -173,12 +193,8 @@ pub async fn get_monitor_map(session: &CephSession) -> Result<MonMap, CephError>
         })
         .unwrap_or_default();
 
-    let modified = data["modified"]
-        .as_str()
-        .and_then(|s| s.parse().ok());
-    let created = data["created"]
-        .as_str()
-        .and_then(|s| s.parse().ok());
+    let modified = data["modified"].as_str().and_then(|s| s.parse().ok());
+    let created = data["created"].as_str().and_then(|s| s.parse().ok());
 
     Ok(MonMap {
         epoch: data["epoch"].as_u64().unwrap_or(0),
@@ -190,10 +206,7 @@ pub async fn get_monitor_map(session: &CephSession) -> Result<MonMap, CephError>
 }
 
 /// Request compaction of a monitor's RocksDB store.
-pub async fn compact_monitor_store(
-    session: &CephSession,
-    mon_name: &str,
-) -> Result<(), CephError> {
+pub async fn compact_monitor_store(session: &CephSession, mon_name: &str) -> Result<(), CephError> {
     let body = serde_json::json!({
         "prefix": "mon compact",
         "who": mon_name,
@@ -209,20 +222,16 @@ pub async fn compact_all_monitor_stores(session: &CephSession) -> Result<(), Cep
     for mon in &monitors {
         compact_monitor_store(session, &mon.name).await?;
     }
-    log::info!("Requested store compaction for all {} monitors", monitors.len());
+    log::info!(
+        "Requested store compaction for all {} monitors",
+        monitors.len()
+    );
     Ok(())
 }
 
 /// Get performance counters for a monitor daemon.
-pub async fn get_monitor_perf(
-    session: &CephSession,
-    mon_name: &str,
-) -> Result<Value, CephError> {
-    let data = api_get(
-        session,
-        &format!("/daemon/mon.{}/perf_counters", mon_name),
-    )
-    .await?;
+pub async fn get_monitor_perf(session: &CephSession, mon_name: &str) -> Result<Value, CephError> {
+    let data = api_get(session, &format!("/daemon/mon.{}/perf_counters", mon_name)).await?;
     Ok(data)
 }
 

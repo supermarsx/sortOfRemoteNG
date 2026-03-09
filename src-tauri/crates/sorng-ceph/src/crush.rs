@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::cluster::{api_delete, api_get, api_post, api_put};
-use crate::error::{CephError, CephErrorKind};
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,12 @@ pub async fn create_crush_rule(
     }
 
     api_post(session, "/crush_rule", &body).await?;
-    log::info!("Created CRUSH rule: {} (root={}, domain={})", name, root, failure_domain);
+    log::info!(
+        "Created CRUSH rule: {} (root={}, domain={})",
+        name,
+        root,
+        failure_domain
+    );
 
     get_crush_rule(session, name).await
 }
@@ -142,10 +147,7 @@ pub async fn create_erasure_crush_rule(
 }
 
 /// Delete a CRUSH rule. The rule must not be in use by any pool.
-pub async fn delete_crush_rule(
-    session: &CephSession,
-    rule_name: &str,
-) -> Result<(), CephError> {
+pub async fn delete_crush_rule(session: &CephSession, rule_name: &str) -> Result<(), CephError> {
     api_delete(session, &format!("/crush_rule/{}", rule_name)).await?;
     log::info!("Deleted CRUSH rule: {}", rule_name);
     Ok(())
@@ -185,7 +187,10 @@ pub async fn get_crush_bucket(
             }
         }
     }
-    Err(CephError::not_found(format!("CRUSH bucket: {}", bucket_name)))
+    Err(CephError::not_found(format!(
+        "CRUSH bucket: {}",
+        bucket_name
+    )))
 }
 
 fn parse_crush_bucket(node: &Value) -> CrushBucket {
@@ -308,10 +313,9 @@ pub async fn list_crush_types(session: &CephSession) -> Result<Vec<CrushType>, C
 
 /// Get the current CRUSH tunables.
 pub async fn get_tunables(session: &CephSession) -> Result<CrushTunables, CephError> {
-    let data = api_get(session, "/crush_rule/tunables").await
-        .or_else(|_| -> Result<Value, CephError> {
-            Ok(Value::Null)
-        })?;
+    let data = api_get(session, "/crush_rule/tunables")
+        .await
+        .or::<CephError>(Ok(Value::Null))?;
 
     // If the dedicated endpoint is not available, try the OSD map
     let tunables_data = if data.is_null() {
@@ -322,31 +326,19 @@ pub async fn get_tunables(session: &CephSession) -> Result<CrushTunables, CephEr
     };
 
     Ok(CrushTunables {
-        choose_local_tries: tunables_data["choose_local_tries"]
-            .as_u64()
-            .unwrap_or(0) as u32,
+        choose_local_tries: tunables_data["choose_local_tries"].as_u64().unwrap_or(0) as u32,
         choose_local_fallback_tries: tunables_data["choose_local_fallback_tries"]
             .as_u64()
             .unwrap_or(0) as u32,
-        choose_total_tries: tunables_data["choose_total_tries"]
-            .as_u64()
-            .unwrap_or(50) as u32,
+        choose_total_tries: tunables_data["choose_total_tries"].as_u64().unwrap_or(50) as u32,
         chooseleaf_descend_once: tunables_data["chooseleaf_descend_once"]
             .as_u64()
             .unwrap_or(1) as u32,
-        chooseleaf_vary_r: tunables_data["chooseleaf_vary_r"]
-            .as_u64()
-            .unwrap_or(1) as u32,
-        chooseleaf_stable: tunables_data["chooseleaf_stable"]
-            .as_u64()
-            .unwrap_or(1) as u32,
-        straw_calc_version: tunables_data["straw_calc_version"]
-            .as_u64()
-            .unwrap_or(1) as u32,
+        chooseleaf_vary_r: tunables_data["chooseleaf_vary_r"].as_u64().unwrap_or(1) as u32,
+        chooseleaf_stable: tunables_data["chooseleaf_stable"].as_u64().unwrap_or(1) as u32,
+        straw_calc_version: tunables_data["straw_calc_version"].as_u64().unwrap_or(1) as u32,
         profile: tunables_data["profile"].as_str().map(String::from),
-        optimal_tunables: tunables_data["optimal_tunables"]
-            .as_bool()
-            .unwrap_or(true),
+        optimal_tunables: tunables_data["optimal_tunables"].as_bool().unwrap_or(true),
     })
 }
 
@@ -355,7 +347,9 @@ pub async fn set_tunables(
     session: &CephSession,
     profile: &str,
 ) -> Result<CrushTunables, CephError> {
-    let valid_profiles = ["legacy", "argonaut", "bobtail", "firefly", "hammer", "jewel", "optimal", "default"];
+    let valid_profiles = [
+        "legacy", "argonaut", "bobtail", "firefly", "hammer", "jewel", "optimal", "default",
+    ];
     if !valid_profiles.contains(&profile) {
         return Err(CephError::invalid_param(format!(
             "Invalid tunables profile: {}. Valid: {}",
@@ -400,10 +394,7 @@ pub async fn set_tunable_value(
 }
 
 /// Get the CRUSH weight for a specific OSD.
-pub async fn get_osd_crush_weight(
-    session: &CephSession,
-    osd_id: u32,
-) -> Result<f64, CephError> {
+pub async fn get_osd_crush_weight(session: &CephSession, osd_id: u32) -> Result<f64, CephError> {
     let data = api_get(session, "/osd/tree").await?;
     if let Some(nodes) = data["nodes"].as_array() {
         for node in nodes {
@@ -415,7 +406,10 @@ pub async fn get_osd_crush_weight(
             }
         }
     }
-    Err(CephError::not_found(format!("OSD {} in CRUSH tree", osd_id)))
+    Err(CephError::not_found(format!(
+        "OSD {} in CRUSH tree",
+        osd_id
+    )))
 }
 
 /// Set the device class for an OSD.
@@ -434,10 +428,7 @@ pub async fn set_osd_device_class(
 }
 
 /// Remove the device class from an OSD.
-pub async fn remove_osd_device_class(
-    session: &CephSession,
-    osd_id: u32,
-) -> Result<(), CephError> {
+pub async fn remove_osd_device_class(session: &CephSession, osd_id: u32) -> Result<(), CephError> {
     let body = serde_json::json!({ "osd": osd_id });
     api_post(session, "/osd/crush/rm-device-class", &body).await?;
     log::info!("Removed device class from osd.{}", osd_id);

@@ -1,8 +1,8 @@
 use chrono::TimeZone;
 use serde_json::Value;
 
-use crate::cluster::{api_get, api_post};
-use crate::error::{CephError, CephErrorKind};
+use crate::cluster::api_get;
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -57,8 +57,16 @@ pub async fn get_cluster_latency(session: &CephSession) -> Result<(f64, f64), Ce
         }
     }
 
-    let avg_commit = if count > 0 { total_commit / count as f64 } else { 0.0 };
-    let avg_apply = if count > 0 { total_apply / count as f64 } else { 0.0 };
+    let avg_commit = if count > 0 {
+        total_commit / count as f64
+    } else {
+        0.0
+    };
+    let avg_apply = if count > 0 {
+        total_apply / count as f64
+    } else {
+        0.0
+    };
 
     Ok((avg_commit, avg_apply))
 }
@@ -136,9 +144,7 @@ pub async fn get_slow_requests(session: &CephSession) -> Result<Vec<SlowRequest>
                         .or_else(|| item["message"].as_str())
                         .unwrap_or("")
                         .to_string(),
-                    initiated_at: item["initiated_at"]
-                        .as_str()
-                        .and_then(|s| s.parse().ok()),
+                    initiated_at: item["initiated_at"].as_str().and_then(|s| s.parse().ok()),
                     osd: item["osd"].as_str().map(String::from),
                     type_name: item["type"].as_str().unwrap_or("osd_op").to_string(),
                 });
@@ -153,7 +159,10 @@ fn extract_osd_from_message(msg: &str) -> Option<String> {
     // Try to find "osd.N" pattern
     for word in msg.split_whitespace() {
         if word.starts_with("osd.") {
-            return Some(word.trim_end_matches(|c: char| !c.is_ascii_digit() && c != '.').to_string());
+            return Some(
+                word.trim_end_matches(|c: char| !c.is_ascii_digit() && c != '.')
+                    .to_string(),
+            );
         }
     }
     None
@@ -217,9 +226,8 @@ pub async fn get_osd_perf(session: &CephSession) -> Result<Vec<OsdPerfCounters>,
             counter.op_w_in_bytes = osd["op_w_in_bytes"].as_u64().unwrap_or(0);
             counter.subop = osd["subop"].as_u64().unwrap_or(0);
             counter.subop_in_bytes = osd["subop_in_bytes"].as_u64().unwrap_or(0);
-            counter.subop_latency_ms = osd["subop_latency"]["avgtime"]
-                .as_f64()
-                .unwrap_or(0.0) * 1000.0;
+            counter.subop_latency_ms =
+                osd["subop_latency"]["avgtime"].as_f64().unwrap_or(0.0) * 1000.0;
             counter.recovery_ops = osd["recovery_ops"].as_u64().unwrap_or(0);
             counter.loadavg = osd["loadavg"].as_f64().unwrap_or(0.0);
             counter.buffer_bytes = osd["buffer_bytes"].as_u64().unwrap_or(0);
@@ -349,7 +357,8 @@ pub async fn get_perf_history(
                 item["value"].as_f64(),
             ) {
                 points.push(PerfDataPoint {
-                    timestamp: chrono::Utc.timestamp_opt(ts, 0)
+                    timestamp: chrono::Utc
+                        .timestamp_opt(ts, 0)
                         .single()
                         .unwrap_or_else(chrono::Utc::now),
                     value: val,

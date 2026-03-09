@@ -18,19 +18,19 @@
 //! - **Performance metrics** — IOPS, throughput, latency, slow requests
 //! - **Alerts** — health checks, muting, acknowledgment
 
-pub mod types;
-pub mod error;
+pub mod alerts;
+pub mod cephfs;
 pub mod cluster;
+pub mod commands;
+pub mod crush;
+pub mod error;
+pub mod mds;
+pub mod monitors;
 pub mod osd;
+pub mod performance;
+pub mod pg;
 pub mod pools;
 pub mod rbd;
-pub mod cephfs;
 pub mod rgw;
-pub mod crush;
-pub mod monitors;
-pub mod mds;
-pub mod pg;
-pub mod performance;
-pub mod alerts;
 pub mod service;
-pub mod commands;
+pub mod types;

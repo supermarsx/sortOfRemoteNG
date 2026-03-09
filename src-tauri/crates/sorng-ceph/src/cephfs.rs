@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 use serde_json::Value;
 
 use crate::cluster::{api_delete, api_get, api_post, api_put};
-use crate::error::{CephError, CephErrorKind};
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -22,10 +22,7 @@ pub async fn list_filesystems(session: &CephSession) -> Result<Vec<CephFsInfo>, 
 }
 
 /// Get detailed information about a specific CephFS filesystem.
-pub async fn get_filesystem(
-    session: &CephSession,
-    fs_name: &str,
-) -> Result<CephFsInfo, CephError> {
+pub async fn get_filesystem(session: &CephSession, fs_name: &str) -> Result<CephFsInfo, CephError> {
     let data = api_get(session, &format!("/cephfs/{}", fs_name)).await?;
     Ok(parse_cephfs_info(&data))
 }
@@ -34,15 +31,27 @@ fn parse_cephfs_info(item: &Value) -> CephFsInfo {
     let mds_map_val = &item["mdsmap"];
     let in_mds: Vec<String> = mds_map_val["in"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     let up_mds: Vec<String> = mds_map_val["up"]
         .as_object()
-        .map(|m| m.values().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|m| {
+            m.values()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     let flags: Vec<String> = mds_map_val["flags"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .or_else(|| {
             mds_map_val["flags"]
                 .as_str()
@@ -81,10 +90,7 @@ fn parse_cephfs_info(item: &Value) -> CephFsInfo {
         name: item["name"].as_str().unwrap_or("").to_string(),
         mds_map,
         data_pools,
-        metadata_pool: item["metadata_pool"]
-            .as_str()
-            .unwrap_or("")
-            .to_string(),
+        metadata_pool: item["metadata_pool"].as_str().unwrap_or("").to_string(),
         max_mds: item["mdsmap"]["max_mds"].as_u64().unwrap_or(1) as u32,
         in_count: item["mdsmap"]["in"]
             .as_array()
@@ -188,9 +194,7 @@ fn parse_subvolume(item: &Value) -> CephFsSubvolume {
         path: item["path"].as_str().unwrap_or("").to_string(),
         state: item["state"].as_str().unwrap_or("complete").to_string(),
         size_bytes: item["bytes_used"].as_u64().or(item["size"].as_u64()),
-        quota_bytes: item["bytes_quota"]
-            .as_u64()
-            .or(item["quota"].as_u64()),
+        quota_bytes: item["bytes_quota"].as_u64().or(item["quota"].as_u64()),
         created_at,
     }
 }
@@ -407,12 +411,7 @@ pub async fn evict_client(
     let body = serde_json::json!({
         "client_id": client_id,
     });
-    api_post(
-        session,
-        &format!("/cephfs/{}/client/evict", fs_name),
-        &body,
-    )
-    .await?;
+    api_post(session, &format!("/cephfs/{}/client/evict", fs_name), &body).await?;
     log::info!("Evicted client {} from fs {}", client_id, fs_name);
     Ok(())
 }
@@ -494,12 +493,7 @@ pub async fn add_data_pool(
     pool_name: &str,
 ) -> Result<(), CephError> {
     let body = serde_json::json!({ "pool": pool_name });
-    api_post(
-        session,
-        &format!("/cephfs/{}/data_pool", fs_name),
-        &body,
-    )
-    .await?;
+    api_post(session, &format!("/cephfs/{}/data_pool", fs_name), &body).await?;
     log::info!("Added data pool {} to fs {}", pool_name, fs_name);
     Ok(())
 }
@@ -526,10 +520,7 @@ pub async fn list_subvolume_snapshots(
     subvol_name: &str,
     group: Option<&str>,
 ) -> Result<Vec<Value>, CephError> {
-    let mut path = format!(
-        "/cephfs/{}/subvolume/{}/snapshot",
-        fs_name, subvol_name
-    );
+    let mut path = format!("/cephfs/{}/subvolume/{}/snapshot", fs_name, subvol_name);
     if let Some(g) = group {
         path = format!("{}?group={}", path, g);
     }

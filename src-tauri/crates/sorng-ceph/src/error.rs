@@ -127,7 +127,10 @@ impl CephError {
     }
 
     pub fn not_found(resource: impl Into<String>) -> Self {
-        Self::new(CephErrorKind::NotFound, format!("Not found: {}", resource.into()))
+        Self::new(
+            CephErrorKind::NotFound,
+            format!("Not found: {}", resource.into()),
+        )
     }
 
     pub fn invalid_param(msg: impl Into<String>) -> Self {
@@ -153,7 +156,10 @@ impl std::error::Error for CephError {}
 impl From<reqwest::Error> for CephError {
     fn from(err: reqwest::Error) -> Self {
         if err.is_timeout() {
-            CephError::new(CephErrorKind::Timeout, format!("Request timed out: {}", err))
+            CephError::new(
+                CephErrorKind::Timeout,
+                format!("Request timed out: {}", err),
+            )
         } else if err.is_connect() {
             CephError::connection(format!("Connection failed: {}", err))
         } else {

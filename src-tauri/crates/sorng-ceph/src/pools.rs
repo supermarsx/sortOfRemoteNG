@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::cluster::{api_delete, api_get, api_post, api_put};
-use crate::error::{CephError, CephErrorKind};
+use crate::error::CephError;
 use crate::types::*;
 
 /// List all pools in the cluster.
@@ -36,7 +36,9 @@ fn parse_pool_info(item: &Value) -> PoolInfo {
         _ => PgAutoscaleMode::On,
     };
 
-    let comp_str = item["options"]["compression_mode"].as_str().unwrap_or("none");
+    let comp_str = item["options"]["compression_mode"]
+        .as_str()
+        .unwrap_or("none");
     let compression_mode = match comp_str {
         "passive" => CompressionMode::Passive,
         "aggressive" => CompressionMode::Aggressive,
@@ -53,7 +55,8 @@ fn parse_pool_info(item: &Value) -> PoolInfo {
         pg_num: item["pg_num"].as_u64().unwrap_or(32) as u32,
         pgp_num: item["pgp_num"].as_u64().unwrap_or(32) as u32,
         pg_autoscale_mode,
-        crush_rule: item["crush_rule"].as_str()
+        crush_rule: item["crush_rule"]
+            .as_str()
             .or_else(|| item["crush_rule"].as_i64().map(|_| "default"))
             .unwrap_or("replicated_rule")
             .to_string(),
@@ -69,9 +72,7 @@ fn parse_pool_info(item: &Value) -> PoolInfo {
         compression_algorithm: item["options"]["compression_algorithm"]
             .as_str()
             .map(String::from),
-        erasure_code_profile: item["erasure_code_profile"]
-            .as_str()
-            .map(String::from),
+        erasure_code_profile: item["erasure_code_profile"].as_str().map(String::from),
         pool_delete_allowed: item["flags_names"]
             .as_str()
             .map(|f| !f.contains("nodelete"))
@@ -143,7 +144,12 @@ pub async fn set_pool_size(
         body["min_size"] = Value::Number(serde_json::Number::from(ms));
     }
     api_put(session, &format!("/pool/{}", pool_name), &body).await?;
-    log::info!("Set pool '{}' size={}, min_size={:?}", pool_name, size, min_size);
+    log::info!(
+        "Set pool '{}' size={}, min_size={:?}",
+        pool_name,
+        size,
+        min_size
+    );
     Ok(())
 }
 
@@ -174,7 +180,12 @@ pub async fn set_pool_quota(
         body["quota_max_bytes"] = Value::Number(serde_json::Number::from(bytes));
     }
     api_put(session, &format!("/pool/{}/quota", pool_name), &body).await?;
-    log::info!("Set pool '{}' quota: max_objects={:?}, max_bytes={:?}", pool_name, max_objects, max_bytes);
+    log::info!(
+        "Set pool '{}' quota: max_objects={:?}, max_bytes={:?}",
+        pool_name,
+        max_objects,
+        max_bytes
+    );
     Ok(())
 }
 
@@ -186,7 +197,11 @@ pub async fn enable_pool_application(
 ) -> Result<(), CephError> {
     let body = serde_json::json!({"application": application});
     api_post(session, &format!("/pool/{}/application", pool_name), &body).await?;
-    log::info!("Enabled application '{}' on pool '{}'", application, pool_name);
+    log::info!(
+        "Enabled application '{}' on pool '{}'",
+        application,
+        pool_name
+    );
     Ok(())
 }
 
@@ -209,21 +224,37 @@ pub async fn set_pool_compression(
         body["compression_algorithm"] = Value::String(algo.to_string());
     }
     api_put(session, &format!("/pool/{}/compression", pool_name), &body).await?;
-    log::info!("Set pool '{}' compression: mode={}, algo={:?}", pool_name, mode_str, algorithm);
+    log::info!(
+        "Set pool '{}' compression: mode={}, algo={:?}",
+        pool_name,
+        mode_str,
+        algorithm
+    );
     Ok(())
 }
 
 /// Get stats for a specific pool.
-pub async fn get_pool_stats(session: &CephSession, pool_name: &str) -> Result<PoolStats, CephError> {
+pub async fn get_pool_stats(
+    session: &CephSession,
+    pool_name: &str,
+) -> Result<PoolStats, CephError> {
     let data = api_get(session, &format!("/pool/{}/stats", pool_name)).await?;
     Ok(PoolStats {
         pool_name: pool_name.to_string(),
         pool_id: data["pool_id"].as_u64().unwrap_or(0) as u32,
         client_io_rate: PoolIoRate {
-            read_ops_per_sec: data["client_io_rate"]["read_op_per_sec"].as_u64().unwrap_or(0),
-            write_ops_per_sec: data["client_io_rate"]["write_op_per_sec"].as_u64().unwrap_or(0),
-            read_bytes_per_sec: data["client_io_rate"]["read_bytes_sec"].as_u64().unwrap_or(0),
-            write_bytes_per_sec: data["client_io_rate"]["write_bytes_sec"].as_u64().unwrap_or(0),
+            read_ops_per_sec: data["client_io_rate"]["read_op_per_sec"]
+                .as_u64()
+                .unwrap_or(0),
+            write_ops_per_sec: data["client_io_rate"]["write_op_per_sec"]
+                .as_u64()
+                .unwrap_or(0),
+            read_bytes_per_sec: data["client_io_rate"]["read_bytes_sec"]
+                .as_u64()
+                .unwrap_or(0),
+            write_bytes_per_sec: data["client_io_rate"]["write_bytes_sec"]
+                .as_u64()
+                .unwrap_or(0),
         },
         recovery_rate: PoolRecoveryRate {
             recovering_objects_per_sec: data["recovery_rate"]["recovering_objects_per_sec"]

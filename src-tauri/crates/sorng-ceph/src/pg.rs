@@ -4,7 +4,7 @@ use chrono::{TimeZone, Utc};
 use serde_json::Value;
 
 use crate::cluster::{api_get, api_post};
-use crate::error::{CephError, CephErrorKind};
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -39,10 +39,7 @@ pub async fn list_pgs_for_pool(
 }
 
 /// Get detailed status of a specific placement group.
-pub async fn get_pg_status(
-    session: &CephSession,
-    pgid: &str,
-) -> Result<PgInfo, CephError> {
+pub async fn get_pg_status(session: &CephSession, pgid: &str) -> Result<PgInfo, CephError> {
     let data = api_get(session, &format!("/pg/{}", pgid)).await?;
     Ok(parse_pg_info(&data))
 }
@@ -50,12 +47,20 @@ pub async fn get_pg_status(
 fn parse_pg_info(item: &Value) -> PgInfo {
     let up: Vec<u32> = item["up"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                .collect()
+        })
         .unwrap_or_default();
 
     let acting: Vec<u32> = item["acting"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                .collect()
+        })
         .unwrap_or_default();
 
     let last_scrub = item["last_scrub_stamp"]
@@ -95,12 +100,13 @@ fn parse_pg_info(item: &Value) -> PgInfo {
         write_ops: stat_sum["num_write"].as_u64().unwrap_or(0),
         read_bytes: stat_sum["num_read_kb"].as_u64().unwrap_or(0) * 1024,
         write_bytes: stat_sum["num_write_kb"].as_u64().unwrap_or(0) * 1024,
-        up_primary: item["up_primary"].as_u64().unwrap_or_else(|| {
-            up.first().copied().unwrap_or(0) as u64
-        }) as u32,
-        acting_primary: item["acting_primary"].as_u64().unwrap_or_else(|| {
-            acting.first().copied().unwrap_or(0) as u64
-        }) as u32,
+        up_primary: item["up_primary"]
+            .as_u64()
+            .unwrap_or_else(|| up.first().copied().unwrap_or(0) as u64) as u32,
+        acting_primary: item["acting_primary"]
+            .as_u64()
+            .unwrap_or_else(|| acting.first().copied().unwrap_or(0) as u64)
+            as u32,
     }
 }
 
@@ -128,7 +134,10 @@ pub async fn get_pg_summary(session: &CephSession) -> Result<PgSummary, CephErro
     if states.is_empty() {
         if let Some(obj) = data["pgs_by_state"].as_array() {
             for entry in obj {
-                let name = entry["state_name"].as_str().unwrap_or("unknown").to_string();
+                let name = entry["state_name"]
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string();
                 let count = entry["count"].as_u64().unwrap_or(0) as u32;
                 states.insert(name, count);
             }
@@ -256,9 +265,7 @@ pub fn parse_pg_state(state: &str) -> PgStateFlags {
 }
 
 /// Get a count of PGs in each state.
-pub async fn get_pg_state_counts(
-    session: &CephSession,
-) -> Result<HashMap<String, u32>, CephError> {
+pub async fn get_pg_state_counts(session: &CephSession) -> Result<HashMap<String, u32>, CephError> {
     let summary = get_pg_summary(session).await?;
     Ok(summary.states)
 }
@@ -306,10 +313,7 @@ pub async fn force_create_pg(session: &CephSession, pgid: &str) -> Result<(), Ce
 }
 
 /// Force recovery of PGs for a specific pool or OSD.
-pub async fn force_recovery(
-    session: &CephSession,
-    pgids: &[String],
-) -> Result<(), CephError> {
+pub async fn force_recovery(session: &CephSession, pgids: &[String]) -> Result<(), CephError> {
     if pgids.is_empty() {
         return Err(CephError::invalid_param("No PG IDs provided"));
     }

@@ -1,7 +1,7 @@
 use serde_json::Value;
 
-use crate::cluster::{api_get, api_post, api_put, api_delete};
-use crate::error::{CephError, CephErrorKind};
+use crate::cluster::{api_get, api_post, api_put};
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -21,10 +21,7 @@ pub async fn list_mds_servers(session: &CephSession) -> Result<Vec<MdsInfo>, Cep
 }
 
 /// Get detailed status of a specific MDS daemon.
-pub async fn get_mds_status(
-    session: &CephSession,
-    mds_name: &str,
-) -> Result<MdsInfo, CephError> {
+pub async fn get_mds_status(session: &CephSession, mds_name: &str) -> Result<MdsInfo, CephError> {
     let data = api_get(session, &format!("/mds/{}", mds_name)).await?;
     Ok(parse_mds_info(&data))
 }
@@ -74,11 +71,7 @@ pub async fn get_mds_perf(
     session: &CephSession,
     mds_name: &str,
 ) -> Result<MdsPerfStats, CephError> {
-    let data = api_get(
-        session,
-        &format!("/daemon/mds.{}/perf_counters", mds_name),
-    )
-    .await?;
+    let data = api_get(session, &format!("/daemon/mds.{}/perf_counters", mds_name)).await?;
 
     let mds_data = &data["mds"];
     let mds_server = &data["mds_server"];
@@ -107,16 +100,12 @@ pub async fn get_mds_perf(
             .as_u64()
             .or_else(|| mds_data["subtrees"]["count"].as_u64())
             .unwrap_or(0),
-        request_rate: mds_server["req"]
-            .as_f64()
-            .unwrap_or(0.0),
+        request_rate: mds_server["req"].as_f64().unwrap_or(0.0),
     })
 }
 
 /// Get performance counters for all active MDS daemons.
-pub async fn get_all_mds_perf(
-    session: &CephSession,
-) -> Result<Vec<MdsPerfStats>, CephError> {
+pub async fn get_all_mds_perf(session: &CephSession) -> Result<Vec<MdsPerfStats>, CephError> {
     let servers = list_mds_servers(session).await?;
     let mut results = Vec::new();
     for mds in &servers {
@@ -133,10 +122,7 @@ pub async fn get_all_mds_perf(
 }
 
 /// Deactivate an MDS daemon (set it to standby).
-pub async fn deactivate_mds(
-    session: &CephSession,
-    mds_name: &str,
-) -> Result<(), CephError> {
+pub async fn deactivate_mds(session: &CephSession, mds_name: &str) -> Result<(), CephError> {
     let body = serde_json::json!({
         "prefix": "mds deactivate",
         "who": mds_name,
@@ -147,10 +133,7 @@ pub async fn deactivate_mds(
 }
 
 /// Failover an MDS daemon, forcing a standby to take over.
-pub async fn failover_mds(
-    session: &CephSession,
-    mds_name: &str,
-) -> Result<(), CephError> {
+pub async fn failover_mds(session: &CephSession, mds_name: &str) -> Result<(), CephError> {
     let body = serde_json::json!({
         "prefix": "mds fail",
         "who": mds_name,
@@ -180,10 +163,7 @@ pub async fn get_mds_map(session: &CephSession) -> Result<Value, CephError> {
 }
 
 /// Get the metadata (version, host, OS info) for a specific MDS.
-pub async fn get_mds_metadata(
-    session: &CephSession,
-    mds_name: &str,
-) -> Result<Value, CephError> {
+pub async fn get_mds_metadata(session: &CephSession, mds_name: &str) -> Result<Value, CephError> {
     api_get(session, &format!("/mds/{}/metadata", mds_name)).await
 }
 
@@ -192,11 +172,7 @@ pub async fn get_mds_cache_stats(
     session: &CephSession,
     mds_name: &str,
 ) -> Result<Value, CephError> {
-    let perf = api_get(
-        session,
-        &format!("/daemon/mds.{}/perf_counters", mds_name),
-    )
-    .await?;
+    let perf = api_get(session, &format!("/daemon/mds.{}/perf_counters", mds_name)).await?;
 
     let mds = &perf["mds"];
     Ok(serde_json::json!({
@@ -212,10 +188,7 @@ pub async fn get_mds_cache_stats(
 }
 
 /// List active MDS sessions (connected clients).
-pub async fn list_mds_sessions(
-    session: &CephSession,
-    mds_name: &str,
-) -> Result<Value, CephError> {
+pub async fn list_mds_sessions(session: &CephSession, mds_name: &str) -> Result<Value, CephError> {
     api_get(session, &format!("/mds/{}/sessions", mds_name)).await
 }
 
@@ -228,12 +201,7 @@ pub async fn evict_mds_client(
     let body = serde_json::json!({
         "client_id": client_id,
     });
-    api_post(
-        session,
-        &format!("/mds/{}/client/evict", mds_name),
-        &body,
-    )
-    .await?;
+    api_post(session, &format!("/mds/{}/client/evict", mds_name), &body).await?;
     log::info!("Evicted client {} from MDS {}", client_id, mds_name);
     Ok(())
 }

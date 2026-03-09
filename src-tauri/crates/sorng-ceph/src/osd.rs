@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::cluster::{api_delete, api_get, api_post, api_put};
-use crate::error::{CephError, CephErrorKind};
+use crate::cluster::{api_get, api_post, api_put};
+use crate::error::CephError;
 use crate::types::*;
 
 /// List all OSDs in the cluster.
 pub async fn list_osds(session: &CephSession) -> Result<Vec<OsdInfo>, CephError> {
     let data = api_get(session, "/osd").await?;
-    let tree_data = api_get(session, "/osd/tree").await.unwrap_or(Value::Null);
+    let _tree_data = api_get(session, "/osd/tree").await.unwrap_or(Value::Null);
     let perf_data = api_get(session, "/osd/perf").await.unwrap_or(Value::Null);
 
     let mut osds = Vec::new();
@@ -38,7 +38,8 @@ pub async fn list_osds(session: &CephSession) -> Result<Vec<OsdInfo>, CephError>
                 }
             }
 
-            let host = item["host"].as_str()
+            let host = item["host"]
+                .as_str()
                 .or_else(|| crush_location.get("host").map(|s| s.as_str()))
                 .unwrap_or("")
                 .to_string();
@@ -50,8 +51,12 @@ pub async fn list_osds(session: &CephSession) -> Result<Vec<OsdInfo>, CephError>
                 .unwrap_or(Value::Null);
 
             let perf_stats = OsdPerfStats {
-                commit_latency_ms: perf["perf_stats"]["commit_latency_ms"].as_f64().unwrap_or(0.0),
-                apply_latency_ms: perf["perf_stats"]["apply_latency_ms"].as_f64().unwrap_or(0.0),
+                commit_latency_ms: perf["perf_stats"]["commit_latency_ms"]
+                    .as_f64()
+                    .unwrap_or(0.0),
+                apply_latency_ms: perf["perf_stats"]["apply_latency_ms"]
+                    .as_f64()
+                    .unwrap_or(0.0),
                 read_ops: 0,
                 write_ops: 0,
                 read_bytes: 0,
@@ -134,7 +139,8 @@ pub async fn get_osd(session: &CephSession, osd_id: u32) -> Result<OsdInfo, Ceph
         }
     }
 
-    let host = data["host"].as_str()
+    let host = data["host"]
+        .as_str()
         .or_else(|| crush_location.get("host").map(|s| s.as_str()))
         .unwrap_or("")
         .to_string();
@@ -266,9 +272,15 @@ pub async fn mark_osd_up(session: &CephSession, osd_id: u32) -> Result<(), CephE
 }
 
 /// Reweight an OSD (value between 0.0 and 1.0).
-pub async fn reweight_osd(session: &CephSession, osd_id: u32, weight: f64) -> Result<(), CephError> {
+pub async fn reweight_osd(
+    session: &CephSession,
+    osd_id: u32,
+    weight: f64,
+) -> Result<(), CephError> {
     if !(0.0..=1.0).contains(&weight) {
-        return Err(CephError::invalid_param("Reweight must be between 0.0 and 1.0"));
+        return Err(CephError::invalid_param(
+            "Reweight must be between 0.0 and 1.0",
+        ));
     }
     let body = serde_json::json!({"reweight": weight});
     api_put(session, &format!("/osd/{}/reweight", osd_id), &body).await?;
@@ -296,8 +308,12 @@ pub async fn get_osd_perf(session: &CephSession) -> Result<Vec<OsdPerfStats>, Ce
     if let Some(infos) = data["osd_perf_infos"].as_array() {
         for info in infos {
             perfs.push(OsdPerfStats {
-                commit_latency_ms: info["perf_stats"]["commit_latency_ms"].as_f64().unwrap_or(0.0),
-                apply_latency_ms: info["perf_stats"]["apply_latency_ms"].as_f64().unwrap_or(0.0),
+                commit_latency_ms: info["perf_stats"]["commit_latency_ms"]
+                    .as_f64()
+                    .unwrap_or(0.0),
+                apply_latency_ms: info["perf_stats"]["apply_latency_ms"]
+                    .as_f64()
+                    .unwrap_or(0.0),
                 read_ops: info["perf_stats"]["op_r"].as_u64().unwrap_or(0),
                 write_ops: info["perf_stats"]["op_w"].as_u64().unwrap_or(0),
                 read_bytes: info["perf_stats"]["op_r_out_bytes"].as_u64().unwrap_or(0),
@@ -321,7 +337,11 @@ pub async fn get_osd_tree(session: &CephSession) -> Result<Vec<OsdTreeNode>, Cep
         for node in arr {
             let children = node["children"]
                 .as_array()
-                .map(|c| c.iter().filter_map(|v| v.as_i64().map(|i| i as i32)).collect())
+                .map(|c| {
+                    c.iter()
+                        .filter_map(|v| v.as_i64().map(|i| i as i32))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             nodes.push(OsdTreeNode {

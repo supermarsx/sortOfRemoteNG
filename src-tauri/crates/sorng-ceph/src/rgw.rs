@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 use serde_json::Value;
 
 use crate::cluster::{api_delete, api_get, api_post, api_put};
-use crate::error::{CephError, CephErrorKind};
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -106,7 +106,10 @@ fn parse_rgw_user(item: &Value) -> RgwUser {
         caps,
         bucket_quota,
         user_quota,
-        op_mask: item["op_mask"].as_str().unwrap_or("read, write, delete").to_string(),
+        op_mask: item["op_mask"]
+            .as_str()
+            .unwrap_or("read, write, delete")
+            .to_string(),
         stats,
     }
 }
@@ -203,10 +206,7 @@ pub async fn delete_user(
 // ---------------------------------------------------------------------------
 
 /// Get the user-level quota for an RGW user.
-pub async fn get_user_quota(
-    session: &CephSession,
-    uid: &str,
-) -> Result<RgwQuota, CephError> {
+pub async fn get_user_quota(session: &CephSession, uid: &str) -> Result<RgwQuota, CephError> {
     let data = api_get(session, &format!("/rgw/user/{}/quota", uid)).await?;
     Ok(parse_quota(&data))
 }
@@ -236,10 +236,7 @@ pub async fn set_user_quota(
 }
 
 /// Get the bucket quota for an RGW user.
-pub async fn get_bucket_quota(
-    session: &CephSession,
-    uid: &str,
-) -> Result<RgwQuota, CephError> {
+pub async fn get_bucket_quota(session: &CephSession, uid: &str) -> Result<RgwQuota, CephError> {
     let data = api_get(
         session,
         &format!("/rgw/user/{}/quota?quota_type=bucket", uid),
@@ -298,10 +295,7 @@ pub async fn list_buckets(session: &CephSession) -> Result<Vec<RgwBucket>, CephE
 }
 
 /// Get detailed information about a specific bucket.
-pub async fn get_bucket(
-    session: &CephSession,
-    bucket_name: &str,
-) -> Result<RgwBucket, CephError> {
+pub async fn get_bucket(session: &CephSession, bucket_name: &str) -> Result<RgwBucket, CephError> {
     let data = api_get(session, &format!("/rgw/bucket/{}", bucket_name)).await?;
     Ok(parse_bucket(&data))
 }
@@ -316,10 +310,12 @@ fn parse_bucket(item: &Value) -> RgwBucket {
                 .map(|t| Utc.timestamp_opt(t, 0).unwrap())
         });
 
-    let size_bytes = item["usage"]["rgw.main"]["size"].as_u64()
+    let size_bytes = item["usage"]["rgw.main"]["size"]
+        .as_u64()
         .or_else(|| item["size"].as_u64())
         .unwrap_or(0);
-    let num_objects = item["usage"]["rgw.main"]["num_objects"].as_u64()
+    let num_objects = item["usage"]["rgw.main"]["num_objects"]
+        .as_u64()
         .or_else(|| item["num_objects"].as_u64())
         .unwrap_or(0);
 
@@ -425,11 +421,7 @@ pub async fn set_bucket_level_quota(
         &body,
     )
     .await?;
-    log::info!(
-        "Set quota for bucket {}: enabled={}",
-        bucket_name,
-        enabled
-    );
+    log::info!("Set quota for bucket {}: enabled={}", bucket_name, enabled);
     Ok(())
 }
 
@@ -474,10 +466,7 @@ pub async fn list_zones(session: &CephSession) -> Result<Vec<RgwZoneInfo>, CephE
 }
 
 /// Get information about a specific zone.
-pub async fn get_zone(
-    session: &CephSession,
-    zone_name: &str,
-) -> Result<RgwZoneInfo, CephError> {
+pub async fn get_zone(session: &CephSession, zone_name: &str) -> Result<RgwZoneInfo, CephError> {
     let data = api_get(session, &format!("/rgw/zone/{}", zone_name)).await?;
     Ok(parse_zone_info(&data))
 }

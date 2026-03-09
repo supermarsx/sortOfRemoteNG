@@ -1,8 +1,8 @@
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
 use serde_json::Value;
 
-use crate::cluster::{api_delete, api_get, api_post, api_put};
-use crate::error::{CephError, CephErrorKind};
+use crate::cluster::{api_delete, api_get, api_post};
+use crate::error::CephError;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -84,7 +84,9 @@ pub async fn mute_health_check(
     sticky: bool,
 ) -> Result<(), CephError> {
     if check_code.is_empty() {
-        return Err(CephError::invalid_param("Health check code cannot be empty"));
+        return Err(CephError::invalid_param(
+            "Health check code cannot be empty",
+        ));
     }
 
     let mut body = serde_json::json!({
@@ -103,12 +105,11 @@ pub async fn mute_health_check(
 }
 
 /// Unmute a previously muted health check.
-pub async fn unmute_health_check(
-    session: &CephSession,
-    check_code: &str,
-) -> Result<(), CephError> {
+pub async fn unmute_health_check(session: &CephSession, check_code: &str) -> Result<(), CephError> {
     if check_code.is_empty() {
-        return Err(CephError::invalid_param("Health check code cannot be empty"));
+        return Err(CephError::invalid_param(
+            "Health check code cannot be empty",
+        ));
     }
 
     api_delete(session, &format!("/health/mute/{}", check_code)).await?;
@@ -158,10 +159,7 @@ pub async fn list_alerts(session: &CephSession) -> Result<Vec<CephAlert>, CephEr
 }
 
 /// Get a specific alert by its check code.
-pub async fn get_alert(
-    session: &CephSession,
-    alert_id: &str,
-) -> Result<CephAlert, CephError> {
+pub async fn get_alert(session: &CephSession, alert_id: &str) -> Result<CephAlert, CephError> {
     let alerts = list_alerts(session).await?;
     alerts
         .into_iter()
@@ -193,10 +191,7 @@ pub async fn acknowledge_alert(
 }
 
 /// Clear (unmute) an acknowledged alert.
-pub async fn clear_alert(
-    session: &CephSession,
-    alert_id: &str,
-) -> Result<(), CephError> {
+pub async fn clear_alert(session: &CephSession, alert_id: &str) -> Result<(), CephError> {
     unmute_health_check(session, alert_id).await?;
     log::info!("Cleared alert: {}", alert_id);
     Ok(())
@@ -257,17 +252,27 @@ pub async fn list_alerts_by_severity(
     severity: AlertSeverity,
 ) -> Result<Vec<CephAlert>, CephError> {
     let alerts = list_alerts(session).await?;
-    Ok(alerts.into_iter().filter(|a| a.severity == severity).collect())
+    Ok(alerts
+        .into_iter()
+        .filter(|a| a.severity == severity)
+        .collect())
 }
 
 /// Get the count of alerts by severity.
-pub async fn get_alert_counts(
-    session: &CephSession,
-) -> Result<(u32, u32, u32), CephError> {
+pub async fn get_alert_counts(session: &CephSession) -> Result<(u32, u32, u32), CephError> {
     let alerts = list_alerts(session).await?;
-    let critical = alerts.iter().filter(|a| a.severity == AlertSeverity::Critical).count() as u32;
-    let warning = alerts.iter().filter(|a| a.severity == AlertSeverity::Warning).count() as u32;
-    let info = alerts.iter().filter(|a| a.severity == AlertSeverity::Info).count() as u32;
+    let critical = alerts
+        .iter()
+        .filter(|a| a.severity == AlertSeverity::Critical)
+        .count() as u32;
+    let warning = alerts
+        .iter()
+        .filter(|a| a.severity == AlertSeverity::Warning)
+        .count() as u32;
+    let info = alerts
+        .iter()
+        .filter(|a| a.severity == AlertSeverity::Info)
+        .count() as u32;
     Ok((critical, warning, info))
 }
 

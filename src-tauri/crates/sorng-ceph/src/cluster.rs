@@ -6,22 +6,29 @@ use crate::types::*;
 
 /// Build the base URL for the Ceph Manager REST API from a session.
 pub fn base_url(session: &CephSession) -> String {
-    let scheme = if session.config.use_tls { "https" } else { "http" };
-    format!("{}://{}:{}/api", scheme, session.config.host, session.config.port)
+    let scheme = if session.config.use_tls {
+        "https"
+    } else {
+        "http"
+    };
+    format!(
+        "{}://{}:{}/api",
+        scheme, session.config.host, session.config.port
+    )
 }
 
 /// Build a configured reqwest::Client for the session.
 pub fn build_client(session: &CephSession) -> Result<Client, CephError> {
-    let mut builder = Client::builder()
-        .timeout(std::time::Duration::from_secs(session.config.timeout_secs));
+    let mut builder =
+        Client::builder().timeout(std::time::Duration::from_secs(session.config.timeout_secs));
 
     if !session.config.verify_cert {
         builder = builder.danger_accept_invalid_certs(true);
     }
 
-    builder.build().map_err(|e| {
-        CephError::connection(format!("Failed to build HTTP client: {}", e))
-    })
+    builder
+        .build()
+        .map_err(|e| CephError::connection(format!("Failed to build HTTP client: {}", e)))
 }
 
 /// Add authentication headers to a request builder.
@@ -167,7 +174,10 @@ pub async fn get_cluster_health(session: &CephSession) -> Result<ClusterHealth, 
                 "HEALTH_WARN" => HealthStatus::Warning,
                 _ => HealthStatus::Error,
             };
-            let summary = check_val["summary"]["message"].as_str().unwrap_or("").to_string();
+            let summary = check_val["summary"]["message"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
             let detail = check_val["detail"]
                 .as_array()
                 .map(|arr| {
@@ -193,7 +203,11 @@ pub async fn get_cluster_health(session: &CephSession) -> Result<ClusterHealth, 
     let quorum_data = api_get(session, "/mon/quorum").await.unwrap_or(Value::Null);
     let quorum_names: Vec<String> = quorum_data["quorum_names"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     let mon_status = MonStatusSummary {
         num_mons: mons,
@@ -239,7 +253,11 @@ pub async fn get_cluster_health(session: &CephSession) -> Result<ClusterHealth, 
     let total = stats["total_bytes"].as_u64().unwrap_or(0);
     let used = stats["total_used_bytes"].as_u64().unwrap_or(0);
     let avail = stats["total_avail_bytes"].as_u64().unwrap_or(0);
-    let used_pct = if total > 0 { (used as f64 / total as f64) * 100.0 } else { 0.0 };
+    let used_pct = if total > 0 {
+        (used as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
     let storage_stats = StorageStats {
         total_bytes: total,
         used_bytes: used,
@@ -248,7 +266,10 @@ pub async fn get_cluster_health(session: &CephSession) -> Result<ClusterHealth, 
         raw_used_bytes: stats["total_used_raw_bytes"].as_u64().unwrap_or(used),
         num_objects: stats["total_objects"].as_u64().unwrap_or(0),
         data_bytes: stats["total_bytes"].as_u64().unwrap_or(0),
-        num_pools: df_data["pools"].as_array().map(|a| a.len() as u32).unwrap_or(0),
+        num_pools: df_data["pools"]
+            .as_array()
+            .map(|a| a.len() as u32)
+            .unwrap_or(0),
     };
 
     Ok(ClusterHealth {
@@ -273,7 +294,11 @@ pub async fn get_cluster_df(session: &CephSession) -> Result<StorageStats, CephE
     let total = stats["total_bytes"].as_u64().unwrap_or(0);
     let used = stats["total_used_bytes"].as_u64().unwrap_or(0);
     let avail = stats["total_avail_bytes"].as_u64().unwrap_or(0);
-    let used_pct = if total > 0 { (used as f64 / total as f64) * 100.0 } else { 0.0 };
+    let used_pct = if total > 0 {
+        (used as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
 
     Ok(StorageStats {
         total_bytes: total,
@@ -283,7 +308,10 @@ pub async fn get_cluster_df(session: &CephSession) -> Result<StorageStats, CephE
         raw_used_bytes: stats["total_used_raw_bytes"].as_u64().unwrap_or(used),
         num_objects: stats["total_objects"].as_u64().unwrap_or(0),
         data_bytes: stats["total_bytes"].as_u64().unwrap_or(0),
-        num_pools: df_data["pools"].as_array().map(|a| a.len() as u32).unwrap_or(0),
+        num_pools: df_data["pools"]
+            .as_array()
+            .map(|a| a.len() as u32)
+            .unwrap_or(0),
     })
 }
 
@@ -353,7 +381,10 @@ pub async fn list_services(session: &CephSession) -> Result<Vec<ServiceInfo>, Ce
             services.push(ServiceInfo {
                 type_name: dtype.clone(),
                 id: item["daemon_id"].as_str().unwrap_or("").to_string(),
-                status: item["status_desc"].as_str().unwrap_or("unknown").to_string(),
+                status: item["status_desc"]
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string(),
                 hostname: item["hostname"].as_str().unwrap_or("").to_string(),
                 daemon_type: dtype_str.to_string(),
                 version: item["version"].as_str().map(String::from),
@@ -386,7 +417,10 @@ pub async fn get_service(
     Ok(ServiceInfo {
         type_name: dtype,
         id: id.to_string(),
-        status: data["status_desc"].as_str().unwrap_or("unknown").to_string(),
+        status: data["status_desc"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string(),
         hostname: data["hostname"].as_str().unwrap_or("").to_string(),
         daemon_type: daemon_type.to_string(),
         version: data["version"].as_str().map(String::from),
@@ -411,9 +445,7 @@ pub async fn restart_service(
 /// Get the Ceph cluster version string.
 pub async fn get_cluster_version(session: &CephSession) -> Result<String, CephError> {
     let data = api_get(session, "/summary").await?;
-    let version = data["health"]["status"]
-        .as_str()
-        .unwrap_or("unknown");
+    let version = data["health"]["status"].as_str().unwrap_or("unknown");
     // The mgr REST API exposes the version at /api/summary
     let ver = data["mgr_map"]["available_modules"]
         .as_array()

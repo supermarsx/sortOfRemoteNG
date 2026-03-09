@@ -9,7 +9,7 @@ use crate::alerts;
 use crate::cephfs;
 use crate::cluster;
 use crate::crush;
-use crate::error::{CephError, CephErrorKind};
+use crate::error::CephError;
 use crate::mds;
 use crate::monitors;
 use crate::osd;
@@ -42,7 +42,10 @@ impl CephService {
     }
 
     /// Connect to a Ceph cluster and establish a new session.
-    pub async fn connect(&mut self, config: CephConnectionConfig) -> Result<CephSession, CephError> {
+    pub async fn connect(
+        &mut self,
+        config: CephConnectionConfig,
+    ) -> Result<CephSession, CephError> {
         let session_id = Uuid::new_v4().to_string();
         let session = CephSession {
             id: session_id.clone(),
@@ -54,11 +57,10 @@ impl CephService {
         };
 
         // Validate the connection by fetching cluster health
-        let health = cluster::api_get(&session, "/health/minimal").await
-            .or_else(|_| -> Result<Value, CephError> {
-                // Sync return for fallback — will try full health on first real call
-                Ok(Value::Null)
-            })?;
+        let health = cluster::api_get(&session, "/health/minimal")
+            .await
+            // Sync return for fallback — will try full health on first real call
+            .or::<CephError>(Ok(Value::Null))?;
 
         let mut validated_session = session;
         if let Some(fsid) = health["fsid"].as_str() {
@@ -71,7 +73,10 @@ impl CephService {
         self.sessions.insert(session_id, validated_session.clone());
         log::info!(
             "Connected to Ceph cluster: {} (session {})",
-            validated_session.cluster_name.as_deref().unwrap_or("unknown"),
+            validated_session
+                .cluster_name
+                .as_deref()
+                .unwrap_or("unknown"),
             validated_session.id
         );
         Ok(validated_session)
@@ -247,11 +252,7 @@ impl CephService {
         rgw::list_users(&session).await
     }
 
-    pub async fn get_rgw_user(
-        &self,
-        session_id: &str,
-        uid: &str,
-    ) -> Result<RgwUser, CephError> {
+    pub async fn get_rgw_user(&self, session_id: &str, uid: &str) -> Result<RgwUser, CephError> {
         let session = self.get_session(session_id)?;
         rgw::get_user(&session, uid).await
     }
@@ -267,11 +268,7 @@ impl CephService {
         rgw::create_user(&session, uid, display_name, email, None, true).await
     }
 
-    pub async fn delete_rgw_user(
-        &self,
-        session_id: &str,
-        uid: &str,
-    ) -> Result<(), CephError> {
+    pub async fn delete_rgw_user(&self, session_id: &str, uid: &str) -> Result<(), CephError> {
         let session = self.get_session(session_id)?;
         rgw::delete_user(&session, uid, false).await
     }
@@ -309,10 +306,7 @@ impl CephService {
         crush::list_crush_rules(&session).await
     }
 
-    pub async fn get_crush_tunables(
-        &self,
-        session_id: &str,
-    ) -> Result<CrushTunables, CephError> {
+    pub async fn get_crush_tunables(&self, session_id: &str) -> Result<CrushTunables, CephError> {
         let session = self.get_session(session_id)?;
         crush::get_tunables(&session).await
     }
@@ -363,11 +357,7 @@ impl CephService {
         mds::get_mds_perf(&session, mds_name).await
     }
 
-    pub async fn failover_mds(
-        &self,
-        session_id: &str,
-        mds_name: &str,
-    ) -> Result<(), CephError> {
+    pub async fn failover_mds(&self, session_id: &str, mds_name: &str) -> Result<(), CephError> {
         let session = self.get_session(session_id)?;
         mds::failover_mds(&session, mds_name).await
     }
@@ -386,29 +376,17 @@ impl CephService {
         pg::get_pg_summary(&session).await
     }
 
-    pub async fn repair_pg(
-        &self,
-        session_id: &str,
-        pgid: &str,
-    ) -> Result<(), CephError> {
+    pub async fn repair_pg(&self, session_id: &str, pgid: &str) -> Result<(), CephError> {
         let session = self.get_session(session_id)?;
         pg::repair_pg(&session, pgid).await
     }
 
-    pub async fn scrub_pg(
-        &self,
-        session_id: &str,
-        pgid: &str,
-    ) -> Result<(), CephError> {
+    pub async fn scrub_pg(&self, session_id: &str, pgid: &str) -> Result<(), CephError> {
         let session = self.get_session(session_id)?;
         pg::scrub_pg(&session, pgid).await
     }
 
-    pub async fn deep_scrub_pg(
-        &self,
-        session_id: &str,
-        pgid: &str,
-    ) -> Result<(), CephError> {
+    pub async fn deep_scrub_pg(&self, session_id: &str, pgid: &str) -> Result<(), CephError> {
         let session = self.get_session(session_id)?;
         pg::deep_scrub_pg(&session, pgid).await
     }
@@ -431,18 +409,12 @@ impl CephService {
         performance::get_perf_metrics(&session).await
     }
 
-    pub async fn get_slow_requests(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<SlowRequest>, CephError> {
+    pub async fn get_slow_requests(&self, session_id: &str) -> Result<Vec<SlowRequest>, CephError> {
         let session = self.get_session(session_id)?;
         performance::get_slow_requests(&session).await
     }
 
-    pub async fn get_osd_perf(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<OsdPerfCounters>, CephError> {
+    pub async fn get_osd_perf(&self, session_id: &str) -> Result<Vec<OsdPerfCounters>, CephError> {
         let session = self.get_session(session_id)?;
         performance::get_osd_perf(&session).await
     }
@@ -452,10 +424,7 @@ impl CephService {
         performance::get_pool_perf(&session).await
     }
 
-    pub async fn get_performance_counters(
-        &self,
-        session_id: &str,
-    ) -> Result<Value, CephError> {
+    pub async fn get_performance_counters(&self, session_id: &str) -> Result<Value, CephError> {
         let session = self.get_session(session_id)?;
         performance::get_performance_counters(&session).await
     }
@@ -518,11 +487,7 @@ impl CephService {
         alerts::acknowledge_alert(&session, alert_id, None).await
     }
 
-    pub async fn clear_alert(
-        &self,
-        session_id: &str,
-        alert_id: &str,
-    ) -> Result<(), CephError> {
+    pub async fn clear_alert(&self, session_id: &str, alert_id: &str) -> Result<(), CephError> {
         let session = self.get_session(session_id)?;
         alerts::clear_alert(&session, alert_id).await
     }
