@@ -96,9 +96,9 @@ fn classify_quality(latency: i32, active_paths: &[PathDetail]) -> ConnectionQual
         .fold(0.0f64, f64::max);
 
     match (latency, best_link) {
-        (l, q) if l >= 0 && l < 20 && q > 0.9 => ConnectionQuality::Excellent,
-        (l, q) if l >= 0 && l < 50 && q > 0.7 => ConnectionQuality::Good,
-        (l, _) if l >= 0 && l < 150 => ConnectionQuality::Fair,
+        (l, q) if (0..20).contains(&l) && q > 0.9 => ConnectionQuality::Excellent,
+        (l, q) if (0..50).contains(&l) && q > 0.7 => ConnectionQuality::Good,
+        (l, _) if (0..150).contains(&l) => ConnectionQuality::Fair,
         (l, _) if l >= 150 => ConnectionQuality::Poor,
         (-1, _) => ConnectionQuality::Fair, // Unknown latency but has paths
         _ => ConnectionQuality::Poor,

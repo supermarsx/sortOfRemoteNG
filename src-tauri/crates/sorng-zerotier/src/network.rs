@@ -119,8 +119,7 @@ pub fn check_route_conflicts(new_route: &ZtRoute, existing: &[ZtRoute]) -> Vec<S
         if route.target == new_route.target {
             conflicts.push(format!(
                 "Route {} already exists (via {:?})",
-                route.target,
-                route.via
+                route.target, route.via
             ));
         }
         // Simple subnet overlap check
@@ -149,7 +148,11 @@ fn routes_overlap(a: &str, b: &str) -> bool {
             .enumerate()
             .fold(0u32, |acc, (i, o)| acc | (o << (24 - i * 8)));
         let prefix: u32 = parts[1].parse().ok()?;
-        let mask = if prefix == 0 { 0 } else { !0u32 << (32 - prefix) };
+        let mask = if prefix == 0 {
+            0
+        } else {
+            !0u32 << (32 - prefix)
+        };
         Some((ip & mask, mask))
     };
 
@@ -162,10 +165,7 @@ fn routes_overlap(a: &str, b: &str) -> bool {
 }
 
 /// Generate managed route entries for the network.
-pub fn suggest_routes(
-    assigned_ips: &[String],
-    include_default: bool,
-) -> Vec<ZtRoute> {
+pub fn suggest_routes(assigned_ips: &[String], include_default: bool) -> Vec<ZtRoute> {
     let mut routes = Vec::new();
 
     for ip in assigned_ips {

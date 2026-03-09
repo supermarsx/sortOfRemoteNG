@@ -4,15 +4,15 @@
 //! network join/leave/config, peer management, flow rules, self-hosted
 //! controller API, DNS, and diagnostics.
 
-pub mod types;
-pub mod service;
+pub mod controller;
 pub mod daemon;
+pub mod diagnostics;
+pub mod dns;
 pub mod network;
 pub mod peer;
 pub mod rules;
-pub mod controller;
-pub mod dns;
-pub mod diagnostics;
+pub mod service;
+pub mod types;
 
-pub use types::*;
 pub use service::{ZeroTierService, ZeroTierServiceState};
+pub use types::*;

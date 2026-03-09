@@ -77,12 +77,26 @@ pub fn version_command() -> Vec<String> {
 
 /// Build info/status command.
 pub fn info_command() -> Vec<String> {
-    vec!["zerotier-cli".to_string(), "info".to_string(), "-j".to_string()]
+    vec![
+        "zerotier-cli".to_string(),
+        "info".to_string(),
+        "-j".to_string(),
+    ]
 }
 
 /// Build command to join a network.
-pub fn join_command(network_id: &str, allow_managed: bool, allow_global: bool, allow_default: bool, allow_dns: bool) -> Vec<String> {
-    let mut cmd = vec!["zerotier-cli".to_string(), "join".to_string(), network_id.to_string()];
+pub fn join_command(
+    network_id: &str,
+    allow_managed: bool,
+    allow_global: bool,
+    allow_default: bool,
+    allow_dns: bool,
+) -> Vec<String> {
+    let mut cmd = vec![
+        "zerotier-cli".to_string(),
+        "join".to_string(),
+        network_id.to_string(),
+    ];
     if allow_managed {
         cmd.push("allowManaged=1".to_string());
     }
@@ -163,8 +177,12 @@ pub fn parse_info_json(json: &str) -> Result<super::types::ZtServiceStatus, Stri
         primary_port: v["config"]["settings"]["primaryPort"]
             .as_u64()
             .unwrap_or(9993) as u16,
-        secondary_port: v["config"]["settings"]["secondaryPort"].as_u64().map(|p| p as u16),
-        tertiary_port: v["config"]["settings"]["tertiaryPort"].as_u64().map(|p| p as u16),
+        secondary_port: v["config"]["settings"]["secondaryPort"]
+            .as_u64()
+            .map(|p| p as u16),
+        tertiary_port: v["config"]["settings"]["tertiaryPort"]
+            .as_u64()
+            .map(|p| p as u16),
         tcp_fallback_active: v["tcpFallbackActive"].as_bool().unwrap_or(false),
         relay_policy: v["config"]["settings"]["relayPolicy"]
             .as_str()
@@ -219,7 +237,11 @@ pub fn parse_networks_json(json: &str) -> Result<Vec<super::types::ZtNetworkDeta
                 netconf_revision: v["netconfRevision"].as_u64().unwrap_or(0),
                 assigned_addresses: v["assignedAddresses"]
                     .as_array()
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 routes: v["routes"]
                     .as_array()
@@ -241,13 +263,19 @@ pub fn parse_networks_json(json: &str) -> Result<Vec<super::types::ZtNetworkDeta
                 allow_global: v["allowGlobal"].as_bool().unwrap_or(false),
                 allow_default: v["allowDefault"].as_bool().unwrap_or(false),
                 allow_dns: v["allowDNS"].as_bool().unwrap_or(true),
-                dns: v["dns"]["domain"].as_str().map(|domain| super::types::ZtDnsConfig {
-                    domain: domain.to_string(),
-                    servers: v["dns"]["servers"]
-                        .as_array()
-                        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-                        .unwrap_or_default(),
-                }),
+                dns: v["dns"]["domain"]
+                    .as_str()
+                    .map(|domain| super::types::ZtDnsConfig {
+                        domain: domain.to_string(),
+                        servers: v["dns"]["servers"]
+                            .as_array()
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    }),
             })
         })
         .collect())
@@ -304,7 +332,7 @@ pub fn parse_peers_json(json: &str) -> Result<Vec<super::types::ZtPeer>, String>
 pub fn read_authtoken(home: Option<&str>) -> Result<String, String> {
     let home_dir = home
         .map(|s| s.to_string())
-        .or_else(|| default_home_dir())
+        .or_else(default_home_dir)
         .ok_or_else(|| "Cannot determine ZeroTier home directory".to_string())?;
 
     let token_path = format!("{}/authtoken.secret", home_dir);

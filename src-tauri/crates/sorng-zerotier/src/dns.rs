@@ -6,23 +6,12 @@
 use serde::{Deserialize, Serialize};
 
 /// DNS configuration for a ZeroTier network.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ZtDnsConfiguration {
     pub enabled: bool,
     pub domain: String,
     pub servers: Vec<String>,
     pub search_domains: Vec<String>,
-}
-
-impl Default for ZtDnsConfiguration {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            domain: String::new(),
-            servers: Vec::new(),
-            search_domains: Vec::new(),
-        }
-    }
 }
 
 /// Build DNS config for the controller API.
@@ -79,10 +68,7 @@ pub fn member_dns_name(hostname: &str, domain: &str) -> String {
 }
 
 /// Suggest DNS configuration based on network.
-pub fn suggest_dns_config(
-    network_name: &str,
-    server_ips: &[String],
-) -> ZtDnsConfiguration {
+pub fn suggest_dns_config(network_name: &str, server_ips: &[String]) -> ZtDnsConfiguration {
     let domain = format!(
         "{}.zt",
         network_name

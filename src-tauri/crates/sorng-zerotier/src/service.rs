@@ -5,7 +5,7 @@
 
 use crate::types::*;
 use chrono::Utc;
-use log::{info, warn};
+use log::info;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -92,7 +92,9 @@ impl ZeroTierService {
     /// Update connection status from CLI output.
     pub fn update_connection_status(&mut self, id: &str, status: ZtConnectionStatus) {
         if let Some(conn) = self.connections.get_mut(id) {
-            if status == ZtConnectionStatus::Connected && conn.status != ZtConnectionStatus::Connected {
+            if status == ZtConnectionStatus::Connected
+                && conn.status != ZtConnectionStatus::Connected
+            {
                 conn.connected_at = Some(Utc::now());
             }
             conn.status = status;
@@ -143,9 +145,7 @@ impl ZeroTierService {
     pub fn direct_peers(&self) -> Vec<&ZtPeer> {
         self.cached_peers
             .iter()
-            .filter(|p| {
-                p.paths.iter().any(|path| path.active && path.preferred)
-            })
+            .filter(|p| p.paths.iter().any(|path| path.active && path.preferred))
             .collect()
     }
 

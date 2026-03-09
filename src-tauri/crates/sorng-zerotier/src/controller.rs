@@ -5,7 +5,6 @@
 
 use crate::types::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Controller API configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,8 +26,8 @@ impl ControllerConfig {
 }
 
 /// Build API path for controller network list.
-pub fn networks_path(controller_address: &str) -> String {
-    format!("controller/network")
+pub fn networks_path(_controller_address: &str) -> String {
+    "controller/network".to_string()
 }
 
 /// Build API path for specific network.
@@ -209,7 +208,10 @@ pub fn validate_create_network(payload: &CreateNetworkPayload) -> Vec<String> {
     // Validate routes
     for route in &payload.routes {
         if !route.target.contains('/') {
-            issues.push(format!("Route target must be CIDR notation: {}", route.target));
+            issues.push(format!(
+                "Route target must be CIDR notation: {}",
+                route.target
+            ));
         }
     }
 
@@ -285,8 +287,7 @@ pub fn parse_network_ids(json: &str) -> Result<Vec<String>, String> {
 
 /// Parse controller network detail.
 pub fn parse_controller_network(json: &str) -> Result<ZtControllerNetwork, String> {
-    serde_json::from_str(json)
-        .map_err(|e| format!("Failed to parse controller network: {}", e))
+    serde_json::from_str(json).map_err(|e| format!("Failed to parse controller network: {}", e))
 }
 
 /// Parse controller member.

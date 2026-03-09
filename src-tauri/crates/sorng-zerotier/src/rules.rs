@@ -4,12 +4,17 @@
 //! Supports the full flow rule language.
 
 use crate::types::*;
-use serde::{Deserialize, Serialize};
 
 /// Rule builder for constructing flow rules.
 #[derive(Debug, Clone)]
 pub struct RuleBuilder {
     rules: Vec<ZtFlowRule>,
+}
+
+impl Default for RuleBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RuleBuilder {
@@ -318,10 +323,7 @@ pub fn validate_rules(rules: &[ZtFlowRule]) -> Vec<String> {
             ));
         }
         if rule.rule_type == "ACTION_ACCEPT"
-            && (i == 0
-                || !rules[..i]
-                    .iter()
-                    .any(|r| r.rule_type.starts_with("MATCH_")))
+            && (i == 0 || !rules[..i].iter().any(|r| r.rule_type.starts_with("MATCH_")))
         {
             after_accept = true;
         }

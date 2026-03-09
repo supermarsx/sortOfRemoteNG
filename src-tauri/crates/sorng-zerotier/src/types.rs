@@ -4,7 +4,6 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// ZeroTier node identity.
 #[derive(Debug, Clone, Serialize, Deserialize)]

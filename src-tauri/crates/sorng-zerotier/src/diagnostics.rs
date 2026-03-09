@@ -5,7 +5,6 @@
 
 use crate::types::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Comprehensive diagnostic report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,8 +52,16 @@ pub fn build_diagnostic_report(
     if let Some(s) = status {
         checks.push(DiagnosticCheck {
             name: "Service Online".to_string(),
-            status: if s.online { CheckStatus::Pass } else { CheckStatus::Fail },
-            message: format!("ZeroTier {} ({})", if s.online { "online" } else { "offline" }, s.version),
+            status: if s.online {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail
+            },
+            message: format!(
+                "ZeroTier {} ({})",
+                if s.online { "online" } else { "offline" },
+                s.version
+            ),
             details: Some(format!("Address: {}, Port: {}", s.address, s.primary_port)),
         });
 
@@ -65,7 +72,8 @@ pub fn build_diagnostic_report(
                 message: "TCP fallback is active — UDP may be blocked".to_string(),
                 details: None,
             });
-            recommendations.push("Check firewall settings to allow UDP traffic on ZeroTier ports".to_string());
+            recommendations
+                .push("Check firewall settings to allow UDP traffic on ZeroTier ports".to_string());
         }
     } else {
         checks.push(DiagnosticCheck {
@@ -126,13 +134,26 @@ pub fn build_diagnostic_report(
 
     // Check peers
     let total_peers = peers.len();
-    let reachable = peers.iter().filter(|p| p.paths.iter().any(|path| path.active)).count();
-    let root_peers = peers.iter().filter(|p| matches!(p.role, ZtPeerRole::Planet | ZtPeerRole::Moon)).count();
+    let reachable = peers
+        .iter()
+        .filter(|p| p.paths.iter().any(|path| path.active))
+        .count();
+    let root_peers = peers
+        .iter()
+        .filter(|p| matches!(p.role, ZtPeerRole::Planet | ZtPeerRole::Moon))
+        .count();
 
     checks.push(DiagnosticCheck {
         name: "Peer Connectivity".to_string(),
-        status: if reachable > 0 { CheckStatus::Pass } else { CheckStatus::Fail },
-        message: format!("{}/{} peers reachable, {} root servers", reachable, total_peers, root_peers),
+        status: if reachable > 0 {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::Fail
+        },
+        message: format!(
+            "{}/{} peers reachable, {} root servers",
+            reachable, total_peers, root_peers
+        ),
         details: None,
     });
 
@@ -143,7 +164,8 @@ pub fn build_diagnostic_report(
             message: "No root servers (planet/moon) reachable".to_string(),
             details: None,
         });
-        recommendations.push("Check internet connectivity and firewall rules for UDP port 9993".to_string());
+        recommendations
+            .push("Check internet connectivity and firewall rules for UDP port 9993".to_string());
     }
 
     // Check for high-latency peers
@@ -206,18 +228,39 @@ pub fn build_diagnostic_report(
 /// Build commands for troubleshooting.
 pub fn troubleshooting_commands() -> Vec<(&'static str, Vec<String>)> {
     vec![
-        ("Service Info", vec!["zerotier-cli".to_string(), "info".to_string(), "-j".to_string()]),
-        ("Network List", vec!["zerotier-cli".to_string(), "listnetworks".to_string(), "-j".to_string()]),
-        ("Peer List", vec!["zerotier-cli".to_string(), "listpeers".to_string(), "-j".to_string()]),
-        ("Moon List", vec!["zerotier-cli".to_string(), "listmoons".to_string()]),
+        (
+            "Service Info",
+            vec![
+                "zerotier-cli".to_string(),
+                "info".to_string(),
+                "-j".to_string(),
+            ],
+        ),
+        (
+            "Network List",
+            vec![
+                "zerotier-cli".to_string(),
+                "listnetworks".to_string(),
+                "-j".to_string(),
+            ],
+        ),
+        (
+            "Peer List",
+            vec![
+                "zerotier-cli".to_string(),
+                "listpeers".to_string(),
+                "-j".to_string(),
+            ],
+        ),
+        (
+            "Moon List",
+            vec!["zerotier-cli".to_string(), "listmoons".to_string()],
+        ),
     ]
 }
 
 /// Analyze potential connectivity issues.
-pub fn analyze_connectivity(
-    status: &ZtServiceStatus,
-    peers: &[ZtPeer],
-) -> Vec<String> {
+pub fn analyze_connectivity(status: &ZtServiceStatus, peers: &[ZtPeer]) -> Vec<String> {
     let mut issues = Vec::new();
 
     if !status.online {
@@ -228,9 +271,14 @@ pub fn analyze_connectivity(
         issues.push("TCP fallback active — UDP likely blocked by firewall".to_string());
     }
 
-    let planet_count = peers.iter().filter(|p| p.role == ZtPeerRole::Planet).count();
+    let planet_count = peers
+        .iter()
+        .filter(|p| p.role == ZtPeerRole::Planet)
+        .count();
     if planet_count == 0 {
-        issues.push("No planet root servers reachable — possible internet connectivity issue".to_string());
+        issues.push(
+            "No planet root servers reachable — possible internet connectivity issue".to_string(),
+        );
     }
 
     let all_high_latency = peers
@@ -238,7 +286,8 @@ pub fn analyze_connectivity(
         .filter(|p| p.latency >= 0)
         .all(|p| p.latency > 300);
     if all_high_latency && !peers.is_empty() {
-        issues.push("All peers have high latency (>300ms) — possible network congestion".to_string());
+        issues
+            .push("All peers have high latency (>300ms) — possible network congestion".to_string());
     }
 
     let no_direct = peers
@@ -246,7 +295,10 @@ pub fn analyze_connectivity(
         .filter(|p| p.role == ZtPeerRole::Leaf)
         .all(|p| !p.paths.iter().any(|path| path.preferred));
     if no_direct {
-        issues.push("No direct peer connections — traffic is being relayed through root servers".to_string());
+        issues.push(
+            "No direct peer connections — traffic is being relayed through root servers"
+                .to_string(),
+        );
     }
 
     issues
