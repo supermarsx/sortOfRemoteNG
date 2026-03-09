@@ -1,0 +1,12 @@
+[package]
+name = "sorng-app-domains-cloud"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sorng-aws = { path = "../sorng-aws" }
+sorng-azure = { path = "../sorng-azure" }
+sorng-cloud = { path = "../sorng-cloud" }
+sorng-exchange = { path = "../sorng-exchange" }
+sorng-gcp = { path = "../sorng-gcp" }
+sorng-smtp = { path = "../sorng-smtp" }

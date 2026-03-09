@@ -1,0 +1,44 @@
+[package]
+name = "sorng-app-domains-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tauri = { workspace = true }
+sorng-1password = { path = "../sorng-1password" }
+sorng-ai-agent = { path = "../sorng-ai-agent" }
+sorng-auth = { path = "../sorng-auth" }
+sorng-biometrics = { path = "../sorng-biometrics" }
+sorng-bitwarden = { path = "../sorng-bitwarden" }
+sorng-core = { path = "../sorng-core" }
+sorng-dashlane = { path = "../sorng-dashlane" }
+sorng-ftp = { path = "../sorng-ftp" }
+sorng-google-passwords = { path = "../sorng-google-passwords" }
+sorng-gpo = { path = "../sorng-gpo" }
+sorng-keepass = { path = "../sorng-keepass" }
+sorng-lastpass = { path = "../sorng-lastpass" }
+sorng-mongodb = { path = "../sorng-mongodb" }
+sorng-mssql = { path = "../sorng-mssql" }
+sorng-mysql = { path = "../sorng-mysql" }
+sorng-network = { path = "../sorng-network" }
+sorng-passbolt = { path = "../sorng-passbolt" }
+sorng-postgres = { path = "../sorng-postgres" }
+sorng-protocols = { path = "../sorng-protocols" }
+sorng-rdp = { path = "../sorng-rdp", optional = true }
+sorng-redis = { path = "../sorng-redis" }
+sorng-remote-mgmt = { path = "../sorng-remote-mgmt" }
+sorng-rustdesk = { path = "../sorng-rustdesk" }
+sorng-scp = { path = "../sorng-scp" }
+sorng-serial = { path = "../sorng-serial" }
+sorng-sftp = { path = "../sorng-sftp" }
+sorng-sqlite = { path = "../sorng-sqlite" }
+sorng-ssh = { path = "../sorng-ssh" }
+sorng-storage = { path = "../sorng-storage" }
+sorng-telnet = { path = "../sorng-telnet" }
+sorng-vault = { path = "../sorng-vault" }
+sorng-vnc = { path = "../sorng-vnc" }
+sorng-vpn = { path = "../sorng-vpn" }
+
+[features]
+default = ["rdp"]
+rdp = ["dep:sorng-rdp"]

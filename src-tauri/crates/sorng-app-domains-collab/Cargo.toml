@@ -1,0 +1,21 @@
+[package]
+name = "sorng-app-domains-collab"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sorng-ai-assist = { path = "../sorng-ai-assist" }
+sorng-collaboration = { path = "../sorng-collaboration" }
+sorng-command-palette = { path = "../sorng-command-palette" }
+sorng-dropbox = { path = "../sorng-dropbox" }
+sorng-extensions = { path = "../sorng-extensions" }
+sorng-fonts = { path = "../sorng-fonts" }
+sorng-gateway = { path = "../sorng-gateway" }
+sorng-gdrive = { path = "../sorng-gdrive" }
+sorng-llm = { path = "../sorng-llm" }
+sorng-nextcloud = { path = "../sorng-nextcloud" }
+sorng-recording = { path = "../sorng-recording" }
+sorng-secure-clip = { path = "../sorng-secure-clip" }
+sorng-telegram = { path = "../sorng-telegram" }
+sorng-terminal-themes = { path = "../sorng-terminal-themes" }
+sorng-whatsapp = { path = "../sorng-whatsapp" }

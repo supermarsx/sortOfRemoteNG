@@ -1,0 +1,15 @@
+[package]
+name = "sorng-app-domains"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sorng-app-domains-cloud = { path = "../sorng-app-domains-cloud" }
+sorng-app-domains-collab = { path = "../sorng-app-domains-collab" }
+sorng-app-domains-core = { path = "../sorng-app-domains-core", default-features = false }
+sorng-app-domains-ops = { path = "../sorng-app-domains-ops" }
+sorng-app-domains-platform = { path = "../sorng-app-domains-platform" }
+
+[features]
+default = ["rdp"]
+rdp = ["sorng-app-domains-core/rdp"]
