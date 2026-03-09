@@ -38,12 +38,12 @@ pub async fn upload_file(
             .unwrap_or("application/octet-stream")
     });
 
-    let strategy = if request.upload_type == UploadType::Resumable || file_size > SIMPLE_UPLOAD_LIMIT
-    {
-        UploadType::Resumable
-    } else {
-        request.upload_type
-    };
+    let strategy =
+        if request.upload_type == UploadType::Resumable || file_size > SIMPLE_UPLOAD_LIMIT {
+            UploadType::Resumable
+        } else {
+            request.upload_type
+        };
 
     match strategy {
         UploadType::Simple => simple_upload(client, &file_data, mime).await,
@@ -134,7 +134,9 @@ async fn multipart_upload_inner(
         "{}?uploadType=multipart&supportsAllDrives=true",
         GDriveClient::upload_url("files")
     );
-    client.post_bytes::<DriveFile>(&url, &content_type, body).await
+    client
+        .post_bytes::<DriveFile>(&url, &content_type, body)
+        .await
 }
 
 // ── Resumable upload ─────────────────────────────────────────────
@@ -191,13 +193,9 @@ async fn resumable_upload_inner(
         let mut headers = HeaderMap::new();
         headers.insert(
             "Content-Range",
-            HeaderValue::from_str(&format!("bytes {}-{}/{}", offset, end - 1, total))
-                .map_err(|e| {
-                    GDriveError::new(
-                        GDriveErrorKind::UploadFailed,
-                        format!("Header error: {e}"),
-                    )
-                })?,
+            HeaderValue::from_str(&format!("bytes {}-{}/{}", offset, end - 1, total)).map_err(
+                |e| GDriveError::new(GDriveErrorKind::UploadFailed, format!("Header error: {e}")),
+            )?,
         );
 
         let resp = client
@@ -220,9 +218,7 @@ async fn resumable_upload_inner(
             if let Some(range) = resp.headers().get("Range") {
                 let range_str = range.to_str().unwrap_or("");
                 if let Some(pos) = range_str.rfind('-') {
-                    let upper: u64 = range_str[pos + 1..]
-                        .parse()
-                        .unwrap_or(end - 1);
+                    let upper: u64 = range_str[pos + 1..].parse().unwrap_or(end - 1);
                     offset = upper + 1;
                 } else {
                     offset = end;
@@ -274,16 +270,16 @@ async fn initiate_resumable_session(
         GDriveErrorKind::UploadFailed,
         "Resumable session init requires raw response — falling back",
     ))
-    .or_else(|_| {
+    .map_err(|_| {
         // For now, use a simplified approach: we post the metadata and assume
         // the server returns the session URI in the response body (which is
         // what happens for well-formed requests).
         // In production, this would use the raw response Location header.
         let _ = resp;
-        Err(GDriveError::new(
+        GDriveError::new(
             GDriveErrorKind::UploadFailed,
             "Resumable upload session initiation not fully implemented in offline mode",
-        ))
+        )
     })
 }
 
@@ -299,9 +295,8 @@ pub async fn resume_upload(
     let mut range_headers = HeaderMap::new();
     range_headers.insert(
         "Content-Range",
-        HeaderValue::from_str(&format!("bytes */{}", total)).map_err(|e| {
-            GDriveError::new(GDriveErrorKind::UploadFailed, format!("Header: {e}"))
-        })?,
+        HeaderValue::from_str(&format!("bytes */{}", total))
+            .map_err(|e| GDriveError::new(GDriveErrorKind::UploadFailed, format!("Header: {e}")))?,
     );
 
     let resp = client
@@ -311,9 +306,10 @@ pub async fn resume_upload(
     let status = resp.status();
     if status.is_success() {
         // Already complete
-        return resp.json().await.map_err(|e| {
-            GDriveError::new(GDriveErrorKind::UploadFailed, format!("Parse: {e}"))
-        });
+        return resp
+            .json()
+            .await
+            .map_err(|e| GDriveError::new(GDriveErrorKind::UploadFailed, format!("Parse: {e}")));
     }
 
     let offset = if status.as_u16() == 308 {
@@ -339,15 +335,8 @@ pub async fn resume_upload(
     let mut h = HeaderMap::new();
     h.insert(
         "Content-Range",
-        HeaderValue::from_str(&format!(
-            "bytes {}-{}/{}",
-            offset,
-            total - 1,
-            total
-        ))
-        .map_err(|e| {
-            GDriveError::new(GDriveErrorKind::UploadFailed, format!("Header: {e}"))
-        })?,
+        HeaderValue::from_str(&format!("bytes {}-{}/{}", offset, total - 1, total))
+            .map_err(|e| GDriveError::new(GDriveErrorKind::UploadFailed, format!("Header: {e}")))?,
     );
 
     let resp = client
@@ -356,9 +345,9 @@ pub async fn resume_upload(
 
     let final_status = resp.status();
     if final_status.is_success() {
-        resp.json().await.map_err(|e| {
-            GDriveError::new(GDriveErrorKind::UploadFailed, format!("Parse: {e}"))
-        })
+        resp.json()
+            .await
+            .map_err(|e| GDriveError::new(GDriveErrorKind::UploadFailed, format!("Parse: {e}")))
     } else {
         let body = resp.text().await.unwrap_or_default();
         Err(GDriveError::from_status(final_status.as_u16(), &body))
@@ -374,12 +363,12 @@ fn build_metadata_json(
 ) -> String {
     let mut map = serde_json::Map::new();
     map.insert("name".into(), serde_json::Value::String(name.into()));
-    map.insert("mimeType".into(), serde_json::Value::String(mime_type.into()));
+    map.insert(
+        "mimeType".into(),
+        serde_json::Value::String(mime_type.into()),
+    );
     if let Some(desc) = description {
-        map.insert(
-            "description".into(),
-            serde_json::Value::String(desc.into()),
-        );
+        map.insert("description".into(), serde_json::Value::String(desc.into()));
     }
     if !parents.is_empty() {
         map.insert(

@@ -60,8 +60,7 @@ impl SearchQueryBuilder {
 
     /// `mimeType = 'value'`
     pub fn mime_type_eq(mut self, value: &str) -> Self {
-        self.clauses
-            .push(format!("mimeType = '{}'", escape(value)));
+        self.clauses.push(format!("mimeType = '{}'", escape(value)));
         self
     }
 
@@ -126,22 +125,19 @@ impl SearchQueryBuilder {
 
     /// `'email' in owners`
     pub fn owned_by(mut self, email: &str) -> Self {
-        self.clauses
-            .push(format!("'{}' in owners", escape(email)));
+        self.clauses.push(format!("'{}' in owners", escape(email)));
         self
     }
 
     /// `'email' in writers`
     pub fn writable_by(mut self, email: &str) -> Self {
-        self.clauses
-            .push(format!("'{}' in writers", escape(email)));
+        self.clauses.push(format!("'{}' in writers", escape(email)));
         self
     }
 
     /// `'email' in readers`
     pub fn readable_by(mut self, email: &str) -> Self {
-        self.clauses
-            .push(format!("'{}' in readers", escape(email)));
+        self.clauses.push(format!("'{}' in readers", escape(email)));
         self
     }
 
@@ -157,8 +153,7 @@ impl SearchQueryBuilder {
 
     /// `visibility = 'limited'`
     pub fn visibility(mut self, vis: &str) -> Self {
-        self.clauses
-            .push(format!("visibility = '{}'", escape(vis)));
+        self.clauses.push(format!("visibility = '{}'", escape(vis)));
         self
     }
 
@@ -166,29 +161,25 @@ impl SearchQueryBuilder {
 
     /// `modifiedTime > 'datetime'` (RFC 3339 string).
     pub fn modified_after(mut self, datetime: &str) -> Self {
-        self.clauses
-            .push(format!("modifiedTime > '{}'", datetime));
+        self.clauses.push(format!("modifiedTime > '{}'", datetime));
         self
     }
 
     /// `modifiedTime < 'datetime'`
     pub fn modified_before(mut self, datetime: &str) -> Self {
-        self.clauses
-            .push(format!("modifiedTime < '{}'", datetime));
+        self.clauses.push(format!("modifiedTime < '{}'", datetime));
         self
     }
 
     /// `createdTime > 'datetime'`
     pub fn created_after(mut self, datetime: &str) -> Self {
-        self.clauses
-            .push(format!("createdTime > '{}'", datetime));
+        self.clauses.push(format!("createdTime > '{}'", datetime));
         self
     }
 
     /// `createdTime < 'datetime'`
     pub fn created_before(mut self, datetime: &str) -> Self {
-        self.clauses
-            .push(format!("createdTime < '{}'", datetime));
+        self.clauses.push(format!("createdTime < '{}'", datetime));
         self
     }
 

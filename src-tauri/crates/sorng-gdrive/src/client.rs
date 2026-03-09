@@ -157,9 +157,9 @@ impl GDriveClient {
         let mut attempt = 0u32;
         loop {
             self.rate_limit().await;
-            let request = build_fn()?.build().map_err(|e| {
-                GDriveError::network(format!("Failed to build request: {e}"))
-            })?;
+            let request = build_fn()?
+                .build()
+                .map_err(|e| GDriveError::network(format!("Failed to build request: {e}")))?;
             debug!("Drive API {} {}", request.method(), request.url());
 
             match self.inner.execute(request).await {
@@ -172,8 +172,7 @@ impl GDriveClient {
                     let err = GDriveError::from_status(status.as_u16(), &body);
 
                     // Retry on 429 and 5xx
-                    if (status == StatusCode::TOO_MANY_REQUESTS
-                        || status.is_server_error())
+                    if (status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error())
                         && attempt < max_retries
                     {
                         attempt += 1;

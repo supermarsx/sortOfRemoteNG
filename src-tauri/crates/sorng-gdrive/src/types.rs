@@ -96,9 +96,7 @@ impl GDriveError {
     pub fn from_status(status: u16, body: &str) -> Self {
         let kind = match status {
             401 => GDriveErrorKind::AuthenticationFailed,
-            403 if body.contains("insufficientPermissions") => {
-                GDriveErrorKind::InsufficientScope
-            }
+            403 if body.contains("insufficientPermissions") => GDriveErrorKind::InsufficientScope,
             403 if body.contains("storageQuotaExceeded") => GDriveErrorKind::QuotaExceeded,
             403 => GDriveErrorKind::PermissionDenied,
             404 => GDriveErrorKind::FileNotFound,
@@ -145,8 +143,7 @@ pub mod scopes {
     /// Access to app-specific data folder only.
     pub const DRIVE_APPDATA: &str = "https://www.googleapis.com/auth/drive.appdata";
     /// Access to view and manage Google Photos.
-    pub const DRIVE_PHOTOS_READONLY: &str =
-        "https://www.googleapis.com/auth/drive.photos.readonly";
+    pub const DRIVE_PHOTOS_READONLY: &str = "https://www.googleapis.com/auth/drive.photos.readonly";
 }
 
 /// OAuth2 client credentials.
@@ -492,6 +489,7 @@ pub struct FileCapabilities {
 /// Paginated file list response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct FileList {
     pub files: Vec<DriveFile>,
     #[serde(default)]
@@ -499,16 +497,6 @@ pub struct FileList {
     /// Whether result set may be incomplete.
     #[serde(default)]
     pub incomplete_search: bool,
-}
-
-impl Default for FileList {
-    fn default() -> Self {
-        Self {
-            files: Vec::new(),
-            next_page_token: None,
-            incomplete_search: false,
-        }
-    }
 }
 
 /// Request parameters for creating a file (metadata only).
@@ -953,6 +941,7 @@ pub struct DriveChange {
 /// Change list response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct ChangeList {
     pub changes: Vec<DriveChange>,
     #[serde(default)]
@@ -962,16 +951,6 @@ pub struct ChangeList {
     pub new_start_page_token: Option<String>,
 }
 
-impl Default for ChangeList {
-    fn default() -> Self {
-        Self {
-            changes: Vec::new(),
-            next_page_token: None,
-            new_start_page_token: None,
-        }
-    }
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Uploads
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -979,19 +958,15 @@ impl Default for ChangeList {
 /// Upload strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum UploadType {
     /// Upload <= 5 MB with no metadata.
     Simple,
     /// Upload <= 5 MB with metadata in a single multipart request.
+    #[default]
     Multipart,
     /// Resumable upload for large files or unreliable networks.
     Resumable,
-}
-
-impl Default for UploadType {
-    fn default() -> Self {
-        Self::Multipart
-    }
 }
 
 /// Parameters for file upload.
@@ -1066,8 +1041,7 @@ pub mod export_formats {
     pub const PDF: &str = "application/pdf";
     pub const DOCX: &str =
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    pub const XLSX: &str =
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    pub const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     pub const PPTX: &str =
         "application/vnd.openxmlformats-officedocument.presentationml.presentation";
     pub const CSV: &str = "text/csv";
@@ -1200,14 +1174,26 @@ mod tests {
     #[test]
     fn error_kind_display_all_variants() {
         assert_eq!(GDriveErrorKind::HttpError(500).to_string(), "HTTP 500");
-        assert_eq!(GDriveErrorKind::AuthenticationFailed.to_string(), "AuthenticationFailed");
+        assert_eq!(
+            GDriveErrorKind::AuthenticationFailed.to_string(),
+            "AuthenticationFailed"
+        );
         assert_eq!(GDriveErrorKind::TokenExpired.to_string(), "TokenExpired");
         assert_eq!(GDriveErrorKind::FileNotFound.to_string(), "FileNotFound");
-        assert_eq!(GDriveErrorKind::PermissionDenied.to_string(), "PermissionDenied");
-        assert_eq!(GDriveErrorKind::RateLimitExceeded.to_string(), "RateLimitExceeded");
+        assert_eq!(
+            GDriveErrorKind::PermissionDenied.to_string(),
+            "PermissionDenied"
+        );
+        assert_eq!(
+            GDriveErrorKind::RateLimitExceeded.to_string(),
+            "RateLimitExceeded"
+        );
         assert_eq!(GDriveErrorKind::QuotaExceeded.to_string(), "QuotaExceeded");
         assert_eq!(GDriveErrorKind::UploadFailed.to_string(), "UploadFailed");
-        assert_eq!(GDriveErrorKind::DownloadFailed.to_string(), "DownloadFailed");
+        assert_eq!(
+            GDriveErrorKind::DownloadFailed.to_string(),
+            "DownloadFailed"
+        );
         assert_eq!(GDriveErrorKind::NetworkError.to_string(), "NetworkError");
         assert_eq!(GDriveErrorKind::ServerError.to_string(), "ServerError");
         assert_eq!(GDriveErrorKind::Other.to_string(), "Other");
@@ -1367,7 +1353,10 @@ mod tests {
     fn mime_types_constants() {
         assert_eq!(mime_types::FOLDER, "application/vnd.google-apps.folder");
         assert_eq!(mime_types::DOCUMENT, "application/vnd.google-apps.document");
-        assert_eq!(mime_types::SPREADSHEET, "application/vnd.google-apps.spreadsheet");
+        assert_eq!(
+            mime_types::SPREADSHEET,
+            "application/vnd.google-apps.spreadsheet"
+        );
     }
 
     #[test]

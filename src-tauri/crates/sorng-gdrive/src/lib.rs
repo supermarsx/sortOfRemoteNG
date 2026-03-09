@@ -17,18 +17,18 @@
 //! - **Change Tracking** – monitor file changes with page tokens
 //! - **Search** – build queries with Drive query syntax
 
-pub mod types;
-pub mod client;
 pub mod auth;
+pub mod changes;
+pub mod client;
+pub mod commands;
+pub mod comments;
+pub mod downloads;
+pub mod drives;
 pub mod files;
 pub mod folders;
-pub mod uploads;
-pub mod downloads;
-pub mod sharing;
 pub mod revisions;
-pub mod comments;
-pub mod drives;
-pub mod changes;
 pub mod search;
 pub mod service;
-pub mod commands;
+pub mod sharing;
+pub mod types;
+pub mod uploads;

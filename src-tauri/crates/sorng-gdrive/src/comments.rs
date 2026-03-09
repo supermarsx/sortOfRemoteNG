@@ -1,9 +1,7 @@
 //! Google Drive comments and replies management.
 
 use crate::client::GDriveClient;
-use crate::types::{
-    CommentList, DriveComment, DriveReply, GDriveResult, ReplyList,
-};
+use crate::types::{CommentList, DriveComment, DriveReply, GDriveResult, ReplyList};
 
 // ──────────────────────────────────────────────────────────────────
 //  Comments
@@ -65,10 +63,7 @@ pub async fn get_comment(
     file_id: &str,
     comment_id: &str,
 ) -> GDriveResult<DriveComment> {
-    let url = GDriveClient::api_url(&format!(
-        "files/{}/comments/{}",
-        file_id, comment_id
-    ));
+    let url = GDriveClient::api_url(&format!("files/{}/comments/{}", file_id, comment_id));
     let query = [("fields", "id,htmlContent,content,createdTime,modifiedTime,author,deleted,resolved,anchor,replies(id,content,htmlContent,createdTime,modifiedTime,author,deleted,action)")];
     client.get_json_with_query(&url, &query).await
 }
@@ -86,10 +81,7 @@ pub async fn create_comment(
     );
 
     let mut body = serde_json::Map::new();
-    body.insert(
-        "content".into(),
-        serde_json::Value::String(content.into()),
-    );
+    body.insert("content".into(), serde_json::Value::String(content.into()));
     if let Some(a) = anchor {
         body.insert("anchor".into(), serde_json::Value::String(a.into()));
     }
@@ -108,17 +100,11 @@ pub async fn update_comment(
 ) -> GDriveResult<DriveComment> {
     let url = format!(
         "{}?fields=id,htmlContent,content,createdTime,modifiedTime,author,deleted,resolved,anchor",
-        GDriveClient::api_url(&format!(
-            "files/{}/comments/{}",
-            file_id, comment_id
-        ))
+        GDriveClient::api_url(&format!("files/{}/comments/{}", file_id, comment_id))
     );
 
     let mut body = serde_json::Map::new();
-    body.insert(
-        "content".into(),
-        serde_json::Value::String(content.into()),
-    );
+    body.insert("content".into(), serde_json::Value::String(content.into()));
 
     client
         .patch_json(&url, &serde_json::Value::Object(body))
@@ -131,10 +117,7 @@ pub async fn delete_comment(
     file_id: &str,
     comment_id: &str,
 ) -> GDriveResult<()> {
-    let url = GDriveClient::api_url(&format!(
-        "files/{}/comments/{}",
-        file_id, comment_id
-    ));
+    let url = GDriveClient::api_url(&format!("files/{}/comments/{}", file_id, comment_id));
     client.delete(&url).await
 }
 
@@ -157,10 +140,7 @@ pub async fn resolve_comment(
         "content".into(),
         serde_json::Value::String("Resolved".into()),
     );
-    body.insert(
-        "action".into(),
-        serde_json::Value::String("resolve".into()),
-    );
+    body.insert("action".into(), serde_json::Value::String("resolve".into()));
 
     client
         .post_json(&url, &serde_json::Value::Object(body))
@@ -186,10 +166,7 @@ pub async fn reopen_comment(
         "content".into(),
         serde_json::Value::String("Reopened".into()),
     );
-    body.insert(
-        "action".into(),
-        serde_json::Value::String("reopen".into()),
-    );
+    body.insert("action".into(), serde_json::Value::String("reopen".into()));
 
     client
         .post_json(&url, &serde_json::Value::Object(body))
@@ -240,10 +217,7 @@ pub async fn create_reply(
     );
 
     let mut body = serde_json::Map::new();
-    body.insert(
-        "content".into(),
-        serde_json::Value::String(content.into()),
-    );
+    body.insert("content".into(), serde_json::Value::String(content.into()));
 
     client
         .post_json(&url, &serde_json::Value::Object(body))
@@ -267,10 +241,7 @@ pub async fn update_reply(
     );
 
     let mut body = serde_json::Map::new();
-    body.insert(
-        "content".into(),
-        serde_json::Value::String(content.into()),
-    );
+    body.insert("content".into(), serde_json::Value::String(content.into()));
 
     client
         .patch_json(&url, &serde_json::Value::Object(body))
@@ -338,10 +309,7 @@ mod tests {
             "content".into(),
             serde_json::Value::String("Resolved".into()),
         );
-        body.insert(
-            "action".into(),
-            serde_json::Value::String("resolve".into()),
-        );
+        body.insert("action".into(), serde_json::Value::String("resolve".into()));
         let json = serde_json::to_string(&body).unwrap();
         assert!(json.contains("resolve"));
     }

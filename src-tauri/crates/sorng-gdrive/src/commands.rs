@@ -36,9 +36,7 @@ pub async fn gdrive_set_credentials(
 
 /// Build the OAuth2 authorization URL.
 #[tauri::command]
-pub async fn gdrive_get_auth_url(
-    state: State<'_, GDriveServiceState>,
-) -> Result<String, String> {
+pub async fn gdrive_get_auth_url(state: State<'_, GDriveServiceState>) -> Result<String, String> {
     let svc = state.lock().await;
     svc.build_auth_url().map_err(err_str)
 }
@@ -55,9 +53,7 @@ pub async fn gdrive_exchange_code(
 
 /// Refresh the access token using the stored refresh token.
 #[tauri::command]
-pub async fn gdrive_refresh_token(
-    state: State<'_, GDriveServiceState>,
-) -> Result<(), String> {
+pub async fn gdrive_refresh_token(state: State<'_, GDriveServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.refresh_token().await.map_err(err_str)
 }
@@ -84,18 +80,14 @@ pub async fn gdrive_get_token(
 
 /// Revoke the current token.
 #[tauri::command]
-pub async fn gdrive_revoke(
-    state: State<'_, GDriveServiceState>,
-) -> Result<(), String> {
+pub async fn gdrive_revoke(state: State<'_, GDriveServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.revoke().await.map_err(err_str)
 }
 
 /// Check if currently authenticated.
 #[tauri::command]
-pub async fn gdrive_is_authenticated(
-    state: State<'_, GDriveServiceState>,
-) -> Result<bool, String> {
+pub async fn gdrive_is_authenticated(state: State<'_, GDriveServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_authenticated())
 }
@@ -113,9 +105,7 @@ pub async fn gdrive_connection_summary(
 
 /// Get account info (user, storage quota, etc.).
 #[tauri::command]
-pub async fn gdrive_get_about(
-    state: State<'_, GDriveServiceState>,
-) -> Result<DriveAbout, String> {
+pub async fn gdrive_get_about(state: State<'_, GDriveServiceState>) -> Result<DriveAbout, String> {
     let mut svc = state.lock().await;
     svc.get_about().await.map_err(err_str)
 }
@@ -242,9 +232,7 @@ pub async fn gdrive_untrash_file(
 
 /// Empty the trash.
 #[tauri::command]
-pub async fn gdrive_empty_trash(
-    state: State<'_, GDriveServiceState>,
-) -> Result<(), String> {
+pub async fn gdrive_empty_trash(state: State<'_, GDriveServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.empty_trash().await.map_err(err_str)
 }

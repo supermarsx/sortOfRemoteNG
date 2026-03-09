@@ -39,9 +39,8 @@ pub async fn create_folder_path(
         last_folder = Some(folder);
     }
 
-    last_folder.ok_or_else(|| {
-        crate::types::GDriveError::invalid("Path must contain at least one segment")
-    })
+    last_folder
+        .ok_or_else(|| crate::types::GDriveError::invalid("Path must contain at least one segment"))
 }
 
 /// List children of a folder.
@@ -122,10 +121,7 @@ pub async fn find_folder(
         name.replace('\'', "\\'")
     );
     if let Some(pid) = parent_id {
-        q.push_str(&format!(
-            " and '{}' in parents",
-            pid.replace('\'', "\\'")
-        ));
+        q.push_str(&format!(" and '{}' in parents", pid.replace('\'', "\\'")));
     }
 
     let params = ListFilesParams {

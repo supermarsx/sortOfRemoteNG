@@ -123,8 +123,7 @@ impl GDriveService {
             .and_then(|t| t.refresh_token.clone())
             .ok_or_else(|| GDriveError::auth("No refresh token available"))?;
 
-        let token =
-            auth::refresh_token(&self.client, &self.credentials, &refresh).await?;
+        let token = auth::refresh_token(&self.client, &self.credentials, &refresh).await?;
         self.client.set_token(token);
         Ok(())
     }
@@ -173,7 +172,10 @@ impl GDriveService {
     pub async fn get_about(&mut self) -> GDriveResult<DriveAbout> {
         self.ensure_auth().await?;
         let url = GDriveClient::api_url("about");
-        let query = [("fields", "user,storageQuota,maxUploadSize,canCreateDrives,exportFormats,importFormats")];
+        let query = [(
+            "fields",
+            "user,storageQuota,maxUploadSize,canCreateDrives,exportFormats,importFormats",
+        )];
 
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -217,11 +219,8 @@ impl GDriveService {
             usage_in_drive_trash: None,
         });
 
-        let parse_i64 = |s: &Option<String>| -> i64 {
-            s.as_deref()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0)
-        };
+        let parse_i64 =
+            |s: &Option<String>| -> i64 { s.as_deref().and_then(|v| v.parse().ok()).unwrap_or(0) };
 
         let export_fmts = raw
             .export_formats
@@ -337,11 +336,7 @@ impl GDriveService {
         files::unstar_file(&self.client, file_id).await
     }
 
-    pub async fn rename_file(
-        &mut self,
-        file_id: &str,
-        new_name: &str,
-    ) -> GDriveResult<DriveFile> {
+    pub async fn rename_file(&mut self, file_id: &str, new_name: &str) -> GDriveResult<DriveFile> {
         self.ensure_auth().await?;
         files::rename_file(&self.client, file_id, new_name).await
     }
@@ -356,11 +351,7 @@ impl GDriveService {
         files::move_file(&self.client, file_id, new_parent, old_parent).await
     }
 
-    pub async fn export_file(
-        &mut self,
-        file_id: &str,
-        mime: &str,
-    ) -> GDriveResult<Vec<u8>> {
+    pub async fn export_file(&mut self, file_id: &str, mime: &str) -> GDriveResult<Vec<u8>> {
         self.ensure_auth().await?;
         files::export_file(&self.client, file_id, mime).await
     }
@@ -400,18 +391,12 @@ impl GDriveService {
         folders::list_children(&self.client, folder_id, page_size, page_token).await
     }
 
-    pub async fn list_all_children(
-        &mut self,
-        folder_id: &str,
-    ) -> GDriveResult<Vec<DriveFile>> {
+    pub async fn list_all_children(&mut self, folder_id: &str) -> GDriveResult<Vec<DriveFile>> {
         self.ensure_auth().await?;
         folders::list_all_children(&self.client, folder_id).await
     }
 
-    pub async fn list_subfolders(
-        &mut self,
-        folder_id: &str,
-    ) -> GDriveResult<Vec<DriveFile>> {
+    pub async fn list_subfolders(&mut self, folder_id: &str) -> GDriveResult<Vec<DriveFile>> {
         self.ensure_auth().await?;
         folders::list_subfolders(&self.client, folder_id).await
     }
@@ -454,11 +439,7 @@ impl GDriveService {
 
     // ── Downloads ────────────────────────────────────────────────
 
-    pub async fn download_file(
-        &mut self,
-        file_id: &str,
-        destination: &str,
-    ) -> GDriveResult<u64> {
+    pub async fn download_file(&mut self, file_id: &str, destination: &str) -> GDriveResult<u64> {
         self.ensure_auth().await?;
         downloads::download_file(&self.client, file_id, destination).await
     }
@@ -489,10 +470,7 @@ impl GDriveService {
         sharing::create_permission(&self.client, file_id, request).await
     }
 
-    pub async fn list_permissions(
-        &mut self,
-        file_id: &str,
-    ) -> GDriveResult<Vec<DrivePermission>> {
+    pub async fn list_permissions(&mut self, file_id: &str) -> GDriveResult<Vec<DrivePermission>> {
         self.ensure_auth().await?;
         sharing::list_all_permissions(&self.client, file_id).await
     }
@@ -543,10 +521,7 @@ impl GDriveService {
 
     // ── Revisions ────────────────────────────────────────────────
 
-    pub async fn list_revisions(
-        &mut self,
-        file_id: &str,
-    ) -> GDriveResult<Vec<DriveRevision>> {
+    pub async fn list_revisions(&mut self, file_id: &str) -> GDriveResult<Vec<DriveRevision>> {
         self.ensure_auth().await?;
         revisions::list_all_revisions(&self.client, file_id).await
     }
@@ -569,11 +544,7 @@ impl GDriveService {
         revisions::pin_revision(&self.client, file_id, revision_id).await
     }
 
-    pub async fn delete_revision(
-        &mut self,
-        file_id: &str,
-        revision_id: &str,
-    ) -> GDriveResult<()> {
+    pub async fn delete_revision(&mut self, file_id: &str, revision_id: &str) -> GDriveResult<()> {
         self.ensure_auth().await?;
         revisions::delete_revision(&self.client, file_id, revision_id).await
     }
@@ -659,12 +630,9 @@ impl GDriveService {
 
     pub async fn poll_changes(&mut self) -> GDriveResult<Vec<DriveChange>> {
         self.ensure_auth().await?;
-        let token = self
-            .change_page_token
-            .clone()
-            .ok_or_else(|| {
-                GDriveError::invalid("No change page token — call get_start_page_token first")
-            })?;
+        let token = self.change_page_token.clone().ok_or_else(|| {
+            GDriveError::invalid("No change page token — call get_start_page_token first")
+        })?;
 
         let (changes, new_token) = changes::poll_changes(&self.client, &token).await?;
         self.change_page_token = Some(new_token);

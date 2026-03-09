@@ -32,8 +32,7 @@ pub async fn list_all_revisions(
     let mut page_token: Option<String> = None;
 
     loop {
-        let page =
-            list_revisions(client, file_id, Some(200), page_token.as_deref()).await?;
+        let page = list_revisions(client, file_id, Some(200), page_token.as_deref()).await?;
         all.extend(page.revisions);
         match page.next_page_token {
             Some(token) => page_token = Some(token),
@@ -50,10 +49,7 @@ pub async fn get_revision(
     file_id: &str,
     revision_id: &str,
 ) -> GDriveResult<DriveRevision> {
-    let url = GDriveClient::api_url(&format!(
-        "files/{}/revisions/{}",
-        file_id, revision_id
-    ));
+    let url = GDriveClient::api_url(&format!("files/{}/revisions/{}", file_id, revision_id));
     let query = [("fields", "id,mimeType,modifiedTime,size,keepForever,md5Checksum,originalFilename,lastModifyingUser,publishAuto,published,publishedOutsideDomain")];
     client.get_json_with_query(&url, &query).await
 }
@@ -67,10 +63,7 @@ pub async fn update_revision(
     publish_auto: Option<bool>,
     published: Option<bool>,
 ) -> GDriveResult<DriveRevision> {
-    let url = GDriveClient::api_url(&format!(
-        "files/{}/revisions/{}",
-        file_id, revision_id
-    ));
+    let url = GDriveClient::api_url(&format!("files/{}/revisions/{}", file_id, revision_id));
 
     let mut body = serde_json::Map::new();
     if let Some(kf) = keep_forever {
@@ -94,10 +87,7 @@ pub async fn delete_revision(
     file_id: &str,
     revision_id: &str,
 ) -> GDriveResult<()> {
-    let url = GDriveClient::api_url(&format!(
-        "files/{}/revisions/{}",
-        file_id, revision_id
-    ));
+    let url = GDriveClient::api_url(&format!("files/{}/revisions/{}", file_id, revision_id));
     client.delete(&url).await
 }
 
@@ -109,10 +99,7 @@ pub async fn download_revision(
 ) -> GDriveResult<Vec<u8>> {
     let url = format!(
         "{}?alt=media",
-        GDriveClient::api_url(&format!(
-            "files/{}/revisions/{}",
-            file_id, revision_id
-        ))
+        GDriveClient::api_url(&format!("files/{}/revisions/{}", file_id, revision_id))
     );
     client.get_bytes(&url).await
 }

@@ -5,7 +5,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::client::GDriveClient;
 use crate::types::{
-    mime_types, DriveFile, DownloadRequest, GDriveError, GDriveErrorKind, GDriveResult,
+    mime_types, DownloadRequest, DriveFile, GDriveError, GDriveErrorKind, GDriveResult,
 };
 
 /// Download a binary (blob) file to a local path.
@@ -22,27 +22,19 @@ pub async fn download_file(
     let bytes = client.get_bytes(&url).await?;
     let size = bytes.len() as u64;
 
-    let mut file = tokio::fs::File::create(destination)
-        .await
-        .map_err(|e| {
-            GDriveError::new(
-                GDriveErrorKind::DownloadFailed,
-                format!("Cannot create file '{}': {}", destination, e),
-            )
-        })?;
-
-    file.write_all(&bytes).await.map_err(|e| {
+    let mut file = tokio::fs::File::create(destination).await.map_err(|e| {
         GDriveError::new(
             GDriveErrorKind::DownloadFailed,
-            format!("Write error: {e}"),
+            format!("Cannot create file '{}': {}", destination, e),
         )
     })?;
 
+    file.write_all(&bytes).await.map_err(|e| {
+        GDriveError::new(GDriveErrorKind::DownloadFailed, format!("Write error: {e}"))
+    })?;
+
     file.flush().await.map_err(|e| {
-        GDriveError::new(
-            GDriveErrorKind::DownloadFailed,
-            format!("Flush error: {e}"),
-        )
+        GDriveError::new(GDriveErrorKind::DownloadFailed, format!("Flush error: {e}"))
     })?;
 
     info!("Downloaded {} bytes to {}", size, destination);
@@ -73,27 +65,19 @@ pub async fn export_file(
     let bytes = crate::files::export_file(client, file_id, export_mime_type).await?;
     let size = bytes.len() as u64;
 
-    let mut file = tokio::fs::File::create(destination)
-        .await
-        .map_err(|e| {
-            GDriveError::new(
-                GDriveErrorKind::DownloadFailed,
-                format!("Cannot create file '{}': {}", destination, e),
-            )
-        })?;
-
-    file.write_all(&bytes).await.map_err(|e| {
+    let mut file = tokio::fs::File::create(destination).await.map_err(|e| {
         GDriveError::new(
             GDriveErrorKind::DownloadFailed,
-            format!("Write error: {e}"),
+            format!("Cannot create file '{}': {}", destination, e),
         )
     })?;
 
+    file.write_all(&bytes).await.map_err(|e| {
+        GDriveError::new(GDriveErrorKind::DownloadFailed, format!("Write error: {e}"))
+    })?;
+
     file.flush().await.map_err(|e| {
-        GDriveError::new(
-            GDriveErrorKind::DownloadFailed,
-            format!("Flush error: {e}"),
-        )
+        GDriveError::new(GDriveErrorKind::DownloadFailed, format!("Flush error: {e}"))
     })?;
 
     info!("Exported {} bytes to {}", size, destination);
@@ -115,7 +99,13 @@ pub async fn process_download(
     request: &DownloadRequest,
 ) -> GDriveResult<u64> {
     if let Some(ref export_mime) = request.export_mime_type {
-        export_file(client, &request.file_id, export_mime, &request.destination_path).await
+        export_file(
+            client,
+            &request.file_id,
+            export_mime,
+            &request.destination_path,
+        )
+        .await
     } else {
         download_file(client, &request.file_id, &request.destination_path).await
     }

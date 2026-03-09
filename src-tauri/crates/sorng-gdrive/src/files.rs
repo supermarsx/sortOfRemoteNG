@@ -4,8 +4,8 @@ use serde::Deserialize;
 
 use crate::client::GDriveClient;
 use crate::types::{
-    CopyFileRequest, CreateFileRequest, DriveFile, FileList, GDriveResult,
-    ListFilesParams, UpdateFileRequest,
+    CopyFileRequest, CreateFileRequest, DriveFile, FileList, GDriveResult, ListFilesParams,
+    UpdateFileRequest,
 };
 
 /// Standard fields to request for file metadata.
@@ -33,10 +33,7 @@ pub async fn get_file_with_fields(
 }
 
 /// List files matching the given parameters.
-pub async fn list_files(
-    client: &GDriveClient,
-    params: &ListFilesParams,
-) -> GDriveResult<FileList> {
+pub async fn list_files(client: &GDriveClient, params: &ListFilesParams) -> GDriveResult<FileList> {
     let url = GDriveClient::api_url("files");
 
     let mut query: Vec<(&str, String)> = Vec::new();
@@ -45,14 +42,19 @@ pub async fn list_files(
         query.push(("q", q.clone()));
     }
 
-    let page_size = params.page_size.unwrap_or(client.config().default_page_size);
+    let page_size = params
+        .page_size
+        .unwrap_or(client.config().default_page_size);
     query.push(("pageSize", page_size.to_string()));
 
     if let Some(ref token) = params.page_token {
         query.push(("pageToken", token.clone()));
     }
 
-    let default_fields = format!("nextPageToken,incompleteSearch,files({})", client.config().default_file_fields);
+    let default_fields = format!(
+        "nextPageToken,incompleteSearch,files({})",
+        client.config().default_file_fields
+    );
     let fields = params.fields.as_deref().unwrap_or(&default_fields);
     query.push(("fields", fields.to_string()));
 
@@ -255,7 +257,7 @@ struct GeneratedIds {
 
 pub async fn generate_ids(client: &GDriveClient, count: u32) -> GDriveResult<Vec<String>> {
     let url = GDriveClient::api_url("files/generateIds");
-    let count_clamped = count.min(1000).max(1);
+    let count_clamped = count.clamp(1, 1000);
     let query = [
         ("count", count_clamped.to_string()),
         ("space", "drive".to_string()),

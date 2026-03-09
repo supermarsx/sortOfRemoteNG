@@ -102,7 +102,9 @@ pub async fn revoke_token(client: &GDriveClient, token: &str) -> GDriveResult<()
 
     debug!("Revoking token");
     let params = [("token", token)];
-    let _: serde_json::Value = client.post_form_unauthenticated(REVOKE_URL, &params).await
+    let _: serde_json::Value = client
+        .post_form_unauthenticated(REVOKE_URL, &params)
+        .await
         .or_else(|e| {
             // Revocation endpoint may return 200 with empty body
             if matches!(e.kind, GDriveErrorKind::NetworkError) {
@@ -116,7 +118,9 @@ pub async fn revoke_token(client: &GDriveClient, token: &str) -> GDriveResult<()
 
 /// Convert the raw token response to our token type.
 fn token_from_response(resp: TokenResponse) -> OAuthToken {
-    let expires_at = resp.expires_in.map(|secs| Utc::now() + Duration::seconds(secs));
+    let expires_at = resp
+        .expires_in
+        .map(|secs| Utc::now() + Duration::seconds(secs));
     OAuthToken {
         access_token: resp.access_token,
         refresh_token: resp.refresh_token,

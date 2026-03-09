@@ -12,9 +12,11 @@ pub async fn list_drives(
     page_token: Option<&str>,
 ) -> GDriveResult<SharedDriveList> {
     let url = GDriveClient::api_url("drives");
-    let mut query: Vec<(&str, String)> = vec![
-        ("fields", "nextPageToken,drives(id,name,colorRgb,createdTime,hidden,restrictions,capabilities)".into()),
-    ];
+    let mut query: Vec<(&str, String)> = vec![(
+        "fields",
+        "nextPageToken,drives(id,name,colorRgb,createdTime,hidden,restrictions,capabilities)"
+            .into(),
+    )];
     if let Some(ps) = page_size {
         query.push(("pageSize", ps.to_string()));
     }
@@ -42,12 +44,12 @@ pub async fn list_all_drives(client: &GDriveClient) -> GDriveResult<Vec<SharedDr
 }
 
 /// Get a specific shared drive.
-pub async fn get_drive(
-    client: &GDriveClient,
-    drive_id: &str,
-) -> GDriveResult<SharedDrive> {
+pub async fn get_drive(client: &GDriveClient, drive_id: &str) -> GDriveResult<SharedDrive> {
     let url = GDriveClient::api_url(&format!("drives/{}", drive_id));
-    let query = [("fields", "id,name,colorRgb,createdTime,hidden,restrictions,capabilities")];
+    let query = [(
+        "fields",
+        "id,name,colorRgb,createdTime,hidden,restrictions,capabilities",
+    )];
     client.get_json_with_query(&url, &query).await
 }
 
@@ -102,21 +104,19 @@ pub async fn delete_drive(client: &GDriveClient, drive_id: &str) -> GDriveResult
 }
 
 /// Hide a shared drive.
-pub async fn hide_drive(
-    client: &GDriveClient,
-    drive_id: &str,
-) -> GDriveResult<SharedDrive> {
+pub async fn hide_drive(client: &GDriveClient, drive_id: &str) -> GDriveResult<SharedDrive> {
     let url = GDriveClient::api_url(&format!("drives/{}/hide", drive_id));
-    client.post_json(&url, &serde_json::Value::Object(serde_json::Map::new())).await
+    client
+        .post_json(&url, &serde_json::Value::Object(serde_json::Map::new()))
+        .await
 }
 
 /// Unhide a shared drive.
-pub async fn unhide_drive(
-    client: &GDriveClient,
-    drive_id: &str,
-) -> GDriveResult<SharedDrive> {
+pub async fn unhide_drive(client: &GDriveClient, drive_id: &str) -> GDriveResult<SharedDrive> {
     let url = GDriveClient::api_url(&format!("drives/{}/unhide", drive_id));
-    client.post_json(&url, &serde_json::Value::Object(serde_json::Map::new())).await
+    client
+        .post_json(&url, &serde_json::Value::Object(serde_json::Map::new()))
+        .await
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -172,10 +172,7 @@ mod tests {
             ..Default::default()
         };
         let mut body = serde_json::Map::new();
-        body.insert(
-            "restrictions".into(),
-            serde_json::to_value(&r).unwrap(),
-        );
+        body.insert("restrictions".into(), serde_json::to_value(&r).unwrap());
         let json = serde_json::to_string(&body).unwrap();
         assert!(json.contains("domainUsersOnly"));
     }

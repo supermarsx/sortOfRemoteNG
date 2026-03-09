@@ -2,8 +2,8 @@
 
 use crate::client::GDriveClient;
 use crate::types::{
-    BatchResult, CreatePermissionRequest, DrivePermission, GDriveResult,
-    PermissionList, UpdatePermissionRequest,
+    BatchResult, CreatePermissionRequest, DrivePermission, GDriveResult, PermissionList,
+    UpdatePermissionRequest,
 };
 
 /// Create a permission on a file.
@@ -63,13 +63,7 @@ pub async fn list_all_permissions(
     let mut page_token: Option<String> = None;
 
     loop {
-        let page = list_permissions(
-            client,
-            file_id,
-            Some(100),
-            page_token.as_deref(),
-        )
-        .await?;
+        let page = list_permissions(client, file_id, Some(100), page_token.as_deref()).await?;
         all.extend(page.permissions);
         match page.next_page_token {
             Some(token) => page_token = Some(token),
@@ -86,10 +80,7 @@ pub async fn get_permission(
     file_id: &str,
     permission_id: &str,
 ) -> GDriveResult<DrivePermission> {
-    let url = GDriveClient::api_url(&format!(
-        "files/{}/permissions/{}",
-        file_id, permission_id
-    ));
+    let url = GDriveClient::api_url(&format!("files/{}/permissions/{}", file_id, permission_id));
     let query = [
         ("supportsAllDrives", "true"),
         ("fields", "id,type,role,emailAddress,domain,displayName,photoLink,expirationTime,deleted,pendingOwner"),
@@ -106,10 +97,7 @@ pub async fn update_permission(
 ) -> GDriveResult<DrivePermission> {
     let url = format!(
         "{}?supportsAllDrives=true",
-        GDriveClient::api_url(&format!(
-            "files/{}/permissions/{}",
-            file_id, permission_id
-        ))
+        GDriveClient::api_url(&format!("files/{}/permissions/{}", file_id, permission_id))
     );
     client.patch_json(&url, request).await
 }
@@ -122,10 +110,7 @@ pub async fn delete_permission(
 ) -> GDriveResult<()> {
     let url = format!(
         "{}?supportsAllDrives=true",
-        GDriveClient::api_url(&format!(
-            "files/{}/permissions/{}",
-            file_id, permission_id
-        ))
+        GDriveClient::api_url(&format!("files/{}/permissions/{}", file_id, permission_id))
     );
     client.delete(&url).await
 }
@@ -209,10 +194,7 @@ pub async fn batch_create_permissions(
 }
 
 /// Remove all permissions from a file except the owner's.
-pub async fn unshare_all(
-    client: &GDriveClient,
-    file_id: &str,
-) -> GDriveResult<BatchResult> {
+pub async fn unshare_all(client: &GDriveClient, file_id: &str) -> GDriveResult<BatchResult> {
     let permissions = list_all_permissions(client, file_id).await?;
     let mut result = BatchResult::new();
 
