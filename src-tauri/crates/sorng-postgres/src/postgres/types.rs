@@ -47,13 +47,19 @@ impl std::error::Error for PgError {}
 
 impl PgError {
     pub fn new(kind: PgErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
     pub fn not_connected() -> Self {
         Self::new(PgErrorKind::NotConnected, "No active PostgreSQL connection")
     }
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(PgErrorKind::SessionNotFound, format!("Session not found: {id}"))
+        Self::new(
+            PgErrorKind::SessionNotFound,
+            format!("Session not found: {id}"),
+        )
     }
 }
 
@@ -172,7 +178,12 @@ pub struct QueryResult {
 
 impl QueryResult {
     pub fn empty(ms: u128) -> Self {
-        Self { columns: vec![], rows: vec![], affected_rows: 0, execution_time_ms: ms }
+        Self {
+            columns: vec![],
+            rows: vec![],
+            affected_rows: 0,
+            execution_time_ms: ms,
+        }
     }
 }
 
@@ -296,19 +307,14 @@ pub struct ExplainNode {
 
 // ── Export / Import ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum ExportFormat {
+    #[default]
     Csv,
     Tsv,
     Sql,
     Json,
     Copy,
-}
-
-impl Default for ExportFormat {
-    fn default() -> Self {
-        Self::Csv
-    }
 }
 
 impl ExportFormat {
@@ -499,12 +505,30 @@ mod tests {
 
     #[test]
     fn export_format_from_str() {
-        assert!(matches!(ExportFormat::from_str_loose("csv"), ExportFormat::Csv));
-        assert!(matches!(ExportFormat::from_str_loose("TSV"), ExportFormat::Tsv));
-        assert!(matches!(ExportFormat::from_str_loose("SQL"), ExportFormat::Sql));
-        assert!(matches!(ExportFormat::from_str_loose("json"), ExportFormat::Json));
-        assert!(matches!(ExportFormat::from_str_loose("copy"), ExportFormat::Copy));
-        assert!(matches!(ExportFormat::from_str_loose("xyz"), ExportFormat::Csv));
+        assert!(matches!(
+            ExportFormat::from_str_loose("csv"),
+            ExportFormat::Csv
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("TSV"),
+            ExportFormat::Tsv
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("SQL"),
+            ExportFormat::Sql
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("json"),
+            ExportFormat::Json
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("copy"),
+            ExportFormat::Copy
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("xyz"),
+            ExportFormat::Csv
+        ));
     }
 
     #[test]

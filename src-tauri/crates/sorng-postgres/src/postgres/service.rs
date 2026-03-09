@@ -2,7 +2,7 @@
 
 use crate::postgres::types::*;
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::{info, warn};
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
 use sqlx::{Column, Row};
 use std::collections::HashMap;
@@ -16,10 +16,12 @@ pub type PostgresServiceState = Arc<Mutex<PostgresService>>;
 
 struct PgSession {
     pool: PgPool,
+    #[allow(dead_code)]
     config: PgConnectionConfig,
     info: SessionInfo,
     #[allow(dead_code)]
     ssh_session: Option<ssh2::Session>,
+    #[allow(dead_code)]
     local_port: Option<u16>,
 }
 
@@ -33,19 +35,32 @@ pub fn new_state() -> PostgresServiceState {
     Arc::new(Mutex::new(PostgresService::new()))
 }
 
+impl Default for PostgresService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PostgresService {
     pub fn new() -> Self {
-        Self { sessions: HashMap::new() }
+        Self {
+            sessions: HashMap::new(),
+        }
     }
 
     // ── helpers ─────────────────────────────────────────────────
 
     fn get_pool(&self, id: &str) -> Result<&PgPool, PgError> {
-        self.sessions.get(id).map(|s| &s.pool).ok_or_else(|| PgError::session_not_found(id))
+        self.sessions
+            .get(id)
+            .map(|s| &s.pool)
+            .ok_or_else(|| PgError::session_not_found(id))
     }
 
     fn get_session_mut(&mut self, id: &str) -> Result<&mut PgSession, PgError> {
-        self.sessions.get_mut(id).ok_or_else(|| PgError::session_not_found(id))
+        self.sessions
+            .get_mut(id)
+            .ok_or_else(|| PgError::session_not_found(id))
     }
 
     fn free_port() -> Result<u16, PgError> {
@@ -57,26 +72,54 @@ impl PostgresService {
 
     // ── SSH tunnel ──────────────────────────────────────────────
 
-    fn setup_ssh_tunnel(cfg: &SshTunnelConfig, remote_host: &str, remote_port: u16) -> Result<(ssh2::Session, u16), PgError> {
+    fn setup_ssh_tunnel(
+        cfg: &SshTunnelConfig,
+        remote_host: &str,
+        remote_port: u16,
+    ) -> Result<(ssh2::Session, u16), PgError> {
         use std::net::TcpStream;
         let local_port = Self::free_port()?;
-        let tcp = TcpStream::connect(format!("{}:{}", cfg.host, cfg.port))
-            .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH TCP connect: {e}")))?;
-        let mut sess = ssh2::Session::new()
-            .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH session new: {e}")))?;
+        let tcp = TcpStream::connect(format!("{}:{}", cfg.host, cfg.port)).map_err(|e| {
+            PgError::new(
+                PgErrorKind::SshTunnelFailed,
+                format!("SSH TCP connect: {e}"),
+            )
+        })?;
+        let mut sess = ssh2::Session::new().map_err(|e| {
+            PgError::new(
+                PgErrorKind::SshTunnelFailed,
+                format!("SSH session new: {e}"),
+            )
+        })?;
         sess.set_tcp_stream(tcp);
-        sess.handshake()
-            .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH handshake: {e}")))?;
+        sess.handshake().map_err(|e| {
+            PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH handshake: {e}"))
+        })?;
         if let Some(ref key_path) = cfg.private_key_path {
-            sess.userauth_pubkey_file(&cfg.username, None, std::path::Path::new(key_path), cfg.passphrase.as_deref())
-                .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH key auth: {e}")))?;
+            sess.userauth_pubkey_file(
+                &cfg.username,
+                None,
+                std::path::Path::new(key_path),
+                cfg.passphrase.as_deref(),
+            )
+            .map_err(|e| {
+                PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH key auth: {e}"))
+            })?;
         } else if let Some(ref pw) = cfg.password {
-            sess.userauth_password(&cfg.username, pw)
-                .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH password auth: {e}")))?;
+            sess.userauth_password(&cfg.username, pw).map_err(|e| {
+                PgError::new(
+                    PgErrorKind::SshTunnelFailed,
+                    format!("SSH password auth: {e}"),
+                )
+            })?;
         } else {
-            return Err(PgError::new(PgErrorKind::SshTunnelFailed, "No SSH credentials"));
+            return Err(PgError::new(
+                PgErrorKind::SshTunnelFailed,
+                "No SSH credentials",
+            ));
         }
-        let _channel = sess.channel_direct_tcpip(remote_host, remote_port, None)
+        let _channel = sess
+            .channel_direct_tcpip(remote_host, remote_port, None)
             .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH tunnel: {e}")))?;
         info!("SSH tunnel established on local port {local_port} → {remote_host}:{remote_port}");
         Ok((sess, local_port))
@@ -97,7 +140,9 @@ impl PostgresService {
         let url = config.to_url(local_port);
         let pool = PgPoolOptions::new()
             .max_connections(5)
-            .acquire_timeout(std::time::Duration::from_secs(config.connection_timeout_secs.unwrap_or(10)))
+            .acquire_timeout(std::time::Duration::from_secs(
+                config.connection_timeout_secs.unwrap_or(10),
+            ))
             .connect(&url)
             .await
             .map_err(|e| PgError::new(PgErrorKind::ConnectionFailed, format!("PG connect: {e}")))?;
@@ -122,13 +167,25 @@ impl PostgresService {
             via_ssh_tunnel: ssh_session.is_some(),
         };
 
-        self.sessions.insert(session_id.clone(), PgSession { pool, config, info, ssh_session, local_port });
+        self.sessions.insert(
+            session_id.clone(),
+            PgSession {
+                pool,
+                config,
+                info,
+                ssh_session,
+                local_port,
+            },
+        );
         info!("PostgreSQL session {session_id} connected");
         Ok(session_id)
     }
 
     pub async fn disconnect(&mut self, id: &str) -> Result<(), PgError> {
-        let sess = self.sessions.remove(id).ok_or_else(|| PgError::session_not_found(id))?;
+        let sess = self
+            .sessions
+            .remove(id)
+            .ok_or_else(|| PgError::session_not_found(id))?;
         sess.pool.close().await;
         info!("PostgreSQL session {id} disconnected");
         Ok(())
@@ -148,11 +205,17 @@ impl PostgresService {
     }
 
     pub fn get_session(&self, id: &str) -> Result<SessionInfo, PgError> {
-        self.sessions.get(id).map(|s| s.info.clone()).ok_or_else(|| PgError::session_not_found(id))
+        self.sessions
+            .get(id)
+            .map(|s| s.info.clone())
+            .ok_or_else(|| PgError::session_not_found(id))
     }
 
     pub fn ping(&self, id: &str) -> Result<bool, PgError> {
-        self.sessions.get(id).map(|_| true).ok_or_else(|| PgError::session_not_found(id))
+        self.sessions
+            .get(id)
+            .map(|_| true)
+            .ok_or_else(|| PgError::session_not_found(id))
     }
 
     // ── Queries ─────────────────────────────────────────────────
@@ -188,7 +251,11 @@ impl PostgresService {
             let mut map = RowMap::new();
             for (i, col) in row.columns().iter().enumerate() {
                 let val: Option<String> = row.try_get::<Option<String>, _>(i).unwrap_or(None);
-                map.insert(col.name().to_string(), val.map(serde_json::Value::String).unwrap_or(serde_json::Value::Null));
+                map.insert(
+                    col.name().to_string(),
+                    val.map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                );
             }
             result_rows.push(map);
         }
@@ -197,7 +264,12 @@ impl PostgresService {
         sess.info.queries_executed += 1;
         sess.info.total_rows_fetched += result_rows.len() as u64;
 
-        Ok(QueryResult { columns, rows: result_rows, affected_rows: 0, execution_time_ms: elapsed })
+        Ok(QueryResult {
+            columns,
+            rows: result_rows,
+            affected_rows: 0,
+            execution_time_ms: elapsed,
+        })
     }
 
     pub async fn execute_statement(&mut self, id: &str, sql: &str) -> Result<QueryResult, PgError> {
@@ -221,7 +293,11 @@ impl PostgresService {
         })
     }
 
-    pub async fn explain_query(&mut self, id: &str, sql: &str) -> Result<Vec<ExplainNode>, PgError> {
+    pub async fn explain_query(
+        &mut self,
+        id: &str,
+        sql: &str,
+    ) -> Result<Vec<ExplainNode>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let explain_sql = format!("EXPLAIN (FORMAT JSON) {sql}");
 
@@ -257,13 +333,16 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| DatabaseInfo {
-            name: r.try_get("datname").unwrap_or_default(),
-            owner: r.try_get("owner").ok(),
-            encoding: r.try_get("encoding").ok(),
-            collation: r.try_get("collation").ok(),
-            size_bytes: r.try_get("size_bytes").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| DatabaseInfo {
+                name: r.try_get("datname").unwrap_or_default(),
+                owner: r.try_get("owner").ok(),
+                encoding: r.try_get("encoding").ok(),
+                collation: r.try_get("collation").ok(),
+                size_bytes: r.try_get("size_bytes").ok(),
+            })
+            .collect())
     }
 
     pub async fn list_schemas(&mut self, id: &str) -> Result<Vec<SchemaInfo>, PgError> {
@@ -279,10 +358,13 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| SchemaInfo {
-            name: r.try_get("schema_name").unwrap_or_default(),
-            owner: r.try_get("schema_owner").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| SchemaInfo {
+                name: r.try_get("schema_name").unwrap_or_default(),
+                owner: r.try_get("schema_owner").ok(),
+            })
+            .collect())
     }
 
     pub async fn list_tables(&mut self, id: &str, schema: &str) -> Result<Vec<TableInfo>, PgError> {
@@ -305,17 +387,25 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| TableInfo {
-            name: r.try_get("name").unwrap_or_default(),
-            schema: r.try_get("schema").unwrap_or_default(),
-            table_type: r.try_get("table_type").unwrap_or_default(),
-            estimated_rows: r.try_get("estimated_rows").ok(),
-            total_size: r.try_get("total_size").ok(),
-            comment: r.try_get("comment").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| TableInfo {
+                name: r.try_get("name").unwrap_or_default(),
+                schema: r.try_get("schema").unwrap_or_default(),
+                table_type: r.try_get("table_type").unwrap_or_default(),
+                estimated_rows: r.try_get("estimated_rows").ok(),
+                total_size: r.try_get("total_size").ok(),
+                comment: r.try_get("comment").ok(),
+            })
+            .collect())
     }
 
-    pub async fn describe_table(&mut self, id: &str, schema: &str, table: &str) -> Result<Vec<ColumnDef>, PgError> {
+    pub async fn describe_table(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<ColumnDef>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT c.column_name, c.data_type, c.udt_name, c.is_nullable, c.column_default, \
@@ -324,7 +414,7 @@ impl PostgresService {
              FROM information_schema.columns c \
              JOIN pg_class t ON t.relname = c.table_name \
              JOIN pg_namespace n ON n.oid = t.relnamespace AND n.nspname = c.table_schema \
-             WHERE c.table_schema = $1 AND c.table_name = $2 ORDER BY c.ordinal_position"
+             WHERE c.table_schema = $1 AND c.table_name = $2 ORDER BY c.ordinal_position",
         )
         .bind(schema)
         .bind(table)
@@ -335,25 +425,36 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| {
-            let nullable_str: String = r.try_get("is_nullable").unwrap_or_default();
-            let identity_str: String = r.try_get("is_identity").unwrap_or_default();
-            ColumnDef {
-                name: r.try_get("column_name").unwrap_or_default(),
-                data_type: r.try_get("data_type").unwrap_or_default(),
-                udt_name: r.try_get("udt_name").unwrap_or_default(),
-                is_nullable: nullable_str == "YES",
-                column_default: r.try_get("column_default").ok(),
-                character_maximum_length: r.try_get::<Option<i32>, _>("character_maximum_length").unwrap_or(None).map(|v| v as i64),
-                numeric_precision: r.try_get("numeric_precision").ok(),
-                ordinal_position: r.try_get::<i32, _>("ordinal_position").unwrap_or(0),
-                is_identity: identity_str == "YES",
-                comment: r.try_get("comment").ok(),
-            }
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let nullable_str: String = r.try_get("is_nullable").unwrap_or_default();
+                let identity_str: String = r.try_get("is_identity").unwrap_or_default();
+                ColumnDef {
+                    name: r.try_get("column_name").unwrap_or_default(),
+                    data_type: r.try_get("data_type").unwrap_or_default(),
+                    udt_name: r.try_get("udt_name").unwrap_or_default(),
+                    is_nullable: nullable_str == "YES",
+                    column_default: r.try_get("column_default").ok(),
+                    character_maximum_length: r
+                        .try_get::<Option<i32>, _>("character_maximum_length")
+                        .unwrap_or(None)
+                        .map(|v| v as i64),
+                    numeric_precision: r.try_get("numeric_precision").ok(),
+                    ordinal_position: r.try_get::<i32, _>("ordinal_position").unwrap_or(0),
+                    is_identity: identity_str == "YES",
+                    comment: r.try_get("comment").ok(),
+                }
+            })
+            .collect())
     }
 
-    pub async fn list_indexes(&mut self, id: &str, schema: &str, table: &str) -> Result<Vec<IndexInfo>, PgError> {
+    pub async fn list_indexes(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<IndexInfo>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT i.relname AS index_name, t.relname AS table_name, \
@@ -369,7 +470,7 @@ impl PostgresService {
              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = x.attnum \
              WHERE n.nspname = $1 AND t.relname = $2 \
              GROUP BY i.relname, t.relname, ix.indisunique, ix.indisprimary, am.amname, i.oid \
-             ORDER BY i.relname"
+             ORDER BY i.relname",
         )
         .bind(schema)
         .bind(table)
@@ -380,21 +481,29 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| {
-            let cols_str: String = r.try_get("columns").unwrap_or_default();
-            IndexInfo {
-                name: r.try_get("index_name").unwrap_or_default(),
-                table_name: r.try_get("table_name").unwrap_or_default(),
-                columns: cols_str.split(", ").map(|s| s.to_string()).collect(),
-                is_unique: r.try_get("is_unique").unwrap_or(false),
-                is_primary: r.try_get("is_primary").unwrap_or(false),
-                index_type: r.try_get("index_type").ok(),
-                index_size: r.try_get("index_size").ok(),
-            }
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let cols_str: String = r.try_get("columns").unwrap_or_default();
+                IndexInfo {
+                    name: r.try_get("index_name").unwrap_or_default(),
+                    table_name: r.try_get("table_name").unwrap_or_default(),
+                    columns: cols_str.split(", ").map(|s| s.to_string()).collect(),
+                    is_unique: r.try_get("is_unique").unwrap_or(false),
+                    is_primary: r.try_get("is_primary").unwrap_or(false),
+                    index_type: r.try_get("index_type").ok(),
+                    index_size: r.try_get("index_size").ok(),
+                }
+            })
+            .collect())
     }
 
-    pub async fn list_foreign_keys(&mut self, id: &str, schema: &str, table: &str) -> Result<Vec<ForeignKeyInfo>, PgError> {
+    pub async fn list_foreign_keys(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<ForeignKeyInfo>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT tc.constraint_name, kcu.column_name, \
@@ -417,15 +526,18 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| ForeignKeyInfo {
-            name: r.try_get("constraint_name").unwrap_or_default(),
-            column: r.try_get("column_name").unwrap_or_default(),
-            referenced_table: r.try_get("referenced_table").unwrap_or_default(),
-            referenced_column: r.try_get("referenced_column").unwrap_or_default(),
-            referenced_schema: r.try_get("referenced_schema").unwrap_or_default(),
-            on_update: r.try_get("update_rule").unwrap_or_default(),
-            on_delete: r.try_get("delete_rule").unwrap_or_default(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| ForeignKeyInfo {
+                name: r.try_get("constraint_name").unwrap_or_default(),
+                column: r.try_get("column_name").unwrap_or_default(),
+                referenced_table: r.try_get("referenced_table").unwrap_or_default(),
+                referenced_column: r.try_get("referenced_column").unwrap_or_default(),
+                referenced_schema: r.try_get("referenced_schema").unwrap_or_default(),
+                on_update: r.try_get("update_rule").unwrap_or_default(),
+                on_delete: r.try_get("delete_rule").unwrap_or_default(),
+            })
+            .collect())
     }
 
     pub async fn list_views(&mut self, id: &str, schema: &str) -> Result<Vec<ViewInfo>, PgError> {
@@ -435,7 +547,7 @@ impl PostgresService {
 
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT table_name, table_schema, view_definition \
-             FROM information_schema.views WHERE table_schema = $1 ORDER BY table_name"
+             FROM information_schema.views WHERE table_schema = $1 ORDER BY table_name",
         )
         .bind(schema)
         .fetch_all(&pool)
@@ -477,7 +589,11 @@ impl PostgresService {
         Ok(views)
     }
 
-    pub async fn list_routines(&mut self, id: &str, schema: &str) -> Result<Vec<RoutineInfo>, PgError> {
+    pub async fn list_routines(
+        &mut self,
+        id: &str,
+        schema: &str,
+    ) -> Result<Vec<RoutineInfo>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT r.routine_name, r.routine_schema, r.routine_type, r.external_language, r.data_type, r.routine_definition \
@@ -492,23 +608,30 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| RoutineInfo {
-            name: r.try_get("routine_name").unwrap_or_default(),
-            schema: r.try_get("routine_schema").unwrap_or_default(),
-            routine_type: r.try_get("routine_type").unwrap_or_default(),
-            language: r.try_get("external_language").ok(),
-            return_type: r.try_get("data_type").ok(),
-            definition: r.try_get("routine_definition").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| RoutineInfo {
+                name: r.try_get("routine_name").unwrap_or_default(),
+                schema: r.try_get("routine_schema").unwrap_or_default(),
+                routine_type: r.try_get("routine_type").unwrap_or_default(),
+                language: r.try_get("external_language").ok(),
+                return_type: r.try_get("data_type").ok(),
+                definition: r.try_get("routine_definition").ok(),
+            })
+            .collect())
     }
 
-    pub async fn list_triggers(&mut self, id: &str, schema: &str) -> Result<Vec<TriggerInfo>, PgError> {
+    pub async fn list_triggers(
+        &mut self,
+        id: &str,
+        schema: &str,
+    ) -> Result<Vec<TriggerInfo>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT t.trigger_name, t.event_object_table, t.trigger_schema, \
              t.event_manipulation, t.action_timing, t.action_statement \
              FROM information_schema.triggers t \
-             WHERE t.trigger_schema = $1 ORDER BY t.trigger_name"
+             WHERE t.trigger_schema = $1 ORDER BY t.trigger_name",
         )
         .bind(schema)
         .fetch_all(&pool)
@@ -518,17 +641,24 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| TriggerInfo {
-            name: r.try_get("trigger_name").unwrap_or_default(),
-            table_name: r.try_get("event_object_table").unwrap_or_default(),
-            schema: r.try_get("trigger_schema").unwrap_or_default(),
-            event: r.try_get("event_manipulation").unwrap_or_default(),
-            timing: r.try_get("action_timing").unwrap_or_default(),
-            definition: r.try_get("action_statement").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| TriggerInfo {
+                name: r.try_get("trigger_name").unwrap_or_default(),
+                table_name: r.try_get("event_object_table").unwrap_or_default(),
+                schema: r.try_get("trigger_schema").unwrap_or_default(),
+                event: r.try_get("event_manipulation").unwrap_or_default(),
+                timing: r.try_get("action_timing").unwrap_or_default(),
+                definition: r.try_get("action_statement").ok(),
+            })
+            .collect())
     }
 
-    pub async fn list_sequences(&mut self, id: &str, schema: &str) -> Result<Vec<SequenceInfo>, PgError> {
+    pub async fn list_sequences(
+        &mut self,
+        id: &str,
+        schema: &str,
+    ) -> Result<Vec<SequenceInfo>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT s.sequence_name, s.sequence_schema, s.data_type, \
@@ -544,16 +674,19 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| SequenceInfo {
-            name: r.try_get("sequence_name").unwrap_or_default(),
-            schema: r.try_get("sequence_schema").unwrap_or_default(),
-            data_type: r.try_get("data_type").unwrap_or_default(),
-            start_value: r.try_get("start_value").ok(),
-            increment: r.try_get("increment").ok(),
-            min_value: r.try_get("minimum_value").ok(),
-            max_value: r.try_get("maximum_value").ok(),
-            current_value: None,
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| SequenceInfo {
+                name: r.try_get("sequence_name").unwrap_or_default(),
+                schema: r.try_get("sequence_schema").unwrap_or_default(),
+                data_type: r.try_get("data_type").unwrap_or_default(),
+                start_value: r.try_get("start_value").ok(),
+                increment: r.try_get("increment").ok(),
+                min_value: r.try_get("minimum_value").ok(),
+                max_value: r.try_get("maximum_value").ok(),
+                current_value: None,
+            })
+            .collect())
     }
 
     pub async fn list_extensions(&mut self, id: &str) -> Result<Vec<ExtensionInfo>, PgError> {
@@ -563,7 +696,7 @@ impl PostgresService {
              FROM pg_extension e \
              JOIN pg_namespace n ON n.oid = e.extnamespace \
              LEFT JOIN pg_description c ON c.objoid = e.oid \
-             ORDER BY e.extname"
+             ORDER BY e.extname",
         )
         .fetch_all(&pool)
         .await
@@ -572,23 +705,33 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| ExtensionInfo {
-            name: r.try_get("extname").unwrap_or_default(),
-            version: r.try_get("extversion").unwrap_or_default(),
-            schema: r.try_get("schema").ok(),
-            description: r.try_get("description").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| ExtensionInfo {
+                name: r.try_get("extname").unwrap_or_default(),
+                version: r.try_get("extversion").unwrap_or_default(),
+                schema: r.try_get("schema").ok(),
+                description: r.try_get("description").ok(),
+            })
+            .collect())
     }
 
     // ── DDL ─────────────────────────────────────────────────────
 
-    pub async fn create_database(&mut self, id: &str, name: &str, owner: Option<&str>) -> Result<(), PgError> {
+    pub async fn create_database(
+        &mut self,
+        id: &str,
+        name: &str,
+        owner: Option<&str>,
+    ) -> Result<(), PgError> {
         let pool = self.get_pool(id)?.clone();
         let mut sql = format!("CREATE DATABASE \"{}\"", name);
         if let Some(o) = owner {
             sql.push_str(&format!(" OWNER \"{}\"", o));
         }
-        sqlx::query(&sql).execute(&pool).await
+        sqlx::query(&sql)
+            .execute(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
@@ -597,7 +740,9 @@ impl PostgresService {
 
     pub async fn drop_database(&mut self, id: &str, name: &str) -> Result<(), PgError> {
         let pool = self.get_pool(id)?.clone();
-        sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", name)).execute(&pool).await
+        sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", name))
+            .execute(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
@@ -606,18 +751,30 @@ impl PostgresService {
 
     pub async fn create_schema(&mut self, id: &str, name: &str) -> Result<(), PgError> {
         let pool = self.get_pool(id)?.clone();
-        sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", name)).execute(&pool).await
+        sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", name))
+            .execute(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
         Ok(())
     }
 
-    pub async fn drop_schema(&mut self, id: &str, name: &str, cascade: bool) -> Result<(), PgError> {
+    pub async fn drop_schema(
+        &mut self,
+        id: &str,
+        name: &str,
+        cascade: bool,
+    ) -> Result<(), PgError> {
         let pool = self.get_pool(id)?.clone();
         let cascade_str = if cascade { " CASCADE" } else { "" };
-        sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{}\"{}", name, cascade_str)).execute(&pool).await
-            .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
+        sqlx::query(&format!(
+            "DROP SCHEMA IF EXISTS \"{}\"{}",
+            name, cascade_str
+        ))
+        .execute(&pool)
+        .await
+        .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
         Ok(())
@@ -625,27 +782,50 @@ impl PostgresService {
 
     pub async fn drop_table(&mut self, id: &str, schema: &str, table: &str) -> Result<(), PgError> {
         let pool = self.get_pool(id)?.clone();
-        sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\".\"{}\"", schema, table)).execute(&pool).await
-            .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
+        sqlx::query(&format!(
+            "DROP TABLE IF EXISTS \"{}\".\"{}\"",
+            schema, table
+        ))
+        .execute(&pool)
+        .await
+        .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
         Ok(())
     }
 
-    pub async fn truncate_table(&mut self, id: &str, schema: &str, table: &str) -> Result<(), PgError> {
+    pub async fn truncate_table(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+    ) -> Result<(), PgError> {
         let pool = self.get_pool(id)?.clone();
-        sqlx::query(&format!("TRUNCATE TABLE \"{}\".\"{}\"", schema, table)).execute(&pool).await
+        sqlx::query(&format!("TRUNCATE TABLE \"{}\".\"{}\"", schema, table))
+            .execute(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
         Ok(())
     }
 
-    pub async fn vacuum_table(&mut self, id: &str, schema: &str, table: &str, analyze: bool) -> Result<(), PgError> {
+    pub async fn vacuum_table(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        analyze: bool,
+    ) -> Result<(), PgError> {
         let pool = self.get_pool(id)?.clone();
         let analyze_str = if analyze { " ANALYZE" } else { "" };
-        sqlx::query(&format!("VACUUM{} \"{}\".\"{}\"", analyze_str, schema, table)).execute(&pool).await
-            .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
+        sqlx::query(&format!(
+            "VACUUM{} \"{}\".\"{}\"",
+            analyze_str, schema, table
+        ))
+        .execute(&pool)
+        .await
+        .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
         Ok(())
@@ -653,48 +833,108 @@ impl PostgresService {
 
     // ── Data CRUD ───────────────────────────────────────────────
 
-    pub async fn get_table_data(&mut self, id: &str, schema: &str, table: &str, limit: Option<u32>, offset: Option<u32>) -> Result<QueryResult, PgError> {
+    pub async fn get_table_data(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<QueryResult, PgError> {
         let lim = limit.unwrap_or(500);
         let off = offset.unwrap_or(0);
-        let sql = format!("SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}", schema, table, lim, off);
+        let sql = format!(
+            "SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}",
+            schema, table, lim, off
+        );
         self.execute_query(id, &sql).await
     }
 
-    pub async fn insert_row(&mut self, id: &str, schema: &str, table: &str, columns: &[String], values: &[String]) -> Result<u64, PgError> {
-        let cols = columns.iter().map(|c| format!("\"{}\"", c)).collect::<Vec<_>>().join(", ");
+    pub async fn insert_row(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        columns: &[String],
+        values: &[String],
+    ) -> Result<u64, PgError> {
+        let cols = columns
+            .iter()
+            .map(|c| format!("\"{}\"", c))
+            .collect::<Vec<_>>()
+            .join(", ");
         let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${i}")).collect();
-        let sql = format!("INSERT INTO \"{}\".\"{}\" ({}) VALUES ({})", schema, table, cols, placeholders.join(", "));
+        let sql = format!(
+            "INSERT INTO \"{}\".\"{}\" ({}) VALUES ({})",
+            schema,
+            table,
+            cols,
+            placeholders.join(", ")
+        );
         let pool = self.get_pool(id)?.clone();
         let mut q = sqlx::query(&sql);
         for v in values {
             q = q.bind(v);
         }
-        let result = q.execute(&pool).await
+        let result = q
+            .execute(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
         Ok(result.rows_affected())
     }
 
-    pub async fn update_rows(&mut self, id: &str, schema: &str, table: &str, columns: &[String], values: &[String], where_clause: &str) -> Result<u64, PgError> {
-        let sets: Vec<String> = columns.iter().enumerate().map(|(i, c)| format!("\"{}\" = ${}", c, i + 1)).collect();
-        let sql = format!("UPDATE \"{}\".\"{}\" SET {} WHERE {}", schema, table, sets.join(", "), where_clause);
+    pub async fn update_rows(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        columns: &[String],
+        values: &[String],
+        where_clause: &str,
+    ) -> Result<u64, PgError> {
+        let sets: Vec<String> = columns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("\"{}\" = ${}", c, i + 1))
+            .collect();
+        let sql = format!(
+            "UPDATE \"{}\".\"{}\" SET {} WHERE {}",
+            schema,
+            table,
+            sets.join(", "),
+            where_clause
+        );
         let pool = self.get_pool(id)?.clone();
         let mut q = sqlx::query(&sql);
         for v in values {
             q = q.bind(v);
         }
-        let result = q.execute(&pool).await
+        let result = q
+            .execute(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
         Ok(result.rows_affected())
     }
 
-    pub async fn delete_rows(&mut self, id: &str, schema: &str, table: &str, where_clause: &str) -> Result<u64, PgError> {
-        let sql = format!("DELETE FROM \"{}\".\"{}\" WHERE {}", schema, table, where_clause);
+    pub async fn delete_rows(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        where_clause: &str,
+    ) -> Result<u64, PgError> {
+        let sql = format!(
+            "DELETE FROM \"{}\".\"{}\" WHERE {}",
+            schema, table, where_clause
+        );
         let pool = self.get_pool(id)?.clone();
-        let result = sqlx::query(&sql).execute(&pool).await
+        let result = sqlx::query(&sql)
+            .execute(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
@@ -703,16 +943,31 @@ impl PostgresService {
 
     // ── Export ───────────────────────────────────────────────────
 
-    pub async fn export_table(&mut self, id: &str, schema: &str, table: &str, options: &ExportOptions) -> Result<String, PgError> {
+    pub async fn export_table(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        options: &ExportOptions,
+    ) -> Result<String, PgError> {
         match options.format {
-            ExportFormat::Csv | ExportFormat::Tsv => self.export_table_delimited(id, schema, table, options).await,
+            ExportFormat::Csv | ExportFormat::Tsv => {
+                self.export_table_delimited(id, schema, table, options)
+                    .await
+            }
             ExportFormat::Sql => self.export_table_sql(id, schema, table, options).await,
             ExportFormat::Json => self.export_table_json(id, schema, table, options).await,
             ExportFormat::Copy => self.export_table_copy(id, schema, table).await,
         }
     }
 
-    async fn export_table_delimited(&mut self, id: &str, schema: &str, table: &str, options: &ExportOptions) -> Result<String, PgError> {
+    async fn export_table_delimited(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        options: &ExportOptions,
+    ) -> Result<String, PgError> {
         let sep = match options.format {
             ExportFormat::Tsv => '\t',
             _ => ',',
@@ -730,15 +985,19 @@ impl PostgresService {
         }
 
         loop {
-            let sql = format!("SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}", schema, table, chunk, offset);
+            let sql = format!(
+                "SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}",
+                schema, table, chunk, offset
+            );
             let result = self.execute_query(id, &sql).await?;
             if result.rows.is_empty() {
                 break;
             }
             let col_names: Vec<String> = result.columns.iter().map(|c| c.name.clone()).collect();
             for row in &result.rows {
-                let vals: Vec<String> = col_names.iter().map(|c| {
-                    match row.get(c) {
+                let vals: Vec<String> = col_names
+                    .iter()
+                    .map(|c| match row.get(c) {
                         Some(serde_json::Value::String(s)) => {
                             if s.contains(sep) || s.contains('"') || s.contains('\n') {
                                 format!("\"{}\"", s.replace('"', "\"\""))
@@ -748,8 +1007,8 @@ impl PostgresService {
                         }
                         Some(serde_json::Value::Null) | None => String::new(),
                         Some(v) => v.to_string(),
-                    }
-                }).collect();
+                    })
+                    .collect();
                 output.push_str(&vals.join(&sep.to_string()));
                 output.push('\n');
             }
@@ -761,7 +1020,13 @@ impl PostgresService {
         Ok(output)
     }
 
-    async fn export_table_sql(&mut self, id: &str, schema: &str, table: &str, options: &ExportOptions) -> Result<String, PgError> {
+    async fn export_table_sql(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        options: &ExportOptions,
+    ) -> Result<String, PgError> {
         let mut output = String::new();
         let chunk = options.chunk_size;
         let mut offset: u32 = 0;
@@ -770,39 +1035,50 @@ impl PostgresService {
             // PG doesn't have SHOW CREATE TABLE — we synthesise a basic one
             let cols = self.describe_table(id, schema, table).await?;
             output.push_str(&format!("CREATE TABLE \"{}\".\"{}\" (\n", schema, table));
-            let col_defs: Vec<String> = cols.iter().map(|c| {
-                let mut def = format!("  \"{}\" {}", c.name, c.udt_name);
-                if !c.is_nullable {
-                    def.push_str(" NOT NULL");
-                }
-                if let Some(ref d) = c.column_default {
-                    def.push_str(&format!(" DEFAULT {}", d));
-                }
-                def
-            }).collect();
+            let col_defs: Vec<String> = cols
+                .iter()
+                .map(|c| {
+                    let mut def = format!("  \"{}\" {}", c.name, c.udt_name);
+                    if !c.is_nullable {
+                        def.push_str(" NOT NULL");
+                    }
+                    if let Some(ref d) = c.column_default {
+                        def.push_str(&format!(" DEFAULT {}", d));
+                    }
+                    def
+                })
+                .collect();
             output.push_str(&col_defs.join(",\n"));
             output.push_str("\n);\n\n");
         }
 
         loop {
-            let sql = format!("SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}", schema, table, chunk, offset);
+            let sql = format!(
+                "SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}",
+                schema, table, chunk, offset
+            );
             let result = self.execute_query(id, &sql).await?;
             if result.rows.is_empty() {
                 break;
             }
             let col_names: Vec<String> = result.columns.iter().map(|c| c.name.clone()).collect();
             for row in &result.rows {
-                let vals: Vec<String> = col_names.iter().map(|c| {
-                    match row.get(c) {
-                        Some(serde_json::Value::String(s)) => format!("'{}'", s.replace('\'', "''")),
+                let vals: Vec<String> = col_names
+                    .iter()
+                    .map(|c| match row.get(c) {
+                        Some(serde_json::Value::String(s)) => {
+                            format!("'{}'", s.replace('\'', "''"))
+                        }
                         Some(serde_json::Value::Null) | None => "NULL".to_string(),
                         Some(v) => v.to_string(),
-                    }
-                }).collect();
-                let quoted_cols: Vec<String> = col_names.iter().map(|c| format!("\"{}\"", c)).collect();
+                    })
+                    .collect();
+                let quoted_cols: Vec<String> =
+                    col_names.iter().map(|c| format!("\"{}\"", c)).collect();
                 output.push_str(&format!(
                     "INSERT INTO \"{}\".\"{}\" ({}) VALUES ({});\n",
-                    schema, table,
+                    schema,
+                    table,
                     quoted_cols.join(", "),
                     vals.join(", ")
                 ));
@@ -815,13 +1091,22 @@ impl PostgresService {
         Ok(output)
     }
 
-    async fn export_table_json(&mut self, id: &str, schema: &str, table: &str, options: &ExportOptions) -> Result<String, PgError> {
+    async fn export_table_json(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        options: &ExportOptions,
+    ) -> Result<String, PgError> {
         let chunk = options.chunk_size;
         let mut offset: u32 = 0;
         let mut all_rows: Vec<RowMap> = Vec::new();
 
         loop {
-            let sql = format!("SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}", schema, table, chunk, offset);
+            let sql = format!(
+                "SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}",
+                schema, table, chunk, offset
+            );
             let result = self.execute_query(id, &sql).await?;
             if result.rows.is_empty() {
                 break;
@@ -836,21 +1121,40 @@ impl PostgresService {
             .map_err(|e| PgError::new(PgErrorKind::ExportFailed, format!("{e}")))
     }
 
-    async fn export_table_copy(&mut self, id: &str, schema: &str, table: &str) -> Result<String, PgError> {
+    async fn export_table_copy(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+    ) -> Result<String, PgError> {
         // Use COPY ... TO STDOUT via a query
-        let sql = format!("COPY \"{}\".\"{}\" TO STDOUT WITH (FORMAT csv, HEADER true)", schema, table);
-        let pool = self.get_pool(id)?.clone();
+        let _sql = format!(
+            "COPY \"{}\".\"{}\" TO STDOUT WITH (FORMAT csv, HEADER true)",
+            schema, table
+        );
+        let _pool = self.get_pool(id)?.clone();
         // Note: COPY TO STDOUT via sqlx is complex; fall back to CSV export
         warn!("COPY format falling back to CSV export for {schema}.{table}");
-        self.export_table_delimited(id, schema, table, &ExportOptions {
-            format: ExportFormat::Csv,
-            include_headers: true,
-            include_create: false,
-            chunk_size: 10000,
-        }).await
+        self.export_table_delimited(
+            id,
+            schema,
+            table,
+            &ExportOptions {
+                format: ExportFormat::Csv,
+                include_headers: true,
+                include_create: false,
+                chunk_size: 10000,
+            },
+        )
+        .await
     }
 
-    pub async fn export_schema(&mut self, id: &str, schema: &str, options: &ExportOptions) -> Result<String, PgError> {
+    pub async fn export_schema(
+        &mut self,
+        id: &str,
+        schema: &str,
+        options: &ExportOptions,
+    ) -> Result<String, PgError> {
         let tables = self.list_tables(id, schema).await?;
         let mut output = String::new();
         for t in &tables {
@@ -868,11 +1172,15 @@ impl PostgresService {
 
     pub async fn import_sql(&mut self, id: &str, sql_content: &str) -> Result<u64, PgError> {
         let pool = self.get_pool(id)?.clone();
-        let statements: Vec<&str> = sql_content.split(';').filter(|s| !s.trim().is_empty()).collect();
+        let statements: Vec<&str> = sql_content
+            .split(';')
+            .filter(|s| !s.trim().is_empty())
+            .collect();
         let mut count: u64 = 0;
         for stmt in &statements {
-            sqlx::query(stmt.trim()).execute(&pool).await
-                .map_err(|e| PgError::new(PgErrorKind::ImportFailed, format!("Statement failed: {e}")))?;
+            sqlx::query(stmt.trim()).execute(&pool).await.map_err(|e| {
+                PgError::new(PgErrorKind::ImportFailed, format!("Statement failed: {e}"))
+            })?;
             count += 1;
         }
         let sess = self.get_session_mut(id)?;
@@ -880,10 +1188,21 @@ impl PostgresService {
         Ok(count)
     }
 
-    pub async fn import_csv(&mut self, id: &str, schema: &str, table: &str, csv_content: &str, has_header: bool) -> Result<u64, PgError> {
+    pub async fn import_csv(
+        &mut self,
+        id: &str,
+        schema: &str,
+        table: &str,
+        csv_content: &str,
+        has_header: bool,
+    ) -> Result<u64, PgError> {
         let mut lines = csv_content.lines();
         let headers: Option<Vec<String>> = if has_header {
-            lines.next().map(|h| h.split(',').map(|s| s.trim().trim_matches('"').to_string()).collect())
+            lines.next().map(|h| {
+                h.split(',')
+                    .map(|s| s.trim().trim_matches('"').to_string())
+                    .collect()
+            })
         } else {
             None
         };
@@ -895,26 +1214,47 @@ impl PostgresService {
             if line.trim().is_empty() {
                 continue;
             }
-            let values: Vec<String> = line.split(',').map(|s| s.trim().trim_matches('"').to_string()).collect();
+            let values: Vec<String> = line
+                .split(',')
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .collect();
             let cols = if let Some(ref h) = headers {
-                h.iter().map(|c| format!("\"{}\"", c)).collect::<Vec<_>>().join(", ")
+                h.iter()
+                    .map(|c| format!("\"{}\"", c))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             } else {
-                (1..=values.len()).map(|_| "".to_string()).collect::<Vec<_>>().join(", ")
+                (1..=values.len())
+                    .map(|_| "".to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             };
             let placeholders: Vec<String> = (1..=values.len()).map(|i| format!("${i}")).collect();
 
             let sql = if headers.is_some() {
-                format!("INSERT INTO \"{}\".\"{}\" ({}) VALUES ({})", schema, table, cols, placeholders.join(", "))
+                format!(
+                    "INSERT INTO \"{}\".\"{}\" ({}) VALUES ({})",
+                    schema,
+                    table,
+                    cols,
+                    placeholders.join(", ")
+                )
             } else {
-                format!("INSERT INTO \"{}\".\"{}\" VALUES ({})", schema, table, placeholders.join(", "))
+                format!(
+                    "INSERT INTO \"{}\".\"{}\" VALUES ({})",
+                    schema,
+                    table,
+                    placeholders.join(", ")
+                )
             };
 
             let mut q = sqlx::query(&sql);
             for v in &values {
                 q = q.bind(v);
             }
-            q.execute(&pool).await
-                .map_err(|e| PgError::new(PgErrorKind::ImportFailed, format!("CSV row import: {e}")))?;
+            q.execute(&pool).await.map_err(|e| {
+                PgError::new(PgErrorKind::ImportFailed, format!("CSV row import: {e}"))
+            })?;
             count += 1;
         }
 
@@ -925,23 +1265,32 @@ impl PostgresService {
 
     // ── Administration ──────────────────────────────────────────
 
-    pub async fn show_settings(&mut self, id: &str, filter: Option<&str>) -> Result<Vec<ServerSetting>, PgError> {
+    pub async fn show_settings(
+        &mut self,
+        id: &str,
+        filter: Option<&str>,
+    ) -> Result<Vec<ServerSetting>, PgError> {
         let pool = self.get_pool(id)?.clone();
         let sql = match filter {
             Some(f) => format!("SELECT name, setting, unit, category, short_desc AS description FROM pg_settings WHERE name ILIKE '%{}%' ORDER BY name", f),
             None => "SELECT name, setting, unit, category, short_desc AS description FROM pg_settings ORDER BY name".to_string(),
         };
-        let rows: Vec<PgRow> = sqlx::query(&sql).fetch_all(&pool).await
+        let rows: Vec<PgRow> = sqlx::query(&sql)
+            .fetch_all(&pool)
+            .await
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
-        Ok(rows.iter().map(|r| ServerSetting {
-            name: r.try_get("name").unwrap_or_default(),
-            setting: r.try_get("setting").unwrap_or_default(),
-            unit: r.try_get("unit").ok(),
-            category: r.try_get("category").ok(),
-            description: r.try_get("description").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| ServerSetting {
+                name: r.try_get("name").unwrap_or_default(),
+                setting: r.try_get("setting").unwrap_or_default(),
+                unit: r.try_get("unit").ok(),
+                category: r.try_get("category").ok(),
+                description: r.try_get("description").ok(),
+            })
+            .collect())
     }
 
     pub async fn show_activity(&mut self, id: &str) -> Result<Vec<PgStatActivity>, PgError> {
@@ -949,7 +1298,7 @@ impl PostgresService {
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT pid, datname AS database, usename AS username, application_name, \
              client_addr::text, state, query, query_start::text, wait_event_type, wait_event \
-             FROM pg_stat_activity WHERE datname IS NOT NULL ORDER BY pid"
+             FROM pg_stat_activity WHERE datname IS NOT NULL ORDER BY pid",
         )
         .fetch_all(&pool)
         .await
@@ -958,18 +1307,21 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| PgStatActivity {
-            pid: r.try_get("pid").unwrap_or(0),
-            database: r.try_get("database").ok(),
-            username: r.try_get("username").ok(),
-            application_name: r.try_get("application_name").ok(),
-            client_addr: r.try_get("client_addr").ok(),
-            state: r.try_get("state").ok(),
-            query: r.try_get("query").ok(),
-            query_start: r.try_get("query_start").ok(),
-            wait_event_type: r.try_get("wait_event_type").ok(),
-            wait_event: r.try_get("wait_event").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| PgStatActivity {
+                pid: r.try_get("pid").unwrap_or(0),
+                database: r.try_get("database").ok(),
+                username: r.try_get("username").ok(),
+                application_name: r.try_get("application_name").ok(),
+                client_addr: r.try_get("client_addr").ok(),
+                state: r.try_get("state").ok(),
+                query: r.try_get("query").ok(),
+                query_start: r.try_get("query_start").ok(),
+                wait_event_type: r.try_get("wait_event_type").ok(),
+                wait_event: r.try_get("wait_event").ok(),
+            })
+            .collect())
     }
 
     pub async fn terminate_backend(&mut self, id: &str, pid: i32) -> Result<bool, PgError> {
@@ -1001,7 +1353,7 @@ impl PostgresService {
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT rolname, rolsuper, rolcanlogin, rolcreatedb, rolcreaterole, rolreplication, \
              rolconnlimit, rolvaliduntil::text \
-             FROM pg_roles WHERE rolname NOT LIKE 'pg_%' ORDER BY rolname"
+             FROM pg_roles WHERE rolname NOT LIKE 'pg_%' ORDER BY rolname",
         )
         .fetch_all(&pool)
         .await
@@ -1010,16 +1362,19 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| PgRole {
-            name: r.try_get("rolname").unwrap_or_default(),
-            is_superuser: r.try_get("rolsuper").unwrap_or(false),
-            can_login: r.try_get("rolcanlogin").unwrap_or(false),
-            can_create_db: r.try_get("rolcreatedb").unwrap_or(false),
-            can_create_role: r.try_get("rolcreaterole").unwrap_or(false),
-            is_replication: r.try_get("rolreplication").unwrap_or(false),
-            connection_limit: r.try_get("rolconnlimit").ok(),
-            valid_until: r.try_get("rolvaliduntil").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| PgRole {
+                name: r.try_get("rolname").unwrap_or_default(),
+                is_superuser: r.try_get("rolsuper").unwrap_or(false),
+                can_login: r.try_get("rolcanlogin").unwrap_or(false),
+                can_create_db: r.try_get("rolcreatedb").unwrap_or(false),
+                can_create_role: r.try_get("rolcreaterole").unwrap_or(false),
+                is_replication: r.try_get("rolreplication").unwrap_or(false),
+                connection_limit: r.try_get("rolconnlimit").ok(),
+                valid_until: r.try_get("rolvaliduntil").ok(),
+            })
+            .collect())
     }
 
     pub async fn list_tablespaces(&mut self, id: &str) -> Result<Vec<TablespaceInfo>, PgError> {
@@ -1027,7 +1382,7 @@ impl PostgresService {
         let rows: Vec<PgRow> = sqlx::query(
             "SELECT spcname, r.rolname AS owner, pg_tablespace_location(t.oid) AS location, \
              pg_size_pretty(pg_tablespace_size(t.oid)) AS size \
-             FROM pg_tablespace t JOIN pg_roles r ON t.spcowner = r.oid ORDER BY spcname"
+             FROM pg_tablespace t JOIN pg_roles r ON t.spcowner = r.oid ORDER BY spcname",
         )
         .fetch_all(&pool)
         .await
@@ -1036,23 +1391,30 @@ impl PostgresService {
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
 
-        Ok(rows.iter().map(|r| TablespaceInfo {
-            name: r.try_get("spcname").unwrap_or_default(),
-            owner: r.try_get("owner").unwrap_or_default(),
-            location: r.try_get("location").ok(),
-            size: r.try_get("size").ok(),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| TablespaceInfo {
+                name: r.try_get("spcname").unwrap_or_default(),
+                owner: r.try_get("owner").unwrap_or_default(),
+                location: r.try_get("location").ok(),
+                size: r.try_get("size").ok(),
+            })
+            .collect())
     }
 
     pub async fn server_uptime(&mut self, id: &str) -> Result<String, PgError> {
         let pool = self.get_pool(id)?.clone();
-        let row: PgRow = sqlx::query("SELECT date_trunc('second', current_timestamp - pg_postmaster_start_time()) AS uptime")
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
+        let row: PgRow = sqlx::query(
+            "SELECT date_trunc('second', current_timestamp - pg_postmaster_start_time()) AS uptime",
+        )
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
-        let uptime: String = row.try_get("uptime").unwrap_or_else(|_| "unknown".to_string());
+        let uptime: String = row
+            .try_get("uptime")
+            .unwrap_or_else(|_| "unknown".to_string());
         Ok(uptime)
     }
 
@@ -1065,7 +1427,9 @@ impl PostgresService {
             .map_err(|e| PgError::new(PgErrorKind::QueryFailed, format!("{e}")))?;
         let sess = self.get_session_mut(id)?;
         sess.info.queries_executed += 1;
-        Ok(row.try_get("size").unwrap_or_else(|_| "unknown".to_string()))
+        Ok(row
+            .try_get("size")
+            .unwrap_or_else(|_| "unknown".to_string()))
     }
 }
 
