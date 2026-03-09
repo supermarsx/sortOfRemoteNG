@@ -202,9 +202,15 @@ pub async fn mongo_update_one(
     update: serde_json::Value,
 ) -> Result<UpdateResult, String> {
     let svc = state.lock().await;
-    svc.update_one(&session_id, db_name.as_deref(), &collection_name, filter, update)
-        .await
-        .map_err(|e| e.message)
+    svc.update_one(
+        &session_id,
+        db_name.as_deref(),
+        &collection_name,
+        filter,
+        update,
+    )
+    .await
+    .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -217,9 +223,15 @@ pub async fn mongo_update_many(
     update: serde_json::Value,
 ) -> Result<UpdateResult, String> {
     let svc = state.lock().await;
-    svc.update_many(&session_id, db_name.as_deref(), &collection_name, filter, update)
-        .await
-        .map_err(|e| e.message)
+    svc.update_many(
+        &session_id,
+        db_name.as_deref(),
+        &collection_name,
+        filter,
+        update,
+    )
+    .await
+    .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -305,9 +317,16 @@ pub async fn mongo_create_index(
     name: Option<String>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.create_index(&session_id, db_name.as_deref(), &collection_name, keys, unique, name)
-        .await
-        .map_err(|e| e.message)
+    svc.create_index(
+        &session_id,
+        db_name.as_deref(),
+        &collection_name,
+        keys,
+        unique,
+        name,
+    )
+    .await
+    .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -319,9 +338,14 @@ pub async fn mongo_drop_index(
     index_name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.drop_index(&session_id, db_name.as_deref(), &collection_name, &index_name)
-        .await
-        .map_err(|e| e.message)
+    svc.drop_index(
+        &session_id,
+        db_name.as_deref(),
+        &collection_name,
+        &index_name,
+    )
+    .await
+    .map_err(|e| e.message)
 }
 
 // ── Server admin ────────────────────────────────────────────────────
@@ -353,7 +377,9 @@ pub async fn mongo_replica_set_status(
     session_id: String,
 ) -> Result<Vec<ReplicaSetMember>, String> {
     let svc = state.lock().await;
-    svc.replica_set_status(&session_id).await.map_err(|e| e.message)
+    svc.replica_set_status(&session_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]

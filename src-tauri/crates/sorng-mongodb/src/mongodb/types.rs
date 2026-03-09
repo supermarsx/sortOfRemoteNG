@@ -83,7 +83,7 @@ pub struct SshTunnelConfig {
 // ── TLS config ──────────────────────────────────────────────────────
 
 /// TLS/SSL options for MongoDB connections.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TlsConfig {
     pub enabled: bool,
     pub ca_cert_path: Option<String>,
@@ -92,24 +92,13 @@ pub struct TlsConfig {
     pub allow_invalid_certificates: bool,
 }
 
-impl Default for TlsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            ca_cert_path: None,
-            client_cert_path: None,
-            client_key_path: None,
-            allow_invalid_certificates: false,
-        }
-    }
-}
-
 // ── Auth mechanism ──────────────────────────────────────────────────
 
 /// MongoDB authentication mechanism.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum MongoAuthMechanism {
     /// Default SCRAM-SHA-256 / SCRAM-SHA-1
+    #[default]
     ScramSha256,
     ScramSha1,
     /// X.509 certificate authentication
@@ -118,12 +107,6 @@ pub enum MongoAuthMechanism {
     AwsIam,
     /// No authentication
     None,
-}
-
-impl Default for MongoAuthMechanism {
-    fn default() -> Self {
-        Self::ScramSha256
-    }
 }
 
 // ── Connection config ───────────────────────────────────────────────
@@ -523,7 +506,10 @@ mod tests {
     fn test_connection_string_full() {
         let cfg = MongoConnectionConfig {
             label: Some("prod".into()),
-            hosts: vec!["db1.example.com:27017".into(), "db2.example.com:27017".into()],
+            hosts: vec![
+                "db1.example.com:27017".into(),
+                "db2.example.com:27017".into(),
+            ],
             database: Some("mydb".into()),
             username: Some("admin".into()),
             password: Some("p@ss:word".into()),

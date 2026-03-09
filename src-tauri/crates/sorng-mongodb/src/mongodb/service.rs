@@ -35,6 +35,12 @@ pub struct MongoService {
     sessions: HashMap<String, MongoSession>,
 }
 
+impl Default for MongoService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MongoService {
     pub fn new() -> Self {
         Self {
@@ -75,29 +81,23 @@ impl MongoService {
         })?;
 
         if let Some(t) = config.connect_timeout_secs {
-            client_options.connect_timeout =
-                Some(std::time::Duration::from_secs(t));
+            client_options.connect_timeout = Some(std::time::Duration::from_secs(t));
         }
         if let Some(t) = config.server_selection_timeout_secs {
-            client_options.server_selection_timeout =
-                Some(std::time::Duration::from_secs(t));
+            client_options.server_selection_timeout = Some(std::time::Duration::from_secs(t));
         }
 
-        let client = Client::with_options(client_options).map_err(|e| {
-            MongoError::connection_failed(format!("Failed to create client: {e}"))
-        })?;
+        let client = Client::with_options(client_options)
+            .map_err(|e| MongoError::connection_failed(format!("Failed to create client: {e}")))?;
 
         // Verify connectivity by pinging admin
         let db = client.database("admin");
-        db.run_command(doc! { "ping": 1 }).await.map_err(|e| {
-            MongoError::connection_failed(format!("Ping failed: {e}"))
-        })?;
+        db.run_command(doc! { "ping": 1 })
+            .await
+            .map_err(|e| MongoError::connection_failed(format!("Ping failed: {e}")))?;
 
         // Get server version
-        let build_info: Option<BsonDocument> = db
-            .run_command(doc! { "buildInfo": 1 })
-            .await
-            .ok();
+        let build_info: Option<BsonDocument> = db.run_command(doc! { "buildInfo": 1 }).await.ok();
         let server_version = build_info
             .as_ref()
             .and_then(|d| d.get_str("version").ok())
@@ -189,8 +189,8 @@ impl MongoService {
             .ok_or_else(|| MongoError::session_not_found(session_id))
     }
 
-    fn resolve_db<'a>(
-        &'a self,
+    fn resolve_db(
+        &self,
         session_id: &str,
         db_name: Option<&str>,
     ) -> Result<mongodb::Database, MongoError> {
@@ -212,7 +212,10 @@ impl MongoService {
     pub async fn list_databases(&self, session_id: &str) -> Result<Vec<DatabaseInfo>, MongoError> {
         let client = self.get_client(session_id)?;
         let dbs = client.list_databases().await.map_err(|e| {
-            MongoError::new(MongoErrorKind::DatabaseError, format!("list_databases: {e}"))
+            MongoError::new(
+                MongoErrorKind::DatabaseError,
+                format!("list_databases: {e}"),
+            )
         })?;
         Ok(dbs
             .into_iter()
@@ -225,19 +228,11 @@ impl MongoService {
     }
 
     /// Drop a database.
-    pub async fn drop_database(
-        &self,
-        session_id: &str,
-        db_name: &str,
-    ) -> Result<(), MongoError> {
+    pub async fn drop_database(&self, session_id: &str, db_name: &str) -> Result<(), MongoError> {
         let client = self.get_client(session_id)?;
-        client
-            .database(db_name)
-            .drop()
-            .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::DatabaseError, format!("drop_database: {e}"))
-            })
+        client.database(db_name).drop().await.map_err(|e| {
+            MongoError::new(MongoErrorKind::DatabaseError, format!("drop_database: {e}"))
+        })
     }
 
     // ── Collection management ───────────────────────────────────────
@@ -325,17 +320,11 @@ impl MongoService {
             .run_command(doc! { "collStats": collection_name })
             .await
             .map_err(|e| {
-                MongoError::new(
-                    MongoErrorKind::DatabaseError,
-                    format!("collStats: {e}"),
-                )
+                MongoError::new(MongoErrorKind::DatabaseError, format!("collStats: {e}"))
             })?;
 
         Ok(CollectionStats {
-            namespace: result
-                .get_str("ns")
-                .unwrap_or_default()
-                .to_string(),
+            namespace: result.get_str("ns").unwrap_or_default().to_string(),
             count: result.get_i64("count").unwrap_or(0),
             size: result.get_i64("size").unwrap_or(0),
             avg_obj_size: result.get_f64("avgObjSize").ok(),
@@ -391,9 +380,11 @@ impl MongoService {
             find_opts.skip = Some(s);
         }
 
-        let mut cursor = coll.find(filter).with_options(find_opts).await.map_err(|e| {
-            MongoError::new(MongoErrorKind::DatabaseError, format!("find: {e}"))
-        })?;
+        let mut cursor = coll
+            .find(filter)
+            .with_options(find_opts)
+            .await
+            .map_err(|e| MongoError::new(MongoErrorKind::DatabaseError, format!("find: {e}")))?;
 
         let mut documents = Vec::new();
         use tokio_stream::StreamExt;
@@ -425,13 +416,16 @@ impl MongoService {
         let db = self.resolve_db(session_id, db_name)?;
         let coll = db.collection::<BsonDocument>(collection_name);
 
-        let filter_doc = filter.and_then(|v| json_to_bson_doc(&v)).unwrap_or_default();
+        let filter_doc = filter
+            .and_then(|v| json_to_bson_doc(&v))
+            .unwrap_or_default();
 
-        coll.count_documents(filter_doc)
-            .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::DatabaseError, format!("count_documents: {e}"))
-            })
+        coll.count_documents(filter_doc).await.map_err(|e| {
+            MongoError::new(
+                MongoErrorKind::DatabaseError,
+                format!("count_documents: {e}"),
+            )
+        })
     }
 
     /// Insert a single document.
@@ -449,9 +443,10 @@ impl MongoService {
             MongoError::new(MongoErrorKind::SerializationError, "Invalid document JSON")
         })?;
 
-        let result = coll.insert_one(doc).await.map_err(|e| {
-            MongoError::new(MongoErrorKind::WriteError, format!("insert_one: {e}"))
-        })?;
+        let result = coll
+            .insert_one(doc)
+            .await
+            .map_err(|e| MongoError::new(MongoErrorKind::WriteError, format!("insert_one: {e}")))?;
 
         let id_str = bson_to_string(&result.inserted_id);
         Ok(InsertResult {
@@ -471,10 +466,7 @@ impl MongoService {
         let db = self.resolve_db(session_id, db_name)?;
         let coll = db.collection::<BsonDocument>(collection_name);
 
-        let docs: Vec<BsonDocument> = documents
-            .iter()
-            .filter_map(|v| json_to_bson_doc(v))
-            .collect();
+        let docs: Vec<BsonDocument> = documents.iter().filter_map(json_to_bson_doc).collect();
 
         if docs.is_empty() {
             return Err(MongoError::new(
@@ -487,11 +479,7 @@ impl MongoService {
             MongoError::new(MongoErrorKind::BulkWriteError, format!("insert_many: {e}"))
         })?;
 
-        let ids: Vec<String> = result
-            .inserted_ids
-            .values()
-            .map(|b| bson_to_string(b))
-            .collect();
+        let ids: Vec<String> = result.inserted_ids.values().map(bson_to_string).collect();
         let count = ids.len();
 
         Ok(InsertResult {
@@ -514,7 +502,10 @@ impl MongoService {
 
         let filter_doc = json_to_bson_doc(&filter).unwrap_or_default();
         let update_doc = json_to_bson_doc(&update).ok_or_else(|| {
-            MongoError::new(MongoErrorKind::SerializationError, "Invalid update document")
+            MongoError::new(
+                MongoErrorKind::SerializationError,
+                "Invalid update document",
+            )
         })?;
 
         let result = coll
@@ -545,15 +536,16 @@ impl MongoService {
 
         let filter_doc = json_to_bson_doc(&filter).unwrap_or_default();
         let update_doc = json_to_bson_doc(&update).ok_or_else(|| {
-            MongoError::new(MongoErrorKind::SerializationError, "Invalid update document")
+            MongoError::new(
+                MongoErrorKind::SerializationError,
+                "Invalid update document",
+            )
         })?;
 
         let result = coll
             .update_one(filter_doc, update_doc)
             .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::WriteError, format!("update_one: {e}"))
-            })?;
+            .map_err(|e| MongoError::new(MongoErrorKind::WriteError, format!("update_one: {e}")))?;
 
         Ok(UpdateResult {
             matched_count: result.matched_count,
@@ -597,9 +589,10 @@ impl MongoService {
 
         let filter_doc = json_to_bson_doc(&filter).unwrap_or_default();
 
-        let result = coll.delete_one(filter_doc).await.map_err(|e| {
-            MongoError::new(MongoErrorKind::WriteError, format!("delete_one: {e}"))
-        })?;
+        let result = coll
+            .delete_one(filter_doc)
+            .await
+            .map_err(|e| MongoError::new(MongoErrorKind::WriteError, format!("delete_one: {e}")))?;
 
         Ok(DeleteResult {
             deleted_count: result.deleted_count,
@@ -619,16 +612,11 @@ impl MongoService {
         let db = self.resolve_db(session_id, db_name)?;
         let coll = db.collection::<BsonDocument>(collection_name);
 
-        let bson_pipeline: Vec<BsonDocument> = pipeline
-            .iter()
-            .filter_map(|v| json_to_bson_doc(v))
-            .collect();
+        let bson_pipeline: Vec<BsonDocument> =
+            pipeline.iter().filter_map(json_to_bson_doc).collect();
 
         let mut cursor = coll.aggregate(bson_pipeline).await.map_err(|e| {
-            MongoError::new(
-                MongoErrorKind::AggregationError,
-                format!("aggregate: {e}"),
-            )
+            MongoError::new(MongoErrorKind::AggregationError, format!("aggregate: {e}"))
         })?;
 
         let mut documents = Vec::new();
@@ -695,8 +683,7 @@ impl MongoService {
         while let Some(result) = StreamExt::next(&mut cursor).await {
             match result {
                 Ok(idx) => {
-                    let keys_json =
-                        bson_doc_to_json(&idx.keys).unwrap_or(serde_json::json!({}));
+                    let keys_json = bson_doc_to_json(&idx.keys).unwrap_or(serde_json::json!({}));
                     let options = &idx.options;
                     indexes.push(IndexInfo {
                         name: options
@@ -709,13 +696,11 @@ impl MongoService {
                         ttl: options
                             .as_ref()
                             .and_then(|o| o.expire_after.map(|d| d.as_secs() as i64)),
-                        partial_filter: options
-                            .as_ref()
-                            .and_then(|o| {
-                                o.partial_filter_expression
-                                    .as_ref()
-                                    .and_then(|d| bson_doc_to_json(d).ok())
-                            }),
+                        partial_filter: options.as_ref().and_then(|o| {
+                            o.partial_filter_expression
+                                .as_ref()
+                                .and_then(|d| bson_doc_to_json(d).ok())
+                        }),
                     });
                 }
                 Err(e) => {
@@ -741,7 +726,10 @@ impl MongoService {
         let coll = db.collection::<BsonDocument>(collection_name);
 
         let keys_doc = json_to_bson_doc(&keys).ok_or_else(|| {
-            MongoError::new(MongoErrorKind::SerializationError, "Invalid index keys JSON")
+            MongoError::new(
+                MongoErrorKind::SerializationError,
+                "Invalid index keys JSON",
+            )
         })?;
 
         let mut opts = mongodb::options::IndexOptions::builder().build();
@@ -773,18 +761,15 @@ impl MongoService {
         let db = self.resolve_db(session_id, db_name)?;
         let coll = db.collection::<BsonDocument>(collection_name);
 
-        coll.drop_index(index_name).await.map_err(|e| {
-            MongoError::new(MongoErrorKind::IndexError, format!("drop_index: {e}"))
-        })
+        coll.drop_index(index_name)
+            .await
+            .map_err(|e| MongoError::new(MongoErrorKind::IndexError, format!("drop_index: {e}")))
     }
 
     // ── Server admin ────────────────────────────────────────────────
 
     /// Get the server status.
-    pub async fn server_status(
-        &self,
-        session_id: &str,
-    ) -> Result<ServerStatus, MongoError> {
+    pub async fn server_status(&self, session_id: &str) -> Result<ServerStatus, MongoError> {
         let client = self.get_client(session_id)?;
         let db = client.database("admin");
         let result = db
@@ -842,12 +827,9 @@ impl MongoService {
         db_name: Option<&str>,
     ) -> Result<Vec<MongoUserInfo>, MongoError> {
         let db = self.resolve_db(session_id, db_name.or(Some("admin")))?;
-        let result = db
-            .run_command(doc! { "usersInfo": 1 })
-            .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::CommandError, format!("usersInfo: {e}"))
-            })?;
+        let result = db.run_command(doc! { "usersInfo": 1 }).await.map_err(|e| {
+            MongoError::new(MongoErrorKind::CommandError, format!("usersInfo: {e}"))
+        })?;
 
         let mut users = Vec::new();
         if let Ok(users_arr) = result.get_array("users") {
@@ -913,18 +895,12 @@ impl MongoService {
     }
 
     /// Get current operations.
-    pub async fn current_op(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<serde_json::Value>, MongoError> {
+    pub async fn current_op(&self, session_id: &str) -> Result<Vec<serde_json::Value>, MongoError> {
         let client = self.get_client(session_id)?;
         let db = client.database("admin");
-        let result = db
-            .run_command(doc! { "currentOp": 1 })
-            .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::CommandError, format!("currentOp: {e}"))
-            })?;
+        let result = db.run_command(doc! { "currentOp": 1 }).await.map_err(|e| {
+            MongoError::new(MongoErrorKind::CommandError, format!("currentOp: {e}"))
+        })?;
 
         let mut ops = Vec::new();
         if let Ok(inprog) = result.get_array("inprog") {
@@ -940,18 +916,12 @@ impl MongoService {
     }
 
     /// Kill an operation by opId.
-    pub async fn kill_op(
-        &self,
-        session_id: &str,
-        op_id: i64,
-    ) -> Result<(), MongoError> {
+    pub async fn kill_op(&self, session_id: &str, op_id: i64) -> Result<(), MongoError> {
         let client = self.get_client(session_id)?;
         let db = client.database("admin");
         db.run_command(doc! { "killOp": 1, "op": op_id })
             .await
-            .map_err(|e| {
-                MongoError::new(MongoErrorKind::CommandError, format!("killOp: {e}"))
-            })?;
+            .map_err(|e| MongoError::new(MongoErrorKind::CommandError, format!("killOp: {e}")))?;
         Ok(())
     }
 
@@ -984,14 +954,12 @@ impl MongoService {
                     format!("JSON export: {e}"),
                 )
             }),
-            ExportFormat::JsonArray => {
-                serde_json::to_string(&result.documents).map_err(|e| {
-                    MongoError::new(
-                        MongoErrorKind::SerializationError,
-                        format!("JSON array export: {e}"),
-                    )
-                })
-            }
+            ExportFormat::JsonArray => serde_json::to_string(&result.documents).map_err(|e| {
+                MongoError::new(
+                    MongoErrorKind::SerializationError,
+                    format!("JSON array export: {e}"),
+                )
+            }),
             ExportFormat::Ndjson => {
                 let mut output = String::new();
                 for doc in &result.documents {
