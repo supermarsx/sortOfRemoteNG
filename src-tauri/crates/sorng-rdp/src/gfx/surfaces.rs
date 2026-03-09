@@ -26,6 +26,12 @@ pub struct SurfaceManager {
     buffer_pool: FrameBufferPool,
 }
 
+impl Default for SurfaceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SurfaceManager {
     pub fn new() -> Self {
         Self {
@@ -79,6 +85,7 @@ impl SurfaceManager {
     /// Blit decoded RGBA data into a surface at the given dest rect.
     ///
     /// `src_data` is contiguous RGBA with stride = `src_width * 4`.
+    #[allow(clippy::too_many_arguments)]
     pub fn blit_to_surface(
         &mut self,
         surface_id: u16,
@@ -105,8 +112,7 @@ impl SurfaceManager {
 
         for row in 0..ch {
             let src_offset = row * src_stride;
-            let dst_offset =
-                (dest_top as usize + row) * dst_stride + dest_left as usize * bpp;
+            let dst_offset = (dest_top as usize + row) * dst_stride + dest_left as usize * bpp;
 
             if src_offset + copy_len > src_data.len() {
                 break;
@@ -208,8 +214,7 @@ mod tests {
         mgr.create_surface(1, 4, 4);
         // red pixel data for a 2x2 patch
         let src = vec![
-            255, 0, 0, 255,  255, 0, 0, 255,
-            255, 0, 0, 255,  255, 0, 0, 255,
+            255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
         ];
         let ok = mgr.blit_to_surface(1, &src, 2, 0, 0, 2, 2);
         assert!(ok);

@@ -126,19 +126,19 @@ pub struct RdpSecurityPayload {
     pub pointer_software_rendering: Option<bool>,
 
     // CredSSP remediation fields
-    pub credssp_oracle_remediation: Option<String>,    // "force-updated" | "mitigated" | "vulnerable"
+    pub credssp_oracle_remediation: Option<String>, // "force-updated" | "mitigated" | "vulnerable"
     pub allow_hybrid_ex: Option<bool>,
     pub nla_fallback_to_tls: Option<bool>,
-    pub tls_min_version: Option<String>,               // "1.0" | "1.1" | "1.2" | "1.3"
+    pub tls_min_version: Option<String>, // "1.0" | "1.1" | "1.2" | "1.3"
     pub ntlm_enabled: Option<bool>,
     pub kerberos_enabled: Option<bool>,
     pub pku2u_enabled: Option<bool>,
     pub restricted_admin: Option<bool>,
     pub remote_credential_guard: Option<bool>,
     pub enforce_server_public_key_validation: Option<bool>,
-    pub credssp_version: Option<u32>,                  // 2 | 3 | 6
+    pub credssp_version: Option<u32>, // 2 | 3 | 6
     pub sspi_package_list: Option<String>,
-    pub server_cert_validation: Option<String>,        // "validate" | "warn" | "ignore"
+    pub server_cert_validation: Option<String>, // "validate" | "warn" | "ignore"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -161,13 +161,13 @@ pub struct RdpGatewayPayload {
     pub enabled: Option<bool>,
     pub hostname: Option<String>,
     pub port: Option<u16>,
-    pub auth_method: Option<String>,        // "ntlm" | "basic" | "digest" | "negotiate" | "smartcard"
-    pub credential_source: Option<String>,   // "same-as-connection" | "separate" | "ask"
+    pub auth_method: Option<String>, // "ntlm" | "basic" | "digest" | "negotiate" | "smartcard"
+    pub credential_source: Option<String>, // "same-as-connection" | "separate" | "ask"
     pub username: Option<String>,
     pub password: Option<String>,
     pub domain: Option<String>,
     pub bypass_for_local: Option<bool>,
-    pub transport_mode: Option<String>,      // "auto" | "http" | "udp"
+    pub transport_mode: Option<String>, // "auto" | "http" | "udp"
     pub access_token: Option<String>,
 }
 
@@ -184,7 +184,7 @@ pub struct RdpHyperVPayload {
 #[serde(rename_all = "camelCase")]
 pub struct RdpNegotiationPayload {
     pub auto_detect: Option<bool>,
-    pub strategy: Option<String>,            // "auto" | "nla-first" | "tls-first" | "nla-only" | "tls-only" | "plain-only"
+    pub strategy: Option<String>, // "auto" | "nla-first" | "tls-first" | "nla-only" | "tls-only" | "plain-only"
     pub max_retries: Option<u32>,
     pub retry_delay_ms: Option<u64>,
     pub load_balancing_info: Option<String>,
@@ -235,11 +235,12 @@ pub(crate) fn build_performance_flags(perf: &RdpPerformancePayload) -> Performan
 /// Build IronRDP BitmapCodecs from resolved settings.
 /// When codecs are disabled, returns an empty list (raw/RLE only).
 /// When enabled, constructs the negotiation list based on individual codec toggles.
-pub(crate) fn build_bitmap_codecs(settings: &ResolvedSettings) -> ironrdp::pdu::rdp::capability_sets::BitmapCodecs {
+pub(crate) fn build_bitmap_codecs(
+    settings: &ResolvedSettings,
+) -> ironrdp::pdu::rdp::capability_sets::BitmapCodecs {
     use ironrdp::pdu::rdp::capability_sets::{
-        BitmapCodecs, CaptureFlags, Codec, CodecProperty, EntropyBits,
-        RemoteFxContainer, RfxCaps, RfxCapset, RfxClientCapsContainer,
-        RfxICap, RfxICapFlags,
+        BitmapCodecs, CaptureFlags, Codec, CodecProperty, EntropyBits, RemoteFxContainer, RfxCaps,
+        RfxCapset, RfxClientCapsContainer, RfxICap, RfxICapFlags,
     };
 
     if !settings.codecs_enabled {
@@ -380,19 +381,15 @@ impl ResolvedSettings {
         let w = display.and_then(|d| d.width).unwrap_or(width);
         let h = display.and_then(|d| d.height).unwrap_or(height);
 
-        let performance_flags = perf
-            .map(|p| build_performance_flags(p))
-            .unwrap_or_else(|| {
-                PerformanceFlags::DISABLE_WALLPAPER
-                    | PerformanceFlags::DISABLE_FULLWINDOWDRAG
-                    | PerformanceFlags::DISABLE_MENUANIMATIONS
-                    | PerformanceFlags::DISABLE_CURSOR_SHADOW
-                    | PerformanceFlags::ENABLE_FONT_SMOOTHING
-            });
+        let performance_flags = perf.map(build_performance_flags).unwrap_or_else(|| {
+            PerformanceFlags::DISABLE_WALLPAPER
+                | PerformanceFlags::DISABLE_FULLWINDOWDRAG
+                | PerformanceFlags::DISABLE_MENUANIMATIONS
+                | PerformanceFlags::DISABLE_CURSOR_SHADOW
+                | PerformanceFlags::ENABLE_FONT_SMOOTHING
+        });
 
-        let batch_ms = perf
-            .and_then(|p| p.frame_batch_interval_ms)
-            .unwrap_or(33);
+        let batch_ms = perf.and_then(|p| p.frame_batch_interval_ms).unwrap_or(33);
 
         // Master CredSSP toggle: if useCredSsp is false, force credssp off
         let use_credssp_master = sec.and_then(|s| s.use_credssp).unwrap_or(true);
@@ -478,9 +475,7 @@ impl ResolvedSettings {
             // Frame delivery
             frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(false),
             frame_batch_interval: Duration::from_millis(batch_ms),
-            full_frame_sync_interval: adv
-                .and_then(|a| a.full_frame_sync_interval)
-                .unwrap_or(1000),
+            full_frame_sync_interval: adv.and_then(|a| a.full_frame_sync_interval).unwrap_or(1000),
             // Render backend
             render_backend: perf
                 .and_then(|p| p.render_backend.clone())
@@ -510,26 +505,42 @@ impl ResolvedSettings {
                 Some("openh264") => crate::h264::H264DecoderPreference::OpenH264,
                 _ => crate::h264::H264DecoderPreference::Auto,
             },
-            read_timeout: Duration::from_millis(
-                adv.and_then(|a| a.read_timeout_ms).unwrap_or(16),
-            ),
-            max_consecutive_errors: adv
-                .and_then(|a| a.max_consecutive_errors)
-                .unwrap_or(50),
+            read_timeout: Duration::from_millis(adv.and_then(|a| a.read_timeout_ms).unwrap_or(16)),
+            max_consecutive_errors: adv.and_then(|a| a.max_consecutive_errors).unwrap_or(50),
             stats_interval: Duration::from_secs(
                 adv.and_then(|a| a.stats_interval_secs).unwrap_or(1),
             ),
             // TCP / Socket
             tcp_connect_timeout: Duration::from_secs(
-                payload.tcp.as_ref().and_then(|t| t.connect_timeout_secs).unwrap_or(10),
+                payload
+                    .tcp
+                    .as_ref()
+                    .and_then(|t| t.connect_timeout_secs)
+                    .unwrap_or(10),
             ),
             tcp_nodelay: payload.tcp.as_ref().and_then(|t| t.nodelay).unwrap_or(true),
-            tcp_keep_alive: payload.tcp.as_ref().and_then(|t| t.keep_alive).unwrap_or(true),
+            tcp_keep_alive: payload
+                .tcp
+                .as_ref()
+                .and_then(|t| t.keep_alive)
+                .unwrap_or(true),
             tcp_keep_alive_interval: Duration::from_secs(
-                payload.tcp.as_ref().and_then(|t| t.keep_alive_interval_secs).unwrap_or(60),
+                payload
+                    .tcp
+                    .as_ref()
+                    .and_then(|t| t.keep_alive_interval_secs)
+                    .unwrap_or(60),
             ),
-            tcp_recv_buffer_size: payload.tcp.as_ref().and_then(|t| t.recv_buffer_size).unwrap_or(256 * 1024),
-            tcp_send_buffer_size: payload.tcp.as_ref().and_then(|t| t.send_buffer_size).unwrap_or(256 * 1024),
+            tcp_recv_buffer_size: payload
+                .tcp
+                .as_ref()
+                .and_then(|t| t.recv_buffer_size)
+                .unwrap_or(256 * 1024),
+            tcp_send_buffer_size: payload
+                .tcp
+                .as_ref()
+                .and_then(|t| t.send_buffer_size)
+                .unwrap_or(256 * 1024),
             // Reconnection
             reconnect_base_delay: Duration::from_secs(
                 adv.and_then(|a| a.reconnect_base_delay_secs).unwrap_or(3),

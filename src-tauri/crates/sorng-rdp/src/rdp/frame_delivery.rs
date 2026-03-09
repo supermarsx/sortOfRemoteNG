@@ -45,7 +45,7 @@ pub(crate) fn process_outputs(
                 // Push dirty region directly through the Channel (no event+invoke round-trip)
                 push_frame_via_channel(image.data(), desktop_width, region, frame_channel);
                 let fc = stats.frame_count.load(Ordering::Relaxed);
-                if fc > 0 && fc % full_frame_sync_interval == 0 {
+                if fc > 0 && fc.is_multiple_of(full_frame_sync_interval) {
                     send_full_frame_via_channel(
                         session_id,
                         image,
@@ -265,7 +265,10 @@ pub(crate) fn push_compositor_frame_via_channel(
     // frame.rgba.  Write the header in-place -- zero extra allocation,
     // zero extra memcpy.
     let mut payload = frame.rgba;
-    debug_assert!(payload.len() >= 8, "CompositorFrame rgba too short for header");
+    debug_assert!(
+        payload.len() >= 8,
+        "CompositorFrame rgba too short for header"
+    );
     payload[0..2].copy_from_slice(&frame.x.to_le_bytes());
     payload[2..4].copy_from_slice(&frame.y.to_le_bytes());
     payload[4..6].copy_from_slice(&frame.width.to_le_bytes());

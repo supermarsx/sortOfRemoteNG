@@ -7,12 +7,14 @@
 use std::ptr;
 use std::sync::Once;
 
-use windows::core::{GUID, IUnknown, Interface as _};
+use windows::core::{IUnknown, Interface as _, GUID};
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Media::MediaFoundation::*;
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
 
 use super::yuv_convert;
 use super::{DecodedFrame, FrameBufferPool, H264Decoder, H264Error};
@@ -41,7 +43,7 @@ fn ensure_mf_init() -> Result<(), H264Error> {
 
 /// CLSID for the Microsoft H.264 decoder MFT.
 #[allow(non_upper_case_globals)]
-const CLSID_CMSH264DecoderMFT: GUID = GUID::from_u128(0x62CE7E72_4C71_4d20_B15D_452831A87D9D);
+const CLSID_CMSH264DecoderMFT: GUID = GUID::from_u128(0x62CE7E72_4C71_4D20_B15D_452831A87D9D);
 
 pub struct MfH264Decoder {
     transform: IMFTransform,
@@ -67,12 +69,10 @@ impl MfH264Decoder {
 
         unsafe {
             // Create the H.264 decoder MFT
-            let transform: IMFTransform = CoCreateInstance(
-                &CLSID_CMSH264DecoderMFT,
-                None,
-                CLSCTX_INPROC_SERVER,
-            )
-            .map_err(|e| H264Error::InitFailed(format!("CoCreateInstance H264 MFT: {e}")))?;
+            let transform: IMFTransform =
+                CoCreateInstance(&CLSID_CMSH264DecoderMFT, None, CLSCTX_INPROC_SERVER).map_err(
+                    |e| H264Error::InitFailed(format!("CoCreateInstance H264 MFT: {e}")),
+                )?;
 
             // Try to enable DXVA2 hardware acceleration
             let hardware = Self::try_enable_hardware(&transform);
@@ -168,12 +168,7 @@ impl MfH264Decoder {
         // Set the D3D manager on the MFT
         let manager_unk: IUnknown = manager.cast().unwrap();
         if transform
-            .ProcessMessage(
-                MFT_MESSAGE_SET_D3D_MANAGER,
-                std::mem::transmute::<*mut std::ffi::c_void, usize>(
-                    manager_unk.into_raw(),
-                ),
-            )
+            .ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, manager_unk.into_raw() as usize)
             .is_err()
         {
             return false;
@@ -188,9 +183,7 @@ impl MfH264Decoder {
         }
     }
 
-    unsafe fn negotiate_output_type(
-        transform: &IMFTransform,
-    ) -> Result<(GUID, u32), H264Error> {
+    unsafe fn negotiate_output_type(transform: &IMFTransform) -> Result<(GUID, u32), H264Error> {
         // Iterate available output types, prefer NV12 > I420 > IYUV
         let preferred = [MFVideoFormat_NV12, MFVideoFormat_IYUV, MFVideoFormat_I420];
 
@@ -300,17 +293,15 @@ impl MfH264Decoder {
                         };
                         pixels * 3 / 2
                     };
-                    let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(buf_size)
-                        .map_err(|e| {
-                            H264Error::DecodeFailed(format!("output MFCreateMemoryBuffer: {e}"))
-                        })?;
-                    let sample: IMFSample =
-                        MFCreateSample().map_err(|e| {
-                            H264Error::DecodeFailed(format!("output MFCreateSample: {e}"))
-                        })?;
-                    sample.AddBuffer(&buffer).map_err(|e| {
-                        H264Error::DecodeFailed(format!("output AddBuffer: {e}"))
+                    let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(buf_size).map_err(|e| {
+                        H264Error::DecodeFailed(format!("output MFCreateMemoryBuffer: {e}"))
                     })?;
+                    let sample: IMFSample = MFCreateSample().map_err(|e| {
+                        H264Error::DecodeFailed(format!("output MFCreateSample: {e}"))
+                    })?;
+                    sample
+                        .AddBuffer(&buffer)
+                        .map_err(|e| H264Error::DecodeFailed(format!("output AddBuffer: {e}")))?;
                     output_buffers[0].pSample = std::mem::ManuallyDrop::new(Some(sample));
                 }
 
@@ -377,7 +368,13 @@ impl MfH264Decoder {
 
         if self.output_subtype == MFVideoFormat_NV12 {
             if self.output_stride > 0 && self.output_stride != w {
-                yuv_convert::nv12_strided_to_rgba_into(data, self.output_stride as usize, w, h, &mut rgba);
+                yuv_convert::nv12_strided_to_rgba_into(
+                    data,
+                    self.output_stride as usize,
+                    w,
+                    h,
+                    &mut rgba,
+                );
             } else {
                 yuv_convert::nv12_to_rgba_into(data, w, h, &mut rgba);
             }
@@ -390,9 +387,15 @@ impl MfH264Decoder {
                 let u_plane = &data[y_size..y_size + uv_size];
                 let v_plane = &data[y_size + uv_size..];
                 yuv_convert::yuv420_planar_to_rgba_inner_into(
-                    y_plane, u_plane, v_plane,
-                    w as usize, w as usize / 2, w as usize / 2,
-                    w as usize, h as usize, &mut rgba,
+                    y_plane,
+                    u_plane,
+                    v_plane,
+                    w as usize,
+                    w as usize / 2,
+                    w as usize / 2,
+                    w as usize,
+                    h as usize,
+                    &mut rgba,
                 );
             } else {
                 rgba.resize(out_size, 0);
@@ -443,9 +446,7 @@ impl H264Decoder for MfH264Decoder {
 
     fn flush(&mut self) -> Result<Vec<DecodedFrame>, H264Error> {
         unsafe {
-            let _ = self
-                .transform
-                .ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
+            let _ = self.transform.ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0);
         }
         self.pull_output_frames()
     }
@@ -462,9 +463,7 @@ impl H264Decoder for MfH264Decoder {
 impl Drop for MfH264Decoder {
     fn drop(&mut self) {
         unsafe {
-            let _ = self
-                .transform
-                .ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+            let _ = self.transform.ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
         }
     }
 }

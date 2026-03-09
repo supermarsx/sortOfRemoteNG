@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use ironrdp::connector::connection_activation::ConnectionActivationState;
 use ironrdp::connector::{self, ClientConnector, ConnectionResult, Sequence, State as _};
+use ironrdp::core::WriteBuf;
 use ironrdp::graphics::image_processing::PixelFormat;
 use ironrdp::pdu::input::fast_path::FastPathInputEvent;
-use ironrdp::core::WriteBuf;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 use ironrdp_blocking::Framed;
@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 
 use super::frame_delivery::*;
 use super::frame_store::SharedFrameStoreState;
-use super::network::{BlockingNetworkClient, extract_cert_fingerprint, tls_upgrade};
+use super::network::{extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
 use super::settings::{build_bitmap_codecs, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpPointerEvent, RdpStatusEvent};
@@ -144,6 +144,7 @@ struct EstablishedSession {
 
 // ---- Blocking RDP session runner ----
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rdp_session(
     session_id: String,
     host: String,
@@ -162,7 +163,7 @@ pub(crate) fn run_rdp_session(
 ) {
     // Log CPU SIMD capabilities once (first session only).
     static LOG_FEATURES: std::sync::Once = std::sync::Once::new();
-    LOG_FEATURES.call_once(|| crate::h264::yuv_convert::log_cpu_features());
+    LOG_FEATURES.call_once(crate::h264::yuv_convert::log_cpu_features);
 
     let result = if settings.auto_detect {
         // -- Auto-detect negotiation: try different protocol combos --
@@ -262,37 +263,36 @@ pub(crate) fn run_rdp_session(
 
 /// Build a list of (enable_tls, enable_credssp, allow_hybrid_ex) combos to try
 /// based on the negotiation strategy.
-pub(crate) fn build_negotiation_combos(strategy: &str, base: &ResolvedSettings) -> Vec<(bool, bool, bool)> {
+pub(crate) fn build_negotiation_combos(
+    strategy: &str,
+    base: &ResolvedSettings,
+) -> Vec<(bool, bool, bool)> {
     match strategy {
         "nla-first" => vec![
-            (true, true, base.allow_hybrid_ex),   // TLS + CredSSP (best)
-            (true, true, !base.allow_hybrid_ex),   // TLS + CredSSP (flip HYBRID_EX)
-            (true, false, false),                   // TLS only
-            (false, false, false),                  // Plain (no security)
+            (true, true, base.allow_hybrid_ex),  // TLS + CredSSP (best)
+            (true, true, !base.allow_hybrid_ex), // TLS + CredSSP (flip HYBRID_EX)
+            (true, false, false),                // TLS only
+            (false, false, false),               // Plain (no security)
         ],
         "tls-first" => vec![
-            (true, false, false),                   // TLS only
-            (true, true, base.allow_hybrid_ex),     // TLS + CredSSP
-            (true, true, !base.allow_hybrid_ex),    // TLS + CredSSP (flip HYBRID_EX)
-            (false, false, false),                   // Plain
+            (true, false, false),                // TLS only
+            (true, true, base.allow_hybrid_ex),  // TLS + CredSSP
+            (true, true, !base.allow_hybrid_ex), // TLS + CredSSP (flip HYBRID_EX)
+            (false, false, false),               // Plain
         ],
         "nla-only" => vec![
             (true, true, base.allow_hybrid_ex),
             (true, true, !base.allow_hybrid_ex),
         ],
-        "tls-only" => vec![
-            (true, false, false),
-        ],
-        "plain-only" => vec![
-            (false, false, false),
-        ],
+        "tls-only" => vec![(true, false, false)],
+        "plain-only" => vec![(false, false, false)],
         // "auto" -- try everything
         _ => vec![
-            (true, true, false),                    // TLS + CredSSP, no HYBRID_EX
-            (true, true, true),                     // TLS + CredSSP, with HYBRID_EX
-            (true, false, false),                   // TLS only
-            (false, true, false),                   // CredSSP without TLS
-            (false, false, false),                  // Plain
+            (true, true, false),   // TLS + CredSSP, no HYBRID_EX
+            (true, true, true),    // TLS + CredSSP, with HYBRID_EX
+            (true, false, false),  // TLS only
+            (false, true, false),  // CredSSP without TLS
+            (false, false, false), // Plain
         ],
     }
 }
@@ -340,7 +340,11 @@ fn run_rdp_session_auto_detect(
     for (i, (tls, credssp, hybrid_ex)) in combos.iter().take(max_attempts).enumerate() {
         log::info!(
             "RDP session {session_id}: auto-detect attempt {}/{} -> tls={} credssp={} hybrid_ex={}",
-            i + 1, max_attempts, tls, credssp, hybrid_ex
+            i + 1,
+            max_attempts,
+            tls,
+            credssp,
+            hybrid_ex
         );
 
         let _ = app_handle.emit(
@@ -350,7 +354,11 @@ fn run_rdp_session_auto_detect(
                 status: "negotiating".to_string(),
                 message: format!(
                     "Auto-detect attempt {}/{}: TLS={} CredSSP={} HYBRID_EX={}",
-                    i + 1, max_attempts, tls, credssp, hybrid_ex
+                    i + 1,
+                    max_attempts,
+                    tls,
+                    credssp,
+                    hybrid_ex
                 ),
                 desktop_width: None,
                 desktop_height: None,
@@ -395,9 +403,7 @@ fn run_rdp_session_auto_detect(
             Err(e) => {
                 let err_str = format!("{e}");
                 if err_str.contains("session_shutdown") {
-                    log::info!(
-                        "RDP session {session_id}: auto-detect aborting (session shutdown)"
-                    );
+                    log::info!("RDP session {session_id}: auto-detect aborting (session shutdown)");
                     return Err(e);
                 }
 
@@ -437,7 +443,7 @@ fn run_rdp_session_auto_detect(
         let total_fallback = fallback_max * color_depths.len();
         let mut attempt_num = 0usize;
 
-        for (_i, (tls, credssp, hybrid_ex)) in fallback_combos.iter().take(fallback_max).enumerate() {
+        for (tls, credssp, hybrid_ex) in fallback_combos.iter().take(fallback_max) {
             for &depth in color_depths {
                 attempt_num += 1;
                 log::info!(
@@ -610,8 +616,7 @@ fn establish_rdp_connection(
     if settings.tcp_keep_alive {
         use socket2::Socket;
         let sock = Socket::from(tcp_stream.try_clone()?);
-        let ka = socket2::TcpKeepalive::new()
-            .with_time(settings.tcp_keep_alive_interval);
+        let ka = socket2::TcpKeepalive::new().with_time(settings.tcp_keep_alive_interval);
         let _ = sock.set_tcp_keepalive(&ka);
         std::mem::forget(sock);
     }
@@ -690,14 +695,17 @@ fn establish_rdp_connection(
             let lb = &settings.load_balancing_info;
             if !lb.is_empty() {
                 if settings.use_routing_token {
-                    Some(ironrdp::pdu::nego::NegoRequestData::routing_token(lb.clone()))
+                    Some(ironrdp::pdu::nego::NegoRequestData::routing_token(
+                        lb.clone(),
+                    ))
                 } else {
                     Some(ironrdp::pdu::nego::NegoRequestData::cookie(lb.clone()))
                 }
             } else if settings.use_vm_id && !settings.vm_id.is_empty() {
-                Some(ironrdp::pdu::nego::NegoRequestData::cookie(
-                    format!("vmconnect/{}", settings.vm_id),
-                ))
+                Some(ironrdp::pdu::nego::NegoRequestData::cookie(format!(
+                    "vmconnect/{}",
+                    settings.vm_id
+                )))
             } else {
                 None
             }
@@ -740,12 +748,9 @@ fn establish_rdp_connection(
     // -- Register RDPGFX Dynamic Virtual Channel (H.264 hardware decode) --
     let gfx_frame_rx = if settings.gfx_enabled {
         let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxFrame>();
-        let gfx_proc = crate::gfx::processor::GfxProcessor::new(
-            settings.h264_decoder_preference,
-            gfx_tx,
-        );
-        let drdynvc = ironrdp_dvc::DrdynvcClient::new()
-            .with_dynamic_channel(gfx_proc);
+        let gfx_proc =
+            crate::gfx::processor::GfxProcessor::new(settings.h264_decoder_preference, gfx_tx);
+        let drdynvc = ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(gfx_proc);
         connector.attach_static_channel(drdynvc);
         log::info!("RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled)");
         Some(gfx_rx)
@@ -757,25 +762,29 @@ fn establish_rdp_connection(
     if settings.gateway_enabled {
         log::info!(
             "RDP session {session_id}: gateway enabled -> {}:{}",
-            settings.gateway_hostname, settings.gateway_port
+            settings.gateway_hostname,
+            settings.gateway_port
         );
     }
     if settings.use_vm_id {
         log::info!(
             "RDP session {session_id}: Hyper-V VM ID mode -> vm_id={:?} enhanced={}",
-            settings.vm_id, settings.enhanced_session_mode
+            settings.vm_id,
+            settings.enhanced_session_mode
         );
     }
     if settings.auto_detect {
         log::info!(
             "RDP session {session_id}: auto-detect negotiation -> strategy={} maxRetries={}",
-            settings.negotiation_strategy, settings.max_retries
+            settings.negotiation_strategy,
+            settings.max_retries
         );
     }
     if !settings.load_balancing_info.is_empty() {
         log::info!(
             "RDP session {session_id}: load balancing info -> {:?} (routing_token={})",
-            settings.load_balancing_info, settings.use_routing_token
+            settings.load_balancing_info,
+            settings.use_routing_token
         );
     }
     if !settings.use_credssp {
@@ -799,7 +808,8 @@ fn establish_rdp_connection(
     let t_tls = Instant::now();
 
     let (tcp_stream, leftover) = framed.into_inner();
-    let (mut tls_framed, server_public_key) = tls_upgrade(tcp_stream, host, leftover, cached_tls_connector)?;
+    let (mut tls_framed, server_public_key) =
+        tls_upgrade(tcp_stream, host, leftover, cached_tls_connector)?;
     let tls_ms = t_tls.elapsed().as_millis();
     log::info!("RDP session {session_id}: TLS upgrade took {tls_ms}ms");
     log::info!(
@@ -944,11 +954,7 @@ fn establish_rdp_connection(
     let mut active_render_backend = "webview".to_string();
 
     if render_backend.is_composited() {
-        match native_renderer::create_compositor(
-            &render_backend,
-            desktop_width,
-            desktop_height,
-        ) {
+        match native_renderer::create_compositor(&render_backend, desktop_width, desktop_height) {
             Some((comp, backend_name)) => {
                 log::info!(
                     "RDP session {session_id}: compositor '{backend_name}' created for {desktop_width}x{desktop_height}"
@@ -1067,9 +1073,7 @@ fn run_active_session_loop(
                     }
                 }
                 Ok(RdpCommand::AttachViewer(new_channel)) => {
-                    log::info!(
-                        "RDP session {session_id}: viewer attached (new frame channel)"
-                    );
+                    log::info!("RDP session {session_id}: viewer attached (new frame channel)");
                     // Send the full current framebuffer so the reattached viewer
                     // immediately sees the screen
                     {
@@ -1118,33 +1122,57 @@ fn run_active_session_loop(
                 Ok(RdpCommand::SignOut) => {
                     log::info!("RDP session {session_id}: sign-out requested");
                     use ironrdp::pdu::input::fast_path::KeyboardFlags;
-                    let win_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
+                    let win_press =
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
                     let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
                     let r_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x13);
-                    let win_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE | KeyboardFlags::EXTENDED, 0x5B);
+                    let win_release = FastPathInputEvent::KeyboardEvent(
+                        KeyboardFlags::RELEASE | KeyboardFlags::EXTENDED,
+                        0x5B,
+                    );
                     merged_inputs.extend([win_press, r_press, r_release, win_release]);
                     for ch in "logoff".encode_utf16() {
-                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::empty(), ch));
-                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::RELEASE, ch));
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(
+                            KeyboardFlags::empty(),
+                            ch,
+                        ));
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(
+                            KeyboardFlags::RELEASE,
+                            ch,
+                        ));
                     }
-                    let enter_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1C);
-                    let enter_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
+                    let enter_press =
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1C);
+                    let enter_release =
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
                     merged_inputs.extend([enter_press, enter_release]);
                 }
                 Ok(RdpCommand::ForceReboot) => {
                     log::info!("RDP session {session_id}: force reboot requested");
                     use ironrdp::pdu::input::fast_path::KeyboardFlags;
-                    let win_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
+                    let win_press =
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
                     let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
                     let r_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x13);
-                    let win_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE | KeyboardFlags::EXTENDED, 0x5B);
+                    let win_release = FastPathInputEvent::KeyboardEvent(
+                        KeyboardFlags::RELEASE | KeyboardFlags::EXTENDED,
+                        0x5B,
+                    );
                     merged_inputs.extend([win_press, r_press, r_release, win_release]);
                     for ch in "shutdown /r /t 0 /f".encode_utf16() {
-                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::empty(), ch));
-                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::RELEASE, ch));
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(
+                            KeyboardFlags::empty(),
+                            ch,
+                        ));
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(
+                            KeyboardFlags::RELEASE,
+                            ch,
+                        ));
                     }
-                    let enter_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1C);
-                    let enter_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
+                    let enter_press =
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1C);
+                    let enter_release =
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
                     merged_inputs.extend([enter_press, enter_release]);
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
@@ -1177,7 +1205,10 @@ fn run_active_session_loop(
             } else {
                 frame_channel // will fail silently on send
             };
-            match est.active_stage.process_fastpath_input(&mut est.image, &merged_inputs) {
+            match est
+                .active_stage
+                .process_fastpath_input(&mut est.image, &merged_inputs)
+            {
                 Ok(outputs) => {
                     if !viewer_detached {
                         if let Err(e) = process_outputs(
@@ -1208,7 +1239,9 @@ fn run_active_session_loop(
                                     .fetch_add(data.len() as u64, Ordering::Relaxed);
                                 stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
                                 if let Err(e) = est.tls_framed.write_all(data) {
-                                    return SessionLoopExit::NetworkError(format!("Write failed: {e}"));
+                                    return SessionLoopExit::NetworkError(format!(
+                                        "Write failed: {e}"
+                                    ));
                                 }
                             }
                         }
@@ -1238,10 +1271,7 @@ fn run_active_session_loop(
             if stats.should_send_keepalive(keepalive_idle, keepalive_min_interval) {
                 // Send a zero-length FastPath input frame as a keepalive
                 // (the server treats any valid PDU as proof of life).
-                if let Ok(outputs) = est.active_stage.process_fastpath_input(
-                    &mut est.image,
-                    &[],
-                ) {
+                if let Ok(outputs) = est.active_stage.process_fastpath_input(&mut est.image, &[]) {
                     for output in &outputs {
                         if let ActiveStageOutput::ResponseFrame(data) = output {
                             let _ = est.tls_framed.write_all(data);
@@ -1254,7 +1284,10 @@ fn run_active_session_loop(
         }
 
         // - Flush batched frame updates -
-        if frame_batching && !dirty_regions.is_empty() && last_frame_emit.elapsed() >= batch_interval {
+        if frame_batching
+            && !dirty_regions.is_empty()
+            && last_frame_emit.elapsed() >= batch_interval
+        {
             merge_dirty_regions(&mut dirty_regions);
             if !viewer_detached {
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
@@ -1269,7 +1302,10 @@ fn run_active_session_loop(
                     }
                 } else {
                     push_multi_rect_via_channel(
-                        est.image.data(), est.desktop_width, &dirty_regions, active_ch,
+                        est.image.data(),
+                        est.desktop_width,
+                        &dirty_regions,
+                        active_ch,
                     );
                 }
             }
@@ -1331,7 +1367,9 @@ fn run_active_session_loop(
         // - Read and process PDUs -
         batch_dirty_rects.clear();
         let mut batch_had_graphics = false;
-        let mut batch_should_reactivate: Option<Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>> = None;
+        let mut batch_should_reactivate: Option<
+            Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>,
+        > = None;
         let mut batch_should_terminate = false;
         let mut pdus_this_batch: u32 = 0;
 
@@ -1372,7 +1410,10 @@ fn run_active_session_loop(
                         .fetch_add(payload_len, Ordering::Relaxed);
                     stats.pdus_received.fetch_add(1, Ordering::Relaxed);
 
-                    match est.active_stage.process(&mut est.image, action, payload.as_ref()) {
+                    match est
+                        .active_stage
+                        .process(&mut est.image, action, payload.as_ref())
+                    {
                         Ok(outputs) => {
                             for output in outputs {
                                 match output {
@@ -1382,9 +1423,9 @@ fn run_active_session_loop(
                                             .fetch_add(data.len() as u64, Ordering::Relaxed);
                                         stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
                                         if let Err(e) = est.tls_framed.write_all(&data) {
-                                            return SessionLoopExit::NetworkError(
-                                                format!("Failed to send response frame: {e}"),
-                                            );
+                                            return SessionLoopExit::NetworkError(format!(
+                                                "Failed to send response frame: {e}"
+                                            ));
                                         }
                                     }
                                     ActiveStageOutput::GraphicsUpdate(region) => {
@@ -1396,31 +1437,54 @@ fn run_active_session_loop(
                                             dirty_regions.push((region.left, region.top, rw, rh));
                                         } else if let Some(ref mut comp) = est.compositor {
                                             comp.update_region(
-                                                est.image.data(), est.desktop_width,
-                                                region.left, region.top, rw, rh,
+                                                est.image.data(),
+                                                est.desktop_width,
+                                                region.left,
+                                                region.top,
+                                                rw,
+                                                rh,
                                             );
                                         } else {
-                                            batch_dirty_rects.push((region.left, region.top, rw, rh));
+                                            batch_dirty_rects.push((
+                                                region.left,
+                                                region.top,
+                                                rw,
+                                                rh,
+                                            ));
                                         }
                                     }
                                     ActiveStageOutput::PointerDefault => {
-                                        let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
-                                            session_id: session_id.to_string(),
-                                            pointer_type: "default", x: None, y: None,
-                                        });
+                                        let _ = app_handle.emit(
+                                            "rdp://pointer",
+                                            RdpPointerEvent {
+                                                session_id: session_id.to_string(),
+                                                pointer_type: "default",
+                                                x: None,
+                                                y: None,
+                                            },
+                                        );
                                     }
                                     ActiveStageOutput::PointerHidden => {
-                                        let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
-                                            session_id: session_id.to_string(),
-                                            pointer_type: "hidden", x: None, y: None,
-                                        });
+                                        let _ = app_handle.emit(
+                                            "rdp://pointer",
+                                            RdpPointerEvent {
+                                                session_id: session_id.to_string(),
+                                                pointer_type: "hidden",
+                                                x: None,
+                                                y: None,
+                                            },
+                                        );
                                     }
                                     ActiveStageOutput::PointerPosition { x, y } => {
-                                        let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
-                                            session_id: session_id.to_string(),
-                                            pointer_type: "position",
-                                            x: Some(x), y: Some(y),
-                                        });
+                                        let _ = app_handle.emit(
+                                            "rdp://pointer",
+                                            RdpPointerEvent {
+                                                session_id: session_id.to_string(),
+                                                pointer_type: "position",
+                                                x: Some(x),
+                                                y: Some(y),
+                                            },
+                                        );
                                     }
                                     ActiveStageOutput::PointerBitmap(_bitmap) => {}
                                     ActiveStageOutput::Terminate(reason) => {
@@ -1454,13 +1518,12 @@ fn run_active_session_loop(
                     }
                 }
                 Err(e) if is_timeout_error(&e) => {
-                    if pdus_this_batch == 0 {
-                        if current_timeout == timeout_active
-                            && last_data_received.elapsed() >= idle_threshold
-                        {
-                            current_timeout = timeout_idle;
-                            set_read_timeout_on_framed(&est.tls_framed, Some(current_timeout));
-                        }
+                    if pdus_this_batch == 0
+                        && current_timeout == timeout_active
+                        && last_data_received.elapsed() >= idle_threshold
+                    {
+                        current_timeout = timeout_idle;
+                        set_read_timeout_on_framed(&est.tls_framed, Some(current_timeout));
                     }
                     break;
                 }
@@ -1471,7 +1534,7 @@ fn run_active_session_loop(
                         // (the server timed out the idle session).  Try to reconnect.
                         if viewer_detached {
                             return SessionLoopExit::NetworkError(
-                                "Server closed connection (EOF) while detached".to_string()
+                                "Server closed connection (EOF) while detached".to_string(),
                             );
                         }
                         return SessionLoopExit::ServerClosed;
@@ -1500,16 +1563,22 @@ fn run_active_session_loop(
                 merge_dirty_regions(&mut batch_dirty_rects);
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                 push_multi_rect_via_channel(
-                    est.image.data(), est.desktop_width, &batch_dirty_rects, active_ch,
+                    est.image.data(),
+                    est.desktop_width,
+                    &batch_dirty_rects,
+                    active_ch,
                 );
             }
 
             let fc = stats.frame_count.load(Ordering::Relaxed);
-            if fc > 0 && fc % full_frame_sync_interval == 0 {
+            if fc > 0 && fc.is_multiple_of(full_frame_sync_interval) {
                 frame_store.update_region(
-                    session_id, est.image.data(), est.desktop_width,
+                    session_id,
+                    est.image.data(),
+                    est.desktop_width,
                     &ironrdp::pdu::geometry::InclusiveRectangle {
-                        left: 0, top: 0,
+                        left: 0,
+                        top: 0,
                         right: est.desktop_width.saturating_sub(1),
                         bottom: est.desktop_height.saturating_sub(1),
                     },
@@ -1522,9 +1591,7 @@ fn run_active_session_loop(
         }
 
         if let Some(cas) = batch_should_reactivate {
-            log::info!(
-                "RDP session {session_id}: DeactivateAll received, running reactivation"
-            );
+            log::info!("RDP session {session_id}: DeactivateAll received, running reactivation");
             stats.reactivations.fetch_add(1, Ordering::Relaxed);
 
             let _ = app_handle.emit(
@@ -1556,7 +1623,8 @@ fn run_active_session_loop(
 
                     log::info!(
                         "RDP session {session_id}: reactivated at {}x{}",
-                        est.desktop_width, est.desktop_height
+                        est.desktop_width,
+                        est.desktop_height
                     );
 
                     let _ = app_handle.emit(
@@ -1573,15 +1641,10 @@ fn run_active_session_loop(
                         },
                     );
 
-                    set_read_timeout_on_framed(
-                        &est.tls_framed,
-                        Some(settings.read_timeout),
-                    );
+                    set_read_timeout_on_framed(&est.tls_framed, Some(settings.read_timeout));
                 }
                 Err(e) => {
-                    log::error!(
-                        "RDP session {session_id}: reactivation failed: {e}"
-                    );
+                    log::error!("RDP session {session_id}: reactivation failed: {e}");
                     return SessionLoopExit::NetworkError(format!("Reactivation failed: {e}"));
                 }
             }
@@ -1689,7 +1752,11 @@ fn run_rdp_session_inner(
 
                 sleep_with_shutdown_check(
                     cmd_rx,
-                    compute_backoff_delay(reconnect_count, settings.reconnect_base_delay, settings.reconnect_max_delay),
+                    compute_backoff_delay(
+                        reconnect_count,
+                        settings.reconnect_base_delay,
+                        settings.reconnect_max_delay,
+                    ),
                 )?;
                 continue 'session;
             }
@@ -1709,7 +1776,10 @@ fn run_rdp_session_inner(
 
         // Drop compositor explicitly before potentially reconnecting
         if let Some(ref comp) = established.compositor {
-            log::info!("RDP session {session_id}: dropping compositor '{}'", comp.name());
+            log::info!(
+                "RDP session {session_id}: dropping compositor '{}'",
+                comp.name()
+            );
         }
         drop(established);
 
@@ -1728,9 +1798,7 @@ fn run_rdp_session_inner(
                     return Err(msg.into());
                 }
                 reconnect_count += 1;
-                log::info!(
-                    "RDP session {session_id}: will reconnect ({reconnect_count}): {msg}"
-                );
+                log::info!("RDP session {session_id}: will reconnect ({reconnect_count}): {msg}");
             }
             SessionLoopExit::ReconnectRequested => {
                 reconnect_count += 1;
@@ -1757,7 +1825,11 @@ fn run_rdp_session_inner(
         // Sleep with exponential backoff, checking for shutdown.
         sleep_with_shutdown_check(
             cmd_rx,
-            compute_backoff_delay(reconnect_count, settings.reconnect_base_delay, settings.reconnect_max_delay),
+            compute_backoff_delay(
+                reconnect_count,
+                settings.reconnect_base_delay,
+                settings.reconnect_max_delay,
+            ),
         )?;
         continue 'session;
     }

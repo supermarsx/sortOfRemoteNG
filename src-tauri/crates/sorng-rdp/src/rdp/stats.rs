@@ -101,7 +101,6 @@ pub struct RdpSessionStats {
     pub alive: AtomicBool,
 
     // -- Health tracking --
-
     /// Timestamp of the last successfully received PDU, encoded as millis
     /// since `connected_at`.  Lock-free: uses `Relaxed` load/store on the
     /// hottest path (every incoming PDU).
@@ -215,7 +214,8 @@ impl RdpSessionStats {
     pub(crate) fn record_successful_pdu(&self) {
         self.consecutive_pdu_errors.store(0, Ordering::Relaxed);
         self.consecutive_zero_reads.store(0, Ordering::Relaxed);
-        self.last_data_time_ms.store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
+        self.last_data_time_ms
+            .store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
     }
 
     /// Record a PDU processing error.  Returns the new consecutive count.
@@ -236,21 +236,26 @@ impl RdpSessionStats {
     #[allow(dead_code)]
     pub(crate) fn record_input_sent(&self) {
         self.input_events.fetch_add(1, Ordering::Relaxed);
-        self.last_input_time_ms.store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
+        self.last_input_time_ms
+            .store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
     }
 
     /// Record N input events in a single batch (avoids N separate
     /// `Instant::now()` calls on the input coalescing path).
     #[inline]
     pub(crate) fn record_input_sent_batch(&self, count: u64) {
-        if count == 0 { return; }
+        if count == 0 {
+            return;
+        }
         self.input_events.fetch_add(count, Ordering::Relaxed);
-        self.last_input_time_ms.store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
+        self.last_input_time_ms
+            .store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
     }
 
     /// Record that a keepalive was sent.  Lock-free.
     pub(crate) fn record_keepalive_sent(&self) {
-        self.last_keepalive_time_ms.store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
+        self.last_keepalive_time_ms
+            .store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
     }
 
     /// Check whether a keepalive should be sent now.
@@ -279,7 +284,8 @@ impl RdpSessionStats {
         }
 
         // Rate-limit: don't send more than once per min_interval.
-        let last_keepalive = self.instant_from_ms(self.last_keepalive_time_ms.load(Ordering::Relaxed));
+        let last_keepalive =
+            self.instant_from_ms(self.last_keepalive_time_ms.load(Ordering::Relaxed));
         if now.duration_since(last_keepalive) < min_interval {
             return false;
         }

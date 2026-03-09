@@ -387,7 +387,7 @@ impl Encode for FrameAcknowledgePdu {
         dst.write_u16(GfxCmdId::FrameAcknowledge as u16);
         dst.write_u16(0); // flags
         dst.write_u32((RDPGFX_HEADER_SIZE + 12) as u32); // 12 bytes body
-        // Body
+                                                         // Body
         dst.write_u32(self.queue_depth);
         dst.write_u32(self.frame_id);
         dst.write_u32(self.total_frames_decoded);
@@ -502,7 +502,7 @@ mod tests {
             0x01, 0x00, // surface_id = 1
             0x00, 0x04, // width = 1024
             0x00, 0x03, // height = 768
-            0x20,       // pixel_format = 32 (XRGB)
+            0x20, // pixel_format = 32 (XRGB)
         ];
         let cs = CreateSurface::parse(&body).unwrap();
         assert_eq!(cs.surface_id, 1);
@@ -638,7 +638,7 @@ mod tests {
         let mut body = vec![
             0x01, 0x00, // surface_id = 1
             0x03, 0x00, // codec_id = CODEC_CAVIDEO
-            0x20,       // pixel_format
+            0x20, // pixel_format
             // dest_rect (8 bytes)
             0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x30, 0x00,
         ];
@@ -653,8 +653,7 @@ mod tests {
     #[test]
     fn wire_to_surface1_parse_empty_bitmap() {
         let body = [
-            0x01, 0x00, 0x00, 0x00, 0x20,
-            0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
+            0x01, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
         ];
         let wts = WireToSurface1::parse(&body).unwrap();
         assert!(wts.bitmap_data.is_empty());
@@ -680,12 +679,12 @@ mod tests {
     fn avc420_parse_one_region() {
         let mut body = Vec::new();
         body.extend_from_slice(&1u32.to_le_bytes()); // numRegions = 1
-        // region rect (8 bytes)
+                                                     // region rect (8 bytes)
         body.extend_from_slice(&[0, 0, 0, 0, 64, 0, 48, 0]);
         // quant/quality (2 bytes)
-        body.push(85);  // quality
-        body.push(1);   // progressive
-        // h264 data
+        body.push(85); // quality
+        body.push(1); // progressive
+                      // h264 data
         body.extend_from_slice(b"h264");
         let stream = Avc420BitmapStream::parse(&body).unwrap();
         assert_eq!(stream.region_rects.len(), 1);
@@ -713,7 +712,7 @@ mod tests {
         let mut body = Vec::new();
         body.extend_from_slice(&1u32.to_le_bytes());
         body.extend_from_slice(&[0; 8]); // 1 rect
-        // Missing quant/quality bytes
+                                         // Missing quant/quality bytes
         assert!(Avc420BitmapStream::parse(&body).is_err());
     }
 
@@ -726,7 +725,15 @@ mod tests {
 
     #[test]
     fn codec_ids_are_distinct() {
-        let ids = [CODEC_UNCOMPRESSED, CODEC_PLANAR, CODEC_CAVIDEO, CODEC_CLEARCODEC, CODEC_ALPHA, CODEC_AVC444, CODEC_AVC444V2];
+        let ids = [
+            CODEC_UNCOMPRESSED,
+            CODEC_PLANAR,
+            CODEC_CAVIDEO,
+            CODEC_CLEARCODEC,
+            CODEC_ALPHA,
+            CODEC_AVC444,
+            CODEC_AVC444V2,
+        ];
         for (i, a) in ids.iter().enumerate() {
             for (j, b) in ids.iter().enumerate() {
                 if i != j {

@@ -41,17 +41,12 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
 
         let response_bytes = match request.protocol {
             NetworkProtocol::Http | NetworkProtocol::Https => {
-                let resp = self
-                    .client
-                    .post(&url)
-                    .body(data)
-                    .send()
-                    .map_err(|e| {
-                        ironrdp::connector::sspi::Error::new(
-                            ironrdp::connector::sspi::ErrorKind::InternalError,
-                            format!("HTTP request failed: {e}"),
-                        )
-                    })?;
+                let resp = self.client.post(&url).body(data).send().map_err(|e| {
+                    ironrdp::connector::sspi::Error::new(
+                        ironrdp::connector::sspi::ErrorKind::InternalError,
+                        format!("HTTP request failed: {e}"),
+                    )
+                })?;
                 resp.bytes()
                     .map_err(|e| {
                         ironrdp::connector::sspi::Error::new(
@@ -131,13 +126,16 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
 
 // ---- TLS upgrade helper ----
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
     leftover: ::bytes::BytesMut,
     cached_connector: Option<Arc<native_tls::TlsConnector>>,
-) -> Result<(Framed<native_tls::TlsStream<TcpStream>>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> Result<
+    (Framed<native_tls::TlsStream<TcpStream>>, Vec<u8>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     // Re-use the cached TLS connector when available -- building one from
     // scratch loads the system certificate store which is very slow on Windows.
     let owned_connector;
@@ -194,7 +192,7 @@ pub(crate) fn extract_server_public_key(
 pub(crate) fn extract_cert_fingerprint(
     tls_stream: &native_tls::TlsStream<TcpStream>,
 ) -> Option<String> {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let peer_cert = tls_stream.peer_certificate().ok()??;
     let der = peer_cert.to_der().ok()?;

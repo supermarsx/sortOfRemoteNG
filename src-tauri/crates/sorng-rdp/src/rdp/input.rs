@@ -1,5 +1,5 @@
 use ironrdp::pdu::input::fast_path::FastPathInputEvent;
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 
 use super::types::RdpInputAction;
 
@@ -70,7 +70,10 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> InputEvents {
             })]
         }
         RdpInputAction::Wheel {
-            x, y, delta, horizontal,
+            x,
+            y,
+            delta,
+            horizontal,
         } => {
             let flags = if *horizontal {
                 PointerFlags::HORIZONTAL_WHEEL

@@ -1,12 +1,12 @@
 pub(crate) mod errors;
+mod frame_delivery;
 mod frame_store;
+mod input;
+mod network;
+mod session_runner;
 mod settings;
 mod stats;
 mod types;
-mod network;
-mod input;
-mod session_runner;
-mod frame_delivery;
 // These must be pub(crate) because #[tauri::command] generates hidden
 // __cmd__<name> symbols that the invoke handler needs to resolve.
 pub(crate) mod commands;
@@ -21,15 +21,15 @@ pub type RdpServiceState = Arc<Mutex<types::RdpService>>;
 // ---- Re-exports: types visible to the rest of the crate ----
 pub use errors::RdpError;
 pub use frame_store::{SharedFrameStore, SharedFrameStoreState};
+pub use settings::RdpSettingsPayload;
 pub use stats::ConnectionPhase;
 pub use types::{
-    RdpService, RdpSession, RdpStatusEvent, RdpPointerEvent, RdpStatsEvent,
-    RdpInputAction, RdpLogEntry,
+    RdpInputAction, RdpLogEntry, RdpPointerEvent, RdpService, RdpSession, RdpStatsEvent,
+    RdpStatusEvent,
 };
-pub use settings::RdpSettingsPayload;
 
 // Re-export shared diagnostics types so the frontend API stays unchanged.
-pub use sorng_core::diagnostics::{DiagnosticStep, DiagnosticReport};
+pub use sorng_core::diagnostics::{DiagnosticReport, DiagnosticStep};
 
 // ---- Re-exports: all Tauri commands + hidden __cmd__ symbols ----
 // Wildcard re-export is needed because #[tauri::command] generates

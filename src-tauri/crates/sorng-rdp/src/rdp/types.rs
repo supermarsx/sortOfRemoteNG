@@ -56,11 +56,31 @@ pub struct RdpStatsEvent {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum RdpInputAction {
-    MouseMove { x: u16, y: u16 },
-    MouseButton { x: u16, y: u16, button: u8, pressed: bool },
-    KeyboardKey { scancode: u16, pressed: bool, extended: bool },
-    Wheel { x: u16, y: u16, delta: i16, horizontal: bool },
-    Unicode { code: u16, pressed: bool },
+    MouseMove {
+        x: u16,
+        y: u16,
+    },
+    MouseButton {
+        x: u16,
+        y: u16,
+        button: u8,
+        pressed: bool,
+    },
+    KeyboardKey {
+        scancode: u16,
+        pressed: bool,
+        extended: bool,
+    },
+    Wheel {
+        x: u16,
+        y: u16,
+        delta: i16,
+        horizontal: bool,
+    },
+    Unicode {
+        code: u16,
+        pressed: bool,
+    },
 }
 
 // ---- Session and service types ----
@@ -115,8 +135,10 @@ pub(crate) struct RdpActiveConnection {
     pub(crate) stats: Arc<RdpSessionStats>,
     pub(crate) _handle: tokio::task::JoinHandle<()>,
     /// Cached password for automatic reconnection (CredSSP re-auth).
+    #[allow(dead_code)]
     pub(crate) cached_password: String,
     /// Cached domain for automatic reconnection.
+    #[allow(dead_code)]
     pub(crate) cached_domain: Option<String>,
 }
 

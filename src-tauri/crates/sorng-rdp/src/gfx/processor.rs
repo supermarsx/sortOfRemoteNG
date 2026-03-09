@@ -3,8 +3,8 @@
 use std::sync::mpsc;
 
 use ironrdp_core::impl_as_any;
-use ironrdp_dvc::{DvcClientProcessor, DvcMessage, DvcProcessor};
 use ironrdp_dvc::ironrdp_pdu::PduResult;
+use ironrdp_dvc::{DvcClientProcessor, DvcMessage, DvcProcessor};
 
 use crate::h264::{self, DecodedFrame, H264Decoder, H264DecoderPreference};
 
@@ -89,7 +89,9 @@ impl GfxProcessor {
 
     fn handle_create_surface(&mut self, body: &[u8]) -> Vec<DvcMessage> {
         match CreateSurface::parse(body) {
-            Ok(cs) => self.surfaces.create_surface(cs.surface_id, cs.width, cs.height),
+            Ok(cs) => self
+                .surfaces
+                .create_surface(cs.surface_id, cs.width, cs.height),
             Err(e) => log::warn!("GFX: CreateSurface parse error: {e}"),
         }
         Vec::new()
@@ -327,9 +329,7 @@ impl DvcProcessor for GfxProcessor {
                 }
                 x if x == GfxCmdId::StartFrame as u16 => self.handle_start_frame(body),
                 x if x == GfxCmdId::EndFrame as u16 => self.handle_end_frame(body),
-                x if x == GfxCmdId::WireToSurface1 as u16 => {
-                    self.handle_wire_to_surface_1(body)
-                }
+                x if x == GfxCmdId::WireToSurface1 as u16 => self.handle_wire_to_surface_1(body),
                 x if x == GfxCmdId::ResetGraphics as u16 => self.handle_reset_graphics(body),
                 other => {
                     log::debug!("GFX: unhandled cmd_id 0x{other:04X}");

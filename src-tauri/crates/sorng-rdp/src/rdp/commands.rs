@@ -36,7 +36,9 @@ pub fn detect_keyboard_layout() -> Result<u32, String> {
         // For RDP we need the full layout identifier if available,
         // otherwise the language ID is sufficient.
         let layout = raw as u32;
-        log::info!("Detected keyboard layout: HKL=0x{raw:08x} lang=0x{lang_id:04x} layout=0x{layout:08x}");
+        log::info!(
+            "Detected keyboard layout: HKL=0x{raw:08x} lang=0x{lang_id:04x} layout=0x{layout:08x}"
+        );
         Ok(layout)
     }
     #[cfg(not(target_os = "windows"))]
@@ -47,6 +49,7 @@ pub fn detect_keyboard_layout() -> Result<u32, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn connect_rdp(
     state: tauri::State<'_, RdpServiceState>,
     frame_store: tauri::State<'_, SharedFrameStoreState>,
@@ -197,7 +200,11 @@ pub async fn disconnect_rdp(
     // 1) Try by session_id first
     if let Some(ref sid) = session_id {
         if let Some(conn) = service.connections.remove(sid) {
-            service.push_log("info", format!("Disconnecting session {sid}"), Some(sid.clone()));
+            service.push_log(
+                "info",
+                format!("Disconnecting session {sid}"),
+                Some(sid.clone()),
+            );
             let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
             tokio::time::sleep(Duration::from_millis(100)).await;
             return Ok(());
@@ -213,7 +220,11 @@ pub async fn disconnect_rdp(
             .map(|c| c.session.id.clone());
         if let Some(id) = old_id {
             if let Some(conn) = service.connections.remove(&id) {
-                service.push_log("info", format!("Disconnecting session {id} (connection_id={cid})"), Some(id.clone()));
+                service.push_log(
+                    "info",
+                    format!("Disconnecting session {id} (connection_id={cid})"),
+                    Some(id.clone()),
+                );
                 let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 return Ok(());
@@ -257,7 +268,11 @@ pub async fn detach_rdp_session(
         }
     }
     if let Some(id) = did_detach {
-        service.push_log("info", format!("Viewer detached from session {id}"), Some(id));
+        service.push_log(
+            "info",
+            format!("Viewer detached from session {id}"),
+            Some(id),
+        );
     }
     Ok(())
 }
@@ -316,7 +331,11 @@ pub async fn rdp_sign_out(
     conn.cmd_tx
         .send(RdpCommand::SignOut)
         .map_err(|_| "Session command channel closed".to_string())?;
-    service.push_log("info", format!("Sign-out requested for session {session_id}"), Some(session_id));
+    service.push_log(
+        "info",
+        format!("Sign-out requested for session {session_id}"),
+        Some(session_id),
+    );
     Ok(())
 }
 
@@ -335,7 +354,11 @@ pub async fn rdp_force_reboot(
     conn.cmd_tx
         .send(RdpCommand::ForceReboot)
         .map_err(|_| "Session command channel closed".to_string())?;
-    service.push_log("warn", format!("Force reboot requested for session {session_id}"), Some(session_id));
+    service.push_log(
+        "warn",
+        format!("Force reboot requested for session {session_id}"),
+        Some(session_id),
+    );
     Ok(())
 }
 
