@@ -66,7 +66,7 @@ pub async fn migrate(
                 // Instead, mark that migration needs the frontend to first decrypt.
                 return Err(VaultError::migration(
                     "Legacy file appears encrypted with frontend PBKDF2 — \
-                     please unlock via the UI first, then retry migration"
+                     please unlock via the UI first, then retry migration",
                 ));
             }
         }
@@ -76,7 +76,7 @@ pub async fn migrate(
             Ok(_) => (raw.clone(), false),
             Err(_) => {
                 return Err(VaultError::migration(
-                    "Legacy file is not valid JSON and no password was provided"
+                    "Legacy file is not valid JSON and no password was provided",
                 ));
             }
         }

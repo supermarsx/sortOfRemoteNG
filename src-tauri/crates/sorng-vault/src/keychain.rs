@@ -9,57 +9,97 @@ use crate::types::*;
 
 fn plat_store(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
     #[cfg(target_os = "windows")]
-    { crate::platform::windows::store_secret(service, account, secret) }
+    {
+        crate::platform::windows::store_secret(service, account, secret)
+    }
     #[cfg(target_os = "macos")]
-    { crate::platform::macos::store_secret(service, account, secret) }
+    {
+        crate::platform::macos::store_secret(service, account, secret)
+    }
     #[cfg(target_os = "linux")]
-    { crate::platform::linux::store_secret(service, account, secret) }
+    {
+        crate::platform::linux::store_secret(service, account, secret)
+    }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    { crate::platform::fallback::store_secret(service, account, secret) }
+    {
+        crate::platform::fallback::store_secret(service, account, secret)
+    }
 }
 
 fn plat_read(service: &str, account: &str) -> VaultResult<Vec<u8>> {
     #[cfg(target_os = "windows")]
-    { crate::platform::windows::read_secret(service, account) }
+    {
+        crate::platform::windows::read_secret(service, account)
+    }
     #[cfg(target_os = "macos")]
-    { crate::platform::macos::read_secret(service, account) }
+    {
+        crate::platform::macos::read_secret(service, account)
+    }
     #[cfg(target_os = "linux")]
-    { crate::platform::linux::read_secret(service, account) }
+    {
+        crate::platform::linux::read_secret(service, account)
+    }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    { crate::platform::fallback::read_secret(service, account) }
+    {
+        crate::platform::fallback::read_secret(service, account)
+    }
 }
 
 fn plat_delete(service: &str, account: &str) -> VaultResult<()> {
     #[cfg(target_os = "windows")]
-    { crate::platform::windows::delete_secret(service, account) }
+    {
+        crate::platform::windows::delete_secret(service, account)
+    }
     #[cfg(target_os = "macos")]
-    { crate::platform::macos::delete_secret(service, account) }
+    {
+        crate::platform::macos::delete_secret(service, account)
+    }
     #[cfg(target_os = "linux")]
-    { crate::platform::linux::delete_secret(service, account) }
+    {
+        crate::platform::linux::delete_secret(service, account)
+    }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    { crate::platform::fallback::delete_secret(service, account) }
+    {
+        crate::platform::fallback::delete_secret(service, account)
+    }
 }
 
 fn plat_available() -> bool {
     #[cfg(target_os = "windows")]
-    { crate::platform::windows::is_available() }
+    {
+        crate::platform::windows::is_available()
+    }
     #[cfg(target_os = "macos")]
-    { crate::platform::macos::is_available() }
+    {
+        crate::platform::macos::is_available()
+    }
     #[cfg(target_os = "linux")]
-    { crate::platform::linux::is_available() }
+    {
+        crate::platform::linux::is_available()
+    }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    { crate::platform::fallback::is_available() }
+    {
+        crate::platform::fallback::is_available()
+    }
 }
 
 fn plat_backend_name() -> &'static str {
     #[cfg(target_os = "windows")]
-    { crate::platform::windows::backend_name() }
+    {
+        crate::platform::windows::backend_name()
+    }
     #[cfg(target_os = "macos")]
-    { crate::platform::macos::backend_name() }
+    {
+        crate::platform::macos::backend_name()
+    }
     #[cfg(target_os = "linux")]
-    { crate::platform::linux::backend_name() }
+    {
+        crate::platform::linux::backend_name()
+    }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    { crate::platform::fallback::backend_name() }
+    {
+        crate::platform::fallback::backend_name()
+    }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -130,34 +130,74 @@ impl std::error::Error for VaultError {}
 
 impl VaultError {
     pub fn not_found(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::NotFound, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::NotFound,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn platform(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::PlatformError, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::PlatformError,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn crypto(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::CryptoError, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::CryptoError,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn kdf(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::KdfError, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::KdfError,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn io(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::IoError, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::IoError,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn serde(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::SerdeError, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::SerdeError,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn migration(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::MigrationError, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::MigrationError,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn internal(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::Internal, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::Internal,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn access_denied(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::AccessDenied, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::AccessDenied,
+            message: msg.into(),
+            detail: None,
+        }
     }
     pub fn backend_unavailable(msg: impl Into<String>) -> Self {
-        Self { kind: VaultErrorKind::BackendUnavailable, message: msg.into(), detail: None }
+        Self {
+            kind: VaultErrorKind::BackendUnavailable,
+            message: msg.into(),
+            detail: None,
+        }
     }
 }
 

@@ -19,8 +19,10 @@ pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> Vault
         .args([
             "store",
             &format!("--label={label}"),
-            "service", service,
-            "account", account,
+            "service",
+            service,
+            "account",
+            account,
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -51,11 +53,7 @@ pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> Vault
 /// Read a secret via `secret-tool lookup`.
 pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> {
     let output = Command::new("secret-tool")
-        .args([
-            "lookup",
-            "service", service,
-            "account", account,
-        ])
+        .args(["lookup", "service", service, "account", account])
         .output()
         .map_err(|e| VaultError::platform(format!("secret-tool lookup spawn: {e}")))?;
 
@@ -71,11 +69,7 @@ pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> 
 /// Delete a secret via `secret-tool clear`.
 pub(crate) fn delete_secret(service: &str, account: &str) -> VaultResult<()> {
     let output = Command::new("secret-tool")
-        .args([
-            "clear",
-            "service", service,
-            "account", account,
-        ])
+        .args(["clear", "service", service, "account", account])
         .output()
         .map_err(|e| VaultError::platform(format!("secret-tool clear spawn: {e}")))?;
 

@@ -10,11 +10,11 @@ use crate::types::*;
 
 /// Store a secret in Windows Credential Manager (DPAPI-protected).
 pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
+    use windows::core::HSTRING;
+    use windows::Win32::Foundation::FILETIME;
     use windows::Win32::Security::Credentials::{
         CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
     };
-    use windows::core::HSTRING;
-    use windows::Win32::Foundation::FILETIME;
 
     // DPAPI-protect the secret first
     let protected = dpapi_protect(secret)?;
@@ -22,7 +22,7 @@ pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> Vault
     let target = format!("{service}/{account}");
     let target_h = HSTRING::from(&target);
 
-    let mut cred = CREDENTIALW {
+    let cred = CREDENTIALW {
         Flags: Default::default(),
         Type: CRED_TYPE_GENERIC,
         TargetName: windows::core::PWSTR(target_h.as_ptr() as *mut u16),
@@ -38,7 +38,7 @@ pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> Vault
     };
 
     unsafe {
-        CredWriteW(&mut cred, 0)
+        CredWriteW(&cred, 0)
             .map_err(|e| VaultError::platform(format!("CredWriteW failed: {e}")))?;
     }
 
@@ -47,10 +47,10 @@ pub(crate) fn store_secret(service: &str, account: &str, secret: &[u8]) -> Vault
 
 /// Read a secret from Windows Credential Manager (DPAPI-unprotected).
 pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> {
+    use windows::core::HSTRING;
     use windows::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
     };
-    use windows::core::HSTRING;
 
     let target = format!("{service}/{account}");
     let target_h = HSTRING::from(&target);
@@ -66,10 +66,8 @@ pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> 
         .map_err(|e| VaultError::not_found(format!("CredReadW failed: {e}")))?;
 
         let cred = &*pcred;
-        let blob = std::slice::from_raw_parts(
-            cred.CredentialBlob,
-            cred.CredentialBlobSize as usize,
-        );
+        let blob =
+            std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize);
         let protected = blob.to_vec();
         CredFree(pcred as *const _ as *const std::ffi::c_void);
 
@@ -80,8 +78,8 @@ pub(crate) fn read_secret(service: &str, account: &str) -> VaultResult<Vec<u8>> 
 
 /// Delete a secret from Windows Credential Manager.
 pub(crate) fn delete_secret(service: &str, account: &str) -> VaultResult<()> {
-    use windows::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
     use windows::core::HSTRING;
+    use windows::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
 
     let target = format!("{service}/{account}");
     let target_h = HSTRING::from(&target);
@@ -111,12 +109,10 @@ pub(crate) fn backend_name() -> &'static str {
 
 /// Protect data with DPAPI (bound to current user).
 fn dpapi_protect(plaintext: &[u8]) -> VaultResult<Vec<u8>> {
-    use windows::Win32::Security::Cryptography::{
-        CryptProtectData, CRYPT_INTEGER_BLOB,
-    };
     use windows::Win32::Foundation::LocalFree;
+    use windows::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
 
-    let mut data_in = CRYPT_INTEGER_BLOB {
+    let data_in = CRYPT_INTEGER_BLOB {
         cbData: plaintext.len() as u32,
         pbData: plaintext.as_ptr() as *mut u8,
     };
@@ -127,18 +123,17 @@ fn dpapi_protect(plaintext: &[u8]) -> VaultResult<Vec<u8>> {
 
     unsafe {
         CryptProtectData(
-            &mut data_in,
-            None,           // description
-            None,           // optional entropy
-            None,           // reserved
-            None,           // prompt struct
-            0,              // flags
+            &data_in,
+            None, // description
+            None, // optional entropy
+            None, // reserved
+            None, // prompt struct
+            0,    // flags
             &mut data_out,
         )
         .map_err(|e| VaultError::crypto(format!("CryptProtectData failed: {e}")))?;
 
-        let result =
-            std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+        let result = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
 
         // Free the buffer allocated by DPAPI
         let _ = LocalFree(Some(windows::Win32::Foundation::HLOCAL(
@@ -151,12 +146,10 @@ fn dpapi_protect(plaintext: &[u8]) -> VaultResult<Vec<u8>> {
 
 /// Unprotect DPAPI-protected data.
 fn dpapi_unprotect(protected: &[u8]) -> VaultResult<Vec<u8>> {
-    use windows::Win32::Security::Cryptography::{
-        CryptUnprotectData, CRYPT_INTEGER_BLOB,
-    };
     use windows::Win32::Foundation::LocalFree;
+    use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
-    let mut data_in = CRYPT_INTEGER_BLOB {
+    let data_in = CRYPT_INTEGER_BLOB {
         cbData: protected.len() as u32,
         pbData: protected.as_ptr() as *mut u8,
     };
@@ -167,18 +160,17 @@ fn dpapi_unprotect(protected: &[u8]) -> VaultResult<Vec<u8>> {
 
     unsafe {
         CryptUnprotectData(
-            &mut data_in,
-            None,           // description
-            None,           // optional entropy
-            None,           // reserved
-            None,           // prompt struct
-            0,              // flags
+            &data_in,
+            None, // description
+            None, // optional entropy
+            None, // reserved
+            None, // prompt struct
+            0,    // flags
             &mut data_out,
         )
         .map_err(|e| VaultError::crypto(format!("CryptUnprotectData failed: {e}")))?;
 
-        let result =
-            std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
+        let result = std::slice::from_raw_parts(data_out.pbData, data_out.cbData as usize).to_vec();
 
         let _ = LocalFree(Some(windows::Win32::Foundation::HLOCAL(
             data_out.pbData as *mut _,

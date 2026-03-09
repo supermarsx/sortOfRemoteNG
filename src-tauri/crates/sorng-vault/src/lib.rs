@@ -26,10 +26,10 @@
 //! - [`migration`] — migrate legacy plain-JSON storage into the vault
 //! - [`commands`]  — Tauri `#[tauri::command]` entry-points
 
-pub mod types;
-pub mod keychain;
-pub mod envelope;
-pub mod migration;
 pub mod commands;
+pub mod envelope;
+pub mod keychain;
+pub mod migration;
+pub mod types;
 
 mod platform;

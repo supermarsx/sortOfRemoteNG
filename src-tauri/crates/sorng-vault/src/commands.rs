@@ -65,7 +65,10 @@ pub async fn vault_delete_secret(service: String, account: String) -> Result<(),
 /// Ensure a master DEK exists in the OS vault (generates one if missing).
 #[tauri::command]
 pub async fn vault_ensure_dek() -> Result<(), String> {
-    keychain::ensure_dek().await.map(|_| ()).map_err(|e| e.to_string())
+    keychain::ensure_dek()
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -154,12 +157,9 @@ pub async fn vault_migrate(
     storage_path: String,
     old_password: Option<String>,
 ) -> Result<migration::MigrationResult, String> {
-    migration::migrate(
-        &PathBuf::from(storage_path),
-        old_password.as_deref(),
-    )
-    .await
-    .map_err(|e| e.to_string())
+    migration::migrate(&PathBuf::from(storage_path), old_password.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Load storage data from vault-backed encrypted file.
@@ -172,10 +172,7 @@ pub async fn vault_load_storage(storage_path: String) -> Result<String, String> 
 
 /// Save storage data to vault-backed encrypted file.
 #[tauri::command]
-pub async fn vault_save_storage(
-    storage_path: String,
-    json_data: String,
-) -> Result<(), String> {
+pub async fn vault_save_storage(storage_path: String, json_data: String) -> Result<(), String> {
     migration::save_vault_storage(&PathBuf::from(storage_path), &json_data)
         .await
         .map_err(|e| e.to_string())

@@ -73,8 +73,8 @@ pub fn encrypt(password: &str, plaintext: &[u8]) -> VaultResult<(String, String)
 
 /// Decrypt `ciphertext_b64` using the `meta_json` envelope and password.
 pub fn decrypt(password: &str, meta_json: &str, ciphertext_b64: &str) -> VaultResult<Vec<u8>> {
-    let meta: EnvelopeMeta =
-        serde_json::from_str(meta_json).map_err(|e| VaultError::serde(format!("meta parse: {e}")))?;
+    let meta: EnvelopeMeta = serde_json::from_str(meta_json)
+        .map_err(|e| VaultError::serde(format!("meta parse: {e}")))?;
 
     if meta.version != 1 {
         return Err(VaultError::crypto(format!(
@@ -104,9 +104,9 @@ pub fn decrypt(password: &str, meta_json: &str, ciphertext_b64: &str) -> VaultRe
     let cipher = Aes256Gcm::new(&key.into());
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    cipher
-        .decrypt(nonce, ciphertext.as_ref())
-        .map_err(|_| VaultError::access_denied("Decryption failed — wrong password or corrupted data"))
+    cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+        VaultError::access_denied("Decryption failed — wrong password or corrupted data")
+    })
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
