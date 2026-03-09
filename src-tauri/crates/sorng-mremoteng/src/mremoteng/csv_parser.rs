@@ -4,8 +4,8 @@
 //! matching the XML attribute names. Containers are represented by
 //! a "TreePath" column (e.g. "Connections/Production/WebServers").
 
-use super::error::{MremotengError, MremotengResult};
 use super::encryption;
+use super::error::{MremotengError, MremotengResult};
 use super::types::*;
 
 /// Parse a mRemoteNG CSV string into a list of connections.
@@ -18,7 +18,7 @@ pub fn parse_csv(
     kdf_iterations: u32,
 ) -> MremotengResult<Vec<MrngConnectionInfo>> {
     // Try semicolon first (mRemoteNG default), then comma
-    let delimiter = if csv_content.lines().next().map_or(false, |l| l.contains(';')) {
+    let delimiter = if csv_content.lines().next().is_some_and(|l| l.contains(';')) {
         b';'
     } else {
         b','
@@ -30,7 +30,8 @@ pub fn parse_csv(
         .has_headers(true)
         .from_reader(csv_content.as_bytes());
 
-    let headers = reader.headers()
+    let headers = reader
+        .headers()
         .map_err(|e| MremotengError::CsvParse(format!("Failed to read headers: {}", e)))?
         .clone();
 
@@ -42,7 +43,9 @@ pub fn parse_csv(
 
         for (i, header) in headers.iter().enumerate() {
             let val = record.get(i).unwrap_or("");
-            if val.is_empty() { continue; }
+            if val.is_empty() {
+                continue;
+            }
 
             match header.trim() {
                 "Name" => node.name = val.to_string(),
@@ -56,7 +59,8 @@ pub fn parse_csv(
                 "Protocol" => node.protocol = MrngProtocol::from_str_loose(val),
                 "Username" => node.username = val.to_string(),
                 "Password" => {
-                    node.password = encryption::decrypt_password(val, master_password, kdf_iterations);
+                    node.password =
+                        encryption::decrypt_password(val, master_password, kdf_iterations);
                 }
                 "Domain" => node.domain = val.to_string(),
                 "PuttySession" => node.putty_session = val.to_string(),

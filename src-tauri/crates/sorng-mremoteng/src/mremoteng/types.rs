@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 // ─── Protocol Types ─────────────────────────────────────────────────
 
 /// Protocol types supported by mRemoteNG (mirrors `ProtocolType` enum).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum MrngProtocol {
+    #[default]
     RDP = 0,
     VNC = 1,
     SSH1 = 2,
@@ -20,10 +21,6 @@ pub enum MrngProtocol {
     PowerShell = 10,
     Winbox = 11,
     IntApp = 20,
-}
-
-impl Default for MrngProtocol {
-    fn default() -> Self { Self::RDP }
 }
 
 impl MrngProtocol {
@@ -81,25 +78,26 @@ impl MrngProtocol {
 
 // ─── RDP Enums ──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RdpVersion {
     Rdc6 = 0,
     Rdc7 = 1,
     Rdc8 = 2,
+    #[default]
     Rdc10 = 3,
 }
-impl Default for RdpVersion { fn default() -> Self { Self::Rdc10 } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AuthenticationLevel {
+    #[default]
     NoAuth = 0,
     AuthRequired = 1,
     WarnOnFailedAuth = 2,
 }
-impl Default for AuthenticationLevel { fn default() -> Self { Self::NoAuth } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RDPResolutions {
+    #[default]
     FitToWindow = 0,
     Fullscreen = 1,
     SmartSize = 2,
@@ -108,85 +106,85 @@ pub enum RDPResolutions {
     Res1280x1024 = 5,
     Res1600x1200 = 6,
 }
-impl Default for RDPResolutions { fn default() -> Self { Self::FitToWindow } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RDPColors {
     Colors256 = 0,
     Colors15Bit = 1,
     Colors16Bit = 2,
     Colors24Bit = 3,
+    #[default]
     Colors32Bit = 4,
 }
-impl Default for RDPColors { fn default() -> Self { Self::Colors32Bit } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RDPSounds {
+    #[default]
     BringToThisComputer = 0,
     LeaveAtRemoteComputer = 1,
     DoNotPlay = 2,
 }
-impl Default for RDPSounds { fn default() -> Self { Self::BringToThisComputer } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RDPSoundQuality {
+    #[default]
     Dynamic = 0,
     Medium = 1,
     High = 2,
 }
-impl Default for RDPSoundQuality { fn default() -> Self { Self::Dynamic } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RDPDiskDrives {
+    #[default]
     None = 0,
     Local = 1,
     Custom = 2,
     All = 3,
 }
-impl Default for RDPDiskDrives { fn default() -> Self { Self::None } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RDGatewayUsageMethod {
+    #[default]
     Never = 0,
     Always = 1,
     Detect = 2,
 }
-impl Default for RDGatewayUsageMethod { fn default() -> Self { Self::Never } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RDGatewayUseConnectionCredentials {
+    #[default]
     Yes = 0,
     SmartCard = 1,
     AskForCredentials = 2,
 }
-impl Default for RDGatewayUseConnectionCredentials { fn default() -> Self { Self::Yes } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RenderingEngine {
+    #[default]
     IE = 0,
     Gecko = 1,
     Webkit = 2,
     EdgeChromium = 3,
 }
-impl Default for RenderingEngine { fn default() -> Self { Self::IE } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ExternalAddressProvider {
+    #[default]
     None = 0,
     AmazonEC2 = 1,
 }
-impl Default for ExternalAddressProvider { fn default() -> Self { Self::None } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ExternalCredentialProvider {
+    #[default]
     None = 0,
     CyberArkPSM = 1,
     VaultOpenbao = 2,
 }
-impl Default for ExternalCredentialProvider { fn default() -> Self { Self::None } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ConnectionFrameColor {
+    #[default]
     None = 0,
     Red = 1,
     Green = 2,
@@ -195,12 +193,12 @@ pub enum ConnectionFrameColor {
     Orange = 5,
     Purple = 6,
 }
-impl Default for ConnectionFrameColor { fn default() -> Self { Self::None } }
 
 // ─── VNC Enums ──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VncCompression {
+    #[default]
     CompNone = 0,
     Comp0 = 1,
     Comp1 = 2,
@@ -213,41 +211,41 @@ pub enum VncCompression {
     Comp8 = 9,
     Comp9 = 10,
 }
-impl Default for VncCompression { fn default() -> Self { Self::CompNone } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VncEncoding {
     EncRaw = 0,
     EncRRE = 1,
     EncCoRRE = 2,
     EncHextile = 3,
     EncZlib = 4,
+    #[default]
     EncTight = 5,
     EncZRLE = 6,
     EncZYWRLE = 7,
     EncUltra = 8,
     EncUltra2 = 9,
 }
-impl Default for VncEncoding { fn default() -> Self { Self::EncTight } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VncAuthMode {
+    #[default]
     AuthVNC = 0,
     AuthWin = 1,
 }
-impl Default for VncAuthMode { fn default() -> Self { Self::AuthVNC } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VncProxyType {
+    #[default]
     ProxyNone = 0,
     ProxySocks5 = 1,
     ProxyHTTP = 2,
     ProxyUltra = 3,
 }
-impl Default for VncProxyType { fn default() -> Self { Self::ProxyNone } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VncColors {
+    #[default]
     ColNormal = 0,
     Col8Bit = 1,
     Col16Bit = 2,
@@ -257,33 +255,32 @@ pub enum VncColors {
     Col3 = 6,
     Col2 = 7,
 }
-impl Default for VncColors { fn default() -> Self { Self::ColNormal } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VncSmartSizeMode {
+    #[default]
     SmartSizeDisabled = 0,
     SmartSizeFree = 1,
     SmartSizeAspect = 2,
 }
-impl Default for VncSmartSizeMode { fn default() -> Self { Self::SmartSizeDisabled } }
 
 // ─── Encryption Config ──────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum BlockCipherEngine {
+    #[default]
     AES,
     Serpent,
     Twofish,
 }
-impl Default for BlockCipherEngine { fn default() -> Self { Self::AES } }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum BlockCipherMode {
+    #[default]
     GCM,
     CCM,
     EAX,
 }
-impl Default for BlockCipherMode { fn default() -> Self { Self::GCM } }
 
 /// Encryption configuration stored in the root `<Connections>` element.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,15 +305,12 @@ impl Default for MrngEncryptionConfig {
 // ─── Node Types ─────────────────────────────────────────────────────
 
 /// The type of a node in the connection tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum MrngNodeType {
+    #[default]
     Connection,
     Container,
     Root,
-}
-
-impl Default for MrngNodeType {
-    fn default() -> Self { Self::Connection }
 }
 
 impl MrngNodeType {
@@ -682,23 +676,12 @@ impl Default for MrngConnectionFile {
 // ─── Import/Export Config ───────────────────────────────────────────
 
 /// Configuration for import operations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MrngImportConfig {
     pub password: Option<String>,
     pub target_folder_id: Option<String>,
     pub merge_duplicates: bool,
     pub overwrite_existing: bool,
-}
-
-impl Default for MrngImportConfig {
-    fn default() -> Self {
-        Self {
-            password: None,
-            target_folder_id: None,
-            merge_duplicates: false,
-            overwrite_existing: false,
-        }
-    }
 }
 
 /// Configuration for export operations.

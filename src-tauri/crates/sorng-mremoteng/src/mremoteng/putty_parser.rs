@@ -38,7 +38,7 @@ pub fn parse_reg_file(content: &str) -> MremotengResult<Vec<PuttySession>> {
 
             // Extract session name from registry path
             let path = &line[1..line.len() - 1];
-            if let Some(name_part) = path.split('\\').last() {
+            if let Some(name_part) = path.split('\\').next_back() {
                 // URL-decode the session name (PuTTY uses %XX encoding)
                 let name = url_decode(name_part);
                 if name != "Default%20Settings" && name != "Default Settings" {
@@ -126,7 +126,9 @@ pub fn read_registry_sessions() -> MremotengResult<Vec<PuttySession>> {
 
         session.hostname = subkey.get_value("HostName").unwrap_or_default();
         session.port = subkey.get_value::<u32, _>("PortNumber").unwrap_or(22) as u16;
-        session.protocol = subkey.get_value("Protocol").unwrap_or_else(|_| "ssh".into());
+        session.protocol = subkey
+            .get_value("Protocol")
+            .unwrap_or_else(|_| "ssh".into());
         session.username = subkey.get_value("UserName").unwrap_or_default();
         session.proxy_host = subkey.get_value("ProxyHost").unwrap_or_default();
         session.proxy_port = subkey.get_value::<u32, _>("ProxyPort").unwrap_or(0) as u16;

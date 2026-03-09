@@ -42,13 +42,17 @@ pub fn parse_rdp_file(content: &str) -> MremotengResult<RdpFileSettings> {
             "redirectprinters" => settings.redirectprinters = val == "1",
             "redirectcomports" => settings.redirectcomports = val == "1",
             "redirectsmartcards" => settings.redirectsmartcards = val == "1",
-            "drivestoredirect" => settings.redirectdrives = !val.is_empty() && val != "",
+            "drivestoredirect" => settings.redirectdrives = !val.is_empty() && !val.is_empty(),
             "alternate shell" => settings.alternate_shell = val.to_string(),
             "shell working directory" => settings.shell_working_directory = val.to_string(),
             "gatewayusagemethod" => settings.gatewayusagemethod = val.parse().unwrap_or(0),
             "gatewayhostname" => settings.gatewayhostname = val.to_string(),
-            "gatewaycredentialssource" => settings.gatewaycredentialssource = val.parse().unwrap_or(0),
-            "gatewayprofileusagemethod" => settings.gatewayprofileusagemethod = val.parse().unwrap_or(0),
+            "gatewaycredentialssource" => {
+                settings.gatewaycredentialssource = val.parse().unwrap_or(0)
+            }
+            "gatewayprofileusagemethod" => {
+                settings.gatewayprofileusagemethod = val.parse().unwrap_or(0)
+            }
             "authentication level" => settings.authentication_level = val.parse().unwrap_or(0),
             "enablecredsspsupport" => settings.enablecredsspsupport = val == "1",
             "disable wallpaper" => settings.disable_wallpaper = val == "1",
@@ -121,7 +125,7 @@ pub fn rdp_settings_to_connection(settings: &RdpFileSettings) -> MrngConnectionI
         15 => RDPColors::Colors15Bit,
         16 => RDPColors::Colors16Bit,
         24 => RDPColors::Colors24Bit,
-        32 | _ => RDPColors::Colors32Bit,
+        _ => RDPColors::Colors32Bit,
     };
 
     // Sound
@@ -232,46 +236,98 @@ pub fn connection_to_rdp_string(conn: &MrngConnectionInfo) -> String {
         RDPSounds::DoNotPlay => 2,
     };
     lines.push(format!("audiomode:i:{}", audiomode));
-    lines.push(format!("audiocapturemode:i:{}", if conn.redirect_audio_capture { 1 } else { 0 }));
+    lines.push(format!(
+        "audiocapturemode:i:{}",
+        if conn.redirect_audio_capture { 1 } else { 0 }
+    ));
 
     // Redirections
-    lines.push(format!("redirectclipboard:i:{}", if conn.redirect_clipboard { 1 } else { 0 }));
-    lines.push(format!("redirectprinters:i:{}", if conn.redirect_printers { 1 } else { 0 }));
-    lines.push(format!("redirectcomports:i:{}", if conn.redirect_ports { 1 } else { 0 }));
-    lines.push(format!("redirectsmartcards:i:{}", if conn.redirect_smart_cards { 1 } else { 0 }));
+    lines.push(format!(
+        "redirectclipboard:i:{}",
+        if conn.redirect_clipboard { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "redirectprinters:i:{}",
+        if conn.redirect_printers { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "redirectcomports:i:{}",
+        if conn.redirect_ports { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "redirectsmartcards:i:{}",
+        if conn.redirect_smart_cards { 1 } else { 0 }
+    ));
 
     if conn.redirect_disk_drives != RDPDiskDrives::None {
         lines.push("drivestoredirect:s:*".to_string());
     }
 
     // Performance
-    lines.push(format!("disable wallpaper:i:{}", if conn.display_wallpaper { 0 } else { 1 }));
-    lines.push(format!("disable themes:i:{}", if conn.display_themes { 0 } else { 1 }));
-    lines.push(format!("disable menu anims:i:{}", if conn.disable_menu_animations { 1 } else { 0 }));
-    lines.push(format!("disable full window drag:i:{}", if conn.disable_full_window_drag { 1 } else { 0 }));
-    lines.push(format!("disable cursor setting:i:{}", if conn.disable_cursor_shadow { 1 } else { 0 }));
-    lines.push(format!("allow font smoothing:i:{}", if conn.enable_font_smoothing { 1 } else { 0 }));
-    lines.push(format!("allow desktop composition:i:{}", if conn.enable_desktop_composition { 1 } else { 0 }));
+    lines.push(format!(
+        "disable wallpaper:i:{}",
+        if conn.display_wallpaper { 0 } else { 1 }
+    ));
+    lines.push(format!(
+        "disable themes:i:{}",
+        if conn.display_themes { 0 } else { 1 }
+    ));
+    lines.push(format!(
+        "disable menu anims:i:{}",
+        if conn.disable_menu_animations { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "disable full window drag:i:{}",
+        if conn.disable_full_window_drag { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "disable cursor setting:i:{}",
+        if conn.disable_cursor_shadow { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "allow font smoothing:i:{}",
+        if conn.enable_font_smoothing { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "allow desktop composition:i:{}",
+        if conn.enable_desktop_composition {
+            1
+        } else {
+            0
+        }
+    ));
 
     // Auth
     let auth_level = conn.rdp_authentication_level as u32;
     lines.push(format!("authentication level:i:{}", auth_level));
-    lines.push(format!("enablecredsspsupport:i:{}", if conn.use_cred_ssp { 1 } else { 0 }));
+    lines.push(format!(
+        "enablecredsspsupport:i:{}",
+        if conn.use_cred_ssp { 1 } else { 0 }
+    ));
 
     // Start program
     if !conn.rdp_start_program.is_empty() {
         lines.push(format!("alternate shell:s:{}", conn.rdp_start_program));
     }
     if !conn.rdp_start_program_work_dir.is_empty() {
-        lines.push(format!("shell working directory:s:{}", conn.rdp_start_program_work_dir));
+        lines.push(format!(
+            "shell working directory:s:{}",
+            conn.rdp_start_program_work_dir
+        ));
     }
 
     // Gateway
-    lines.push(format!("gatewayusagemethod:i:{}", conn.rd_gateway_usage_method as u32));
+    lines.push(format!(
+        "gatewayusagemethod:i:{}",
+        conn.rd_gateway_usage_method as u32
+    ));
     if !conn.rd_gateway_hostname.is_empty() {
         lines.push(format!("gatewayhostname:s:{}", conn.rd_gateway_hostname));
     }
-    lines.push(format!("gatewaycredentialssource:i:{}", conn.rd_gateway_use_connection_credentials as u32));
+    lines.push(format!(
+        "gatewaycredentialssource:i:{}",
+        conn.rd_gateway_use_connection_credentials as u32
+    ));
 
     lines.join("\r\n")
 }

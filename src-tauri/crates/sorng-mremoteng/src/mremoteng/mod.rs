@@ -21,21 +21,21 @@
 //! - `service` — high-level orchestrator
 //! - `commands` — thin `#[tauri::command]` wrappers
 
-pub mod types;
-pub mod error;
-pub mod encryption;
-pub mod xml_parser;
-pub mod xml_writer;
+pub mod commands;
+pub mod converter;
 pub mod csv_parser;
 pub mod csv_writer;
-pub mod rdp_parser;
+pub mod encryption;
+pub mod error;
 pub mod putty_parser;
-pub mod converter;
+pub mod rdp_parser;
 pub mod service;
-pub mod commands;
+pub mod types;
+pub mod xml_parser;
+pub mod xml_writer;
 
 // Re-exports
-pub use types::*;
+pub use commands::*;
 pub use error::{MremotengError, MremotengResult};
 pub use service::MremotengService;
-pub use commands::*;
+pub use types::*;

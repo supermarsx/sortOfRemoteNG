@@ -33,12 +33,7 @@ const AES_GCM_NONCE_SIZE: usize = 12;
 /// Derive a 256-bit key from a password and salt using PBKDF2-HMAC-SHA1.
 fn derive_key(password: &str, salt: &[u8], iterations: u32) -> [u8; KEY_SIZE] {
     let mut key = [0u8; KEY_SIZE];
-    pbkdf2::pbkdf2_hmac::<Sha1>(
-        password.as_bytes(),
-        salt,
-        iterations,
-        &mut key,
-    );
+    pbkdf2::pbkdf2_hmac::<Sha1>(password.as_bytes(), salt, iterations, &mut key);
     key
 }
 
@@ -47,9 +42,10 @@ fn derive_key(password: &str, salt: &[u8], iterations: u32) -> [u8; KEY_SIZE] {
 /// Output: Base64-encoded `[salt (16)] [nonce (12)] [ciphertext+tag]`
 pub fn encrypt(plaintext: &str, password: &str, iterations: u32) -> MremotengResult<String> {
     if password.len() < MIN_PASSWORD_LEN {
-        return Err(MremotengError::Encryption(
-            format!("Password must be at least {} character(s)", MIN_PASSWORD_LEN),
-        ));
+        return Err(MremotengError::Encryption(format!(
+            "Password must be at least {} character(s)",
+            MIN_PASSWORD_LEN
+        )));
     }
 
     if plaintext.is_empty() {
@@ -70,8 +66,8 @@ pub fn encrypt(plaintext: &str, password: &str, iterations: u32) -> MremotengRes
     rng.fill(&mut nonce_bytes);
 
     // Encrypt
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| MremotengError::Encryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| MremotengError::Encryption(e.to_string()))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
         .encrypt(nonce, plaintext.as_bytes())
@@ -91,16 +87,18 @@ pub fn encrypt(plaintext: &str, password: &str, iterations: u32) -> MremotengRes
 /// Supports both 96-bit (standard) and 128-bit (mRemoteNG BouncyCastle) nonces.
 pub fn decrypt(ciphertext_b64: &str, password: &str, iterations: u32) -> MremotengResult<String> {
     if password.len() < MIN_PASSWORD_LEN {
-        return Err(MremotengError::Decryption(
-            format!("Password must be at least {} character(s)", MIN_PASSWORD_LEN),
-        ));
+        return Err(MremotengError::Decryption(format!(
+            "Password must be at least {} character(s)",
+            MIN_PASSWORD_LEN
+        )));
     }
 
     if ciphertext_b64.is_empty() {
         return Ok(String::new());
     }
 
-    let data = B64.decode(ciphertext_b64)
+    let data = B64
+        .decode(ciphertext_b64)
         .map_err(|e| MremotengError::Decryption(format!("Invalid Base64: {}", e)))?;
 
     // Try standard 96-bit nonce first, then mRemoteNG's 128-bit
@@ -136,15 +134,13 @@ fn decrypt_with_nonce_size(
         nonce_bytes
     };
 
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| MremotengError::Decryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| MremotengError::Decryption(e.to_string()))?;
     let nonce = Nonce::from_slice(effective_nonce);
 
-    let plaintext_bytes = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| MremotengError::Decryption(
-            "Decryption failed — wrong password or corrupted data".into(),
-        ))?;
+    let plaintext_bytes = cipher.decrypt(nonce, ciphertext).map_err(|_| {
+        MremotengError::Decryption("Decryption failed — wrong password or corrupted data".into())
+    })?;
 
     String::from_utf8(plaintext_bytes)
         .map_err(|e| MremotengError::Decryption(format!("Invalid UTF-8: {}", e)))
@@ -186,7 +182,11 @@ pub fn encrypt_password(
         return Ok(String::new());
     }
 
-    let pwd = if master_password.is_empty() { "mR3m" } else { master_password };
+    let pwd = if master_password.is_empty() {
+        "mR3m"
+    } else {
+        master_password
+    };
     encrypt(plaintext_password, pwd, iterations)
 }
 

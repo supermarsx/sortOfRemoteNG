@@ -5,21 +5,21 @@ edition = "2021"
 description = "Full mRemoteNG connection import/export — XML confCons.xml, CSV, RDP files, PuTTY sessions, encryption/decryption (AES-256-GCM, PBKDF2)"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1", features = ["full"] }
-tauri = { version = "2.9.5", features = ["devtools"] }
-log = "0.4"
-uuid = { version = "1.0", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.21"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
 sha1 = "0.10"
-sha2 = "0.10"
-rand = "0.8"
+sha2 = { workspace = true }
+rand = { workspace = true }
 quick-xml = { version = "0.36", features = ["serialize"] }
-aes-gcm = "0.10"
-pbkdf2 = { version = "0.12", features = ["simple"] }
-hmac = "0.12"
+aes-gcm = { workspace = true }
+pbkdf2 = { workspace = true }
+hmac = { workspace = true }
 csv = "1.3"
 
 [target.'cfg(windows)'.dependencies]

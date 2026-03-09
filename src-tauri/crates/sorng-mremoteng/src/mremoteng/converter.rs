@@ -51,7 +51,9 @@ pub fn mrng_to_app_connection(mrng: &MrngConnectionInfo) -> Value {
         obj.insert("macAddress".into(), json!(mrng.mac_address));
     }
     if !mrng.environment_tags.is_empty() {
-        let tags: Vec<&str> = mrng.environment_tags.split(',')
+        let tags: Vec<&str> = mrng
+            .environment_tags
+            .split(',')
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect();
@@ -65,15 +67,18 @@ pub fn mrng_to_app_connection(mrng: &MrngConnectionInfo) -> Value {
 
     // SSH tunnel reference
     if !mrng.ssh_tunnel_connection_name.is_empty() {
-        obj.insert("security".into(), json!({
-            "sshTunnel": {
-                "enabled": true,
-                "connectionId": mrng.ssh_tunnel_connection_name,
-                "localPort": 0,
-                "remoteHost": mrng.hostname,
-                "remotePort": mrng.port
-            }
-        }));
+        obj.insert(
+            "security".into(),
+            json!({
+                "sshTunnel": {
+                    "enabled": true,
+                    "connectionId": mrng.ssh_tunnel_connection_name,
+                    "localPort": 0,
+                    "remoteHost": mrng.hostname,
+                    "remotePort": mrng.port
+                }
+            }),
+        );
     }
 
     // Scripts
@@ -132,7 +137,8 @@ fn flatten_node(node: &MrngConnectionInfo, parent_id: Option<&str>, result: &mut
 
 /// Convert an application Connection JSON to `MrngConnectionInfo`.
 pub fn app_connection_to_mrng(conn: &Value) -> MremotengResult<MrngConnectionInfo> {
-    let obj = conn.as_object()
+    let obj = conn
+        .as_object()
         .ok_or_else(|| MremotengError::InvalidValue("Expected a JSON object".into()))?;
 
     let mut mrng = MrngConnectionInfo::default();
@@ -145,7 +151,11 @@ pub fn app_connection_to_mrng(conn: &Value) -> MremotengResult<MrngConnectionInf
         mrng.name = name.to_string();
     }
     if let Some(is_group) = obj.get("isGroup").and_then(|v| v.as_bool()) {
-        mrng.node_type = if is_group { MrngNodeType::Container } else { MrngNodeType::Connection };
+        mrng.node_type = if is_group {
+            MrngNodeType::Container
+        } else {
+            MrngNodeType::Connection
+        };
     }
 
     // Connection basics
@@ -184,7 +194,8 @@ pub fn app_connection_to_mrng(conn: &Value) -> MremotengResult<MrngConnectionInf
         mrng.mac_address = mac.to_string();
     }
     if let Some(tags) = obj.get("tags").and_then(|v| v.as_array()) {
-        let tag_strs: Vec<String> = tags.iter()
+        let tag_strs: Vec<String> = tags
+            .iter()
             .filter_map(|t| t.as_str().map(|s| s.to_string()))
             .collect();
         mrng.environment_tags = tag_strs.join(",");
@@ -225,7 +236,9 @@ pub fn app_connection_to_mrng(conn: &Value) -> MremotengResult<MrngConnectionInf
 }
 
 /// Convert a flat list of app connections (with parentId) back into a tree.
-pub fn flat_connections_to_mrng_tree(connections: &[Value]) -> MremotengResult<Vec<MrngConnectionInfo>> {
+pub fn flat_connections_to_mrng_tree(
+    connections: &[Value],
+) -> MremotengResult<Vec<MrngConnectionInfo>> {
     use std::collections::HashMap;
 
     // First convert all to MrngConnectionInfo
@@ -251,7 +264,10 @@ pub fn flat_connections_to_mrng_tree(connections: &[Value]) -> MremotengResult<V
 
     for id in &order {
         if let Some(parent_id) = parent_map.get(id) {
-            children_map.entry(parent_id.clone()).or_default().push(id.clone());
+            children_map
+                .entry(parent_id.clone())
+                .or_default()
+                .push(id.clone());
         } else {
             roots.push(id.clone());
         }
@@ -293,12 +309,12 @@ fn mrng_protocol_to_app(protocol: &MrngProtocol) -> &'static str {
         MrngProtocol::SSH1 | MrngProtocol::SSH2 => "ssh",
         MrngProtocol::Telnet => "telnet",
         MrngProtocol::Rlogin => "rlogin",
-        MrngProtocol::RAW => "telnet",    // Closest app equivalent
+        MrngProtocol::RAW => "telnet", // Closest app equivalent
         MrngProtocol::HTTP => "http",
         MrngProtocol::HTTPS => "https",
-        MrngProtocol::PowerShell => "winrm",  // PowerShell remoting → WinRM
-        MrngProtocol::Winbox => "http",    // Winbox → HTTP as closest
-        MrngProtocol::IntApp => "ssh",     // External app → SSH as default
+        MrngProtocol::PowerShell => "winrm", // PowerShell remoting → WinRM
+        MrngProtocol::Winbox => "http",      // Winbox → HTTP as closest
+        MrngProtocol::IntApp => "ssh",       // External app → SSH as default
     }
 }
 
@@ -332,8 +348,14 @@ fn build_rdp_settings(mrng: &MrngConnectionInfo) -> Value {
         display.insert("height".into(), json!(height));
     }
     display.insert("resizeToWindow".into(), json!(mrng.automatic_resize));
-    display.insert("colorDepth".into(), json!(rdp_colors_to_depth(&mrng.colors)));
-    display.insert("smartSizing".into(), json!(mrng.resolution == RDPResolutions::SmartSize));
+    display.insert(
+        "colorDepth".into(),
+        json!(rdp_colors_to_depth(&mrng.colors)),
+    );
+    display.insert(
+        "smartSizing".into(),
+        json!(mrng.resolution == RDPResolutions::SmartSize),
+    );
     rdp.insert("display".into(), Value::Object(display));
 
     // Audio
@@ -342,22 +364,32 @@ fn build_rdp_settings(mrng: &MrngConnectionInfo) -> Value {
         RDPSounds::LeaveAtRemoteComputer => "remote",
         RDPSounds::DoNotPlay => "disabled",
     };
-    let recording = if mrng.redirect_audio_capture { "enabled" } else { "disabled" };
+    let recording = if mrng.redirect_audio_capture {
+        "enabled"
+    } else {
+        "disabled"
+    };
     let quality = match mrng.sound_quality {
         RDPSoundQuality::Dynamic => "dynamic",
         RDPSoundQuality::Medium => "medium",
         RDPSoundQuality::High => "high",
     };
-    rdp.insert("audio".into(), json!({
-        "playbackMode": playback,
-        "recordingMode": recording,
-        "audioQuality": quality
-    }));
+    rdp.insert(
+        "audio".into(),
+        json!({
+            "playbackMode": playback,
+            "recordingMode": recording,
+            "audioQuality": quality
+        }),
+    );
 
     // Input
-    rdp.insert("input".into(), json!({
-        "mouseMode": "relative"
-    }));
+    rdp.insert(
+        "input".into(),
+        json!({
+            "mouseMode": "relative"
+        }),
+    );
 
     // Device Redirection
     let mut redir = Map::new();
@@ -373,13 +405,31 @@ fn build_rdp_settings(mrng: &MrngConnectionInfo) -> Value {
     // Performance
     let mut perf = Map::new();
     perf.insert("disableWallpaper".into(), json!(!mrng.display_wallpaper));
-    perf.insert("disableFullWindowDrag".into(), json!(mrng.disable_full_window_drag));
-    perf.insert("disableMenuAnimations".into(), json!(mrng.disable_menu_animations));
+    perf.insert(
+        "disableFullWindowDrag".into(),
+        json!(mrng.disable_full_window_drag),
+    );
+    perf.insert(
+        "disableMenuAnimations".into(),
+        json!(mrng.disable_menu_animations),
+    );
     perf.insert("disableTheming".into(), json!(!mrng.display_themes));
-    perf.insert("disableCursorShadow".into(), json!(mrng.disable_cursor_shadow));
-    perf.insert("disableCursorSettings".into(), json!(mrng.disable_cursor_blinking));
-    perf.insert("enableFontSmoothing".into(), json!(mrng.enable_font_smoothing));
-    perf.insert("enableDesktopComposition".into(), json!(mrng.enable_desktop_composition));
+    perf.insert(
+        "disableCursorShadow".into(),
+        json!(mrng.disable_cursor_shadow),
+    );
+    perf.insert(
+        "disableCursorSettings".into(),
+        json!(mrng.disable_cursor_blinking),
+    );
+    perf.insert(
+        "enableFontSmoothing".into(),
+        json!(mrng.enable_font_smoothing),
+    );
+    perf.insert(
+        "enableDesktopComposition".into(),
+        json!(mrng.enable_desktop_composition),
+    );
     perf.insert("persistentBitmapCaching".into(), json!(mrng.cache_bitmaps));
     rdp.insert("performance".into(), Value::Object(perf));
 
@@ -414,15 +464,19 @@ fn build_rdp_settings(mrng: &MrngConnectionInfo) -> Value {
 
     // HyperV
     if mrng.use_vm_id || mrng.use_enhanced_mode {
-        rdp.insert("hyperv".into(), json!({
-            "vmId": mrng.vm_id,
-            "useVmId": mrng.use_vm_id,
-            "useEnhancedSession": mrng.use_enhanced_mode
-        }));
+        rdp.insert(
+            "hyperv".into(),
+            json!({
+                "vmId": mrng.vm_id,
+                "useVmId": mrng.use_vm_id,
+                "useEnhancedSession": mrng.use_enhanced_mode
+            }),
+        );
     }
 
     // Advanced
-    if mrng.use_console_session || !mrng.load_balance_info.is_empty()
+    if mrng.use_console_session
+        || !mrng.load_balance_info.is_empty()
         || !mrng.rdp_start_program.is_empty()
     {
         let mut adv = Map::new();
@@ -436,7 +490,10 @@ fn build_rdp_settings(mrng: &MrngConnectionInfo) -> Value {
             adv.insert("alternateShell".into(), json!(mrng.rdp_start_program));
         }
         if !mrng.rdp_start_program_work_dir.is_empty() {
-            adv.insert("shellWorkingDirectory".into(), json!(mrng.rdp_start_program_work_dir));
+            adv.insert(
+                "shellWorkingDirectory".into(),
+                json!(mrng.rdp_start_program_work_dir),
+            );
         }
         rdp.insert("advanced".into(), Value::Object(adv));
     }
@@ -449,7 +506,10 @@ fn parse_rdp_settings_from_json(rdp: &Map<String, Value>, mrng: &mut MrngConnect
     // Display
     if let Some(display) = rdp.get("display").and_then(|v| v.as_object()) {
         if let Some(w) = display.get("width").and_then(|v| v.as_u64()) {
-            mrng.resolution = dimensions_to_resolution(w as u32, display.get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32);
+            mrng.resolution = dimensions_to_resolution(
+                w as u32,
+                display.get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            );
         }
         if let Some(resize) = display.get("resizeToWindow").and_then(|v| v.as_bool()) {
             mrng.automatic_resize = resize;
@@ -482,10 +542,22 @@ fn parse_rdp_settings_from_json(rdp: &Map<String, Value>, mrng: &mut MrngConnect
 
     // Device Redirection
     if let Some(redir) = rdp.get("deviceRedirection").and_then(|v| v.as_object()) {
-        mrng.redirect_clipboard = redir.get("clipboard").and_then(|v| v.as_bool()).unwrap_or(true);
-        mrng.redirect_printers = redir.get("printers").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.redirect_ports = redir.get("ports").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.redirect_smart_cards = redir.get("smartCards").and_then(|v| v.as_bool()).unwrap_or(false);
+        mrng.redirect_clipboard = redir
+            .get("clipboard")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        mrng.redirect_printers = redir
+            .get("printers")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.redirect_ports = redir
+            .get("ports")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.redirect_smart_cards = redir
+            .get("smartCards")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if redir.get("drives").is_some() {
             mrng.redirect_disk_drives = RDPDiskDrives::All;
         }
@@ -493,28 +565,68 @@ fn parse_rdp_settings_from_json(rdp: &Map<String, Value>, mrng: &mut MrngConnect
 
     // Performance
     if let Some(perf) = rdp.get("performance").and_then(|v| v.as_object()) {
-        mrng.display_wallpaper = !perf.get("disableWallpaper").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.disable_full_window_drag = perf.get("disableFullWindowDrag").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.disable_menu_animations = perf.get("disableMenuAnimations").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.display_themes = !perf.get("disableTheming").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.disable_cursor_shadow = perf.get("disableCursorShadow").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.disable_cursor_blinking = perf.get("disableCursorSettings").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.enable_font_smoothing = perf.get("enableFontSmoothing").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.enable_desktop_composition = perf.get("enableDesktopComposition").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.cache_bitmaps = perf.get("persistentBitmapCaching").and_then(|v| v.as_bool()).unwrap_or(false);
+        mrng.display_wallpaper = !perf
+            .get("disableWallpaper")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.disable_full_window_drag = perf
+            .get("disableFullWindowDrag")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.disable_menu_animations = perf
+            .get("disableMenuAnimations")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.display_themes = !perf
+            .get("disableTheming")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.disable_cursor_shadow = perf
+            .get("disableCursorShadow")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.disable_cursor_blinking = perf
+            .get("disableCursorSettings")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.enable_font_smoothing = perf
+            .get("enableFontSmoothing")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.enable_desktop_composition = perf
+            .get("enableDesktopComposition")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.cache_bitmaps = perf
+            .get("persistentBitmapCaching")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
     }
 
     // Security
     if let Some(sec) = rdp.get("security").and_then(|v| v.as_object()) {
-        mrng.use_cred_ssp = sec.get("useCredSsp").and_then(|v| v.as_bool()).unwrap_or(true);
-        mrng.use_restricted_admin = sec.get("restrictedAdmin").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.use_rcg = sec.get("remoteCredentialGuard").and_then(|v| v.as_bool()).unwrap_or(false);
+        mrng.use_cred_ssp = sec
+            .get("useCredSsp")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        mrng.use_restricted_admin = sec
+            .get("restrictedAdmin")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        mrng.use_rcg = sec
+            .get("remoteCredentialGuard")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
     }
 
     // Gateway
     if let Some(gw) = rdp.get("gateway").and_then(|v| v.as_object()) {
         let enabled = gw.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.rd_gateway_usage_method = if enabled { RDGatewayUsageMethod::Always } else { RDGatewayUsageMethod::Never };
+        mrng.rd_gateway_usage_method = if enabled {
+            RDGatewayUsageMethod::Always
+        } else {
+            RDGatewayUsageMethod::Never
+        };
         if let Some(hostname) = gw.get("hostname").and_then(|v| v.as_str()) {
             mrng.rd_gateway_hostname = hostname.to_string();
         }
@@ -540,12 +652,18 @@ fn parse_rdp_settings_from_json(rdp: &Map<String, Value>, mrng: &mut MrngConnect
             mrng.vm_id = vm_id.to_string();
         }
         mrng.use_vm_id = hv.get("useVmId").and_then(|v| v.as_bool()).unwrap_or(false);
-        mrng.use_enhanced_mode = hv.get("useEnhancedSession").and_then(|v| v.as_bool()).unwrap_or(false);
+        mrng.use_enhanced_mode = hv
+            .get("useEnhancedSession")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
     }
 
     // Advanced
     if let Some(adv) = rdp.get("advanced").and_then(|v| v.as_object()) {
-        mrng.use_console_session = adv.get("connectToConsole").and_then(|v| v.as_bool()).unwrap_or(false);
+        mrng.use_console_session = adv
+            .get("connectToConsole")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if let Some(lb) = adv.get("loadBalanceInfo").and_then(|v| v.as_str()) {
             mrng.load_balance_info = lb.to_string();
         }
@@ -621,7 +739,9 @@ mod tests {
         assert_eq!(conn["hostname"], "10.0.0.1");
         assert_eq!(conn["port"], 3389);
         assert_eq!(conn["username"], "admin");
-        assert!(conn["rdpSettings"]["performance"]["enableFontSmoothing"].as_bool().unwrap());
+        assert!(conn["rdpSettings"]["performance"]["enableFontSmoothing"]
+            .as_bool()
+            .unwrap());
     }
 
     #[test]

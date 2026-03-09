@@ -11,10 +11,7 @@ use super::types::*;
 // ─── Format Detection ────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn mrng_detect_format(
-    file_path: String,
-    content: String,
-) -> Result<String, String> {
+pub async fn mrng_detect_format(file_path: String, content: String) -> Result<String, String> {
     let format = super::service::MremotengService::detect_format(&file_path, &content);
     serde_json::to_string(&format).map_err(|e| e.to_string())
 }
@@ -44,7 +41,8 @@ pub async fn mrng_import_xml(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.import_xml(&xml_content, &config).map_err(|e| e.to_string())
+    svc.import_xml(&xml_content, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -58,7 +56,8 @@ pub async fn mrng_import_xml_as_connections(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.import_xml_as_app_connections(&xml_content, &config).map_err(|e| e.to_string())
+    svc.import_xml_as_app_connections(&xml_content, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -72,7 +71,8 @@ pub async fn mrng_import_csv(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.import_csv(&csv_content, &config).map_err(|e| e.to_string())
+    svc.import_csv(&csv_content, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -86,7 +86,8 @@ pub async fn mrng_import_csv_as_connections(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.import_csv_as_app_connections(&csv_content, &config).map_err(|e| e.to_string())
+    svc.import_csv_as_app_connections(&csv_content, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -104,7 +105,8 @@ pub async fn mrng_import_rdp_as_connections(
     files: Vec<(String, String)>,
 ) -> Result<Vec<Value>, String> {
     let mut svc = state.lock().await;
-    svc.import_rdp_as_app_connections(&files).map_err(|e| e.to_string())
+    svc.import_rdp_as_app_connections(&files)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -113,7 +115,8 @@ pub async fn mrng_import_putty_reg(
     reg_content: String,
 ) -> Result<MrngImportResult, String> {
     let mut svc = state.lock().await;
-    svc.import_putty_from_reg(&reg_content).map_err(|e| e.to_string())
+    svc.import_putty_from_reg(&reg_content)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -130,7 +133,8 @@ pub async fn mrng_import_putty_as_connections(
     reg_content: Option<String>,
 ) -> Result<Vec<Value>, String> {
     let mut svc = state.lock().await;
-    svc.import_putty_as_app_connections(reg_content.as_deref()).map_err(|e| e.to_string())
+    svc.import_putty_as_app_connections(reg_content.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -145,7 +149,8 @@ pub async fn mrng_import_auto(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.import_auto(&file_path, &content, &config).map_err(|e| e.to_string())
+    svc.import_auto(&file_path, &content, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -160,7 +165,8 @@ pub async fn mrng_import_auto_as_connections(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.import_auto_as_app_connections(&file_path, &content, &config).map_err(|e| e.to_string())
+    svc.import_auto_as_app_connections(&file_path, &content, &config)
+        .map_err(|e| e.to_string())
 }
 
 // ─── Export Operations ───────────────────────────────────────────────
@@ -180,7 +186,8 @@ pub async fn mrng_export_xml(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.export_xml(&connections, &config).map_err(|e| e.to_string())
+    svc.export_xml(&connections, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -198,7 +205,8 @@ pub async fn mrng_export_app_to_xml(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.export_app_to_xml(&app_connections, &config).map_err(|e| e.to_string())
+    svc.export_app_to_xml(&app_connections, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -216,7 +224,8 @@ pub async fn mrng_export_csv(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.export_csv(&connections, &config).map_err(|e| e.to_string())
+    svc.export_csv(&connections, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -234,7 +243,8 @@ pub async fn mrng_export_app_to_csv(
         ..Default::default()
     };
     let mut svc = state.lock().await;
-    svc.export_app_to_csv(&app_connections, &config).map_err(|e| e.to_string())
+    svc.export_app_to_csv(&app_connections, &config)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -252,7 +262,8 @@ pub async fn mrng_export_app_to_rdp(
     app_connection: Value,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.export_app_to_rdp(&app_connection).map_err(|e| e.to_string())
+    svc.export_app_to_rdp(&app_connection)
+        .map_err(|e| e.to_string())
 }
 
 // ─── Validation / Info ───────────────────────────────────────────────
@@ -265,7 +276,8 @@ pub async fn mrng_validate_xml(
 ) -> Result<Value, String> {
     let svc = state.lock().await;
     let pw = password.as_deref().unwrap_or(&svc.default_password);
-    svc.validate_xml(&xml_content, pw).map_err(|e| e.to_string())
+    svc.validate_xml(&xml_content, pw)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

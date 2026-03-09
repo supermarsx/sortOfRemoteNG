@@ -9,27 +9,77 @@ use super::types::*;
 
 /// CSV column headers matching mRemoteNG export format.
 const CSV_HEADERS: &[&str] = &[
-    "Name", "Id", "Type", "Description", "Icon", "Panel",
-    "Hostname", "Port", "Protocol", "Username", "Password", "Domain",
-    "PuttySession", "SSHOptions", "ExtApp", "UseConsoleSession",
-    "RDPAuthenticationLevel", "LoadBalanceInfo", "RenderingEngine",
-    "UseCredSsp", "UseRestrictedAdmin", "UseRCG",
-    "RDGatewayUsageMethod", "RDGatewayHostname",
-    "RDGatewayUseConnectionCredentials", "RDGatewayUsername", "RDGatewayDomain",
-    "Resolution", "AutomaticResize", "Colors", "CacheBitmaps",
-    "DisplayWallpaper", "DisplayThemes", "EnableFontSmoothing",
-    "EnableDesktopComposition", "DisableFullWindowDrag",
-    "DisableMenuAnimations", "DisableCursorShadow", "DisableCursorBlinking",
-    "RedirectKeys", "RedirectDiskDrives", "RedirectDiskDrivesCustom",
-    "RedirectPrinters", "RedirectClipboard", "RedirectPorts",
-    "RedirectSmartCards", "RedirectSound", "SoundQuality", "RedirectAudioCapture",
-    "RDPStartProgram", "RDPStartProgramWorkDir",
-    "VNCCompression", "VNCEncoding", "VNCAuthMode",
-    "VNCProxyType", "VNCProxyIP", "VNCProxyPort",
-    "VNCProxyUsername", "VNCColors", "VNCSmartSizeMode", "VNCViewOnly",
-    "PreExtApp", "PostExtApp", "MacAddress", "UserField",
-    "EnvironmentTags", "Favorite",
-    "Color", "TabColor", "OpeningCommand", "SSHTunnelConnectionName",
+    "Name",
+    "Id",
+    "Type",
+    "Description",
+    "Icon",
+    "Panel",
+    "Hostname",
+    "Port",
+    "Protocol",
+    "Username",
+    "Password",
+    "Domain",
+    "PuttySession",
+    "SSHOptions",
+    "ExtApp",
+    "UseConsoleSession",
+    "RDPAuthenticationLevel",
+    "LoadBalanceInfo",
+    "RenderingEngine",
+    "UseCredSsp",
+    "UseRestrictedAdmin",
+    "UseRCG",
+    "RDGatewayUsageMethod",
+    "RDGatewayHostname",
+    "RDGatewayUseConnectionCredentials",
+    "RDGatewayUsername",
+    "RDGatewayDomain",
+    "Resolution",
+    "AutomaticResize",
+    "Colors",
+    "CacheBitmaps",
+    "DisplayWallpaper",
+    "DisplayThemes",
+    "EnableFontSmoothing",
+    "EnableDesktopComposition",
+    "DisableFullWindowDrag",
+    "DisableMenuAnimations",
+    "DisableCursorShadow",
+    "DisableCursorBlinking",
+    "RedirectKeys",
+    "RedirectDiskDrives",
+    "RedirectDiskDrivesCustom",
+    "RedirectPrinters",
+    "RedirectClipboard",
+    "RedirectPorts",
+    "RedirectSmartCards",
+    "RedirectSound",
+    "SoundQuality",
+    "RedirectAudioCapture",
+    "RDPStartProgram",
+    "RDPStartProgramWorkDir",
+    "VNCCompression",
+    "VNCEncoding",
+    "VNCAuthMode",
+    "VNCProxyType",
+    "VNCProxyIP",
+    "VNCProxyPort",
+    "VNCProxyUsername",
+    "VNCColors",
+    "VNCSmartSizeMode",
+    "VNCViewOnly",
+    "PreExtApp",
+    "PostExtApp",
+    "MacAddress",
+    "UserField",
+    "EnvironmentTags",
+    "Favorite",
+    "Color",
+    "TabColor",
+    "OpeningCommand",
+    "SSHTunnelConnectionName",
 ];
 
 /// Write connections to a CSV string.
@@ -137,7 +187,8 @@ pub fn write_csv(
                 .map_err(|e| MremotengError::Serialization(e.to_string()))?;
         }
 
-        wtr.flush().map_err(|e| MremotengError::Serialization(e.to_string()))?;
+        wtr.flush()
+            .map_err(|e| MremotengError::Serialization(e.to_string()))?;
     }
 
     String::from_utf8(buf).map_err(|e| MremotengError::Serialization(e.to_string()))
@@ -156,7 +207,11 @@ fn flatten_tree(nodes: &[MrngConnectionInfo]) -> Vec<&MrngConnectionInfo> {
 }
 
 fn bool_str(val: bool) -> &'static str {
-    if val { "True" } else { "False" }
+    if val {
+        "True"
+    } else {
+        "False"
+    }
 }
 
 fn u32_str(val: u32) -> String {

@@ -35,7 +35,8 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
                         parse_connections_element(e, &mut file)?;
                     }
                     "Node" => {
-                        let node = parse_node_element(e, master_password, file.encryption.kdf_iterations)?;
+                        let node =
+                            parse_node_element(e, master_password, file.encryption.kdf_iterations)?;
                         stack.push(node);
                     }
                     _ => {}
@@ -47,7 +48,8 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
                     .map_err(|_| MremotengError::XmlParse("Invalid UTF-8 in tag name".into()))?;
 
                 if tag_name == "Node" {
-                    let node = parse_node_element(e, master_password, file.encryption.kdf_iterations)?;
+                    let node =
+                        parse_node_element(e, master_password, file.encryption.kdf_iterations)?;
                     // Self-closing node — add to current parent or root
                     if let Some(parent) = stack.last_mut() {
                         parent.children.push(node);
@@ -73,7 +75,13 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(MremotengError::XmlParse(format!("XML error at position {}: {}", reader.buffer_position(), e))),
+            Err(e) => {
+                return Err(MremotengError::XmlParse(format!(
+                    "XML error at position {}: {}",
+                    reader.buffer_position(),
+                    e
+                )))
+            }
             _ => {}
         }
     }
@@ -86,7 +94,8 @@ fn parse_connections_element(e: &BytesStart, file: &mut MrngConnectionFile) -> M
     for attr in e.attributes() {
         let attr = attr?;
         let key = str::from_utf8(attr.key.as_ref()).unwrap_or("");
-        let val = attr.unescape_value()
+        let val = attr
+            .unescape_value()
             .map_err(|e| MremotengError::XmlParse(e.to_string()))?;
 
         match key {
@@ -132,7 +141,8 @@ fn parse_node_element(
     for attr in e.attributes() {
         let attr = attr?;
         let key = str::from_utf8(attr.key.as_ref()).unwrap_or("");
-        let val = attr.unescape_value()
+        let val = attr
+            .unescape_value()
             .map_err(|e| MremotengError::XmlParse(e.to_string()))?;
         let val = val.as_ref();
 
@@ -172,7 +182,8 @@ fn parse_node_element(
             }
             "Domain" => node.domain = val.to_string(),
             "ExternalCredentialProvider" => {
-                node.external_credential_provider = parse_enum_u32::<ExternalCredentialProvider>(val);
+                node.external_credential_provider =
+                    parse_enum_u32::<ExternalCredentialProvider>(val);
             }
             "UserViaAPI" => node.user_via_api = val.to_string(),
             "VaultOpenbaoMount" => node.vault_openbao_mount = val.to_string(),
@@ -195,7 +206,9 @@ fn parse_node_element(
             "RDPAuthenticationLevel" => {
                 node.rdp_authentication_level = parse_enum_u32::<AuthenticationLevel>(val);
             }
-            "RDPMinutesToIdleTimeout" => node.rdp_minutes_to_idle_timeout = val.parse().unwrap_or(0),
+            "RDPMinutesToIdleTimeout" => {
+                node.rdp_minutes_to_idle_timeout = val.parse().unwrap_or(0)
+            }
             "RDPAlertIdleTimeout" => node.rdp_alert_idle_timeout = parse_bool(val),
             "LoadBalanceInfo" => node.load_balance_info = val.to_string(),
             "RenderingEngine" => {
@@ -211,16 +224,19 @@ fn parse_node_element(
             }
             "RDGatewayHostname" => node.rd_gateway_hostname = val.to_string(),
             "RDGatewayUseConnectionCredentials" => {
-                node.rd_gateway_use_connection_credentials = parse_enum_u32::<RDGatewayUseConnectionCredentials>(val);
+                node.rd_gateway_use_connection_credentials =
+                    parse_enum_u32::<RDGatewayUseConnectionCredentials>(val);
             }
             "RDGatewayUsername" => node.rd_gateway_username = val.to_string(),
             "RDGatewayPassword" => {
-                node.rd_gateway_password = encryption::decrypt_password(val, master_password, kdf_iterations);
+                node.rd_gateway_password =
+                    encryption::decrypt_password(val, master_password, kdf_iterations);
             }
             "RDGatewayDomain" => node.rd_gateway_domain = val.to_string(),
             "RDGatewayAccessToken" => node.rd_gateway_access_token = val.to_string(),
             "RDGatewayExternalCredentialProvider" => {
-                node.rd_gateway_external_credential_provider = parse_enum_u32::<ExternalCredentialProvider>(val);
+                node.rd_gateway_external_credential_provider =
+                    parse_enum_u32::<ExternalCredentialProvider>(val);
             }
             "RDGatewayUserViaAPI" => node.rd_gateway_user_via_api = val.to_string(),
 
@@ -240,7 +256,9 @@ fn parse_node_element(
 
             // ── Redirect ─────────────────────────────────────────
             "RedirectKeys" => node.redirect_keys = parse_bool(val),
-            "RedirectDiskDrives" => node.redirect_disk_drives = parse_enum_u32::<RDPDiskDrives>(val),
+            "RedirectDiskDrives" => {
+                node.redirect_disk_drives = parse_enum_u32::<RDPDiskDrives>(val)
+            }
             "RedirectDiskDrivesCustom" => node.redirect_disk_drives_custom = val.to_string(),
             "RedirectPrinters" => node.redirect_printers = parse_bool(val),
             "RedirectClipboard" => node.redirect_clipboard = parse_bool(val),
@@ -263,10 +281,13 @@ fn parse_node_element(
             "VNCProxyPort" => node.vnc_proxy_port = val.parse().unwrap_or(0),
             "VNCProxyUsername" => node.vnc_proxy_username = val.to_string(),
             "VNCProxyPassword" => {
-                node.vnc_proxy_password = encryption::decrypt_password(val, master_password, kdf_iterations);
+                node.vnc_proxy_password =
+                    encryption::decrypt_password(val, master_password, kdf_iterations);
             }
             "VNCColors" => node.vnc_colors = parse_enum_u32::<VncColors>(val),
-            "VNCSmartSizeMode" => node.vnc_smart_size_mode = parse_enum_u32::<VncSmartSizeMode>(val),
+            "VNCSmartSizeMode" => {
+                node.vnc_smart_size_mode = parse_enum_u32::<VncSmartSizeMode>(val)
+            }
             "VNCViewOnly" => node.vnc_view_only = parse_bool(val),
 
             // ── Miscellaneous ────────────────────────────────────
@@ -283,12 +304,24 @@ fn parse_node_element(
             "InheritDescription" => node.inheritance.description = parse_bool(val),
             "InheritDisplayThemes" => node.inheritance.display_themes = parse_bool(val),
             "InheritDisplayWallpaper" => node.inheritance.display_wallpaper = parse_bool(val),
-            "InheritEnableFontSmoothing" => node.inheritance.enable_font_smoothing = parse_bool(val),
-            "InheritEnableDesktopComposition" => node.inheritance.enable_desktop_composition = parse_bool(val),
-            "InheritDisableFullWindowDrag" => node.inheritance.disable_full_window_drag = parse_bool(val),
-            "InheritDisableMenuAnimations" => node.inheritance.disable_menu_animations = parse_bool(val),
-            "InheritDisableCursorShadow" => node.inheritance.disable_cursor_shadow = parse_bool(val),
-            "InheritDisableCursorBlinking" => node.inheritance.disable_cursor_blinking = parse_bool(val),
+            "InheritEnableFontSmoothing" => {
+                node.inheritance.enable_font_smoothing = parse_bool(val)
+            }
+            "InheritEnableDesktopComposition" => {
+                node.inheritance.enable_desktop_composition = parse_bool(val)
+            }
+            "InheritDisableFullWindowDrag" => {
+                node.inheritance.disable_full_window_drag = parse_bool(val)
+            }
+            "InheritDisableMenuAnimations" => {
+                node.inheritance.disable_menu_animations = parse_bool(val)
+            }
+            "InheritDisableCursorShadow" => {
+                node.inheritance.disable_cursor_shadow = parse_bool(val)
+            }
+            "InheritDisableCursorBlinking" => {
+                node.inheritance.disable_cursor_blinking = parse_bool(val)
+            }
             "InheritDomain" => node.inheritance.domain = parse_bool(val),
             "InheritExtApp" => node.inheritance.ext_app = parse_bool(val),
             "InheritIcon" => node.inheritance.icon = parse_bool(val),
@@ -298,12 +331,20 @@ fn parse_node_element(
             "InheritProtocol" => node.inheritance.protocol = parse_bool(val),
             "InheritPuttySession" => node.inheritance.putty_session = parse_bool(val),
             "InheritSSHOptions" => node.inheritance.ssh_options = parse_bool(val),
-            "InheritRDPAuthenticationLevel" => node.inheritance.rdp_authentication_level = parse_bool(val),
-            "InheritRDPMinutesToIdleTimeout" => node.inheritance.rdp_minutes_to_idle_timeout = parse_bool(val),
-            "InheritRDPAlertIdleTimeout" => node.inheritance.rdp_alert_idle_timeout = parse_bool(val),
+            "InheritRDPAuthenticationLevel" => {
+                node.inheritance.rdp_authentication_level = parse_bool(val)
+            }
+            "InheritRDPMinutesToIdleTimeout" => {
+                node.inheritance.rdp_minutes_to_idle_timeout = parse_bool(val)
+            }
+            "InheritRDPAlertIdleTimeout" => {
+                node.inheritance.rdp_alert_idle_timeout = parse_bool(val)
+            }
             "InheritLoadBalanceInfo" => node.inheritance.load_balance_info = parse_bool(val),
             "InheritRedirectDiskDrives" => node.inheritance.redirect_disk_drives = parse_bool(val),
-            "InheritRedirectDiskDrivesCustom" => node.inheritance.redirect_disk_drives_custom = parse_bool(val),
+            "InheritRedirectDiskDrivesCustom" => {
+                node.inheritance.redirect_disk_drives_custom = parse_bool(val)
+            }
             "InheritRedirectKeys" => node.inheritance.redirect_keys = parse_bool(val),
             "InheritRedirectPrinters" => node.inheritance.redirect_printers = parse_bool(val),
             "InheritRedirectClipboard" => node.inheritance.redirect_clipboard = parse_bool(val),
@@ -311,7 +352,9 @@ fn parse_node_element(
             "InheritRedirectSmartCards" => node.inheritance.redirect_smart_cards = parse_bool(val),
             "InheritRedirectSound" => node.inheritance.redirect_sound = parse_bool(val),
             "InheritSoundQuality" => node.inheritance.sound_quality = parse_bool(val),
-            "InheritRedirectAudioCapture" => node.inheritance.redirect_audio_capture = parse_bool(val),
+            "InheritRedirectAudioCapture" => {
+                node.inheritance.redirect_audio_capture = parse_bool(val)
+            }
             "InheritRenderingEngine" => node.inheritance.rendering_engine = parse_bool(val),
             "InheritResolution" => node.inheritance.resolution = parse_bool(val),
             "InheritAutomaticResize" => node.inheritance.automatic_resize = parse_bool(val),
@@ -322,7 +365,9 @@ fn parse_node_element(
             "InheritUseVmId" => node.inheritance.use_vm_id = parse_bool(val),
             "InheritUseEnhancedMode" => node.inheritance.use_enhanced_mode = parse_bool(val),
             "InheritUsername" => node.inheritance.username = parse_bool(val),
-            "InheritRdpVersion" | "InheritRDPVersion" => node.inheritance.rdp_version = parse_bool(val),
+            "InheritRdpVersion" | "InheritRDPVersion" => {
+                node.inheritance.rdp_version = parse_bool(val)
+            }
             "InheritVNCAuthMode" => node.inheritance.vnc_auth_mode = parse_bool(val),
             "InheritVNCColors" => node.inheritance.vnc_colors = parse_bool(val),
             "InheritVNCCompression" => node.inheritance.vnc_compression = parse_bool(val),
@@ -334,27 +379,43 @@ fn parse_node_element(
             "InheritVNCProxyUsername" => node.inheritance.vnc_proxy_username = parse_bool(val),
             "InheritVNCSmartSizeMode" => node.inheritance.vnc_smart_size_mode = parse_bool(val),
             "InheritVNCViewOnly" => node.inheritance.vnc_view_only = parse_bool(val),
-            "InheritRDGatewayUsageMethod" => node.inheritance.rd_gateway_usage_method = parse_bool(val),
+            "InheritRDGatewayUsageMethod" => {
+                node.inheritance.rd_gateway_usage_method = parse_bool(val)
+            }
             "InheritRDGatewayHostname" => node.inheritance.rd_gateway_hostname = parse_bool(val),
-            "InheritRDGatewayUseConnectionCredentials" => node.inheritance.rd_gateway_use_connection_credentials = parse_bool(val),
+            "InheritRDGatewayUseConnectionCredentials" => {
+                node.inheritance.rd_gateway_use_connection_credentials = parse_bool(val)
+            }
             "InheritRDGatewayUsername" => node.inheritance.rd_gateway_username = parse_bool(val),
             "InheritRDGatewayPassword" => node.inheritance.rd_gateway_password = parse_bool(val),
             "InheritRDGatewayDomain" => node.inheritance.rd_gateway_domain = parse_bool(val),
-            "InheritRDGatewayExternalCredentialProvider" => node.inheritance.rd_gateway_external_credential_provider = parse_bool(val),
-            "InheritRDGatewayUserViaAPI" => node.inheritance.rd_gateway_user_via_api = parse_bool(val),
-            "InheritExternalCredentialProvider" => node.inheritance.external_credential_provider = parse_bool(val),
+            "InheritRDGatewayExternalCredentialProvider" => {
+                node.inheritance.rd_gateway_external_credential_provider = parse_bool(val)
+            }
+            "InheritRDGatewayUserViaAPI" => {
+                node.inheritance.rd_gateway_user_via_api = parse_bool(val)
+            }
+            "InheritExternalCredentialProvider" => {
+                node.inheritance.external_credential_provider = parse_bool(val)
+            }
             "InheritUserViaAPI" => node.inheritance.user_via_api = parse_bool(val),
-            "InheritExternalAddressProvider" => node.inheritance.external_address_provider = parse_bool(val),
+            "InheritExternalAddressProvider" => {
+                node.inheritance.external_address_provider = parse_bool(val)
+            }
             "InheritUserField" => node.inheritance.user_field = parse_bool(val),
             "InheritEnvironmentTags" => node.inheritance.environment_tags = parse_bool(val),
             "InheritFavorite" => node.inheritance.favorite = parse_bool(val),
             "InheritPreExtApp" => node.inheritance.pre_ext_app = parse_bool(val),
             "InheritPostExtApp" => node.inheritance.post_ext_app = parse_bool(val),
             "InheritMacAddress" => node.inheritance.mac_address = parse_bool(val),
-            "InheritSSHTunnelConnectionName" => node.inheritance.ssh_tunnel_connection_name = parse_bool(val),
+            "InheritSSHTunnelConnectionName" => {
+                node.inheritance.ssh_tunnel_connection_name = parse_bool(val)
+            }
             "InheritOpeningCommand" => node.inheritance.opening_command = parse_bool(val),
             "InheritRDPStartProgram" => node.inheritance.rdp_start_program = parse_bool(val),
-            "InheritRDPStartProgramWorkDir" => node.inheritance.rdp_start_program_work_dir = parse_bool(val),
+            "InheritRDPStartProgramWorkDir" => {
+                node.inheritance.rdp_start_program_work_dir = parse_bool(val)
+            }
             "InheritVmId" => node.inheritance.vm_id = parse_bool(val),
 
             _ => { /* Ignore unknown attributes for forward compatibility */ }
@@ -373,13 +434,11 @@ fn parse_bool(val: &str) -> bool {
 /// Parse a string that could be either a numeric value (enum discriminant)
 /// or a name, into one of our Serde-serializable enums.
 /// Falls back to Default if parsing fails.
-fn parse_enum_u32<T: Default>(val: &str) -> T
+fn parse_enum_u32<T>(val: &str) -> T
 where
-    T: From<u32>,
+    T: Default + From<u32>,
 {
-    val.parse::<u32>()
-        .map(T::from)
-        .unwrap_or_default()
+    val.parse::<u32>().map(T::from).unwrap_or_default()
 }
 
 // Implement From<u32> for all our enums

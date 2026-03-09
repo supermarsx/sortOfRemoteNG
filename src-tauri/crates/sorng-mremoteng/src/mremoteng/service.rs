@@ -62,7 +62,10 @@ impl MremotengService {
 
         // Sniff content
         let trimmed = content.trim();
-        if trimmed.starts_with("<?xml") || trimmed.starts_with("<Connections") || trimmed.starts_with("<Node") {
+        if trimmed.starts_with("<?xml")
+            || trimmed.starts_with("<Connections")
+            || trimmed.starts_with("<Node")
+        {
             return ImportFormat::MremotengXml;
         }
         if trimmed.starts_with("Windows Registry Editor") || trimmed.starts_with("REGEDIT") {
@@ -71,7 +74,11 @@ impl MremotengService {
         if trimmed.contains("full address:") || trimmed.contains("screen mode id:") {
             return ImportFormat::RdpFile;
         }
-        if trimmed.contains(';') && (trimmed.contains("Name;") || trimmed.contains("Hostname;") || trimmed.contains("Protocol;")) {
+        if trimmed.contains(';')
+            && (trimmed.contains("Name;")
+                || trimmed.contains("Hostname;")
+                || trimmed.contains("Protocol;"))
+        {
             return ImportFormat::MremotengCsv;
         }
 
@@ -130,7 +137,11 @@ impl MremotengService {
     // ─── Import Operations ───────────────────────────────────────
 
     /// Import from mRemoteNG XML (confCons.xml).
-    pub fn import_xml(&mut self, xml_content: &str, config: &MrngImportConfig) -> MremotengResult<MrngImportResult> {
+    pub fn import_xml(
+        &mut self,
+        xml_content: &str,
+        config: &MrngImportConfig,
+    ) -> MremotengResult<MrngImportResult> {
         let password = config.password.as_deref().unwrap_or(&self.default_password);
         let file = xml_parser::parse_xml(xml_content, password)?;
 
@@ -150,7 +161,11 @@ impl MremotengService {
     }
 
     /// Import from mRemoteNG XML and convert to app Connection JSON.
-    pub fn import_xml_as_app_connections(&mut self, xml_content: &str, config: &MrngImportConfig) -> MremotengResult<Vec<Value>> {
+    pub fn import_xml_as_app_connections(
+        &mut self,
+        xml_content: &str,
+        config: &MrngImportConfig,
+    ) -> MremotengResult<Vec<Value>> {
         let import_result = self.import_xml(xml_content, config)?;
         let mut app_connections = Vec::new();
 
@@ -163,7 +178,11 @@ impl MremotengService {
     }
 
     /// Import from CSV.
-    pub fn import_csv(&mut self, csv_content: &str, config: &MrngImportConfig) -> MremotengResult<MrngImportResult> {
+    pub fn import_csv(
+        &mut self,
+        csv_content: &str,
+        config: &MrngImportConfig,
+    ) -> MremotengResult<MrngImportResult> {
         let password = config.password.as_deref().unwrap_or(&self.default_password);
         let connections = csv_parser::parse_csv(csv_content, password, self.kdf_iterations)?;
         let total = connections.len();
@@ -181,15 +200,24 @@ impl MremotengService {
     }
 
     /// Import from CSV and convert to app Connection JSON.
-    pub fn import_csv_as_app_connections(&mut self, csv_content: &str, config: &MrngImportConfig) -> MremotengResult<Vec<Value>> {
+    pub fn import_csv_as_app_connections(
+        &mut self,
+        csv_content: &str,
+        config: &MrngImportConfig,
+    ) -> MremotengResult<Vec<Value>> {
         let import_result = self.import_csv(csv_content, config)?;
-        Ok(import_result.connections.iter()
+        Ok(import_result
+            .connections
+            .iter()
             .map(converter::mrng_to_app_connection)
             .collect())
     }
 
     /// Import from .rdp file(s).
-    pub fn import_rdp_files(&mut self, files: &[(String, String)]) -> MremotengResult<MrngImportResult> {
+    pub fn import_rdp_files(
+        &mut self,
+        files: &[(String, String)],
+    ) -> MremotengResult<MrngImportResult> {
         let mut connections = Vec::new();
         let mut errors = Vec::new();
 
@@ -214,15 +242,23 @@ impl MremotengService {
     }
 
     /// Import .rdp files and convert to app Connection JSON.
-    pub fn import_rdp_as_app_connections(&mut self, files: &[(String, String)]) -> MremotengResult<Vec<Value>> {
+    pub fn import_rdp_as_app_connections(
+        &mut self,
+        files: &[(String, String)],
+    ) -> MremotengResult<Vec<Value>> {
         let import_result = self.import_rdp_files(files)?;
-        Ok(import_result.connections.iter()
+        Ok(import_result
+            .connections
+            .iter()
             .map(converter::mrng_to_app_connection)
             .collect())
     }
 
     /// Import PuTTY sessions from a .reg file.
-    pub fn import_putty_from_reg(&mut self, reg_content: &str) -> MremotengResult<MrngImportResult> {
+    pub fn import_putty_from_reg(
+        &mut self,
+        reg_content: &str,
+    ) -> MremotengResult<MrngImportResult> {
         let sessions = putty_parser::parse_reg_file(reg_content)?;
         let connections = putty_parser::putty_sessions_to_connections(&sessions);
         let total = connections.len();
@@ -258,38 +294,57 @@ impl MremotengService {
     }
 
     /// Import PuTTY sessions and convert to app Connection JSON.
-    pub fn import_putty_as_app_connections(&mut self, reg_content: Option<&str>) -> MremotengResult<Vec<Value>> {
+    pub fn import_putty_as_app_connections(
+        &mut self,
+        reg_content: Option<&str>,
+    ) -> MremotengResult<Vec<Value>> {
         let import_result = if let Some(content) = reg_content {
             self.import_putty_from_reg(content)?
         } else {
             self.import_putty_from_registry()?
         };
 
-        Ok(import_result.connections.iter()
+        Ok(import_result
+            .connections
+            .iter()
             .map(converter::mrng_to_app_connection)
             .collect())
     }
 
     /// Auto-detect format and import.
-    pub fn import_auto(&mut self, file_path: &str, content: &str, config: &MrngImportConfig) -> MremotengResult<MrngImportResult> {
+    pub fn import_auto(
+        &mut self,
+        file_path: &str,
+        content: &str,
+        config: &MrngImportConfig,
+    ) -> MremotengResult<MrngImportResult> {
         let format = Self::detect_format(file_path, content);
 
         match format {
             ImportFormat::MremotengXml => self.import_xml(content, config),
             ImportFormat::MremotengCsv => self.import_csv(content, config),
-            ImportFormat::RdpFile => self.import_rdp_files(&[(file_path.to_string(), content.to_string())]),
+            ImportFormat::RdpFile => {
+                self.import_rdp_files(&[(file_path.to_string(), content.to_string())])
+            }
             ImportFormat::PuttySessions => self.import_putty_from_reg(content),
         }
     }
 
     /// Auto-detect format and import as app connections.
-    pub fn import_auto_as_app_connections(&mut self, file_path: &str, content: &str, config: &MrngImportConfig) -> MremotengResult<Vec<Value>> {
+    pub fn import_auto_as_app_connections(
+        &mut self,
+        file_path: &str,
+        content: &str,
+        config: &MrngImportConfig,
+    ) -> MremotengResult<Vec<Value>> {
         let import_result = self.import_auto(file_path, content, config)?;
         let mut result = Vec::new();
 
         for mrng_conn in &import_result.connections {
             // For XML hierarchical data, flatten the tree
-            if mrng_conn.node_type == MrngNodeType::Container || mrng_conn.node_type == MrngNodeType::Root {
+            if mrng_conn.node_type == MrngNodeType::Container
+                || mrng_conn.node_type == MrngNodeType::Root
+            {
                 result.extend(converter::mrng_tree_to_flat_connections(mrng_conn));
             } else {
                 result.push(converter::mrng_to_app_connection(mrng_conn));
@@ -302,7 +357,11 @@ impl MremotengService {
     // ─── Export Operations ───────────────────────────────────────
 
     /// Export connections to mRemoteNG XML format.
-    pub fn export_xml(&mut self, connections: &[MrngConnectionInfo], config: &MrngExportConfig) -> MremotengResult<MrngExportResult> {
+    pub fn export_xml(
+        &mut self,
+        connections: &[MrngConnectionInfo],
+        config: &MrngExportConfig,
+    ) -> MremotengResult<MrngExportResult> {
         let password = config.password.as_deref().unwrap_or(&self.default_password);
 
         let file = MrngConnectionFile {
@@ -336,13 +395,21 @@ impl MremotengService {
     }
 
     /// Export app connections (JSON) to mRemoteNG XML.
-    pub fn export_app_to_xml(&mut self, app_connections: &[Value], config: &MrngExportConfig) -> MremotengResult<MrngExportResult> {
+    pub fn export_app_to_xml(
+        &mut self,
+        app_connections: &[Value],
+        config: &MrngExportConfig,
+    ) -> MremotengResult<MrngExportResult> {
         let mrng_connections = converter::flat_connections_to_mrng_tree(app_connections)?;
         self.export_xml(&mrng_connections, config)
     }
 
     /// Export connections to mRemoteNG CSV format.
-    pub fn export_csv(&mut self, connections: &[MrngConnectionInfo], config: &MrngExportConfig) -> MremotengResult<MrngExportResult> {
+    pub fn export_csv(
+        &mut self,
+        connections: &[MrngConnectionInfo],
+        config: &MrngExportConfig,
+    ) -> MremotengResult<MrngExportResult> {
         let password = config.password.as_deref().unwrap_or(&self.default_password);
 
         let csv = csv_writer::write_csv(
@@ -367,7 +434,11 @@ impl MremotengService {
     }
 
     /// Export app connections (JSON) to mRemoteNG CSV.
-    pub fn export_app_to_csv(&mut self, app_connections: &[Value], config: &MrngExportConfig) -> MremotengResult<MrngExportResult> {
+    pub fn export_app_to_csv(
+        &mut self,
+        app_connections: &[Value],
+        config: &MrngExportConfig,
+    ) -> MremotengResult<MrngExportResult> {
         let mrng_connections = converter::flat_connections_to_mrng_tree(app_connections)?;
         self.export_csv(&mrng_connections, config)
     }

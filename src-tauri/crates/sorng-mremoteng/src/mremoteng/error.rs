@@ -55,11 +55,15 @@ impl std::error::Error for MremotengError {}
 pub type MremotengResult<T> = Result<T, MremotengError>;
 
 impl From<std::io::Error> for MremotengError {
-    fn from(e: std::io::Error) -> Self { Self::Io(e.to_string()) }
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e.to_string())
+    }
 }
 
 impl From<quick_xml::Error> for MremotengError {
-    fn from(e: quick_xml::Error) -> Self { Self::XmlParse(e.to_string()) }
+    fn from(e: quick_xml::Error) -> Self {
+        Self::XmlParse(e.to_string())
+    }
 }
 
 impl From<quick_xml::events::attributes::AttrError> for MremotengError {
@@ -69,5 +73,7 @@ impl From<quick_xml::events::attributes::AttrError> for MremotengError {
 }
 
 impl From<serde_json::Error> for MremotengError {
-    fn from(e: serde_json::Error) -> Self { Self::Serialization(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        Self::Serialization(e.to_string())
+    }
 }
