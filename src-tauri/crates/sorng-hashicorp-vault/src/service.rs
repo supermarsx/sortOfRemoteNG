@@ -10,15 +10,15 @@ use crate::client::VaultClient;
 use crate::error::{VaultError, VaultResult};
 use crate::types::*;
 
-use crate::kv::KvManager;
-use crate::transit::TransitManager;
-use crate::pki::PkiManager;
-use crate::auth_methods::AuthMethodManager;
-use crate::policies::PolicyManager;
 use crate::audit::AuditManager;
-use crate::tokens::TokenManager;
+use crate::auth_methods::AuthMethodManager;
+use crate::kv::KvManager;
 use crate::leases::LeaseManager;
+use crate::pki::PkiManager;
+use crate::policies::PolicyManager;
 use crate::sys::SysManager;
+use crate::tokens::TokenManager;
+use crate::transit::TransitManager;
 use serde_json::Value;
 
 /// Shared Tauri state handle.
@@ -31,12 +31,18 @@ pub struct VaultService {
 
 impl VaultService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ─────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: VaultConnectionConfig) -> VaultResult<VaultConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: VaultConnectionConfig,
+    ) -> VaultResult<VaultConnectionSummary> {
         let client = VaultClient::new(&config)?;
         let health = client.health().await?;
         let seal = client.seal_status().await?;
@@ -55,7 +61,8 @@ impl VaultService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> VaultResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| VaultError::not_found(format!("No connection '{}'", id)))
     }
@@ -65,7 +72,8 @@ impl VaultService {
     }
 
     fn client(&self, id: &str) -> VaultResult<&VaultClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| VaultError::not_found(format!("No connection '{}'", id)))
     }
 
@@ -100,7 +108,13 @@ impl VaultService {
         SysManager::seal(self.client(id)?).await
     }
 
-    pub async fn unseal(&self, id: &str, key: &str, reset: bool, migrate: bool) -> VaultResult<VaultSealStatus> {
+    pub async fn unseal(
+        &self,
+        id: &str,
+        key: &str,
+        reset: bool,
+        migrate: bool,
+    ) -> VaultResult<VaultSealStatus> {
         SysManager::unseal(self.client(id)?, key, reset, migrate).await
     }
 
@@ -116,7 +130,13 @@ impl VaultService {
         SysManager::list_secret_engines(self.client(id)?).await
     }
 
-    pub async fn mount_secret_engine(&self, id: &str, path: &str, engine_type: &str, config: Option<&Value>) -> VaultResult<()> {
+    pub async fn mount_secret_engine(
+        &self,
+        id: &str,
+        path: &str,
+        engine_type: &str,
+        config: Option<&Value>,
+    ) -> VaultResult<()> {
         SysManager::mount_secret_engine(self.client(id)?, path, engine_type, config).await
     }
 
@@ -130,7 +150,13 @@ impl VaultService {
         KvManager::read_secret(self.client(id)?, mount, path).await
     }
 
-    pub async fn kv_write(&self, id: &str, mount: &str, path: &str, data: Value) -> VaultResult<Value> {
+    pub async fn kv_write(
+        &self,
+        id: &str,
+        mount: &str,
+        path: &str,
+        data: Value,
+    ) -> VaultResult<Value> {
         KvManager::write_secret(self.client(id)?, mount, path, data).await
     }
 
@@ -142,21 +168,43 @@ impl VaultService {
         KvManager::list_secrets(self.client(id)?, mount, path).await
     }
 
-    pub async fn kv_undelete(&self, id: &str, mount: &str, path: &str, versions: Vec<u64>) -> VaultResult<()> {
+    pub async fn kv_undelete(
+        &self,
+        id: &str,
+        mount: &str,
+        path: &str,
+        versions: Vec<u64>,
+    ) -> VaultResult<()> {
         KvManager::undelete_secret(self.client(id)?, mount, path, versions).await
     }
 
-    pub async fn kv_destroy(&self, id: &str, mount: &str, path: &str, versions: Vec<u64>) -> VaultResult<()> {
+    pub async fn kv_destroy(
+        &self,
+        id: &str,
+        mount: &str,
+        path: &str,
+        versions: Vec<u64>,
+    ) -> VaultResult<()> {
         KvManager::destroy_secret(self.client(id)?, mount, path, versions).await
     }
 
-    pub async fn kv_metadata(&self, id: &str, mount: &str, path: &str) -> VaultResult<VaultKvMetadata> {
+    pub async fn kv_metadata(
+        &self,
+        id: &str,
+        mount: &str,
+        path: &str,
+    ) -> VaultResult<VaultKvMetadata> {
         KvManager::read_metadata(self.client(id)?, mount, path).await
     }
 
     // ── Transit ──────────────────────────────────────────────────
 
-    pub async fn transit_create_key(&self, id: &str, name: &str, key_type: Option<&str>) -> VaultResult<()> {
+    pub async fn transit_create_key(
+        &self,
+        id: &str,
+        name: &str,
+        key_type: Option<&str>,
+    ) -> VaultResult<()> {
         TransitManager::create_key(self.client(id)?, name, key_type).await
     }
 
@@ -168,11 +216,23 @@ impl VaultService {
         TransitManager::read_key(self.client(id)?, name).await
     }
 
-    pub async fn transit_encrypt(&self, id: &str, name: &str, plaintext: &str, context: Option<&str>) -> VaultResult<VaultEncryptResponse> {
+    pub async fn transit_encrypt(
+        &self,
+        id: &str,
+        name: &str,
+        plaintext: &str,
+        context: Option<&str>,
+    ) -> VaultResult<VaultEncryptResponse> {
         TransitManager::encrypt(self.client(id)?, name, plaintext, context).await
     }
 
-    pub async fn transit_decrypt(&self, id: &str, name: &str, ciphertext: &str, context: Option<&str>) -> VaultResult<VaultDecryptResponse> {
+    pub async fn transit_decrypt(
+        &self,
+        id: &str,
+        name: &str,
+        ciphertext: &str,
+        context: Option<&str>,
+    ) -> VaultResult<VaultDecryptResponse> {
         TransitManager::decrypt(self.client(id)?, name, ciphertext, context).await
     }
 
@@ -184,7 +244,13 @@ impl VaultService {
         TransitManager::sign(self.client(id)?, name, input).await
     }
 
-    pub async fn transit_verify(&self, id: &str, name: &str, input: &str, signature: &str) -> VaultResult<Value> {
+    pub async fn transit_verify(
+        &self,
+        id: &str,
+        name: &str,
+        input: &str,
+        signature: &str,
+    ) -> VaultResult<Value> {
         TransitManager::verify(self.client(id)?, name, input, signature).await
     }
 
@@ -194,7 +260,13 @@ impl VaultService {
         PkiManager::read_ca_cert(self.client(id)?, mount).await
     }
 
-    pub async fn pki_issue_cert(&self, id: &str, mount: &str, role: &str, params: &VaultPkiIssueCert) -> VaultResult<VaultCertificate> {
+    pub async fn pki_issue_cert(
+        &self,
+        id: &str,
+        mount: &str,
+        role: &str,
+        params: &VaultPkiIssueCert,
+    ) -> VaultResult<VaultCertificate> {
         PkiManager::issue_cert(self.client(id)?, mount, role, params).await
     }
 
@@ -210,7 +282,13 @@ impl VaultService {
         PkiManager::list_roles(self.client(id)?, mount).await
     }
 
-    pub async fn pki_create_role(&self, id: &str, mount: &str, name: &str, config: &Value) -> VaultResult<Value> {
+    pub async fn pki_create_role(
+        &self,
+        id: &str,
+        mount: &str,
+        name: &str,
+        config: &Value,
+    ) -> VaultResult<Value> {
         PkiManager::create_role(self.client(id)?, mount, name, config).await
     }
 
@@ -220,7 +298,13 @@ impl VaultService {
         AuthMethodManager::list_auth_methods(self.client(id)?).await
     }
 
-    pub async fn enable_auth(&self, id: &str, path: &str, auth_type: &str, config: Option<&Value>) -> VaultResult<()> {
+    pub async fn enable_auth(
+        &self,
+        id: &str,
+        path: &str,
+        auth_type: &str,
+        config: Option<&Value>,
+    ) -> VaultResult<()> {
         AuthMethodManager::enable_auth_method(self.client(id)?, path, auth_type, config).await
     }
 
@@ -228,8 +312,22 @@ impl VaultService {
         AuthMethodManager::disable_auth_method(self.client(id)?, path).await
     }
 
-    pub async fn userpass_create(&self, id: &str, mount: &str, username: &str, password: &str, policies: &[String]) -> VaultResult<()> {
-        AuthMethodManager::userpass_create_user(self.client(id)?, mount, username, password, policies).await
+    pub async fn userpass_create(
+        &self,
+        id: &str,
+        mount: &str,
+        username: &str,
+        password: &str,
+        policies: &[String],
+    ) -> VaultResult<()> {
+        AuthMethodManager::userpass_create_user(
+            self.client(id)?,
+            mount,
+            username,
+            password,
+            policies,
+        )
+        .await
     }
 
     pub async fn userpass_list(&self, id: &str, mount: &str) -> VaultResult<Vec<String>> {
@@ -264,7 +362,13 @@ impl VaultService {
         AuditManager::list_audit_devices(self.client(id)?).await
     }
 
-    pub async fn enable_audit(&self, id: &str, path: &str, audit_type: &str, options: &Value) -> VaultResult<()> {
+    pub async fn enable_audit(
+        &self,
+        id: &str,
+        path: &str,
+        audit_type: &str,
+        options: &Value,
+    ) -> VaultResult<()> {
         AuditManager::enable_audit_device(self.client(id)?, path, audit_type, options).await
     }
 
@@ -274,7 +378,11 @@ impl VaultService {
 
     // ── Tokens ───────────────────────────────────────────────────
 
-    pub async fn create_token(&self, id: &str, request: &VaultTokenCreateRequest) -> VaultResult<VaultTokenInfo> {
+    pub async fn create_token(
+        &self,
+        id: &str,
+        request: &VaultTokenCreateRequest,
+    ) -> VaultResult<VaultTokenInfo> {
         TokenManager::create_token(self.client(id)?, request).await
     }
 
@@ -286,7 +394,12 @@ impl VaultService {
         TokenManager::revoke_token(self.client(id)?, token).await
     }
 
-    pub async fn renew_token(&self, id: &str, token: &str, increment: Option<&str>) -> VaultResult<Value> {
+    pub async fn renew_token(
+        &self,
+        id: &str,
+        token: &str,
+        increment: Option<&str>,
+    ) -> VaultResult<Value> {
         TokenManager::renew_token(self.client(id)?, token, increment).await
     }
 
@@ -300,7 +413,12 @@ impl VaultService {
         LeaseManager::list_leases(self.client(id)?, prefix).await
     }
 
-    pub async fn renew_lease(&self, id: &str, lease_id: &str, increment: Option<&str>) -> VaultResult<Value> {
+    pub async fn renew_lease(
+        &self,
+        id: &str,
+        lease_id: &str,
+        increment: Option<&str>,
+    ) -> VaultResult<Value> {
         LeaseManager::renew_lease(self.client(id)?, lease_id, increment).await
     }
 

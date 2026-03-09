@@ -9,11 +9,20 @@ use serde_json::Value;
 pub struct KvManager;
 
 impl KvManager {
-    pub async fn read_secret(client: &VaultClient, mount: &str, path: &str) -> VaultResult<VaultKvEntry> {
+    pub async fn read_secret(
+        client: &VaultClient,
+        mount: &str,
+        path: &str,
+    ) -> VaultResult<VaultKvEntry> {
         client.kv_read(mount, path).await
     }
 
-    pub async fn write_secret(client: &VaultClient, mount: &str, path: &str, data: Value) -> VaultResult<Value> {
+    pub async fn write_secret(
+        client: &VaultClient,
+        mount: &str,
+        path: &str,
+        data: Value,
+    ) -> VaultResult<Value> {
         client.kv_write(mount, path, data).await
     }
 
@@ -21,19 +30,37 @@ impl KvManager {
         client.kv_delete(mount, path).await
     }
 
-    pub async fn undelete_secret(client: &VaultClient, mount: &str, path: &str, versions: Vec<u64>) -> VaultResult<()> {
+    pub async fn undelete_secret(
+        client: &VaultClient,
+        mount: &str,
+        path: &str,
+        versions: Vec<u64>,
+    ) -> VaultResult<()> {
         client.kv_undelete(mount, path, versions).await
     }
 
-    pub async fn destroy_secret(client: &VaultClient, mount: &str, path: &str, versions: Vec<u64>) -> VaultResult<()> {
+    pub async fn destroy_secret(
+        client: &VaultClient,
+        mount: &str,
+        path: &str,
+        versions: Vec<u64>,
+    ) -> VaultResult<()> {
         client.kv_destroy(mount, path, versions).await
     }
 
-    pub async fn list_secrets(client: &VaultClient, mount: &str, path: &str) -> VaultResult<Vec<String>> {
+    pub async fn list_secrets(
+        client: &VaultClient,
+        mount: &str,
+        path: &str,
+    ) -> VaultResult<Vec<String>> {
         client.kv_list(mount, path).await
     }
 
-    pub async fn read_metadata(client: &VaultClient, mount: &str, path: &str) -> VaultResult<VaultKvMetadata> {
+    pub async fn read_metadata(
+        client: &VaultClient,
+        mount: &str,
+        path: &str,
+    ) -> VaultResult<VaultKvMetadata> {
         client.kv_read_metadata(mount, path).await
     }
 

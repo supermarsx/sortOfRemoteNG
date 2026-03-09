@@ -16,7 +16,11 @@ impl LeaseManager {
         client.list_leases(prefix).await
     }
 
-    pub async fn renew_lease(client: &VaultClient, lease_id: &str, increment: Option<&str>) -> VaultResult<Value> {
+    pub async fn renew_lease(
+        client: &VaultClient,
+        lease_id: &str,
+        increment: Option<&str>,
+    ) -> VaultResult<Value> {
         client.renew_lease(lease_id, increment).await
     }
 

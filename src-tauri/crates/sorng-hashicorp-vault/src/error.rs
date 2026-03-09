@@ -379,10 +379,7 @@ mod tests {
     #[test]
     fn test_api_error_display() {
         let err = VaultError::api_error(403, vec!["permission denied".into()]);
-        assert_eq!(
-            err.to_string(),
-            "Vault API error (403): permission denied"
-        );
+        assert_eq!(err.to_string(), "Vault API error (403): permission denied");
     }
 
     #[test]

@@ -13,7 +13,12 @@ impl AuditManager {
         client.list_audit_devices().await
     }
 
-    pub async fn enable_audit_device(client: &VaultClient, path: &str, audit_type: &str, options: &Value) -> VaultResult<()> {
+    pub async fn enable_audit_device(
+        client: &VaultClient,
+        path: &str,
+        audit_type: &str,
+        options: &Value,
+    ) -> VaultResult<()> {
         client.enable_audit_device(path, audit_type, options).await
     }
 
@@ -21,7 +26,11 @@ impl AuditManager {
         client.disable_audit_device(path).await
     }
 
-    pub async fn calculate_hash(client: &VaultClient, path: &str, input: &str) -> VaultResult<String> {
+    pub async fn calculate_hash(
+        client: &VaultClient,
+        path: &str,
+        input: &str,
+    ) -> VaultResult<String> {
         client.calculate_hash(path, input).await
     }
 }

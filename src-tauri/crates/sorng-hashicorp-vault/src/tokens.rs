@@ -9,7 +9,10 @@ use serde_json::Value;
 pub struct TokenManager;
 
 impl TokenManager {
-    pub async fn create_token(client: &VaultClient, request: &VaultTokenCreateRequest) -> VaultResult<VaultTokenInfo> {
+    pub async fn create_token(
+        client: &VaultClient,
+        request: &VaultTokenCreateRequest,
+    ) -> VaultResult<VaultTokenInfo> {
         client.create_token(request).await
     }
 
@@ -21,7 +24,11 @@ impl TokenManager {
         client.lookup_self().await
     }
 
-    pub async fn renew_token(client: &VaultClient, token: &str, increment: Option<&str>) -> VaultResult<Value> {
+    pub async fn renew_token(
+        client: &VaultClient,
+        token: &str,
+        increment: Option<&str>,
+    ) -> VaultResult<Value> {
         client.renew_token(token, increment).await
     }
 
@@ -41,7 +48,10 @@ impl TokenManager {
         client.list_accessors().await
     }
 
-    pub async fn lookup_accessor(client: &VaultClient, accessor: &str) -> VaultResult<VaultTokenInfo> {
+    pub async fn lookup_accessor(
+        client: &VaultClient,
+        accessor: &str,
+    ) -> VaultResult<VaultTokenInfo> {
         client.lookup_accessor(accessor).await
     }
 }

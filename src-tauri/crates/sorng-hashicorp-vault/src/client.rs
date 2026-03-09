@@ -20,6 +20,7 @@ pub struct VaultClient {
 // ── Vault API response envelope ──────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct VaultApiResponse<T> {
     #[serde(default)]
     data: Option<T>,
@@ -67,7 +68,9 @@ impl VaultClient {
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        let mut req = self.http.request(method, self.url(path))
+        let mut req = self
+            .http
+            .request(method, self.url(path))
             .header("X-Vault-Token", &self.token);
         if let Some(ns) = &self.namespace {
             req = req.header("X-Vault-Namespace", ns);
@@ -82,20 +85,35 @@ impl VaultClient {
         }
         let body: Value = resp.json().await?;
         if status == 403 {
-            let errors = body["errors"].as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            let errors: Vec<String> = body["errors"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             return Err(VaultError::permission_denied(errors.join(", ")));
         }
         if status == 404 {
-            let errors = body["errors"].as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            let errors: Vec<String> = body["errors"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             return Err(VaultError::not_found(errors.join(", ")));
         }
         if status >= 400 {
-            let errors = body["errors"].as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>())
+            let errors = body["errors"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             return Err(VaultError::api_error(status, errors));
         }
@@ -103,7 +121,9 @@ impl VaultClient {
     }
 
     fn extract_data<T: DeserializeOwned>(body: &Value) -> VaultResult<T> {
-        let data = body.get("data").ok_or_else(|| VaultError::parse_error("missing 'data' field"))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| VaultError::parse_error("missing 'data' field"))?;
         serde_json::from_value(data.clone()).map_err(|e| VaultError::parse_error(e.to_string()))
     }
 
@@ -122,14 +142,22 @@ impl VaultClient {
 
     pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> VaultResult<T> {
         debug!("VAULT POST {}", path);
-        let resp = self.request(reqwest::Method::POST, path).json(body).send().await?;
+        let resp = self
+            .request(reqwest::Method::POST, path)
+            .json(body)
+            .send()
+            .await?;
         let resp_body = self.check_response(resp).await?;
         Self::extract_data(&resp_body)
     }
 
     pub async fn post_raw(&self, path: &str, body: &Value) -> VaultResult<Value> {
         debug!("VAULT POST (raw) {}", path);
-        let resp = self.request(reqwest::Method::POST, path).json(body).send().await?;
+        let resp = self
+            .request(reqwest::Method::POST, path)
+            .json(body)
+            .send()
+            .await?;
         self.check_response(resp).await
     }
 
@@ -141,7 +169,11 @@ impl VaultClient {
 
     pub async fn put_raw(&self, path: &str, body: &Value) -> VaultResult<Value> {
         debug!("VAULT PUT {}", path);
-        let resp = self.request(reqwest::Method::PUT, path).json(body).send().await?;
+        let resp = self
+            .request(reqwest::Method::PUT, path)
+            .json(body)
+            .send()
+            .await?;
         self.check_response(resp).await
     }
 
@@ -161,7 +193,11 @@ impl VaultClient {
 
     pub async fn list(&self, path: &str) -> VaultResult<Vec<String>> {
         debug!("VAULT LIST {}", path);
-        let resp = self.request(reqwest::Method::from_bytes(b"LIST").unwrap_or(reqwest::Method::GET), path)
+        let resp = self
+            .request(
+                reqwest::Method::from_bytes(b"LIST").unwrap_or(reqwest::Method::GET),
+                path,
+            )
             .send()
             .await?;
         let body = self.check_response(resp).await?;
@@ -173,7 +209,8 @@ impl VaultClient {
 
     pub async fn health(&self) -> VaultResult<VaultHealthResponse> {
         debug!("VAULT health check");
-        let resp = self.http
+        let resp = self
+            .http
             .get(format!("{}/v1/sys/health", self.base_url))
             .query(&[("standbyok", "true"), ("perfstandbyok", "true")])
             .send()
@@ -184,7 +221,8 @@ impl VaultClient {
 
     pub async fn seal_status(&self) -> VaultResult<VaultSealStatus> {
         debug!("VAULT seal-status");
-        let resp = self.http
+        let resp = self
+            .http
             .get(format!("{}/v1/sys/seal-status", self.base_url))
             .send()
             .await?;
@@ -201,13 +239,30 @@ impl VaultClient {
     pub async fn kv_read(&self, mount: &str, path: &str) -> VaultResult<VaultKvEntry> {
         let api_path = format!("{}/data/{}", mount, path);
         let body = self.get_raw(&api_path).await?;
-        let data = body.get("data").ok_or_else(|| VaultError::secret_not_found(path))?;
+        let data = body
+            .get("data")
+            .ok_or_else(|| VaultError::secret_not_found(path))?;
         let value = data.get("data").cloned().unwrap_or(Value::Null);
         let metadata = data.get("metadata").cloned();
-        let version = metadata.as_ref().and_then(|m| m.get("version")).and_then(|v| v.as_u64());
-        let created_time = metadata.as_ref().and_then(|m| m.get("created_time")).and_then(|v| v.as_str()).map(String::from);
-        let deletion_time = metadata.as_ref().and_then(|m| m.get("deletion_time")).and_then(|v| v.as_str()).map(String::from);
-        let destroyed = metadata.as_ref().and_then(|m| m.get("destroyed")).and_then(|v| v.as_bool()).unwrap_or(false);
+        let version = metadata
+            .as_ref()
+            .and_then(|m| m.get("version"))
+            .and_then(|v| v.as_u64());
+        let created_time = metadata
+            .as_ref()
+            .and_then(|m| m.get("created_time"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let deletion_time = metadata
+            .as_ref()
+            .and_then(|m| m.get("deletion_time"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let destroyed = metadata
+            .as_ref()
+            .and_then(|m| m.get("destroyed"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         Ok(VaultKvEntry {
             key: path.to_string(),
@@ -230,15 +285,22 @@ impl VaultClient {
         self.delete_req(&api_path).await
     }
 
-    pub async fn kv_undelete(&self, mount: &str, path: &str, versions: Vec<u64>) -> VaultResult<()> {
+    pub async fn kv_undelete(
+        &self,
+        mount: &str,
+        path: &str,
+        versions: Vec<u64>,
+    ) -> VaultResult<()> {
         let api_path = format!("{}/undelete/{}", mount, path);
-        self.post_raw(&api_path, &json!({ "versions": versions })).await?;
+        self.post_raw(&api_path, &json!({ "versions": versions }))
+            .await?;
         Ok(())
     }
 
     pub async fn kv_destroy(&self, mount: &str, path: &str, versions: Vec<u64>) -> VaultResult<()> {
         let api_path = format!("{}/destroy/{}", mount, path);
-        self.post_raw(&api_path, &json!({ "versions": versions })).await?;
+        self.post_raw(&api_path, &json!({ "versions": versions }))
+            .await?;
         Ok(())
     }
 
@@ -264,7 +326,8 @@ impl VaultClient {
         if let Some(t) = key_type {
             body["type"] = Value::String(t.to_string());
         }
-        self.post_raw(&format!("transit/keys/{}", name), &body).await?;
+        self.post_raw(&format!("transit/keys/{}", name), &body)
+            .await?;
         Ok(())
     }
 
@@ -280,18 +343,29 @@ impl VaultClient {
         self.delete_req(&format!("transit/keys/{}", name)).await
     }
 
-    pub async fn transit_update_key_config(&self, name: &str, config: &VaultTransitKeyConfig) -> VaultResult<()> {
+    pub async fn transit_update_key_config(
+        &self,
+        name: &str,
+        config: &VaultTransitKeyConfig,
+    ) -> VaultResult<()> {
         let body = serde_json::to_value(config)?;
-        self.post_raw(&format!("transit/keys/{}/config", name), &body).await?;
+        self.post_raw(&format!("transit/keys/{}/config", name), &body)
+            .await?;
         Ok(())
     }
 
     pub async fn transit_rotate_key(&self, name: &str) -> VaultResult<()> {
-        self.post_no_body(&format!("transit/keys/{}/rotate", name)).await?;
+        self.post_no_body(&format!("transit/keys/{}/rotate", name))
+            .await?;
         Ok(())
     }
 
-    pub async fn transit_encrypt(&self, name: &str, plaintext: &str, context: Option<&str>) -> VaultResult<VaultEncryptResponse> {
+    pub async fn transit_encrypt(
+        &self,
+        name: &str,
+        plaintext: &str,
+        context: Option<&str>,
+    ) -> VaultResult<VaultEncryptResponse> {
         let mut body = json!({ "plaintext": plaintext });
         if let Some(ctx) = context {
             body["context"] = Value::String(ctx.to_string());
@@ -299,7 +373,12 @@ impl VaultClient {
         self.post(&format!("transit/encrypt/{}", name), &body).await
     }
 
-    pub async fn transit_decrypt(&self, name: &str, ciphertext: &str, context: Option<&str>) -> VaultResult<VaultDecryptResponse> {
+    pub async fn transit_decrypt(
+        &self,
+        name: &str,
+        ciphertext: &str,
+        context: Option<&str>,
+    ) -> VaultResult<VaultDecryptResponse> {
         let mut body = json!({ "ciphertext": ciphertext });
         if let Some(ctx) = context {
             body["context"] = Value::String(ctx.to_string());
@@ -307,20 +386,49 @@ impl VaultClient {
         self.post(&format!("transit/decrypt/{}", name), &body).await
     }
 
-    pub async fn transit_rewrap(&self, name: &str, ciphertext: &str) -> VaultResult<VaultEncryptResponse> {
-        self.post(&format!("transit/rewrap/{}", name), &json!({ "ciphertext": ciphertext })).await
+    pub async fn transit_rewrap(
+        &self,
+        name: &str,
+        ciphertext: &str,
+    ) -> VaultResult<VaultEncryptResponse> {
+        self.post(
+            &format!("transit/rewrap/{}", name),
+            &json!({ "ciphertext": ciphertext }),
+        )
+        .await
     }
 
-    pub async fn transit_generate_data_key(&self, name: &str, key_type: &str) -> VaultResult<Value> {
-        self.post_raw(&format!("transit/datakey/{}/{}", key_type, name), &json!({})).await
+    pub async fn transit_generate_data_key(
+        &self,
+        name: &str,
+        key_type: &str,
+    ) -> VaultResult<Value> {
+        self.post_raw(
+            &format!("transit/datakey/{}/{}", key_type, name),
+            &json!({}),
+        )
+        .await
     }
 
     pub async fn transit_sign(&self, name: &str, input: &str) -> VaultResult<Value> {
-        self.post_raw(&format!("transit/sign/{}", name), &json!({ "input": input })).await
+        self.post_raw(
+            &format!("transit/sign/{}", name),
+            &json!({ "input": input }),
+        )
+        .await
     }
 
-    pub async fn transit_verify(&self, name: &str, input: &str, signature: &str) -> VaultResult<Value> {
-        self.post_raw(&format!("transit/verify/{}", name), &json!({ "input": input, "signature": signature })).await
+    pub async fn transit_verify(
+        &self,
+        name: &str,
+        input: &str,
+        signature: &str,
+    ) -> VaultResult<Value> {
+        self.post_raw(
+            &format!("transit/verify/{}", name),
+            &json!({ "input": input, "signature": signature }),
+        )
+        .await
     }
 
     pub async fn transit_hash(&self, input: &str, algorithm: Option<&str>) -> VaultResult<Value> {
@@ -345,21 +453,40 @@ impl VaultClient {
         self.get(&format!("{}/cert/{}", mount, serial)).await
     }
 
-    pub async fn pki_issue_cert(&self, mount: &str, role: &str, params: &VaultPkiIssueCert) -> VaultResult<VaultCertificate> {
+    pub async fn pki_issue_cert(
+        &self,
+        mount: &str,
+        role: &str,
+        params: &VaultPkiIssueCert,
+    ) -> VaultResult<VaultCertificate> {
         let body = serde_json::to_value(params)?;
         self.post(&format!("{}/issue/{}", mount, role), &body).await
     }
 
-    pub async fn pki_sign_cert(&self, mount: &str, role: &str, csr: &str) -> VaultResult<VaultCertificate> {
-        self.post(&format!("{}/sign/{}", mount, role), &json!({ "csr": csr })).await
+    pub async fn pki_sign_cert(
+        &self,
+        mount: &str,
+        role: &str,
+        csr: &str,
+    ) -> VaultResult<VaultCertificate> {
+        self.post(&format!("{}/sign/{}", mount, role), &json!({ "csr": csr }))
+            .await
     }
 
     pub async fn pki_revoke_cert(&self, mount: &str, serial: &str) -> VaultResult<Value> {
-        self.post_raw(&format!("{}/revoke", mount), &json!({ "serial_number": serial })).await
+        self.post_raw(
+            &format!("{}/revoke", mount),
+            &json!({ "serial_number": serial }),
+        )
+        .await
     }
 
     pub async fn pki_tidy(&self, mount: &str) -> VaultResult<Value> {
-        self.post_raw(&format!("{}/tidy", mount), &json!({ "tidy_cert_store": true, "tidy_revoked_certs": true })).await
+        self.post_raw(
+            &format!("{}/tidy", mount),
+            &json!({ "tidy_cert_store": true, "tidy_revoked_certs": true }),
+        )
+        .await
     }
 
     pub async fn pki_list_roles(&self, mount: &str) -> VaultResult<Vec<String>> {
@@ -370,16 +497,27 @@ impl VaultClient {
         self.get(&format!("{}/roles/{}", mount, name)).await
     }
 
-    pub async fn pki_create_role(&self, mount: &str, name: &str, config: &Value) -> VaultResult<Value> {
-        self.post_raw(&format!("{}/roles/{}", mount, name), config).await
+    pub async fn pki_create_role(
+        &self,
+        mount: &str,
+        name: &str,
+        config: &Value,
+    ) -> VaultResult<Value> {
+        self.post_raw(&format!("{}/roles/{}", mount, name), config)
+            .await
     }
 
     pub async fn pki_delete_role(&self, mount: &str, name: &str) -> VaultResult<()> {
         self.delete_req(&format!("{}/roles/{}", mount, name)).await
     }
 
-    pub async fn pki_generate_root(&self, mount: &str, params: &Value) -> VaultResult<VaultCertificate> {
-        self.post(&format!("{}/root/generate/internal", mount), params).await
+    pub async fn pki_generate_root(
+        &self,
+        mount: &str,
+        params: &Value,
+    ) -> VaultResult<VaultCertificate> {
+        self.post(&format!("{}/root/generate/internal", mount), params)
+            .await
     }
 
     pub async fn pki_set_urls(&self, mount: &str, urls: &Value) -> VaultResult<Value> {
@@ -390,22 +528,50 @@ impl VaultClient {
 
     pub async fn list_auth_methods(&self) -> VaultResult<Vec<VaultAuthMount>> {
         let body = self.get_raw("sys/auth").await?;
-        let data = body.get("data").or_else(|| body.as_object().map(|_| &body))
+        let data = body
+            .get("data")
+            .or_else(|| body.as_object().map(|_| &body))
             .ok_or_else(|| VaultError::parse_error("invalid auth list response"))?;
         let map: std::collections::HashMap<String, Value> = serde_json::from_value(data.clone())?;
-        let mounts = map.into_iter().map(|(path, v)| {
-            let auth_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("unknown").to_string();
-            let description = v.get("description").and_then(|d| d.as_str()).map(String::from);
-            let accessor = v.get("accessor").and_then(|a| a.as_str()).map(String::from);
-            let local = v.get("local").and_then(|l| l.as_bool()).unwrap_or(false);
-            let seal_wrap = v.get("seal_wrap").and_then(|s| s.as_bool()).unwrap_or(false);
-            let config = v.get("config").cloned();
-            VaultAuthMount { path, auth_type, description, accessor, local, seal_wrap, config }
-        }).collect();
+        let mounts = map
+            .into_iter()
+            .map(|(path, v)| {
+                let auth_type = v
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let description = v
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(String::from);
+                let accessor = v.get("accessor").and_then(|a| a.as_str()).map(String::from);
+                let local = v.get("local").and_then(|l| l.as_bool()).unwrap_or(false);
+                let seal_wrap = v
+                    .get("seal_wrap")
+                    .and_then(|s| s.as_bool())
+                    .unwrap_or(false);
+                let config = v.get("config").cloned();
+                VaultAuthMount {
+                    path,
+                    auth_type,
+                    description,
+                    accessor,
+                    local,
+                    seal_wrap,
+                    config,
+                }
+            })
+            .collect();
         Ok(mounts)
     }
 
-    pub async fn enable_auth_method(&self, path: &str, auth_type: &str, config: Option<&Value>) -> VaultResult<()> {
+    pub async fn enable_auth_method(
+        &self,
+        path: &str,
+        auth_type: &str,
+        config: Option<&Value>,
+    ) -> VaultResult<()> {
         let mut body = json!({ "type": auth_type });
         if let Some(c) = config {
             body["config"] = c.clone();
@@ -423,19 +589,28 @@ impl VaultClient {
     }
 
     pub async fn tune_auth_method(&self, path: &str, config: &Value) -> VaultResult<()> {
-        self.post_raw(&format!("sys/auth/{}/tune", path), config).await?;
+        self.post_raw(&format!("sys/auth/{}/tune", path), config)
+            .await?;
         Ok(())
     }
 
     // Userpass helpers
-    pub async fn userpass_create_user(&self, mount: &str, username: &str, password: &str, policies: &[String]) -> VaultResult<()> {
+    pub async fn userpass_create_user(
+        &self,
+        mount: &str,
+        username: &str,
+        password: &str,
+        policies: &[String],
+    ) -> VaultResult<()> {
         let body = json!({ "password": password, "policies": policies.join(",") });
-        self.post_raw(&format!("auth/{}/users/{}", mount, username), &body).await?;
+        self.post_raw(&format!("auth/{}/users/{}", mount, username), &body)
+            .await?;
         Ok(())
     }
 
     pub async fn userpass_read_user(&self, mount: &str, username: &str) -> VaultResult<Value> {
-        self.get_raw(&format!("auth/{}/users/{}", mount, username)).await
+        self.get_raw(&format!("auth/{}/users/{}", mount, username))
+            .await
     }
 
     pub async fn userpass_list_users(&self, mount: &str) -> VaultResult<Vec<String>> {
@@ -443,12 +618,19 @@ impl VaultClient {
     }
 
     pub async fn userpass_delete_user(&self, mount: &str, username: &str) -> VaultResult<()> {
-        self.delete_req(&format!("auth/{}/users/{}", mount, username)).await
+        self.delete_req(&format!("auth/{}/users/{}", mount, username))
+            .await
     }
 
     // AppRole helpers
-    pub async fn approle_create_role(&self, mount: &str, name: &str, config: &Value) -> VaultResult<()> {
-        self.post_raw(&format!("auth/{}/role/{}", mount, name), config).await?;
+    pub async fn approle_create_role(
+        &self,
+        mount: &str,
+        name: &str,
+        config: &Value,
+    ) -> VaultResult<()> {
+        self.post_raw(&format!("auth/{}/role/{}", mount, name), config)
+            .await?;
         Ok(())
     }
 
@@ -461,8 +643,11 @@ impl VaultClient {
     }
 
     pub async fn approle_get_role_id(&self, mount: &str, name: &str) -> VaultResult<String> {
-        let body = self.get_raw(&format!("auth/{}/role/{}/role-id", mount, name)).await?;
-        let role_id = body.get("data")
+        let body = self
+            .get_raw(&format!("auth/{}/role/{}/role-id", mount, name))
+            .await?;
+        let role_id = body
+            .get("data")
             .and_then(|d| d.get("role_id"))
             .and_then(|r| r.as_str())
             .ok_or_else(|| VaultError::parse_error("missing role_id"))?;
@@ -470,7 +655,11 @@ impl VaultClient {
     }
 
     pub async fn approle_generate_secret_id(&self, mount: &str, name: &str) -> VaultResult<Value> {
-        self.post_raw(&format!("auth/{}/role/{}/secret-id", mount, name), &json!({})).await
+        self.post_raw(
+            &format!("auth/{}/role/{}/secret-id", mount, name),
+            &json!({}),
+        )
+        .await
     }
 
     // ── Policies ─────────────────────────────────────────────────
@@ -481,13 +670,26 @@ impl VaultClient {
 
     pub async fn read_policy(&self, name: &str) -> VaultResult<VaultPolicy> {
         let body = self.get_raw(&format!("sys/policies/acl/{}", name)).await?;
-        let data = body.get("data").ok_or_else(|| VaultError::policy_not_found(name))?;
-        let policy_text = data.get("policy").and_then(|p| p.as_str()).unwrap_or("").to_string();
-        Ok(VaultPolicy { name: name.to_string(), policy_text })
+        let data = body
+            .get("data")
+            .ok_or_else(|| VaultError::policy_not_found(name))?;
+        let policy_text = data
+            .get("policy")
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .to_string();
+        Ok(VaultPolicy {
+            name: name.to_string(),
+            policy_text,
+        })
     }
 
     pub async fn create_or_update_policy(&self, name: &str, policy_text: &str) -> VaultResult<()> {
-        self.put_raw(&format!("sys/policies/acl/{}", name), &json!({ "policy": policy_text })).await?;
+        self.put_raw(
+            &format!("sys/policies/acl/{}", name),
+            &json!({ "policy": policy_text }),
+        )
+        .await?;
         Ok(())
     }
 
@@ -499,22 +701,51 @@ impl VaultClient {
 
     pub async fn list_audit_devices(&self) -> VaultResult<Vec<VaultAuditDevice>> {
         let body = self.get_raw("sys/audit").await?;
-        let data = body.get("data").or_else(|| body.as_object().map(|_| &body))
+        let data = body
+            .get("data")
+            .or_else(|| body.as_object().map(|_| &body))
             .ok_or_else(|| VaultError::parse_error("invalid audit list response"))?;
         let map: std::collections::HashMap<String, Value> = serde_json::from_value(data.clone())?;
-        let devices = map.into_iter().map(|(path, v)| {
-            let audit_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("unknown").to_string();
-            let description = v.get("description").and_then(|d| d.as_str()).map(String::from);
-            let options = v.get("options")
-                .and_then(|o| serde_json::from_value::<std::collections::HashMap<String, String>>(o.clone()).ok())
-                .unwrap_or_default();
-            let local = v.get("local").and_then(|l| l.as_bool()).unwrap_or(false);
-            VaultAuditDevice { path, audit_type, description, options, local }
-        }).collect();
+        let devices = map
+            .into_iter()
+            .map(|(path, v)| {
+                let audit_type = v
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let description = v
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(String::from);
+                let options = v
+                    .get("options")
+                    .and_then(|o| {
+                        serde_json::from_value::<std::collections::HashMap<String, String>>(
+                            o.clone(),
+                        )
+                        .ok()
+                    })
+                    .unwrap_or_default();
+                let local = v.get("local").and_then(|l| l.as_bool()).unwrap_or(false);
+                VaultAuditDevice {
+                    path,
+                    audit_type,
+                    description,
+                    options,
+                    local,
+                }
+            })
+            .collect();
         Ok(devices)
     }
 
-    pub async fn enable_audit_device(&self, path: &str, audit_type: &str, options: &Value) -> VaultResult<()> {
+    pub async fn enable_audit_device(
+        &self,
+        path: &str,
+        audit_type: &str,
+        options: &Value,
+    ) -> VaultResult<()> {
         let body = json!({ "type": audit_type, "options": options });
         self.put_raw(&format!("sys/audit/{}", path), &body).await?;
         Ok(())
@@ -525,8 +756,14 @@ impl VaultClient {
     }
 
     pub async fn calculate_hash(&self, path: &str, input: &str) -> VaultResult<String> {
-        let body = self.post_raw(&format!("sys/audit-hash/{}", path), &json!({ "input": input })).await?;
-        let hash = body.get("data")
+        let body = self
+            .post_raw(
+                &format!("sys/audit-hash/{}", path),
+                &json!({ "input": input }),
+            )
+            .await?;
+        let hash = body
+            .get("data")
             .and_then(|d| d.get("hash"))
             .and_then(|h| h.as_str())
             .ok_or_else(|| VaultError::parse_error("missing hash"))?;
@@ -535,15 +772,21 @@ impl VaultClient {
 
     // ── Tokens ───────────────────────────────────────────────────
 
-    pub async fn create_token(&self, request: &VaultTokenCreateRequest) -> VaultResult<VaultTokenInfo> {
+    pub async fn create_token(
+        &self,
+        request: &VaultTokenCreateRequest,
+    ) -> VaultResult<VaultTokenInfo> {
         let body = serde_json::to_value(request)?;
         let resp = self.post_raw("auth/token/create", &body).await?;
-        let auth = resp.get("auth").ok_or_else(|| VaultError::parse_error("missing auth in token create response"))?;
+        let auth = resp
+            .get("auth")
+            .ok_or_else(|| VaultError::parse_error("missing auth in token create response"))?;
         serde_json::from_value(auth.clone()).map_err(|e| VaultError::parse_error(e.to_string()))
     }
 
     pub async fn lookup_token(&self, token: &str) -> VaultResult<VaultTokenInfo> {
-        self.post("auth/token/lookup", &json!({ "token": token })).await
+        self.post("auth/token/lookup", &json!({ "token": token }))
+            .await
     }
 
     pub async fn lookup_self(&self) -> VaultResult<VaultTokenInfo> {
@@ -559,7 +802,8 @@ impl VaultClient {
     }
 
     pub async fn revoke_token(&self, token: &str) -> VaultResult<()> {
-        self.post_raw("auth/token/revoke", &json!({ "token": token })).await?;
+        self.post_raw("auth/token/revoke", &json!({ "token": token }))
+            .await?;
         Ok(())
     }
 
@@ -569,7 +813,8 @@ impl VaultClient {
     }
 
     pub async fn revoke_token_and_orphans(&self, token: &str) -> VaultResult<()> {
-        self.post_raw("auth/token/revoke-orphan", &json!({ "token": token })).await?;
+        self.post_raw("auth/token/revoke-orphan", &json!({ "token": token }))
+            .await?;
         Ok(())
     }
 
@@ -578,13 +823,18 @@ impl VaultClient {
     }
 
     pub async fn lookup_accessor(&self, accessor: &str) -> VaultResult<VaultTokenInfo> {
-        self.post("auth/token/lookup-accessor", &json!({ "accessor": accessor })).await
+        self.post(
+            "auth/token/lookup-accessor",
+            &json!({ "accessor": accessor }),
+        )
+        .await
     }
 
     // ── Leases ───────────────────────────────────────────────────
 
     pub async fn read_lease(&self, lease_id: &str) -> VaultResult<Value> {
-        self.put_raw("sys/leases/lookup", &json!({ "lease_id": lease_id })).await
+        self.put_raw("sys/leases/lookup", &json!({ "lease_id": lease_id }))
+            .await
     }
 
     pub async fn list_leases(&self, prefix: &str) -> VaultResult<Vec<String>> {
@@ -600,12 +850,14 @@ impl VaultClient {
     }
 
     pub async fn revoke_lease(&self, lease_id: &str) -> VaultResult<()> {
-        self.put_raw("sys/leases/revoke", &json!({ "lease_id": lease_id })).await?;
+        self.put_raw("sys/leases/revoke", &json!({ "lease_id": lease_id }))
+            .await?;
         Ok(())
     }
 
     pub async fn revoke_force(&self, prefix: &str) -> VaultResult<()> {
-        self.put_raw(&format!("sys/leases/revoke-force/{}", prefix), &json!({})).await?;
+        self.put_raw(&format!("sys/leases/revoke-force/{}", prefix), &json!({}))
+            .await?;
         Ok(())
     }
 
@@ -616,7 +868,12 @@ impl VaultClient {
         Ok(())
     }
 
-    pub async fn unseal(&self, key: &str, reset: bool, migrate: bool) -> VaultResult<VaultSealStatus> {
+    pub async fn unseal(
+        &self,
+        key: &str,
+        reset: bool,
+        migrate: bool,
+    ) -> VaultResult<VaultSealStatus> {
         let body = json!({ "key": key, "reset": reset, "migrate": migrate });
         let resp = self.put_raw("sys/unseal", &body).await?;
         serde_json::from_value(resp).map_err(|e| VaultError::parse_error(e.to_string()))
@@ -633,27 +890,58 @@ impl VaultClient {
 
     pub async fn list_secret_engines(&self) -> VaultResult<Vec<VaultSecretEngine>> {
         let body = self.get_raw("sys/mounts").await?;
-        let data = body.get("data").or_else(|| body.as_object().map(|_| &body))
+        let data = body
+            .get("data")
+            .or_else(|| body.as_object().map(|_| &body))
             .ok_or_else(|| VaultError::parse_error("invalid mounts response"))?;
         let map: std::collections::HashMap<String, Value> = serde_json::from_value(data.clone())?;
-        let engines = map.into_iter().map(|(path, v)| {
-            let engine_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("unknown").to_string();
-            let description = v.get("description").and_then(|d| d.as_str()).map(String::from);
-            let accessor = v.get("accessor").and_then(|a| a.as_str()).map(String::from);
-            let local = v.get("local").and_then(|l| l.as_bool()).unwrap_or(false);
-            let seal_wrap = v.get("seal_wrap").and_then(|s| s.as_bool()).unwrap_or(false);
-            let config = v.get("config").and_then(|c| serde_json::from_value(c.clone()).ok());
-            VaultSecretEngine { path, engine_type, description, accessor, local, seal_wrap, config }
-        }).collect();
+        let engines = map
+            .into_iter()
+            .map(|(path, v)| {
+                let engine_type = v
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let description = v
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(String::from);
+                let accessor = v.get("accessor").and_then(|a| a.as_str()).map(String::from);
+                let local = v.get("local").and_then(|l| l.as_bool()).unwrap_or(false);
+                let seal_wrap = v
+                    .get("seal_wrap")
+                    .and_then(|s| s.as_bool())
+                    .unwrap_or(false);
+                let config = v
+                    .get("config")
+                    .and_then(|c| serde_json::from_value(c.clone()).ok());
+                VaultSecretEngine {
+                    path,
+                    engine_type,
+                    description,
+                    accessor,
+                    local,
+                    seal_wrap,
+                    config,
+                }
+            })
+            .collect();
         Ok(engines)
     }
 
-    pub async fn mount_secret_engine(&self, path: &str, engine_type: &str, config: Option<&Value>) -> VaultResult<()> {
+    pub async fn mount_secret_engine(
+        &self,
+        path: &str,
+        engine_type: &str,
+        config: Option<&Value>,
+    ) -> VaultResult<()> {
         let mut body = json!({ "type": engine_type });
         if let Some(c) = config {
             body["config"] = c.clone();
         }
-        self.post_raw(&format!("sys/mounts/{}", path), &body).await?;
+        self.post_raw(&format!("sys/mounts/{}", path), &body)
+            .await?;
         Ok(())
     }
 
@@ -662,7 +950,8 @@ impl VaultClient {
     }
 
     pub async fn tune_mount(&self, path: &str, config: &Value) -> VaultResult<()> {
-        self.post_raw(&format!("sys/mounts/{}/tune", path), config).await?;
+        self.post_raw(&format!("sys/mounts/{}/tune", path), config)
+            .await?;
         Ok(())
     }
 

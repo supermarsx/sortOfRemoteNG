@@ -16,7 +16,11 @@ impl PolicyManager {
         client.read_policy(name).await
     }
 
-    pub async fn create_or_update_policy(client: &VaultClient, name: &str, policy_text: &str) -> VaultResult<()> {
+    pub async fn create_or_update_policy(
+        client: &VaultClient,
+        name: &str,
+        policy_text: &str,
+    ) -> VaultResult<()> {
         client.create_or_update_policy(name, policy_text).await
     }
 

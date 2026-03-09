@@ -19,7 +19,12 @@ impl SysManager {
         client.seal().await
     }
 
-    pub async fn unseal(client: &VaultClient, key: &str, reset: bool, migrate: bool) -> VaultResult<VaultSealStatus> {
+    pub async fn unseal(
+        client: &VaultClient,
+        key: &str,
+        reset: bool,
+        migrate: bool,
+    ) -> VaultResult<VaultSealStatus> {
         client.unseal(key, reset, migrate).await
     }
 
@@ -43,7 +48,12 @@ impl SysManager {
         client.list_secret_engines().await
     }
 
-    pub async fn mount_secret_engine(client: &VaultClient, path: &str, engine_type: &str, config: Option<&Value>) -> VaultResult<()> {
+    pub async fn mount_secret_engine(
+        client: &VaultClient,
+        path: &str,
+        engine_type: &str,
+        config: Option<&Value>,
+    ) -> VaultResult<()> {
         client.mount_secret_engine(path, engine_type, config).await
     }
 

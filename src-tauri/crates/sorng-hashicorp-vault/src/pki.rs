@@ -17,19 +17,37 @@ impl PkiManager {
         client.pki_list_certs(mount).await
     }
 
-    pub async fn read_cert(client: &VaultClient, mount: &str, serial: &str) -> VaultResult<VaultCertificate> {
+    pub async fn read_cert(
+        client: &VaultClient,
+        mount: &str,
+        serial: &str,
+    ) -> VaultResult<VaultCertificate> {
         client.pki_read_cert(mount, serial).await
     }
 
-    pub async fn issue_cert(client: &VaultClient, mount: &str, role: &str, params: &VaultPkiIssueCert) -> VaultResult<VaultCertificate> {
+    pub async fn issue_cert(
+        client: &VaultClient,
+        mount: &str,
+        role: &str,
+        params: &VaultPkiIssueCert,
+    ) -> VaultResult<VaultCertificate> {
         client.pki_issue_cert(mount, role, params).await
     }
 
-    pub async fn sign_cert(client: &VaultClient, mount: &str, role: &str, csr: &str) -> VaultResult<VaultCertificate> {
+    pub async fn sign_cert(
+        client: &VaultClient,
+        mount: &str,
+        role: &str,
+        csr: &str,
+    ) -> VaultResult<VaultCertificate> {
         client.pki_sign_cert(mount, role, csr).await
     }
 
-    pub async fn revoke_cert(client: &VaultClient, mount: &str, serial: &str) -> VaultResult<Value> {
+    pub async fn revoke_cert(
+        client: &VaultClient,
+        mount: &str,
+        serial: &str,
+    ) -> VaultResult<Value> {
         client.pki_revoke_cert(mount, serial).await
     }
 
@@ -41,11 +59,20 @@ impl PkiManager {
         client.pki_list_roles(mount).await
     }
 
-    pub async fn read_role(client: &VaultClient, mount: &str, name: &str) -> VaultResult<VaultPkiRole> {
+    pub async fn read_role(
+        client: &VaultClient,
+        mount: &str,
+        name: &str,
+    ) -> VaultResult<VaultPkiRole> {
         client.pki_read_role(mount, name).await
     }
 
-    pub async fn create_role(client: &VaultClient, mount: &str, name: &str, config: &Value) -> VaultResult<Value> {
+    pub async fn create_role(
+        client: &VaultClient,
+        mount: &str,
+        name: &str,
+        config: &Value,
+    ) -> VaultResult<Value> {
         client.pki_create_role(mount, name, config).await
     }
 
@@ -53,7 +80,11 @@ impl PkiManager {
         client.pki_delete_role(mount, name).await
     }
 
-    pub async fn generate_root(client: &VaultClient, mount: &str, params: &Value) -> VaultResult<VaultCertificate> {
+    pub async fn generate_root(
+        client: &VaultClient,
+        mount: &str,
+        params: &Value,
+    ) -> VaultResult<VaultCertificate> {
         client.pki_generate_root(mount, params).await
     }
 
