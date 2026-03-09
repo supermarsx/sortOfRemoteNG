@@ -4,7 +4,9 @@ use crate::google_passwords::types::{
 
 /// Import credentials from Google/Chrome CSV format.
 /// Expected header: name,url,username,password,note
-pub fn import_google_csv(csv_data: &str) -> Result<(Vec<Credential>, ImportResult), GooglePasswordsError> {
+pub fn import_google_csv(
+    csv_data: &str,
+) -> Result<(Vec<Credential>, ImportResult), GooglePasswordsError> {
     let mut credentials = Vec::new();
     let mut result = ImportResult {
         total_records: 0,
@@ -25,7 +27,9 @@ pub fn import_google_csv(csv_data: &str) -> Result<(Vec<Credential>, ImportResul
         let fields = parse_csv_line(line);
 
         if fields.len() < 4 {
-            result.errors.push(format!("Line {}: insufficient fields", idx + 2));
+            result
+                .errors
+                .push(format!("Line {}: insufficient fields", idx + 2));
             result.skipped += 1;
             continue;
         }
@@ -71,7 +75,9 @@ pub fn import_google_csv(csv_data: &str) -> Result<(Vec<Credential>, ImportResul
 }
 
 /// Import credentials from LastPass CSV format.
-pub fn import_lastpass_csv(csv_data: &str) -> Result<(Vec<Credential>, ImportResult), GooglePasswordsError> {
+pub fn import_lastpass_csv(
+    csv_data: &str,
+) -> Result<(Vec<Credential>, ImportResult), GooglePasswordsError> {
     let mut credentials = Vec::new();
     let mut result = ImportResult {
         total_records: 0,
@@ -91,7 +97,9 @@ pub fn import_lastpass_csv(csv_data: &str) -> Result<(Vec<Credential>, ImportRes
         let fields = parse_csv_line(line);
 
         if fields.len() < 4 {
-            result.errors.push(format!("Line {}: insufficient fields", idx + 2));
+            result
+                .errors
+                .push(format!("Line {}: insufficient fields", idx + 2));
             result.skipped += 1;
             continue;
         }
@@ -101,7 +109,10 @@ pub fn import_lastpass_csv(csv_data: &str) -> Result<(Vec<Credential>, ImportRes
         let username = fields.get(1).cloned().unwrap_or_default();
         let password = fields.get(2).cloned().unwrap_or_default();
         let notes = fields.get(4).cloned().filter(|s| !s.is_empty());
-        let name = fields.get(5).cloned().unwrap_or_else(|| extract_domain(&url));
+        let name = fields
+            .get(5)
+            .cloned()
+            .unwrap_or_else(|| extract_domain(&url));
         let folder = fields.get(6).cloned().filter(|s| !s.is_empty());
 
         credentials.push(Credential {
@@ -163,8 +174,9 @@ pub fn export_google_csv(credentials: &[Credential]) -> ExportResult {
 
 /// Export credentials to JSON format.
 pub fn export_json(credentials: &[Credential]) -> Result<ExportResult, GooglePasswordsError> {
-    let json = serde_json::to_string_pretty(credentials)
-        .map_err(|e| GooglePasswordsError::export_error(format!("JSON serialization failed: {}", e)))?;
+    let json = serde_json::to_string_pretty(credentials).map_err(|e| {
+        GooglePasswordsError::export_error(format!("JSON serialization failed: {}", e))
+    })?;
 
     Ok(ExportResult {
         format: ExportFormat::Json,

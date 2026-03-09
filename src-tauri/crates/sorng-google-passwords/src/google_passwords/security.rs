@@ -1,4 +1,4 @@
-use crate::google_passwords::types::{Credential, GooglePasswordsError, PasswordCheckupResult, PasswordStrength};
+use crate::google_passwords::types::{Credential, PasswordCheckupResult, PasswordStrength};
 
 /// Run Google Password Checkup analysis on all credentials.
 pub fn run_checkup(credentials: &[Credential]) -> PasswordCheckupResult {

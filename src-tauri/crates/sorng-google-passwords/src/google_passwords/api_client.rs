@@ -1,4 +1,6 @@
-use crate::google_passwords::types::{GooglePasswordsConfig, GooglePasswordsError, GooglePasswordsErrorKind, OAuthToken};
+use crate::google_passwords::types::{
+    GooglePasswordsConfig, GooglePasswordsError, GooglePasswordsErrorKind, OAuthToken,
+};
 use reqwest::{Client, Response, StatusCode};
 use std::time::Duration;
 
@@ -16,7 +18,12 @@ impl GoogleApiClient {
             .timeout(Duration::from_secs(config.timeout_secs))
             .user_agent("sortOfRemoteNG/1.0 (Google Passwords Integration)")
             .build()
-            .map_err(|e| GooglePasswordsError::connection_error(format!("Failed to build HTTP client: {}", e)))?;
+            .map_err(|e| {
+                GooglePasswordsError::connection_error(format!(
+                    "Failed to build HTTP client: {}",
+                    e
+                ))
+            })?;
 
         Ok(Self {
             client,
@@ -34,7 +41,10 @@ impl GoogleApiClient {
     }
 
     pub fn has_token(&self) -> bool {
-        self.token.as_ref().map(|t| !t.is_expired()).unwrap_or(false)
+        self.token
+            .as_ref()
+            .map(|t| !t.is_expired())
+            .unwrap_or(false)
     }
 
     fn get_access_token(&self) -> Result<&str, GooglePasswordsError> {
@@ -68,12 +78,12 @@ impl GoogleApiClient {
                 "HTTP {} — {}",
                 status.as_u16(),
                 body
-            )).with_status(status.as_u16()));
+            ))
+            .with_status(status.as_u16()));
         }
-        response
-            .text()
-            .await
-            .map_err(|e| GooglePasswordsError::server_error(format!("Failed to read response: {}", e)))
+        response.text().await.map_err(|e| {
+            GooglePasswordsError::server_error(format!("Failed to read response: {}", e))
+        })
     }
 
     /// Generate the OAuth2 authorization URL.
@@ -171,8 +181,9 @@ impl GoogleApiClient {
             scope: Option<String>,
         }
 
-        let refresh_resp: RefreshResponse = serde_json::from_str(&body)
-            .map_err(|e| GooglePasswordsError::parse_error(format!("Refresh token parse error: {}", e)))?;
+        let refresh_resp: RefreshResponse = serde_json::from_str(&body).map_err(|e| {
+            GooglePasswordsError::parse_error(format!("Refresh token parse error: {}", e))
+        })?;
 
         let expires_at = refresh_resp
             .expires_in

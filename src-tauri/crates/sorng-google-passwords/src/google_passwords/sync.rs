@@ -1,6 +1,4 @@
-use crate::google_passwords::types::{
-    Credential, GooglePasswordsError, SyncInfo, SyncStatus,
-};
+use crate::google_passwords::types::{Credential, SyncInfo, SyncStatus};
 
 /// Represents a sync operation that can track changes between local and remote.
 pub struct SyncEngine {
@@ -8,6 +6,12 @@ pub struct SyncEngine {
     pending_additions: Vec<Credential>,
     pending_updates: Vec<Credential>,
     pending_deletions: Vec<String>,
+}
+
+impl Default for SyncEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SyncEngine {

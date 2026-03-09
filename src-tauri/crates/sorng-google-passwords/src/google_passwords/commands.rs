@@ -52,9 +52,7 @@ pub async fn gp_refresh_auth(
 }
 
 #[tauri::command]
-pub async fn gp_logout(
-    state: tauri::State<'_, GooglePasswordsServiceState>,
-) -> Result<(), String> {
+pub async fn gp_logout(state: tauri::State<'_, GooglePasswordsServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.logout().await.map_err(|e| e.message)
 }

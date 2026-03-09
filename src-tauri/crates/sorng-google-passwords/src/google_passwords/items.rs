@@ -1,9 +1,10 @@
-use crate::google_passwords::types::{
-    Credential, CredentialFilter, GooglePasswordsError, PasswordStrength,
-};
+use crate::google_passwords::types::{Credential, CredentialFilter, PasswordStrength};
 
 /// Filter credentials based on the given criteria.
-pub fn filter_credentials(credentials: &[Credential], filter: &CredentialFilter) -> Vec<Credential> {
+pub fn filter_credentials(
+    credentials: &[Credential],
+    filter: &CredentialFilter,
+) -> Vec<Credential> {
     credentials
         .iter()
         .filter(|c| {
@@ -121,7 +122,10 @@ pub fn run_security_analysis(credentials: &mut [Credential]) {
     for cred in credentials.iter_mut() {
         // Assess strength
         let strength = assess_strength(&cred.password);
-        cred.weak = matches!(strength, PasswordStrength::VeryWeak | PasswordStrength::Weak);
+        cred.weak = matches!(
+            strength,
+            PasswordStrength::VeryWeak | PasswordStrength::Weak
+        );
         cred.password_strength = Some(strength);
 
         // Check reuse

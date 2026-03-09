@@ -2,7 +2,10 @@ use crate::google_passwords::api_client::GoogleApiClient;
 use crate::google_passwords::types::{GooglePasswordsConfig, GooglePasswordsError, OAuthToken};
 
 /// Generate the OAuth2 authorization URL for the user to visit.
-pub fn get_authorization_url(config: &GooglePasswordsConfig, state: &str) -> Result<String, GooglePasswordsError> {
+pub fn get_authorization_url(
+    config: &GooglePasswordsConfig,
+    state: &str,
+) -> Result<String, GooglePasswordsError> {
     let client = GoogleApiClient::new(config)?;
     Ok(client.get_auth_url(state))
 }
@@ -16,7 +19,9 @@ pub async fn exchange_code(
 }
 
 /// Refresh the access token.
-pub async fn refresh_token(client: &mut GoogleApiClient) -> Result<OAuthToken, GooglePasswordsError> {
+pub async fn refresh_token(
+    client: &mut GoogleApiClient,
+) -> Result<OAuthToken, GooglePasswordsError> {
     client.refresh_token().await
 }
 

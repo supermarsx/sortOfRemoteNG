@@ -19,6 +19,12 @@ pub struct GooglePasswordsService {
     cached_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+impl Default for GooglePasswordsService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GooglePasswordsService {
     pub fn new() -> Self {
         Self {
@@ -38,7 +44,9 @@ impl GooglePasswordsService {
 
     pub fn configure(&mut self, config: GooglePasswordsConfig) -> Result<(), GooglePasswordsError> {
         if config.client_id.is_empty() {
-            return Err(GooglePasswordsError::config_error("OAuth client ID is required"));
+            return Err(GooglePasswordsError::config_error(
+                "OAuth client ID is required",
+            ));
         }
         let client = GoogleApiClient::new(&config)?;
         self.config = Some(config);
@@ -62,7 +70,7 @@ impl GooglePasswordsService {
             .as_ref()
             .ok_or_else(|| GooglePasswordsError::config_error("Not configured"))?;
         let state = auth::generate_oauth_state();
-        Ok(auth::get_authorization_url(config, &state)?)
+        auth::get_authorization_url(config, &state)
     }
 
     pub async fn authenticate(&mut self, code: &str) -> Result<(), GooglePasswordsError> {
@@ -94,10 +102,7 @@ impl GooglePasswordsService {
 
     // ─── Credentials (local store + CSV-based) ───────────────────
 
-    pub fn list_credentials(
-        &self,
-        filter: Option<CredentialFilter>,
-    ) -> Vec<Credential> {
+    pub fn list_credentials(&self, filter: Option<CredentialFilter>) -> Vec<Credential> {
         if let Some(filter) = filter {
             items::filter_credentials(&self.credentials, &filter)
         } else {

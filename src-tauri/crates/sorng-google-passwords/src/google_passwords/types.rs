@@ -50,11 +50,17 @@ impl GooglePasswordsError {
     }
 
     pub fn token_expired() -> Self {
-        Self::new(GooglePasswordsErrorKind::TokenExpired, "OAuth token has expired")
+        Self::new(
+            GooglePasswordsErrorKind::TokenExpired,
+            "OAuth token has expired",
+        )
     }
 
     pub fn not_found(resource: &str, id: &str) -> Self {
-        Self::new(GooglePasswordsErrorKind::NotFound, format!("{} '{}' not found", resource, id))
+        Self::new(
+            GooglePasswordsErrorKind::NotFound,
+            format!("{} '{}' not found", resource, id),
+        )
     }
 
     pub fn config_error(msg: impl Into<String>) -> Self {
@@ -103,7 +109,10 @@ impl From<GooglePasswordsError> for String {
 impl From<reqwest::Error> for GooglePasswordsError {
     fn from(e: reqwest::Error) -> Self {
         if e.is_timeout() {
-            Self::new(GooglePasswordsErrorKind::Timeout, format!("Request timed out: {}", e))
+            Self::new(
+                GooglePasswordsErrorKind::Timeout,
+                format!("Request timed out: {}", e),
+            )
         } else if e.is_connect() {
             Self::connection_error(format!("Connection failed: {}", e))
         } else {

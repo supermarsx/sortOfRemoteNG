@@ -22,7 +22,10 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, GooglePas
 
     if config.include_uppercase {
         let chars: String = if config.exclude_ambiguous {
-            uppercase.chars().filter(|c| !ambiguous.contains(*c)).collect()
+            uppercase
+                .chars()
+                .filter(|c| !ambiguous.contains(*c))
+                .collect()
         } else {
             uppercase.to_string()
         };
@@ -33,7 +36,10 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, GooglePas
 
     if config.include_lowercase {
         let chars: String = if config.exclude_ambiguous {
-            lowercase.chars().filter(|c| !ambiguous.contains(*c)).collect()
+            lowercase
+                .chars()
+                .filter(|c| !ambiguous.contains(*c))
+                .collect()
         } else {
             lowercase.to_string()
         };
@@ -90,19 +96,38 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, GooglePas
 /// Calculate password entropy in bits.
 pub fn calculate_entropy(password: &str) -> f64 {
     let mut charset_size = 0u32;
-    if password.chars().any(|c| c.is_ascii_lowercase()) { charset_size += 26; }
-    if password.chars().any(|c| c.is_ascii_uppercase()) { charset_size += 26; }
-    if password.chars().any(|c| c.is_ascii_digit()) { charset_size += 10; }
-    if password.chars().any(|c| !c.is_alphanumeric() && c.is_ascii()) { charset_size += 32; }
-    if charset_size == 0 { return 0.0; }
+    if password.chars().any(|c| c.is_ascii_lowercase()) {
+        charset_size += 26;
+    }
+    if password.chars().any(|c| c.is_ascii_uppercase()) {
+        charset_size += 26;
+    }
+    if password.chars().any(|c| c.is_ascii_digit()) {
+        charset_size += 10;
+    }
+    if password
+        .chars()
+        .any(|c| !c.is_alphanumeric() && c.is_ascii())
+    {
+        charset_size += 32;
+    }
+    if charset_size == 0 {
+        return 0.0;
+    }
     password.len() as f64 * (charset_size as f64).log2()
 }
 
 /// Rate password strength as a human-readable string.
 pub fn rate_strength(entropy: f64) -> &'static str {
-    if entropy < 28.0 { "Very Weak" }
-    else if entropy < 36.0 { "Weak" }
-    else if entropy < 60.0 { "Fair" }
-    else if entropy < 80.0 { "Strong" }
-    else { "Very Strong" }
+    if entropy < 28.0 {
+        "Very Weak"
+    } else if entropy < 36.0 {
+        "Weak"
+    } else if entropy < 60.0 {
+        "Fair"
+    } else if entropy < 80.0 {
+        "Strong"
+    } else {
+        "Very Strong"
+    }
 }
