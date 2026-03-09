@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::process::Command;
-use std::process::Stdio;
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::time::{timeout, Duration};
 use dns_lookup::lookup_addr;
+use futures::future::join_all;
 use mac_address::get_mac_address;
 use serde::{Deserialize, Serialize};
-use futures::future::join_all;
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 
 pub type NetworkServiceState = Arc<Mutex<NetworkService>>;
 
@@ -43,13 +43,17 @@ impl NetworkService {
     pub async fn ping_host(&self, host: String) -> Result<bool, String> {
         // Use system ping command
         let mut cmd = Command::new("ping");
-        cmd.arg("-n").arg("1")  // Windows: -n 1 (1 packet)
-           .arg("-w").arg("1000")  // Windows: -w 1000 (1 second timeout)
-           .arg(&host)
-           .stdout(Stdio::null())
-           .stderr(Stdio::null());
+        cmd.arg("-n")
+            .arg("1") // Windows: -n 1 (1 packet)
+            .arg("-w")
+            .arg("1000") // Windows: -w 1000 (1 second timeout)
+            .arg(&host)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
 
-        let output = cmd.status().await
+        let output = cmd
+            .status()
+            .await
             .map_err(|e| format!("Failed to execute ping: {}", e))?;
 
         Ok(output.success())
@@ -68,10 +72,7 @@ impl NetworkService {
     }
 
     pub async fn resolve_hostname(&self, ip: &str) -> Option<String> {
-        match lookup_addr(&ip.parse().unwrap()) {
-            Ok(hostname) => Some(hostname),
-            Err(_) => None,
-        }
+        lookup_addr(&ip.parse().unwrap()).ok()
     }
 
     pub async fn get_mac_address(&self, _ip: &str) -> Option<String> {
@@ -135,7 +136,11 @@ impl NetworkService {
         services
     }
 
-    pub async fn scan_network_comprehensive(&self, subnet: String, scan_ports: bool) -> Result<Vec<DiscoveredHost>, String> {
+    pub async fn scan_network_comprehensive(
+        &self,
+        subnet: String,
+        scan_ports: bool,
+    ) -> Result<Vec<DiscoveredHost>, String> {
         let mut discovered_hosts = Vec::new();
 
         // Parse subnet (e.g., "192.168.1.0/24" -> "192.168.1")
@@ -153,7 +158,11 @@ impl NetworkService {
 
         let base = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
         let start_octet: u8 = parts[3].parse().unwrap_or(1);
-        let end_octet: u8 = if subnet.contains("/24") { 254 } else { start_octet + 10 };
+        let end_octet: u8 = if subnet.contains("/24") {
+            254
+        } else {
+            start_octet + 10
+        };
 
         // Scan IP range concurrently
         let mut handles = vec![];
@@ -161,7 +170,6 @@ impl NetworkService {
         for i in start_octet..=end_octet {
             let ip = format!("{}.{}", base, i);
             let ip_clone = ip.clone();
-            let scan_ports = scan_ports;
 
             let handle = tokio::spawn(async move {
                 // Check if host is up
@@ -196,7 +204,7 @@ impl NetworkService {
                                 .as_secs(),
                             response_time,
                         })
-                    },
+                    }
                     _ => None,
                 }
             });
@@ -231,7 +239,11 @@ impl NetworkService {
 
         let base = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
         let start_octet: u8 = parts[3].parse().unwrap_or(1);
-        let end_octet: u8 = if subnet.contains("/24") { 254 } else { start_octet + 10 };
+        let end_octet: u8 = if subnet.contains("/24") {
+            254
+        } else {
+            start_octet + 10
+        };
 
         // Scan IP range concurrently
         let mut handles = vec![];
@@ -242,11 +254,13 @@ impl NetworkService {
             let handle = tokio::spawn(async move {
                 // Simple ping check - in production, you'd want more sophisticated scanning
                 let mut cmd = Command::new("ping");
-                cmd.arg("-n").arg("1")
-                   .arg("-w").arg("500")  // Shorter timeout for scanning
-                   .arg(&ip_clone)
-                   .stdout(Stdio::null())
-                   .stderr(Stdio::null());
+                cmd.arg("-n")
+                    .arg("1")
+                    .arg("-w")
+                    .arg("500") // Shorter timeout for scanning
+                    .arg(&ip_clone)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
 
                 match cmd.status().await {
                     Ok(status) if status.success() => Some(ip_clone),
@@ -268,7 +282,10 @@ impl NetworkService {
 }
 
 #[tauri::command]
-pub async fn ping_host(state: tauri::State<'_, NetworkServiceState>, host: String) -> Result<bool, String> {
+pub async fn ping_host(
+    state: tauri::State<'_, NetworkServiceState>,
+    host: String,
+) -> Result<bool, String> {
     let network = state.lock().await;
     network.ping_host(host).await
 }
@@ -282,14 +299,14 @@ pub struct PingResult {
 
 #[tauri::command]
 pub async fn ping_host_detailed(
-    state: tauri::State<'_, NetworkServiceState>, 
+    state: tauri::State<'_, NetworkServiceState>,
     host: String,
     _count: Option<u32>,
     _timeout_secs: Option<u64>,
 ) -> Result<PingResult, String> {
     let network = state.lock().await;
     let start = std::time::Instant::now();
-    
+
     match network.ping_host(host).await {
         Ok(success) => {
             let elapsed = start.elapsed().as_millis() as u64;
@@ -303,7 +320,7 @@ pub async fn ping_host_detailed(
             success: false,
             time_ms: None,
             error: Some(e),
-        })
+        }),
     }
 }
 
@@ -311,19 +328,22 @@ pub async fn ping_host_detailed(
 pub async fn ping_gateway(timeout_secs: Option<u64>) -> Result<PingResult, String> {
     // Try to get the default gateway
     let gateway = get_default_gateway()?;
-    
+
     let start = std::time::Instant::now();
     let timeout_ms = (timeout_secs.unwrap_or(5) * 1000) as u32;
-    
+
     // Use ICMP ping directly - gateways typically don't have TCP services open
     let mut cmd = Command::new("ping");
     #[cfg(target_os = "windows")]
     cmd.arg("-n").arg("1").arg("-w").arg(timeout_ms.to_string());
     #[cfg(not(target_os = "windows"))]
-    cmd.arg("-c").arg("1").arg("-W").arg((timeout_secs.unwrap_or(5)).to_string());
+    cmd.arg("-c")
+        .arg("1")
+        .arg("-W")
+        .arg((timeout_secs.unwrap_or(5)).to_string());
     cmd.arg(&gateway)
-       .stdout(Stdio::piped())
-       .stderr(Stdio::null());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
 
     match cmd.output().await {
         Ok(output) if output.status.success() => {
@@ -345,7 +365,7 @@ pub async fn ping_gateway(timeout_secs: Option<u64>) -> Result<PingResult, Strin
             success: false,
             time_ms: None,
             error: Some(format!("Ping command failed: {}", e)),
-        })
+        }),
     }
 }
 
@@ -357,7 +377,8 @@ fn parse_ping_time(output: &str) -> Option<u64> {
         let line_lower = line.to_lowercase();
         if let Some(pos) = line_lower.find("time=") {
             let after_time = &line[pos + 5..];
-            let num_str: String = after_time.chars()
+            let num_str: String = after_time
+                .chars()
                 .take_while(|c| c.is_ascii_digit() || *c == '.')
                 .collect();
             if let Ok(ms) = num_str.parse::<f64>() {
@@ -378,7 +399,7 @@ fn get_default_gateway() -> Result<String, String> {
         let output = std::process::Command::new("ipconfig")
             .output()
             .map_err(|e| format!("Failed to get gateway: {}", e))?;
-        
+
         let output_str = String::from_utf8_lossy(&output.stdout);
         for line in output_str.lines() {
             if line.contains("Default Gateway") && line.contains(":") {
@@ -393,14 +414,14 @@ fn get_default_gateway() -> Result<String, String> {
         }
         Err("Could not find default gateway".to_string())
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         let output = std::process::Command::new("ip")
             .args(["route", "show", "default"])
             .output()
             .map_err(|e| format!("Failed to get gateway: {}", e))?;
-        
+
         let output_str = String::from_utf8_lossy(&output.stdout);
         for line in output_str.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -410,14 +431,14 @@ fn get_default_gateway() -> Result<String, String> {
         }
         Err("Could not find default gateway".to_string())
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         let output = std::process::Command::new("netstat")
             .args(["-nr"])
             .output()
             .map_err(|e| format!("Failed to get gateway: {}", e))?;
-        
+
         let output_str = String::from_utf8_lossy(&output.stdout);
         for line in output_str.lines() {
             if line.starts_with("default") {
@@ -429,7 +450,7 @@ fn get_default_gateway() -> Result<String, String> {
         }
         Err("Could not find default gateway".to_string())
     }
-    
+
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         Err("Gateway detection not supported on this platform".to_string())
@@ -454,16 +475,16 @@ pub async fn check_port(
     let start = std::time::Instant::now();
     let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(5));
     let addr = format!("{}:{}", host, port);
-    
+
     let service = NetworkService::get_common_ports()
         .iter()
         .find(|(p, _)| *p == port)
         .map(|(_, s)| s.clone());
-    
+
     match timeout(timeout_duration, TcpStream::connect(&addr)).await {
         Ok(Ok(mut stream)) => {
             let elapsed = start.elapsed().as_millis() as u64;
-            
+
             // Try to grab a banner (first ~128 bytes within 2 seconds)
             let banner = {
                 let mut buf = vec![0u8; 128];
@@ -486,7 +507,7 @@ pub async fn check_port(
                     _ => None,
                 }
             };
-            
+
             Ok(PortCheckResult {
                 port,
                 open: true,
@@ -501,7 +522,7 @@ pub async fn check_port(
             service,
             time_ms: None,
             banner: None,
-        })
+        }),
     }
 }
 
@@ -516,26 +537,24 @@ pub struct DnsResult {
 }
 
 #[tauri::command]
-pub async fn dns_lookup(
-    host: String,
-    timeout_secs: Option<u64>,
-) -> Result<DnsResult, String> {
+pub async fn dns_lookup(host: String, timeout_secs: Option<u64>) -> Result<DnsResult, String> {
     use std::net::ToSocketAddrs;
-    
+
     let start = std::time::Instant::now();
     let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(5));
-    
+
     // Try to resolve hostname to IP addresses
     let resolve_result = tokio::task::spawn_blocking(move || {
         let addr_with_port = format!("{}:80", host);
-        addr_with_port.to_socket_addrs()
+        addr_with_port
+            .to_socket_addrs()
             .map(|addrs| addrs.map(|a| a.ip().to_string()).collect::<Vec<_>>())
     });
-    
+
     match timeout(timeout_duration, resolve_result).await {
         Ok(Ok(Ok(ips))) if !ips.is_empty() => {
             let elapsed = start.elapsed().as_millis() as u64;
-            
+
             // Try reverse DNS on first IP
             let first_ip = ips.first().cloned();
             let reverse = if let Some(ref ip) = first_ip {
@@ -547,7 +566,7 @@ pub async fn dns_lookup(
             } else {
                 None
             };
-            
+
             Ok(DnsResult {
                 success: true,
                 resolved_ips: ips,
@@ -595,7 +614,7 @@ pub async fn dns_lookup(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpClassification {
     pub ip: String,
-    pub ip_type: String,         // "private", "public", "loopback", "link_local", "cgnat", "multicast"
+    pub ip_type: String, // "private", "public", "loopback", "link_local", "cgnat", "multicast"
     pub ip_class: Option<String>, // "A", "B", "C", "D", "E" for IPv4
     pub is_ipv6: bool,
     pub network_info: Option<String>,
@@ -604,15 +623,16 @@ pub struct IpClassification {
 #[tauri::command]
 pub fn classify_ip(ip: String) -> Result<IpClassification, String> {
     use std::net::IpAddr;
-    
-    let addr: IpAddr = ip.parse()
+
+    let addr: IpAddr = ip
+        .parse()
         .map_err(|e| format!("Invalid IP address: {}", e))?;
-    
+
     match addr {
         IpAddr::V4(v4) => {
             let octets = v4.octets();
             let first = octets[0];
-            
+
             // Determine IP type
             let (ip_type, network_info) = if v4.is_loopback() {
                 ("loopback", Some("127.0.0.0/8 - Loopback"))
@@ -638,7 +658,7 @@ pub fn classify_ip(ip: String) -> Result<IpClassification, String> {
             } else {
                 ("public", None)
             };
-            
+
             // Determine IP class (legacy classful networking)
             let ip_class = if first < 128 {
                 Some("A")
@@ -651,7 +671,7 @@ pub fn classify_ip(ip: String) -> Result<IpClassification, String> {
             } else {
                 Some("E")
             };
-            
+
             Ok(IpClassification {
                 ip,
                 ip_type: ip_type.to_string(),
@@ -678,7 +698,7 @@ pub fn classify_ip(ip: String) -> Result<IpClassification, String> {
                     "public"
                 }
             };
-            
+
             Ok(IpClassification {
                 ip,
                 ip_type: ip_type.to_string(),
@@ -706,51 +726,58 @@ pub async fn traceroute(
     timeout_secs: Option<u64>,
 ) -> Result<Vec<TracerouteHop>, String> {
     let max_hops = max_hops.unwrap_or(30);
-    
+
     #[cfg(target_os = "windows")]
     let cmd_name = "tracert";
     #[cfg(not(target_os = "windows"))]
     let cmd_name = "traceroute";
-    
+
     let mut cmd = Command::new(cmd_name);
-    
+
     #[cfg(target_os = "windows")]
     {
         cmd.arg("-d") // Don't resolve hostnames (faster)
-           .arg("-h").arg(max_hops.to_string())
-           .arg("-w").arg((timeout_secs.unwrap_or(3) * 1000).to_string())
-           .arg(&host);
+            .arg("-h")
+            .arg(max_hops.to_string())
+            .arg("-w")
+            .arg((timeout_secs.unwrap_or(3) * 1000).to_string())
+            .arg(&host);
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         cmd.arg("-n") // Don't resolve hostnames
-           .arg("-m").arg(max_hops.to_string())
-           .arg("-w").arg(timeout_secs.unwrap_or(3).to_string())
-           .arg(&host);
+            .arg("-m")
+            .arg(max_hops.to_string())
+            .arg("-w")
+            .arg(timeout_secs.unwrap_or(3).to_string())
+            .arg(&host);
     }
-    
-    let output = cmd.output().await
+
+    let output = cmd
+        .output()
+        .await
         .map_err(|e| format!("Failed to run traceroute: {}", e))?;
-    
+
     let output_str = String::from_utf8_lossy(&output.stdout);
     let mut hops = Vec::new();
-    
+
     for line in output_str.lines() {
         // Parse traceroute output - format varies by OS
         let trimmed = line.trim();
-        
+
         // Skip empty lines and headers
-        if trimmed.is_empty() || trimmed.starts_with("Tracing") || trimmed.starts_with("traceroute") {
+        if trimmed.is_empty() || trimmed.starts_with("Tracing") || trimmed.starts_with("traceroute")
+        {
             continue;
         }
-        
+
         // Try to parse hop number
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
         if parts.is_empty() {
             continue;
         }
-        
+
         if let Ok(hop_num) = parts[0].parse::<u32>() {
             let mut hop = TracerouteHop {
                 hop: hop_num,
@@ -759,7 +786,7 @@ pub async fn traceroute(
                 time_ms: None,
                 timeout: false,
             };
-            
+
             // Check for timeout (asterisks)
             if trimmed.contains("*") && !trimmed.contains("ms") {
                 hop.timeout = true;
@@ -768,22 +795,27 @@ pub async fn traceroute(
                 for part in &parts[1..] {
                     // Check if it looks like an IP
                     if part.contains('.') && !part.contains("ms") {
-                        let ip = part.trim_matches(|c| c == '(' || c == ')' || c == '[' || c == ']');
+                        let ip =
+                            part.trim_matches(|c| c == '(' || c == ')' || c == '[' || c == ']');
                         hop.ip = Some(ip.to_string());
                         break;
                     }
                 }
-                
+
                 // Try to find timing
                 for (i, part) in parts.iter().enumerate() {
                     if *part == "ms" || part.ends_with("ms") {
                         // Get the number before "ms"
                         let num_str = if *part == "ms" {
-                            if i > 0 { parts[i - 1] } else { continue }
+                            if i > 0 {
+                                parts[i - 1]
+                            } else {
+                                continue;
+                            }
                         } else {
                             part.trim_end_matches("ms")
                         };
-                        
+
                         if let Ok(time) = num_str.parse::<f64>() {
                             hop.time_ms = Some(time as u64);
                             break;
@@ -791,50 +823,56 @@ pub async fn traceroute(
                     }
                 }
             }
-            
+
             let hop_num_check = hop.hop;
             hops.push(hop);
-            
+
             // Stop if we've reached the target (check if "Trace complete" or similar)
             if trimmed.contains("Trace complete") || hop_num_check >= max_hops {
                 break;
             }
         }
     }
-    
+
     // Perform reverse DNS lookups for all discovered IPs in parallel
-    let dns_futures: Vec<_> = hops.iter()
+    let dns_futures: Vec<_> = hops
+        .iter()
         .enumerate()
         .filter_map(|(idx, hop)| {
             hop.ip.as_ref().map(|ip| {
                 let ip_clone = ip.clone();
-                async move {
-                    (idx, reverse_dns_lookup(&ip_clone).await)
-                }
+                async move { (idx, reverse_dns_lookup(&ip_clone).await) }
             })
         })
         .collect();
-    
+
     let dns_results = join_all(dns_futures).await;
-    
+
     // Apply reverse DNS results to hops
     for (idx, hostname) in dns_results {
         if let Some(hop) = hops.get_mut(idx) {
             hop.hostname = hostname;
         }
     }
-    
+
     Ok(hops)
 }
 
 #[tauri::command]
-pub async fn scan_network(state: tauri::State<'_, NetworkServiceState>, subnet: String) -> Result<Vec<String>, String> {
+pub async fn scan_network(
+    state: tauri::State<'_, NetworkServiceState>,
+    subnet: String,
+) -> Result<Vec<String>, String> {
     let network = state.lock().await;
     network.scan_network(subnet).await
 }
 
 #[tauri::command]
-pub async fn scan_network_comprehensive(state: tauri::State<'_, NetworkServiceState>, subnet: String, scan_ports: bool) -> Result<Vec<DiscoveredHost>, String> {
+pub async fn scan_network_comprehensive(
+    state: tauri::State<'_, NetworkServiceState>,
+    subnet: String,
+    scan_ports: bool,
+) -> Result<Vec<DiscoveredHost>, String> {
     let network = state.lock().await;
     network.scan_network_comprehensive(subnet, scan_ports).await
 }
@@ -862,16 +900,16 @@ pub async fn tcp_connection_timing(
 ) -> Result<TcpTimingResult, String> {
     let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(10));
     let addr = format!("{}:{}", host, port);
-    
+
     let start = std::time::Instant::now();
-    
+
     match timeout(timeout_duration, TcpStream::connect(&addr)).await {
         Ok(Ok(_stream)) => {
             let connect_time = start.elapsed().as_millis() as u64;
-            
+
             // Connection time > 200ms is considered slow
             let slow = connect_time > 200;
-            
+
             Ok(TcpTimingResult {
                 connect_time_ms: connect_time,
                 syn_ack_time_ms: Some(connect_time), // In async, these are effectively the same
@@ -923,59 +961,64 @@ pub struct MtuTestPoint {
 
 /// Check MTU to host using ping with don't fragment flag
 #[tauri::command]
-pub async fn check_mtu(
-    host: String,
-) -> Result<MtuCheckResult, String> {
+pub async fn check_mtu(host: String) -> Result<MtuCheckResult, String> {
     let test_sizes = vec![1472, 1400, 1300, 1200, 1000, 576];
     let mut test_results = Vec::new();
     let mut largest_working = 576u32;
     let mut fragmentation_needed = false;
-    
+
     for size in &test_sizes {
         let mut cmd = Command::new("ping");
-        
+
         #[cfg(target_os = "windows")]
         {
-            cmd.arg("-n").arg("1")
-               .arg("-f")  // Don't fragment
-               .arg("-l").arg(size.to_string())
-               .arg("-w").arg("2000")
-               .arg(&host);
+            cmd.arg("-n")
+                .arg("1")
+                .arg("-f") // Don't fragment
+                .arg("-l")
+                .arg(size.to_string())
+                .arg("-w")
+                .arg("2000")
+                .arg(&host);
         }
-        
+
         #[cfg(not(target_os = "windows"))]
         {
-            cmd.arg("-c").arg("1")
-               .arg("-M").arg("do")  // Don't fragment (Linux)
-               .arg("-s").arg(size.to_string())
-               .arg("-W").arg("2")
-               .arg(&host);
+            cmd.arg("-c")
+                .arg("1")
+                .arg("-M")
+                .arg("do") // Don't fragment (Linux)
+                .arg("-s")
+                .arg(size.to_string())
+                .arg("-W")
+                .arg("2")
+                .arg(&host);
         }
-        
+
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-        
+
         match cmd.output().await {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let combined = format!("{}{}", stdout, stderr).to_lowercase();
-                
+
                 // Check for fragmentation needed messages
-                let needs_frag = combined.contains("fragmentation needed") 
+                let needs_frag = combined.contains("fragmentation needed")
                     || combined.contains("frag needed")
                     || combined.contains("message too long")
                     || combined.contains("packet needs to be fragmented");
-                
+
                 let success = output.status.success() && !needs_frag;
-                
+
                 if needs_frag {
                     fragmentation_needed = true;
                 }
-                
+
                 if success && *size as u32 > largest_working {
                     largest_working = *size as u32;
                 }
-                
+
                 test_results.push(MtuTestPoint {
                     size: *size as u32,
                     success,
@@ -989,14 +1032,14 @@ pub async fn check_mtu(
             }
         }
     }
-    
+
     // Path MTU = largest working payload + 28 (IP header + ICMP header)
     let path_mtu = if largest_working > 576 {
         Some(largest_working + 28)
     } else {
         None
     };
-    
+
     // Standard ethernet MTU is 1500, recommend 1400 for safe internet traversal
     let recommended = if largest_working >= 1472 {
         1500
@@ -1005,7 +1048,7 @@ pub async fn check_mtu(
     } else {
         largest_working + 28
     };
-    
+
     Ok(MtuCheckResult {
         path_mtu,
         fragmentation_needed,
@@ -1031,25 +1074,25 @@ pub async fn detect_icmp_blockade(
 ) -> Result<IcmpBlockadeResult, String> {
     // First try ICMP ping
     let mut ping_cmd = Command::new("ping");
-    
+
     #[cfg(target_os = "windows")]
     ping_cmd.arg("-n").arg("2").arg("-w").arg("2000").arg(&host);
-    
+
     #[cfg(not(target_os = "windows"))]
     ping_cmd.arg("-c").arg("2").arg("-W").arg("2").arg(&host);
-    
+
     ping_cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    
+
     let icmp_result = ping_cmd.status().await;
     let icmp_allowed = icmp_result.map(|s| s.success()).unwrap_or(false);
-    
+
     // Try TCP connection to common ports or specified port
     let ports_to_try = if let Some(p) = port {
         vec![p]
     } else {
         vec![80, 443, 22]
     };
-    
+
     let mut tcp_reachable = false;
     for p in ports_to_try {
         let addr = format!("{}:{}", host, p);
@@ -1058,14 +1101,20 @@ pub async fn detect_icmp_blockade(
             break;
         }
     }
-    
+
     let (likely_blocked, diagnosis) = match (icmp_allowed, tcp_reachable) {
         (true, true) => (false, "Host fully reachable via ICMP and TCP".to_string()),
-        (true, false) => (false, "ICMP allowed but TCP ports closed/filtered".to_string()),
-        (false, true) => (true, "ICMP appears blocked - host reachable via TCP but not ping".to_string()),
+        (true, false) => (
+            false,
+            "ICMP allowed but TCP ports closed/filtered".to_string(),
+        ),
+        (false, true) => (
+            true,
+            "ICMP appears blocked - host reachable via TCP but not ping".to_string(),
+        ),
         (false, false) => (false, "Host unreachable via both ICMP and TCP".to_string()),
     };
-    
+
     Ok(IcmpBlockadeResult {
         icmp_allowed,
         tcp_reachable,
@@ -1088,13 +1137,10 @@ pub struct TlsCheckResult {
 
 /// Check TLS/SSL handshake for a host
 #[tauri::command]
-pub async fn check_tls(
-    host: String,
-    port: Option<u16>,
-) -> Result<TlsCheckResult, String> {
+pub async fn check_tls(host: String, port: Option<u16>) -> Result<TlsCheckResult, String> {
     let port = port.unwrap_or(443);
     let start = std::time::Instant::now();
-    
+
     // Use openssl s_client or similar for TLS check
     #[cfg(target_os = "windows")]
     {
@@ -1123,19 +1169,19 @@ pub async fn check_tls(
             "#,
             host, port, host
         );
-        
+
         let mut cmd = Command::new("powershell");
         cmd.arg("-NoProfile")
-           .arg("-Command")
-           .arg(&script)
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
-        
+            .arg("-Command")
+            .arg(&script)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
         match timeout(Duration::from_secs(10), cmd.output()).await {
             Ok(Ok(output)) => {
                 let elapsed = start.elapsed().as_millis() as u64;
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                
+
                 // Try to parse JSON response
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
                     if let Some(err) = json.get("Error").and_then(|e| e.as_str()) {
@@ -1150,19 +1196,34 @@ pub async fn check_tls(
                             error: Some(err.to_string()),
                         });
                     }
-                    
+
                     return Ok(TlsCheckResult {
                         tls_supported: true,
-                        tls_version: json.get("TlsVersion").and_then(|v| v.as_str()).map(String::from),
-                        certificate_valid: json.get("Valid").and_then(|v| v.as_bool()).unwrap_or(false),
-                        certificate_subject: json.get("Subject").and_then(|v| v.as_str()).map(String::from),
-                        certificate_issuer: json.get("Issuer").and_then(|v| v.as_str()).map(String::from),
-                        certificate_expiry: json.get("Expiry").and_then(|v| v.as_str()).map(String::from),
+                        tls_version: json
+                            .get("TlsVersion")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        certificate_valid: json
+                            .get("Valid")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        certificate_subject: json
+                            .get("Subject")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        certificate_issuer: json
+                            .get("Issuer")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        certificate_expiry: json
+                            .get("Expiry")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
                         handshake_time_ms: elapsed,
                         error: None,
                     });
                 }
-                
+
                 Ok(TlsCheckResult {
                     tls_supported: false,
                     tls_version: None,
@@ -1196,32 +1257,34 @@ pub async fn check_tls(
             }),
         }
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         // Use openssl s_client on Unix
         let mut cmd = Command::new("timeout");
         cmd.arg("10")
-           .arg("openssl")
-           .arg("s_client")
-           .arg("-connect").arg(format!("{}:{}", host, port))
-           .arg("-servername").arg(&host)
-           .arg("-brief")
-           .stdin(Stdio::null())
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
-        
+            .arg("openssl")
+            .arg("s_client")
+            .arg("-connect")
+            .arg(format!("{}:{}", host, port))
+            .arg("-servername")
+            .arg(&host)
+            .arg("-brief")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
         match cmd.output().await {
             Ok(output) => {
                 let elapsed = start.elapsed().as_millis() as u64;
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let combined = format!("{}\n{}", stdout, stderr);
-                
-                let tls_supported = combined.contains("CONNECTION ESTABLISHED") 
-                    || combined.contains("Verification:") 
+
+                let tls_supported = combined.contains("CONNECTION ESTABLISHED")
+                    || combined.contains("Verification:")
                     || output.status.success();
-                
+
                 // Extract TLS version
                 let tls_version = if combined.contains("TLSv1.3") {
                     Some("TLS 1.3".to_string())
@@ -1234,7 +1297,7 @@ pub async fn check_tls(
                 } else {
                     None
                 };
-                
+
                 Ok(TlsCheckResult {
                     tls_supported,
                     tls_version,
@@ -1243,7 +1306,11 @@ pub async fn check_tls(
                     certificate_issuer: None,
                     certificate_expiry: None,
                     handshake_time_ms: elapsed,
-                    error: if !tls_supported { Some("TLS connection failed".to_string()) } else { None },
+                    error: if !tls_supported {
+                        Some("TLS connection failed".to_string())
+                    } else {
+                        None
+                    },
                 })
             }
             Err(e) => Ok(TlsCheckResult {
@@ -1272,20 +1339,17 @@ pub struct ServiceFingerprint {
 
 /// Enhanced service fingerprinting with protocol detection
 #[tauri::command]
-pub async fn fingerprint_service(
-    host: String,
-    port: u16,
-) -> Result<ServiceFingerprint, String> {
+pub async fn fingerprint_service(host: String, port: u16) -> Result<ServiceFingerprint, String> {
     let addr = format!("{}:{}", host, port);
     let timeout_duration = Duration::from_secs(5);
-    
+
     // Known service name
     let service_name = NetworkService::get_common_ports()
         .iter()
         .find(|(p, _)| *p == port)
         .map(|(_, s)| s.clone())
         .unwrap_or_else(|| "unknown".to_string());
-    
+
     // Try to connect and probe
     match timeout(timeout_duration, TcpStream::connect(&addr)).await {
         Ok(Ok(mut stream)) => {
@@ -1293,51 +1357,51 @@ pub async fn fingerprint_service(
             let mut protocol_detected = None;
             let mut version = None;
             let mut response_preview = None;
-            
+
             // Send protocol-specific probes based on port
             let probe_data: Option<&[u8]> = match port {
                 80 | 8080 | 8000 | 8888 => Some(b"HEAD / HTTP/1.0\r\nHost: test\r\n\r\n"),
                 443 | 8443 => None, // TLS ports - just connect
-                21 => Some(b""), // FTP sends banner automatically
-                22 => Some(b""), // SSH sends banner automatically  
+                21 => Some(b""),    // FTP sends banner automatically
+                22 => Some(b""),    // SSH sends banner automatically
                 25 | 587 => Some(b"EHLO test\r\n"),
-                110 => Some(b""), // POP3 sends banner automatically
-                143 => Some(b""), // IMAP sends banner automatically
+                110 => Some(b""),  // POP3 sends banner automatically
+                143 => Some(b""),  // IMAP sends banner automatically
                 3306 => Some(b""), // MySQL sends greeting
                 5432 => Some(b"\x00\x00\x00\x08\x04\xd2\x16\x2f"), // PostgreSQL startup
                 6379 => Some(b"PING\r\n"), // Redis
                 _ => Some(b""),
             };
-            
+
             // Send probe if any
             if let Some(probe) = probe_data {
                 if !probe.is_empty() {
                     let _ = stream.write_all(probe).await;
                 }
             }
-            
+
             // Read response
             let mut buf = vec![0u8; 512];
             let read_timeout = Duration::from_secs(3);
-            
+
             if let Ok(Ok(n)) = timeout(read_timeout, stream.read(&mut buf)).await {
                 if n > 0 {
                     let raw = String::from_utf8_lossy(&buf[..n]);
-                    
+
                     // Clean banner (printable chars only)
                     let cleaned: String = raw
                         .chars()
                         .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
                         .take(128)
                         .collect();
-                    
+
                     if !cleaned.trim().is_empty() {
                         banner = Some(cleaned.trim().to_string());
                     }
-                    
+
                     // Detect protocol from response
                     let response_lower = raw.to_lowercase();
-                    
+
                     if response_lower.contains("http/") {
                         protocol_detected = Some("HTTP".to_string());
                         // Try to extract server version
@@ -1350,10 +1414,21 @@ pub async fn fingerprint_service(
                     } else if response_lower.starts_with("ssh-") {
                         protocol_detected = Some("SSH".to_string());
                         version = raw.lines().next().map(|s| s.to_string());
-                    } else if response_lower.contains("220") && (response_lower.contains("ftp") || response_lower.contains("smtp")) {
-                        protocol_detected = Some(if response_lower.contains("ftp") { "FTP" } else { "SMTP" }.to_string());
+                    } else if response_lower.contains("220")
+                        && (response_lower.contains("ftp") || response_lower.contains("smtp"))
+                    {
+                        protocol_detected = Some(
+                            if response_lower.contains("ftp") {
+                                "FTP"
+                            } else {
+                                "SMTP"
+                            }
+                            .to_string(),
+                        );
                         version = raw.lines().next().map(|s| s.trim().to_string());
-                    } else if response_lower.starts_with("+ok") || response_lower.starts_with("-err") {
+                    } else if response_lower.starts_with("+ok")
+                        || response_lower.starts_with("-err")
+                    {
                         protocol_detected = Some("POP3".to_string());
                     } else if response_lower.starts_with("* ok") {
                         protocol_detected = Some("IMAP".to_string());
@@ -1361,15 +1436,16 @@ pub async fn fingerprint_service(
                         protocol_detected = Some("MySQL".to_string());
                     } else if response_lower.contains("postgresql") || buf[0] == b'R' {
                         protocol_detected = Some("PostgreSQL".to_string());
-                    } else if response_lower.starts_with("+pong") || response_lower.starts_with("-") {
+                    } else if response_lower.starts_with("+pong") || response_lower.starts_with("-")
+                    {
                         protocol_detected = Some("Redis".to_string());
                     }
-                    
+
                     // Truncated preview
                     response_preview = Some(cleaned.chars().take(64).collect());
                 }
             }
-            
+
             Ok(ServiceFingerprint {
                 port,
                 service: service_name,
@@ -1418,13 +1494,13 @@ pub async fn detect_asymmetric_routing(
     let mut latencies: Vec<f64> = Vec::new();
     let mut ttl_values: Vec<u8> = Vec::new();
     let mut outbound_hops: Vec<String> = Vec::new();
-    
+
     // Run multiple pings to gather TTL data
     #[cfg(target_os = "windows")]
     let ping_cmd = "ping";
     #[cfg(not(target_os = "windows"))]
     let ping_cmd = "ping";
-    
+
     for _ in 0..samples {
         let output = Command::new(ping_cmd)
             .args(if cfg!(target_os = "windows") {
@@ -1435,32 +1511,36 @@ pub async fn detect_asymmetric_routing(
             .output()
             .await
             .map_err(|e| format!("Ping failed: {}", e))?;
-        
+
         let stdout = String::from_utf8_lossy(&output.stdout);
-        
+
         // Parse TTL from ping output
         if let Some(ttl) = parse_ttl_from_ping(&stdout) {
             ttl_values.push(ttl);
         }
-        
+
         // Parse latency
         if let Some(latency) = parse_latency_from_ping(&stdout) {
             latencies.push(latency);
         }
-        
+
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    
+
     // Run a quick traceroute to get outbound path (limited hops)
-    let traceroute_output = Command::new(if cfg!(target_os = "windows") { "tracert" } else { "traceroute" })
-        .args(if cfg!(target_os = "windows") {
-            vec!["-d", "-h", "5", "-w", "1000", &host]
-        } else {
-            vec!["-n", "-m", "5", "-w", "1", &host]
-        })
-        .output()
-        .await;
-    
+    let traceroute_output = Command::new(if cfg!(target_os = "windows") {
+        "tracert"
+    } else {
+        "traceroute"
+    })
+    .args(if cfg!(target_os = "windows") {
+        vec!["-d", "-h", "5", "-w", "1000", &host]
+    } else {
+        vec!["-n", "-m", "5", "-w", "1", &host]
+    })
+    .output()
+    .await;
+
     if let Ok(output) = traceroute_output {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines().skip(1) {
@@ -1472,59 +1552,63 @@ pub async fn detect_asymmetric_routing(
             }
         }
     }
-    
+
     // Analyze TTL values
     let ttl_analysis = analyze_ttl(&ttl_values);
-    
+
     // Calculate latency variance
     let latency_variance = if latencies.len() >= 2 {
         let mean: f64 = latencies.iter().sum::<f64>() / latencies.len() as f64;
-        let variance: f64 = latencies.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / latencies.len() as f64;
+        let variance: f64 =
+            latencies.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / latencies.len() as f64;
         Some(variance.sqrt())
     } else {
         None
     };
-    
+
     // Determine path stability
     let path_stability = match latency_variance {
         Some(v) if v < 5.0 => "stable",
         Some(v) if v < 20.0 => "moderate",
         Some(_) => "unstable",
         None => "unknown",
-    }.to_string();
-    
+    }
+    .to_string();
+
     // High variance could indicate asymmetric routing
     if let Some(variance) = latency_variance {
         if variance > 30.0 {
             notes.push("High latency variance detected, may indicate path changes".to_string());
         }
     }
-    
+
     // TTL inconsistency could indicate asymmetric routing
     if !ttl_analysis.ttl_consistent && ttl_values.len() >= 3 {
-        notes.push("TTL values vary between responses, suggesting different return paths".to_string());
+        notes.push(
+            "TTL values vary between responses, suggesting different return paths".to_string(),
+        );
     }
-    
+
     // Determine confidence level
-    let asymmetry_detected = !ttl_analysis.ttl_consistent || 
-        latency_variance.map_or(false, |v| v > 30.0);
-    
-    let confidence = if !ttl_analysis.ttl_consistent && latency_variance.map_or(false, |v| v > 30.0) {
-        "high"
-    } else if !ttl_analysis.ttl_consistent || latency_variance.map_or(false, |v| v > 30.0) {
-        "medium"
-    } else if latency_variance.map_or(false, |v| v > 15.0) {
-        "low"
-    } else {
-        "none"
-    }.to_string();
-    
+    let asymmetry_detected =
+        !ttl_analysis.ttl_consistent || latency_variance.is_some_and(|v| v > 30.0);
+
+    let confidence =
+        if !ttl_analysis.ttl_consistent && latency_variance.is_some_and(|v| v > 30.0) {
+            "high"
+        } else if !ttl_analysis.ttl_consistent || latency_variance.is_some_and(|v| v > 30.0) {
+            "medium"
+        } else if latency_variance.is_some_and(|v| v > 15.0) {
+            "low"
+        } else {
+            "none"
+        }
+        .to_string();
+
     if confidence == "none" {
         notes.push("No clear signs of asymmetric routing detected".to_string());
     }
-    
+
     Ok(AsymmetricRoutingResult {
         asymmetry_detected,
         confidence,
@@ -1541,7 +1625,9 @@ fn parse_ttl_from_ping(output: &str) -> Option<u8> {
     // Windows: TTL=64, Unix: ttl=64
     if let Some(idx) = lower.find("ttl=") {
         let start = idx + 4;
-        let end = lower[start..].find(|c: char| !c.is_ascii_digit()).unwrap_or(lower.len() - start);
+        let end = lower[start..]
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(lower.len() - start);
         lower[start..start + end].parse().ok()
     } else {
         None
@@ -1553,7 +1639,9 @@ fn parse_latency_from_ping(output: &str) -> Option<f64> {
     // Windows: time=23ms or time<1ms, Unix: time=23.4 ms
     if let Some(idx) = lower.find("time=") {
         let start = idx + 5;
-        let end = lower[start..].find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(lower.len() - start);
+        let end = lower[start..]
+            .find(|c: char| !c.is_ascii_digit() && c != '.')
+            .unwrap_or(lower.len() - start);
         lower[start..start + end].parse().ok()
     } else if lower.contains("time<1") {
         Some(0.5)
@@ -1587,10 +1675,10 @@ fn analyze_ttl(ttl_values: &[u8]) -> TtlAnalysis {
             ttl_consistent: true,
         };
     }
-    
+
     let first_ttl = ttl_values[0];
     let ttl_consistent = ttl_values.iter().all(|&t| t == first_ttl);
-    
+
     // Common initial TTL values: 64 (Linux), 128 (Windows), 255 (Cisco/network devices)
     let expected_ttl = if first_ttl <= 64 {
         Some(64)
@@ -1599,9 +1687,9 @@ fn analyze_ttl(ttl_values: &[u8]) -> TtlAnalysis {
     } else {
         Some(255)
     };
-    
+
     let estimated_hops = expected_ttl.map(|e| e - first_ttl);
-    
+
     TtlAnalysis {
         expected_ttl,
         received_ttl: Some(first_ttl),
@@ -1636,16 +1724,16 @@ pub async fn probe_udp_port(
     probe_data: Option<String>,
 ) -> Result<UdpProbeResult, String> {
     use tokio::net::UdpSocket;
-    
+
     let timeout_duration = Duration::from_millis(timeout_ms.unwrap_or(3000));
     let start = std::time::Instant::now();
-    
+
     // Bind to any available local port
     let socket = match UdpSocket::bind("0.0.0.0:0").await {
         Ok(s) => s,
         Err(e) => return Err(format!("Failed to create UDP socket: {}", e)),
     };
-    
+
     let target = format!("{}:{}", host, port);
     if let Err(e) = socket.connect(&target).await {
         return Ok(UdpProbeResult {
@@ -1658,7 +1746,7 @@ pub async fn probe_udp_port(
             error: Some(format!("Connect failed: {}", e)),
         });
     }
-    
+
     // Prepare probe data based on common protocols
     let data = if let Some(custom) = probe_data {
         custom.into_bytes()
@@ -1674,7 +1762,7 @@ pub async fn probe_udp_port(
                     0x00, 0x00, // Answer RRs: 0
                     0x00, 0x00, // Authority RRs: 0
                     0x00, 0x00, // Additional RRs: 0
-                    0x00,       // Root domain
+                    0x00, // Root domain
                     0x00, 0x01, // Type: A
                     0x00, 0x01, // Class: IN
                 ]
@@ -1686,11 +1774,10 @@ pub async fn probe_udp_port(
             161 | 162 => {
                 // SNMP GetRequest (simple probe)
                 vec![
-                    0x30, 0x26, 0x02, 0x01, 0x00, 0x04, 0x06, 0x70,
-                    0x75, 0x62, 0x6c, 0x69, 0x63, 0xa0, 0x19, 0x02,
-                    0x01, 0x01, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00,
-                    0x30, 0x0e, 0x30, 0x0c, 0x06, 0x08, 0x2b, 0x06,
-                    0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x05, 0x00,
+                    0x30, 0x26, 0x02, 0x01, 0x00, 0x04, 0x06, 0x70, 0x75, 0x62, 0x6c, 0x69, 0x63,
+                    0xa0, 0x19, 0x02, 0x01, 0x01, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00, 0x30, 0x0e,
+                    0x30, 0x0c, 0x06, 0x08, 0x2b, 0x06, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x05,
+                    0x00,
                 ]
             }
             _ => {
@@ -1699,7 +1786,7 @@ pub async fn probe_udp_port(
             }
         }
     };
-    
+
     // Send probe
     if let Err(e) = socket.send(&data).await {
         return Ok(UdpProbeResult {
@@ -1712,7 +1799,7 @@ pub async fn probe_udp_port(
             error: Some(format!("Send failed: {}", e)),
         });
     }
-    
+
     // Wait for response
     let mut buf = [0u8; 1024];
     match timeout(timeout_duration, socket.recv(&mut buf)).await {
@@ -1721,14 +1808,17 @@ pub async fn probe_udp_port(
             let response_data = if len > 0 {
                 // Show first 64 bytes as hex
                 let preview_len = std::cmp::min(len, 64);
-                Some(buf[..preview_len].iter()
-                    .map(|b| format!("{:02x}", b))
-                    .collect::<Vec<_>>()
-                    .join(" "))
+                Some(
+                    buf[..preview_len]
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                )
             } else {
                 None
             };
-            
+
             Ok(UdpProbeResult {
                 port,
                 reachable: Some(true),
@@ -1742,12 +1832,13 @@ pub async fn probe_udp_port(
         Ok(Err(e)) => {
             // Check if ICMP unreachable
             let error_str = e.to_string().to_lowercase();
-            let (response_type, reachable) = if error_str.contains("refused") || error_str.contains("unreachable") {
-                ("icmp_unreachable".to_string(), Some(false))
-            } else {
-                ("error".to_string(), None)
-            };
-            
+            let (response_type, reachable) =
+                if error_str.contains("refused") || error_str.contains("unreachable") {
+                    ("icmp_unreachable".to_string(), Some(false))
+                } else {
+                    ("error".to_string(), None)
+                };
+
             Ok(UdpProbeResult {
                 port,
                 reachable,
@@ -1798,19 +1889,17 @@ pub struct IpGeoInfo {
 /// Lookup ASN and geolocation information for an IP address
 /// Uses free public APIs with fallbacks
 #[tauri::command]
-pub async fn lookup_ip_geo(
-    ip: String,
-) -> Result<IpGeoInfo, String> {
+pub async fn lookup_ip_geo(ip: String) -> Result<IpGeoInfo, String> {
     // Try ip-api.com first (free, no key required, 45 requests/minute)
     if let Ok(info) = lookup_ip_api(&ip).await {
         return Ok(info);
     }
-    
+
     // Fallback to ipinfo.io (free tier, limited)
     if let Ok(info) = lookup_ipinfo(&ip).await {
         return Ok(info);
     }
-    
+
     // Return minimal info if all APIs fail
     Ok(IpGeoInfo {
         ip: ip.clone(),
@@ -1832,46 +1921,82 @@ pub async fn lookup_ip_geo(
 
 async fn lookup_ip_api(ip: &str) -> Result<IpGeoInfo, String> {
     let url = format!("http://ip-api.com/json/{}?fields=status,message,country,countryCode,region,city,isp,org,as,asname,proxy,hosting,query", ip);
-    
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
-    
-    let response = client.get(&url)
+
+    let response = client
+        .get(&url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    
+
     if !response.status().is_success() {
         return Err(format!("API returned status: {}", response.status()));
     }
-    
-    let json: serde_json::Value = response.json().await
+
+    let json: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
-    
+
     if json.get("status").and_then(|s| s.as_str()) != Some("success") {
-        return Err(json.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error").to_string());
+        return Err(json
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("Unknown error")
+            .to_string());
     }
-    
+
     // Parse ASN number from "as" field (format: "AS12345 Organization Name")
     let as_field = json.get("as").and_then(|a| a.as_str()).unwrap_or("");
-    let asn = if as_field.starts_with("AS") {
-        as_field[2..].split_whitespace().next().and_then(|n| n.parse().ok())
+    let asn = if let Some(stripped) = as_field.strip_prefix("AS") {
+        stripped
+            .split_whitespace()
+            .next()
+            .and_then(|n| n.parse().ok())
     } else {
         None
     };
-    
+
     Ok(IpGeoInfo {
-        ip: json.get("query").and_then(|q| q.as_str()).unwrap_or(ip).to_string(),
+        ip: json
+            .get("query")
+            .and_then(|q| q.as_str())
+            .unwrap_or(ip)
+            .to_string(),
         asn,
-        asn_org: json.get("asname").and_then(|a| a.as_str()).map(|s| s.to_string())
-            .or_else(|| json.get("org").and_then(|o| o.as_str()).map(|s| s.to_string())),
-        country: json.get("country").and_then(|c| c.as_str()).map(|s| s.to_string()),
-        country_code: json.get("countryCode").and_then(|c| c.as_str()).map(|s| s.to_string()),
-        region: json.get("region").and_then(|r| r.as_str()).map(|s| s.to_string()),
-        city: json.get("city").and_then(|c| c.as_str()).map(|s| s.to_string()),
-        isp: json.get("isp").and_then(|i| i.as_str()).map(|s| s.to_string()),
+        asn_org: json
+            .get("asname")
+            .and_then(|a| a.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                json.get("org")
+                    .and_then(|o| o.as_str())
+                    .map(|s| s.to_string())
+            }),
+        country: json
+            .get("country")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string()),
+        country_code: json
+            .get("countryCode")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string()),
+        region: json
+            .get("region")
+            .and_then(|r| r.as_str())
+            .map(|s| s.to_string()),
+        city: json
+            .get("city")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string()),
+        isp: json
+            .get("isp")
+            .and_then(|i| i.as_str())
+            .map(|s| s.to_string()),
         is_proxy: json.get("proxy").and_then(|p| p.as_bool()),
         is_vpn: None, // ip-api doesn't differentiate VPN
         is_tor: None,
@@ -1883,45 +2008,67 @@ async fn lookup_ip_api(ip: &str) -> Result<IpGeoInfo, String> {
 
 async fn lookup_ipinfo(ip: &str) -> Result<IpGeoInfo, String> {
     let url = format!("https://ipinfo.io/{}/json", ip);
-    
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
-    
-    let response = client.get(&url)
+
+    let response = client
+        .get(&url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
-    
+
     if !response.status().is_success() {
         return Err(format!("API returned status: {}", response.status()));
     }
-    
-    let json: serde_json::Value = response.json().await
+
+    let json: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
-    
+
     // Parse ASN from org field (format: "AS12345 Organization Name")
     let org = json.get("org").and_then(|o| o.as_str()).unwrap_or("");
-    let asn = if org.starts_with("AS") {
-        org[2..].split_whitespace().next().and_then(|n| n.parse().ok())
+    let asn = if let Some(stripped) = org.strip_prefix("AS") {
+        stripped
+            .split_whitespace()
+            .next()
+            .and_then(|n| n.parse().ok())
     } else {
         None
     };
     let asn_org = if org.contains(' ') {
-        Some(org.splitn(2, ' ').nth(1).unwrap_or("").to_string())
+        Some(org.split_once(' ').map(|x| x.1).unwrap_or("").to_string())
     } else {
         None
     };
-    
+
     Ok(IpGeoInfo {
-        ip: json.get("ip").and_then(|i| i.as_str()).unwrap_or(ip).to_string(),
+        ip: json
+            .get("ip")
+            .and_then(|i| i.as_str())
+            .unwrap_or(ip)
+            .to_string(),
         asn,
         asn_org,
-        country: json.get("country").and_then(|c| c.as_str()).map(|s| s.to_string()),
-        country_code: json.get("country").and_then(|c| c.as_str()).map(|s| s.to_string()),
-        region: json.get("region").and_then(|r| r.as_str()).map(|s| s.to_string()),
-        city: json.get("city").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        country: json
+            .get("country")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string()),
+        country_code: json
+            .get("country")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string()),
+        region: json
+            .get("region")
+            .and_then(|r| r.as_str())
+            .map(|s| s.to_string()),
+        city: json
+            .get("city")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string()),
         isp: None,
         is_proxy: None,
         is_vpn: None,
@@ -1957,25 +2104,25 @@ pub async fn detect_proxy_leakage(
     let mut dns_servers: Vec<String> = Vec::new();
     let mut dns_leak = false;
     let mut ip_mismatch = false;
-    
+
     // Get our public IP using multiple services
     let public_ip = get_public_ip().await;
-    
+
     // Check if public IP matches expected proxy exit
     if let (Some(ref detected), Some(ref expected)) = (&public_ip, &expected_exit_ip) {
         if detected != expected {
             ip_mismatch = true;
-            notes.push(format!("IP mismatch: detected {} but expected {}", detected, expected));
+            notes.push(format!(
+                "IP mismatch: detected {} but expected {}",
+                detected, expected
+            ));
         }
     }
-    
+
     // Try to detect DNS servers by resolving known test domains
     // This is a simplified check - real DNS leak tests use specialized servers
-    let dns_test_domains = [
-        "whoami.akamai.net",
-        "o-o.myaddr.l.google.com",
-    ];
-    
+    let dns_test_domains = ["whoami.akamai.net", "o-o.myaddr.l.google.com"];
+
     for domain in &dns_test_domains {
         if let Ok(result) = resolve_dns_with_server_detection(domain).await {
             for server in result {
@@ -1985,9 +2132,16 @@ pub async fn detect_proxy_leakage(
             }
         }
     }
-    
+
     // Check DNS servers against known public DNS (potential leak indicators)
-    let public_dns = ["8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9", "208.67.222.222"];
+    let public_dns = [
+        "8.8.8.8",
+        "8.8.4.4",
+        "1.1.1.1",
+        "1.0.0.1",
+        "9.9.9.9",
+        "208.67.222.222",
+    ];
     for server in &dns_servers {
         if public_dns.contains(&server.as_str()) {
             // Using public DNS while on VPN might indicate DNS leak
@@ -1995,24 +2149,22 @@ pub async fn detect_proxy_leakage(
             notes.push(format!("Using public DNS server: {}", server));
         }
     }
-    
+
     // If expected proxy IP provided and we detect different DNS servers, could be leak
     if expected_exit_ip.is_some() && !dns_servers.is_empty() {
         // This is a heuristic - proper DNS leak detection requires specialized infrastructure
-        dns_leak = dns_servers.iter().any(|s| {
-            public_dns.contains(&s.as_str())
-        });
-        
+        dns_leak = dns_servers.iter().any(|s| public_dns.contains(&s.as_str()));
+
         if dns_leak {
             notes.push("DNS queries may not be going through VPN/proxy".to_string());
         }
     }
-    
+
     // WebRTC leak is browser-side and can't be detected from Rust backend
     // Just note that it's a potential concern
     let webrtc_note = "WebRTC leaks can only be detected in browser context".to_string();
     notes.push(webrtc_note);
-    
+
     // Determine overall status
     let overall_status = if ip_mismatch || dns_leak {
         "leak_detected"
@@ -2020,8 +2172,9 @@ pub async fn detect_proxy_leakage(
         "potential_leak"
     } else {
         "secure"
-    }.to_string();
-    
+    }
+    .to_string();
+
     Ok(LeakageDetectionResult {
         dns_leak_detected: dns_leak,
         webrtc_leak_possible: true, // Always possible from browser
@@ -2040,12 +2193,12 @@ async fn get_public_ip() -> Option<String> {
         "https://ifconfig.me/ip",
         "https://icanhazip.com",
     ];
-    
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
         .ok()?;
-    
+
     for service in &services {
         if let Ok(response) = client.get(*service).send().await {
             if let Ok(ip) = response.text().await {
@@ -2056,7 +2209,7 @@ async fn get_public_ip() -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
@@ -2064,22 +2217,20 @@ async fn resolve_dns_with_server_detection(_domain: &str) -> Result<Vec<String>,
     // This is a simplified implementation
     // Real DNS leak detection requires specialized test infrastructure
     // that returns the resolver's IP in the DNS response
-    
+
     // For now, just return system DNS servers from config
     let mut servers = Vec::new();
-    
+
     #[cfg(target_os = "windows")]
     {
         // Try to get DNS servers from ipconfig
-        if let Ok(output) = Command::new("ipconfig")
-            .arg("/all")
-            .output()
-            .await
-        {
+        if let Ok(output) = Command::new("ipconfig").arg("/all").output().await {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                if line.to_lowercase().contains("dns servers") || 
-                   (line.starts_with("   ") && line.trim().parse::<std::net::Ipv4Addr>().is_ok()) {
+                if line.to_lowercase().contains("dns servers")
+                    || (line.starts_with("   ")
+                        && line.trim().parse::<std::net::Ipv4Addr>().is_ok())
+                {
                     let parts: Vec<&str> = line.split(':').collect();
                     if parts.len() > 1 {
                         let ip = parts[1].trim();
@@ -2096,7 +2247,7 @@ async fn resolve_dns_with_server_detection(_domain: &str) -> Result<Vec<String>,
             }
         }
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         // Try to read from /etc/resolv.conf
@@ -2112,7 +2263,7 @@ async fn resolve_dns_with_server_detection(_domain: &str) -> Result<Vec<String>,
             }
         }
     }
-    
+
     Ok(servers)
 }
 
@@ -2123,12 +2274,10 @@ async fn reverse_dns_lookup(ip: &str) -> Option<String> {
         Ok(a) => a,
         Err(_) => return None,
     };
-    
+
     // Use tokio's spawn_blocking since dns_lookup is synchronous
-    let result = tokio::task::spawn_blocking(move || {
-        lookup_addr(&addr).ok()
-    }).await;
-    
+    let result = tokio::task::spawn_blocking(move || lookup_addr(&addr).ok()).await;
+
     match result {
         Ok(Some(hostname)) => {
             // Don't return if hostname is just the IP address
