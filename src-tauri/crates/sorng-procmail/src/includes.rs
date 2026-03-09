@@ -9,20 +9,13 @@ pub struct IncludeManager;
 
 impl IncludeManager {
     /// List all INCLUDERC directives in the user's procmailrc.
-    pub async fn list(
-        client: &ProcmailClient,
-        user: &str,
-    ) -> ProcmailResult<Vec<ProcmailInclude>> {
+    pub async fn list(client: &ProcmailClient, user: &str) -> ProcmailResult<Vec<ProcmailInclude>> {
         let content = client.get_procmailrc(user).await?;
         Ok(parse_includes(&content))
     }
 
     /// Add a new INCLUDERC directive.
-    pub async fn add(
-        client: &ProcmailClient,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn add(client: &ProcmailClient, user: &str, path: &str) -> ProcmailResult<()> {
         let mut content = client.get_procmailrc(user).await.unwrap_or_default();
 
         // Check if already included
@@ -36,12 +29,10 @@ impl IncludeManager {
 
         // Insert before the first recipe line
         let lines: Vec<&str> = content.lines().collect();
-        let insert_pos = lines
-            .iter()
-            .position(|l| {
-                let t = l.trim();
-                t.starts_with(":0") || t.starts_with("#:0")
-            });
+        let insert_pos = lines.iter().position(|l| {
+            let t = l.trim();
+            t.starts_with(":0") || t.starts_with("#:0")
+        });
 
         if let Some(pos) = insert_pos {
             let mut output: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
@@ -58,11 +49,7 @@ impl IncludeManager {
     }
 
     /// Remove an INCLUDERC directive by path.
-    pub async fn remove(
-        client: &ProcmailClient,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn remove(client: &ProcmailClient, user: &str, path: &str) -> ProcmailResult<()> {
         let content = client.get_procmailrc(user).await?;
         let lines: Vec<&str> = content.lines().collect();
         let mut output = Vec::new();
@@ -102,11 +89,7 @@ impl IncludeManager {
     }
 
     /// Enable an INCLUDERC directive (uncomment it).
-    pub async fn enable(
-        client: &ProcmailClient,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn enable(client: &ProcmailClient, user: &str, path: &str) -> ProcmailResult<()> {
         let content = client.get_procmailrc(user).await?;
         let lines: Vec<&str> = content.lines().collect();
         let mut output = Vec::new();
@@ -140,11 +123,7 @@ impl IncludeManager {
     }
 
     /// Disable an INCLUDERC directive (comment it out).
-    pub async fn disable(
-        client: &ProcmailClient,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn disable(client: &ProcmailClient, user: &str, path: &str) -> ProcmailResult<()> {
         let content = client.get_procmailrc(user).await?;
         let lines: Vec<&str> = content.lines().collect();
         let mut output = Vec::new();

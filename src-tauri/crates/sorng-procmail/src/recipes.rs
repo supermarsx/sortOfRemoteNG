@@ -123,11 +123,7 @@ impl RecipeManager {
     }
 
     /// Delete a recipe by id.
-    pub async fn delete(
-        client: &ProcmailClient,
-        user: &str,
-        id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn delete(client: &ProcmailClient, user: &str, id: &str) -> ProcmailResult<()> {
         let mut recipes = Self::list(client, user).await?;
         let idx = recipes
             .iter()
@@ -138,11 +134,7 @@ impl RecipeManager {
     }
 
     /// Enable a recipe.
-    pub async fn enable(
-        client: &ProcmailClient,
-        user: &str,
-        id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn enable(client: &ProcmailClient, user: &str, id: &str) -> ProcmailResult<()> {
         let mut recipes = Self::list(client, user).await?;
         let r = recipes
             .iter_mut()
@@ -161,11 +153,7 @@ impl RecipeManager {
     }
 
     /// Disable a recipe (comments it out with `#`).
-    pub async fn disable(
-        client: &ProcmailClient,
-        user: &str,
-        id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn disable(client: &ProcmailClient, user: &str, id: &str) -> ProcmailResult<()> {
         let mut recipes = Self::list(client, user).await?;
         let r = recipes
             .iter_mut()
@@ -229,7 +217,8 @@ impl RecipeManager {
 
         for line in log_output.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("Strstrectdelivering to") || trimmed.starts_with("Delivering to") {
+            if trimmed.starts_with("Strstrectdelivering to") || trimmed.starts_with("Delivering to")
+            {
                 if let Some(target_str) = trimmed.split_whitespace().last() {
                     delivery_target = Some(parse_delivery_target(target_str));
                 }
@@ -313,16 +302,11 @@ fn parse_recipes(content: &str) -> Vec<ProcmailRecipe> {
         let id = if recipe_start > 0 {
             let prev = lines[recipe_start - 1].trim();
             if prev.starts_with("# SORNG-ID:") {
-                prev.trim_start_matches("# SORNG-ID:")
-                    .trim()
-                    .to_string()
+                prev.trim_start_matches("# SORNG-ID:").trim().to_string()
             } else if recipe_start > 1 {
                 let prev2 = lines[recipe_start - 2].trim();
                 if prev2.starts_with("# SORNG-ID:") {
-                    prev2
-                        .trim_start_matches("# SORNG-ID:")
-                        .trim()
-                        .to_string()
+                    prev2.trim_start_matches("# SORNG-ID:").trim().to_string()
                 } else {
                     Uuid::new_v4().to_string()
                 }
@@ -358,10 +342,7 @@ fn parse_recipes(content: &str) -> Vec<ProcmailRecipe> {
         if i < lines.len() {
             let act = lines[i].trim();
             action = if disabled {
-                act.strip_prefix('#')
-                    .unwrap_or(act)
-                    .trim()
-                    .to_string()
+                act.strip_prefix('#').unwrap_or(act).trim().to_string()
             } else {
                 act.to_string()
             };
@@ -488,13 +469,11 @@ async fn reindex_and_write(
             break;
         }
         // Skip old SORNG-ID lines that precede a recipe
-        if trimmed.starts_with("# SORNG-ID:") {
-            if i + 1 < lines.len() {
-                let next = lines[i + 1].trim();
-                if next.starts_with(":0") || next.starts_with("#:0") {
-                    i += 1;
-                    continue;
-                }
+        if trimmed.starts_with("# SORNG-ID:") && i + 1 < lines.len() {
+            let next = lines[i + 1].trim();
+            if next.starts_with(":0") || next.starts_with("#:0") {
+                i += 1;
+                continue;
             }
         }
         header_lines.push(lines[i].to_string());

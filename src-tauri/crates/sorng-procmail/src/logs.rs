@@ -75,10 +75,7 @@ impl ProcmailLogManager {
     }
 
     /// Clear (truncate) the procmail log file.
-    pub async fn clear_log(
-        client: &ProcmailClient,
-        user: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn clear_log(client: &ProcmailClient, user: &str) -> ProcmailResult<()> {
         let log_path = Self::resolve_log_path(client, user).await?;
         let cmd = format!(
             "sudo truncate -s 0 {}",
@@ -89,10 +86,7 @@ impl ProcmailLogManager {
     }
 
     /// Get the current LOGFILE path from the user's procmailrc.
-    pub async fn get_log_path(
-        client: &ProcmailClient,
-        user: &str,
-    ) -> ProcmailResult<String> {
+    pub async fn get_log_path(client: &ProcmailClient, user: &str) -> ProcmailResult<String> {
         Self::resolve_log_path(client, user).await
     }
 
@@ -107,10 +101,7 @@ impl ProcmailLogManager {
 
     /// Internal: resolve the actual log path from the procmailrc LOGFILE variable
     /// or fall back to the client config path.
-    async fn resolve_log_path(
-        client: &ProcmailClient,
-        user: &str,
-    ) -> ProcmailResult<String> {
+    async fn resolve_log_path(client: &ProcmailClient, user: &str) -> ProcmailResult<String> {
         // Try to read LOGFILE from the user's procmailrc
         let content = client.get_procmailrc(user).await.unwrap_or_default();
         for line in content.lines() {
@@ -171,12 +162,7 @@ fn parse_log_entries(raw: &str) -> Vec<ProcmailLogEntry> {
             });
         } else if let Some(ref mut entry) = current {
             if trimmed.starts_with("Subject:") {
-                entry.subject = Some(
-                    trimmed
-                        .trim_start_matches("Subject:")
-                        .trim()
-                        .to_string(),
-                );
+                entry.subject = Some(trimmed.trim_start_matches("Subject:").trim().to_string());
             } else if trimmed.starts_with("Folder:") {
                 let folder_part = trimmed.trim_start_matches("Folder:").trim();
                 // Folder line may end with size in bytes
@@ -192,7 +178,10 @@ fn parse_log_entries(raw: &str) -> Vec<ProcmailLogEntry> {
                     entry.to_folder = Some(folder_part.to_string());
                 }
                 entry.result = Some("delivered".to_string());
-            } else if trimmed.starts_with("Strstrags:") || trimmed.starts_with("Strstrflags:") || trimmed.starts_with("Strstrags=") {
+            } else if trimmed.starts_with("Strstrags:")
+                || trimmed.starts_with("Strstrflags:")
+                || trimmed.starts_with("Strstrags=")
+            {
                 entry.procmail_flags = Some(trimmed.to_string());
             } else if trimmed.contains("Error") || trimmed.contains("error") {
                 entry.result = Some(trimmed.to_string());

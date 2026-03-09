@@ -25,14 +25,12 @@ impl VariableManager {
         name: &str,
     ) -> ProcmailResult<ProcmailVariable> {
         let vars = Self::list(client, user).await?;
-        vars.into_iter()
-            .find(|v| v.name == name)
-            .ok_or_else(|| {
-                ProcmailError::new(
-                    crate::error::ProcmailErrorKind::ParseError,
-                    format!("Variable not found: {name}"),
-                )
-            })
+        vars.into_iter().find(|v| v.name == name).ok_or_else(|| {
+            ProcmailError::new(
+                crate::error::ProcmailErrorKind::ParseError,
+                format!("Variable not found: {name}"),
+            )
+        })
     }
 
     /// Set (create or update) a variable.
@@ -52,7 +50,11 @@ impl VariableManager {
             // Match VAR=value or VAR = value
             if let Some(eq_pos) = trimmed.find('=') {
                 let var_name = trimmed[..eq_pos].trim();
-                if var_name == name && !trimmed.starts_with('#') && !trimmed.starts_with(':') && !trimmed.starts_with('*') {
+                if var_name == name
+                    && !trimmed.starts_with('#')
+                    && !trimmed.starts_with(':')
+                    && !trimmed.starts_with('*')
+                {
                     output.push(format!("{}={}", name, value));
                     found = true;
                     continue;
@@ -78,11 +80,7 @@ impl VariableManager {
     }
 
     /// Delete a variable by name.
-    pub async fn delete(
-        client: &ProcmailClient,
-        user: &str,
-        name: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn delete(client: &ProcmailClient, user: &str, name: &str) -> ProcmailResult<()> {
         let content = client.get_procmailrc(user).await?;
         let lines: Vec<&str> = content.lines().collect();
         let mut output = Vec::new();
@@ -92,7 +90,11 @@ impl VariableManager {
             let trimmed = line.trim();
             if let Some(eq_pos) = trimmed.find('=') {
                 let var_name = trimmed[..eq_pos].trim();
-                if var_name == name && !trimmed.starts_with('#') && !trimmed.starts_with(':') && !trimmed.starts_with('*') {
+                if var_name == name
+                    && !trimmed.starts_with('#')
+                    && !trimmed.starts_with(':')
+                    && !trimmed.starts_with('*')
+                {
                     // Also remove preceding comment if it exists
                     if !output.is_empty() {
                         let last = output.last().map(|s: &String| s.trim().to_string());
@@ -167,7 +169,8 @@ fn parse_variables(content: &str) -> Vec<ProcmailVariable> {
             // Check for preceding comment
             let comment = if i > 0 {
                 let prev = lines[i - 1].trim();
-                if prev.starts_with('#') && !prev.starts_with("# SORNG") && !prev.starts_with("#:0") {
+                if prev.starts_with('#') && !prev.starts_with("# SORNG") && !prev.starts_with("#:0")
+                {
                     Some(prev.trim_start_matches('#').trim().to_string())
                 } else {
                     None
@@ -177,10 +180,7 @@ fn parse_variables(content: &str) -> Vec<ProcmailVariable> {
             };
 
             // Strip quotes from value
-            let clean_value = var_value
-                .trim_matches('"')
-                .trim_matches('\'')
-                .to_string();
+            let clean_value = var_value.trim_matches('"').trim_matches('\'').to_string();
 
             variables.push(ProcmailVariable {
                 name: var_name.to_string(),

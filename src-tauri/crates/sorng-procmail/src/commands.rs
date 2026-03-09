@@ -1,13 +1,15 @@
 // ── sorng-procmail/src/commands.rs ────────────────────────────────────────────
 //! Tauri commands – thin wrappers around `ProcmailService`.
 
-use tauri::State;
 use crate::service::ProcmailServiceState;
 use crate::types::*;
+use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 
-fn map_err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
+fn map_err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 // ── Connection ────────────────────────────────────────────────────
 
@@ -17,7 +19,12 @@ pub async fn procmail_connect(
     id: String,
     config: ProcmailConnectionConfig,
 ) -> CmdResult<ProcmailConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -43,7 +50,12 @@ pub async fn procmail_list_recipes(
     id: String,
     user: String,
 ) -> CmdResult<Vec<ProcmailRecipe>> {
-    state.lock().await.list_recipes(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_recipes(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -53,7 +65,12 @@ pub async fn procmail_get_recipe(
     user: String,
     recipe_id: String,
 ) -> CmdResult<ProcmailRecipe> {
-    state.lock().await.get_recipe(&id, &user, &recipe_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_recipe(&id, &user, &recipe_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -63,7 +80,12 @@ pub async fn procmail_create_recipe(
     user: String,
     request: CreateRecipeRequest,
 ) -> CmdResult<ProcmailRecipe> {
-    state.lock().await.create_recipe(&id, &user, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_recipe(&id, &user, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -74,7 +96,12 @@ pub async fn procmail_update_recipe(
     recipe_id: String,
     request: UpdateRecipeRequest,
 ) -> CmdResult<ProcmailRecipe> {
-    state.lock().await.update_recipe(&id, &user, &recipe_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_recipe(&id, &user, &recipe_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -84,7 +111,12 @@ pub async fn procmail_delete_recipe(
     user: String,
     recipe_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_recipe(&id, &user, &recipe_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_recipe(&id, &user, &recipe_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -94,7 +126,12 @@ pub async fn procmail_enable_recipe(
     user: String,
     recipe_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_recipe(&id, &user, &recipe_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_recipe(&id, &user, &recipe_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -104,7 +141,12 @@ pub async fn procmail_disable_recipe(
     user: String,
     recipe_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_recipe(&id, &user, &recipe_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_recipe(&id, &user, &recipe_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -115,7 +157,12 @@ pub async fn procmail_reorder_recipe(
     recipe_id: String,
     new_position: usize,
 ) -> CmdResult<()> {
-    state.lock().await.reorder_recipe(&id, &user, &recipe_id, new_position).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .reorder_recipe(&id, &user, &recipe_id, new_position)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -125,7 +172,12 @@ pub async fn procmail_test_recipe(
     user: String,
     message_content: String,
 ) -> CmdResult<RecipeTestResult> {
-    state.lock().await.test_recipe(&id, &user, &message_content).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .test_recipe(&id, &user, &message_content)
+        .await
+        .map_err(map_err)
 }
 
 // ── Rules ─────────────────────────────────────────────────────────
@@ -136,7 +188,12 @@ pub async fn procmail_list_rules(
     id: String,
     user: String,
 ) -> CmdResult<Vec<ProcmailRule>> {
-    state.lock().await.list_rules(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_rules(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -146,7 +203,12 @@ pub async fn procmail_get_rule(
     user: String,
     rule_id: String,
 ) -> CmdResult<ProcmailRule> {
-    state.lock().await.get_rule(&id, &user, &rule_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_rule(&id, &user, &rule_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -156,7 +218,12 @@ pub async fn procmail_create_rule(
     user: String,
     request: CreateRuleRequest,
 ) -> CmdResult<ProcmailRule> {
-    state.lock().await.create_rule(&id, &user, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .create_rule(&id, &user, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -167,7 +234,12 @@ pub async fn procmail_update_rule(
     rule_id: String,
     request: UpdateRuleRequest,
 ) -> CmdResult<ProcmailRule> {
-    state.lock().await.update_rule(&id, &user, &rule_id, request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .update_rule(&id, &user, &rule_id, request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -177,7 +249,12 @@ pub async fn procmail_delete_rule(
     user: String,
     rule_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_rule(&id, &user, &rule_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_rule(&id, &user, &rule_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -187,7 +264,12 @@ pub async fn procmail_enable_rule(
     user: String,
     rule_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_rule(&id, &user, &rule_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_rule(&id, &user, &rule_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -197,7 +279,12 @@ pub async fn procmail_disable_rule(
     user: String,
     rule_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_rule(&id, &user, &rule_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_rule(&id, &user, &rule_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Variables ─────────────────────────────────────────────────────
@@ -208,7 +295,12 @@ pub async fn procmail_list_variables(
     id: String,
     user: String,
 ) -> CmdResult<Vec<ProcmailVariable>> {
-    state.lock().await.list_variables(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_variables(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -218,7 +310,12 @@ pub async fn procmail_get_variable(
     user: String,
     name: String,
 ) -> CmdResult<ProcmailVariable> {
-    state.lock().await.get_variable(&id, &user, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_variable(&id, &user, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -229,7 +326,12 @@ pub async fn procmail_set_variable(
     name: String,
     value: String,
 ) -> CmdResult<()> {
-    state.lock().await.set_variable(&id, &user, &name, &value).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .set_variable(&id, &user, &name, &value)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -239,7 +341,12 @@ pub async fn procmail_delete_variable(
     user: String,
     name: String,
 ) -> CmdResult<()> {
-    state.lock().await.delete_variable(&id, &user, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .delete_variable(&id, &user, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── Includes ──────────────────────────────────────────────────────
@@ -250,7 +357,12 @@ pub async fn procmail_list_includes(
     id: String,
     user: String,
 ) -> CmdResult<Vec<ProcmailInclude>> {
-    state.lock().await.list_includes(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_includes(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -260,7 +372,12 @@ pub async fn procmail_add_include(
     user: String,
     path: String,
 ) -> CmdResult<()> {
-    state.lock().await.add_include(&id, &user, &path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .add_include(&id, &user, &path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -270,7 +387,12 @@ pub async fn procmail_remove_include(
     user: String,
     path: String,
 ) -> CmdResult<()> {
-    state.lock().await.remove_include(&id, &user, &path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .remove_include(&id, &user, &path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -280,7 +402,12 @@ pub async fn procmail_enable_include(
     user: String,
     path: String,
 ) -> CmdResult<()> {
-    state.lock().await.enable_include(&id, &user, &path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .enable_include(&id, &user, &path)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -290,7 +417,12 @@ pub async fn procmail_disable_include(
     user: String,
     path: String,
 ) -> CmdResult<()> {
-    state.lock().await.disable_include(&id, &user, &path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .disable_include(&id, &user, &path)
+        .await
+        .map_err(map_err)
 }
 
 // ── Config ────────────────────────────────────────────────────────
@@ -301,7 +433,12 @@ pub async fn procmail_get_config(
     id: String,
     user: String,
 ) -> CmdResult<ProcmailConfig> {
-    state.lock().await.get_config(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_config(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -311,7 +448,12 @@ pub async fn procmail_set_config(
     user: String,
     config: ProcmailConfig,
 ) -> CmdResult<()> {
-    state.lock().await.set_config(&id, &user, &config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .set_config(&id, &user, &config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -320,7 +462,12 @@ pub async fn procmail_backup_config(
     id: String,
     user: String,
 ) -> CmdResult<String> {
-    state.lock().await.backup_config(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .backup_config(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -330,7 +477,12 @@ pub async fn procmail_restore_config(
     user: String,
     backup_content: String,
 ) -> CmdResult<()> {
-    state.lock().await.restore_config(&id, &user, &backup_content).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .restore_config(&id, &user, &backup_content)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -340,7 +492,12 @@ pub async fn procmail_validate_config(
     user: String,
     content: String,
 ) -> CmdResult<RecipeTestResult> {
-    state.lock().await.validate_config(&id, &user, &content).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .validate_config(&id, &user, &content)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -349,7 +506,12 @@ pub async fn procmail_get_raw_config(
     id: String,
     user: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_raw_config(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_raw_config(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -359,7 +521,12 @@ pub async fn procmail_set_raw_config(
     user: String,
     content: String,
 ) -> CmdResult<()> {
-    state.lock().await.set_raw_config(&id, &user, &content).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .set_raw_config(&id, &user, &content)
+        .await
+        .map_err(map_err)
 }
 
 // ── Logs ──────────────────────────────────────────────────────────
@@ -372,7 +539,12 @@ pub async fn procmail_query_log(
     lines: Option<usize>,
     filter: Option<String>,
 ) -> CmdResult<Vec<ProcmailLogEntry>> {
-    state.lock().await.query_log(&id, &user, lines, filter).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .query_log(&id, &user, lines, filter)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -381,7 +553,12 @@ pub async fn procmail_list_log_files(
     id: String,
     user: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.list_log_files(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_log_files(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -390,7 +567,12 @@ pub async fn procmail_clear_log(
     id: String,
     user: String,
 ) -> CmdResult<()> {
-    state.lock().await.clear_log(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .clear_log(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -399,7 +581,12 @@ pub async fn procmail_get_log_path(
     id: String,
     user: String,
 ) -> CmdResult<String> {
-    state.lock().await.get_log_path(&id, &user).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_log_path(&id, &user)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -409,5 +596,10 @@ pub async fn procmail_set_log_path(
     user: String,
     path: String,
 ) -> CmdResult<()> {
-    state.lock().await.set_log_path(&id, &user, &path).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .set_log_path(&id, &user, &path)
+        .await
+        .map_err(map_err)
 }

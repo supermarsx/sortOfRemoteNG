@@ -19,15 +19,24 @@ impl ProcmailClient {
     // ── Paths ────────────────────────────────────────────────────────
 
     pub fn procmail_bin(&self) -> &str {
-        self.config.procmail_bin.as_deref().unwrap_or("/usr/bin/procmail")
+        self.config
+            .procmail_bin
+            .as_deref()
+            .unwrap_or("/usr/bin/procmail")
     }
 
     pub fn procmailrc_path(&self) -> &str {
-        self.config.procmailrc_path.as_deref().unwrap_or("/etc/procmailrc")
+        self.config
+            .procmailrc_path
+            .as_deref()
+            .unwrap_or("/etc/procmailrc")
     }
 
     pub fn log_path(&self) -> &str {
-        self.config.log_path.as_deref().unwrap_or("/var/log/procmail.log")
+        self.config
+            .log_path
+            .as_deref()
+            .unwrap_or("/var/log/procmail.log")
     }
 
     /// Return the per-user procmailrc path (~user/.procmailrc).
@@ -50,7 +59,9 @@ impl ProcmailClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> ProcmailResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 
@@ -82,13 +93,7 @@ impl ProcmailClient {
             .exec_ssh(&format!("{} -v 2>&1", self.procmail_bin()))
             .await?;
         // procmail -v outputs version on the first line
-        let ver = out
-            .stdout
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let ver = out.stdout.lines().next().unwrap_or("").trim().to_string();
         Ok(ver)
     }
 

@@ -24,6 +24,12 @@ pub struct ProcmailService {
     connections: HashMap<String, ProcmailClient>,
 }
 
+impl Default for ProcmailService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcmailService {
     pub fn new() -> Self {
         Self {
@@ -40,7 +46,10 @@ impl ProcmailService {
     ) -> ProcmailResult<ProcmailConnectionSummary> {
         let client = ProcmailClient::new(config)?;
         let ver = client.version().await.ok();
-        let recipe_count = RecipeManager::list(&client, "").await.map(|r| r.len()).unwrap_or(0);
+        let recipe_count = RecipeManager::list(&client, "")
+            .await
+            .map(|r| r.len())
+            .unwrap_or(0);
         let log_path = client.log_path().to_string();
         let summary = ProcmailConnectionSummary {
             host: client.config.host.clone(),
@@ -53,15 +62,12 @@ impl ProcmailService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> ProcmailResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| {
-                ProcmailError::new(
-                    crate::error::ProcmailErrorKind::NotConnected,
-                    format!("No connection '{}'", id),
-                )
-            })
+        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+            ProcmailError::new(
+                crate::error::ProcmailErrorKind::NotConnected,
+                format!("No connection '{}'", id),
+            )
+        })
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -79,11 +85,7 @@ impl ProcmailService {
 
     // ── Recipes ──────────────────────────────────────────────────
 
-    pub async fn list_recipes(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<Vec<ProcmailRecipe>> {
+    pub async fn list_recipes(&self, id: &str, user: &str) -> ProcmailResult<Vec<ProcmailRecipe>> {
         RecipeManager::list(self.client(id)?, user).await
     }
 
@@ -115,21 +117,11 @@ impl ProcmailService {
         RecipeManager::update(self.client(id)?, user, recipe_id, req).await
     }
 
-    pub async fn delete_recipe(
-        &self,
-        id: &str,
-        user: &str,
-        recipe_id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn delete_recipe(&self, id: &str, user: &str, recipe_id: &str) -> ProcmailResult<()> {
         RecipeManager::delete(self.client(id)?, user, recipe_id).await
     }
 
-    pub async fn enable_recipe(
-        &self,
-        id: &str,
-        user: &str,
-        recipe_id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn enable_recipe(&self, id: &str, user: &str, recipe_id: &str) -> ProcmailResult<()> {
         RecipeManager::enable(self.client(id)?, user, recipe_id).await
     }
 
@@ -163,11 +155,7 @@ impl ProcmailService {
 
     // ── Rules ────────────────────────────────────────────────────
 
-    pub async fn list_rules(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<Vec<ProcmailRule>> {
+    pub async fn list_rules(&self, id: &str, user: &str) -> ProcmailResult<Vec<ProcmailRule>> {
         RuleManager::list(self.client(id)?, user).await
     }
 
@@ -199,30 +187,15 @@ impl ProcmailService {
         RuleManager::update(self.client(id)?, user, rule_id, req).await
     }
 
-    pub async fn delete_rule(
-        &self,
-        id: &str,
-        user: &str,
-        rule_id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn delete_rule(&self, id: &str, user: &str, rule_id: &str) -> ProcmailResult<()> {
         RuleManager::delete(self.client(id)?, user, rule_id).await
     }
 
-    pub async fn enable_rule(
-        &self,
-        id: &str,
-        user: &str,
-        rule_id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn enable_rule(&self, id: &str, user: &str, rule_id: &str) -> ProcmailResult<()> {
         RuleManager::enable(self.client(id)?, user, rule_id).await
     }
 
-    pub async fn disable_rule(
-        &self,
-        id: &str,
-        user: &str,
-        rule_id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn disable_rule(&self, id: &str, user: &str, rule_id: &str) -> ProcmailResult<()> {
         RuleManager::disable(self.client(id)?, user, rule_id).await
     }
 
@@ -255,12 +228,7 @@ impl ProcmailService {
         VariableManager::set(self.client(id)?, user, name, value).await
     }
 
-    pub async fn delete_variable(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn delete_variable(&self, id: &str, user: &str, name: &str) -> ProcmailResult<()> {
         VariableManager::delete(self.client(id)?, user, name).await
     }
 
@@ -274,49 +242,25 @@ impl ProcmailService {
         IncludeManager::list(self.client(id)?, user).await
     }
 
-    pub async fn add_include(
-        &self,
-        id: &str,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn add_include(&self, id: &str, user: &str, path: &str) -> ProcmailResult<()> {
         IncludeManager::add(self.client(id)?, user, path).await
     }
 
-    pub async fn remove_include(
-        &self,
-        id: &str,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn remove_include(&self, id: &str, user: &str, path: &str) -> ProcmailResult<()> {
         IncludeManager::remove(self.client(id)?, user, path).await
     }
 
-    pub async fn enable_include(
-        &self,
-        id: &str,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn enable_include(&self, id: &str, user: &str, path: &str) -> ProcmailResult<()> {
         IncludeManager::enable(self.client(id)?, user, path).await
     }
 
-    pub async fn disable_include(
-        &self,
-        id: &str,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn disable_include(&self, id: &str, user: &str, path: &str) -> ProcmailResult<()> {
         IncludeManager::disable(self.client(id)?, user, path).await
     }
 
     // ── Config ───────────────────────────────────────────────────
 
-    pub async fn get_config(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<ProcmailConfig> {
+    pub async fn get_config(&self, id: &str, user: &str) -> ProcmailResult<ProcmailConfig> {
         ProcmailConfigManager::get_full(self.client(id)?, user).await
     }
 
@@ -329,11 +273,7 @@ impl ProcmailService {
         ProcmailConfigManager::set_full(self.client(id)?, user, config).await
     }
 
-    pub async fn backup_config(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<String> {
+    pub async fn backup_config(&self, id: &str, user: &str) -> ProcmailResult<String> {
         ProcmailConfigManager::backup(self.client(id)?, user).await
     }
 
@@ -355,20 +295,11 @@ impl ProcmailService {
         ProcmailConfigManager::validate(self.client(id)?, user, content).await
     }
 
-    pub async fn get_raw_config(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<String> {
+    pub async fn get_raw_config(&self, id: &str, user: &str) -> ProcmailResult<String> {
         ProcmailConfigManager::get_raw(self.client(id)?, user).await
     }
 
-    pub async fn set_raw_config(
-        &self,
-        id: &str,
-        user: &str,
-        content: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn set_raw_config(&self, id: &str, user: &str, content: &str) -> ProcmailResult<()> {
         ProcmailConfigManager::set_raw(self.client(id)?, user, content).await
     }
 
@@ -384,36 +315,19 @@ impl ProcmailService {
         ProcmailLogManager::query(self.client(id)?, user, lines, filter.as_deref()).await
     }
 
-    pub async fn list_log_files(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<Vec<String>> {
+    pub async fn list_log_files(&self, id: &str, user: &str) -> ProcmailResult<Vec<String>> {
         ProcmailLogManager::list_log_files(self.client(id)?, user).await
     }
 
-    pub async fn clear_log(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn clear_log(&self, id: &str, user: &str) -> ProcmailResult<()> {
         ProcmailLogManager::clear_log(self.client(id)?, user).await
     }
 
-    pub async fn get_log_path(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> ProcmailResult<String> {
+    pub async fn get_log_path(&self, id: &str, user: &str) -> ProcmailResult<String> {
         ProcmailLogManager::get_log_path(self.client(id)?, user).await
     }
 
-    pub async fn set_log_path(
-        &self,
-        id: &str,
-        user: &str,
-        path: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn set_log_path(&self, id: &str, user: &str, path: &str) -> ProcmailResult<()> {
         ProcmailLogManager::set_log_path(self.client(id)?, user, path).await
     }
 }

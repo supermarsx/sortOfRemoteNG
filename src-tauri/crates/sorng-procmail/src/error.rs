@@ -39,23 +39,38 @@ impl std::error::Error for ProcmailError {}
 
 impl ProcmailError {
     pub fn new(kind: ProcmailErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected() -> Self {
-        Self::new(ProcmailErrorKind::NotConnected, "Not connected to Procmail host")
+        Self::new(
+            ProcmailErrorKind::NotConnected,
+            "Not connected to Procmail host",
+        )
     }
 
     pub fn recipe_not_found(id: &str) -> Self {
-        Self::new(ProcmailErrorKind::RecipeNotFound, format!("Recipe not found: {id}"))
+        Self::new(
+            ProcmailErrorKind::RecipeNotFound,
+            format!("Recipe not found: {id}"),
+        )
     }
 
     pub fn rule_not_found(id: &str) -> Self {
-        Self::new(ProcmailErrorKind::RuleNotFound, format!("Rule not found: {id}"))
+        Self::new(
+            ProcmailErrorKind::RuleNotFound,
+            format!("Rule not found: {id}"),
+        )
     }
 
     pub fn config_not_found(path: &str) -> Self {
-        Self::new(ProcmailErrorKind::ConfigNotFound, format!("Config not found: {path}"))
+        Self::new(
+            ProcmailErrorKind::ConfigNotFound,
+            format!("Config not found: {path}"),
+        )
     }
 
     pub fn syntax(msg: &str) -> Self {

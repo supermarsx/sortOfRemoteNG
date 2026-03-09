@@ -142,11 +142,7 @@ impl RuleManager {
     }
 
     /// Delete a rule and its associated recipes.
-    pub async fn delete(
-        client: &ProcmailClient,
-        user: &str,
-        id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn delete(client: &ProcmailClient, user: &str, id: &str) -> ProcmailResult<()> {
         let rules = Self::list(client, user).await?;
         let rule = rules
             .iter()
@@ -164,11 +160,7 @@ impl RuleManager {
     }
 
     /// Enable a rule and all its recipes.
-    pub async fn enable(
-        client: &ProcmailClient,
-        user: &str,
-        id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn enable(client: &ProcmailClient, user: &str, id: &str) -> ProcmailResult<()> {
         let rules = Self::list(client, user).await?;
         let rule = rules
             .iter()
@@ -187,11 +179,7 @@ impl RuleManager {
     }
 
     /// Disable a rule and all its recipes.
-    pub async fn disable(
-        client: &ProcmailClient,
-        user: &str,
-        id: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn disable(client: &ProcmailClient, user: &str, id: &str) -> ProcmailResult<()> {
         let rules = Self::list(client, user).await?;
         let rule = rules
             .iter()
@@ -219,20 +207,33 @@ fn parse_rules(content: &str) -> Vec<ProcmailRule> {
 
     while i < lines.len() {
         let trimmed = lines[i].trim();
-        if trimmed.starts_with("## SORNG-RULE:") && !trimmed.contains("RULE-END") && !trimmed.contains("RULE-MEMBER") {
+        if trimmed.starts_with("## SORNG-RULE:")
+            && !trimmed.contains("RULE-END")
+            && !trimmed.contains("RULE-MEMBER")
+        {
             let header_part = trimmed.trim_start_matches("## SORNG-RULE:").trim();
             let parts: Vec<&str> = header_part.splitn(5, '|').collect();
 
-            let id = parts.first().map(|s| s.trim().to_string()).unwrap_or_default();
-            let name = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
-            let description = parts.get(2).map(|s| {
-                let d = s.trim().to_string();
-                if d.is_empty() { None } else { Some(d) }
-            }).unwrap_or(None);
-            let enabled = parts
-                .get(3)
-                .map(|s| s.trim() == "true")
-                .unwrap_or(true);
+            let id = parts
+                .first()
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let name = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let description = parts
+                .get(2)
+                .map(|s| {
+                    let d = s.trim().to_string();
+                    if d.is_empty() {
+                        None
+                    } else {
+                        Some(d)
+                    }
+                })
+                .unwrap_or(None);
+            let enabled = parts.get(3).map(|s| s.trim() == "true").unwrap_or(true);
             let priority = parts
                 .get(4)
                 .and_then(|s| s.trim().parse::<u32>().ok())
@@ -294,7 +295,10 @@ async fn rewrite_rule_markers(
     // Strip existing rule markers
     while i < lines.len() {
         let trimmed = lines[i].trim();
-        if trimmed.starts_with("## SORNG-RULE:") && !trimmed.contains("RULE-END") && !trimmed.contains("RULE-MEMBER") {
+        if trimmed.starts_with("## SORNG-RULE:")
+            && !trimmed.contains("RULE-END")
+            && !trimmed.contains("RULE-MEMBER")
+        {
             // Skip until RULE-END
             while i < lines.len() {
                 if lines[i].trim().starts_with("## SORNG-RULE-END:") {

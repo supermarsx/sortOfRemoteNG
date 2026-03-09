@@ -13,10 +13,7 @@ pub struct ProcmailConfigManager;
 
 impl ProcmailConfigManager {
     /// Get the fully-parsed procmailrc as a `ProcmailConfig`.
-    pub async fn get_full(
-        client: &ProcmailClient,
-        user: &str,
-    ) -> ProcmailResult<ProcmailConfig> {
+    pub async fn get_full(client: &ProcmailClient, user: &str) -> ProcmailResult<ProcmailConfig> {
         let raw_content = client.get_procmailrc(user).await?;
         let recipes = RecipeManager::list(client, user).await?;
         let variables = VariableManager::list(client, user).await?;
@@ -79,10 +76,7 @@ impl ProcmailConfigManager {
     }
 
     /// Create a backup of the user's procmailrc, returns the backup content.
-    pub async fn backup(
-        client: &ProcmailClient,
-        user: &str,
-    ) -> ProcmailResult<String> {
+    pub async fn backup(client: &ProcmailClient, user: &str) -> ProcmailResult<String> {
         let content = client.get_procmailrc(user).await?;
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let rc_path = if user.is_empty() {
@@ -139,19 +133,12 @@ impl ProcmailConfigManager {
     }
 
     /// Get raw procmailrc content as a string.
-    pub async fn get_raw(
-        client: &ProcmailClient,
-        user: &str,
-    ) -> ProcmailResult<String> {
+    pub async fn get_raw(client: &ProcmailClient, user: &str) -> ProcmailResult<String> {
         client.get_procmailrc(user).await
     }
 
     /// Set raw procmailrc content from a string.
-    pub async fn set_raw(
-        client: &ProcmailClient,
-        user: &str,
-        content: &str,
-    ) -> ProcmailResult<()> {
+    pub async fn set_raw(client: &ProcmailClient, user: &str, content: &str) -> ProcmailResult<()> {
         client.write_procmailrc(user, content).await
     }
 }
