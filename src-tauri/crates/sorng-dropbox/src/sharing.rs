@@ -166,10 +166,7 @@ pub fn build_unmount_folder(shared_folder_id: &str) -> serde_json::Value {
 }
 
 /// Build transfer_folder request body.
-pub fn build_transfer_folder(
-    shared_folder_id: &str,
-    to_dropbox_id: &str,
-) -> serde_json::Value {
+pub fn build_transfer_folder(shared_folder_id: &str, to_dropbox_id: &str) -> serde_json::Value {
     serde_json::json!({
         "shared_folder_id": shared_folder_id,
         "to_dropbox_id": to_dropbox_id,

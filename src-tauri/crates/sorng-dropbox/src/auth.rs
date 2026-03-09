@@ -214,8 +214,16 @@ mod tests {
 
     #[test]
     fn build_auth_url_with_scopes() {
-        let (url, _) = build_auth_url("key", "http://localhost", Some(&["files.metadata.read", "files.content.write"]));
-        assert!(url.contains("scope=files.metadata.read+files.content.write") || url.contains("scope=files.metadata.read%20files.content.write") || url.contains("scope=files.metadata.read files.content.write"));
+        let (url, _) = build_auth_url(
+            "key",
+            "http://localhost",
+            Some(&["files.metadata.read", "files.content.write"]),
+        );
+        assert!(
+            url.contains("scope=files.metadata.read+files.content.write")
+                || url.contains("scope=files.metadata.read%20files.content.write")
+                || url.contains("scope=files.metadata.read files.content.write")
+        );
     }
 
     #[test]

@@ -84,7 +84,12 @@ impl DropboxService {
     // ━━━━━━━━━━━━━━  Configuration  ━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /// Configure app credentials.
-    pub fn configure(&mut self, app_key: &str, app_secret: Option<&str>, redirect_uri: Option<&str>) {
+    pub fn configure(
+        &mut self,
+        app_key: &str,
+        app_secret: Option<&str>,
+        redirect_uri: Option<&str>,
+    ) {
         self.app_key = Some(app_key.to_string());
         self.app_secret = app_secret.map(|s| s.to_string());
         if let Some(uri) = redirect_uri {
@@ -117,10 +122,7 @@ impl DropboxService {
 
     /// Start the OAuth 2.0 PKCE flow — returns the URL the user should open.
     pub fn start_auth(&mut self, scopes: Option<Vec<String>>) -> Result<String, String> {
-        let app_key = self
-            .app_key
-            .as_deref()
-            .ok_or("App key not configured")?;
+        let app_key = self.app_key.as_deref().ok_or("App key not configured")?;
 
         let scope_refs: Vec<&str> = scopes
             .as_ref()
@@ -134,28 +136,22 @@ impl DropboxService {
 
         let (url, pkce) = auth::build_auth_url(app_key, &self.redirect_uri, scopes_opt);
         self.pending_pkce = Some(pkce);
-        self.log(ActivityType::AccountAction, "OAuth flow started", true, None);
+        self.log(
+            ActivityType::AccountAction,
+            "OAuth flow started",
+            true,
+            None,
+        );
         Ok(url)
     }
 
     /// Complete the OAuth flow with the code received from the redirect.
     pub async fn finish_auth(&mut self, code: &str) -> Result<(), String> {
-        let app_key = self
-            .app_key
-            .clone()
-            .ok_or("App key not configured")?;
-        let pkce = self
-            .pending_pkce
-            .clone()
-            .ok_or("No pending PKCE state")?;
+        let app_key = self.app_key.clone().ok_or("App key not configured")?;
+        let pkce = self.pending_pkce.clone().ok_or("No pending PKCE state")?;
 
-        let token_resp = auth::exchange_code(
-            &app_key,
-            self.app_secret.as_deref(),
-            code,
-            &pkce,
-        )
-        .await?;
+        let token_resp =
+            auth::exchange_code(&app_key, self.app_secret.as_deref(), code, &pkce).await?;
 
         self.access_token = Some(token_resp.access_token.clone());
         self.refresh_token = token_resp.refresh_token.clone();
@@ -164,7 +160,12 @@ impl DropboxService {
         }
         self.pending_pkce = None;
         self.connected = true;
-        self.log(ActivityType::AccountAction, "OAuth flow completed", true, None);
+        self.log(
+            ActivityType::AccountAction,
+            "OAuth flow completed",
+            true,
+            None,
+        );
         Ok(())
     }
 
@@ -176,10 +177,7 @@ impl DropboxService {
             }
         }
         // Need refresh
-        let app_key = self
-            .app_key
-            .clone()
-            .ok_or("App key not configured")?;
+        let app_key = self.app_key.clone().ok_or("App key not configured")?;
         let refresh = self
             .refresh_token
             .clone()
@@ -218,7 +216,13 @@ impl DropboxService {
     // ━━━━━━━━━━━━━━  Activity log  ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /// Append an entry to the activity log.
-    pub fn log(&mut self, activity_type: ActivityType, description: &str, success: bool, error: Option<&str>) {
+    pub fn log(
+        &mut self,
+        activity_type: ActivityType,
+        description: &str,
+        success: bool,
+        error: Option<&str>,
+    ) {
         let entry = ActivityLogEntry {
             timestamp: Utc::now(),
             activity_type,
@@ -430,7 +434,12 @@ mod tests {
         let mut svc = service();
         svc.max_log = 5;
         for i in 0..20 {
-            svc.log(ActivityType::AccountAction, &format!("Entry {i}"), true, None);
+            svc.log(
+                ActivityType::AccountAction,
+                &format!("Entry {i}"),
+                true,
+                None,
+            );
         }
         assert_eq!(svc.get_activity_log().len(), 5);
     }

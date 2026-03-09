@@ -79,7 +79,11 @@ impl DropboxClient {
         if self.access_token.len() <= 8 {
             "****".into()
         } else {
-            format!("{}…{}", &self.access_token[..4], &self.access_token[self.access_token.len() - 4..])
+            format!(
+                "{}…{}",
+                &self.access_token[..4],
+                &self.access_token[self.access_token.len() - 4..]
+            )
         }
     }
 
@@ -160,8 +164,9 @@ impl DropboxClient {
                 .unwrap_or_else(|e| format!(r#"{{"error_summary":"read body: {e}"}}"#));
 
             if status.is_success() {
-                return serde_json::from_str(&body)
-                    .map_err(|e| format!("Failed to parse response from {url}: {e} — body: {body}"));
+                return serde_json::from_str(&body).map_err(|e| {
+                    format!("Failed to parse response from {url}: {e} — body: {body}")
+                });
             }
 
             if status.is_server_error() && attempt < MAX_RETRIES {
@@ -179,7 +184,9 @@ impl DropboxClient {
             });
         }
 
-        Err(format!("Dropbox API request failed after {MAX_RETRIES} retries: {last_err}"))
+        Err(format!(
+            "Dropbox API request failed after {MAX_RETRIES} retries: {last_err}"
+        ))
     }
 
     // ── Content-upload endpoint ─────────────────────────────────────
@@ -257,7 +264,9 @@ impl DropboxClient {
             });
         }
 
-        Err(format!("Content upload failed after {MAX_RETRIES} retries: {last_err}"))
+        Err(format!(
+            "Content upload failed after {MAX_RETRIES} retries: {last_err}"
+        ))
     }
 
     // ── Content-download endpoint ───────────────────────────────────

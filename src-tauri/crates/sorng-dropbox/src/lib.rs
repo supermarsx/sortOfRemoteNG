@@ -13,19 +13,19 @@
 //! - **Backup** — Scheduled connection-config backups to Dropbox
 //! - **Watcher** — File-change polling for Dropbox folders
 
-pub mod types;
-pub mod client;
+pub mod account;
 pub mod auth;
+pub mod backup;
+pub mod client;
+pub mod commands;
 pub mod files;
 pub mod folders;
-pub mod sharing;
-pub mod account;
-pub mod team;
 pub mod paper;
-pub mod sync;
-pub mod backup;
-pub mod watcher;
 pub mod service;
-pub mod commands;
+pub mod sharing;
+pub mod sync;
+pub mod team;
+pub mod types;
+pub mod watcher;
 
 pub use service::DropboxServiceState;

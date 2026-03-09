@@ -196,7 +196,9 @@ pub fn determine_sync_action(
                 }
             } else if r > l {
                 match direction {
-                    SyncDirection::Download | SyncDirection::Bidirectional => SyncAction::Downloaded,
+                    SyncDirection::Download | SyncDirection::Bidirectional => {
+                        SyncAction::Downloaded
+                    }
                     SyncDirection::Upload => SyncAction::Uploaded,
                 }
             } else {
@@ -228,7 +230,13 @@ mod tests {
     #[test]
     fn create_and_list_configs() {
         let mut mgr = SyncManager::new();
-        let id = mgr.create_config("Sync1", "acct", "/local/docs", "/remote/docs", SyncDirection::Bidirectional);
+        let id = mgr.create_config(
+            "Sync1",
+            "acct",
+            "/local/docs",
+            "/remote/docs",
+            SyncDirection::Bidirectional,
+        );
         assert_eq!(mgr.list_configs().len(), 1);
         assert!(mgr.get_config(&id).is_some());
     }
@@ -263,21 +271,13 @@ mod tests {
 
     #[test]
     fn sync_action_upload_new_local() {
-        let action = determine_sync_action(
-            Some(Utc::now()),
-            None,
-            &SyncDirection::Upload,
-        );
+        let action = determine_sync_action(Some(Utc::now()), None, &SyncDirection::Upload);
         assert!(matches!(action, SyncAction::Uploaded));
     }
 
     #[test]
     fn sync_action_download_new_remote() {
-        let action = determine_sync_action(
-            None,
-            Some(Utc::now()),
-            &SyncDirection::Download,
-        );
+        let action = determine_sync_action(None, Some(Utc::now()), &SyncDirection::Download);
         assert!(matches!(action, SyncAction::Downloaded));
     }
 

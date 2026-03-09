@@ -3,10 +3,7 @@
 use crate::types::*;
 
 /// Build paper/docs/create request body.
-pub fn build_paper_create(
-    path: &str,
-    import_format: &str,
-) -> serde_json::Value {
+pub fn build_paper_create(path: &str, import_format: &str) -> serde_json::Value {
     serde_json::json!({
         "path": path,
         "import_format": import_format,
@@ -57,10 +54,7 @@ pub fn build_paper_file_update(
 }
 
 /// Build paper/docs/download arg header for exporting.
-pub fn build_paper_export(
-    doc_id: &str,
-    export_format: &PaperDocExportFormat,
-) -> serde_json::Value {
+pub fn build_paper_export(doc_id: &str, export_format: &PaperDocExportFormat) -> serde_json::Value {
     serde_json::json!({
         "doc_id": doc_id,
         "export_format": export_format,
@@ -198,7 +192,12 @@ mod tests {
 
     #[test]
     fn paper_update_body() {
-        let v = build_paper_update("/doc.paper", "markdown", &PaperDocUpdatePolicy::Overwrite, Some(42));
+        let v = build_paper_update(
+            "/doc.paper",
+            "markdown",
+            &PaperDocUpdatePolicy::Overwrite,
+            Some(42),
+        );
         assert_eq!(v["paper_revision"], 42);
     }
 
@@ -240,7 +239,12 @@ mod tests {
 
     #[test]
     fn paper_list_body() {
-        let v = build_paper_list(Some("docs_created"), Some("modified"), Some("descending"), Some(50));
+        let v = build_paper_list(
+            Some("docs_created"),
+            Some("modified"),
+            Some("descending"),
+            Some(50),
+        );
         assert_eq!(v["filter_by"], "docs_created");
         assert_eq!(v["limit"], 50);
     }
@@ -254,7 +258,9 @@ mod tests {
     #[test]
     fn paper_set_sharing_policy_body() {
         let v = build_paper_set_sharing_policy("doc1", Some("people_with_link_can_edit"), None);
-        assert!(v["sharing_policy"]["public_sharing_policy"].as_str().is_some());
+        assert!(v["sharing_policy"]["public_sharing_policy"]
+            .as_str()
+            .is_some());
     }
 
     #[test]

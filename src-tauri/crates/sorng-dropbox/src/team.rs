@@ -37,10 +37,7 @@ pub fn build_members_get_info(members: &[&str]) -> serde_json::Value {
 }
 
 /// Build team/members/add_v2 request body.
-pub fn build_members_add(
-    new_members: &[NewTeamMember],
-    force_async: bool,
-) -> serde_json::Value {
+pub fn build_members_add(new_members: &[NewTeamMember], force_async: bool) -> serde_json::Value {
     let entries: Vec<serde_json::Value> = new_members
         .iter()
         .map(|nm| {
@@ -79,10 +76,12 @@ pub fn build_members_remove(
         "keep_account": keep_account,
     });
     if let Some(dest) = transfer_dest_id {
-        body["transfer_dest_id"] = serde_json::json!({".tag": "team_member_id", "team_member_id": dest});
+        body["transfer_dest_id"] =
+            serde_json::json!({".tag": "team_member_id", "team_member_id": dest});
     }
     if let Some(admin) = transfer_admin_id {
-        body["transfer_admin_id"] = serde_json::json!({".tag": "team_member_id", "team_member_id": admin});
+        body["transfer_admin_id"] =
+            serde_json::json!({".tag": "team_member_id", "team_member_id": admin});
     }
     body
 }
@@ -103,10 +102,7 @@ pub fn build_members_unsuspend(team_member_id: &str) -> serde_json::Value {
 }
 
 /// Build team/members/set_admin_permissions_v2 request body.
-pub fn build_set_admin_permissions(
-    team_member_id: &str,
-    new_role: &str,
-) -> serde_json::Value {
+pub fn build_set_admin_permissions(team_member_id: &str, new_role: &str) -> serde_json::Value {
     serde_json::json!({
         "user": {".tag": "team_member_id", "team_member_id": team_member_id},
         "new_role": new_role,

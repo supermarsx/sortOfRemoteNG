@@ -90,8 +90,7 @@ pub async fn dropbox_finish_auth(
         )
     };
 
-    let token_resp =
-        auth::exchange_code(&app_key, app_secret.as_deref(), &code, &pkce).await?;
+    let token_resp = auth::exchange_code(&app_key, app_secret.as_deref(), &code, &pkce).await?;
 
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     svc.access_token = Some(token_resp.access_token);
@@ -101,7 +100,12 @@ pub async fn dropbox_finish_auth(
     }
     svc.pending_pkce = None;
     svc.connected = true;
-    svc.log(ActivityType::AccountAction, "OAuth flow completed via command", true, None);
+    svc.log(
+        ActivityType::AccountAction,
+        "OAuth flow completed via command",
+        true,
+        None,
+    );
     Ok("authenticated".into())
 }
 
@@ -127,14 +131,17 @@ pub async fn dropbox_refresh_token(
     if let Some(exp) = resp.expires_in {
         svc.token_expires_at = Some(auth::expires_at_from_now(exp));
     }
-    svc.log(ActivityType::AccountAction, "Token refreshed via command", true, None);
+    svc.log(
+        ActivityType::AccountAction,
+        "Token refreshed via command",
+        true,
+        None,
+    );
     Ok("refreshed".into())
 }
 
 #[tauri::command]
-pub async fn dropbox_revoke_token(
-    state: State<'_, DropboxServiceState>,
-) -> Result<String, String> {
+pub async fn dropbox_revoke_token(state: State<'_, DropboxServiceState>) -> Result<String, String> {
     let token = {
         let svc = state.lock().map_err(|e| e.to_string())?;
         svc.access_token.clone().ok_or("No access token")?
@@ -181,7 +188,12 @@ pub async fn dropbox_upload(
         let mut svc = state.lock().map_err(|e| e.to_string())?;
         svc.record_upload(result.to_string().len() as u64);
         svc.record_api_call();
-        svc.log(ActivityType::Upload, &format!("Uploaded {path}"), true, None);
+        svc.log(
+            ActivityType::Upload,
+            &format!("Uploaded {path}"),
+            true,
+            None,
+        );
     }
     Ok(result)
 }
@@ -199,7 +211,12 @@ pub async fn dropbox_download(
         let mut svc = state.lock().map_err(|e| e.to_string())?;
         svc.record_download(bytes.len() as u64);
         svc.record_api_call();
-        svc.log(ActivityType::Download, &format!("Downloaded {path}"), true, None);
+        svc.log(
+            ActivityType::Download,
+            &format!("Downloaded {path}"),
+            true,
+            None,
+        );
     }
     Ok(bytes)
 }
@@ -235,7 +252,12 @@ pub async fn dropbox_move_file(
     {
         let mut svc = state.lock().map_err(|e| e.to_string())?;
         svc.record_api_call();
-        svc.log(ActivityType::Move, &format!("Moved {from_path} → {to_path}"), true, None);
+        svc.log(
+            ActivityType::Move,
+            &format!("Moved {from_path} → {to_path}"),
+            true,
+            None,
+        );
     }
     Ok(result)
 }
@@ -254,7 +276,12 @@ pub async fn dropbox_copy_file(
     {
         let mut svc = state.lock().map_err(|e| e.to_string())?;
         svc.record_api_call();
-        svc.log(ActivityType::Copy, &format!("Copied {from_path} → {to_path}"), true, None);
+        svc.log(
+            ActivityType::Copy,
+            &format!("Copied {from_path} → {to_path}"),
+            true,
+            None,
+        );
     }
     Ok(result)
 }
@@ -413,7 +440,9 @@ pub async fn dropbox_get_thumbnail(
     };
     let arg = files::build_get_thumbnail(&path, &fmt, &sz, &ThumbnailMode::Bestfit);
     let client = DropboxClient::new(&token)?;
-    let (bytes, _) = client.content_download("files/get_thumbnail_v2", &arg).await?;
+    let (bytes, _) = client
+        .content_download("files/get_thumbnail_v2", &arg)
+        .await?;
     Ok(bytes)
 }
 
@@ -561,7 +590,9 @@ pub async fn dropbox_get_latest_cursor(
     let token = get_token(&state)?;
     let body = folders::build_get_latest_cursor(&path, recursive.unwrap_or(false));
     let client = DropboxClient::new(&token)?;
-    client.rpc("files/list_folder/get_latest_cursor", &body).await
+    client
+        .rpc("files/list_folder/get_latest_cursor", &body)
+        .await
 }
 
 #[tauri::command]
@@ -625,11 +656,7 @@ pub async fn dropbox_list_shared_links(
     direct_only: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let token = get_token(&state)?;
-    let body = sharing::build_list_shared_links(
-        path.as_deref(),
-        cursor.as_deref(),
-        direct_only,
-    );
+    let body = sharing::build_list_shared_links(path.as_deref(), cursor.as_deref(), direct_only);
     let client = DropboxClient::new(&token)?;
     client.rpc("sharing/list_shared_links", &body).await
 }
@@ -872,7 +899,9 @@ pub async fn dropbox_paper_create(
     let fmt = import_format.unwrap_or_else(|| "html".into());
     let arg = paper::build_paper_create(&path, &fmt);
     let client = DropboxClient::new(&token)?;
-    client.content_upload("files/paper/create", &arg, &content).await
+    client
+        .content_upload("files/paper/create", &arg, &content)
+        .await
 }
 
 #[tauri::command]
@@ -893,7 +922,9 @@ pub async fn dropbox_paper_update(
     };
     let arg = paper::build_paper_update(&path, &fmt, &policy, paper_revision);
     let client = DropboxClient::new(&token)?;
-    client.content_upload("files/paper/update", &arg, &content).await
+    client
+        .content_upload("files/paper/update", &arg, &content)
+        .await
 }
 
 #[tauri::command]
@@ -946,7 +977,9 @@ pub fn dropbox_sync_create(
         "download" => SyncDirection::Download,
         _ => SyncDirection::Bidirectional,
     };
-    Ok(svc.sync_manager.create_config(&name, &account_name, &local_path, &dropbox_path, dir))
+    Ok(svc
+        .sync_manager
+        .create_config(&name, &account_name, &local_path, &dropbox_path, dir))
 }
 
 #[tauri::command]
@@ -1022,7 +1055,9 @@ pub fn dropbox_backup_create(
         scripts: include_scripts.unwrap_or(false),
         templates: include_templates.unwrap_or(false),
     };
-    Ok(svc.backup_manager.create_config(&name, &account_name, &dropbox_path, includes))
+    Ok(svc
+        .backup_manager
+        .create_config(&name, &account_name, &dropbox_path, includes))
 }
 
 #[tauri::command]
@@ -1164,9 +1199,7 @@ pub fn dropbox_watch_clear_changes(
 }
 
 #[tauri::command]
-pub fn dropbox_watch_total_pending(
-    state: State<'_, DropboxServiceState>,
-) -> Result<usize, String> {
+pub fn dropbox_watch_total_pending(state: State<'_, DropboxServiceState>) -> Result<usize, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.watch_manager.total_pending_changes())
 }
@@ -1184,9 +1217,7 @@ pub fn dropbox_get_activity_log(
 }
 
 #[tauri::command]
-pub fn dropbox_clear_activity_log(
-    state: State<'_, DropboxServiceState>,
-) -> Result<String, String> {
+pub fn dropbox_clear_activity_log(state: State<'_, DropboxServiceState>) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     svc.clear_activity_log();
     Ok("cleared".into())
@@ -1201,9 +1232,7 @@ pub fn dropbox_get_stats(
 }
 
 #[tauri::command]
-pub fn dropbox_reset_stats(
-    state: State<'_, DropboxServiceState>,
-) -> Result<String, String> {
+pub fn dropbox_reset_stats(state: State<'_, DropboxServiceState>) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     svc.reset_stats();
     Ok("reset".into())

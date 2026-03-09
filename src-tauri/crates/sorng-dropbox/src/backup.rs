@@ -209,7 +209,13 @@ impl Default for BackupManager {
 mod tests {
     use super::*;
 
-    fn make_result(config_id: &str, file_path: &str, file_size: u64, success: bool, error: Option<&str>) -> BackupResult {
+    fn make_result(
+        config_id: &str,
+        file_path: &str,
+        file_size: u64,
+        success: bool,
+        error: Option<&str>,
+    ) -> BackupResult {
         BackupResult {
             backup_id: Uuid::new_v4().to_string(),
             config_id: config_id.to_string(),
@@ -315,7 +321,10 @@ mod tests {
         let id = mgr.create_config("test", "a", "/bak", BackupIncludes::default());
         mgr.set_max_revisions(&id, 5);
         for i in 0..3 {
-            mgr.record_backup(&id, make_result(&id, &format!("/bak/backup_{i}.json"), 100, true, None));
+            mgr.record_backup(
+                &id,
+                make_result(&id, &format!("/bak/backup_{i}.json"), 100, true, None),
+            );
         }
         assert!(mgr.files_to_prune(&id).is_empty());
     }
@@ -326,7 +335,10 @@ mod tests {
         let id = mgr.create_config("test", "a", "/bak", BackupIncludes::default());
         mgr.set_max_revisions(&id, 2);
         for i in 0..5 {
-            mgr.record_backup(&id, make_result(&id, &format!("/bak/backup_{i}.json"), 100, true, None));
+            mgr.record_backup(
+                &id,
+                make_result(&id, &format!("/bak/backup_{i}.json"), 100, true, None),
+            );
         }
         let prunable = mgr.files_to_prune(&id);
         assert_eq!(prunable.len(), 3);
@@ -346,7 +358,10 @@ mod tests {
     fn failed_backup_not_counted_size() {
         let mut mgr = BackupManager::new();
         let id = mgr.create_config("test", "a", "/bak", BackupIncludes::default());
-        mgr.record_backup(&id, make_result(&id, "/bak/f.json", 1000, false, Some("disk full")));
+        mgr.record_backup(
+            &id,
+            make_result(&id, "/bak/f.json", 1000, false, Some("disk full")),
+        );
         assert_eq!(mgr.total_backup_size(&id), 0);
     }
 
@@ -356,7 +371,10 @@ mod tests {
         mgr.set_max_history(3);
         let id = mgr.create_config("test", "a", "/bak", BackupIncludes::default());
         for i in 0..10 {
-            mgr.record_backup(&id, make_result(&id, &format!("/bak/backup_{i}.json"), 100, true, None));
+            mgr.record_backup(
+                &id,
+                make_result(&id, &format!("/bak/backup_{i}.json"), 100, true, None),
+            );
         }
         assert_eq!(mgr.get_history(&id).len(), 3);
     }

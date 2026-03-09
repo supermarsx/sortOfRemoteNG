@@ -46,7 +46,11 @@ pub fn build_get_latest_cursor(path: &str, recursive: bool) -> serde_json::Value
 }
 
 /// Build a batch create_folder request body.
-pub fn build_create_folder_batch(paths: &[&str], autorename: bool, force_async: bool) -> serde_json::Value {
+pub fn build_create_folder_batch(
+    paths: &[&str],
+    autorename: bool,
+    force_async: bool,
+) -> serde_json::Value {
     let entries: Vec<serde_json::Value> = paths
         .iter()
         .map(|p| serde_json::json!({"path": *p}))
@@ -76,7 +80,10 @@ pub fn folders_only(entries: &[Metadata]) -> Vec<&Metadata> {
 
 /// Count files and folders in a listing.
 pub fn count_entries(entries: &[Metadata]) -> (usize, usize) {
-    let files = entries.iter().filter(|m| m.tag == MetadataTag::File).count();
+    let files = entries
+        .iter()
+        .filter(|m| m.tag == MetadataTag::File)
+        .count();
     let folders = entries
         .iter()
         .filter(|m| m.tag == MetadataTag::Folder)
@@ -231,14 +238,22 @@ mod tests {
 
     #[test]
     fn files_only_filter() {
-        let entries = vec![make_file("a.txt", 10), make_folder("docs"), make_file("b.txt", 20)];
+        let entries = vec![
+            make_file("a.txt", 10),
+            make_folder("docs"),
+            make_file("b.txt", 20),
+        ];
         let result = files_only(&entries);
         assert_eq!(result.len(), 2);
     }
 
     #[test]
     fn folders_only_filter() {
-        let entries = vec![make_file("a.txt", 10), make_folder("docs"), make_folder("pics")];
+        let entries = vec![
+            make_file("a.txt", 10),
+            make_folder("docs"),
+            make_folder("pics"),
+        ];
         let result = folders_only(&entries);
         assert_eq!(result.len(), 2);
     }
@@ -259,7 +274,11 @@ mod tests {
 
     #[test]
     fn sort_entries_folders_first() {
-        let mut entries = vec![make_file("z.txt", 1), make_folder("Alpha"), make_file("a.txt", 2)];
+        let mut entries = vec![
+            make_file("z.txt", 1),
+            make_folder("Alpha"),
+            make_file("a.txt", 2),
+        ];
         sort_entries(&mut entries);
         assert_eq!(entries[0].name, "Alpha");
         assert_eq!(entries[1].name, "a.txt");
@@ -268,7 +287,10 @@ mod tests {
 
     #[test]
     fn breadcrumbs_test() {
-        assert_eq!(breadcrumbs("/Documents/Work/Reports"), vec!["Documents", "Work", "Reports"]);
+        assert_eq!(
+            breadcrumbs("/Documents/Work/Reports"),
+            vec!["Documents", "Work", "Reports"]
+        );
         assert_eq!(breadcrumbs("/"), Vec::<String>::new());
         assert_eq!(breadcrumbs(""), Vec::<String>::new());
     }

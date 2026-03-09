@@ -82,9 +82,7 @@ impl WatchManager {
 
     /// Get the current cursor for a watch.
     pub fn get_cursor(&self, id: &str) -> Option<&str> {
-        self.configs
-            .get(id)
-            .and_then(|c| c.cursor.as_deref())
+        self.configs.get(id).and_then(|c| c.cursor.as_deref())
     }
 
     /// Update the last poll time.
@@ -308,10 +306,13 @@ mod tests {
         let id2 = mgr.create_watch("B", "acct", "/b", true, 30);
         let meta = test_meta(MetadataTag::File, "f", "/f");
         mgr.record_changes(&id1, vec![WatchManager::metadata_to_change(&id1, &meta)]);
-        mgr.record_changes(&id2, vec![
-            WatchManager::metadata_to_change(&id2, &meta),
-            WatchManager::metadata_to_change(&id2, &meta),
-        ]);
+        mgr.record_changes(
+            &id2,
+            vec![
+                WatchManager::metadata_to_change(&id2, &meta),
+                WatchManager::metadata_to_change(&id2, &meta),
+            ],
+        );
         assert_eq!(mgr.total_pending_changes(), 3);
     }
 
@@ -321,7 +322,11 @@ mod tests {
         mgr.set_max_changes(5);
         let id = mgr.create_watch("W1", "acct", "/remote", true, 30);
         for i in 0..20 {
-            let meta = test_meta(MetadataTag::File, &format!("file_{i}.txt"), &format!("/file_{i}.txt"));
+            let meta = test_meta(
+                MetadataTag::File,
+                &format!("file_{i}.txt"),
+                &format!("/file_{i}.txt"),
+            );
             mgr.record_changes(&id, vec![WatchManager::metadata_to_change(&id, &meta)]);
         }
         assert_eq!(mgr.get_changes(&id).len(), 5);

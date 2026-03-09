@@ -112,7 +112,11 @@ pub fn build_copy_batch(entries: &[(&str, &str)], autorename: bool) -> serde_jso
 }
 
 /// Build a search_v2 request body.
-pub fn build_search(query: &str, path: Option<&str>, max_results: Option<u64>) -> serde_json::Value {
+pub fn build_search(
+    query: &str,
+    path: Option<&str>,
+    max_results: Option<u64>,
+) -> serde_json::Value {
     let mut body = serde_json::json!({ "query": query });
     if path.is_some() || max_results.is_some() {
         let mut opts = serde_json::Map::new();
@@ -167,7 +171,11 @@ pub fn build_upload_session_start(close: bool) -> serde_json::Value {
 }
 
 /// Build an upload session append arg.
-pub fn build_upload_session_append(session_id: &str, offset: u64, close: bool) -> serde_json::Value {
+pub fn build_upload_session_append(
+    session_id: &str,
+    offset: u64,
+    close: bool,
+) -> serde_json::Value {
     serde_json::json!({
         "cursor": { "session_id": session_id, "offset": offset },
         "close": close,
@@ -504,7 +512,8 @@ mod tests {
 
     #[test]
     fn upload_session_finish_arg() {
-        let v = build_upload_session_finish("sess123", 8192, "/big.zip", &WriteMode::Overwrite, true);
+        let v =
+            build_upload_session_finish("sess123", 8192, "/big.zip", &WriteMode::Overwrite, true);
         assert_eq!(v["cursor"]["offset"], 8192);
         assert_eq!(v["commit"]["path"], "/big.zip");
         assert_eq!(v["commit"]["mode"], "overwrite");
