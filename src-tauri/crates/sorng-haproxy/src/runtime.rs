@@ -22,7 +22,8 @@ impl RuntimeManager {
 
     pub async fn show_backend_list(client: &HaproxyClient) -> HaproxyResult<Vec<String>> {
         let raw = client.show_backend().await?;
-        Ok(raw.lines()
+        Ok(raw
+            .lines()
             .filter(|l| !l.starts_with('#') && !l.is_empty())
             .map(String::from)
             .collect())
@@ -30,19 +31,23 @@ impl RuntimeManager {
 }
 
 fn parse_sessions(raw: &str) -> Vec<SessionEntry> {
-    raw.lines().filter_map(|line| {
-        if line.starts_with('#') || line.is_empty() { return None; }
-        Some(SessionEntry {
-            id: String::new(),
-            frontend: String::new(),
-            backend: String::new(),
-            server: String::new(),
-            source: line.to_string(),
-            destination: None,
-            age_secs: 0,
-            idle_secs: None,
-            bytes_in: 0,
-            bytes_out: 0,
+    raw.lines()
+        .filter_map(|line| {
+            if line.starts_with('#') || line.is_empty() {
+                return None;
+            }
+            Some(SessionEntry {
+                id: String::new(),
+                frontend: String::new(),
+                backend: String::new(),
+                server: String::new(),
+                source: line.to_string(),
+                destination: None,
+                age_secs: 0,
+                idle_secs: None,
+                bytes_in: 0,
+                bytes_out: 0,
+            })
         })
-    }).collect()
+        .collect()
 }

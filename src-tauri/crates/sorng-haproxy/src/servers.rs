@@ -9,32 +9,56 @@ pub struct ServerManager;
 impl ServerManager {
     pub async fn list(client: &HaproxyClient, backend: &str) -> HaproxyResult<Vec<HaproxyServer>> {
         if client.config.dataplane_url.is_some() {
-            client.dp_get(&format!("/services/haproxy/configuration/servers?backend={}", backend)).await
+            client
+                .dp_get(&format!(
+                    "/services/haproxy/configuration/servers?backend={}",
+                    backend
+                ))
+                .await
         } else {
             let csv = client.show_stat().await?;
             Ok(parse_servers_from_csv(&csv, backend))
         }
     }
 
-    pub async fn get(client: &HaproxyClient, backend: &str, server: &str) -> HaproxyResult<HaproxyServer> {
+    pub async fn get(
+        client: &HaproxyClient,
+        backend: &str,
+        server: &str,
+    ) -> HaproxyResult<HaproxyServer> {
         if client.config.dataplane_url.is_some() {
-            client.dp_get(&format!("/services/haproxy/configuration/servers/{}?backend={}", server, backend)).await
+            client
+                .dp_get(&format!(
+                    "/services/haproxy/configuration/servers/{}?backend={}",
+                    server, backend
+                ))
+                .await
         } else {
             let all = Self::list(client, backend).await?;
-            all.into_iter().find(|s| s.name == server)
-                .ok_or_else(|| crate::error::HaproxyError::server_not_found(&format!("{}/{}", backend, server)))
+            all.into_iter().find(|s| s.name == server).ok_or_else(|| {
+                crate::error::HaproxyError::server_not_found(&format!("{}/{}", backend, server))
+            })
         }
     }
 
-    pub async fn set_state(client: &HaproxyClient, backend: &str, server: &str, action: &ServerAction) -> HaproxyResult<String> {
+    pub async fn set_state(
+        client: &HaproxyClient,
+        backend: &str,
+        server: &str,
+        action: &ServerAction,
+    ) -> HaproxyResult<String> {
         let cmd = match action {
             ServerAction::Enable => "state ready",
             ServerAction::Disable => "state maint",
             ServerAction::Drain => "state drain",
             ServerAction::Maint => "state maint",
             ServerAction::Ready => "state ready",
-            ServerAction::SetWeight => return client.set_server(backend, server, "weight 100").await,
-            ServerAction::SetAddr => return client.set_server(backend, server, "addr 127.0.0.1").await,
+            ServerAction::SetWeight => {
+                return client.set_server(backend, server, "weight 100").await
+            }
+            ServerAction::SetAddr => {
+                return client.set_server(backend, server, "addr 127.0.0.1").await
+            }
             ServerAction::AgentUp => "agent-check force-up",
             ServerAction::AgentDown => "agent-check force-nochk",
         };
@@ -45,13 +69,21 @@ impl ServerManager {
 fn parse_servers_from_csv(csv: &str, backend: &str) -> Vec<HaproxyServer> {
     let mut result = Vec::new();
     let lines: Vec<&str> = csv.lines().collect();
-    if lines.is_empty() { return result; }
+    if lines.is_empty() {
+        return result;
+    }
     for line in &lines[1..] {
         let cols: Vec<&str> = line.split(',').collect();
-        if cols.len() < 2 { continue; }
-        if cols[0] != backend { continue; }
-        let svtype = cols.get(1).map(|s| *s).unwrap_or("");
-        if svtype == "FRONTEND" || svtype == "BACKEND" { continue; }
+        if cols.len() < 2 {
+            continue;
+        }
+        if cols[0] != backend {
+            continue;
+        }
+        let svtype = cols.get(1).copied().unwrap_or("");
+        if svtype == "FRONTEND" || svtype == "BACKEND" {
+            continue;
+        }
         result.push(HaproxyServer {
             name: svtype.to_string(),
             backend: cols[0].to_string(),

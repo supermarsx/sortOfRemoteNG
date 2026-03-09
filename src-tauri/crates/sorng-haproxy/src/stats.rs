@@ -75,7 +75,9 @@ fn parse_info(raw: &str) -> HaproxyInfo {
 
     for line in raw.lines() {
         let parts: Vec<&str> = line.splitn(2, ':').collect();
-        if parts.len() != 2 { continue; }
+        if parts.len() != 2 {
+            continue;
+        }
         let key = parts[0].trim();
         let val = parts[1].trim();
         match key {
@@ -133,15 +135,55 @@ fn parse_info(raw: &str) -> HaproxyInfo {
         }
     }
     HaproxyInfo {
-        name, version, release_date, nbthread, nbproc, process_num, pid,
-        uptime, uptime_sec, mem_max_mb, pool_alloc_mb, pool_used_mb, pool_failed,
-        ulimit_n, maxsock, maxconn, hard_maxconn, curr_conns, cum_conns, cum_req,
-        max_ssl_conns, curr_ssl_conns, cum_ssl_conns, maxpipes, pipes_used, pipes_free,
-        conn_rate, conn_rate_limit, max_conn_rate, sess_rate, sess_rate_limit,
-        max_sess_rate, ssl_rate, ssl_rate_limit, max_ssl_rate, ssl_frontend_key_rate,
-        ssl_frontend_max_key_rate, ssl_frontend_session_reuse, ssl_backend_key_rate,
-        ssl_backend_max_key_rate, ssl_cache_usage, ssl_cache_misses, compress_bps_in,
-        compress_bps_out, compress_bps_rate_lim, tasks, run_queue, idle_pct, node,
+        name,
+        version,
+        release_date,
+        nbthread,
+        nbproc,
+        process_num,
+        pid,
+        uptime,
+        uptime_sec,
+        mem_max_mb,
+        pool_alloc_mb,
+        pool_used_mb,
+        pool_failed,
+        ulimit_n,
+        maxsock,
+        maxconn,
+        hard_maxconn,
+        curr_conns,
+        cum_conns,
+        cum_req,
+        max_ssl_conns,
+        curr_ssl_conns,
+        cum_ssl_conns,
+        maxpipes,
+        pipes_used,
+        pipes_free,
+        conn_rate,
+        conn_rate_limit,
+        max_conn_rate,
+        sess_rate,
+        sess_rate_limit,
+        max_sess_rate,
+        ssl_rate,
+        ssl_rate_limit,
+        max_ssl_rate,
+        ssl_frontend_key_rate,
+        ssl_frontend_max_key_rate,
+        ssl_frontend_session_reuse,
+        ssl_backend_key_rate,
+        ssl_backend_max_key_rate,
+        ssl_cache_usage,
+        ssl_cache_misses,
+        compress_bps_in,
+        compress_bps_out,
+        compress_bps_rate_lim,
+        tasks,
+        run_queue,
+        idle_pct,
+        node,
         description,
     }
 }

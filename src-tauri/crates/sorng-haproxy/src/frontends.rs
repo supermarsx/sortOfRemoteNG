@@ -9,7 +9,9 @@ pub struct FrontendManager;
 impl FrontendManager {
     pub async fn list(client: &HaproxyClient) -> HaproxyResult<Vec<HaproxyFrontend>> {
         if client.config.dataplane_url.is_some() {
-            client.dp_get("/services/haproxy/configuration/frontends").await
+            client
+                .dp_get("/services/haproxy/configuration/frontends")
+                .await
         } else {
             let csv = client.show_stat().await?;
             Ok(parse_frontends_from_csv(&csv))
@@ -18,10 +20,16 @@ impl FrontendManager {
 
     pub async fn get(client: &HaproxyClient, name: &str) -> HaproxyResult<HaproxyFrontend> {
         if client.config.dataplane_url.is_some() {
-            client.dp_get(&format!("/services/haproxy/configuration/frontends/{}", name)).await
+            client
+                .dp_get(&format!(
+                    "/services/haproxy/configuration/frontends/{}",
+                    name
+                ))
+                .await
         } else {
             let all = Self::list(client).await?;
-            all.into_iter().find(|f| f.name == name)
+            all.into_iter()
+                .find(|f| f.name == name)
                 .ok_or_else(|| crate::error::HaproxyError::frontend_not_found(name))
         }
     }
@@ -30,11 +38,17 @@ impl FrontendManager {
 fn parse_frontends_from_csv(csv: &str) -> Vec<HaproxyFrontend> {
     let mut result = Vec::new();
     let lines: Vec<&str> = csv.lines().collect();
-    if lines.is_empty() { return result; }
+    if lines.is_empty() {
+        return result;
+    }
     for line in &lines[1..] {
         let cols: Vec<&str> = line.split(',').collect();
-        if cols.len() < 2 { continue; }
-        if cols.get(1).map(|c| *c) != Some("FRONTEND") { continue; }
+        if cols.len() < 2 {
+            continue;
+        }
+        if cols.get(1).copied() != Some("FRONTEND") {
+            continue;
+        }
         result.push(HaproxyFrontend {
             name: cols[0].to_string(),
             status: cols.get(17).map(|s| s.to_string()).unwrap_or_default(),

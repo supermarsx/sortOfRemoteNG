@@ -17,12 +17,24 @@ impl AclManager {
         Ok(parse_acl_entries(&raw))
     }
 
-    pub async fn add_entry(client: &HaproxyClient, acl_id: &str, value: &str) -> HaproxyResult<String> {
-        client.socket_cmd(&format!("add acl #{} {}", acl_id, value)).await
+    pub async fn add_entry(
+        client: &HaproxyClient,
+        acl_id: &str,
+        value: &str,
+    ) -> HaproxyResult<String> {
+        client
+            .socket_cmd(&format!("add acl #{} {}", acl_id, value))
+            .await
     }
 
-    pub async fn del_entry(client: &HaproxyClient, acl_id: &str, value: &str) -> HaproxyResult<String> {
-        client.socket_cmd(&format!("del acl #{} {}", acl_id, value)).await
+    pub async fn del_entry(
+        client: &HaproxyClient,
+        acl_id: &str,
+        value: &str,
+    ) -> HaproxyResult<String> {
+        client
+            .socket_cmd(&format!("del acl #{} {}", acl_id, value))
+            .await
     }
 
     pub async fn clear(client: &HaproxyClient, acl_id: &str) -> HaproxyResult<String> {
@@ -31,27 +43,34 @@ impl AclManager {
 }
 
 fn parse_acl_list(raw: &str) -> Vec<HaproxyAcl> {
-    raw.lines().filter_map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            Some(HaproxyAcl {
-                id: parts[0].trim_start_matches('#').to_string(),
-                description: Some(parts[1..].join(" ")),
-                entries: vec![],
-            })
-        } else {
-            None
-        }
-    }).collect()
+    raw.lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                Some(HaproxyAcl {
+                    id: parts[0].trim_start_matches('#').to_string(),
+                    description: Some(parts[1..].join(" ")),
+                    entries: vec![],
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn parse_acl_entries(raw: &str) -> Vec<AclEntry> {
-    raw.lines().filter_map(|line| {
-        let parts: Vec<&str> = line.splitn(2, ' ').collect();
-        if parts.len() >= 2 {
-            Some(AclEntry { id: parts[0].parse().unwrap_or(0), value: parts[1].to_string() })
-        } else {
-            None
-        }
-    }).collect()
+    raw.lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            if parts.len() >= 2 {
+                Some(AclEntry {
+                    id: parts[0].parse().unwrap_or(0),
+                    value: parts[1].to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }

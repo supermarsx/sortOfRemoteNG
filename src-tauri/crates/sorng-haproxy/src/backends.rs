@@ -9,7 +9,9 @@ pub struct BackendManager;
 impl BackendManager {
     pub async fn list(client: &HaproxyClient) -> HaproxyResult<Vec<HaproxyBackend>> {
         if client.config.dataplane_url.is_some() {
-            client.dp_get("/services/haproxy/configuration/backends").await
+            client
+                .dp_get("/services/haproxy/configuration/backends")
+                .await
         } else {
             let csv = client.show_stat().await?;
             Ok(parse_backends_from_csv(&csv))
@@ -18,10 +20,16 @@ impl BackendManager {
 
     pub async fn get(client: &HaproxyClient, name: &str) -> HaproxyResult<HaproxyBackend> {
         if client.config.dataplane_url.is_some() {
-            client.dp_get(&format!("/services/haproxy/configuration/backends/{}", name)).await
+            client
+                .dp_get(&format!(
+                    "/services/haproxy/configuration/backends/{}",
+                    name
+                ))
+                .await
         } else {
             let all = Self::list(client).await?;
-            all.into_iter().find(|b| b.name == name)
+            all.into_iter()
+                .find(|b| b.name == name)
                 .ok_or_else(|| crate::error::HaproxyError::backend_not_found(name))
         }
     }
@@ -30,11 +38,17 @@ impl BackendManager {
 fn parse_backends_from_csv(csv: &str) -> Vec<HaproxyBackend> {
     let mut result = Vec::new();
     let lines: Vec<&str> = csv.lines().collect();
-    if lines.is_empty() { return result; }
+    if lines.is_empty() {
+        return result;
+    }
     for line in &lines[1..] {
         let cols: Vec<&str> = line.split(',').collect();
-        if cols.len() < 2 { continue; }
-        if cols.get(1).map(|c| *c) != Some("BACKEND") { continue; }
+        if cols.len() < 2 {
+            continue;
+        }
+        if cols.get(1).copied() != Some("BACKEND") {
+            continue;
+        }
         result.push(HaproxyBackend {
             name: cols[0].to_string(),
             status: cols.get(17).map(|s| s.to_string()).unwrap_or_default(),

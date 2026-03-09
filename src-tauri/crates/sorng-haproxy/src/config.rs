@@ -8,12 +8,20 @@ pub struct HaproxyConfigManager;
 
 impl HaproxyConfigManager {
     pub async fn get_raw(client: &HaproxyClient) -> HaproxyResult<String> {
-        let path = client.config.config_path.as_deref().unwrap_or("/etc/haproxy/haproxy.cfg");
+        let path = client
+            .config
+            .config_path
+            .as_deref()
+            .unwrap_or("/etc/haproxy/haproxy.cfg");
         client.read_remote_file(path).await
     }
 
     pub async fn update_raw(client: &HaproxyClient, content: &str) -> HaproxyResult<()> {
-        let path = client.config.config_path.as_deref().unwrap_or("/etc/haproxy/haproxy.cfg");
+        let path = client
+            .config
+            .config_path
+            .as_deref()
+            .unwrap_or("/etc/haproxy/haproxy.cfg");
         client.write_remote_file(path, content).await
     }
 

@@ -41,7 +41,10 @@ impl std::error::Error for HaproxyError {}
 
 impl HaproxyError {
     pub fn new(kind: HaproxyErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(HaproxyErrorKind::NotConnected, msg)
@@ -56,13 +59,22 @@ impl HaproxyError {
         Self::new(HaproxyErrorKind::ReloadFailed, msg)
     }
     pub fn frontend_not_found(name: &str) -> Self {
-        Self::new(HaproxyErrorKind::FrontendNotFound, format!("Frontend not found: {name}"))
+        Self::new(
+            HaproxyErrorKind::FrontendNotFound,
+            format!("Frontend not found: {name}"),
+        )
     }
     pub fn backend_not_found(name: &str) -> Self {
-        Self::new(HaproxyErrorKind::BackendNotFound, format!("Backend not found: {name}"))
+        Self::new(
+            HaproxyErrorKind::BackendNotFound,
+            format!("Backend not found: {name}"),
+        )
     }
     pub fn server_not_found(name: &str) -> Self {
-        Self::new(HaproxyErrorKind::ServerNotFound, format!("Server not found: {name}"))
+        Self::new(
+            HaproxyErrorKind::ServerNotFound,
+            format!("Server not found: {name}"),
+        )
     }
     pub fn socket(e: impl fmt::Display) -> Self {
         Self::new(HaproxyErrorKind::SocketError, e.to_string())

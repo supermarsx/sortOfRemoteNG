@@ -10,15 +10,15 @@ use crate::client::HaproxyClient;
 use crate::error::{HaproxyError, HaproxyResult};
 use crate::types::*;
 
-use crate::stats::StatsManager;
-use crate::frontends::FrontendManager;
-use crate::backends::BackendManager;
-use crate::servers::ServerManager;
 use crate::acls::AclManager;
-use crate::maps::MapManager;
-use crate::stick_tables::StickTableManager;
-use crate::runtime::RuntimeManager;
+use crate::backends::BackendManager;
 use crate::config::HaproxyConfigManager;
+use crate::frontends::FrontendManager;
+use crate::maps::MapManager;
+use crate::runtime::RuntimeManager;
+use crate::servers::ServerManager;
+use crate::stats::StatsManager;
+use crate::stick_tables::StickTableManager;
 
 /// Shared Tauri state handle.
 pub type HaproxyServiceState = Arc<Mutex<HaproxyService>>;
@@ -28,14 +28,26 @@ pub struct HaproxyService {
     connections: HashMap<String, HaproxyClient>,
 }
 
+impl Default for HaproxyService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HaproxyService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: HaproxyConnectionConfig) -> HaproxyResult<HaproxyConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: HaproxyConnectionConfig,
+    ) -> HaproxyResult<HaproxyConnectionSummary> {
         let client = HaproxyClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
@@ -43,7 +55,8 @@ impl HaproxyService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> HaproxyResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| HaproxyError::not_connected(format!("No connection '{}'", id)))
     }
@@ -53,7 +66,8 @@ impl HaproxyService {
     }
 
     fn client(&self, id: &str) -> HaproxyResult<&HaproxyClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| HaproxyError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -97,11 +111,22 @@ impl HaproxyService {
         ServerManager::list(self.client(id)?, backend).await
     }
 
-    pub async fn get_server(&self, id: &str, backend: &str, server: &str) -> HaproxyResult<HaproxyServer> {
+    pub async fn get_server(
+        &self,
+        id: &str,
+        backend: &str,
+        server: &str,
+    ) -> HaproxyResult<HaproxyServer> {
         ServerManager::get(self.client(id)?, backend, server).await
     }
 
-    pub async fn set_server_state(&self, id: &str, backend: &str, server: &str, action: ServerAction) -> HaproxyResult<String> {
+    pub async fn set_server_state(
+        &self,
+        id: &str,
+        backend: &str,
+        server: &str,
+        action: ServerAction,
+    ) -> HaproxyResult<String> {
         ServerManager::set_state(self.client(id)?, backend, server, &action).await
     }
 
@@ -115,11 +140,21 @@ impl HaproxyService {
         AclManager::get(self.client(id)?, acl_id).await
     }
 
-    pub async fn add_acl_entry(&self, id: &str, acl_id: &str, value: &str) -> HaproxyResult<String> {
+    pub async fn add_acl_entry(
+        &self,
+        id: &str,
+        acl_id: &str,
+        value: &str,
+    ) -> HaproxyResult<String> {
         AclManager::add_entry(self.client(id)?, acl_id, value).await
     }
 
-    pub async fn del_acl_entry(&self, id: &str, acl_id: &str, value: &str) -> HaproxyResult<String> {
+    pub async fn del_acl_entry(
+        &self,
+        id: &str,
+        acl_id: &str,
+        value: &str,
+    ) -> HaproxyResult<String> {
         AclManager::del_entry(self.client(id)?, acl_id, value).await
     }
 
@@ -137,7 +172,13 @@ impl HaproxyService {
         MapManager::get(self.client(id)?, map_id).await
     }
 
-    pub async fn add_map_entry(&self, id: &str, map_id: &str, key: &str, value: &str) -> HaproxyResult<String> {
+    pub async fn add_map_entry(
+        &self,
+        id: &str,
+        map_id: &str,
+        key: &str,
+        value: &str,
+    ) -> HaproxyResult<String> {
         MapManager::add_entry(self.client(id)?, map_id, key, value).await
     }
 
@@ -145,7 +186,13 @@ impl HaproxyService {
         MapManager::del_entry(self.client(id)?, map_id, key).await
     }
 
-    pub async fn set_map_entry(&self, id: &str, map_id: &str, key: &str, value: &str) -> HaproxyResult<String> {
+    pub async fn set_map_entry(
+        &self,
+        id: &str,
+        map_id: &str,
+        key: &str,
+        value: &str,
+    ) -> HaproxyResult<String> {
         MapManager::set_entry(self.client(id)?, map_id, key, value).await
     }
 
@@ -159,7 +206,11 @@ impl HaproxyService {
         StickTableManager::list(self.client(id)?).await
     }
 
-    pub async fn get_stick_table(&self, id: &str, name: &str) -> HaproxyResult<Vec<StickTableEntry>> {
+    pub async fn get_stick_table(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> HaproxyResult<Vec<StickTableEntry>> {
         StickTableManager::get(self.client(id)?, name).await
     }
 
@@ -167,7 +218,13 @@ impl HaproxyService {
         StickTableManager::clear(self.client(id)?, name).await
     }
 
-    pub async fn set_stick_table_entry(&self, id: &str, name: &str, key: &str, data: &str) -> HaproxyResult<String> {
+    pub async fn set_stick_table_entry(
+        &self,
+        id: &str,
+        name: &str,
+        key: &str,
+        data: &str,
+    ) -> HaproxyResult<String> {
         StickTableManager::set_entry(self.client(id)?, name, key, data).await
     }
 

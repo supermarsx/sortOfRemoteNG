@@ -1,16 +1,16 @@
 // ── sorng-haproxy – HAProxy load balancer integration ────────────────────────
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod stats;
-pub mod frontends;
-pub mod backends;
-pub mod servers;
 pub mod acls;
-pub mod maps;
-pub mod stick_tables;
-pub mod runtime;
-pub mod config;
-pub mod service;
+pub mod backends;
+pub mod client;
 pub mod commands;
+pub mod config;
+pub mod error;
+pub mod frontends;
+pub mod maps;
+pub mod runtime;
+pub mod servers;
+pub mod service;
+pub mod stats;
+pub mod stick_tables;
+pub mod types;

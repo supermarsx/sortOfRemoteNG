@@ -27,7 +27,10 @@ impl HaproxyClient {
     // ── Stats socket helpers (stub – would go through SSH) ───────────
 
     pub fn stats_socket(&self) -> &str {
-        self.config.stats_socket.as_deref().unwrap_or("/var/run/haproxy/admin.sock")
+        self.config
+            .stats_socket
+            .as_deref()
+            .unwrap_or("/var/run/haproxy/admin.sock")
     }
 
     /// Execute a command on the HAProxy stats socket via SSH.
@@ -51,13 +54,19 @@ impl HaproxyClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> HaproxyResult<String> {
-        let out = self.exec_ssh(&format!("cat '{}'", path.replace('\'', "'\\''"))).await?;
+        let out = self
+            .exec_ssh(&format!("cat '{}'", path.replace('\'', "'\\''")))
+            .await?;
         Ok(out.stdout)
     }
 
     pub async fn write_remote_file(&self, path: &str, content: &str) -> HaproxyResult<()> {
         let escaped = content.replace('\'', "'\\''");
-        let cmd = format!("printf '%s' '{}' | sudo tee '{}' > /dev/null", escaped, path.replace('\'', "'\\''"));
+        let cmd = format!(
+            "printf '%s' '{}' | sudo tee '{}' > /dev/null",
+            escaped,
+            path.replace('\'', "'\\''")
+        );
         self.exec_ssh(&cmd).await?;
         Ok(())
     }
@@ -65,7 +74,10 @@ impl HaproxyClient {
     // ── Stats HTTP endpoint ──────────────────────────────────────────
 
     pub async fn stats_http_csv(&self) -> HaproxyResult<String> {
-        let url = self.config.stats_url.as_deref()
+        let url = self
+            .config
+            .stats_url
+            .as_deref()
             .ok_or_else(|| HaproxyError::not_connected("No stats_url configured"))?;
         let csv_url = format!("{};csv", url.trim_end_matches(';'));
         debug!("HAPROXY stats CSV GET {csv_url}");
@@ -73,24 +85,34 @@ impl HaproxyClient {
         if let (Some(ref u), Some(ref p)) = (&self.config.stats_user, &self.config.stats_password) {
             req = req.basic_auth(u, Some(p));
         }
-        let resp = req.send().await.map_err(|e| HaproxyError::http(format!("stats: {e}")))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| HaproxyError::http(format!("stats: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
             return Err(HaproxyError::http(format!("stats HTTP {status}")));
         }
-        resp.text().await.map_err(|e| HaproxyError::http(format!("stats body: {e}")))
+        resp.text()
+            .await
+            .map_err(|e| HaproxyError::http(format!("stats body: {e}")))
     }
 
     // ── Data Plane API helpers ───────────────────────────────────────
 
     fn dp_url(&self, path: &str) -> HaproxyResult<String> {
-        let base = self.config.dataplane_url.as_deref()
+        let base = self
+            .config
+            .dataplane_url
+            .as_deref()
             .ok_or_else(|| HaproxyError::not_connected("No dataplane_url configured"))?;
         Ok(format!("{}/v2{}", base.trim_end_matches('/'), path))
     }
 
     fn apply_dp_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if let (Some(ref u), Some(ref p)) = (&self.config.dataplane_user, &self.config.dataplane_password) {
+        if let (Some(ref u), Some(ref p)) =
+            (&self.config.dataplane_user, &self.config.dataplane_password)
+        {
             req.basic_auth(u, Some(p))
         } else {
             req
@@ -100,17 +122,25 @@ impl HaproxyClient {
     pub async fn dp_get<T: DeserializeOwned>(&self, path: &str) -> HaproxyResult<T> {
         let url = self.dp_url(path)?;
         debug!("HAPROXY DP GET {url}");
-        let resp = self.apply_dp_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_dp_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| HaproxyError::http(format!("DP GET {url}: {e}")))?;
         self.handle_dp_response(resp).await
     }
 
-    pub async fn dp_post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> HaproxyResult<T> {
+    pub async fn dp_post<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> HaproxyResult<T> {
         let url = self.dp_url(path)?;
         debug!("HAPROXY DP POST {url}");
-        let resp = self.apply_dp_auth(self.http.post(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_dp_auth(self.http.post(&url).json(body))
+            .send()
+            .await
             .map_err(|e| HaproxyError::http(format!("DP POST {url}: {e}")))?;
         self.handle_dp_response(resp).await
     }
@@ -118,8 +148,10 @@ impl HaproxyClient {
     pub async fn dp_put<B: Serialize>(&self, path: &str, body: &B) -> HaproxyResult<()> {
         let url = self.dp_url(path)?;
         debug!("HAPROXY DP PUT {url}");
-        let resp = self.apply_dp_auth(self.http.put(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_dp_auth(self.http.put(&url).json(body))
+            .send()
+            .await
             .map_err(|e| HaproxyError::http(format!("DP PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -132,8 +164,10 @@ impl HaproxyClient {
     pub async fn dp_delete(&self, path: &str) -> HaproxyResult<()> {
         let url = self.dp_url(path)?;
         debug!("HAPROXY DP DELETE {url}");
-        let resp = self.apply_dp_auth(self.http.delete(&url))
-            .send().await
+        let resp = self
+            .apply_dp_auth(self.http.delete(&url))
+            .send()
+            .await
             .map_err(|e| HaproxyError::http(format!("DP DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -148,7 +182,10 @@ impl HaproxyClient {
     pub async fn reload(&self) -> HaproxyResult<()> {
         let out = self.exec_ssh("sudo systemctl reload haproxy").await?;
         if out.exit_code != 0 {
-            return Err(HaproxyError::reload(format!("reload failed: {}", out.stderr)));
+            return Err(HaproxyError::reload(format!(
+                "reload failed: {}",
+                out.stderr
+            )));
         }
         Ok(())
     }
@@ -156,7 +193,10 @@ impl HaproxyClient {
     pub async fn start(&self) -> HaproxyResult<()> {
         let out = self.exec_ssh("sudo systemctl start haproxy").await?;
         if out.exit_code != 0 {
-            return Err(HaproxyError::socket(format!("start failed: {}", out.stderr)));
+            return Err(HaproxyError::socket(format!(
+                "start failed: {}",
+                out.stderr
+            )));
         }
         Ok(())
     }
@@ -172,7 +212,10 @@ impl HaproxyClient {
     pub async fn restart(&self) -> HaproxyResult<()> {
         let out = self.exec_ssh("sudo systemctl restart haproxy").await?;
         if out.exit_code != 0 {
-            return Err(HaproxyError::socket(format!("restart failed: {}", out.stderr)));
+            return Err(HaproxyError::socket(format!(
+                "restart failed: {}",
+                out.stderr
+            )));
         }
         Ok(())
     }
@@ -183,14 +226,24 @@ impl HaproxyClient {
     }
 
     pub async fn check_config(&self) -> HaproxyResult<ConfigValidationResult> {
-        let path = self.config.config_path.as_deref().unwrap_or("/etc/haproxy/haproxy.cfg");
-        let out = self.exec_ssh(&format!("sudo haproxy -c -f {} 2>&1", path)).await;
+        let path = self
+            .config
+            .config_path
+            .as_deref()
+            .unwrap_or("/etc/haproxy/haproxy.cfg");
+        let out = self
+            .exec_ssh(&format!("sudo haproxy -c -f {} 2>&1", path))
+            .await;
         match out {
             Ok(o) => Ok(ConfigValidationResult {
                 valid: o.exit_code == 0,
                 output: o.stdout,
                 warnings: vec![],
-                errors: if o.exit_code != 0 { vec![o.stderr] } else { vec![] },
+                errors: if o.exit_code != 0 {
+                    vec![o.stderr]
+                } else {
+                    vec![]
+                },
             }),
             Err(_) => Ok(ConfigValidationResult {
                 valid: false,
@@ -219,8 +272,14 @@ impl HaproxyClient {
         self.socket_cmd("show backend").await
     }
 
-    pub async fn set_server(&self, backend: &str, server: &str, action: &str) -> HaproxyResult<String> {
-        self.socket_cmd(&format!("set server {}/{} {}", backend, server, action)).await
+    pub async fn set_server(
+        &self,
+        backend: &str,
+        server: &str,
+        action: &str,
+    ) -> HaproxyResult<String> {
+        self.socket_cmd(&format!("set server {}/{} {}", backend, server, action))
+            .await
     }
 
     pub async fn show_sess(&self) -> HaproxyResult<String> {
@@ -239,12 +298,19 @@ impl HaproxyClient {
         self.socket_cmd(&format!("show map #{}", map_id)).await
     }
 
-    pub async fn add_map_entry(&self, map_id: &str, key: &str, value: &str) -> HaproxyResult<String> {
-        self.socket_cmd(&format!("add map #{} {} {}", map_id, key, value)).await
+    pub async fn add_map_entry(
+        &self,
+        map_id: &str,
+        key: &str,
+        value: &str,
+    ) -> HaproxyResult<String> {
+        self.socket_cmd(&format!("add map #{} {} {}", map_id, key, value))
+            .await
     }
 
     pub async fn del_map_entry(&self, map_id: &str, key: &str) -> HaproxyResult<String> {
-        self.socket_cmd(&format!("del map #{} {}", map_id, key)).await
+        self.socket_cmd(&format!("del map #{} {}", map_id, key))
+            .await
     }
 
     // ── Ping ─────────────────────────────────────────────────────────
@@ -253,7 +319,10 @@ impl HaproxyClient {
         // Try Data Plane API first, fall back to stats socket
         let version = if self.config.dataplane_url.is_some() {
             let info: serde_json::Value = self.dp_get("/info").await?;
-            info.get("haproxy").and_then(|h| h.get("version")).and_then(|v| v.as_str()).map(String::from)
+            info.get("haproxy")
+                .and_then(|h| h.get("version"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
         } else {
             None
         };
@@ -270,9 +339,14 @@ impl HaproxyClient {
 
     // ── Response handling ────────────────────────────────────────────
 
-    async fn handle_dp_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> HaproxyResult<T> {
+    async fn handle_dp_response<T: DeserializeOwned>(
+        &self,
+        resp: reqwest::Response,
+    ) -> HaproxyResult<T> {
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| HaproxyError::http(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_dp_error(status.as_u16(), &body_text));
@@ -288,7 +362,10 @@ impl HaproxyClient {
             409 => HaproxyErrorKind::ReloadFailed,
             _ => HaproxyErrorKind::HttpError,
         };
-        HaproxyError { kind, message: format!("HTTP {status}: {body}") }
+        HaproxyError {
+            kind,
+            message: format!("HTTP {status}: {body}"),
+        }
     }
 }
 
