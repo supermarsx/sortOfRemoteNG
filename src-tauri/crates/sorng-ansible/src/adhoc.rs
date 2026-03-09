@@ -355,11 +355,11 @@ impl AdHocManager {
         let mut results: Vec<HostResult> = Vec::new();
 
         let re = regex::Regex::new(
-            r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)\s*(?:\|\s*rc=(\d+))?\s*>>\s*$"
-        ).unwrap();
-        let simple_re = regex::Regex::new(
-            r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)"
-        ).unwrap();
+            r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)\s*(?:\|\s*rc=(\d+))?\s*>>\s*$",
+        )
+        .unwrap();
+        let simple_re =
+            regex::Regex::new(r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)").unwrap();
 
         for line in output.lines() {
             let (host, status_str) = if let Some(caps) = re.captures(line) {
@@ -384,7 +384,13 @@ impl AdHocManager {
                 task_results: vec![TaskResult {
                     task_name: "ad-hoc".to_string(),
                     module: "unknown".to_string(),
-                    status: if failed { HostStatus::Failed } else if changed { HostStatus::Changed } else { HostStatus::Ok },
+                    status: if failed {
+                        HostStatus::Failed
+                    } else if changed {
+                        HostStatus::Changed
+                    } else {
+                        HostStatus::Ok
+                    },
                     changed,
                     msg: None,
                     stdout: None,

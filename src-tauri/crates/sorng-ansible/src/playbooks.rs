@@ -29,7 +29,7 @@ impl PlaybookManager {
         let file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
         let last_modified = metadata
             .and_then(|m| m.modified().ok())
-            .map(|t| chrono::DateTime::<Utc>::from(t));
+            .map(chrono::DateTime::<Utc>::from);
 
         let plays_raw: Vec<serde_yaml::Value> = serde_yaml::from_str(&raw)?;
 
@@ -64,9 +64,11 @@ impl PlaybookManager {
             let path = entry.path();
             if let Some(ext) = path.extension() {
                 let ext_str = ext.to_string_lossy().to_lowercase();
-                if (ext_str == "yml" || ext_str == "yaml") && !path.file_name()
-                    .map(|n| n.to_string_lossy().starts_with('.'))
-                    .unwrap_or(false)
+                if (ext_str == "yml" || ext_str == "yaml")
+                    && !path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().starts_with('.'))
+                        .unwrap_or(false)
                 {
                     playbooks.push(path.to_string_lossy().to_string());
                 }
@@ -85,10 +87,7 @@ impl PlaybookManager {
         playbook_path: &str,
     ) -> AnsibleResult<PlaybookValidation> {
         let output = client
-            .run_playbook(&[
-                "--syntax-check".to_string(),
-                playbook_path.to_string(),
-            ])
+            .run_playbook(&["--syntax-check".to_string(), playbook_path.to_string()])
             .await?;
 
         let valid = output.exit_code == 0;
@@ -116,7 +115,11 @@ impl PlaybookManager {
             }
         }
 
-        Ok(PlaybookValidation { valid, errors, warnings })
+        Ok(PlaybookValidation {
+            valid,
+            errors,
+            warnings,
+        })
     }
 
     /// Validate a playbook with ansible-lint if available.
@@ -160,7 +163,11 @@ impl PlaybookManager {
                     }
                 }
 
-                Ok(PlaybookValidation { valid, errors, warnings })
+                Ok(PlaybookValidation {
+                    valid,
+                    errors,
+                    warnings,
+                })
             }
             Err(_) => {
                 warn!("ansible-lint not available, falling back to syntax check");
@@ -355,8 +362,13 @@ impl PlaybookManager {
 
     fn parse_play_recap(output: &str) -> PlayStats {
         let mut stats = PlayStats {
-            ok: 0, changed: 0, unreachable: 0, failed: 0,
-            skipped: 0, rescued: 0, ignored: 0,
+            ok: 0,
+            changed: 0,
+            unreachable: 0,
+            failed: 0,
+            skipped: 0,
+            rescued: 0,
+            ignored: 0,
         };
 
         let re = Regex::new(
@@ -369,9 +381,18 @@ impl PlaybookManager {
                 stats.changed += caps[2].parse::<u32>().unwrap_or(0);
                 stats.unreachable += caps[3].parse::<u32>().unwrap_or(0);
                 stats.failed += caps[4].parse::<u32>().unwrap_or(0);
-                stats.skipped += caps.get(5).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-                stats.rescued += caps.get(6).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
-                stats.ignored += caps.get(7).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+                stats.skipped += caps
+                    .get(5)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0);
+                stats.rescued += caps
+                    .get(6)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0);
+                stats.ignored += caps
+                    .get(7)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(0);
             }
         }
 
@@ -383,7 +404,8 @@ impl PlaybookManager {
 
         // Match "TASK [name]" section followed by host-level results.
         let task_re = Regex::new(r"^TASK\s+\[(.+)\]").unwrap();
-        let result_re = Regex::new(r"^(ok|changed|fatal|skipping|unreachable):\s+\[(.+?)\]").unwrap();
+        let result_re =
+            Regex::new(r"^(ok|changed|fatal|skipping|unreachable):\s+\[(.+?)\]").unwrap();
 
         let mut current_task: Option<String> = None;
 
@@ -396,7 +418,9 @@ impl PlaybookManager {
             if let Some(caps) = result_re.captures(line) {
                 let status_str = &caps[1];
                 let host = caps[2].to_string();
-                let task_name = current_task.clone().unwrap_or_else(|| "unknown".to_string());
+                let task_name = current_task
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string());
 
                 let (host_status, changed, failed, skipped) = match status_str {
                     "ok" => (HostStatus::Ok, false, false, false),
@@ -453,20 +477,20 @@ impl PlaybookManager {
     // ── Play parsing helpers ─────────────────────────────────────────
 
     fn parse_play(value: serde_yaml::Value) -> AnsibleResult<Play> {
-        let mapping = value.as_mapping().ok_or_else(|| {
-            AnsibleError::playbook("Play is not a mapping")
-        })?;
+        let mapping = value
+            .as_mapping()
+            .ok_or_else(|| AnsibleError::playbook("Play is not a mapping"))?;
 
         let get_str = |key: &str| -> Option<String> {
             mapping
-                .get(&serde_yaml::Value::String(key.into()))
+                .get(serde_yaml::Value::String(key.into()))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
         };
 
         let get_bool = |key: &str| -> Option<bool> {
             mapping
-                .get(&serde_yaml::Value::String(key.into()))
+                .get(serde_yaml::Value::String(key.into()))
                 .and_then(|v| v.as_bool())
         };
 
@@ -480,9 +504,11 @@ impl PlaybookManager {
             become_method: get_str("become_method"),
             gather_facts: get_bool("gather_facts"),
             strategy: get_str("strategy"),
-            serial: mapping.get(&serde_yaml::Value::String("serial".into()))
+            serial: mapping
+                .get(serde_yaml::Value::String("serial".into()))
                 .map(|v| serde_json::to_value(v).unwrap_or_default()),
-            max_fail_percentage: mapping.get(&serde_yaml::Value::String("max_fail_percentage".into()))
+            max_fail_percentage: mapping
+                .get(serde_yaml::Value::String("max_fail_percentage".into()))
                 .and_then(|v| v.as_f64()),
             any_errors_fatal: get_bool("any_errors_fatal"),
             connection: get_str("connection"),

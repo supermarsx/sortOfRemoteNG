@@ -42,7 +42,8 @@ impl VaultManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::vault(format!(
-                "ansible-vault encrypt failed: {}", output.stderr
+                "ansible-vault encrypt failed: {}",
+                output.stderr
             )));
         }
 
@@ -86,7 +87,8 @@ impl VaultManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::vault(format!(
-                "ansible-vault decrypt failed: {}", output.stderr
+                "ansible-vault decrypt failed: {}",
+                output.stderr
             )));
         }
 
@@ -124,7 +126,8 @@ impl VaultManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::vault(format!(
-                "ansible-vault view failed: {}", output.stderr
+                "ansible-vault view failed: {}",
+                output.stderr
             )));
         }
 
@@ -167,7 +170,8 @@ impl VaultManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::vault(format!(
-                "ansible-vault rekey failed: {}", output.stderr
+                "ansible-vault rekey failed: {}",
+                output.stderr
             )));
         }
 
@@ -214,7 +218,8 @@ impl VaultManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::vault(format!(
-                "ansible-vault encrypt_string failed: {}", output.stderr
+                "ansible-vault encrypt_string failed: {}",
+                output.stderr
             )));
         }
 

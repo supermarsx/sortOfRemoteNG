@@ -45,7 +45,8 @@ impl InventoryManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::inventory(format!(
-                "ansible-inventory --graph failed: {}", output.stderr
+                "ansible-inventory --graph failed: {}",
+                output.stderr
             )));
         }
 
@@ -53,7 +54,11 @@ impl InventoryManager {
     }
 
     /// List all hosts for a given pattern (e.g. `"all"`, `"webservers"`).
-    pub async fn list_hosts(client: &AnsibleClient, source: &str, pattern: &str) -> AnsibleResult<Vec<String>> {
+    pub async fn list_hosts(
+        client: &AnsibleClient,
+        source: &str,
+        pattern: &str,
+    ) -> AnsibleResult<Vec<String>> {
         let output = client
             .run_raw(
                 &client.ansible_bin,
@@ -63,11 +68,13 @@ impl InventoryManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::inventory(format!(
-                "ansible --list-hosts failed: {}", output.stderr
+                "ansible --list-hosts failed: {}",
+                output.stderr
             )));
         }
 
-        let hosts = output.stdout
+        let hosts = output
+            .stdout
             .lines()
             .filter_map(|line| {
                 let trimmed = line.trim();
@@ -89,20 +96,17 @@ impl InventoryManager {
         host: &str,
     ) -> AnsibleResult<HashMap<String, serde_json::Value>> {
         let output = client
-            .run_raw(
-                &client.inventory_bin,
-                &["-i", source, "--host", host],
-            )
+            .run_raw(&client.inventory_bin, &["-i", source, "--host", host])
             .await?;
 
         if output.exit_code != 0 {
             return Err(AnsibleError::inventory(format!(
-                "ansible-inventory --host {} failed: {}", host, output.stderr
+                "ansible-inventory --host {} failed: {}",
+                host, output.stderr
             )));
         }
 
-        let vars: HashMap<String, serde_json::Value> =
-            serde_json::from_str(&output.stdout)?;
+        let vars: HashMap<String, serde_json::Value> = serde_json::from_str(&output.stdout)?;
 
         Ok(vars)
     }
@@ -110,10 +114,7 @@ impl InventoryManager {
     // ── Mutation (write inventory files) ─────────────────────────────
 
     /// Add a host to a YAML inventory file.
-    pub async fn add_host(
-        inventory_path: &str,
-        params: &AddHostParams,
-    ) -> AnsibleResult<()> {
+    pub async fn add_host(inventory_path: &str, params: &AddHostParams) -> AnsibleResult<()> {
         let content = tokio::fs::read_to_string(inventory_path)
             .await
             .map_err(|e| AnsibleError::io(format!("Cannot read {}: {}", inventory_path, e)))?;
@@ -148,7 +149,10 @@ impl InventoryManager {
                 m.insert("ansible_user".into(), serde_yaml::Value::String(u.clone()));
             }
             if let Some(ref c) = params.ansible_connection {
-                m.insert("ansible_connection".into(), serde_yaml::Value::String(c.clone()));
+                m.insert(
+                    "ansible_connection".into(),
+                    serde_yaml::Value::String(c.clone()),
+                );
             }
             serde_yaml::Value::Mapping(m)
         };
@@ -156,17 +160,17 @@ impl InventoryManager {
         hosts_section
             .as_mapping_mut()
             .ok_or_else(|| AnsibleError::inventory("'hosts' is not a mapping"))?
-            .insert(
-                serde_yaml::Value::String(params.name.clone()),
-                host_vars,
-            );
+            .insert(serde_yaml::Value::String(params.name.clone()), host_vars);
 
         let yaml_str = serde_yaml::to_string(&doc)?;
         tokio::fs::write(inventory_path, yaml_str)
             .await
             .map_err(|e| AnsibleError::io(format!("Cannot write {}: {}", inventory_path, e)))?;
 
-        debug!("Added host '{}' to inventory {}", params.name, inventory_path);
+        debug!(
+            "Added host '{}' to inventory {}",
+            params.name, inventory_path
+        );
         Ok(())
     }
 
@@ -194,10 +198,7 @@ impl InventoryManager {
     }
 
     /// Add a group to a YAML inventory file.
-    pub async fn add_group(
-        inventory_path: &str,
-        params: &AddGroupParams,
-    ) -> AnsibleResult<()> {
+    pub async fn add_group(inventory_path: &str, params: &AddGroupParams) -> AnsibleResult<()> {
         let content = tokio::fs::read_to_string(inventory_path)
             .await
             .map_err(|e| AnsibleError::io(format!("Cannot read {}: {}", inventory_path, e)))?;
@@ -221,10 +222,7 @@ impl InventoryManager {
         children
             .as_mapping_mut()
             .ok_or_else(|| AnsibleError::inventory("'children' is not a mapping"))?
-            .insert(
-                serde_yaml::Value::String(params.name.clone()),
-                group_val,
-            );
+            .insert(serde_yaml::Value::String(params.name.clone()), group_val);
 
         let yaml_str = serde_yaml::to_string(&doc)?;
         tokio::fs::write(inventory_path, yaml_str).await?;
@@ -290,9 +288,9 @@ impl InventoryManager {
         let mut groups: Vec<InventoryGroup> = Vec::new();
         let mut host_group_map: HashMap<String, Vec<String>> = HashMap::new();
 
-        let obj = data.as_object().ok_or_else(|| {
-            AnsibleError::parse("Inventory JSON is not an object")
-        })?;
+        let obj = data
+            .as_object()
+            .ok_or_else(|| AnsibleError::parse("Inventory JSON is not an object"))?;
 
         // hostvars
         let hostvars = obj
@@ -315,7 +313,8 @@ impl InventoryManager {
                     for host in h {
                         if let Some(name) = host.as_str() {
                             group_hosts.push(name.to_string());
-                            host_group_map.entry(name.to_string())
+                            host_group_map
+                                .entry(name.to_string())
                                 .or_default()
                                 .push(group_name.clone());
                         }
@@ -355,11 +354,26 @@ impl InventoryManager {
 
                 hosts.push(InventoryHost {
                     name: host_name.clone(),
-                    ansible_host: vars_map.get("ansible_host").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    ansible_port: vars_map.get("ansible_port").and_then(|v| v.as_u64()).map(|p| p as u16),
-                    ansible_user: vars_map.get("ansible_user").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    ansible_connection: vars_map.get("ansible_connection").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    ansible_python_interpreter: vars_map.get("ansible_python_interpreter").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    ansible_host: vars_map
+                        .get("ansible_host")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    ansible_port: vars_map
+                        .get("ansible_port")
+                        .and_then(|v| v.as_u64())
+                        .map(|p| p as u16),
+                    ansible_user: vars_map
+                        .get("ansible_user")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    ansible_connection: vars_map
+                        .get("ansible_connection")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    ansible_python_interpreter: vars_map
+                        .get("ansible_python_interpreter")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     groups: host_groups,
                     variables: vars_map,
                     enabled: true,
@@ -403,7 +417,7 @@ impl InventoryManager {
     fn remove_host_recursive(mapping: &mut serde_yaml::Mapping, host_name: &str) -> bool {
         let mut removed = false;
 
-        if let Some(hosts) = mapping.get_mut(&serde_yaml::Value::String("hosts".into())) {
+        if let Some(hosts) = mapping.get_mut(serde_yaml::Value::String("hosts".into())) {
             if let Some(hosts_map) = hosts.as_mapping_mut() {
                 let key = serde_yaml::Value::String(host_name.into());
                 if hosts_map.remove(&key).is_some() {
@@ -430,7 +444,7 @@ impl InventoryManager {
     fn remove_group_recursive(mapping: &mut serde_yaml::Mapping, group_name: &str) -> bool {
         let mut removed = false;
 
-        if let Some(children) = mapping.get_mut(&serde_yaml::Value::String("children".into())) {
+        if let Some(children) = mapping.get_mut(serde_yaml::Value::String("children".into())) {
             if let Some(children_map) = children.as_mapping_mut() {
                 let key = serde_yaml::Value::String(group_name.into());
                 if children_map.remove(&key).is_some() {

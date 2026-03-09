@@ -56,7 +56,8 @@ impl RoleManager {
             has_templates: role_path.join("templates").exists(),
             has_meta: role_path.join("meta").exists(),
             has_tests: role_path.join("tests").exists(),
-            has_readme: role_path.join("README.md").exists() || role_path.join("readme.md").exists(),
+            has_readme: role_path.join("README.md").exists()
+                || role_path.join("readme.md").exists(),
         };
 
         let (galaxy_info, dependencies) = Self::parse_meta(role_path).await;
@@ -69,8 +70,11 @@ impl RoleManager {
             description: galaxy_info.as_ref().and_then(|g| g.description.clone()),
             author: galaxy_info.as_ref().and_then(|g| g.author.clone()),
             license: galaxy_info.as_ref().and_then(|g| g.license.clone()),
-            min_ansible_version: galaxy_info.as_ref().and_then(|g| g.min_ansible_version.clone()),
-            platforms: galaxy_info.as_ref()
+            min_ansible_version: galaxy_info
+                .as_ref()
+                .and_then(|g| g.min_ansible_version.clone()),
+            platforms: galaxy_info
+                .as_ref()
                 .map(|g| g.platforms.clone())
                 .unwrap_or_default(),
             dependencies,
@@ -82,10 +86,7 @@ impl RoleManager {
     // ── Scaffolding ──────────────────────────────────────────────────
 
     /// Initialize a new role using `ansible-galaxy role init`.
-    pub async fn init(
-        client: &AnsibleClient,
-        options: &RoleInitOptions,
-    ) -> AnsibleResult<Role> {
+    pub async fn init(client: &AnsibleClient, options: &RoleInitOptions) -> AnsibleResult<Role> {
         let mut args = vec!["role".to_string(), "init".to_string()];
 
         if let Some(ref path) = options.path {
@@ -109,16 +110,24 @@ impl RoleManager {
         args.push(options.name.clone());
 
         let output = client
-            .run_raw(&client.galaxy_bin, &args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+            .run_raw(
+                &client.galaxy_bin,
+                &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            )
             .await?;
 
         if output.exit_code != 0 {
             return Err(AnsibleError::role(format!(
-                "ansible-galaxy role init failed: {}", output.stderr
+                "ansible-galaxy role init failed: {}",
+                output.stderr
             )));
         }
 
-        debug!("Initialized role '{}': {}", options.name, output.stdout.trim());
+        debug!(
+            "Initialized role '{}': {}",
+            options.name,
+            output.stdout.trim()
+        );
 
         let base = options.path.clone().unwrap_or_else(|| ".".to_string());
         let role_path = PathBuf::from(&base).join(&options.name);
@@ -128,7 +137,10 @@ impl RoleManager {
     // ── Dependency resolution ────────────────────────────────────────
 
     /// Read and resolve all role dependencies (from meta/main.yml).
-    pub async fn resolve_dependencies(roles_path: &str, role_name: &str) -> AnsibleResult<Vec<RoleDependency>> {
+    pub async fn resolve_dependencies(
+        roles_path: &str,
+        role_name: &str,
+    ) -> AnsibleResult<Vec<RoleDependency>> {
         let role_dir = Path::new(roles_path).join(role_name);
         let (_galaxy, deps) = Self::parse_meta(&role_dir).await;
         Ok(deps)
@@ -148,8 +160,10 @@ impl RoleManager {
             .run_raw(
                 &client.galaxy_bin,
                 &[
-                    "role", "install",
-                    "-r", &meta_path.to_string_lossy(),
+                    "role",
+                    "install",
+                    "-r",
+                    &meta_path.to_string_lossy(),
                     "--force",
                 ],
             )
@@ -157,7 +171,8 @@ impl RoleManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "Failed to install role dependencies: {}", output.stderr
+                "Failed to install role dependencies: {}",
+                output.stderr
             )));
         }
 
@@ -196,11 +211,11 @@ impl RoleManager {
 
         // galaxy_info section
         let galaxy_info = mapping
-            .get(&serde_yaml::Value::String("galaxy_info".into()))
+            .get(serde_yaml::Value::String("galaxy_info".into()))
             .and_then(|v| {
                 let gi = v.as_mapping()?;
                 let get_str = |key: &str| -> Option<String> {
-                    gi.get(&serde_yaml::Value::String(key.into()))
+                    gi.get(serde_yaml::Value::String(key.into()))
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string())
                 };
@@ -220,7 +235,7 @@ impl RoleManager {
 
         // dependencies section
         let dependencies = mapping
-            .get(&serde_yaml::Value::String("dependencies".into()))
+            .get(serde_yaml::Value::String("dependencies".into()))
             .and_then(|v| v.as_sequence())
             .map(|deps| {
                 deps.iter()
@@ -232,13 +247,19 @@ impl RoleManager {
                                 source: None,
                             })
                         } else if let Some(m) = d.as_mapping() {
-                            let role = m.get(&serde_yaml::Value::String("role".into()))
+                            let role = m
+                                .get(serde_yaml::Value::String("role".into()))
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())?;
-                            let version = m.get(&serde_yaml::Value::String("version".into()))
+                            let version = m
+                                .get(serde_yaml::Value::String("version".into()))
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
-                            Some(RoleDependency { role, version, source: None })
+                            Some(RoleDependency {
+                                role,
+                                version,
+                                source: None,
+                            })
                         } else {
                             None
                         }

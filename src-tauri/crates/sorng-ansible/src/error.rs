@@ -79,11 +79,23 @@ pub struct AnsibleError {
 
 impl AnsibleError {
     pub fn new(kind: AnsibleErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: None }
+        Self {
+            kind,
+            message: message.into(),
+            details: None,
+        }
     }
 
-    pub fn with_details(kind: AnsibleErrorKind, message: impl Into<String>, details: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: Some(details.into()) }
+    pub fn with_details(
+        kind: AnsibleErrorKind,
+        message: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            details: Some(details.into()),
+        }
     }
 
     // ── Convenience constructors ──
@@ -181,13 +193,21 @@ impl From<std::io::Error> for AnsibleError {
 
 impl From<serde_json::Error> for AnsibleError {
     fn from(err: serde_json::Error) -> Self {
-        Self::with_details(AnsibleErrorKind::ParseError, "JSON parse error", err.to_string())
+        Self::with_details(
+            AnsibleErrorKind::ParseError,
+            "JSON parse error",
+            err.to_string(),
+        )
     }
 }
 
 impl From<serde_yaml::Error> for AnsibleError {
     fn from(err: serde_yaml::Error) -> Self {
-        Self::with_details(AnsibleErrorKind::ParseError, "YAML parse error", err.to_string())
+        Self::with_details(
+            AnsibleErrorKind::ParseError,
+            "YAML parse error",
+            err.to_string(),
+        )
     }
 }
 

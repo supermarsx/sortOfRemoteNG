@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-
 use crate::client::AnsibleClient;
 use crate::error::{AnsibleError, AnsibleResult};
 use crate::types::*;
@@ -19,11 +18,7 @@ impl FactManager {
         inventory: Option<&str>,
         subset: Option<&str>,
     ) -> AnsibleResult<HashMap<String, HostFacts>> {
-        let mut args = vec![
-            pattern.to_string(),
-            "-m".to_string(),
-            "setup".to_string(),
-        ];
+        let mut args = vec![pattern.to_string(), "-m".to_string(), "setup".to_string()];
 
         if let Some(inv) = inventory {
             args.push("-i".to_string());
@@ -43,7 +38,8 @@ impl FactManager {
 
         if output.exit_code != 0 && output.exit_code != 2 {
             return Err(AnsibleError::facts(format!(
-                "Fact gathering failed (exit {}): {}", output.exit_code, output.stderr
+                "Fact gathering failed (exit {}): {}",
+                output.exit_code, output.stderr
             )));
         }
 
@@ -75,7 +71,8 @@ impl FactManager {
 
         if output.exit_code != 0 && output.exit_code != 2 {
             return Err(AnsibleError::facts(format!(
-                "Fact gathering failed (exit {}): {}", output.exit_code, output.stderr
+                "Fact gathering failed (exit {}): {}",
+                output.exit_code, output.stderr
             )));
         }
 
@@ -100,8 +97,11 @@ impl FactManager {
         match output {
             Ok(out) if out.exit_code == 0 => {
                 // Try parsing JSON listing
-                if let Ok(data) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&out.stdout) {
-                    let modules: Vec<String> = data.keys()
+                if let Ok(data) =
+                    serde_json::from_str::<HashMap<String, serde_json::Value>>(&out.stdout)
+                {
+                    let modules: Vec<String> = data
+                        .keys()
                         .filter(|k| k.contains("facts") || k.contains("setup"))
                         .cloned()
                         .collect();
@@ -126,7 +126,9 @@ impl FactManager {
                         for task in tasks {
                             if let Some(hosts) = task.get("hosts").and_then(|v| v.as_object()) {
                                 for (host, host_data) in hosts {
-                                    if let Some(facts) = host_data.get("ansible_facts").and_then(|v| v.as_object()) {
+                                    if let Some(facts) =
+                                        host_data.get("ansible_facts").and_then(|v| v.as_object())
+                                    {
                                         let host_facts = Self::extract_host_facts(host, facts);
                                         results.insert(host.clone(), host_facts);
                                     }
@@ -152,7 +154,8 @@ impl FactManager {
                 // Flush previous
                 if let Some(ref host) = current_host {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_buf) {
-                        if let Some(facts) = parsed.get("ansible_facts").and_then(|v| v.as_object()) {
+                        if let Some(facts) = parsed.get("ansible_facts").and_then(|v| v.as_object())
+                        {
                             let hf = Self::extract_host_facts(host, facts);
                             results.insert(host.clone(), hf);
                         }
@@ -173,7 +176,9 @@ impl FactManager {
                 if brace_depth <= 0 && !json_buf.trim().is_empty() {
                     if let Some(ref host) = current_host {
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_buf) {
-                            if let Some(facts) = parsed.get("ansible_facts").and_then(|v| v.as_object()) {
+                            if let Some(facts) =
+                                parsed.get("ansible_facts").and_then(|v| v.as_object())
+                            {
                                 let hf = Self::extract_host_facts(host, facts);
                                 results.insert(host.clone(), hf);
                             }
@@ -192,16 +197,27 @@ impl FactManager {
         hostname: &str,
         facts: &serde_json::Map<String, serde_json::Value>,
     ) -> HostFacts {
-        let get_str = |key: &str| facts.get(key).and_then(|v| v.as_str()).map(|s| s.to_string());
+        let get_str = |key: &str| {
+            facts
+                .get(key)
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        };
         let get_u64 = |key: &str| facts.get(key).and_then(|v| v.as_u64());
         let get_u32 = |key: &str| facts.get(key).and_then(|v| v.as_u64()).map(|n| n as u32);
 
-        let processor = facts.get("ansible_processor")
+        let processor = facts
+            .get("ansible_processor")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let memory_mb = facts.get("ansible_memory_mb")
+        let memory_mb = facts
+            .get("ansible_memory_mb")
             .and_then(|v| v.as_object())
             .and_then(|m| {
                 let real = m.get("real")?.as_object()?;
@@ -215,7 +231,8 @@ impl FactManager {
                 })
             });
 
-        let interfaces = facts.get("ansible_interfaces")
+        let interfaces = facts
+            .get("ansible_interfaces")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -226,30 +243,46 @@ impl FactManager {
 
                         Some(NetworkInterfaceFacts {
                             name: name.to_string(),
-                            ipv4: iface_data.get("ipv4")
+                            ipv4: iface_data
+                                .get("ipv4")
                                 .and_then(|v| v.get("address"))
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
-                            ipv6: iface_data.get("ipv6")
+                            ipv6: iface_data
+                                .get("ipv6")
                                 .and_then(|v| v.as_array())
                                 .and_then(|arr| arr.first())
                                 .and_then(|v| v.get("address"))
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
-                            mac_address: iface_data.get("macaddress")
+                            mac_address: iface_data
+                                .get("macaddress")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string()),
-                            mtu: iface_data.get("mtu").and_then(|v| v.as_u64()).map(|n| n as u32),
-                            active: iface_data.get("active").and_then(|v| v.as_bool()).unwrap_or(false),
-                            speed: iface_data.get("speed").and_then(|v| v.as_u64()).map(|n| n as u32),
-                            interface_type: iface_data.get("type").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            mtu: iface_data
+                                .get("mtu")
+                                .and_then(|v| v.as_u64())
+                                .map(|n| n as u32),
+                            active: iface_data
+                                .get("active")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false),
+                            speed: iface_data
+                                .get("speed")
+                                .and_then(|v| v.as_u64())
+                                .map(|n| n as u32),
+                            interface_type: iface_data
+                                .get("type")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                         })
                     })
                     .collect()
             })
             .unwrap_or_default();
 
-        let mounts = facts.get("ansible_mounts")
+        let mounts = facts
+            .get("ansible_mounts")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -259,7 +292,11 @@ impl FactManager {
                             mount: mount.get("mount")?.as_str()?.to_string(),
                             device: mount.get("device")?.as_str()?.to_string(),
                             fstype: mount.get("fstype")?.as_str()?.to_string(),
-                            options: mount.get("options").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            options: mount
+                                .get("options")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                             size_total: mount.get("size_total").and_then(|v| v.as_u64()),
                             size_available: mount.get("size_available").and_then(|v| v.as_u64()),
                         })
@@ -268,28 +305,51 @@ impl FactManager {
             })
             .unwrap_or_default();
 
-        let ipv4_addresses = facts.get("ansible_all_ipv4_addresses")
+        let ipv4_addresses = facts
+            .get("ansible_all_ipv4_addresses")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let ipv6_addresses = facts.get("ansible_all_ipv6_addresses")
+        let ipv6_addresses = facts
+            .get("ansible_all_ipv6_addresses")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let selinux = facts.get("ansible_selinux")
+        let selinux = facts
+            .get("ansible_selinux")
             .and_then(|v| v.as_object())
             .map(|se| SelinuxFacts {
-                status: se.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-                mode: se.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                policy_version: se.get("policyvers").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                config_mode: se.get("config_mode").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                status: se
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                mode: se
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                policy_version: se
+                    .get("policyvers")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                config_mode: se
+                    .get("config_mode")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
 
-        let all_facts: HashMap<String, serde_json::Value> = facts.iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let all_facts: HashMap<String, serde_json::Value> =
+            facts.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         HostFacts {
             hostname: hostname.to_string(),

@@ -64,25 +64,19 @@ impl AnsibleClient {
 
     /// Build a client from the connection config.
     pub async fn from_config(config: &AnsibleConnectionConfig) -> AnsibleResult<Self> {
-        let ansible_bin = Self::resolve_bin(
-            config.ansible_bin_path.as_deref(),
-            "ansible",
-        ).await?;
+        let ansible_bin = Self::resolve_bin(config.ansible_bin_path.as_deref(), "ansible").await?;
 
         let playbook_bin = Self::resolve_bin(
             config.ansible_playbook_bin_path.as_deref(),
             "ansible-playbook",
-        ).await?;
+        )
+        .await?;
 
-        let vault_bin = Self::resolve_bin(
-            config.ansible_vault_bin_path.as_deref(),
-            "ansible-vault",
-        ).await?;
+        let vault_bin =
+            Self::resolve_bin(config.ansible_vault_bin_path.as_deref(), "ansible-vault").await?;
 
-        let galaxy_bin = Self::resolve_bin(
-            config.ansible_galaxy_bin_path.as_deref(),
-            "ansible-galaxy",
-        ).await?;
+        let galaxy_bin =
+            Self::resolve_bin(config.ansible_galaxy_bin_path.as_deref(), "ansible-galaxy").await?;
 
         // These are standard companions – resolve best-effort.
         let config_bin = Self::resolve_bin(None, "ansible-config")
@@ -124,21 +118,26 @@ impl AnsibleClient {
                 return Ok(path.to_string());
             }
             return Err(AnsibleError::not_installed(format!(
-                "Specified binary not found: {}", path
+                "Specified binary not found: {}",
+                path
             )));
         }
 
         // Try `which` / `where` depending on platform.
-        let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+        let which_cmd = if cfg!(target_os = "windows") {
+            "where"
+        } else {
+            "which"
+        };
         let output = Command::new(which_cmd)
             .arg(name)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| AnsibleError::not_installed(format!(
-                "Failed to locate '{}': {}", name, e
-            )))?;
+            .map_err(|e| {
+                AnsibleError::not_installed(format!("Failed to locate '{}': {}", name, e))
+            })?;
 
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout)
@@ -153,7 +152,8 @@ impl AnsibleClient {
         }
 
         Err(AnsibleError::not_installed(format!(
-            "'{}' not found on PATH. Please install Ansible or specify the binary path.", name
+            "'{}' not found on PATH. Please install Ansible or specify the binary path.",
+            name
         )))
     }
 
@@ -181,7 +181,9 @@ impl AnsibleClient {
 
     /// Check that the ansible binary is reachable.
     pub async fn is_available(&self) -> bool {
-        self.run_raw(&self.ansible_bin, &["--version"]).await.is_ok()
+        self.run_raw(&self.ansible_bin, &["--version"])
+            .await
+            .is_ok()
     }
 
     // ── Command execution ────────────────────────────────────────────
@@ -191,9 +193,7 @@ impl AnsibleClient {
         debug!("Running: {} {}", bin, args.join(" "));
 
         let mut cmd = Command::new(bin);
-        cmd.args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
 
         if let Some(ref dir) = self.working_dir {
             cmd.current_dir(dir);
@@ -203,13 +203,14 @@ impl AnsibleClient {
             cmd.env(k, v);
         }
 
-        let child = cmd.spawn().map_err(|e| {
-            AnsibleError::process(format!("Failed to spawn '{}': {}", bin, e))
-        })?;
+        let child = cmd
+            .spawn()
+            .map_err(|e| AnsibleError::process(format!("Failed to spawn '{}': {}", bin, e)))?;
 
-        let output = child.wait_with_output().await.map_err(|e| {
-            AnsibleError::process(format!("Failed to wait on '{}': {}", bin, e))
-        })?;
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| AnsibleError::process(format!("Failed to wait on '{}': {}", bin, e)))?;
 
         let exit_code = output.status.code().unwrap_or(-1);
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -219,7 +220,11 @@ impl AnsibleClient {
             debug!("stderr: {}", stderr);
         }
 
-        Ok(CliOutput { stdout, stderr, exit_code })
+        Ok(CliOutput {
+            stdout,
+            stderr,
+            exit_code,
+        })
     }
 
     /// Run `ansible` with dynamic args, applying client defaults.

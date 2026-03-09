@@ -20,12 +20,12 @@ impl ConfigManager {
             .run_raw(&client.config_bin, &["dump", "--only-changed"])
             .await;
 
-        let full_output = client
-            .run_raw(&client.config_bin, &["dump"])
-            .await?;
+        let full_output = client.run_raw(&client.config_bin, &["dump"]).await?;
 
         let changed_keys: Vec<String> = if let Ok(ref changed) = output {
-            changed.stdout.lines()
+            changed
+                .stdout
+                .lines()
                 .filter_map(|line| {
                     let parts: Vec<&str> = line.splitn(2, '=').collect();
                     if parts.len() == 2 {
@@ -99,19 +99,21 @@ impl ConfigManager {
 
     /// List all available modules.
     pub async fn list_modules(client: &AnsibleClient) -> AnsibleResult<Vec<String>> {
-        let output = client
-            .run_raw(&client.doc_bin, &["-l", "--json"])
-            .await;
+        let output = client.run_raw(&client.doc_bin, &["-l", "--json"]).await;
 
         match output {
             Ok(out) if out.exit_code == 0 => {
-                if let Ok(data) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&out.stdout) {
+                if let Ok(data) =
+                    serde_json::from_str::<HashMap<String, serde_json::Value>>(&out.stdout)
+                {
                     let mut modules: Vec<String> = data.keys().cloned().collect();
                     modules.sort();
                     return Ok(modules);
                 }
                 // Fallback: parse line-based output
-                let modules: Vec<String> = out.stdout.lines()
+                let modules: Vec<String> = out
+                    .stdout
+                    .lines()
                     .filter_map(|line| {
                         let trimmed = line.trim();
                         if trimmed.is_empty() {
@@ -125,7 +127,9 @@ impl ConfigManager {
             }
             Ok(out) => {
                 // Non-JSON fallback
-                let modules: Vec<String> = out.stdout.lines()
+                let modules: Vec<String> = out
+                    .stdout
+                    .lines()
                     .filter_map(|line| {
                         let trimmed = line.trim();
                         if trimmed.is_empty() {
@@ -142,14 +146,18 @@ impl ConfigManager {
     }
 
     /// Get documentation for a specific module.
-    pub async fn module_doc(client: &AnsibleClient, module_name: &str) -> AnsibleResult<ModuleInfo> {
+    pub async fn module_doc(
+        client: &AnsibleClient,
+        module_name: &str,
+    ) -> AnsibleResult<ModuleInfo> {
         let output = client
             .run_raw(&client.doc_bin, &[module_name, "--json"])
             .await?;
 
         if output.exit_code != 0 {
             return Err(AnsibleError::parse(format!(
-                "ansible-doc {} failed: {}", module_name, output.stderr
+                "ansible-doc {} failed: {}",
+                module_name, output.stderr
             )));
         }
 
@@ -157,14 +165,18 @@ impl ConfigManager {
     }
 
     /// Get module examples.
-    pub async fn module_examples(client: &AnsibleClient, module_name: &str) -> AnsibleResult<String> {
+    pub async fn module_examples(
+        client: &AnsibleClient,
+        module_name: &str,
+    ) -> AnsibleResult<String> {
         let output = client
             .run_raw(&client.doc_bin, &[module_name, "-s"])
             .await?;
 
         if output.exit_code != 0 {
             return Err(AnsibleError::parse(format!(
-                "ansible-doc -s {} failed: {}", module_name, output.stderr
+                "ansible-doc -s {} failed: {}",
+                module_name, output.stderr
             )));
         }
 
@@ -184,7 +196,9 @@ impl ConfigManager {
             return Ok(Vec::new());
         }
 
-        let plugins: Vec<String> = output.stdout.lines()
+        let plugins: Vec<String> = output
+            .stdout
+            .lines()
             .filter_map(|line| {
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
@@ -239,7 +253,8 @@ impl ConfigManager {
         let data: serde_json::Value = serde_json::from_str(json_str)?;
 
         // ansible-doc --json returns {module_name: {doc: {...}}}
-        let module_data = data.get(module_name)
+        let module_data = data
+            .get(module_name)
             .or_else(|| {
                 // Sometimes the key has a namespace prefix
                 data.as_object().and_then(|obj| obj.values().next())
@@ -248,92 +263,109 @@ impl ConfigManager {
 
         let doc = module_data.get("doc").unwrap_or(module_data);
 
-        let description = doc.get("description")
-            .and_then(|v| {
-                if let Some(arr) = v.as_array() {
-                    Some(arr.iter()
+        let description = doc.get("description").and_then(|v| {
+            if let Some(arr) = v.as_array() {
+                Some(
+                    arr.iter()
                         .filter_map(|item| item.as_str())
                         .collect::<Vec<_>>()
-                        .join(" "))
-                } else {
-                    v.as_str().map(|s| s.to_string())
-                }
-            });
+                        .join(" "),
+                )
+            } else {
+                v.as_str().map(|s| s.to_string())
+            }
+        });
 
-        let short_description = doc.get("short_description")
+        let short_description = doc
+            .get("short_description")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let namespace = doc.get("collection")
+        let namespace = doc
+            .get("collection")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let parameters = doc.get("options")
+        let parameters = doc
+            .get("options")
             .and_then(|v| v.as_object())
             .map(|opts| {
-                opts.iter().map(|(name, opt)| {
-                    let opt_obj = opt.as_object();
-                    ModuleParameter {
-                        name: name.clone(),
-                        description: opt_obj
-                            .and_then(|o| o.get("description"))
-                            .and_then(|v| {
+                opts.iter()
+                    .map(|(name, opt)| {
+                        let opt_obj = opt.as_object();
+                        ModuleParameter {
+                            name: name.clone(),
+                            description: opt_obj.and_then(|o| o.get("description")).and_then(|v| {
                                 if let Some(arr) = v.as_array() {
-                                    Some(arr.iter().filter_map(|i| i.as_str()).collect::<Vec<_>>().join(" "))
+                                    Some(
+                                        arr.iter()
+                                            .filter_map(|i| i.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(" "),
+                                    )
                                 } else {
                                     v.as_str().map(|s| s.to_string())
                                 }
                             }),
-                        param_type: opt_obj
-                            .and_then(|o| o.get("type"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        required: opt_obj
-                            .and_then(|o| o.get("required"))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false),
-                        default: opt_obj.and_then(|o| o.get("default")).cloned(),
-                        choices: opt_obj
-                            .and_then(|o| o.get("choices"))
-                            .and_then(|v| v.as_array())
-                            .map(|arr| arr.clone())
-                            .unwrap_or_default(),
-                        aliases: opt_obj
-                            .and_then(|o| o.get("aliases"))
-                            .and_then(|v| v.as_array())
-                            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-                            .unwrap_or_default(),
-                    }
-                }).collect()
+                            param_type: opt_obj
+                                .and_then(|o| o.get("type"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            required: opt_obj
+                                .and_then(|o| o.get("required"))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false),
+                            default: opt_obj.and_then(|o| o.get("default")).cloned(),
+                            choices: opt_obj
+                                .and_then(|o| o.get("choices"))
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default(),
+                            aliases: opt_obj
+                                .and_then(|o| o.get("aliases"))
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                        }
+                    })
+                    .collect()
             })
             .unwrap_or_default();
 
-        let examples = module_data.get("examples")
+        let examples = module_data
+            .get("examples")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let return_values = module_data.get("return")
+        let return_values = module_data
+            .get("return")
             .and_then(|v| v.as_object())
             .map(|rets| {
-                rets.iter().map(|(name, ret)| {
-                    let ret_obj = ret.as_object();
-                    ModuleReturnValue {
-                        name: name.clone(),
-                        description: ret_obj
-                            .and_then(|o| o.get("description"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        returned: ret_obj
-                            .and_then(|o| o.get("returned"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        return_type: ret_obj
-                            .and_then(|o| o.get("type"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        sample: ret_obj.and_then(|o| o.get("sample")).cloned(),
-                    }
-                }).collect()
+                rets.iter()
+                    .map(|(name, ret)| {
+                        let ret_obj = ret.as_object();
+                        ModuleReturnValue {
+                            name: name.clone(),
+                            description: ret_obj
+                                .and_then(|o| o.get("description"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            returned: ret_obj
+                                .and_then(|o| o.get("returned"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            return_type: ret_obj
+                                .and_then(|o| o.get("type"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            sample: ret_obj.and_then(|o| o.get("sample")).cloned(),
+                        }
+                    })
+                    .collect()
             })
             .unwrap_or_default();
 

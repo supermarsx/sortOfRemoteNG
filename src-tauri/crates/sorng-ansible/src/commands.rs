@@ -64,7 +64,9 @@ pub async fn ansible_inventory_parse(
     source: String,
 ) -> Result<Inventory, String> {
     let svc = state.lock().await;
-    svc.inventory_parse(&id, &source).await.map_err(|e| e.to_string())
+    svc.inventory_parse(&id, &source)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -74,7 +76,9 @@ pub async fn ansible_inventory_graph(
     source: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.inventory_graph(&id, &source).await.map_err(|e| e.to_string())
+    svc.inventory_graph(&id, &source)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -85,7 +89,9 @@ pub async fn ansible_inventory_list_hosts(
     pattern: String,
 ) -> Result<Vec<String>, String> {
     let svc = state.lock().await;
-    svc.inventory_list_hosts(&id, &source, &pattern).await.map_err(|e| e.to_string())
+    svc.inventory_list_hosts(&id, &source, &pattern)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -96,7 +102,9 @@ pub async fn ansible_inventory_host_vars(
     host: String,
 ) -> Result<HashMap<String, serde_json::Value>, String> {
     let svc = state.lock().await;
-    svc.inventory_host_vars(&id, &source, &host).await.map_err(|e| e.to_string())
+    svc.inventory_host_vars(&id, &source, &host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -106,7 +114,9 @@ pub async fn ansible_inventory_add_host(
     params: AddHostParams,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.inventory_add_host(&path, &params).await.map_err(|e| e.to_string())
+    svc.inventory_add_host(&path, &params)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -116,7 +126,9 @@ pub async fn ansible_inventory_remove_host(
     host: String,
 ) -> Result<bool, String> {
     let svc = state.lock().await;
-    svc.inventory_remove_host(&path, &host).await.map_err(|e| e.to_string())
+    svc.inventory_remove_host(&path, &host)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -126,7 +138,9 @@ pub async fn ansible_inventory_add_group(
     params: AddGroupParams,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.inventory_add_group(&path, &params).await.map_err(|e| e.to_string())
+    svc.inventory_add_group(&path, &params)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -136,7 +150,9 @@ pub async fn ansible_inventory_remove_group(
     group: String,
 ) -> Result<bool, String> {
     let svc = state.lock().await;
-    svc.inventory_remove_group(&path, &group).await.map_err(|e| e.to_string())
+    svc.inventory_remove_group(&path, &group)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -146,7 +162,9 @@ pub async fn ansible_inventory_dynamic(
     config: DynamicInventoryConfig,
 ) -> Result<Inventory, String> {
     let svc = state.lock().await;
-    svc.inventory_dynamic(&id, &config).await.map_err(|e| e.to_string())
+    svc.inventory_dynamic(&id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Playbooks ────────────────────────────────────────────────────────────────
@@ -176,7 +194,9 @@ pub async fn ansible_playbook_syntax_check(
     path: String,
 ) -> Result<PlaybookValidation, String> {
     let svc = state.lock().await;
-    svc.playbook_syntax_check(&id, &path).await.map_err(|e| e.to_string())
+    svc.playbook_syntax_check(&id, &path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -186,7 +206,9 @@ pub async fn ansible_playbook_lint(
     path: String,
 ) -> Result<PlaybookValidation, String> {
     let svc = state.lock().await;
-    svc.playbook_lint(&id, &path).await.map_err(|e| e.to_string())
+    svc.playbook_lint(&id, &path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -196,7 +218,9 @@ pub async fn ansible_playbook_run(
     options: PlaybookRunOptions,
 ) -> Result<ExecutionResult, String> {
     let mut svc = state.lock().await;
-    svc.playbook_run(&id, &options).await.map_err(|e| e.to_string())
+    svc.playbook_run(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -206,7 +230,9 @@ pub async fn ansible_playbook_check(
     options: PlaybookRunOptions,
 ) -> Result<ExecutionResult, String> {
     let svc = state.lock().await;
-    svc.playbook_check(&id, &options).await.map_err(|e| e.to_string())
+    svc.playbook_check(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -216,7 +242,9 @@ pub async fn ansible_playbook_diff(
     options: PlaybookRunOptions,
 ) -> Result<ExecutionResult, String> {
     let svc = state.lock().await;
-    svc.playbook_diff(&id, &options).await.map_err(|e| e.to_string())
+    svc.playbook_diff(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Ad-hoc commands ──────────────────────────────────────────────────────────
@@ -228,7 +256,9 @@ pub async fn ansible_adhoc_run(
     options: AdHocOptions,
 ) -> Result<ExecutionResult, String> {
     let mut svc = state.lock().await;
-    svc.adhoc_run(&id, &options).await.map_err(|e| e.to_string())
+    svc.adhoc_run(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -239,7 +269,9 @@ pub async fn ansible_adhoc_ping(
     inventory: Option<String>,
 ) -> Result<ExecutionResult, String> {
     let svc = state.lock().await;
-    svc.adhoc_ping(&id, &pattern, inventory.as_deref()).await.map_err(|e| e.to_string())
+    svc.adhoc_ping(&id, &pattern, inventory.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -283,9 +315,15 @@ pub async fn ansible_adhoc_service(
     inventory: Option<String>,
 ) -> Result<ExecutionResult, String> {
     let svc = state.lock().await;
-    svc.adhoc_service(&id, &pattern, &service_name, &service_state, inventory.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    svc.adhoc_service(
+        &id,
+        &pattern,
+        &service_name,
+        &service_state,
+        inventory.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -298,9 +336,15 @@ pub async fn ansible_adhoc_package(
     inventory: Option<String>,
 ) -> Result<ExecutionResult, String> {
     let svc = state.lock().await;
-    svc.adhoc_package(&id, &pattern, &package, &package_state, inventory.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    svc.adhoc_package(
+        &id,
+        &pattern,
+        &package,
+        &package_state,
+        inventory.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 // ── Roles ────────────────────────────────────────────────────────────────────
@@ -320,7 +364,9 @@ pub async fn ansible_role_inspect(
     role_path: String,
 ) -> Result<Role, String> {
     let svc = state.lock().await;
-    svc.role_inspect(&role_path).await.map_err(|e| e.to_string())
+    svc.role_inspect(&role_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -330,7 +376,9 @@ pub async fn ansible_role_init(
     options: RoleInitOptions,
 ) -> Result<Role, String> {
     let svc = state.lock().await;
-    svc.role_init(&id, &options).await.map_err(|e| e.to_string())
+    svc.role_init(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -340,7 +388,9 @@ pub async fn ansible_role_dependencies(
     role_name: String,
 ) -> Result<Vec<RoleDependency>, String> {
     let svc = state.lock().await;
-    svc.role_dependencies(&roles_path, &role_name).await.map_err(|e| e.to_string())
+    svc.role_dependencies(&roles_path, &role_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -350,7 +400,9 @@ pub async fn ansible_role_install_deps(
     role_path: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.role_install_deps(&id, &role_path).await.map_err(|e| e.to_string())
+    svc.role_install_deps(&id, &role_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Vault ────────────────────────────────────────────────────────────────────
@@ -364,9 +416,14 @@ pub async fn ansible_vault_encrypt(
     vault_id: Option<String>,
 ) -> Result<VaultResult, String> {
     let svc = state.lock().await;
-    svc.vault_encrypt(&id, &file_path, vault_password_file.as_deref(), vault_id.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    svc.vault_encrypt(
+        &id,
+        &file_path,
+        vault_password_file.as_deref(),
+        vault_id.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -378,9 +435,14 @@ pub async fn ansible_vault_decrypt(
     vault_id: Option<String>,
 ) -> Result<VaultResult, String> {
     let svc = state.lock().await;
-    svc.vault_decrypt(&id, &file_path, vault_password_file.as_deref(), vault_id.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    svc.vault_decrypt(
+        &id,
+        &file_path,
+        vault_password_file.as_deref(),
+        vault_id.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -403,7 +465,9 @@ pub async fn ansible_vault_rekey(
     options: VaultRekeyOptions,
 ) -> Result<VaultResult, String> {
     let svc = state.lock().await;
-    svc.vault_rekey(&id, &options).await.map_err(|e| e.to_string())
+    svc.vault_rekey(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -413,7 +477,9 @@ pub async fn ansible_vault_encrypt_string(
     options: VaultEncryptStringOptions,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.vault_encrypt_string(&id, &options).await.map_err(|e| e.to_string())
+    svc.vault_encrypt_string(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -422,7 +488,9 @@ pub async fn ansible_vault_is_encrypted(
     file_path: String,
 ) -> Result<bool, String> {
     let svc = state.lock().await;
-    svc.vault_is_encrypted(&file_path).await.map_err(|e| e.to_string())
+    svc.vault_is_encrypted(&file_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Galaxy ───────────────────────────────────────────────────────────────────
@@ -434,7 +502,9 @@ pub async fn ansible_galaxy_install_role(
     options: GalaxyInstallOptions,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.galaxy_install_role(&id, &options).await.map_err(|e| e.to_string())
+    svc.galaxy_install_role(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -444,7 +514,9 @@ pub async fn ansible_galaxy_list_roles(
     roles_path: Option<String>,
 ) -> Result<Vec<GalaxySearchResult>, String> {
     let svc = state.lock().await;
-    svc.galaxy_list_roles(&id, roles_path.as_deref()).await.map_err(|e| e.to_string())
+    svc.galaxy_list_roles(&id, roles_path.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -455,7 +527,9 @@ pub async fn ansible_galaxy_remove_role(
     roles_path: Option<String>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.galaxy_remove_role(&id, &role_name, roles_path.as_deref()).await.map_err(|e| e.to_string())
+    svc.galaxy_remove_role(&id, &role_name, roles_path.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -465,7 +539,9 @@ pub async fn ansible_galaxy_install_collection(
     options: GalaxyInstallOptions,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.galaxy_install_collection(&id, &options).await.map_err(|e| e.to_string())
+    svc.galaxy_install_collection(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -475,7 +551,9 @@ pub async fn ansible_galaxy_list_collections(
     collections_path: Option<String>,
 ) -> Result<Vec<GalaxyCollection>, String> {
     let svc = state.lock().await;
-    svc.galaxy_list_collections(&id, collections_path.as_deref()).await.map_err(|e| e.to_string())
+    svc.galaxy_list_collections(&id, collections_path.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -486,7 +564,9 @@ pub async fn ansible_galaxy_remove_collection(
     collections_path: Option<String>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.galaxy_remove_collection(&id, &name, collections_path.as_deref()).await.map_err(|e| e.to_string())
+    svc.galaxy_remove_collection(&id, &name, collections_path.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -496,7 +576,9 @@ pub async fn ansible_galaxy_search(
     options: GalaxySearchOptions,
 ) -> Result<Vec<GalaxySearchResult>, String> {
     let svc = state.lock().await;
-    svc.galaxy_search(&id, &options).await.map_err(|e| e.to_string())
+    svc.galaxy_search(&id, &options)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -506,7 +588,9 @@ pub async fn ansible_galaxy_role_info(
     role_name: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.galaxy_role_info(&id, &role_name).await.map_err(|e| e.to_string())
+    svc.galaxy_role_info(&id, &role_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -517,7 +601,9 @@ pub async fn ansible_galaxy_install_requirements(
     force: bool,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.galaxy_install_requirements(&id, &requirements_path, force).await.map_err(|e| e.to_string())
+    svc.galaxy_install_requirements(&id, &requirements_path, force)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Facts ────────────────────────────────────────────────────────────────────
@@ -576,7 +662,9 @@ pub async fn ansible_config_parse_file(
     path: String,
 ) -> Result<AnsibleConfig, String> {
     let svc = state.lock().await;
-    svc.config_parse_file(&path).await.map_err(|e| e.to_string())
+    svc.config_parse_file(&path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -604,7 +692,9 @@ pub async fn ansible_module_doc(
     module_name: String,
 ) -> Result<ModuleInfo, String> {
     let svc = state.lock().await;
-    svc.module_doc(&id, &module_name).await.map_err(|e| e.to_string())
+    svc.module_doc(&id, &module_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -614,7 +704,9 @@ pub async fn ansible_module_examples(
     module_name: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.module_examples(&id, &module_name).await.map_err(|e| e.to_string())
+    svc.module_examples(&id, &module_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -624,7 +716,9 @@ pub async fn ansible_list_plugins(
     plugin_type: String,
 ) -> Result<Vec<String>, String> {
     let svc = state.lock().await;
-    svc.list_plugins(&id, &plugin_type).await.map_err(|e| e.to_string())
+    svc.list_plugins(&id, &plugin_type)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── History ──────────────────────────────────────────────────────────────────
@@ -647,9 +741,7 @@ pub async fn ansible_history_get(
 }
 
 #[tauri::command]
-pub async fn ansible_history_clear(
-    state: State<'_, AnsibleServiceState>,
-) -> Result<(), String> {
+pub async fn ansible_history_clear(state: State<'_, AnsibleServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.history_clear();
     Ok(())

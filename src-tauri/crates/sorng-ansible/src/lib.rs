@@ -21,16 +21,16 @@
 //! - **service** — Aggregate façade + Tauri state alias
 //! - **commands** — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
+pub mod adhoc;
 pub mod client;
+pub mod commands;
+pub mod config;
+pub mod error;
+pub mod facts;
+pub mod galaxy;
 pub mod inventory;
 pub mod playbooks;
-pub mod adhoc;
 pub mod roles;
-pub mod vault;
-pub mod galaxy;
-pub mod facts;
-pub mod config;
 pub mod service;
-pub mod commands;
+pub mod types;
+pub mod vault;

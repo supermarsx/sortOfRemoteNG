@@ -55,7 +55,8 @@ impl GalaxyManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "ansible-galaxy role install failed: {}", output.stderr
+                "ansible-galaxy role install failed: {}",
+                output.stderr
             )));
         }
 
@@ -84,12 +85,15 @@ impl GalaxyManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "ansible-galaxy role list failed: {}", output.stderr
+                "ansible-galaxy role list failed: {}",
+                output.stderr
             )));
         }
 
         let re = Regex::new(r"^-\s+(\S+),\s+(.+)$").unwrap();
-        let results: Vec<GalaxySearchResult> = output.stdout.lines()
+        let results: Vec<GalaxySearchResult> = output
+            .stdout
+            .lines()
             .filter_map(|line| {
                 let caps = re.captures(line.trim())?;
                 Some(GalaxySearchResult {
@@ -113,7 +117,11 @@ impl GalaxyManager {
         role_name: &str,
         roles_path: Option<&str>,
     ) -> AnsibleResult<String> {
-        let mut args = vec!["role".to_string(), "remove".to_string(), role_name.to_string()];
+        let mut args = vec![
+            "role".to_string(),
+            "remove".to_string(),
+            role_name.to_string(),
+        ];
 
         if let Some(rp) = roles_path {
             args.push("--roles-path".to_string());
@@ -129,7 +137,8 @@ impl GalaxyManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "ansible-galaxy role remove failed: {}", output.stderr
+                "ansible-galaxy role remove failed: {}",
+                output.stderr
             )));
         }
 
@@ -180,7 +189,8 @@ impl GalaxyManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "ansible-galaxy collection install failed: {}", output.stderr
+                "ansible-galaxy collection install failed: {}",
+                output.stderr
             )));
         }
 
@@ -209,12 +219,15 @@ impl GalaxyManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "ansible-galaxy collection list failed: {}", output.stderr
+                "ansible-galaxy collection list failed: {}",
+                output.stderr
             )));
         }
 
         let re = Regex::new(r"^(\S+\.\S+)\s+(\S+)").unwrap();
-        let collections: Vec<GalaxyCollection> = output.stdout.lines()
+        let collections: Vec<GalaxyCollection> = output
+            .stdout
+            .lines()
             .filter_map(|line| {
                 let caps = re.captures(line.trim())?;
                 let full_name = &caps[1];
@@ -261,14 +274,18 @@ impl GalaxyManager {
 
                 if collection_path.exists() {
                     tokio::fs::remove_dir_all(&collection_path).await?;
-                    debug!("Removed collection directory: {}", collection_path.display());
+                    debug!(
+                        "Removed collection directory: {}",
+                        collection_path.display()
+                    );
                     return Ok(format!("Removed {}", name));
                 }
             }
         }
 
         Err(AnsibleError::galaxy(format!(
-            "Collection '{}' not found or cannot be removed", name
+            "Collection '{}' not found or cannot be removed",
+            name
         )))
     }
 
@@ -279,7 +296,11 @@ impl GalaxyManager {
         client: &AnsibleClient,
         options: &GalaxySearchOptions,
     ) -> AnsibleResult<Vec<GalaxySearchResult>> {
-        let mut args = vec!["role".to_string(), "search".to_string(), options.query.clone()];
+        let mut args = vec![
+            "role".to_string(),
+            "search".to_string(),
+            options.query.clone(),
+        ];
 
         for tag in &options.galaxy_tags {
             args.push("--galaxy-tags".to_string());
@@ -305,7 +326,8 @@ impl GalaxyManager {
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "ansible-galaxy role search failed: {}", output.stderr
+                "ansible-galaxy role search failed: {}",
+                output.stderr
             )));
         }
 
@@ -360,20 +382,15 @@ impl GalaxyManager {
     }
 
     /// Get info about a Galaxy role.
-    pub async fn role_info(
-        client: &AnsibleClient,
-        role_name: &str,
-    ) -> AnsibleResult<String> {
+    pub async fn role_info(client: &AnsibleClient, role_name: &str) -> AnsibleResult<String> {
         let output = client
-            .run_raw(
-                &client.galaxy_bin,
-                &["role", "info", role_name],
-            )
+            .run_raw(&client.galaxy_bin, &["role", "info", role_name])
             .await?;
 
         if output.exit_code != 0 {
             return Err(AnsibleError::galaxy(format!(
-                "ansible-galaxy role info failed: {}", output.stderr
+                "ansible-galaxy role info failed: {}",
+                output.stderr
             )));
         }
 
@@ -386,7 +403,12 @@ impl GalaxyManager {
         requirements_path: &str,
         force: bool,
     ) -> AnsibleResult<String> {
-        let mut roles_args = vec!["role".to_string(), "install".to_string(), "-r".to_string(), requirements_path.to_string()];
+        let mut roles_args = vec![
+            "role".to_string(),
+            "install".to_string(),
+            "-r".to_string(),
+            requirements_path.to_string(),
+        ];
         if force {
             roles_args.push("--force".to_string());
         }
@@ -398,7 +420,12 @@ impl GalaxyManager {
             )
             .await;
 
-        let mut colls_args = vec!["collection".to_string(), "install".to_string(), "-r".to_string(), requirements_path.to_string()];
+        let mut colls_args = vec![
+            "collection".to_string(),
+            "install".to_string(),
+            "-r".to_string(),
+            requirements_path.to_string(),
+        ];
         if force {
             colls_args.push("--force".to_string());
         }
