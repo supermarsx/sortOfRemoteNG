@@ -208,10 +208,7 @@ impl RustDeskService {
     // ── TCP Tunnel (Port Forward) ───────────────────────────────────
 
     /// Create a TCP tunnel through a RustDesk connection.
-    pub async fn create_tunnel(
-        &mut self,
-        request: CreateTunnelRequest,
-    ) -> Result<String, String> {
+    pub async fn create_tunnel(&mut self, request: CreateTunnelRequest) -> Result<String, String> {
         let connect_request = RustDeskConnectRequest {
             remote_id: request.remote_id.clone(),
             password: request.password.clone(),
@@ -233,7 +230,9 @@ impl RustDeskService {
             session_id: session_id.clone(),
             local_port: request.local_port,
             remote_port: request.remote_port,
-            remote_host: request.remote_host.unwrap_or_else(|| "localhost".to_string()),
+            remote_host: request
+                .remote_host
+                .unwrap_or_else(|| "localhost".to_string()),
             active: true,
             bytes_sent: 0,
             bytes_received: 0,
@@ -371,7 +370,11 @@ impl RustDeskService {
             .ok_or("RustDesk binary not found")?
             .to_string();
 
-        let mut args = vec!["--assign".to_string(), "--token".to_string(), token.to_string()];
+        let mut args = vec![
+            "--assign".to_string(),
+            "--token".to_string(),
+            token.to_string(),
+        ];
         if let Some(v) = user_name {
             args.push("--user_name".to_string());
             args.push(v.to_string());

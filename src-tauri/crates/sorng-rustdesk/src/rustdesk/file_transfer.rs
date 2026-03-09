@@ -7,6 +7,7 @@ use uuid::Uuid;
 /// File transfer operations via RustDesk.
 impl RustDeskService {
     /// Initiate a file transfer session to a remote peer via CLI.
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_file_transfer(
         &mut self,
         session_id: &str,
@@ -88,6 +89,7 @@ impl RustDeskService {
     }
 
     /// Upload a local file to a remote peer (convenience wrapper).
+    #[allow(clippy::too_many_arguments)]
     pub async fn upload_file(
         &mut self,
         session_id: &str,
@@ -112,6 +114,7 @@ impl RustDeskService {
     }
 
     /// Download a file from a remote peer (convenience wrapper).
+    #[allow(clippy::too_many_arguments)]
     pub async fn download_file(
         &mut self,
         session_id: &str,

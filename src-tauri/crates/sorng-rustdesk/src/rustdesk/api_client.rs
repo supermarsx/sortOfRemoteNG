@@ -46,7 +46,7 @@ impl RustDeskApiClient {
     pub async fn get(&self, path: &str) -> Result<Value, String> {
         let resp = self
             .client
-            .get(&self.url(path))
+            .get(self.url(path))
             .bearer_auth(&self.token)
             .send()
             .await
@@ -65,7 +65,7 @@ impl RustDeskApiClient {
     pub async fn post(&self, path: &str, body: &Value) -> Result<Value, String> {
         let resp = self
             .client
-            .post(&self.url(path))
+            .post(self.url(path))
             .bearer_auth(&self.token)
             .json(body)
             .send()
@@ -85,7 +85,7 @@ impl RustDeskApiClient {
     pub async fn put(&self, path: &str, body: &Value) -> Result<Value, String> {
         let resp = self
             .client
-            .put(&self.url(path))
+            .put(self.url(path))
             .bearer_auth(&self.token)
             .json(body)
             .send()
@@ -105,7 +105,7 @@ impl RustDeskApiClient {
     pub async fn delete(&self, path: &str) -> Result<Value, String> {
         let resp = self
             .client
-            .delete(&self.url(path))
+            .delete(self.url(path))
             .bearer_auth(&self.token)
             .send()
             .await
@@ -114,7 +114,10 @@ impl RustDeskApiClient {
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
-            return Err(format!("DELETE {} returned {}: {}", path, status, body_text));
+            return Err(format!(
+                "DELETE {} returned {}: {}",
+                path, status, body_text
+            ));
         }
         resp.json::<Value>()
             .await
@@ -140,6 +143,7 @@ impl RustDeskApiClient {
 
     // ── Devices ─────────────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn list_devices(
         &self,
         id: Option<&str>,
@@ -213,19 +217,13 @@ impl RustDeskApiClient {
             body.insert("user_name".into(), Value::String(v.to_string()));
         }
         if let Some(v) = device_group_name {
-            body.insert(
-                "device_group_name".into(),
-                Value::String(v.to_string()),
-            );
+            body.insert("device_group_name".into(), Value::String(v.to_string()));
         }
         if let Some(v) = note {
             body.insert("note".into(), Value::String(v.to_string()));
         }
-        self.put(
-            &format!("/peers/{}", device_guid),
-            &Value::Object(body),
-        )
-        .await
+        self.put(&format!("/peers/{}", device_guid), &Value::Object(body))
+            .await
     }
 
     // ── Users ───────────────────────────────────────────────────────
@@ -445,10 +443,7 @@ impl RustDeskApiClient {
 
     // ── Address Books ───────────────────────────────────────────────
 
-    pub async fn list_address_books(
-        &self,
-        name: Option<&str>,
-    ) -> Result<Value, String> {
+    pub async fn list_address_books(&self, name: Option<&str>) -> Result<Value, String> {
         let path = match name {
             Some(n) => format!("/ab?name={}", n),
             None => "/ab".to_string(),
@@ -781,7 +776,7 @@ impl RustDeskApiClient {
         // Login uses a different path (no /api prefix sometimes)
         let resp = self
             .client
-            .post(&format!("{}/api/login", self.base_url))
+            .post(format!("{}/api/login", self.base_url))
             .json(&body)
             .send()
             .await

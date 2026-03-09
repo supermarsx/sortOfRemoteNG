@@ -132,10 +132,7 @@ impl RustDeskService {
 
         let config_valid = binary.installed
             && (self.server_config.is_none()
-                || server_status
-                    .as_ref()
-                    .map(|s| s.reachable)
-                    .unwrap_or(false));
+                || server_status.as_ref().map(|s| s.reachable).unwrap_or(false));
 
         DiagnosticsReport {
             binary,

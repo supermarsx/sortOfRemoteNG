@@ -244,6 +244,7 @@ pub async fn rustdesk_get_tunnel(
 //  File Transfers
 // ═══════════════════════════════════════════════════════════════════════
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn rustdesk_start_file_transfer(
     state: tauri::State<'_, RustDeskServiceState>,
@@ -270,6 +271,7 @@ pub async fn rustdesk_start_file_transfer(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn rustdesk_upload_file(
     state: tauri::State<'_, RustDeskServiceState>,
@@ -294,6 +296,7 @@ pub async fn rustdesk_upload_file(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn rustdesk_download_file(
     state: tauri::State<'_, RustDeskServiceState>,
@@ -616,7 +619,8 @@ pub async fn rustdesk_api_add_devices_to_group(
     device_guids: Vec<String>,
 ) -> Result<serde_json::Value, String> {
     let svc = state.lock().await;
-    svc.api_add_devices_to_group(&group_guid, device_guids).await
+    svc.api_add_devices_to_group(&group_guid, device_guids)
+        .await
 }
 
 #[tauri::command]

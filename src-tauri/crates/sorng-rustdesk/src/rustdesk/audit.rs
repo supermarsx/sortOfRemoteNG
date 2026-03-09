@@ -21,10 +21,7 @@ impl RustDeskService {
     }
 
     /// Retrieve file transfer audit logs from the server.
-    pub async fn api_file_audits(
-        &self,
-        filter: AuditFilter,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_file_audits(&self, filter: AuditFilter) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client
             .list_file_audits(
@@ -37,10 +34,7 @@ impl RustDeskService {
     }
 
     /// Retrieve alarm audit logs from the server.
-    pub async fn api_alarm_audits(
-        &self,
-        filter: AuditFilter,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_alarm_audits(&self, filter: AuditFilter) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client
             .list_alarm_audits(
@@ -69,10 +63,7 @@ impl RustDeskService {
     }
 
     /// Get a combined audit summary across all categories for a given peer.
-    pub async fn api_peer_audit_summary(
-        &self,
-        remote: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_peer_audit_summary(&self, remote: &str) -> Result<serde_json::Value, String> {
         let conn_filter = AuditFilter {
             remote: Some(remote.to_string()),
             page: Some(1),

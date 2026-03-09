@@ -1,10 +1,10 @@
+use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
 
-use super::types::*;
 use super::api_client::RustDeskApiClient;
+use super::types::*;
 
 pub type RustDeskServiceState = Arc<Mutex<RustDeskService>>;
 
@@ -90,9 +90,7 @@ impl RustDeskService {
             None
         };
 
-        let path = found
-            .map(|s| s.to_string())
-            .or(path_from_which);
+        let path = found.map(|s| s.to_string()).or(path_from_which);
 
         let platform = if cfg!(target_os = "windows") {
             "windows"
@@ -161,7 +159,10 @@ impl RustDeskService {
     }
 
     pub fn list_sessions(&self) -> Vec<RustDeskSession> {
-        self.connections.values().map(|c| c.session.clone()).collect()
+        self.connections
+            .values()
+            .map(|c| c.session.clone())
+            .collect()
     }
 
     pub fn list_tunnels(&self) -> Vec<RustDeskTunnel> {
@@ -357,7 +358,10 @@ impl RustDeskService {
     // ── Connection Statistics ────────────────────────────────────────
 
     pub fn active_session_count(&self) -> usize {
-        self.connections.values().filter(|c| c.session.connected).count()
+        self.connections
+            .values()
+            .filter(|c| c.session.connected)
+            .count()
     }
 
     pub fn total_session_count(&self) -> usize {

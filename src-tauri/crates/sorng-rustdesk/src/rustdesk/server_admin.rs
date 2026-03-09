@@ -59,10 +59,7 @@ impl RustDeskService {
 
     // ─── Users ──────────────────────────────────────────────────────
 
-    pub async fn api_list_users(
-        &self,
-        filter: UserFilter,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_list_users(&self, filter: UserFilter) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client
             .list_users(
@@ -143,10 +140,7 @@ impl RustDeskService {
             .await
     }
 
-    pub async fn api_delete_user_group(
-        &self,
-        guid: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_delete_user_group(&self, guid: &str) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client.delete_user_group(guid).await
     }
@@ -196,10 +190,7 @@ impl RustDeskService {
             .await
     }
 
-    pub async fn api_delete_device_group(
-        &self,
-        guid: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_delete_device_group(&self, guid: &str) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client.delete_device_group(guid).await
     }
@@ -231,26 +222,17 @@ impl RustDeskService {
         client.list_strategies().await
     }
 
-    pub async fn api_get_strategy(
-        &self,
-        name: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_get_strategy(&self, name: &str) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client.get_strategy(name).await
     }
 
-    pub async fn api_enable_strategy(
-        &self,
-        guid: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_enable_strategy(&self, guid: &str) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client.enable_strategy(guid).await
     }
 
-    pub async fn api_disable_strategy(
-        &self,
-        guid: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_disable_strategy(&self, guid: &str) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client.disable_strategy(guid).await
     }
@@ -280,11 +262,7 @@ impl RustDeskService {
     ) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client
-            .unassign_strategy(
-                peers.as_deref(),
-                users.as_deref(),
-                device_groups.as_deref(),
-            )
+            .unassign_strategy(peers.as_deref(), users.as_deref(), device_groups.as_deref())
             .await
     }
 

@@ -39,10 +39,7 @@ impl RustDeskService {
             .await
     }
 
-    pub async fn api_delete_address_book(
-        &self,
-        guid: &str,
-    ) -> Result<serde_json::Value, String> {
+    pub async fn api_delete_address_book(&self, guid: &str) -> Result<serde_json::Value, String> {
         let client = self.get_api_client()?;
         client.delete_address_book(guid).await
     }
