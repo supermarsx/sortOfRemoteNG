@@ -1,8 +1,8 @@
 // ── sorng-ssh-scripts/src/variables.rs ───────────────────────────────────────
 //! Variable resolution engine.
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 
 use crate::types::*;
 
@@ -37,13 +37,15 @@ pub fn resolve_variables(
                 // In manual mode, the UI should have already provided overrides
             }
             VariableSource::ConnectionMeta { field } => {
-                let val = connection_meta.get(field)
+                let val = connection_meta
+                    .get(field)
                     .cloned()
                     .unwrap_or_else(|| var.default_value.clone());
                 resolved.insert(var.name.clone(), val);
             }
             VariableSource::PreviousOutput { script_id } => {
-                let val = previous_outputs.get(script_id)
+                let val = previous_outputs
+                    .get(script_id)
                     .cloned()
                     .unwrap_or_else(|| var.default_value.clone());
                 resolved.insert(var.name.clone(), val);
@@ -63,7 +65,10 @@ pub fn resolve_variables(
                 pending.push(PendingVariable {
                     name: var.name.clone(),
                     default_value: var.default_value.clone(),
-                    resolution: PendingResolution::RemoteCommand(format!("cat {}", shell_escape(path))),
+                    resolution: PendingResolution::RemoteCommand(format!(
+                        "cat {}",
+                        shell_escape(path)
+                    )),
                 });
             }
             VariableSource::RemoteEnv { variable } => {
@@ -77,18 +82,30 @@ pub fn resolve_variables(
     }
 
     // Also add built-in variables
-    resolved.entry("TIMESTAMP".to_string()).or_insert_with(|| Utc::now().to_rfc3339());
-    resolved.entry("SCRIPT_ID".to_string()).or_insert_with(|| script.id.clone());
-    resolved.entry("SCRIPT_NAME".to_string()).or_insert_with(|| script.name.clone());
+    resolved
+        .entry("TIMESTAMP".to_string())
+        .or_insert_with(|| Utc::now().to_rfc3339());
+    resolved
+        .entry("SCRIPT_ID".to_string())
+        .or_insert_with(|| script.id.clone());
+    resolved
+        .entry("SCRIPT_NAME".to_string())
+        .or_insert_with(|| script.name.clone());
 
     if let Some(host) = connection_meta.get("host") {
-        resolved.entry("HOST".to_string()).or_insert_with(|| host.clone());
+        resolved
+            .entry("HOST".to_string())
+            .or_insert_with(|| host.clone());
     }
     if let Some(user) = connection_meta.get("username") {
-        resolved.entry("USERNAME".to_string()).or_insert_with(|| user.clone());
+        resolved
+            .entry("USERNAME".to_string())
+            .or_insert_with(|| user.clone());
     }
     if let Some(port) = connection_meta.get("port") {
-        resolved.entry("PORT".to_string()).or_insert_with(|| port.clone());
+        resolved
+            .entry("PORT".to_string())
+            .or_insert_with(|| port.clone());
     }
 
     (resolved, pending)

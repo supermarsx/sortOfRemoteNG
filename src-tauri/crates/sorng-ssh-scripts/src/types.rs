@@ -1,9 +1,9 @@
 // ── sorng-ssh-scripts/src/types.rs ───────────────────────────────────────────
 //! Comprehensive types for the SSH script execution engine.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Script Trigger Types
@@ -162,15 +162,33 @@ pub enum FileWatchType {
     Any,
 }
 
-fn default_retry_delay() -> u64 { 5000 }
-fn default_timezone() -> String { "UTC".to_string() }
-fn default_cooldown() -> u64 { 5000 }
-fn default_file_poll() -> u64 { 10000 }
-fn default_env_poll() -> u64 { 30000 }
-fn default_metric_poll() -> u64 { 15000 }
-fn default_direction() -> String { "above".to_string() }
-fn default_true() -> bool { true }
-fn default_timeout() -> u64 { 30000 }
+fn default_retry_delay() -> u64 {
+    5000
+}
+fn default_timezone() -> String {
+    "UTC".to_string()
+}
+fn default_cooldown() -> u64 {
+    5000
+}
+fn default_file_poll() -> u64 {
+    10000
+}
+fn default_env_poll() -> u64 {
+    30000
+}
+fn default_metric_poll() -> u64 {
+    15000
+}
+fn default_direction() -> String {
+    "above".to_string()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_timeout() -> u64 {
+    30000
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Script Definition
@@ -179,7 +197,9 @@ fn default_timeout() -> u64 { 30000 }
 /// The language/type of a script.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ScriptLanguage {
+    #[default]
     Bash,
     Sh,
     PowerShell,
@@ -190,15 +210,13 @@ pub enum ScriptLanguage {
     Raw,
 }
 
-impl Default for ScriptLanguage {
-    fn default() -> Self { ScriptLanguage::Bash }
-}
-
 /// Execution mode for how the script body is sent to the remote.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum ExecutionMode {
     /// Run via `ssh exec` (non-interactive single command).
+    #[default]
     Exec,
     /// Feed commands into the interactive shell (PTY).
     Shell,
@@ -208,15 +226,13 @@ pub enum ExecutionMode {
     Local,
 }
 
-impl Default for ExecutionMode {
-    fn default() -> Self { ExecutionMode::Exec }
-}
-
 /// Failure handling strategy.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum OnFailure {
     /// Log and continue.
+    #[default]
     Continue,
     /// Retry up to `max_retries` times.
     Retry,
@@ -224,10 +240,6 @@ pub enum OnFailure {
     Abort,
     /// Run a fallback script.
     RunFallback { fallback_script_id: String },
-}
-
-impl Default for OnFailure {
-    fn default() -> Self { OnFailure::Continue }
 }
 
 /// Condition that must be met before a script is eligible to run.
@@ -245,7 +257,11 @@ pub enum ScriptCondition {
     /// A remote env var must equal a value.
     EnvEquals { variable: String, value: String },
     /// Current time must be within a window (HH:MM–HH:MM).
-    TimeWindow { start: String, end: String, timezone: Option<String> },
+    TimeWindow {
+        start: String,
+        end: String,
+        timezone: Option<String>,
+    },
     /// Session must have been alive for at least N ms.
     SessionAge { min_age_ms: u64 },
     /// A variable in the script context must match.

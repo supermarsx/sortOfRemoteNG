@@ -1,12 +1,12 @@
 // ── sorng-ssh-scripts/src/store.rs ───────────────────────────────────────────
 //! In-memory script and chain store with CRUD operations.
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::types::*;
 use crate::error::*;
+use crate::types::*;
 
 /// In-memory store for SSH event scripts for chains.
 #[derive(Debug, Default)]
@@ -59,62 +59,118 @@ impl ScriptStore {
     }
 
     pub fn get_script(&self, id: &str) -> SshScriptResult<SshEventScript> {
-        self.scripts.get(id).cloned().ok_or_else(|| SshScriptError::not_found(format!("Script not found: {}", id)))
+        self.scripts
+            .get(id)
+            .cloned()
+            .ok_or_else(|| SshScriptError::not_found(format!("Script not found: {}", id)))
     }
 
     pub fn list_scripts(&self) -> Vec<SshEventScript> {
         let mut list: Vec<_> = self.scripts.values().cloned().collect();
-        list.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.name.cmp(&b.name)));
+        list.sort_by(|a, b| {
+            a.priority
+                .cmp(&b.priority)
+                .then_with(|| a.name.cmp(&b.name))
+        });
         list
     }
 
     pub fn list_scripts_by_tag(&self, tag: &str) -> Vec<SshEventScript> {
-        self.scripts.values()
+        self.scripts
+            .values()
             .filter(|s| s.tags.contains(&tag.to_string()))
             .cloned()
             .collect()
     }
 
     pub fn list_scripts_by_category(&self, category: &str) -> Vec<SshEventScript> {
-        self.scripts.values()
+        self.scripts
+            .values()
             .filter(|s| s.category.as_deref() == Some(category))
             .cloned()
             .collect()
     }
 
     pub fn list_scripts_by_trigger(&self, trigger_type: &str) -> Vec<SshEventScript> {
-        self.scripts.values()
+        self.scripts
+            .values()
             .filter(|s| trigger_type_name(&s.trigger) == trigger_type)
             .cloned()
             .collect()
     }
 
     pub fn update_script(&mut self, req: UpdateScriptRequest) -> SshScriptResult<SshEventScript> {
-        let script = self.scripts.get_mut(&req.id)
+        let script = self
+            .scripts
+            .get_mut(&req.id)
             .ok_or_else(|| SshScriptError::not_found(format!("Script not found: {}", req.id)))?;
 
-        if let Some(name) = req.name { script.name = name; }
-        if let Some(desc) = req.description { script.description = Some(desc); }
-        if let Some(content) = req.content { script.content = content; }
-        if let Some(lang) = req.language { script.language = lang; }
-        if let Some(mode) = req.execution_mode { script.execution_mode = mode; }
-        if let Some(trigger) = req.trigger { script.trigger = trigger; }
-        if let Some(conds) = req.conditions { script.conditions = conds; }
-        if let Some(vars) = req.variables { script.variables = vars; }
-        if let Some(t) = req.timeout_ms { script.timeout_ms = t; }
-        if let Some(of) = req.on_failure { script.on_failure = of; }
-        if let Some(mr) = req.max_retries { script.max_retries = mr; }
-        if let Some(rd) = req.retry_delay_ms { script.retry_delay_ms = rd; }
-        if let Some(user) = req.run_as_user { script.run_as_user = Some(user); }
-        if let Some(wd) = req.working_directory { script.working_directory = Some(wd); }
-        if let Some(env) = req.environment { script.environment = env; }
-        if let Some(notifs) = req.notifications { script.notifications = notifs; }
-        if let Some(tags) = req.tags { script.tags = tags; }
-        if let Some(cat) = req.category { script.category = Some(cat); }
-        if let Some(pri) = req.priority { script.priority = pri; }
-        if let Some(en) = req.enabled { script.enabled = en; }
-        if let Some(cids) = req.connection_ids { script.connection_ids = cids; }
-        if let Some(hp) = req.host_patterns { script.host_patterns = hp; }
+        if let Some(name) = req.name {
+            script.name = name;
+        }
+        if let Some(desc) = req.description {
+            script.description = Some(desc);
+        }
+        if let Some(content) = req.content {
+            script.content = content;
+        }
+        if let Some(lang) = req.language {
+            script.language = lang;
+        }
+        if let Some(mode) = req.execution_mode {
+            script.execution_mode = mode;
+        }
+        if let Some(trigger) = req.trigger {
+            script.trigger = trigger;
+        }
+        if let Some(conds) = req.conditions {
+            script.conditions = conds;
+        }
+        if let Some(vars) = req.variables {
+            script.variables = vars;
+        }
+        if let Some(t) = req.timeout_ms {
+            script.timeout_ms = t;
+        }
+        if let Some(of) = req.on_failure {
+            script.on_failure = of;
+        }
+        if let Some(mr) = req.max_retries {
+            script.max_retries = mr;
+        }
+        if let Some(rd) = req.retry_delay_ms {
+            script.retry_delay_ms = rd;
+        }
+        if let Some(user) = req.run_as_user {
+            script.run_as_user = Some(user);
+        }
+        if let Some(wd) = req.working_directory {
+            script.working_directory = Some(wd);
+        }
+        if let Some(env) = req.environment {
+            script.environment = env;
+        }
+        if let Some(notifs) = req.notifications {
+            script.notifications = notifs;
+        }
+        if let Some(tags) = req.tags {
+            script.tags = tags;
+        }
+        if let Some(cat) = req.category {
+            script.category = Some(cat);
+        }
+        if let Some(pri) = req.priority {
+            script.priority = pri;
+        }
+        if let Some(en) = req.enabled {
+            script.enabled = en;
+        }
+        if let Some(cids) = req.connection_ids {
+            script.connection_ids = cids;
+        }
+        if let Some(hp) = req.host_patterns {
+            script.host_patterns = hp;
+        }
 
         script.updated_at = Utc::now();
         script.version += 1;
@@ -123,7 +179,8 @@ impl ScriptStore {
     }
 
     pub fn delete_script(&mut self, id: &str) -> SshScriptResult<()> {
-        self.scripts.remove(id)
+        self.scripts
+            .remove(id)
             .ok_or_else(|| SshScriptError::not_found(format!("Script not found: {}", id)))?;
         Ok(())
     }
@@ -143,7 +200,9 @@ impl ScriptStore {
     }
 
     pub fn toggle_script(&mut self, id: &str) -> SshScriptResult<bool> {
-        let script = self.scripts.get_mut(id)
+        let script = self
+            .scripts
+            .get_mut(id)
             .ok_or_else(|| SshScriptError::not_found(format!("Script not found: {}", id)))?;
         script.enabled = !script.enabled;
         script.updated_at = Utc::now();
@@ -157,15 +216,23 @@ impl ScriptStore {
         connection_id: Option<&str>,
         host: Option<&str>,
     ) -> Vec<SshEventScript> {
-        let mut matching: Vec<_> = self.scripts.values()
+        let mut matching: Vec<_> = self
+            .scripts
+            .values()
             .filter(|s| {
-                if !s.enabled { return false; }
-                if trigger_type_name(&s.trigger) != trigger_type { return false; }
+                if !s.enabled {
+                    return false;
+                }
+                if trigger_type_name(&s.trigger) != trigger_type {
+                    return false;
+                }
 
                 // Connection filter
                 if !s.connection_ids.is_empty() {
                     if let Some(cid) = connection_id {
-                        if !s.connection_ids.contains(&cid.to_string()) { return false; }
+                        if !s.connection_ids.contains(&cid.to_string()) {
+                            return false;
+                        }
                     } else {
                         return false;
                     }
@@ -174,7 +241,9 @@ impl ScriptStore {
                 // Host pattern filter
                 if !s.host_patterns.is_empty() {
                     if let Some(h) = host {
-                        if !s.host_patterns.iter().any(|p| glob_match(p, h)) { return false; }
+                        if !s.host_patterns.iter().any(|p| glob_match(p, h)) {
+                            return false;
+                        }
                     } else {
                         return false;
                     }
@@ -190,7 +259,9 @@ impl ScriptStore {
     }
 
     pub fn get_all_tags(&self) -> Vec<String> {
-        let mut tags: Vec<String> = self.scripts.values()
+        let mut tags: Vec<String> = self
+            .scripts
+            .values()
             .flat_map(|s| s.tags.iter().cloned())
             .collect();
         tags.sort();
@@ -199,7 +270,9 @@ impl ScriptStore {
     }
 
     pub fn get_all_categories(&self) -> Vec<String> {
-        let mut cats: Vec<String> = self.scripts.values()
+        let mut cats: Vec<String> = self
+            .scripts
+            .values()
             .filter_map(|s| s.category.clone())
             .collect();
         cats.sort();
@@ -213,9 +286,10 @@ impl ScriptStore {
         // Validate all step script IDs exist
         for step in &req.steps {
             if !self.scripts.contains_key(&step.script_id) {
-                return Err(SshScriptError::validation(
-                    format!("Chain step references unknown script: {}", step.script_id)
-                ));
+                return Err(SshScriptError::validation(format!(
+                    "Chain step references unknown script: {}",
+                    step.script_id
+                )));
             }
         }
 
@@ -238,7 +312,9 @@ impl ScriptStore {
     }
 
     pub fn get_chain(&self, id: &str) -> SshScriptResult<ScriptChain> {
-        self.chains.get(id).cloned()
+        self.chains
+            .get(id)
+            .cloned()
             .ok_or_else(|| SshScriptError::not_found(format!("Chain not found: {}", id)))
     }
 
@@ -249,16 +325,32 @@ impl ScriptStore {
     }
 
     pub fn update_chain(&mut self, req: UpdateChainRequest) -> SshScriptResult<ScriptChain> {
-        let chain = self.chains.get_mut(&req.id)
+        let chain = self
+            .chains
+            .get_mut(&req.id)
             .ok_or_else(|| SshScriptError::not_found(format!("Chain not found: {}", req.id)))?;
 
-        if let Some(name) = req.name { chain.name = name; }
-        if let Some(desc) = req.description { chain.description = Some(desc); }
-        if let Some(trigger) = req.trigger { chain.trigger = trigger; }
-        if let Some(steps) = req.steps { chain.steps = steps; }
-        if let Some(aof) = req.abort_on_failure { chain.abort_on_failure = aof; }
-        if let Some(en) = req.enabled { chain.enabled = en; }
-        if let Some(tags) = req.tags { chain.tags = tags; }
+        if let Some(name) = req.name {
+            chain.name = name;
+        }
+        if let Some(desc) = req.description {
+            chain.description = Some(desc);
+        }
+        if let Some(trigger) = req.trigger {
+            chain.trigger = trigger;
+        }
+        if let Some(steps) = req.steps {
+            chain.steps = steps;
+        }
+        if let Some(aof) = req.abort_on_failure {
+            chain.abort_on_failure = aof;
+        }
+        if let Some(en) = req.enabled {
+            chain.enabled = en;
+        }
+        if let Some(tags) = req.tags {
+            chain.tags = tags;
+        }
 
         chain.updated_at = Utc::now();
 
@@ -266,13 +358,16 @@ impl ScriptStore {
     }
 
     pub fn delete_chain(&mut self, id: &str) -> SshScriptResult<()> {
-        self.chains.remove(id)
+        self.chains
+            .remove(id)
             .ok_or_else(|| SshScriptError::not_found(format!("Chain not found: {}", id)))?;
         Ok(())
     }
 
     pub fn toggle_chain(&mut self, id: &str) -> SshScriptResult<bool> {
-        let chain = self.chains.get_mut(id)
+        let chain = self
+            .chains
+            .get_mut(id)
             .ok_or_else(|| SshScriptError::not_found(format!("Chain not found: {}", id)))?;
         chain.enabled = !chain.enabled;
         chain.updated_at = Utc::now();
@@ -290,7 +385,11 @@ impl ScriptStore {
         }
     }
 
-    pub fn import_bundle(&mut self, bundle: ScriptBundle, overwrite: bool) -> SshScriptResult<(usize, usize)> {
+    pub fn import_bundle(
+        &mut self,
+        bundle: ScriptBundle,
+        overwrite: bool,
+    ) -> SshScriptResult<(usize, usize)> {
         let mut scripts_imported = 0usize;
         let mut chains_imported = 0usize;
 
@@ -348,13 +447,20 @@ pub fn trigger_type_name(trigger: &ScriptTrigger) -> &'static str {
 
 /// Simple glob matcher (supports only `*` and `?` wildcards).
 fn glob_match(pattern: &str, text: &str) -> bool {
-    let regex_str = format!("^{}$",
-        pattern.chars().map(|c| match c {
-            '*' => ".*".to_string(),
-            '?' => ".".to_string(),
-            c if regex::escape(&c.to_string()) != c.to_string() => regex::escape(&c.to_string()),
-            c => c.to_string(),
-        }).collect::<String>()
+    let regex_str = format!(
+        "^{}$",
+        pattern
+            .chars()
+            .map(|c| match c {
+                '*' => ".*".to_string(),
+                '?' => ".".to_string(),
+                c if regex::escape(&c.to_string()) != c.to_string() =>
+                    regex::escape(&c.to_string()),
+                c => c.to_string(),
+            })
+            .collect::<String>()
     );
-    regex::Regex::new(&regex_str).map(|r| r.is_match(text)).unwrap_or(false)
+    regex::Regex::new(&regex_str)
+        .map(|r| r.is_match(text))
+        .unwrap_or(false)
 }

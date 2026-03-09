@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,37 +34,70 @@ impl fmt::Display for SshScriptError {
 
 impl SshScriptError {
     pub fn not_found(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::NotFound, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::NotFound,
+            message: msg.into(),
+        }
     }
     pub fn already_exists(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::AlreadyExists, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::AlreadyExists,
+            message: msg.into(),
+        }
     }
     pub fn validation(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::ValidationError, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::ValidationError,
+            message: msg.into(),
+        }
     }
     pub fn execution(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::ExecutionFailed, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::ExecutionFailed,
+            message: msg.into(),
+        }
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::Timeout, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::Timeout,
+            message: msg.into(),
+        }
     }
     pub fn condition(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::ConditionFailed, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::ConditionFailed,
+            message: msg.into(),
+        }
     }
     pub fn scheduler(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::SchedulerError, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::SchedulerError,
+            message: msg.into(),
+        }
     }
     pub fn store(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::StoreError, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::StoreError,
+            message: msg.into(),
+        }
     }
     pub fn cancelled(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::Cancelled, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::Cancelled,
+            message: msg.into(),
+        }
     }
     pub fn dependency(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::DependencyFailed, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::DependencyFailed,
+            message: msg.into(),
+        }
     }
     pub fn chain_aborted(msg: impl Into<String>) -> Self {
-        SshScriptError { kind: SshScriptErrorKind::ChainAborted, message: msg.into() }
+        SshScriptError {
+            kind: SshScriptErrorKind::ChainAborted,
+            message: msg.into(),
+        }
     }
 }
 

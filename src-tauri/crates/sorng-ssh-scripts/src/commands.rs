@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use tauri::{command, State};
 
 use crate::engine::SshScriptEngineState;
-use crate::types::*;
 use crate::error::SshScriptError;
+use crate::types::*;
 
 type Res<T> = Result<T, String>;
-fn e(err: SshScriptError) -> String { err.to_string() }
+fn e(err: SshScriptError) -> String {
+    err.to_string()
+}
 
 // ── Script CRUD ──────────────────────────────────────────────────────────────
 
@@ -255,7 +257,8 @@ pub async fn ssh_scripts_get_execution(
     execution_id: String,
 ) -> Res<ExecutionRecord> {
     let eng = state.lock().await;
-    eng.history.get_record(&execution_id)
+    eng.history
+        .get_record(&execution_id)
         .ok_or_else(|| "Execution record not found".to_string())
 }
 
@@ -265,7 +268,8 @@ pub async fn ssh_scripts_get_chain_execution(
     chain_execution_id: String,
 ) -> Res<ChainExecutionRecord> {
     let eng = state.lock().await;
-    eng.history.get_chain_record(&chain_execution_id)
+    eng.history
+        .get_chain_record(&chain_execution_id)
         .ok_or_else(|| "Chain execution record not found".to_string())
 }
 
@@ -287,9 +291,7 @@ pub async fn ssh_scripts_get_all_stats(
 }
 
 #[command]
-pub async fn ssh_scripts_clear_history(
-    state: State<'_, SshScriptEngineState>,
-) -> Res<()> {
+pub async fn ssh_scripts_clear_history(state: State<'_, SshScriptEngineState>) -> Res<()> {
     let mut eng = state.lock().await;
     eng.history.clear_history();
     Ok(())
@@ -378,9 +380,7 @@ pub async fn ssh_scripts_list_by_trigger(
 }
 
 #[command]
-pub async fn ssh_scripts_get_tags(
-    state: State<'_, SshScriptEngineState>,
-) -> Res<Vec<String>> {
+pub async fn ssh_scripts_get_tags(state: State<'_, SshScriptEngineState>) -> Res<Vec<String>> {
     let eng = state.lock().await;
     Ok(eng.store.get_all_tags())
 }
@@ -396,9 +396,7 @@ pub async fn ssh_scripts_get_categories(
 // ── Import/Export ────────────────────────────────────────────────────────────
 
 #[command]
-pub async fn ssh_scripts_export(
-    state: State<'_, SshScriptEngineState>,
-) -> Res<ScriptBundle> {
+pub async fn ssh_scripts_export(state: State<'_, SshScriptEngineState>) -> Res<ScriptBundle> {
     let eng = state.lock().await;
     Ok(eng.store.export_bundle())
 }
@@ -409,7 +407,10 @@ pub async fn ssh_scripts_import(
     bundle: ScriptBundle,
 ) -> Res<serde_json::Value> {
     let mut eng = state.lock().await;
-    let (scripts_imported, chains_imported) = eng.store.import_bundle(bundle, false).map_err(|e| e.to_string())?;
+    let (scripts_imported, chains_imported) = eng
+        .store
+        .import_bundle(bundle, false)
+        .map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
         "scriptsImported": scripts_imported,
         "chainsImported": chains_imported

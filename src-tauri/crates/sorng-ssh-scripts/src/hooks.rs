@@ -1,9 +1,9 @@
 // ── sorng-ssh-scripts/src/hooks.rs ───────────────────────────────────────────
 //! SSH lifecycle event hooks — maps SSH events to script triggers.
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use regex::Regex;
+use std::collections::HashMap;
 
 use crate::types::*;
 
@@ -91,15 +91,23 @@ impl SessionHookState {
     ) -> bool {
         // Max triggers check
         if max_triggers > 0 {
-            let count = self.output_match_counts.get(script_id).copied().unwrap_or(0);
-            if count >= max_triggers { return false; }
+            let count = self
+                .output_match_counts
+                .get(script_id)
+                .copied()
+                .unwrap_or(0);
+            if count >= max_triggers {
+                return false;
+            }
         }
 
         // Cooldown check
         if cooldown_ms > 0 {
             if let Some(last) = self.output_match_cooldowns.get(script_id) {
                 let elapsed = Utc::now().signed_duration_since(*last).num_milliseconds() as u64;
-                if elapsed < cooldown_ms { return false; }
+                if elapsed < cooldown_ms {
+                    return false;
+                }
             }
         }
 
@@ -107,8 +115,12 @@ impl SessionHookState {
         if let Ok(re) = Regex::new(pattern) {
             if re.is_match(&self.output_buffer) {
                 // Record trigger
-                *self.output_match_counts.entry(script_id.to_string()).or_insert(0) += 1;
-                self.output_match_cooldowns.insert(script_id.to_string(), Utc::now());
+                *self
+                    .output_match_counts
+                    .entry(script_id.to_string())
+                    .or_insert(0) += 1;
+                self.output_match_cooldowns
+                    .insert(script_id.to_string(), Utc::now());
                 // Clear matched portion to avoid re-matching
                 self.output_buffer.clear();
                 return true;
@@ -120,7 +132,9 @@ impl SessionHookState {
 
     /// Check if session is idle beyond threshold.
     pub fn check_idle(&mut self, threshold_ms: u64) -> bool {
-        let elapsed = Utc::now().signed_duration_since(self.last_activity).num_milliseconds() as u64;
+        let elapsed = Utc::now()
+            .signed_duration_since(self.last_activity)
+            .num_milliseconds() as u64;
         if elapsed >= threshold_ms && !self.idle_notified {
             self.idle_notified = true;
             return true;
@@ -129,13 +143,21 @@ impl SessionHookState {
     }
 
     /// Check file mtime change (returns true if changed).
-    pub fn check_file_mtime(&mut self, path: &str, current_mtime: &str, watch_type: &FileWatchType) -> bool {
+    pub fn check_file_mtime(
+        &mut self,
+        path: &str,
+        current_mtime: &str,
+        watch_type: &FileWatchType,
+    ) -> bool {
         match watch_type {
             FileWatchType::Modified => {
-                let changed = self.file_watch_mtimes.get(path)
+                let changed = self
+                    .file_watch_mtimes
+                    .get(path)
                     .map(|prev| prev != current_mtime)
                     .unwrap_or(false); // first poll is baseline
-                self.file_watch_mtimes.insert(path.to_string(), current_mtime.to_string());
+                self.file_watch_mtimes
+                    .insert(path.to_string(), current_mtime.to_string());
                 changed
             }
             FileWatchType::Created => {
@@ -153,7 +175,8 @@ impl SessionHookState {
             FileWatchType::Any => {
                 let prev = self.file_watch_mtimes.get(path).cloned();
                 let prev_exists = self.file_watch_exists.get(path).copied();
-                self.file_watch_mtimes.insert(path.to_string(), current_mtime.to_string());
+                self.file_watch_mtimes
+                    .insert(path.to_string(), current_mtime.to_string());
                 let exists_now = !current_mtime.is_empty();
                 self.file_watch_exists.insert(path.to_string(), exists_now);
 
@@ -166,9 +189,15 @@ impl SessionHookState {
     }
 
     /// Check env variable change.
-    pub fn check_env_change(&mut self, variable: &str, current_value: &str, expected: Option<&str>) -> bool {
+    pub fn check_env_change(
+        &mut self,
+        variable: &str,
+        current_value: &str,
+        expected: Option<&str>,
+    ) -> bool {
         let prev = self.env_snapshots.get(variable).cloned();
-        self.env_snapshots.insert(variable.to_string(), current_value.to_string());
+        self.env_snapshots
+            .insert(variable.to_string(), current_value.to_string());
 
         match prev {
             None => false, // first poll is baseline
@@ -197,7 +226,9 @@ impl SessionHookState {
         if cooldown_ms > 0 {
             if let Some(last) = self.metric_cooldowns.get(script_id) {
                 let elapsed = Utc::now().signed_duration_since(*last).num_milliseconds() as u64;
-                if elapsed < cooldown_ms { return false; }
+                if elapsed < cooldown_ms {
+                    return false;
+                }
             }
         }
 
@@ -208,7 +239,8 @@ impl SessionHookState {
         };
 
         if triggered {
-            self.metric_cooldowns.insert(script_id.to_string(), Utc::now());
+            self.metric_cooldowns
+                .insert(script_id.to_string(), Utc::now());
         }
 
         triggered

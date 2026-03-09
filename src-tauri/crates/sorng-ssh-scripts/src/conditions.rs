@@ -1,30 +1,19 @@
 // ── sorng-ssh-scripts/src/conditions.rs ──────────────────────────────────────
 //! Condition evaluation engine.
 
-use chrono::{Utc, NaiveTime};
+use chrono::{NaiveTime, Utc};
 use std::collections::HashMap;
 
 use crate::types::*;
 
 /// Context available for condition evaluation.
+#[derive(Default)]
 pub struct ConditionContext {
     pub os_type: Option<String>,
     pub session_started_at: Option<chrono::DateTime<Utc>>,
     pub variables: HashMap<String, String>,
     pub connection_id: Option<String>,
     pub host: Option<String>,
-}
-
-impl Default for ConditionContext {
-    fn default() -> Self {
-        ConditionContext {
-            os_type: None,
-            session_started_at: None,
-            variables: HashMap::new(),
-            connection_id: None,
-            host: None,
-        }
-    }
 }
 
 /// Evaluate a condition. For conditions that need remote command execution
@@ -44,10 +33,15 @@ pub fn evaluate_local_condition(
             }
         }
 
-        ScriptCondition::TimeWindow { start, end, timezone: _ } => {
+        ScriptCondition::TimeWindow {
+            start,
+            end,
+            timezone: _,
+        } => {
             let now = Utc::now().time();
             let parse = |s: &str| -> Option<NaiveTime> {
-                NaiveTime::parse_from_str(s, "%H:%M").ok()
+                NaiveTime::parse_from_str(s, "%H:%M")
+                    .ok()
                     .or_else(|| NaiveTime::parse_from_str(s, "%H:%M:%S").ok())
             };
             match (parse(start), parse(end)) {
@@ -78,7 +72,10 @@ pub fn evaluate_local_condition(
             ConditionResult::Resolved(matches)
         }
 
-        ScriptCondition::PreviousExitCode { script_id, exit_code } => {
+        ScriptCondition::PreviousExitCode {
+            script_id,
+            exit_code,
+        } => {
             // Needs history lookup — deferred
             ConditionResult::NeedsHistoryLookup {
                 script_id: script_id.clone(),
@@ -86,12 +83,10 @@ pub fn evaluate_local_condition(
             }
         }
 
-        ScriptCondition::CommandSucceeds { command } => {
-            ConditionResult::NeedsRemoteExec {
-                command: command.clone(),
-                check_type: RemoteCheckType::ExitCodeZero,
-            }
-        }
+        ScriptCondition::CommandSucceeds { command } => ConditionResult::NeedsRemoteExec {
+            command: command.clone(),
+            check_type: RemoteCheckType::ExitCodeZero,
+        },
 
         ScriptCondition::CommandOutputMatches { command, pattern } => {
             ConditionResult::NeedsRemoteExec {
@@ -100,43 +95,66 @@ pub fn evaluate_local_condition(
             }
         }
 
-        ScriptCondition::FileExists { path } => {
-            ConditionResult::NeedsRemoteExec {
-                command: format!("test -e {} && echo EXISTS || echo MISSING", shell_escape(path)),
-                check_type: RemoteCheckType::OutputMatches("EXISTS".to_string()),
-            }
-        }
+        ScriptCondition::FileExists { path } => ConditionResult::NeedsRemoteExec {
+            command: format!(
+                "test -e {} && echo EXISTS || echo MISSING",
+                shell_escape(path)
+            ),
+            check_type: RemoteCheckType::OutputMatches("EXISTS".to_string()),
+        },
 
-        ScriptCondition::EnvEquals { variable, value } => {
-            ConditionResult::NeedsRemoteExec {
-                command: format!("echo \"${}\"", variable),
-                check_type: RemoteCheckType::OutputMatches(regex::escape(value)),
-            }
-        }
+        ScriptCondition::EnvEquals { variable, value } => ConditionResult::NeedsRemoteExec {
+            command: format!("echo \"${}\"", variable),
+            check_type: RemoteCheckType::OutputMatches(regex::escape(value)),
+        },
 
         ScriptCondition::All { conditions } => {
-            let results: Vec<_> = conditions.iter()
+            let results: Vec<_> = conditions
+                .iter()
                 .map(|c| evaluate_local_condition(c, ctx))
                 .collect();
 
             // If any needs remote, the whole thing needs remote
-            if results.iter().any(|r| matches!(r, ConditionResult::NeedsRemoteExec { .. } | ConditionResult::NeedsHistoryLookup { .. })) {
-                ConditionResult::NeedsCompositeEval { conditions: conditions.clone(), mode: CompositeMode::All }
+            if results.iter().any(|r| {
+                matches!(
+                    r,
+                    ConditionResult::NeedsRemoteExec { .. }
+                        | ConditionResult::NeedsHistoryLookup { .. }
+                )
+            }) {
+                ConditionResult::NeedsCompositeEval {
+                    conditions: conditions.clone(),
+                    mode: CompositeMode::All,
+                }
             } else {
-                let all_pass = results.iter().all(|r| matches!(r, ConditionResult::Resolved(true)));
+                let all_pass = results
+                    .iter()
+                    .all(|r| matches!(r, ConditionResult::Resolved(true)));
                 ConditionResult::Resolved(all_pass)
             }
         }
 
         ScriptCondition::Any { conditions } => {
-            let results: Vec<_> = conditions.iter()
+            let results: Vec<_> = conditions
+                .iter()
                 .map(|c| evaluate_local_condition(c, ctx))
                 .collect();
 
-            if results.iter().any(|r| matches!(r, ConditionResult::NeedsRemoteExec { .. } | ConditionResult::NeedsHistoryLookup { .. })) {
-                ConditionResult::NeedsCompositeEval { conditions: conditions.clone(), mode: CompositeMode::Any }
+            if results.iter().any(|r| {
+                matches!(
+                    r,
+                    ConditionResult::NeedsRemoteExec { .. }
+                        | ConditionResult::NeedsHistoryLookup { .. }
+                )
+            }) {
+                ConditionResult::NeedsCompositeEval {
+                    conditions: conditions.clone(),
+                    mode: CompositeMode::Any,
+                }
             } else {
-                let any_pass = results.iter().any(|r| matches!(r, ConditionResult::Resolved(true)));
+                let any_pass = results
+                    .iter()
+                    .any(|r| matches!(r, ConditionResult::Resolved(true)));
                 ConditionResult::Resolved(any_pass)
             }
         }

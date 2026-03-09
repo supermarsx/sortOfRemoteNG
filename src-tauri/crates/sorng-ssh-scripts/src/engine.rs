@@ -6,14 +6,14 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::types::*;
-use crate::error::*;
-use crate::store::{ScriptStore, trigger_type_name};
-use crate::scheduler::Scheduler;
-use crate::hooks::{SessionHookState, map_event_to_triggers};
-use crate::history::ExecutionHistory;
-use crate::variables::{resolve_variables, substitute_variables};
 use crate::conditions::{evaluate_local_condition, ConditionResult};
+use crate::error::*;
+use crate::history::ExecutionHistory;
+use crate::hooks::{map_event_to_triggers, SessionHookState};
+use crate::scheduler::Scheduler;
+use crate::store::{trigger_type_name, ScriptStore};
+use crate::types::*;
+use crate::variables::{resolve_variables, substitute_variables};
 
 pub type SshScriptEngineState = Arc<Mutex<SshScriptEngine>>;
 
@@ -57,6 +57,12 @@ pub struct PendingExecution {
     pub retry_delay_ms: u64,
 }
 
+impl Default for SshScriptEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SshScriptEngine {
     pub fn new() -> Self {
         SshScriptEngine {
@@ -91,23 +97,26 @@ impl SshScriptEngine {
         self.sessions.insert(session_id.to_string(), hook_state);
 
         // Register time-based triggers
-        let scripts = self.store.get_matching_scripts(
-            "interval",
-            connection_id,
-            host,
-        );
+        let scripts = self
+            .store
+            .get_matching_scripts("interval", connection_id, host);
         for s in &scripts {
-            self.scheduler.register(&s.id, &s.name, session_id, &s.trigger);
+            self.scheduler
+                .register(&s.id, &s.name, session_id, &s.trigger);
         }
 
         let cron_scripts = self.store.get_matching_scripts("cron", connection_id, host);
         for s in &cron_scripts {
-            self.scheduler.register(&s.id, &s.name, session_id, &s.trigger);
+            self.scheduler
+                .register(&s.id, &s.name, session_id, &s.trigger);
         }
 
-        let scheduled = self.store.get_matching_scripts("scheduled", connection_id, host);
+        let scheduled = self
+            .store
+            .get_matching_scripts("scheduled", connection_id, host);
         for s in &scheduled {
-            self.scheduler.register(&s.id, &s.name, session_id, &s.trigger);
+            self.scheduler
+                .register(&s.id, &s.name, session_id, &s.trigger);
         }
     }
 
@@ -168,7 +177,13 @@ impl SshScriptEngine {
         let mut executions = Vec::new();
 
         // First, update session output buffer and collect matches
-        let mut matched_scripts: Vec<(String, Option<String>, Option<String>, Option<String>)> = Vec::new();
+        #[allow(clippy::type_complexity)]
+        let mut matched_scripts: Vec<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )> = Vec::new();
 
         if let Some(session) = self.sessions.get_mut(session_id) {
             session.append_output(data);
@@ -185,16 +200,22 @@ impl SshScriptEngine {
             );
 
             for script in scripts {
-                if let ScriptTrigger::OutputMatch { ref pattern, max_triggers, cooldown_ms } = script.trigger {
-                    let matched = session.check_output_match(
-                        &script.id,
-                        pattern,
-                        max_triggers,
-                        cooldown_ms,
-                    );
+                if let ScriptTrigger::OutputMatch {
+                    ref pattern,
+                    max_triggers,
+                    cooldown_ms,
+                } = script.trigger
+                {
+                    let matched =
+                        session.check_output_match(&script.id, pattern, max_triggers, cooldown_ms);
 
                     if matched {
-                        matched_scripts.push((script.id.clone(), connection_id.clone(), host.clone(), username.clone()));
+                        matched_scripts.push((
+                            script.id.clone(),
+                            connection_id.clone(),
+                            host.clone(),
+                            username.clone(),
+                        ));
                     }
                 }
             }
@@ -270,11 +291,9 @@ impl SshScriptEngine {
                 username = session.username.clone();
             }
 
-            let idle_scripts = self.store.get_matching_scripts(
-                "idle",
-                connection_id.as_deref(),
-                host.as_deref(),
-            );
+            let idle_scripts =
+                self.store
+                    .get_matching_scripts("idle", connection_id.as_deref(), host.as_deref());
 
             for script in idle_scripts {
                 if let ScriptTrigger::Idle { idle_ms, repeat: _ } = &script.trigger {
@@ -306,15 +325,14 @@ impl SshScriptEngine {
     // ── Manual Execution ─────────────────────────────────────────────────────
 
     /// Manually trigger a script.
-    pub fn run_script(
-        &mut self,
-        req: &RunScriptRequest,
-    ) -> SshScriptResult<PendingExecution> {
+    pub fn run_script(&mut self, req: &RunScriptRequest) -> SshScriptResult<PendingExecution> {
         let script = self.store.get_script(&req.script_id)?;
         let session_id = req.session_id.as_deref().unwrap_or("manual");
 
         let session = self.sessions.get(session_id);
-        let connection_id = req.connection_id.as_deref()
+        let connection_id = req
+            .connection_id
+            .as_deref()
             .or_else(|| session.and_then(|s| s.connection_id.as_deref()));
         let host = session.and_then(|s| s.host.as_deref());
         let username = session.and_then(|s| s.username.as_deref());
@@ -327,19 +345,19 @@ impl SshScriptEngine {
             username,
             "manual",
             &req.variable_overrides,
-        ).ok_or_else(|| SshScriptError::condition("Conditions not met for script execution"))
+        )
+        .ok_or_else(|| SshScriptError::condition("Conditions not met for script execution"))
     }
 
     /// Run a chain manually.
-    pub fn run_chain(
-        &mut self,
-        req: &RunChainRequest,
-    ) -> SshScriptResult<Vec<PendingExecution>> {
+    pub fn run_chain(&mut self, req: &RunChainRequest) -> SshScriptResult<Vec<PendingExecution>> {
         let chain = self.store.get_chain(&req.chain_id)?;
         let session_id = req.session_id.as_deref().unwrap_or("manual");
 
         let session = self.sessions.get(session_id);
-        let connection_id = req.connection_id.as_deref()
+        let connection_id = req
+            .connection_id
+            .as_deref()
             .or_else(|| session.and_then(|s| s.connection_id.as_deref()));
         let host = session.and_then(|s| s.host.as_deref());
         let username = session.and_then(|s| s.username.as_deref());
@@ -360,15 +378,20 @@ impl SshScriptEngine {
                 &req.variable_overrides,
             ) {
                 // Tag with chain info
-                exec.environment.insert("CHAIN_ID".to_string(), chain.id.clone());
-                exec.environment.insert("CHAIN_NAME".to_string(), chain.name.clone());
-                exec.environment.insert("CHAIN_STEP".to_string(), idx.to_string());
-                exec.environment.insert("CHAIN_EXECUTION_ID".to_string(), chain_execution_id.clone());
+                exec.environment
+                    .insert("CHAIN_ID".to_string(), chain.id.clone());
+                exec.environment
+                    .insert("CHAIN_NAME".to_string(), chain.name.clone());
+                exec.environment
+                    .insert("CHAIN_STEP".to_string(), idx.to_string());
+                exec.environment
+                    .insert("CHAIN_EXECUTION_ID".to_string(), chain_execution_id.clone());
                 executions.push(exec);
             } else if chain.abort_on_failure && !step.continue_on_failure {
-                return Err(SshScriptError::chain_aborted(
-                    format!("Step {} conditions not met", idx)
-                ));
+                return Err(SshScriptError::chain_aborted(format!(
+                    "Step {} conditions not met",
+                    idx
+                )));
             }
         }
 
@@ -388,9 +411,16 @@ impl SshScriptEngine {
 
         // Fire AfterScript triggers if succeeded
         if status == ExecutionStatus::Success {
-            let after_scripts: Vec<_> = self.store.list_scripts().into_iter()
+            let after_scripts: Vec<_> = self
+                .store
+                .list_scripts()
+                .into_iter()
                 .filter(|s| {
-                    if let ScriptTrigger::AfterScript { script_id: ref sid, require_success: _ } = s.trigger {
+                    if let ScriptTrigger::AfterScript {
+                        script_id: ref sid,
+                        require_success: _,
+                    } = s.trigger
+                    {
                         *sid == script_id && s.enabled
                     } else {
                         false
@@ -428,6 +458,7 @@ impl SshScriptEngine {
 
     // ── Internal ─────────────────────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     fn prepare_execution(
         &self,
         script: &SshEventScript,
@@ -444,9 +475,15 @@ impl SshScriptEngine {
 
         // Build connection metadata
         let mut conn_meta = HashMap::new();
-        if let Some(h) = host { conn_meta.insert("host".to_string(), h.to_string()); }
-        if let Some(u) = username { conn_meta.insert("username".to_string(), u.to_string()); }
-        if let Some(c) = connection_id { conn_meta.insert("connection_id".to_string(), c.to_string()); }
+        if let Some(h) = host {
+            conn_meta.insert("host".to_string(), h.to_string());
+        }
+        if let Some(u) = username {
+            conn_meta.insert("username".to_string(), u.to_string());
+        }
+        if let Some(c) = connection_id {
+            conn_meta.insert("connection_id".to_string(), c.to_string());
+        }
         conn_meta.insert("session_id".to_string(), session_id.to_string());
 
         // Evaluate local conditions
@@ -461,23 +498,21 @@ impl SshScriptEngine {
         for condition in &script.conditions {
             match evaluate_local_condition(condition, &condition_ctx) {
                 ConditionResult::Resolved(false) => return None,
-                ConditionResult::Resolved(true) => {},
+                ConditionResult::Resolved(true) => {}
                 _ => {} // deferred conditions pass for now (evaluated at execution time)
             }
         }
 
         // Resolve variables
         let previous_outputs = HashMap::new(); // TODO: wire up chain outputs
-        let (mut resolved_vars, pending_vars) = resolve_variables(
-            script,
-            variable_overrides,
-            &conn_meta,
-            &previous_outputs,
-        );
+        let (mut resolved_vars, pending_vars) =
+            resolve_variables(script, variable_overrides, &conn_meta, &previous_outputs);
 
         // For pending vars, use defaults (remote resolution happens in execution)
         for pv in &pending_vars {
-            resolved_vars.entry(pv.name.clone()).or_insert_with(|| pv.default_value.clone());
+            resolved_vars
+                .entry(pv.name.clone())
+                .or_insert_with(|| pv.default_value.clone());
         }
 
         // Substitute variables in content

@@ -1,7 +1,6 @@
 // ── sorng-ssh-scripts/src/history.rs ─────────────────────────────────────────
 //! Execution history tracker with querying and statistics.
 
-
 use crate::types::*;
 
 /// In-memory execution history store.
@@ -38,28 +37,44 @@ impl ExecutionHistory {
     }
 
     pub fn query(&self, query: &HistoryQuery) -> HistoryResponse {
-        let filtered: Vec<_> = self.records.iter()
+        let filtered: Vec<_> = self
+            .records
+            .iter()
             .filter(|r| {
                 if let Some(ref sid) = query.script_id {
-                    if &r.script_id != sid { return false; }
+                    if &r.script_id != sid {
+                        return false;
+                    }
                 }
                 if let Some(ref sess) = query.session_id {
-                    if r.session_id.as_deref() != Some(sess.as_str()) { return false; }
+                    if r.session_id.as_deref() != Some(sess.as_str()) {
+                        return false;
+                    }
                 }
                 if let Some(ref cid) = query.connection_id {
-                    if r.connection_id.as_deref() != Some(cid.as_str()) { return false; }
+                    if r.connection_id.as_deref() != Some(cid.as_str()) {
+                        return false;
+                    }
                 }
                 if let Some(ref status) = query.status {
-                    if &r.status != status { return false; }
+                    if &r.status != status {
+                        return false;
+                    }
                 }
                 if let Some(ref tt) = query.trigger_type {
-                    if &r.trigger_type != tt { return false; }
+                    if &r.trigger_type != tt {
+                        return false;
+                    }
                 }
                 if let Some(ref since) = query.since {
-                    if &r.started_at < since { return false; }
+                    if &r.started_at < since {
+                        return false;
+                    }
                 }
                 if let Some(ref until) = query.until {
-                    if &r.started_at > until { return false; }
+                    if &r.started_at > until {
+                        return false;
+                    }
                 }
                 true
             })
@@ -70,7 +85,8 @@ impl ExecutionHistory {
         let offset = query.offset.unwrap_or(0) as usize;
         let limit = query.limit.unwrap_or(50) as usize;
 
-        let records: Vec<_> = filtered.into_iter()
+        let records: Vec<_> = filtered
+            .into_iter()
             .rev() // newest first
             .skip(offset)
             .take(limit)
@@ -84,11 +100,18 @@ impl ExecutionHistory {
     }
 
     pub fn get_chain_record(&self, chain_execution_id: &str) -> Option<ChainExecutionRecord> {
-        self.chain_records.iter().find(|r| r.id == chain_execution_id).cloned()
+        self.chain_records
+            .iter()
+            .find(|r| r.id == chain_execution_id)
+            .cloned()
     }
 
     pub fn get_last_execution(&self, script_id: &str) -> Option<ExecutionRecord> {
-        self.records.iter().rev().find(|r| r.script_id == script_id).cloned()
+        self.records
+            .iter()
+            .rev()
+            .find(|r| r.script_id == script_id)
+            .cloned()
     }
 
     pub fn get_last_exit_code(&self, script_id: &str) -> Option<i32> {
@@ -96,14 +119,25 @@ impl ExecutionHistory {
     }
 
     pub fn get_script_stats(&self, script_id: &str) -> ScriptStats {
-        let runs: Vec<_> = self.records.iter()
+        let runs: Vec<_> = self
+            .records
+            .iter()
             .filter(|r| r.script_id == script_id)
             .collect();
 
         let total_runs = runs.len() as u64;
-        let success_count = runs.iter().filter(|r| r.status == ExecutionStatus::Success).count() as u64;
-        let failure_count = runs.iter().filter(|r| r.status == ExecutionStatus::Failed).count() as u64;
-        let timeout_count = runs.iter().filter(|r| r.status == ExecutionStatus::Timeout).count() as u64;
+        let success_count = runs
+            .iter()
+            .filter(|r| r.status == ExecutionStatus::Success)
+            .count() as u64;
+        let failure_count = runs
+            .iter()
+            .filter(|r| r.status == ExecutionStatus::Failed)
+            .count() as u64;
+        let timeout_count = runs
+            .iter()
+            .filter(|r| r.status == ExecutionStatus::Timeout)
+            .count() as u64;
 
         let avg_duration_ms = if runs.is_empty() {
             0.0
@@ -126,13 +160,15 @@ impl ExecutionHistory {
     }
 
     pub fn get_all_stats(&self) -> Vec<ScriptStats> {
-        let mut script_ids: Vec<String> = self.records.iter()
-            .map(|r| r.script_id.clone())
-            .collect();
+        let mut script_ids: Vec<String> =
+            self.records.iter().map(|r| r.script_id.clone()).collect();
         script_ids.sort();
         script_ids.dedup();
 
-        script_ids.iter().map(|id| self.get_script_stats(id)).collect()
+        script_ids
+            .iter()
+            .map(|id| self.get_script_stats(id))
+            .collect()
     }
 
     pub fn clear_history(&mut self) {
