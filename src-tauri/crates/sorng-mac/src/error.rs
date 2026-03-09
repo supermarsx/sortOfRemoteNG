@@ -42,7 +42,10 @@ impl std::error::Error for MacError {}
 
 impl MacError {
     pub fn new(kind: MacErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(MacErrorKind::NotConnected, msg)
@@ -66,7 +69,10 @@ impl MacError {
         Self::new(MacErrorKind::ProfileError, msg)
     }
     pub fn boolean_not_found(name: &str) -> Self {
-        Self::new(MacErrorKind::BooleanNotFound, format!("Boolean not found: {name}"))
+        Self::new(
+            MacErrorKind::BooleanNotFound,
+            format!("Boolean not found: {name}"),
+        )
     }
     pub fn ssh(e: impl fmt::Display) -> Self {
         Self::new(MacErrorKind::SshError, e.to_string())

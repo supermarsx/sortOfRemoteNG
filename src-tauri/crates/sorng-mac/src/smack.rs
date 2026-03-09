@@ -87,26 +87,16 @@ pub async fn list_rules(client: &MacClient) -> MacResult<Vec<SmackRule>> {
 pub async fn add_rule(client: &MacClient, req: &AddSmackRuleRequest) -> MacResult<bool> {
     let rule = format!("{} {} {}", req.subject, req.object, req.access);
     client
-        .run_sudo_command(&format!(
-            "echo '{}' > /sys/fs/smackfs/load2",
-            rule
-        ))
+        .run_sudo_command(&format!("echo '{}' > /sys/fs/smackfs/load2", rule))
         .await?;
     Ok(true)
 }
 
-pub async fn remove_rule(
-    client: &MacClient,
-    subject: &str,
-    object: &str,
-) -> MacResult<bool> {
+pub async fn remove_rule(client: &MacClient, subject: &str, object: &str) -> MacResult<bool> {
     // Remove by writing empty access
     let rule = format!("{} {} ---", subject, object);
     client
-        .run_sudo_command(&format!(
-            "echo '{}' > /sys/fs/smackfs/load2",
-            rule
-        ))
+        .run_sudo_command(&format!("echo '{}' > /sys/fs/smackfs/load2", rule))
         .await?;
     Ok(true)
 }

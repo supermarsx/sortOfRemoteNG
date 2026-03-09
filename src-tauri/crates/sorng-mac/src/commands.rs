@@ -20,21 +20,21 @@ pub async fn mac_connect(
     id: String,
     config: MacConnectionConfig,
 ) -> CmdResult<MacConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn mac_disconnect(
-    state: State<'_, MacServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn mac_disconnect(state: State<'_, MacServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn mac_list_connections(
-    state: State<'_, MacServiceState>,
-) -> CmdResult<Vec<String>> {
+pub async fn mac_list_connections(state: State<'_, MacServiceState>) -> CmdResult<Vec<String>> {
     Ok(state.lock().await.list_connections())
 }
 
@@ -51,12 +51,7 @@ pub async fn mac_get_dashboard(
     state: State<'_, MacServiceState>,
     id: String,
 ) -> CmdResult<MacDashboard> {
-    state
-        .lock()
-        .await
-        .get_dashboard(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.get_dashboard(&id).await.map_err(map_err)
 }
 
 // ── SELinux ───────────────────────────────────────────────────────
@@ -453,12 +448,7 @@ pub async fn mac_tomoyo_status(
     state: State<'_, MacServiceState>,
     id: String,
 ) -> CmdResult<TomoyoStatus> {
-    state
-        .lock()
-        .await
-        .tomoyo_status(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.tomoyo_status(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -509,12 +499,7 @@ pub async fn mac_smack_status(
     state: State<'_, MacServiceState>,
     id: String,
 ) -> CmdResult<SmackStatus> {
-    state
-        .lock()
-        .await
-        .smack_status(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.smack_status(&id).await.map_err(map_err)
 }
 
 #[tauri::command]

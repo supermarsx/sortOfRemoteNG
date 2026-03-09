@@ -480,9 +480,18 @@ mod tests {
 
     #[test]
     fn test_selinux_mode_from_str() {
-        assert_eq!(SelinuxMode::from_str_loose("Enforcing"), SelinuxMode::Enforcing);
-        assert_eq!(SelinuxMode::from_str_loose("permissive"), SelinuxMode::Permissive);
-        assert_eq!(SelinuxMode::from_str_loose("DISABLED"), SelinuxMode::Disabled);
+        assert_eq!(
+            SelinuxMode::from_str_loose("Enforcing"),
+            SelinuxMode::Enforcing
+        );
+        assert_eq!(
+            SelinuxMode::from_str_loose("permissive"),
+            SelinuxMode::Permissive
+        );
+        assert_eq!(
+            SelinuxMode::from_str_loose("DISABLED"),
+            SelinuxMode::Disabled
+        );
         assert_eq!(SelinuxMode::from_str_loose("junk"), SelinuxMode::Disabled);
     }
 
@@ -509,17 +518,32 @@ mod tests {
 
     #[test]
     fn test_apparmor_mode_roundtrip() {
-        assert_eq!(AppArmorMode::from_str_loose("enforce"), AppArmorMode::Enforce);
-        assert_eq!(AppArmorMode::from_str_loose("complain"), AppArmorMode::Complain);
+        assert_eq!(
+            AppArmorMode::from_str_loose("enforce"),
+            AppArmorMode::Enforce
+        );
+        assert_eq!(
+            AppArmorMode::from_str_loose("complain"),
+            AppArmorMode::Complain
+        );
         assert_eq!(AppArmorMode::from_str_loose("kill"), AppArmorMode::Kill);
-        assert_eq!(AppArmorMode::from_str_loose("unconfined"), AppArmorMode::Unconfined);
-        assert_eq!(AppArmorMode::from_str_loose("garbage"), AppArmorMode::Disabled);
+        assert_eq!(
+            AppArmorMode::from_str_loose("unconfined"),
+            AppArmorMode::Unconfined
+        );
+        assert_eq!(
+            AppArmorMode::from_str_loose("garbage"),
+            AppArmorMode::Disabled
+        );
     }
 
     #[test]
     fn test_tomoyo_mode() {
         assert_eq!(TomoyoMode::from_str_loose("learning"), TomoyoMode::Learning);
-        assert_eq!(TomoyoMode::from_str_loose("enforcing"), TomoyoMode::Enforcing);
+        assert_eq!(
+            TomoyoMode::from_str_loose("enforcing"),
+            TomoyoMode::Enforcing
+        );
         assert_eq!(TomoyoMode::Disabled.to_flag(), 0);
         assert_eq!(TomoyoMode::Enforcing.to_flag(), 3);
     }

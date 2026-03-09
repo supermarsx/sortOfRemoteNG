@@ -16,10 +16,7 @@ pub async fn audit2allow(client: &MacClient, audit_lines: &str) -> MacResult<Str
 
 /// Run audit2why on recent AVC denials and return explanations.
 pub async fn audit2why(client: &MacClient, audit_lines: &str) -> MacResult<String> {
-    let cmd = format!(
-        "echo '{}' | audit2why",
-        audit_lines.replace('\'', "'\\''")
-    );
+    let cmd = format!("echo '{}' | audit2why", audit_lines.replace('\'', "'\\''"));
     client.run_command(&cmd).await
 }
 
@@ -29,9 +26,6 @@ pub async fn selinux_audit(client: &MacClient, limit: u32) -> MacResult<Vec<Seli
 }
 
 /// Fetch the last N AppArmor audit entries.
-pub async fn apparmor_audit(
-    client: &MacClient,
-    limit: u32,
-) -> MacResult<Vec<AppArmorLogEntry>> {
+pub async fn apparmor_audit(client: &MacClient, limit: u32) -> MacResult<Vec<AppArmorLogEntry>> {
     crate::apparmor::audit_log(client, limit).await
 }

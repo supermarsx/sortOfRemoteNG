@@ -18,6 +18,12 @@ pub struct MacService {
     connections: HashMap<String, MacClient>,
 }
 
+impl Default for MacService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MacService {
     pub fn new() -> Self {
         Self {
@@ -91,8 +97,7 @@ impl MacService {
                     active_booleans: booleans.len() as u32,
                     denied_count_24h: 0,
                     profiles_count: 0,
-                    last_audit: audit
-                        .and_then(|a| a.first().map(|e| e.timestamp.clone())),
+                    last_audit: audit.and_then(|a| a.first().map(|e| e.timestamp.clone())),
                 })
             }
             MacSystemType::AppArmor => {
@@ -106,8 +111,7 @@ impl MacService {
                     active_booleans: 0,
                     denied_count_24h: 0,
                     profiles_count: status.profiles_loaded,
-                    last_audit: audit
-                        .and_then(|a| a.first().map(|e| e.timestamp.clone())),
+                    last_audit: audit.and_then(|a| a.first().map(|e| e.timestamp.clone())),
                 })
             }
             MacSystemType::Tomoyo => {
@@ -168,11 +172,7 @@ impl MacService {
         crate::selinux::list_booleans(self.client(id)?).await
     }
 
-    pub async fn selinux_get_boolean(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> MacResult<SelinuxBoolean> {
+    pub async fn selinux_get_boolean(&self, id: &str, name: &str) -> MacResult<SelinuxBoolean> {
         crate::selinux::get_boolean(self.client(id)?, name).await
     }
 
@@ -196,10 +196,7 @@ impl MacService {
         crate::selinux::manage_module(self.client(id)?, &request).await
     }
 
-    pub async fn selinux_list_file_contexts(
-        &self,
-        id: &str,
-    ) -> MacResult<Vec<SelinuxFileContext>> {
+    pub async fn selinux_list_file_contexts(&self, id: &str) -> MacResult<Vec<SelinuxFileContext>> {
         crate::selinux::list_file_contexts(self.client(id)?).await
     }
 
@@ -211,11 +208,7 @@ impl MacService {
         crate::selinux::add_file_context(self.client(id)?, &request).await
     }
 
-    pub async fn selinux_remove_file_context(
-        &self,
-        id: &str,
-        pattern: &str,
-    ) -> MacResult<bool> {
+    pub async fn selinux_remove_file_context(&self, id: &str, pattern: &str) -> MacResult<bool> {
         crate::selinux::remove_file_context(self.client(id)?, pattern).await
     }
 
@@ -260,11 +253,7 @@ impl MacService {
         crate::selinux::audit_log(self.client(id)?, limit).await
     }
 
-    pub async fn selinux_audit2allow(
-        &self,
-        id: &str,
-        audit_lines: &str,
-    ) -> MacResult<String> {
+    pub async fn selinux_audit2allow(&self, id: &str, audit_lines: &str) -> MacResult<String> {
         crate::selinux::audit2allow(self.client(id)?, audit_lines).await
     }
 
@@ -286,11 +275,7 @@ impl MacService {
         crate::apparmor::set_profile_mode(self.client(id)?, &request).await
     }
 
-    pub async fn apparmor_reload_profile(
-        &self,
-        id: &str,
-        profile_name: &str,
-    ) -> MacResult<bool> {
+    pub async fn apparmor_reload_profile(&self, id: &str, profile_name: &str) -> MacResult<bool> {
         crate::apparmor::reload_profile(self.client(id)?, profile_name).await
     }
 
@@ -302,11 +287,7 @@ impl MacService {
         crate::apparmor::create_profile(self.client(id)?, &request).await
     }
 
-    pub async fn apparmor_delete_profile(
-        &self,
-        id: &str,
-        profile_name: &str,
-    ) -> MacResult<bool> {
+    pub async fn apparmor_delete_profile(&self, id: &str, profile_name: &str) -> MacResult<bool> {
         crate::apparmor::delete_profile(self.client(id)?, profile_name).await
     }
 
@@ -353,11 +334,7 @@ impl MacService {
         crate::tomoyo::set_domain_mode(self.client(id)?, &request).await
     }
 
-    pub async fn tomoyo_list_rules(
-        &self,
-        id: &str,
-        domain: &str,
-    ) -> MacResult<Vec<TomoyoRule>> {
+    pub async fn tomoyo_list_rules(&self, id: &str, domain: &str) -> MacResult<Vec<TomoyoRule>> {
         crate::tomoyo::list_rules(self.client(id)?, domain).await
     }
 
@@ -375,11 +352,7 @@ impl MacService {
         crate::smack::list_rules(self.client(id)?).await
     }
 
-    pub async fn smack_add_rule(
-        &self,
-        id: &str,
-        request: AddSmackRuleRequest,
-    ) -> MacResult<bool> {
+    pub async fn smack_add_rule(&self, id: &str, request: AddSmackRuleRequest) -> MacResult<bool> {
         crate::smack::add_rule(self.client(id)?, &request).await
     }
 
@@ -394,11 +367,7 @@ impl MacService {
 
     // ── Compliance ───────────────────────────────────────────────
 
-    pub async fn compliance_check(
-        &self,
-        id: &str,
-        framework: &str,
-    ) -> MacResult<ComplianceResult> {
+    pub async fn compliance_check(&self, id: &str, framework: &str) -> MacResult<ComplianceResult> {
         let client = self.client(id)?;
         let sys = detect_system_inner(client).await?;
         crate::compliance::check(client, &sys, framework).await
@@ -451,11 +420,15 @@ async fn detect_version(client: &MacClient, sys: &MacSystemType) -> MacResult<St
             Ok(out.trim().to_string())
         }
         MacSystemType::AppArmor => {
-            let out = client.run_command("apparmor_parser --version 2>&1 | head -1").await?;
+            let out = client
+                .run_command("apparmor_parser --version 2>&1 | head -1")
+                .await?;
             Ok(out.trim().to_string())
         }
         MacSystemType::Tomoyo => {
-            let out = client.run_command("cat /sys/kernel/security/tomoyo/version 2>/dev/null || echo unknown").await?;
+            let out = client
+                .run_command("cat /sys/kernel/security/tomoyo/version 2>/dev/null || echo unknown")
+                .await?;
             Ok(out.trim().to_string())
         }
         MacSystemType::Smack => Ok("smack".to_string()),
@@ -511,7 +484,11 @@ async fn count_active_modules(client: &MacClient, sys: &MacSystemType) -> u32 {
                 .unwrap_or_default();
             // First numeric value is usually profiles loaded
             out.lines()
-                .find_map(|l| l.split_whitespace().next().and_then(|n| n.parse::<u32>().ok()))
+                .find_map(|l| {
+                    l.split_whitespace()
+                        .next()
+                        .and_then(|n| n.parse::<u32>().ok())
+                })
                 .unwrap_or(0)
         }
         _ => 0,

@@ -25,8 +25,14 @@ pub async fn check(
     };
 
     let total = checks.len() as u32;
-    let passed = checks.iter().filter(|c| c.status == CheckStatus::Pass).count() as u32;
-    let failed = checks.iter().filter(|c| c.status == CheckStatus::Fail).count() as u32;
+    let passed = checks
+        .iter()
+        .filter(|c| c.status == CheckStatus::Pass)
+        .count() as u32;
+    let failed = checks
+        .iter()
+        .filter(|c| c.status == CheckStatus::Fail)
+        .count() as u32;
     let warnings = checks
         .iter()
         .filter(|c| c.status == CheckStatus::Warning)
@@ -65,7 +71,9 @@ async fn build_selinux_checks(client: &MacClient) -> MacResult<Vec<ComplianceChe
         } else {
             CheckStatus::Fail
         },
-        remediation: Some("Edit /etc/selinux/config and set SELINUX=enforcing, then reboot".to_string()),
+        remediation: Some(
+            "Edit /etc/selinux/config and set SELINUX=enforcing, then reboot".to_string(),
+        ),
     });
 
     // Check 2: SELinux in enforcing mode
@@ -115,7 +123,9 @@ async fn build_selinux_checks(client: &MacClient) -> MacResult<Vec<ComplianceChe
         } else {
             CheckStatus::Warning
         },
-        remediation: Some("Review denials with: ausearch -m avc -ts recent | audit2allow".to_string()),
+        remediation: Some(
+            "Review denials with: ausearch -m avc -ts recent | audit2allow".to_string(),
+        ),
     });
 
     // Check 5: SELinux policy is targeted (most common secure default)
@@ -148,7 +158,11 @@ async fn build_apparmor_checks(client: &MacClient) -> MacResult<Vec<ComplianceCh
         title: "AppArmor is loaded".to_string(),
         description: "AppArmor kernel module must be loaded".to_string(),
         severity: Severity::Critical,
-        status: if loaded { CheckStatus::Pass } else { CheckStatus::Fail },
+        status: if loaded {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::Fail
+        },
         remediation: Some("Install apparmor and ensure it is enabled in the kernel".to_string()),
     });
 
@@ -164,7 +178,9 @@ async fn build_apparmor_checks(client: &MacClient) -> MacResult<Vec<ComplianceCh
         } else {
             CheckStatus::Warning
         },
-        remediation: Some("Move complain profiles to enforce: aa-enforce /etc/apparmor.d/<profile>".to_string()),
+        remediation: Some(
+            "Move complain profiles to enforce: aa-enforce /etc/apparmor.d/<profile>".to_string(),
+        ),
     });
 
     // Check 3: No unconfined processes

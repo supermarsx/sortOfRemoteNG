@@ -129,7 +129,8 @@ mod tests {
 
     #[test]
     fn test_parse_tomoyo_status() {
-        let output = "Policy update: 0\nlearning domains: 2\nenforcing domains: 1\npermissive domains: 3\n";
+        let output =
+            "Policy update: 0\nlearning domains: 2\nenforcing domains: 1\npermissive domains: 3\n";
         let status = parse_tomoyo_status(output);
         assert!(status.enabled);
         assert_eq!(status.learning_domains, 2);

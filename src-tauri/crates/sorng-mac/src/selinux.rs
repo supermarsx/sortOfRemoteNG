@@ -14,11 +14,12 @@ pub fn parse_getenforce(output: &str) -> SelinuxMode {
 /// Parse `sestatus` output into SelinuxStatus.
 pub fn parse_sestatus(output: &str) -> MacResult<SelinuxStatus> {
     fn val(lines: &[&str], key: &str) -> String {
-        lines.iter()
+        lines
+            .iter()
             .find(|l| l.to_lowercase().contains(&key.to_lowercase()))
             .map(|l| {
-                l.splitn(2, ':')
-                    .nth(1)
+                l.split_once(':')
+                    .map(|x| x.1)
                     .unwrap_or("")
                     .trim()
                     .to_string()
@@ -80,10 +81,7 @@ pub fn parse_semodule_list(output: &str) -> Vec<SelinuxModule> {
                 Some(SelinuxModule {
                     name: parts[0].to_string(),
                     version: parts.get(1).unwrap_or(&"0").to_string(),
-                    priority: parts
-                        .get(2)
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(400),
+                    priority: parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(400),
                     enabled: true,
                     cil: false,
                 })
@@ -118,7 +116,7 @@ pub fn parse_fcontext_list(output: &str) -> Vec<SelinuxFileContext> {
                 let rest = parts[1..].join(" ");
                 let rest = rest.trim();
                 // Try to split file_type and context
-                if let Some(ctx_start) = rest.rfind(|c: char| c == ':') {
+                if let Some(ctx_start) = rest.rfind(':') {
                     let _ = ctx_start; // context is the last colon-delimited part
                 }
                 Some(SelinuxFileContext {
@@ -267,10 +265,7 @@ pub async fn list_file_contexts(client: &MacClient) -> MacResult<Vec<SelinuxFile
     Ok(parse_fcontext_list(&out))
 }
 
-pub async fn add_file_context(
-    client: &MacClient,
-    req: &AddFileContextRequest,
-) -> MacResult<bool> {
+pub async fn add_file_context(client: &MacClient, req: &AddFileContextRequest) -> MacResult<bool> {
     let cmd = format!(
         "semanage fcontext -a -t {} '{}'",
         req.context_type, req.pattern
@@ -285,11 +280,7 @@ pub async fn remove_file_context(client: &MacClient, pattern: &str) -> MacResult
     Ok(true)
 }
 
-pub async fn restorecon(
-    client: &MacClient,
-    path: &str,
-    recursive: bool,
-) -> MacResult<Vec<String>> {
+pub async fn restorecon(client: &MacClient, path: &str, recursive: bool) -> MacResult<Vec<String>> {
     let flag = if recursive { "-Rv" } else { "-v" };
     let out = client
         .run_sudo_command(&format!("restorecon {} {}", flag, path))
@@ -302,10 +293,7 @@ pub async fn list_ports(client: &MacClient) -> MacResult<Vec<SelinuxPort>> {
     Ok(parse_port_list(&out))
 }
 
-pub async fn add_port_context(
-    client: &MacClient,
-    req: &AddPortContextRequest,
-) -> MacResult<bool> {
+pub async fn add_port_context(client: &MacClient, req: &AddPortContextRequest) -> MacResult<bool> {
     let cmd = format!(
         "semanage port -a -t {} -p {} {}",
         req.context_type, req.protocol, req.port_range
@@ -347,10 +335,7 @@ pub async fn get_policy_info(client: &MacClient) -> MacResult<SelinuxPolicy> {
 
 pub async fn audit_log(client: &MacClient, limit: u32) -> MacResult<Vec<SelinuxAuditEntry>> {
     let out = client
-        .run_command(&format!(
-            "ausearch -m avc --raw | tail -n {}",
-            limit
-        ))
+        .run_command(&format!("ausearch -m avc --raw | tail -n {}", limit))
         .await?;
     Ok(parse_audit_entries(&out))
 }
@@ -390,7 +375,10 @@ pub fn parse_audit_entries(output: &str) -> Vec<SelinuxAuditEntry> {
 
 pub async fn audit2allow(client: &MacClient, audit_lines: &str) -> MacResult<String> {
     // Pipe audit lines through audit2allow
-    let cmd = format!("echo '{}' | audit2allow", audit_lines.replace('\'', "'\\''"));
+    let cmd = format!(
+        "echo '{}' | audit2allow",
+        audit_lines.replace('\'', "'\\''")
+    );
     client.run_command(&cmd).await
 }
 

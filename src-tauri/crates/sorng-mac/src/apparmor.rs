@@ -71,10 +71,8 @@ pub fn parse_aa_profiles(output: &str) -> Vec<AppArmorProfile> {
 
 /// Parse AppArmor audit log entries from kern.log / audit.log.
 pub fn parse_apparmor_log(output: &str) -> Vec<AppArmorLogEntry> {
-    let re = Regex::new(
-        r#"apparmor="(\w+)"\s+operation="([^"]+)"\s+(?:.*?profile="([^"]*)")?"#,
-    )
-    .unwrap();
+    let re = Regex::new(r#"apparmor="(\w+)"\s+operation="([^"]+)"\s+(?:.*?profile="([^"]*)")?"#)
+        .unwrap();
 
     output
         .lines()
@@ -91,7 +89,10 @@ pub fn parse_apparmor_log(output: &str) -> Vec<AppArmorLogEntry> {
 
             Some(AppArmorLogEntry {
                 timestamp: line.get(..15).unwrap_or("").trim().to_string(),
-                profile_name: caps.get(3).map(|m| m.as_str().to_string()).unwrap_or_default(),
+                profile_name: caps
+                    .get(3)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default(),
                 operation: caps[2].to_string(),
                 denied: caps[1].to_uppercase() == "DENIED",
                 info: extract("info"),
@@ -117,10 +118,7 @@ pub async fn list_profiles(client: &MacClient) -> MacResult<Vec<AppArmorProfile>
     Ok(parse_aa_profiles(&out))
 }
 
-pub async fn set_profile_mode(
-    client: &MacClient,
-    req: &SetProfileModeRequest,
-) -> MacResult<bool> {
+pub async fn set_profile_mode(client: &MacClient, req: &SetProfileModeRequest) -> MacResult<bool> {
     let cmd = match req.mode {
         AppArmorMode::Enforce => format!("aa-enforce {}", req.profile_name),
         AppArmorMode::Complain => format!("aa-complain {}", req.profile_name),
@@ -138,7 +136,10 @@ pub async fn set_profile_mode(
 
 pub async fn reload_profile(client: &MacClient, profile_name: &str) -> MacResult<bool> {
     client
-        .run_sudo_command(&format!("apparmor_parser -r /etc/apparmor.d/{}", profile_name))
+        .run_sudo_command(&format!(
+            "apparmor_parser -r /etc/apparmor.d/{}",
+            profile_name
+        ))
         .await?;
     Ok(true)
 }
@@ -166,7 +167,10 @@ pub async fn create_profile(
     let dest = format!("/etc/apparmor.d/{}", profile_name);
 
     client
-        .run_sudo_command(&format!("cat > {} << 'SORNG_EOF'\n{}\nSORNG_EOF", dest, content))
+        .run_sudo_command(&format!(
+            "cat > {} << 'SORNG_EOF'\n{}\nSORNG_EOF",
+            dest, content
+        ))
         .await?;
     client
         .run_sudo_command(&format!("apparmor_parser -r {}", dest))
