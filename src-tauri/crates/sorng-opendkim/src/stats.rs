@@ -20,21 +20,15 @@ impl StatsManager {
         }
         // Fall back to parsing syslog/mail.log for DKIM-related entries
         let log_out = client
-            .exec_ssh(
-                "grep -c 'DKIM-Signature' /var/log/mail.log 2>/dev/null || echo 0",
-            )
+            .exec_ssh("grep -c 'DKIM-Signature' /var/log/mail.log 2>/dev/null || echo 0")
             .await?;
         let signed: u64 = log_out.stdout.trim().parse().unwrap_or(0);
         let verified_out = client
-            .exec_ssh(
-                "grep -c 'dkim=pass' /var/log/mail.log 2>/dev/null || echo 0",
-            )
+            .exec_ssh("grep -c 'dkim=pass' /var/log/mail.log 2>/dev/null || echo 0")
             .await?;
         let verified: u64 = verified_out.stdout.trim().parse().unwrap_or(0);
         let bad_out = client
-            .exec_ssh(
-                "grep -c 'dkim=fail' /var/log/mail.log 2>/dev/null || echo 0",
-            )
+            .exec_ssh("grep -c 'dkim=fail' /var/log/mail.log 2>/dev/null || echo 0")
             .await?;
         let bad: u64 = bad_out.stdout.trim().parse().unwrap_or(0);
         let error_out = client

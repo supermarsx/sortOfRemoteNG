@@ -41,15 +41,24 @@ impl std::error::Error for OpendkimError {}
 
 impl OpendkimError {
     pub fn new(kind: OpendkimErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected() -> Self {
-        Self::new(OpendkimErrorKind::NotConnected, "Not connected to OpenDKIM host")
+        Self::new(
+            OpendkimErrorKind::NotConnected,
+            "Not connected to OpenDKIM host",
+        )
     }
 
     pub fn already_connected(id: &str) -> Self {
-        Self::new(OpendkimErrorKind::AlreadyConnected, format!("Connection '{}' already exists", id))
+        Self::new(
+            OpendkimErrorKind::AlreadyConnected,
+            format!("Connection '{}' already exists", id),
+        )
     }
 
     pub fn connection_failed(msg: impl fmt::Display) -> Self {
@@ -65,11 +74,17 @@ impl OpendkimError {
     }
 
     pub fn config_not_found(path: &str) -> Self {
-        Self::new(OpendkimErrorKind::ConfigNotFound, format!("Config not found: {}", path))
+        Self::new(
+            OpendkimErrorKind::ConfigNotFound,
+            format!("Config not found: {}", path),
+        )
     }
 
     pub fn key_not_found(selector: &str, domain: &str) -> Self {
-        Self::new(OpendkimErrorKind::KeyNotFound, format!("Key not found: {}._domainkey.{}", selector, domain))
+        Self::new(
+            OpendkimErrorKind::KeyNotFound,
+            format!("Key not found: {}._domainkey.{}", selector, domain),
+        )
     }
 
     pub fn signing_table(msg: impl fmt::Display) -> Self {

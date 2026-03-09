@@ -18,8 +18,8 @@ impl SigningTableManager {
                 // SigningTable  refile:/etc/opendkim/signing.table
                 // or SigningTable  /etc/opendkim/signing.table
                 let value = trimmed
-                    .splitn(2, char::is_whitespace)
-                    .nth(1)
+                    .split_once(char::is_whitespace)
+                    .map(|x| x.1)
                     .unwrap_or("")
                     .trim();
                 let path = value
@@ -40,23 +40,15 @@ impl SigningTableManager {
     }
 
     /// Get a single signing table entry by pattern.
-    pub async fn get(
-        client: &OpendkimClient,
-        pattern: &str,
-    ) -> OpendkimResult<SigningTableEntry> {
+    pub async fn get(client: &OpendkimClient, pattern: &str) -> OpendkimResult<SigningTableEntry> {
         let all = Self::list(client).await?;
         all.into_iter()
             .find(|e| e.pattern == pattern)
-            .ok_or_else(|| {
-                OpendkimError::signing_table(format!("pattern not found: {}", pattern))
-            })
+            .ok_or_else(|| OpendkimError::signing_table(format!("pattern not found: {}", pattern)))
     }
 
     /// Add a new entry to the signing table.
-    pub async fn add(
-        client: &OpendkimClient,
-        entry: &SigningTableEntry,
-    ) -> OpendkimResult<()> {
+    pub async fn add(client: &OpendkimClient, entry: &SigningTableEntry) -> OpendkimResult<()> {
         let path = Self::table_path(client).await?;
         let content = client.read_remote_file(&path).await.unwrap_or_default();
         // Check for duplicate
@@ -123,7 +115,7 @@ impl SigningTableManager {
         let kt_path = kt_conf
             .lines()
             .find(|l| l.trim().starts_with("KeyTable"))
-            .and_then(|l| l.splitn(2, char::is_whitespace).nth(1))
+            .and_then(|l| l.split_once(char::is_whitespace).map(|x| x.1))
             .map(|v| {
                 v.trim()
                     .strip_prefix("refile:")
@@ -143,10 +135,7 @@ impl SigningTableManager {
             if parts.len() >= 2 {
                 let key_name = parts[0];
                 // Extract domain from key_name: selector._domainkey.domain
-                let domain = key_name
-                    .split("._domainkey.")
-                    .nth(1)
-                    .unwrap_or(key_name);
+                let domain = key_name.split("._domainkey.").nth(1).unwrap_or(key_name);
                 entries.push(SigningTableEntry {
                     pattern: format!("*@{}", domain),
                     key_name: key_name.to_string(),

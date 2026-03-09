@@ -16,8 +16,8 @@ impl KeyTableManager {
             let trimmed = line.trim();
             if trimmed.starts_with("KeyTable") {
                 let value = trimmed
-                    .splitn(2, char::is_whitespace)
-                    .nth(1)
+                    .split_once(char::is_whitespace)
+                    .map(|x| x.1)
                     .unwrap_or("")
                     .trim();
                 let path = value
@@ -38,23 +38,15 @@ impl KeyTableManager {
     }
 
     /// Get a single key table entry by key_name.
-    pub async fn get(
-        client: &OpendkimClient,
-        key_name: &str,
-    ) -> OpendkimResult<KeyTableEntry> {
+    pub async fn get(client: &OpendkimClient, key_name: &str) -> OpendkimResult<KeyTableEntry> {
         let all = Self::list(client).await?;
         all.into_iter()
             .find(|e| e.key_name == key_name)
-            .ok_or_else(|| {
-                OpendkimError::key_table(format!("key_name not found: {}", key_name))
-            })
+            .ok_or_else(|| OpendkimError::key_table(format!("key_name not found: {}", key_name)))
     }
 
     /// Add a new entry to the key table.
-    pub async fn add(
-        client: &OpendkimClient,
-        entry: &KeyTableEntry,
-    ) -> OpendkimResult<()> {
+    pub async fn add(client: &OpendkimClient, entry: &KeyTableEntry) -> OpendkimResult<()> {
         let path = Self::table_path(client).await?;
         let content = client.read_remote_file(&path).await.unwrap_or_default();
         let existing = parse_key_table(&content);
@@ -85,9 +77,7 @@ impl KeyTableManager {
         let idx = entries
             .iter()
             .position(|e| e.key_name == key_name)
-            .ok_or_else(|| {
-                OpendkimError::key_table(format!("key_name not found: {}", key_name))
-            })?;
+            .ok_or_else(|| OpendkimError::key_table(format!("key_name not found: {}", key_name)))?;
         entries[idx] = entry.clone();
         let new_content = serialize_key_table(&entries);
         client.write_remote_file(&path, &new_content).await
@@ -120,7 +110,10 @@ impl KeyTableManager {
         let mut entries = Vec::new();
         for domain in &domains {
             let domain_dir = format!("{}/{}", key_dir, domain);
-            let files = client.list_remote_dir(&domain_dir).await.unwrap_or_default();
+            let files = client
+                .list_remote_dir(&domain_dir)
+                .await
+                .unwrap_or_default();
             for file in &files {
                 if !file.ends_with(".private") {
                     continue;

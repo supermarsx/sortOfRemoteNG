@@ -19,8 +19,8 @@ impl TrustedHostManager {
             let trimmed = line.trim();
             if trimmed.starts_with("TrustedHosts") || trimmed.starts_with("ExternalIgnoreList") {
                 let value = trimmed
-                    .splitn(2, char::is_whitespace)
-                    .nth(1)
+                    .split_once(char::is_whitespace)
+                    .map(|x| x.1)
                     .unwrap_or("")
                     .trim();
                 let path = value
@@ -88,8 +88,8 @@ impl TrustedHostManager {
             let trimmed = line.trim();
             if trimmed.starts_with("InternalHosts") {
                 let value = trimmed
-                    .splitn(2, char::is_whitespace)
-                    .nth(1)
+                    .split_once(char::is_whitespace)
+                    .map(|x| x.1)
                     .unwrap_or("")
                     .trim();
                 let path = value
@@ -113,10 +113,7 @@ impl TrustedHostManager {
     }
 
     /// Add an internal host.
-    pub async fn add_internal(
-        client: &OpendkimClient,
-        host: &InternalHost,
-    ) -> OpendkimResult<()> {
+    pub async fn add_internal(client: &OpendkimClient, host: &InternalHost) -> OpendkimResult<()> {
         let path = Self::internal_hosts_path(client).await?;
         let content = client.read_remote_file(&path).await.unwrap_or_default();
         let existing = parse_host_list(&content);
@@ -136,10 +133,7 @@ impl TrustedHostManager {
     }
 
     /// Remove an internal host.
-    pub async fn remove_internal(
-        client: &OpendkimClient,
-        host: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn remove_internal(client: &OpendkimClient, host: &str) -> OpendkimResult<()> {
         let path = Self::internal_hosts_path(client).await?;
         let content = client.read_remote_file(&path).await?;
         let entries = parse_host_list(&content);

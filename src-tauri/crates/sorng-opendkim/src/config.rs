@@ -15,10 +15,7 @@ impl OpendkimConfigManager {
     }
 
     /// Get a specific configuration parameter by key.
-    pub async fn get_param(
-        client: &OpendkimClient,
-        key: &str,
-    ) -> OpendkimResult<OpendkimConfig> {
+    pub async fn get_param(client: &OpendkimClient, key: &str) -> OpendkimResult<OpendkimConfig> {
         let all = Self::get_all(client).await?;
         all.into_iter()
             .find(|p| p.key.eq_ignore_ascii_case(key))
@@ -29,11 +26,7 @@ impl OpendkimConfigManager {
 
     /// Set a configuration parameter. If the key already exists, its value
     /// is updated in place; otherwise a new line is appended.
-    pub async fn set_param(
-        client: &OpendkimClient,
-        key: &str,
-        value: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn set_param(client: &OpendkimClient, key: &str, value: &str) -> OpendkimResult<()> {
         let raw = client.read_remote_file(client.config_path()).await?;
         let mut lines: Vec<String> = raw.lines().map(String::from).collect();
         let mut found = false;
@@ -43,7 +36,11 @@ impl OpendkimConfigManager {
                 continue;
             }
             let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
-            if parts.first().map(|k| k.eq_ignore_ascii_case(key)).unwrap_or(false) {
+            if parts
+                .first()
+                .map(|k| k.eq_ignore_ascii_case(key))
+                .unwrap_or(false)
+            {
                 // Preserve leading whitespace
                 let leading: String = line.chars().take_while(|c| c.is_whitespace()).collect();
                 *line = format!("{}{}\t{}", leading, key, value);
@@ -61,10 +58,7 @@ impl OpendkimConfigManager {
     }
 
     /// Delete a configuration parameter by key.
-    pub async fn delete_param(
-        client: &OpendkimClient,
-        key: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn delete_param(client: &OpendkimClient, key: &str) -> OpendkimResult<()> {
         let raw = client.read_remote_file(client.config_path()).await?;
         let lines: Vec<&str> = raw.lines().collect();
         let mut new_lines = Vec::new();
@@ -73,7 +67,11 @@ impl OpendkimConfigManager {
             let trimmed = line.trim();
             if !trimmed.starts_with('#') && !trimmed.is_empty() {
                 let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
-                if parts.first().map(|k| k.eq_ignore_ascii_case(key)).unwrap_or(false) {
+                if parts
+                    .first()
+                    .map(|k| k.eq_ignore_ascii_case(key))
+                    .unwrap_or(false)
+                {
                     found = true;
                     continue;
                 }
@@ -131,10 +129,7 @@ impl OpendkimConfigManager {
     }
 
     /// Set the operating mode.
-    pub async fn set_mode(
-        client: &OpendkimClient,
-        mode: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn set_mode(client: &OpendkimClient, mode: &str) -> OpendkimResult<()> {
         // Validate mode
         let valid = ["s", "v", "sv", "vs"];
         if !valid.contains(&mode) {
@@ -156,10 +151,7 @@ impl OpendkimConfigManager {
     }
 
     /// Set the milter socket configuration.
-    pub async fn set_socket(
-        client: &OpendkimClient,
-        socket: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn set_socket(client: &OpendkimClient, socket: &str) -> OpendkimResult<()> {
         Self::set_param(client, "Socket", socket).await
     }
 }

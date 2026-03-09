@@ -19,15 +19,24 @@ impl OpendkimClient {
     // ── Paths ────────────────────────────────────────────────────────
 
     pub fn opendkim_bin(&self) -> &str {
-        self.config.opendkim_bin.as_deref().unwrap_or("/usr/sbin/opendkim")
+        self.config
+            .opendkim_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/opendkim")
     }
 
     pub fn config_path(&self) -> &str {
-        self.config.config_path.as_deref().unwrap_or("/etc/opendkim.conf")
+        self.config
+            .config_path
+            .as_deref()
+            .unwrap_or("/etc/opendkim.conf")
     }
 
     pub fn key_dir(&self) -> &str {
-        self.config.key_dir.as_deref().unwrap_or("/etc/opendkim/keys")
+        self.config
+            .key_dir
+            .as_deref()
+            .unwrap_or("/etc/opendkim/keys")
     }
 
     // ── SSH command execution stub ───────────────────────────────────
@@ -45,7 +54,9 @@ impl OpendkimClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> OpendkimResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 
@@ -101,20 +112,12 @@ impl OpendkimClient {
             .exec_ssh(&format!("{} -V 2>&1", self.opendkim_bin()))
             .await?;
         // opendkim -V outputs: "opendkim: OpenDKIM Filter v2.11.0"
-        let version = out
-            .stdout
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let version = out.stdout.lines().next().unwrap_or("").trim().to_string();
         Ok(version)
     }
 
     pub async fn reload(&self) -> OpendkimResult<()> {
-        let out = self
-            .exec_ssh("sudo systemctl reload opendkim 2>&1")
-            .await?;
+        let out = self.exec_ssh("sudo systemctl reload opendkim 2>&1").await?;
         if out.exit_code != 0 {
             return Err(OpendkimError::reload(format!(
                 "reload failed: {}",
@@ -125,9 +128,7 @@ impl OpendkimClient {
     }
 
     pub async fn status(&self) -> OpendkimResult<String> {
-        let out = self
-            .exec_ssh("systemctl is-active opendkim 2>&1")
-            .await?;
+        let out = self.exec_ssh("systemctl is-active opendkim 2>&1").await?;
         Ok(out.stdout.trim().to_string())
     }
 }

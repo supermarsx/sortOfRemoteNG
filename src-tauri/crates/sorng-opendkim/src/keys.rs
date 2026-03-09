@@ -15,7 +15,10 @@ impl KeyManager {
         let mut keys = Vec::new();
         for domain in &domains {
             let domain_dir = format!("{}/{}", key_dir, domain);
-            let files = client.list_remote_dir(&domain_dir).await.unwrap_or_default();
+            let files = client
+                .list_remote_dir(&domain_dir)
+                .await
+                .unwrap_or_default();
             for file in &files {
                 if !file.ends_with(".private") {
                     continue;
@@ -56,7 +59,6 @@ impl KeyManager {
                         .ok()
                         .and_then(|o| {
                             o.stdout
-                                .trim()
                                 .split_whitespace()
                                 .find_map(|w| w.trim_end_matches('-').parse::<u32>().ok())
                         })
@@ -169,9 +171,10 @@ impl KeyManager {
         domain: &str,
     ) -> OpendkimResult<DnsRecord> {
         let txt_path = format!("{}/{}/{}.txt", client.key_dir(), domain, selector);
-        let content = client.read_remote_file(&txt_path).await.map_err(|_| {
-            OpendkimError::key_not_found(selector, domain)
-        })?;
+        let content = client
+            .read_remote_file(&txt_path)
+            .await
+            .map_err(|_| OpendkimError::key_not_found(selector, domain))?;
         // opendkim-genkey produces a file like:
         //   selector._domainkey IN TXT ( "v=DKIM1; k=rsa; p=MIG..." )
         let value = content
@@ -214,9 +217,10 @@ impl KeyManager {
         domain: &str,
     ) -> OpendkimResult<String> {
         let txt_path = format!("{}/{}/{}.txt", client.key_dir(), domain, selector);
-        let content = client.read_remote_file(&txt_path).await.map_err(|_| {
-            OpendkimError::key_not_found(selector, domain)
-        })?;
+        let content = client
+            .read_remote_file(&txt_path)
+            .await
+            .map_err(|_| OpendkimError::key_not_found(selector, domain))?;
         // Extract the p= value from the TXT record content
         let mut p_value = String::new();
         let mut capture = false;
@@ -227,7 +231,11 @@ impl KeyManager {
                     p_value.push_str(after_p.trim_end_matches(';').trim());
                     capture = true;
                 }
-            } else if capture && !trimmed.is_empty() && !trimmed.contains('(') && !trimmed.contains(')') {
+            } else if capture
+                && !trimmed.is_empty()
+                && !trimmed.contains('(')
+                && !trimmed.contains(')')
+            {
                 p_value.push_str(trimmed.trim_end_matches(';').trim());
             }
         }

@@ -21,9 +21,7 @@ impl OpendkimProcessManager {
     }
 
     pub async fn stop(client: &OpendkimClient) -> OpendkimResult<()> {
-        let out = client
-            .exec_ssh("sudo systemctl stop opendkim 2>&1")
-            .await?;
+        let out = client.exec_ssh("sudo systemctl stop opendkim 2>&1").await?;
         if out.exit_code != 0 {
             return Err(OpendkimError::process(format!(
                 "stop failed: {}",
@@ -63,7 +61,7 @@ impl OpendkimProcessManager {
         // Parse version string: "opendkim: OpenDKIM Filter v2.11.0"
         let version = version_raw
             .split('v')
-            .last()
+            .next_back()
             .unwrap_or(&version_raw)
             .trim()
             .to_string();

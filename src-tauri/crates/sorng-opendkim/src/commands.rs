@@ -20,14 +20,16 @@ pub async fn dkim_connect(
     id: String,
     config: OpendkimConnectionConfig,
 ) -> CmdResult<OpendkimConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dkim_disconnect(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dkim_disconnect(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
@@ -39,10 +41,7 @@ pub async fn dkim_list_connections(
 }
 
 #[tauri::command]
-pub async fn dkim_ping(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<bool> {
+pub async fn dkim_ping(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<bool> {
     state.lock().await.ping(&id).await.map_err(map_err)
 }
 
@@ -529,10 +528,7 @@ pub async fn dkim_get_stats(
 }
 
 #[tauri::command]
-pub async fn dkim_reset_stats(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dkim_reset_stats(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reset_stats(&id).await.map_err(map_err)
 }
 
@@ -553,50 +549,32 @@ pub async fn dkim_get_last_messages(
 // ── Process ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn dkim_start(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dkim_start(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.start(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dkim_stop(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dkim_stop(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.stop(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dkim_restart(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dkim_restart(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.restart(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dkim_reload(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dkim_reload(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reload(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dkim_status(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<String> {
+pub async fn dkim_status(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<String> {
     state.lock().await.status(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dkim_version(
-    state: State<'_, OpendkimServiceState>,
-    id: String,
-) -> CmdResult<String> {
+pub async fn dkim_version(state: State<'_, OpendkimServiceState>, id: String) -> CmdResult<String> {
     state.lock().await.version(&id).await.map_err(map_err)
 }
 

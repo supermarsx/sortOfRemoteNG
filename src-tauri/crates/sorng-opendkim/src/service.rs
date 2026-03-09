@@ -25,6 +25,12 @@ pub struct OpendkimService {
     connections: HashMap<String, OpendkimClient>,
 }
 
+impl Default for OpendkimService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OpendkimService {
     pub fn new() -> Self {
         Self {
@@ -44,7 +50,9 @@ impl OpendkimService {
         }
         let client = OpendkimClient::new(config)?;
         let ver = client.version().await.ok();
-        let mode = crate::config::OpendkimConfigManager::get_mode(&client).await.ok();
+        let mode = crate::config::OpendkimConfigManager::get_mode(&client)
+            .await
+            .ok();
         let domain = crate::config::OpendkimConfigManager::get_param(&client, "Domain")
             .await
             .ok()
@@ -63,7 +71,7 @@ impl OpendkimService {
         self.connections
             .remove(id)
             .map(|_| ())
-            .ok_or_else(|| OpendkimError::not_connected())
+            .ok_or_else(OpendkimError::not_connected)
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -73,7 +81,7 @@ impl OpendkimService {
     fn client(&self, id: &str) -> OpendkimResult<&OpendkimClient> {
         self.connections
             .get(id)
-            .ok_or_else(|| OpendkimError::not_connected())
+            .ok_or_else(OpendkimError::not_connected)
     }
 
     pub async fn ping(&self, id: &str) -> OpendkimResult<bool> {
@@ -88,37 +96,19 @@ impl OpendkimService {
         KeyManager::list(self.client(id)?).await
     }
 
-    pub async fn get_key(
-        &self,
-        id: &str,
-        selector: &str,
-        domain: &str,
-    ) -> OpendkimResult<DkimKey> {
+    pub async fn get_key(&self, id: &str, selector: &str, domain: &str) -> OpendkimResult<DkimKey> {
         KeyManager::get(self.client(id)?, selector, domain).await
     }
 
-    pub async fn generate_key(
-        &self,
-        id: &str,
-        req: CreateKeyRequest,
-    ) -> OpendkimResult<DkimKey> {
+    pub async fn generate_key(&self, id: &str, req: CreateKeyRequest) -> OpendkimResult<DkimKey> {
         KeyManager::generate(self.client(id)?, &req).await
     }
 
-    pub async fn rotate_key(
-        &self,
-        id: &str,
-        req: RotateKeyRequest,
-    ) -> OpendkimResult<DkimKey> {
+    pub async fn rotate_key(&self, id: &str, req: RotateKeyRequest) -> OpendkimResult<DkimKey> {
         KeyManager::rotate(self.client(id)?, &req).await
     }
 
-    pub async fn delete_key(
-        &self,
-        id: &str,
-        selector: &str,
-        domain: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn delete_key(&self, id: &str, selector: &str, domain: &str) -> OpendkimResult<()> {
         KeyManager::delete(self.client(id)?, selector, domain).await
     }
 
@@ -131,12 +121,7 @@ impl OpendkimService {
         KeyManager::get_dns_record(self.client(id)?, selector, domain).await
     }
 
-    pub async fn verify_dns(
-        &self,
-        id: &str,
-        selector: &str,
-        domain: &str,
-    ) -> OpendkimResult<bool> {
+    pub async fn verify_dns(&self, id: &str, selector: &str, domain: &str) -> OpendkimResult<bool> {
         KeyManager::verify_dns(self.client(id)?, selector, domain).await
     }
 
@@ -151,10 +136,7 @@ impl OpendkimService {
 
     // ── Signing Table ────────────────────────────────────────────
 
-    pub async fn list_signing_table(
-        &self,
-        id: &str,
-    ) -> OpendkimResult<Vec<SigningTableEntry>> {
+    pub async fn list_signing_table(&self, id: &str) -> OpendkimResult<Vec<SigningTableEntry>> {
         SigningTableManager::list(self.client(id)?).await
     }
 
@@ -183,11 +165,7 @@ impl OpendkimService {
         SigningTableManager::update(self.client(id)?, pattern, &entry).await
     }
 
-    pub async fn remove_signing_entry(
-        &self,
-        id: &str,
-        pattern: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn remove_signing_entry(&self, id: &str, pattern: &str) -> OpendkimResult<()> {
         SigningTableManager::remove(self.client(id)?, pattern).await
     }
 
@@ -197,26 +175,15 @@ impl OpendkimService {
 
     // ── Key Table ────────────────────────────────────────────────
 
-    pub async fn list_key_table(
-        &self,
-        id: &str,
-    ) -> OpendkimResult<Vec<KeyTableEntry>> {
+    pub async fn list_key_table(&self, id: &str) -> OpendkimResult<Vec<KeyTableEntry>> {
         KeyTableManager::list(self.client(id)?).await
     }
 
-    pub async fn get_key_entry(
-        &self,
-        id: &str,
-        key_name: &str,
-    ) -> OpendkimResult<KeyTableEntry> {
+    pub async fn get_key_entry(&self, id: &str, key_name: &str) -> OpendkimResult<KeyTableEntry> {
         KeyTableManager::get(self.client(id)?, key_name).await
     }
 
-    pub async fn add_key_entry(
-        &self,
-        id: &str,
-        entry: KeyTableEntry,
-    ) -> OpendkimResult<()> {
+    pub async fn add_key_entry(&self, id: &str, entry: KeyTableEntry) -> OpendkimResult<()> {
         KeyTableManager::add(self.client(id)?, &entry).await
     }
 
@@ -229,11 +196,7 @@ impl OpendkimService {
         KeyTableManager::update(self.client(id)?, key_name, &entry).await
     }
 
-    pub async fn remove_key_entry(
-        &self,
-        id: &str,
-        key_name: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn remove_key_entry(&self, id: &str, key_name: &str) -> OpendkimResult<()> {
         KeyTableManager::remove(self.client(id)?, key_name).await
     }
 
@@ -243,83 +206,45 @@ impl OpendkimService {
 
     // ── Trusted Hosts ────────────────────────────────────────────
 
-    pub async fn list_trusted_hosts(
-        &self,
-        id: &str,
-    ) -> OpendkimResult<Vec<TrustedHost>> {
+    pub async fn list_trusted_hosts(&self, id: &str) -> OpendkimResult<Vec<TrustedHost>> {
         TrustedHostManager::list(self.client(id)?).await
     }
 
-    pub async fn add_trusted_host(
-        &self,
-        id: &str,
-        host: TrustedHost,
-    ) -> OpendkimResult<()> {
+    pub async fn add_trusted_host(&self, id: &str, host: TrustedHost) -> OpendkimResult<()> {
         TrustedHostManager::add(self.client(id)?, &host).await
     }
 
-    pub async fn remove_trusted_host(
-        &self,
-        id: &str,
-        host: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn remove_trusted_host(&self, id: &str, host: &str) -> OpendkimResult<()> {
         TrustedHostManager::remove(self.client(id)?, host).await
     }
 
-    pub async fn list_internal_hosts(
-        &self,
-        id: &str,
-    ) -> OpendkimResult<Vec<InternalHost>> {
+    pub async fn list_internal_hosts(&self, id: &str) -> OpendkimResult<Vec<InternalHost>> {
         TrustedHostManager::list_internal(self.client(id)?).await
     }
 
-    pub async fn add_internal_host(
-        &self,
-        id: &str,
-        host: InternalHost,
-    ) -> OpendkimResult<()> {
+    pub async fn add_internal_host(&self, id: &str, host: InternalHost) -> OpendkimResult<()> {
         TrustedHostManager::add_internal(self.client(id)?, &host).await
     }
 
-    pub async fn remove_internal_host(
-        &self,
-        id: &str,
-        host: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn remove_internal_host(&self, id: &str, host: &str) -> OpendkimResult<()> {
         TrustedHostManager::remove_internal(self.client(id)?, host).await
     }
 
     // ── Config ───────────────────────────────────────────────────
 
-    pub async fn get_config(
-        &self,
-        id: &str,
-    ) -> OpendkimResult<Vec<OpendkimConfig>> {
+    pub async fn get_config(&self, id: &str) -> OpendkimResult<Vec<OpendkimConfig>> {
         OpendkimConfigManager::get_all(self.client(id)?).await
     }
 
-    pub async fn get_config_param(
-        &self,
-        id: &str,
-        key: &str,
-    ) -> OpendkimResult<OpendkimConfig> {
+    pub async fn get_config_param(&self, id: &str, key: &str) -> OpendkimResult<OpendkimConfig> {
         OpendkimConfigManager::get_param(self.client(id)?, key).await
     }
 
-    pub async fn set_config_param(
-        &self,
-        id: &str,
-        key: &str,
-        value: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn set_config_param(&self, id: &str, key: &str, value: &str) -> OpendkimResult<()> {
         OpendkimConfigManager::set_param(self.client(id)?, key, value).await
     }
 
-    pub async fn delete_config_param(
-        &self,
-        id: &str,
-        key: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn delete_config_param(&self, id: &str, key: &str) -> OpendkimResult<()> {
         OpendkimConfigManager::delete_param(self.client(id)?, key).await
     }
 
@@ -339,11 +264,7 @@ impl OpendkimService {
         OpendkimConfigManager::get_socket(self.client(id)?).await
     }
 
-    pub async fn set_socket(
-        &self,
-        id: &str,
-        socket: &str,
-    ) -> OpendkimResult<()> {
+    pub async fn set_socket(&self, id: &str, socket: &str) -> OpendkimResult<()> {
         OpendkimConfigManager::set_socket(self.client(id)?, socket).await
     }
 
@@ -357,11 +278,7 @@ impl OpendkimService {
         StatsManager::reset_stats(self.client(id)?).await
     }
 
-    pub async fn get_last_messages(
-        &self,
-        id: &str,
-        count: u32,
-    ) -> OpendkimResult<Vec<String>> {
+    pub async fn get_last_messages(&self, id: &str, count: u32) -> OpendkimResult<Vec<String>> {
         StatsManager::get_last_messages(self.client(id)?, count).await
     }
 
