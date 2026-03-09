@@ -39,27 +39,27 @@
 //! - `service` — high-level orchestrator (owns sessions)
 //! - `commands` — thin `#[tauri::command]` wrappers
 
-pub mod types;
-pub mod error;
+pub mod agents;
 pub mod api_client;
 pub mod auth;
-pub mod devices;
+pub mod commands;
 pub mod device_groups;
-pub mod users;
-pub mod user_groups;
-pub mod remote;
-pub mod power;
-pub mod files;
+pub mod devices;
+pub mod error;
 pub mod events;
-pub mod sharing;
+pub mod files;
 pub mod messaging;
-pub mod agents;
+pub mod power;
+pub mod remote;
 pub mod server;
 pub mod service;
-pub mod commands;
+pub mod sharing;
+pub mod types;
+pub mod user_groups;
+pub mod users;
 
 // Re-exports
-pub use types::*;
+pub use commands::*;
 pub use error::{MeshCentralError, MeshCentralResult};
 pub use service::{MeshCentralService, MeshCentralServiceState};
-pub use commands::*;
+pub use types::*;

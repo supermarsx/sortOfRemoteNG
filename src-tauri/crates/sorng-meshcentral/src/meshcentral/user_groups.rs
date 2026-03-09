@@ -15,9 +15,7 @@ impl McApiClient {
         if let Some(ugroups) = resp.get("ugroups") {
             if let Some(obj) = ugroups.as_object() {
                 for (_id, group_val) in obj {
-                    if let Ok(group) =
-                        serde_json::from_value::<McUserGroup>(group_val.clone())
-                    {
+                    if let Ok(group) = serde_json::from_value::<McUserGroup>(group_val.clone()) {
                         groups.push(group);
                     }
                 }
@@ -44,8 +42,8 @@ impl McApiClient {
         }
 
         let resp = self.send_action("createusergroup", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "User group created".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "User group created".to_string());
         Ok(result)
     }
 
@@ -66,8 +64,8 @@ impl McApiClient {
         payload.insert("ugrpid".to_string(), json!(ugrpid));
 
         let resp = self.send_action("deleteusergroup", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "User group removed".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "User group removed".to_string());
         Ok(result)
     }
 
@@ -91,9 +89,7 @@ impl McApiClient {
             payload.insert("ugrpid".to_string(), json!(group_id));
             payload.insert("usernames".to_string(), json!([username]));
 
-            let resp = self
-                .send_action("addusertousergroup", payload)
-                .await?;
+            let resp = self.send_action("addusertousergroup", payload).await?;
             let result = McApiClient::extract_result(&resp)
                 .unwrap_or_else(|| "User added to user group".to_string());
             Ok(result)
@@ -139,9 +135,7 @@ impl McApiClient {
             payload.insert("ugrpid".to_string(), json!(group_id));
             payload.insert("userid".to_string(), json!(id));
 
-            let resp = self
-                .send_action("removeuserfromusergroup", payload)
-                .await?;
+            let resp = self.send_action("removeuserfromusergroup", payload).await?;
             let result = McApiClient::extract_result(&resp)
                 .unwrap_or_else(|| "User removed from user group".to_string());
             Ok(result)
@@ -172,20 +166,13 @@ impl McApiClient {
     }
 
     /// Remove all users from a user group.
-    pub async fn remove_all_users_from_user_group(
-        &self,
-        group_id: &str,
-    ) -> MeshCentralResult<u32> {
+    pub async fn remove_all_users_from_user_group(&self, group_id: &str) -> MeshCentralResult<u32> {
         let groups = self.list_user_groups().await?;
 
         let target = groups.iter().find(|g| g.id == group_id);
         let target = match target {
             Some(g) => g,
-            None => {
-                return Err(MeshCentralError::UserGroupNotFound(
-                    group_id.to_string(),
-                ))
-            }
+            None => return Err(MeshCentralError::UserGroupNotFound(group_id.to_string())),
         };
 
         let mut count = 0u32;
@@ -195,9 +182,7 @@ impl McApiClient {
                     let mut payload = serde_json::Map::new();
                     payload.insert("ugrpid".to_string(), json!(group_id));
                     payload.insert("userid".to_string(), json!(user_id));
-                    let _ = self
-                        .send_action("removeuserfromusergroup", payload)
-                        .await;
+                    let _ = self.send_action("removeuserfromusergroup", payload).await;
                     count += 1;
                 }
             }

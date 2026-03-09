@@ -46,7 +46,10 @@ pub enum McAuthConfig {
     },
     /// Login token (created via MeshCentral UI or API).
     #[serde(rename = "login_token")]
-    LoginToken { token_user: String, token_pass: String },
+    LoginToken {
+        token_user: String,
+        token_pass: String,
+    },
     /// Login key (hex-encoded 80-byte key) for cookie-based auth.
     #[serde(rename = "login_key")]
     LoginKey {
@@ -525,13 +528,13 @@ impl McPowerAction {
     /// Convert to the MeshCentral API action type number.
     pub fn action_type(&self) -> u32 {
         match self {
-            Self::Wake => 1,         // wakedevices action
-            Self::PowerOff => 2,     // poweraction type 2
-            Self::Reset => 3,        // poweraction type 3
-            Self::Sleep => 4,        // poweraction type 4
-            Self::AmtPowerOn => 302, // AMT power on
+            Self::Wake => 1,          // wakedevices action
+            Self::PowerOff => 2,      // poweraction type 2
+            Self::Reset => 3,         // poweraction type 3
+            Self::Sleep => 4,         // poweraction type 4
+            Self::AmtPowerOn => 302,  // AMT power on
             Self::AmtPowerOff => 308, // AMT power off
-            Self::AmtReset => 310,   // AMT reset
+            Self::AmtReset => 310,    // AMT reset
         }
     }
 }

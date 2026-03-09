@@ -11,10 +11,7 @@ impl McApiClient {
     /// Supports both Windows (cmd) and Linux/macOS (bash) commands.
     /// The `run_as_user` option runs the command as the logged-in user on Windows.
     /// The `powershell` option runs the command in PowerShell instead of cmd on Windows.
-    pub async fn run_commands(
-        &self,
-        cmd: &McRunCommand,
-    ) -> MeshCentralResult<McCommandResult> {
+    pub async fn run_commands(&self, cmd: &McRunCommand) -> MeshCentralResult<McCommandResult> {
         let mut payload = serde_json::Map::new();
 
         payload.insert("nodeids".to_string(), json!([cmd.device_id]));
@@ -59,7 +56,10 @@ impl McApiClient {
             device_id: cmd.device_id.clone(),
             result: result_text,
             error: error_text,
-            exit_code: resp.get("exitCode").and_then(|v| v.as_i64()).map(|v| v as i32),
+            exit_code: resp
+                .get("exitCode")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32),
             execution_time_ms: None,
         })
     }
@@ -148,15 +148,12 @@ impl McApiClient {
     }
 
     /// Request the server to send a wake-on-LAN packet to wake a device.
-    pub async fn wake_device(
-        &self,
-        device_id: &str,
-    ) -> MeshCentralResult<String> {
+    pub async fn wake_device(&self, device_id: &str) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeids".to_string(), json!([device_id]));
         let resp = self.send_action("wakedevices", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Wake request sent".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Wake request sent".to_string());
         Ok(result)
     }
 

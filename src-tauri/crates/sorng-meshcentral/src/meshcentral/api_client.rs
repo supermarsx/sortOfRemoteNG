@@ -22,7 +22,9 @@ pub struct McApiClient {
     pub(crate) base_url: String,
     pub(crate) auth_header: Option<String>,
     pub(crate) auth_cookie: Option<String>,
+    #[allow(dead_code)]
     pub(crate) domain: String,
+    #[allow(dead_code)]
     pub(crate) timeout: Duration,
 }
 
@@ -68,11 +70,7 @@ impl McApiClient {
     }
 
     /// Build a request with authentication headers.
-    fn authenticated_request(
-        &self,
-        method: reqwest::Method,
-        url: &str,
-    ) -> reqwest::RequestBuilder {
+    fn authenticated_request(&self, method: reqwest::Method, url: &str) -> reqwest::RequestBuilder {
         let mut req = self.client.request(method, url);
         if let Some(ref header) = self.auth_header {
             req = req.header("x-meshauth", header);
@@ -121,7 +119,10 @@ impl McApiClient {
         }
 
         let body: Value = resp.json().await?;
-        debug!("MeshCentral API ← {}", serde_json::to_string(&body).unwrap_or_default());
+        debug!(
+            "MeshCentral API ← {}",
+            serde_json::to_string(&body).unwrap_or_default()
+        );
         Ok(body)
     }
 
@@ -162,11 +163,7 @@ impl McApiClient {
     }
 
     /// Perform a raw POST request.
-    pub async fn post_json(
-        &self,
-        path: &str,
-        body: &Value,
-    ) -> MeshCentralResult<Value> {
+    pub async fn post_json(&self, path: &str, body: &Value) -> MeshCentralResult<Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .authenticated_request(reqwest::Method::POST, &url)

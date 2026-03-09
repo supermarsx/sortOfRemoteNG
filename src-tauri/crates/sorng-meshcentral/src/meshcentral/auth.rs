@@ -41,7 +41,10 @@ pub fn build_auth(
             let header = format!("{},{}", user_b64, pass_b64);
             Ok((Some(header), None))
         }
-        McAuthConfig::LoginKey { key_hex, username: _ } => {
+        McAuthConfig::LoginKey {
+            key_hex,
+            username: _,
+        } => {
             // Login keys are 80 bytes (160 hex chars).
             // They get passed as the `auth` query parameter.
             if key_hex.len() == 160 {
@@ -92,10 +95,7 @@ pub fn parse_site_rights(rights_str: &str) -> u64 {
 }
 
 /// Parse mesh (device group) rights from common permission names.
-pub fn parse_mesh_rights(
-    full_rights: bool,
-    individual: &[&str],
-) -> u64 {
+pub fn parse_mesh_rights(full_rights: bool, individual: &[&str]) -> u64 {
     if full_rights {
         return 0xFFFFFFFF;
     }

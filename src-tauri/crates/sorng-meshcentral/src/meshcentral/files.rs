@@ -139,10 +139,7 @@ impl McApiClient {
     /// The file is sent through the MeshCentral relay tunnel protocol.
     /// In the real implementation, this opens a WebSocket tunnel to the agent.
     /// This method prepares the upload request and returns transfer metadata.
-    pub async fn upload_file(
-        &self,
-        upload: &McFileUpload,
-    ) -> MeshCentralResult<String> {
+    pub async fn upload_file(&self, upload: &McFileUpload) -> MeshCentralResult<String> {
         // Validate the file exists locally
         let metadata = tokio::fs::metadata(&upload.local_path).await.map_err(|e| {
             MeshCentralError::FileTransferFailed(format!(
@@ -172,10 +169,7 @@ impl McApiClient {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeid".to_string(), json!(upload.device_id));
         payload.insert("protocol".to_string(), json!(5)); // 5 = files
-        payload.insert(
-            "name".to_string(),
-            json!(format!("upload_{}", transfer_id)),
-        );
+        payload.insert("name".to_string(), json!(format!("upload_{}", transfer_id)));
 
         // Initiate relay tunnel for file transfer
         let resp = self.send_action("msg", payload).await?;
@@ -206,10 +200,7 @@ impl McApiClient {
     /// Download a file from a device.
     ///
     /// Returns a transfer ID that can be used to track progress.
-    pub async fn download_file(
-        &self,
-        download: &McFileDownload,
-    ) -> MeshCentralResult<String> {
+    pub async fn download_file(&self, download: &McFileDownload) -> MeshCentralResult<String> {
         let transfer_id = uuid::Uuid::new_v4().to_string();
 
         // Create the file transfer relay request
@@ -273,8 +264,8 @@ impl McApiClient {
         payload.insert("fileop".to_string(), json!("createfolder"));
 
         let resp = self.send_action("msg", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Directory created".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Directory created".to_string());
         Ok(result)
     }
 
@@ -297,8 +288,8 @@ impl McApiClient {
         }
 
         let resp = self.send_action("msg", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "File(s) deleted".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "File(s) deleted".to_string());
         Ok(result)
     }
 
@@ -319,8 +310,8 @@ impl McApiClient {
         payload.insert("newname".to_string(), json!(new_name));
 
         let resp = self.send_action("msg", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "File renamed".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "File renamed".to_string());
         Ok(result)
     }
 }

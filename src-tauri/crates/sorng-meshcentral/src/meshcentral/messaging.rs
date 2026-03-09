@@ -7,10 +7,7 @@ use serde_json::json;
 
 impl McApiClient {
     /// Send a toast notification to one or more devices.
-    pub async fn send_toast(
-        &self,
-        toast: &McDeviceToast,
-    ) -> MeshCentralResult<String> {
+    pub async fn send_toast(&self, toast: &McDeviceToast) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeids".to_string(), json!(toast.device_ids));
         if let Some(ref title) = toast.title {
@@ -25,10 +22,7 @@ impl McApiClient {
     }
 
     /// Send a message box dialog to a device.
-    pub async fn send_message_box(
-        &self,
-        msg: &McDeviceMessage,
-    ) -> MeshCentralResult<String> {
+    pub async fn send_message_box(&self, msg: &McDeviceMessage) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeid".to_string(), json!(msg.device_id));
         payload.insert("type".to_string(), json!("messagebox"));
@@ -41,16 +35,13 @@ impl McApiClient {
         }
 
         let resp = self.send_action("msg", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Message box sent".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Message box sent".to_string());
         Ok(result)
     }
 
     /// Open a URL on a device's default browser.
-    pub async fn send_open_url(
-        &self,
-        open: &McDeviceOpenUrl,
-    ) -> MeshCentralResult<String> {
+    pub async fn send_open_url(&self, open: &McDeviceOpenUrl) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeid".to_string(), json!(open.device_id));
         payload.insert("type".to_string(), json!("openUrl"));
@@ -72,9 +63,7 @@ impl McApiClient {
         let devices = self.list_devices(None).await?;
         let group_nodes: Vec<String> = devices
             .iter()
-            .filter(|d| {
-                d.meshid.as_deref() == Some(mesh_id)
-            })
+            .filter(|d| d.meshid.as_deref() == Some(mesh_id))
             .map(|d| d.id.clone())
             .collect();
 
@@ -121,10 +110,7 @@ impl McApiClient {
     }
 
     /// Broadcast a message to all connected users on the server.
-    pub async fn broadcast_message(
-        &self,
-        broadcast: &McBroadcast,
-    ) -> MeshCentralResult<String> {
+    pub async fn broadcast_message(&self, broadcast: &McBroadcast) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("msg".to_string(), json!(broadcast.msg));
 
@@ -133,8 +119,8 @@ impl McApiClient {
         }
 
         let resp = self.send_action("userbroadcast", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Broadcast sent".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Broadcast sent".to_string());
         Ok(result)
     }
 
@@ -154,11 +140,7 @@ impl McApiClient {
     }
 
     /// Send a notification to a specific user.
-    pub async fn notify_user(
-        &self,
-        user_id: &str,
-        message: &str,
-    ) -> MeshCentralResult<String> {
+    pub async fn notify_user(&self, user_id: &str, message: &str) -> MeshCentralResult<String> {
         let broadcast = McBroadcast {
             msg: message.to_string(),
             user_id: Some(user_id.to_string()),

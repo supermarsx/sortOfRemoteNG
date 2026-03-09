@@ -31,10 +31,7 @@ impl McApiClient {
     }
 
     /// Wake one or more devices via Wake-on-LAN.
-    pub async fn wake_devices(
-        &self,
-        node_ids: &[String],
-    ) -> MeshCentralResult<String> {
+    pub async fn wake_devices(&self, node_ids: &[String]) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeids".to_string(), json!(node_ids));
 
@@ -45,75 +42,39 @@ impl McApiClient {
     }
 
     /// Power off a single device.
-    pub async fn power_off_device(
-        &self,
-        node_id: &str,
-    ) -> MeshCentralResult<String> {
-        self.power_action(
-            &[node_id.to_string()],
-            McPowerAction::PowerOff,
-        )
-        .await
+    pub async fn power_off_device(&self, node_id: &str) -> MeshCentralResult<String> {
+        self.power_action(&[node_id.to_string()], McPowerAction::PowerOff)
+            .await
     }
 
     /// Reboot/reset a single device.
-    pub async fn reset_device(
-        &self,
-        node_id: &str,
-    ) -> MeshCentralResult<String> {
-        self.power_action(
-            &[node_id.to_string()],
-            McPowerAction::Reset,
-        )
-        .await
+    pub async fn reset_device(&self, node_id: &str) -> MeshCentralResult<String> {
+        self.power_action(&[node_id.to_string()], McPowerAction::Reset)
+            .await
     }
 
     /// Put a single device to sleep.
-    pub async fn sleep_device(
-        &self,
-        node_id: &str,
-    ) -> MeshCentralResult<String> {
-        self.power_action(
-            &[node_id.to_string()],
-            McPowerAction::Sleep,
-        )
-        .await
+    pub async fn sleep_device(&self, node_id: &str) -> MeshCentralResult<String> {
+        self.power_action(&[node_id.to_string()], McPowerAction::Sleep)
+            .await
     }
 
     /// Power on a device using Intel AMT.
-    pub async fn amt_power_on(
-        &self,
-        node_id: &str,
-    ) -> MeshCentralResult<String> {
-        self.power_action(
-            &[node_id.to_string()],
-            McPowerAction::AmtPowerOn,
-        )
-        .await
+    pub async fn amt_power_on(&self, node_id: &str) -> MeshCentralResult<String> {
+        self.power_action(&[node_id.to_string()], McPowerAction::AmtPowerOn)
+            .await
     }
 
     /// Power off a device using Intel AMT.
-    pub async fn amt_power_off(
-        &self,
-        node_id: &str,
-    ) -> MeshCentralResult<String> {
-        self.power_action(
-            &[node_id.to_string()],
-            McPowerAction::AmtPowerOff,
-        )
-        .await
+    pub async fn amt_power_off(&self, node_id: &str) -> MeshCentralResult<String> {
+        self.power_action(&[node_id.to_string()], McPowerAction::AmtPowerOff)
+            .await
     }
 
     /// Reset a device using Intel AMT.
-    pub async fn amt_reset(
-        &self,
-        node_id: &str,
-    ) -> MeshCentralResult<String> {
-        self.power_action(
-            &[node_id.to_string()],
-            McPowerAction::AmtReset,
-        )
-        .await
+    pub async fn amt_reset(&self, node_id: &str) -> MeshCentralResult<String> {
+        self.power_action(&[node_id.to_string()], McPowerAction::AmtReset)
+            .await
     }
 
     /// Batch power action on multiple devices with the same action.
@@ -145,10 +106,7 @@ impl McApiClient {
     ///
     /// Returns the connection state flags from `McConnState`.
     /// Bits: 1=agent, 2=CIRA, 4=AMT, 8=relay, 16=MQTT
-    pub async fn get_device_power_state(
-        &self,
-        node_id: &str,
-    ) -> MeshCentralResult<u32> {
+    pub async fn get_device_power_state(&self, node_id: &str) -> MeshCentralResult<u32> {
         let info = self.get_device_info(node_id).await?;
         Ok(info.device.as_ref().and_then(|d| d.conn).unwrap_or(0))
     }

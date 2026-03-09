@@ -10,10 +10,7 @@ impl McApiClient {
     ///
     /// The `agent_type` field of `McAgentDownload` is provided as a `u32`
     /// matching the MeshCentral agent type IDs directly.
-    pub async fn download_agent(
-        &self,
-        download: &McAgentDownload,
-    ) -> MeshCentralResult<Vec<u8>> {
+    pub async fn download_agent(&self, download: &McAgentDownload) -> MeshCentralResult<Vec<u8>> {
         let url = format!(
             "{}/meshagents?id={}&meshid={}",
             self.base_url.trim_end_matches('/'),
@@ -62,10 +59,7 @@ impl McApiClient {
     }
 
     /// Send an email invitation to install the MeshCentral agent.
-    pub async fn send_invite_email(
-        &self,
-        invite: &McSendInviteEmail,
-    ) -> MeshCentralResult<String> {
+    pub async fn send_invite_email(&self, invite: &McSendInviteEmail) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
 
         if let Some(ref gid) = invite.group_id {
@@ -154,11 +148,7 @@ impl McApiClient {
     }
 
     /// Get the mesh agent download URL for direct browser download.
-    pub fn get_agent_download_url(
-        &self,
-        agent_type: u32,
-        mesh_id: &str,
-    ) -> String {
+    pub fn get_agent_download_url(&self, agent_type: u32, mesh_id: &str) -> String {
         format!(
             "{}/meshagents?id={}&meshid={}",
             self.base_url.trim_end_matches('/'),
@@ -168,20 +158,14 @@ impl McApiClient {
     }
 
     /// Check if an agent is currently connected for a device.
-    pub async fn is_agent_connected(
-        &self,
-        device_id: &str,
-    ) -> MeshCentralResult<bool> {
+    pub async fn is_agent_connected(&self, device_id: &str) -> MeshCentralResult<bool> {
         let info = self.get_device_info(device_id).await?;
         let conn = info.device.as_ref().and_then(|d| d.conn).unwrap_or(0);
         Ok(conn & McConnState::AGENT != 0)
     }
 
     /// Get agent version information for a device.
-    pub async fn get_agent_version(
-        &self,
-        device_id: &str,
-    ) -> MeshCentralResult<Option<String>> {
+    pub async fn get_agent_version(&self, device_id: &str) -> MeshCentralResult<Option<String>> {
         let info = self.get_device_info(device_id).await?;
         if let Some(ref dev) = info.device {
             if let Some(ref agent) = dev.agent {
@@ -195,10 +179,7 @@ impl McApiClient {
     }
 
     /// Request an agent to check in / re-connect.
-    pub async fn request_agent_checkin(
-        &self,
-        device_id: &str,
-    ) -> MeshCentralResult<String> {
+    pub async fn request_agent_checkin(&self, device_id: &str) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeid".to_string(), json!(device_id));
         payload.insert("type".to_string(), json!("pong"));
@@ -210,10 +191,7 @@ impl McApiClient {
     }
 
     /// Request an agent update on a device.
-    pub async fn update_agent(
-        &self,
-        device_id: &str,
-    ) -> MeshCentralResult<String> {
+    pub async fn update_agent(&self, device_id: &str) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeids".to_string(), json!([device_id]));
 

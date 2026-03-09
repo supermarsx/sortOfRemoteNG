@@ -239,9 +239,7 @@ pub async fn mc_list_users(
     session_id: String,
 ) -> Result<Vec<McUser>, String> {
     let svc = state.lock().await;
-    svc.list_users(&session_id)
-        .await
-        .map_err(|e| e.to_string())
+    svc.list_users(&session_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

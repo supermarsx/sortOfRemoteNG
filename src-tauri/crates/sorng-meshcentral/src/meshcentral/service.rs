@@ -32,10 +32,7 @@ impl MeshCentralService {
     // ─── Connection lifecycle ────────────────────────────────────
 
     /// Connect to a MeshCentral server.
-    pub async fn connect(
-        &mut self,
-        config: McConnectionConfig,
-    ) -> MeshCentralResult<McSession> {
+    pub async fn connect(&mut self, config: McConnectionConfig) -> MeshCentralResult<McSession> {
         info!("MeshCentral connecting to {}", config.server_url);
 
         // Extract username from auth config before borrowing config
@@ -80,9 +77,7 @@ impl MeshCentralService {
             info!("MeshCentral session {} disconnected", session_id);
             Ok(())
         } else {
-            Err(MeshCentralError::SessionNotFound(
-                session_id.to_string(),
-            ))
+            Err(MeshCentralError::SessionNotFound(session_id.to_string()))
         }
     }
 
@@ -95,16 +90,11 @@ impl MeshCentralService {
     }
 
     /// Get session info.
-    pub fn get_session_info(
-        &self,
-        session_id: &str,
-    ) -> MeshCentralResult<McSession> {
+    pub fn get_session_info(&self, session_id: &str) -> MeshCentralResult<McSession> {
         self.sessions
             .get(session_id)
             .map(|(s, _)| s.clone())
-            .ok_or_else(|| {
-                MeshCentralError::SessionNotFound(session_id.to_string())
-            })
+            .ok_or_else(|| MeshCentralError::SessionNotFound(session_id.to_string()))
     }
 
     /// List all active sessions.
@@ -113,10 +103,7 @@ impl MeshCentralService {
     }
 
     /// Ping a session to verify it is still alive.
-    pub async fn ping(
-        &mut self,
-        session_id: &str,
-    ) -> MeshCentralResult<bool> {
+    pub async fn ping(&mut self, session_id: &str) -> MeshCentralResult<bool> {
         let (_, client) = self.get_client(session_id)?;
         match client.ping().await {
             Ok(_) => Ok(true),
@@ -127,51 +114,36 @@ impl MeshCentralService {
     // ─── Internal helper ─────────────────────────────────────────
 
     /// Get a mutable reference to the client for a session.
-    fn get_client(
-        &mut self,
-        session_id: &str,
-    ) -> MeshCentralResult<&mut (McSession, McApiClient)> {
-        self.sessions.get_mut(session_id).ok_or_else(|| {
-            MeshCentralError::SessionNotFound(session_id.to_string())
-        })
+    fn get_client(&mut self, session_id: &str) -> MeshCentralResult<&mut (McSession, McApiClient)> {
+        self.sessions
+            .get_mut(session_id)
+            .ok_or_else(|| MeshCentralError::SessionNotFound(session_id.to_string()))
     }
 
     /// Get an immutable reference to the client for a session.
-    fn get_client_ref(
-        &self,
-        session_id: &str,
-    ) -> MeshCentralResult<&(McSession, McApiClient)> {
-        self.sessions.get(session_id).ok_or_else(|| {
-            MeshCentralError::SessionNotFound(session_id.to_string())
-        })
+    fn get_client_ref(&self, session_id: &str) -> MeshCentralResult<&(McSession, McApiClient)> {
+        self.sessions
+            .get(session_id)
+            .ok_or_else(|| MeshCentralError::SessionNotFound(session_id.to_string()))
     }
 
     // ─── Server ──────────────────────────────────────────────────
 
     /// Get server information.
-    pub async fn get_server_info(
-        &self,
-        session_id: &str,
-    ) -> MeshCentralResult<McServerInfo> {
+    pub async fn get_server_info(&self, session_id: &str) -> MeshCentralResult<McServerInfo> {
         let (_, client) = self.get_client_ref(session_id)?;
         client.server_info().await
     }
 
     /// Get the server version.
-    pub async fn get_server_version(
-        &self,
-        session_id: &str,
-    ) -> MeshCentralResult<String> {
+    pub async fn get_server_version(&self, session_id: &str) -> MeshCentralResult<String> {
         let (_, client) = self.get_client_ref(session_id)?;
         let info = client.server_info().await?;
         Ok(info.version)
     }
 
     /// Health check the server.
-    pub async fn health_check(
-        &self,
-        session_id: &str,
-    ) -> MeshCentralResult<bool> {
+    pub async fn health_check(&self, session_id: &str) -> MeshCentralResult<bool> {
         let (_, client) = self.get_client_ref(session_id)?;
         client.health_check().await
     }
@@ -196,9 +168,8 @@ impl MeshCentralService {
     ) -> MeshCentralResult<McDevice> {
         let (_, client) = self.get_client_ref(session_id)?;
         let info = client.get_device_info(node_id).await?;
-        info.device.ok_or_else(|| {
-            MeshCentralError::DeviceNotFound(node_id.to_string())
-        })
+        info.device
+            .ok_or_else(|| MeshCentralError::DeviceNotFound(node_id.to_string()))
     }
 
     /// Add a local device.
@@ -249,7 +220,9 @@ impl MeshCentralService {
         mesh_id: &str,
     ) -> MeshCentralResult<String> {
         let (_, client) = self.get_client_ref(session_id)?;
-        client.move_device_to_group(node_id, Some(mesh_id), None).await
+        client
+            .move_device_to_group(node_id, Some(mesh_id), None)
+            .await
     }
 
     // ─── Device Groups ───────────────────────────────────────────
@@ -296,20 +269,13 @@ impl MeshCentralService {
     // ─── Users ───────────────────────────────────────────────────
 
     /// List users.
-    pub async fn list_users(
-        &self,
-        session_id: &str,
-    ) -> MeshCentralResult<Vec<McUser>> {
+    pub async fn list_users(&self, session_id: &str) -> MeshCentralResult<Vec<McUser>> {
         let (_, client) = self.get_client_ref(session_id)?;
         client.list_users().await
     }
 
     /// Add a user.
-    pub async fn add_user(
-        &self,
-        session_id: &str,
-        user: &McAddUser,
-    ) -> MeshCentralResult<String> {
+    pub async fn add_user(&self, session_id: &str, user: &McAddUser) -> MeshCentralResult<String> {
         let (_, client) = self.get_client_ref(session_id)?;
         client.add_user(user.clone()).await
     }
@@ -325,11 +291,7 @@ impl MeshCentralService {
     }
 
     /// Remove a user.
-    pub async fn remove_user(
-        &self,
-        session_id: &str,
-        user_id: &str,
-    ) -> MeshCentralResult<String> {
+    pub async fn remove_user(&self, session_id: &str, user_id: &str) -> MeshCentralResult<String> {
         let (_, client) = self.get_client_ref(session_id)?;
         client.remove_user(user_id, None).await
     }
@@ -337,10 +299,7 @@ impl MeshCentralService {
     // ─── User Groups ────────────────────────────────────────────
 
     /// List user groups.
-    pub async fn list_user_groups(
-        &self,
-        session_id: &str,
-    ) -> MeshCentralResult<Vec<McUserGroup>> {
+    pub async fn list_user_groups(&self, session_id: &str) -> MeshCentralResult<Vec<McUserGroup>> {
         let (_, client) = self.get_client_ref(session_id)?;
         client.list_user_groups().await
     }
@@ -457,10 +416,7 @@ impl MeshCentralService {
     }
 
     /// Get file transfer progress.
-    pub fn get_transfer_progress(
-        &self,
-        transfer_id: &str,
-    ) -> Option<McFileTransferProgress> {
+    pub fn get_transfer_progress(&self, transfer_id: &str) -> Option<McFileTransferProgress> {
         self.transfers.get_progress(transfer_id)
     }
 

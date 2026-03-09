@@ -15,18 +15,14 @@ impl McApiClient {
         if let Some(meshes) = resp.get("meshes") {
             if let Some(arr) = meshes.as_array() {
                 for mesh_val in arr {
-                    if let Ok(group) =
-                        serde_json::from_value::<McDeviceGroup>(mesh_val.clone())
-                    {
+                    if let Ok(group) = serde_json::from_value::<McDeviceGroup>(mesh_val.clone()) {
                         groups.push(group);
                     }
                 }
             } else if let Some(obj) = meshes.as_object() {
                 // Some responses return meshes as an object keyed by id
                 for (_id, mesh_val) in obj {
-                    if let Ok(group) =
-                        serde_json::from_value::<McDeviceGroup>(mesh_val.clone())
-                    {
+                    if let Ok(group) = serde_json::from_value::<McDeviceGroup>(mesh_val.clone()) {
                         groups.push(group);
                     }
                 }
@@ -68,10 +64,7 @@ impl McApiClient {
     }
 
     /// Edit a device group.
-    pub async fn edit_device_group(
-        &self,
-        params: McEditDeviceGroup,
-    ) -> MeshCentralResult<String> {
+    pub async fn edit_device_group(&self, params: McEditDeviceGroup) -> MeshCentralResult<String> {
         let mut payload = serde_json::Map::new();
 
         if let Some(ref gid) = params.group_id {
@@ -102,10 +95,7 @@ impl McApiClient {
             } else {
                 let mut invite = serde_json::Map::new();
                 invite.insert("codes".to_string(), json!(codes));
-                invite.insert(
-                    "flags".to_string(),
-                    json!(params.invite_flags.unwrap_or(0)),
-                );
+                invite.insert("flags".to_string(), json!(params.invite_flags.unwrap_or(0)));
                 payload.insert("invite".to_string(), serde_json::Value::Object(invite));
             }
         }
@@ -149,7 +139,7 @@ impl McApiClient {
 
         for group in &groups {
             let gid = &group.id;
-            let gid_short = gid.split('/').last().unwrap_or(gid);
+            let gid_short = gid.split('/').next_back().unwrap_or(gid);
             if gid == group_id || gid_short == group_id || gid.contains(group_id) {
                 let mut result = Vec::new();
                 if let Some(ref links) = group.links {
@@ -161,9 +151,7 @@ impl McApiClient {
             }
         }
 
-        Err(MeshCentralError::DeviceGroupNotFound(
-            group_id.to_string(),
-        ))
+        Err(MeshCentralError::DeviceGroupNotFound(group_id.to_string()))
     }
 
     /// Add a user to a device group with specific rights.

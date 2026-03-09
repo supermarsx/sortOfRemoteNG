@@ -72,10 +72,7 @@ impl McApiClient {
     }
 
     /// List the most recent events (server-wide).
-    pub async fn list_recent_events(
-        &self,
-        limit: u32,
-    ) -> MeshCentralResult<Vec<McEvent>> {
+    pub async fn list_recent_events(&self, limit: u32) -> MeshCentralResult<Vec<McEvent>> {
         let filter = McEventFilter {
             user_id: None,
             device_id: None,
@@ -122,19 +119,14 @@ impl McApiClient {
     }
 
     /// Get event dispatch configuration (what events the logged-in user subscribes to).
-    pub async fn get_event_dispatch_config(
-        &self,
-    ) -> MeshCentralResult<serde_json::Value> {
+    pub async fn get_event_dispatch_config(&self) -> MeshCentralResult<serde_json::Value> {
         let payload = serde_json::Map::new();
         let resp = self.send_action("getDeviceDetails", payload).await?;
         Ok(resp)
     }
 
     /// Filter events by event type (e.g., "user-login", "node-connect", "power", etc.).
-    pub fn filter_events_by_type<'a>(
-        events: &'a [McEvent],
-        event_type: &str,
-    ) -> Vec<&'a McEvent> {
+    pub fn filter_events_by_type<'a>(events: &'a [McEvent], event_type: &str) -> Vec<&'a McEvent> {
         events
             .iter()
             .filter(|ev| {
@@ -148,10 +140,7 @@ impl McApiClient {
     }
 
     /// Filter events by action.
-    pub fn filter_events_by_action<'a>(
-        events: &'a [McEvent],
-        action: &str,
-    ) -> Vec<&'a McEvent> {
+    pub fn filter_events_by_action<'a>(events: &'a [McEvent], action: &str) -> Vec<&'a McEvent> {
         events
             .iter()
             .filter(|ev| {

@@ -84,7 +84,10 @@ impl McApiClient {
 
         // Fetch network info
         payload.insert("nodeid".to_string(), json!(device_id));
-        let net_resp = self.send_action("getnetworkinfo", payload.clone()).await.ok();
+        let net_resp = self
+            .send_action("getnetworkinfo", payload.clone())
+            .await
+            .ok();
 
         // Fetch system info
         payload.insert("nodeinfo".to_string(), json!(true));
@@ -114,8 +117,8 @@ impl McApiClient {
         payload.insert("type".to_string(), json!(params.device_type));
 
         let resp = self.send_action("addlocaldevice", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Device added".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Device added".to_string());
         Ok(result)
     }
 
@@ -127,11 +130,14 @@ impl McApiClient {
         payload.insert("hostname".to_string(), json!(params.hostname));
         payload.insert("amtusername".to_string(), json!(params.amt_username));
         payload.insert("amtpassword".to_string(), json!(params.amt_password));
-        payload.insert("amttls".to_string(), json!(if params.use_tls { 1 } else { 0 }));
+        payload.insert(
+            "amttls".to_string(),
+            json!(if params.use_tls { 1 } else { 0 }),
+        );
 
         let resp = self.send_action("addamtdevice", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "AMT device added".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "AMT device added".to_string());
         Ok(result)
     }
 
@@ -157,8 +163,8 @@ impl McApiClient {
         }
 
         let resp = self.send_action("changedevice", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Device updated".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Device updated".to_string());
         Ok(result)
     }
 
@@ -168,8 +174,8 @@ impl McApiClient {
         payload.insert("nodeids".to_string(), json!(device_ids));
 
         let resp = self.send_action("removedevices", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Devices removed".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Devices removed".to_string());
         Ok(result)
     }
 
@@ -194,16 +200,13 @@ impl McApiClient {
         }
 
         let resp = self.send_action("changeDeviceMesh", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Device moved".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Device moved".to_string());
         Ok(result)
     }
 
     /// Add a user to a device with specific rights.
-    pub async fn add_user_to_device(
-        &self,
-        params: McAddUserToDevice,
-    ) -> MeshCentralResult<String> {
+    pub async fn add_user_to_device(&self, params: McAddUserToDevice) -> MeshCentralResult<String> {
         let rights = if params.full_rights {
             (8 + 16 + 32 + 64 + 128 + 16384 + 32768) as u64
         } else {
@@ -245,11 +248,12 @@ fn device_matches_filter(dev: &McDevice, filter: &str) -> bool {
     let lower = filter.to_lowercase();
 
     // Check prefixed filters
-    if let Some(rest) = lower.strip_prefix("user:").or_else(|| lower.strip_prefix("u:")) {
+    if let Some(rest) = lower
+        .strip_prefix("user:")
+        .or_else(|| lower.strip_prefix("u:"))
+    {
         if let Some(ref users) = dev.users {
-            return users
-                .iter()
-                .any(|u| u.to_lowercase().contains(rest));
+            return users.iter().any(|u| u.to_lowercase().contains(rest));
         }
         return false;
     }
@@ -259,11 +263,12 @@ fn device_matches_filter(dev: &McDevice, filter: &str) -> bool {
         }
         return false;
     }
-    if let Some(rest) = lower.strip_prefix("tag:").or_else(|| lower.strip_prefix("t:")) {
+    if let Some(rest) = lower
+        .strip_prefix("tag:")
+        .or_else(|| lower.strip_prefix("t:"))
+    {
         if let Some(ref tags) = dev.tags {
-            return tags
-                .iter()
-                .any(|t| t.to_lowercase().contains(rest));
+            return tags.iter().any(|t| t.to_lowercase().contains(rest));
         }
         return false;
     }

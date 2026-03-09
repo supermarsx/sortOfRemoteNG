@@ -47,9 +47,7 @@ impl McApiClient {
             payload.insert("port".to_string(), json!(port));
         }
 
-        let resp = self
-            .send_action("createDeviceShareLink", payload)
-            .await?;
+        let resp = self.send_action("createDeviceShareLink", payload).await?;
 
         let url = resp
             .get("url")
@@ -70,7 +68,11 @@ impl McApiClient {
             start_time: None,
             expire_time: None,
             duration: share.duration,
-            recurring: if share.recurring != 0 { Some(share.recurring) } else { None },
+            recurring: if share.recurring != 0 {
+                Some(share.recurring)
+            } else {
+                None
+            },
             url,
             userid: None,
             extra: Default::default(),
@@ -91,9 +93,7 @@ impl McApiClient {
         if let Some(list) = resp.get("deviceShares") {
             if let Some(arr) = list.as_array() {
                 for item in arr {
-                    if let Ok(share) =
-                        serde_json::from_value::<McDeviceShare>(item.clone())
-                    {
+                    if let Ok(share) = serde_json::from_value::<McDeviceShare>(item.clone()) {
                         shares.push(share);
                     }
                 }
@@ -114,16 +114,13 @@ impl McApiClient {
         payload.insert("publicid".to_string(), json!(share_id));
 
         let resp = self.send_action("removeDeviceShare", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Share removed".to_string());
+        let result =
+            McApiClient::extract_result(&resp).unwrap_or_else(|| "Share removed".to_string());
         Ok(result)
     }
 
     /// Remove all shares for a device.
-    pub async fn remove_all_device_shares(
-        &self,
-        device_id: &str,
-    ) -> MeshCentralResult<u32> {
+    pub async fn remove_all_device_shares(&self, device_id: &str) -> MeshCentralResult<u32> {
         let shares = self.list_device_shares(device_id).await?;
         let mut count = 0u32;
 

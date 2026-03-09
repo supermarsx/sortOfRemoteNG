@@ -27,10 +27,7 @@ impl McApiClient {
     }
 
     /// Generate a report on the MeshCentral server.
-    pub async fn generate_report(
-        &self,
-        report: &McGenerateReport,
-    ) -> MeshCentralResult<McReport> {
+    pub async fn generate_report(&self, report: &McGenerateReport) -> MeshCentralResult<McReport> {
         let mut payload = serde_json::Map::new();
         payload.insert("type".to_string(), json!(report.report_type as u32));
 
@@ -109,10 +106,7 @@ impl McApiClient {
     }
 
     /// Check if the server has a specific capability by inspecting the extra fields.
-    pub async fn check_server_capability(
-        &self,
-        capability: &str,
-    ) -> MeshCentralResult<bool> {
+    pub async fn check_server_capability(&self, capability: &str) -> MeshCentralResult<bool> {
         let info = self.get_server_info().await?;
         let has = info.extra.contains_key(capability);
         Ok(has)
