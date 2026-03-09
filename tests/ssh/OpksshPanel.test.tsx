@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OpksshPanel } from "../../src/components/ssh/OpksshPanel";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
@@ -16,7 +22,10 @@ import type {
   CustomProvider,
   ExpirationPolicy,
 } from "../../src/types/security/opkssh";
-import { WELL_KNOWN_PROVIDERS, EXPIRATION_POLICIES } from "../../src/types/security/opkssh";
+import {
+  WELL_KNOWN_PROVIDERS,
+  EXPIRATION_POLICIES,
+} from "../../src/types/security/opkssh";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -169,7 +178,8 @@ const makeServerConfig = (): ServerOpksshConfig => ({
     },
   ],
   userAuthIds: [],
-  sshdConfigSnippet: "AuthorizedKeysCommand /usr/local/bin/opkssh verify %u %k %t",
+  sshdConfigSnippet:
+    "AuthorizedKeysCommand /usr/local/bin/opkssh verify %u %k %t",
 });
 
 const makeAuditResult = (): AuditResult => ({
@@ -199,12 +209,17 @@ const makeAuditResult = (): AuditResult => ({
   rawOutput: "",
 });
 
-const renderPanel = (isOpen = true) =>
-  render(
-    <ConnectionProvider>
-      <OpksshPanel isOpen={isOpen} onClose={mockOnClose} />
-    </ConnectionProvider>,
-  );
+const renderPanel = async (isOpen = true) => {
+  let result: ReturnType<typeof render>;
+  await act(async () => {
+    result = render(
+      <ConnectionProvider>
+        <OpksshPanel isOpen={isOpen} onClose={mockOnClose} />
+      </ConnectionProvider>,
+    );
+  });
+  return result!;
+};
 
 // ── Component Tests ────────────────────────────────────────────────
 
@@ -222,9 +237,21 @@ describe("OpksshPanel", () => {
           return Promise.resolve([makeKey()]);
         case "opkssh_well_known_providers":
           return Promise.resolve([
-            { alias: "google", issuer: "https://accounts.google.com", clientId: "google-default" },
-            { alias: "microsoft", issuer: "https://login.microsoftonline.com/.../v2.0", clientId: "ms-default" },
-            { alias: "gitlab", issuer: "https://gitlab.com", clientId: "gitlab-default" },
+            {
+              alias: "google",
+              issuer: "https://accounts.google.com",
+              clientId: "google-default",
+            },
+            {
+              alias: "microsoft",
+              issuer: "https://login.microsoftonline.com/.../v2.0",
+              clientId: "ms-default",
+            },
+            {
+              alias: "gitlab",
+              issuer: "https://gitlab.com",
+              clientId: "gitlab-default",
+            },
           ] as CustomProvider[]);
         case "opkssh_get_client_config":
           return Promise.resolve(makeClientConfig());
@@ -235,29 +262,27 @@ describe("OpksshPanel", () => {
   });
 
   describe("Basic Rendering", () => {
-    it("should not render when isOpen is false", () => {
-      renderPanel(false);
+    it("should not render when isOpen is false", async () => {
+      await renderPanel(false);
       expect(
         screen.queryByText("opkssh — OpenPubkey SSH"),
       ).not.toBeInTheDocument();
     });
 
-    it("should render when isOpen is true", () => {
-      renderPanel(true);
-      expect(
-        screen.getByText("opkssh — OpenPubkey SSH"),
-      ).toBeInTheDocument();
+    it("should render when isOpen is true", async () => {
+      await renderPanel(true);
+      expect(screen.getByText("opkssh — OpenPubkey SSH")).toBeInTheDocument();
     });
 
-    it("should show overview tab by default", () => {
-      renderPanel();
+    it("should show overview tab by default", async () => {
+      await renderPanel();
       expect(screen.getByText("opkssh Binary")).toBeInTheDocument();
       expect(screen.getByText("Active Keys")).toBeInTheDocument();
       expect(screen.getByText("Quick Actions")).toBeInTheDocument();
     });
 
-    it("should render tab navigation buttons", () => {
-      renderPanel();
+    it("should render tab navigation buttons", async () => {
+      await renderPanel();
       expect(screen.getByTitle("overview")).toBeInTheDocument();
       expect(screen.getByTitle("login")).toBeInTheDocument();
       expect(screen.getByTitle("keys")).toBeInTheDocument();
@@ -268,42 +293,50 @@ describe("OpksshPanel", () => {
   });
 
   describe("Tab Navigation", () => {
-    it("should switch to login tab", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("login"));
+    it("should switch to login tab", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("login"));
+      });
       expect(screen.getByText("OIDC Login")).toBeInTheDocument();
     });
 
-    it("should switch to keys tab", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("keys"));
+    it("should switch to keys tab", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("keys"));
+      });
       expect(screen.getByText("SSH Keys")).toBeInTheDocument();
     });
 
-    it("should switch to server config tab and show session selector", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("serverConfig"));
-      expect(
-        screen.getByLabelText("Select SSH session"),
-      ).toBeInTheDocument();
+    it("should switch to server config tab and show session selector", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("serverConfig"));
+      });
+      expect(screen.getByLabelText("Select SSH session")).toBeInTheDocument();
     });
 
-    it("should switch to providers tab", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("providers"));
+    it("should switch to providers tab", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("providers"));
+      });
       expect(screen.getByText("Client Configuration")).toBeInTheDocument();
     });
 
-    it("should switch to audit tab", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("audit"));
+    it("should switch to audit tab", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("audit"));
+      });
       expect(screen.getByText("Run Audit")).toBeInTheDocument();
     });
   });
 
   describe("Overview Tab", () => {
     it("should show binary status when loaded", async () => {
-      renderPanel();
+      await renderPanel();
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith("opkssh_get_status");
       });
@@ -318,14 +351,14 @@ describe("OpksshPanel", () => {
         if (cmd === "opkssh_well_known_providers") return Promise.resolve([]);
         return Promise.resolve(null);
       });
-      renderPanel();
+      await renderPanel();
       await waitFor(() => {
         expect(screen.getByText("Not installed")).toBeInTheDocument();
       });
     });
 
-    it("should render quick action buttons", () => {
-      renderPanel();
+    it("should render quick action buttons", async () => {
+      await renderPanel();
       expect(screen.getByText("Login with OIDC")).toBeInTheDocument();
       expect(screen.getByText("Refresh Keys")).toBeInTheDocument();
       expect(screen.getByText("Refresh All")).toBeInTheDocument();
@@ -333,23 +366,31 @@ describe("OpksshPanel", () => {
   });
 
   describe("Login Tab", () => {
-    it("should show provider selector", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("login"));
+    it("should show provider selector", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("login"));
+      });
       const providerSelect = screen.getByRole("combobox");
       expect(providerSelect).toBeInTheDocument();
     });
 
-    it("should show advanced options toggle", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("login"));
+    it("should show advanced options toggle", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("login"));
+      });
       expect(screen.getByText("Advanced Options")).toBeInTheDocument();
     });
 
-    it("should expand advanced options when clicked", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("login"));
-      fireEvent.click(screen.getByText("Advanced Options"));
+    it("should expand advanced options when clicked", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("login"));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText("Advanced Options"));
+      });
       expect(screen.getByText("Key File Name")).toBeInTheDocument();
       expect(screen.getByText("Remote Redirect URI")).toBeInTheDocument();
       expect(screen.getByText("Create SSH config entry")).toBeInTheDocument();
@@ -372,22 +413,31 @@ describe("OpksshPanel", () => {
         if (cmd === "opkssh_list_keys") return Promise.resolve([makeKey()]);
         return Promise.resolve(null);
       });
-      renderPanel();
-      fireEvent.click(screen.getByTitle("login"));
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("login"));
+      });
       // Find and click the "Login with OIDC" button (the one in the login tab)
       const loginButtons = screen.getAllByText("Login with OIDC");
       const tabLoginBtn = loginButtons[loginButtons.length - 1];
-      fireEvent.click(tabLoginBtn);
+      await act(async () => {
+        fireEvent.click(tabLoginBtn);
+      });
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith("opkssh_login", expect.any(Object));
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "opkssh_login",
+          expect.any(Object),
+        );
       });
     });
   });
 
   describe("Keys Tab", () => {
     it("should show key list after refresh", async () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("keys"));
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("keys"));
+      });
       // Key data comes from the initial status call
       await waitFor(() => {
         expect(screen.getByText("user@example.com")).toBeInTheDocument();
@@ -399,22 +449,31 @@ describe("OpksshPanel", () => {
         if (cmd === "opkssh_get_status")
           return Promise.resolve(
             makeStatus({
-              activeKeys: [makeKey({ isExpired: true, expiresAt: new Date(Date.now() - 3600_000).toISOString() })],
+              activeKeys: [
+                makeKey({
+                  isExpired: true,
+                  expiresAt: new Date(Date.now() - 3600_000).toISOString(),
+                }),
+              ],
             }),
           );
         if (cmd === "opkssh_well_known_providers") return Promise.resolve([]);
         return Promise.resolve(null);
       });
-      renderPanel();
-      fireEvent.click(screen.getByTitle("keys"));
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("keys"));
+      });
       await waitFor(() => {
         expect(screen.getByText("Expired")).toBeInTheDocument();
       });
     });
 
     it("should show key details", async () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("keys"));
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("keys"));
+      });
       await waitFor(() => {
         expect(screen.getByText("user@example.com")).toBeInTheDocument();
       });
@@ -423,44 +482,56 @@ describe("OpksshPanel", () => {
   });
 
   describe("Server Config Tab", () => {
-    it("should show hint when no session selected", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("serverConfig"));
+    it("should show hint when no session selected", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("serverConfig"));
+      });
       // The auto-selector picks the first session, so deselect
       const select = screen.getByLabelText("Select SSH session");
-      fireEvent.change(select, { target: { value: "" } });
+      await act(async () => {
+        fireEvent.change(select, { target: { value: "" } });
+      });
       // After deselecting, the component shows the "Server Configuration" heading
       // and prompt to load server config (since no config cached)
       expect(screen.getByText("Server Configuration")).toBeInTheDocument();
     });
 
-    it("should show server config sections when session selected", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("serverConfig"));
+    it("should show server config sections when session selected", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("serverConfig"));
+      });
       expect(screen.getByText("Server Configuration")).toBeInTheDocument();
       expect(screen.getByText("Allowed Providers")).toBeInTheDocument();
       expect(screen.getByText("Global Auth IDs")).toBeInTheDocument();
     });
 
-    it("should show install button", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("serverConfig"));
+    it("should show install button", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("serverConfig"));
+      });
       expect(screen.getByText("Install")).toBeInTheDocument();
     });
   });
 
   describe("Providers Tab", () => {
-    it("should show client config section", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("providers"));
+    it("should show client config section", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("providers"));
+      });
       expect(screen.getByText("Client Configuration")).toBeInTheDocument();
       expect(screen.getByText("Well-Known Providers")).toBeInTheDocument();
       expect(screen.getByText("Custom Providers")).toBeInTheDocument();
     });
 
-    it("should show env variable builder", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("providers"));
+    it("should show env variable builder", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("providers"));
+      });
       expect(
         screen.getByText("OPKSSH_PROVIDERS Environment Variable"),
       ).toBeInTheDocument();
@@ -469,19 +540,21 @@ describe("OpksshPanel", () => {
   });
 
   describe("Audit Tab", () => {
-    it("should show audit controls", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("audit"));
+    it("should show audit controls", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("audit"));
+      });
       expect(screen.getByText("Run Audit")).toBeInTheDocument();
     });
 
-    it("should show hint when no results", () => {
-      renderPanel();
-      fireEvent.click(screen.getByTitle("audit"));
+    it("should show hint when no results", async () => {
+      await renderPanel();
+      await act(async () => {
+        fireEvent.click(screen.getByTitle("audit"));
+      });
       expect(
-        screen.getByText(
-          "Click Run Audit to view opkssh authentication logs.",
-        ),
+        screen.getByText("Click Run Audit to view opkssh authentication logs."),
       ).toBeInTheDocument();
     });
   });
@@ -494,7 +567,7 @@ describe("OpksshPanel", () => {
         if (cmd === "opkssh_well_known_providers") return Promise.resolve([]);
         return Promise.resolve(null);
       });
-      renderPanel();
+      await renderPanel();
       await waitFor(() => {
         expect(screen.getByText(/Status refresh failed/)).toBeInTheDocument();
       });
@@ -587,7 +660,8 @@ describe("opkssh types", () => {
         },
       ],
       userAuthIds: [],
-      sshdConfigSnippet: "AuthorizedKeysCommand /usr/local/bin/opkssh verify %u %k %t",
+      sshdConfigSnippet:
+        "AuthorizedKeysCommand /usr/local/bin/opkssh verify %u %k %t",
     };
     expect(config.installed).toBe(true);
     expect(config.providers).toHaveLength(1);

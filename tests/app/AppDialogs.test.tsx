@@ -64,7 +64,7 @@ vi.mock("../../src/components/security/AutoLockManager", () => ({
   AutoLockManager: () => <div data-testid="auto-lock" />,
 }));
 vi.mock("../../src/components/rdp/RDPSessionPanel", () => ({
-  RDPSessionPanel: ({ onClose }: { onClose: () => void }) => (
+  default: ({ onClose }: { onClose: () => void }) => (
     <div>
       <span>rdp-session-panel</span>
       <button onClick={onClose}>close-rdp-panel</button>
