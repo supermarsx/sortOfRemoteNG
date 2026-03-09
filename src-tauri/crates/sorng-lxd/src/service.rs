@@ -13,6 +13,12 @@ pub struct LxdService {
     client: Arc<Mutex<Option<LxdClient>>>,
 }
 
+impl Default for LxdService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LxdService {
     pub fn new() -> Self {
         Self {
@@ -31,7 +37,10 @@ impl LxdService {
             server_url: config.url.clone(),
             project: config.project.clone(),
             api_version: info.api_version.clone(),
-            server_name: info.environment.as_ref().and_then(|e| e.server_name.clone()),
+            server_name: info
+                .environment
+                .as_ref()
+                .and_then(|e| e.server_name.clone()),
             server_version: info
                 .environment
                 .as_ref()
@@ -175,12 +184,23 @@ impl LxdService {
         crate::instances::start_instance(&c, &name, stateful).await
     }
 
-    pub async fn stop_instance(&self, name: String, force: bool, stateful: bool, timeout: Option<i32>) -> LxdResult<LxdOperation> {
+    pub async fn stop_instance(
+        &self,
+        name: String,
+        force: bool,
+        stateful: bool,
+        timeout: Option<i32>,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::instances::stop_instance(&c, &name, force, stateful, timeout).await
     }
 
-    pub async fn restart_instance(&self, name: String, force: bool, timeout: Option<i32>) -> LxdResult<LxdOperation> {
+    pub async fn restart_instance(
+        &self,
+        name: String,
+        force: bool,
+        timeout: Option<i32>,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::instances::restart_instance(&c, &name, force, timeout).await
     }
@@ -195,12 +215,20 @@ impl LxdService {
         crate::instances::unfreeze_instance(&c, &name).await
     }
 
-    pub async fn exec_instance(&self, name: String, req: InstanceExecRequest) -> LxdResult<LxdOperation> {
+    pub async fn exec_instance(
+        &self,
+        name: String,
+        req: InstanceExecRequest,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::instances::exec_instance(&c, &name, &req).await
     }
 
-    pub async fn console_instance(&self, name: String, req: InstanceConsoleRequest) -> LxdResult<LxdOperation> {
+    pub async fn console_instance(
+        &self,
+        name: String,
+        req: InstanceConsoleRequest,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::instances::console_instance(&c, &name, &req).await
     }
@@ -225,9 +253,18 @@ impl LxdService {
         crate::instances::get_instance_file(&c, &name, &path).await
     }
 
-    pub async fn push_instance_file(&self, name: String, path: String, content: String, uid: Option<u32>, gid: Option<u32>, mode: Option<String>) -> LxdResult<()> {
+    pub async fn push_instance_file(
+        &self,
+        name: String,
+        path: String,
+        content: String,
+        uid: Option<u32>,
+        gid: Option<u32>,
+        mode: Option<String>,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
-        crate::instances::push_instance_file(&c, &name, &path, &content, uid, gid, mode.as_deref()).await
+        crate::instances::push_instance_file(&c, &name, &path, &content, uid, gid, mode.as_deref())
+            .await
     }
 
     pub async fn delete_instance_file(&self, name: String, path: String) -> LxdResult<()> {
@@ -244,7 +281,11 @@ impl LxdService {
         crate::snapshots::list_snapshots(&c, &instance).await
     }
 
-    pub async fn get_snapshot(&self, instance: String, snapshot: String) -> LxdResult<InstanceSnapshot> {
+    pub async fn get_snapshot(
+        &self,
+        instance: String,
+        snapshot: String,
+    ) -> LxdResult<InstanceSnapshot> {
         let c = self.client().await?;
         crate::snapshots::get_snapshot(&c, &instance, &snapshot).await
     }
@@ -254,12 +295,21 @@ impl LxdService {
         crate::snapshots::create_snapshot(&c, &req).await
     }
 
-    pub async fn delete_snapshot(&self, instance: String, snapshot: String) -> LxdResult<LxdOperation> {
+    pub async fn delete_snapshot(
+        &self,
+        instance: String,
+        snapshot: String,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::snapshots::delete_snapshot(&c, &instance, &snapshot).await
     }
 
-    pub async fn rename_snapshot(&self, instance: String, old_name: String, new_name: String) -> LxdResult<LxdOperation> {
+    pub async fn rename_snapshot(
+        &self,
+        instance: String,
+        old_name: String,
+        new_name: String,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::snapshots::rename_snapshot(&c, &instance, &old_name, &new_name).await
     }
@@ -293,7 +343,12 @@ impl LxdService {
         crate::backups::delete_backup(&c, &instance, &backup).await
     }
 
-    pub async fn rename_backup(&self, instance: String, old_name: String, new_name: String) -> LxdResult<LxdOperation> {
+    pub async fn rename_backup(
+        &self,
+        instance: String,
+        old_name: String,
+        new_name: String,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::backups::rename_backup(&c, &instance, &old_name, &new_name).await
     }
@@ -332,14 +387,37 @@ impl LxdService {
         crate::images::delete_image(&c, &fingerprint).await
     }
 
-    pub async fn update_image(&self, fingerprint: String, properties: std::collections::HashMap<String, String>, public: Option<bool>, auto_update: Option<bool>) -> LxdResult<()> {
+    pub async fn update_image(
+        &self,
+        fingerprint: String,
+        properties: std::collections::HashMap<String, String>,
+        public: Option<bool>,
+        auto_update: Option<bool>,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
         crate::images::update_image(&c, &fingerprint, &properties, public, auto_update).await
     }
 
-    pub async fn copy_image_from_remote(&self, server: String, protocol: String, alias: Option<String>, fingerprint: Option<String>, auto_update: bool, public: bool) -> LxdResult<LxdOperation> {
+    pub async fn copy_image_from_remote(
+        &self,
+        server: String,
+        protocol: String,
+        alias: Option<String>,
+        fingerprint: Option<String>,
+        auto_update: bool,
+        public: bool,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
-        crate::images::copy_image_from_remote(&c, &server, &protocol, alias.as_deref(), fingerprint.as_deref(), auto_update, public).await
+        crate::images::copy_image_from_remote(
+            &c,
+            &server,
+            &protocol,
+            alias.as_deref(),
+            fingerprint.as_deref(),
+            auto_update,
+            public,
+        )
+        .await
     }
 
     pub async fn refresh_image(&self, fingerprint: String) -> LxdResult<LxdOperation> {
@@ -405,7 +483,12 @@ impl LxdService {
         crate::networks::create_network(&c, &req).await
     }
 
-    pub async fn update_network(&self, name: String, config: std::collections::HashMap<String, String>, description: Option<String>) -> LxdResult<()> {
+    pub async fn update_network(
+        &self,
+        name: String,
+        config: std::collections::HashMap<String, String>,
+        description: Option<String>,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
         crate::networks::update_network(&c, &name, &config, description.as_deref()).await
     }
@@ -462,12 +545,19 @@ impl LxdService {
     }
 
     // Network Forwards
-    pub async fn list_network_forwards(&self, network: String) -> LxdResult<Vec<LxdNetworkForward>> {
+    pub async fn list_network_forwards(
+        &self,
+        network: String,
+    ) -> LxdResult<Vec<LxdNetworkForward>> {
         let c = self.client().await?;
         crate::networks::list_network_forwards(&c, &network).await
     }
 
-    pub async fn get_network_forward(&self, network: String, listen_address: String) -> LxdResult<LxdNetworkForward> {
+    pub async fn get_network_forward(
+        &self,
+        network: String,
+        listen_address: String,
+    ) -> LxdResult<LxdNetworkForward> {
         let c = self.client().await?;
         crate::networks::get_network_forward(&c, &network, &listen_address).await
     }
@@ -477,7 +567,11 @@ impl LxdService {
         crate::networks::create_network_forward(&c, &req).await
     }
 
-    pub async fn delete_network_forward(&self, network: String, listen_address: String) -> LxdResult<()> {
+    pub async fn delete_network_forward(
+        &self,
+        network: String,
+        listen_address: String,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
         crate::networks::delete_network_forward(&c, &network, &listen_address).await
     }
@@ -499,17 +593,28 @@ impl LxdService {
     }
 
     // Network Load Balancers
-    pub async fn list_network_load_balancers(&self, network: String) -> LxdResult<Vec<LxdNetworkLoadBalancer>> {
+    pub async fn list_network_load_balancers(
+        &self,
+        network: String,
+    ) -> LxdResult<Vec<LxdNetworkLoadBalancer>> {
         let c = self.client().await?;
         crate::networks::list_network_load_balancers(&c, &network).await
     }
 
-    pub async fn get_network_load_balancer(&self, network: String, listen_address: String) -> LxdResult<LxdNetworkLoadBalancer> {
+    pub async fn get_network_load_balancer(
+        &self,
+        network: String,
+        listen_address: String,
+    ) -> LxdResult<LxdNetworkLoadBalancer> {
         let c = self.client().await?;
         crate::networks::get_network_load_balancer(&c, &network, &listen_address).await
     }
 
-    pub async fn delete_network_load_balancer(&self, network: String, listen_address: String) -> LxdResult<()> {
+    pub async fn delete_network_load_balancer(
+        &self,
+        network: String,
+        listen_address: String,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
         crate::networks::delete_network_load_balancer(&c, &network, &listen_address).await
     }
@@ -539,7 +644,12 @@ impl LxdService {
         crate::storage::create_storage_pool(&c, &req).await
     }
 
-    pub async fn update_storage_pool(&self, name: String, config: std::collections::HashMap<String, String>, description: Option<String>) -> LxdResult<()> {
+    pub async fn update_storage_pool(
+        &self,
+        name: String,
+        config: std::collections::HashMap<String, String>,
+        description: Option<String>,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
         crate::storage::update_storage_pool(&c, &name, &config, description.as_deref()).await
     }
@@ -549,7 +659,10 @@ impl LxdService {
         crate::storage::delete_storage_pool(&c, &name).await
     }
 
-    pub async fn get_storage_pool_resources(&self, name: String) -> LxdResult<StoragePoolResources> {
+    pub async fn get_storage_pool_resources(
+        &self,
+        name: String,
+    ) -> LxdResult<StoragePoolResources> {
         let c = self.client().await?;
         crate::storage::get_storage_pool_resources(&c, &name).await
     }
@@ -564,7 +677,12 @@ impl LxdService {
         crate::storage::list_custom_volumes(&c, &pool).await
     }
 
-    pub async fn get_storage_volume(&self, pool: String, vol_type: String, name: String) -> LxdResult<StorageVolume> {
+    pub async fn get_storage_volume(
+        &self,
+        pool: String,
+        vol_type: String,
+        name: String,
+    ) -> LxdResult<StorageVolume> {
         let c = self.client().await?;
         crate::storage::get_storage_volume(&c, &pool, &vol_type, &name).await
     }
@@ -574,7 +692,12 @@ impl LxdService {
         crate::storage::create_storage_volume(&c, &req).await
     }
 
-    pub async fn update_storage_volume(&self, pool: String, name: String, patch: serde_json::Value) -> LxdResult<()> {
+    pub async fn update_storage_volume(
+        &self,
+        pool: String,
+        name: String,
+        patch: serde_json::Value,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
         crate::storage::update_storage_volume(&c, &pool, &name, &patch).await
     }
@@ -584,22 +707,49 @@ impl LxdService {
         crate::storage::delete_storage_volume(&c, &pool, &name).await
     }
 
-    pub async fn rename_storage_volume(&self, pool: String, name: String, new_name: String) -> LxdResult<LxdOperation> {
+    pub async fn rename_storage_volume(
+        &self,
+        pool: String,
+        name: String,
+        new_name: String,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::storage::rename_storage_volume(&c, &pool, &name, &new_name).await
     }
 
-    pub async fn list_volume_snapshots(&self, pool: String, volume: String) -> LxdResult<Vec<StorageVolumeSnapshot>> {
+    pub async fn list_volume_snapshots(
+        &self,
+        pool: String,
+        volume: String,
+    ) -> LxdResult<Vec<StorageVolumeSnapshot>> {
         let c = self.client().await?;
         crate::storage::list_volume_snapshots(&c, &pool, &volume).await
     }
 
-    pub async fn create_volume_snapshot(&self, pool: String, volume: String, snapshot_name: String, expires_at: Option<chrono::DateTime<chrono::Utc>>) -> LxdResult<LxdOperation> {
+    pub async fn create_volume_snapshot(
+        &self,
+        pool: String,
+        volume: String,
+        snapshot_name: String,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
-        crate::storage::create_volume_snapshot(&c, &pool, &volume, &snapshot_name, expires_at.as_ref()).await
+        crate::storage::create_volume_snapshot(
+            &c,
+            &pool,
+            &volume,
+            &snapshot_name,
+            expires_at.as_ref(),
+        )
+        .await
     }
 
-    pub async fn delete_volume_snapshot(&self, pool: String, volume: String, snapshot: String) -> LxdResult<LxdOperation> {
+    pub async fn delete_volume_snapshot(
+        &self,
+        pool: String,
+        volume: String,
+        snapshot: String,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::storage::delete_volume_snapshot(&c, &pool, &volume, &snapshot).await
     }
@@ -624,7 +774,11 @@ impl LxdService {
         crate::storage::delete_storage_bucket(&c, &pool, &name).await
     }
 
-    pub async fn list_bucket_keys(&self, pool: String, bucket: String) -> LxdResult<Vec<StorageBucketKey>> {
+    pub async fn list_bucket_keys(
+        &self,
+        pool: String,
+        bucket: String,
+    ) -> LxdResult<Vec<StorageBucketKey>> {
         let c = self.client().await?;
         crate::storage::list_bucket_keys(&c, &pool, &bucket).await
     }
@@ -692,7 +846,11 @@ impl LxdService {
         crate::operations::delete_certificate(&c, &fingerprint).await
     }
 
-    pub async fn update_certificate(&self, fingerprint: String, patch: serde_json::Value) -> LxdResult<()> {
+    pub async fn update_certificate(
+        &self,
+        fingerprint: String,
+        patch: serde_json::Value,
+    ) -> LxdResult<()> {
         let c = self.client().await?;
         crate::operations::update_certificate(&c, &fingerprint, &patch).await
     }
@@ -716,7 +874,11 @@ impl LxdService {
         crate::operations::cancel_operation(&c, &id).await
     }
 
-    pub async fn wait_operation(&self, id: String, timeout: Option<u64>) -> LxdResult<LxdOperation> {
+    pub async fn wait_operation(
+        &self,
+        id: String,
+        timeout: Option<u64>,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::operations::wait_operation(&c, &id, timeout).await
     }
@@ -754,13 +916,32 @@ impl LxdService {
         crate::migration::migrate_instance(&c, &req).await
     }
 
-    pub async fn copy_instance(&self, source_name: String, new_name: String, instance_only: bool, stateful: bool) -> LxdResult<LxdOperation> {
+    pub async fn copy_instance(
+        &self,
+        source_name: String,
+        new_name: String,
+        instance_only: bool,
+        stateful: bool,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
         crate::migration::copy_instance(&c, &source_name, &new_name, instance_only, stateful).await
     }
 
-    pub async fn publish_instance(&self, instance: String, alias: Option<String>, public: bool, properties: Option<std::collections::HashMap<String, String>>) -> LxdResult<LxdOperation> {
+    pub async fn publish_instance(
+        &self,
+        instance: String,
+        alias: Option<String>,
+        public: bool,
+        properties: Option<std::collections::HashMap<String, String>>,
+    ) -> LxdResult<LxdOperation> {
         let c = self.client().await?;
-        crate::migration::publish_instance(&c, &instance, alias.as_deref(), public, properties.as_ref()).await
+        crate::migration::publish_instance(
+            &c,
+            &instance,
+            alias.as_deref(),
+            public,
+            properties.as_ref(),
+        )
+        .await
     }
 }

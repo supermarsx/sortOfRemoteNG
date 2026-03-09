@@ -78,10 +78,7 @@ pub async fn rename_snapshot(
 }
 
 /// PUT /1.0/instances/<name> with restore field — restore a snapshot
-pub async fn restore_snapshot(
-    client: &LxdClient,
-    req: &RestoreSnapshotRequest,
-) -> LxdResult<()> {
+pub async fn restore_snapshot(client: &LxdClient, req: &RestoreSnapshotRequest) -> LxdResult<()> {
     #[derive(serde::Serialize)]
     struct Body<'a> {
         restore: &'a str,

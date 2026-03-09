@@ -38,9 +38,7 @@ pub async fn lxd_is_connected(svc: tauri::State<'_, LxdService>) -> Result<bool,
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tauri::command]
-pub async fn lxd_get_server(
-    svc: tauri::State<'_, LxdService>,
-) -> Result<LxdServer, String> {
+pub async fn lxd_get_server(svc: tauri::State<'_, LxdService>) -> Result<LxdServer, String> {
     svc.get_server().await.map_err(err_str)
 }
 
@@ -60,9 +58,7 @@ pub async fn lxd_update_server_config(
 }
 
 #[tauri::command]
-pub async fn lxd_get_cluster(
-    svc: tauri::State<'_, LxdService>,
-) -> Result<LxdCluster, String> {
+pub async fn lxd_get_cluster(svc: tauri::State<'_, LxdService>) -> Result<LxdCluster, String> {
     svc.get_cluster().await.map_err(err_str)
 }
 
@@ -103,7 +99,9 @@ pub async fn lxd_remove_cluster_member(
     name: String,
     force: bool,
 ) -> Result<(), String> {
-    svc.remove_cluster_member(name, force).await.map_err(err_str)
+    svc.remove_cluster_member(name, force)
+        .await
+        .map_err(err_str)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -430,9 +428,7 @@ pub async fn lxd_rename_backup(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tauri::command]
-pub async fn lxd_list_images(
-    svc: tauri::State<'_, LxdService>,
-) -> Result<Vec<LxdImage>, String> {
+pub async fn lxd_list_images(svc: tauri::State<'_, LxdService>) -> Result<Vec<LxdImage>, String> {
     svc.list_images().await.map_err(err_str)
 }
 
@@ -857,9 +853,7 @@ pub async fn lxd_get_storage_pool_resources(
     svc: tauri::State<'_, LxdService>,
     name: String,
 ) -> Result<StoragePoolResources, String> {
-    svc.get_storage_pool_resources(name)
-        .await
-        .map_err(err_str)
+    svc.get_storage_pool_resources(name).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -916,9 +910,7 @@ pub async fn lxd_delete_storage_volume(
     pool: String,
     name: String,
 ) -> Result<(), String> {
-    svc.delete_storage_volume(pool, name)
-        .await
-        .map_err(err_str)
+    svc.delete_storage_volume(pool, name).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -1000,9 +992,7 @@ pub async fn lxd_delete_storage_bucket(
     pool: String,
     name: String,
 ) -> Result<(), String> {
-    svc.delete_storage_bucket(pool, name)
-        .await
-        .map_err(err_str)
+    svc.delete_storage_bucket(pool, name).await.map_err(err_str)
 }
 
 #[tauri::command]

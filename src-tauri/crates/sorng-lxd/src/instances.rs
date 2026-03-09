@@ -72,7 +72,9 @@ pub async fn create_instance(
         #[serde(skip_serializing_if = "Option::is_none")]
         config: &'a Option<std::collections::HashMap<String, String>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        devices: &'a Option<std::collections::HashMap<String, std::collections::HashMap<String, String>>>,
+        devices: &'a Option<
+            std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+        >,
         ephemeral: bool,
     }
 
@@ -94,13 +96,8 @@ pub async fn create_instance(
 }
 
 /// PUT /1.0/instances/<name> — replace instance config
-pub async fn update_instance(
-    client: &LxdClient,
-    req: &UpdateInstanceRequest,
-) -> LxdResult<()> {
-    client
-        .put(&format!("/instances/{}", req.name), req)
-        .await
+pub async fn update_instance(client: &LxdClient, req: &UpdateInstanceRequest) -> LxdResult<()> {
+    client.put(&format!("/instances/{}", req.name), req).await
 }
 
 /// PATCH /1.0/instances/<name> — partial update
@@ -113,10 +110,7 @@ pub async fn patch_instance(
 }
 
 /// DELETE /1.0/instances/<name>
-pub async fn delete_instance(
-    client: &LxdClient,
-    name: &str,
-) -> LxdResult<LxdOperation> {
+pub async fn delete_instance(client: &LxdClient, name: &str) -> LxdResult<LxdOperation> {
     client.delete_async(&format!("/instances/{name}")).await
 }
 
@@ -248,11 +242,7 @@ pub async fn list_instance_logs(client: &LxdClient, name: &str) -> LxdResult<Vec
 }
 
 /// GET /1.0/instances/<name>/logs/<filename> — download log content
-pub async fn get_instance_log(
-    client: &LxdClient,
-    name: &str,
-    filename: &str,
-) -> LxdResult<String> {
+pub async fn get_instance_log(client: &LxdClient, name: &str, filename: &str) -> LxdResult<String> {
     client
         .get_raw(&format!("/instances/{name}/logs/{filename}"))
         .await
@@ -263,11 +253,7 @@ pub async fn get_instance_log(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// GET /1.0/instances/<name>/files?path=<path> — read file content
-pub async fn get_instance_file(
-    client: &LxdClient,
-    name: &str,
-    path: &str,
-) -> LxdResult<String> {
+pub async fn get_instance_file(client: &LxdClient, name: &str, path: &str) -> LxdResult<String> {
     let encoded = urlencoding::encode(path);
     client
         .get_raw(&format!("/instances/{name}/files?path={encoded}"))
@@ -319,11 +305,7 @@ pub async fn push_instance_file(
 }
 
 /// DELETE /1.0/instances/<name>/files?path=<path> — delete file
-pub async fn delete_instance_file(
-    client: &LxdClient,
-    name: &str,
-    path: &str,
-) -> LxdResult<()> {
+pub async fn delete_instance_file(client: &LxdClient, name: &str, path: &str) -> LxdResult<()> {
     let encoded = urlencoding::encode(path);
     client
         .delete(&format!("/instances/{name}/files?path={encoded}"))

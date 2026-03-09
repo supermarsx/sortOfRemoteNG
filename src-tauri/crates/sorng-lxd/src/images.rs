@@ -13,10 +13,7 @@ pub async fn get_image(client: &LxdClient, fingerprint: &str) -> LxdResult<LxdIm
 }
 
 /// GET /1.0/images/aliases/<name> — resolve alias → fingerprint
-pub async fn get_image_alias(
-    client: &LxdClient,
-    alias: &str,
-) -> LxdResult<serde_json::Value> {
+pub async fn get_image_alias(client: &LxdClient, alias: &str) -> LxdResult<serde_json::Value> {
     client.get(&format!("/images/aliases/{alias}")).await
 }
 
@@ -50,9 +47,7 @@ pub async fn delete_image_alias(client: &LxdClient, alias: &str) -> LxdResult<()
 
 /// DELETE /1.0/images/<fingerprint>
 pub async fn delete_image(client: &LxdClient, fingerprint: &str) -> LxdResult<LxdOperation> {
-    client
-        .delete_async(&format!("/images/{fingerprint}"))
-        .await
+    client.delete_async(&format!("/images/{fingerprint}")).await
 }
 
 /// PUT /1.0/images/<fingerprint> — update image properties
@@ -132,10 +127,7 @@ pub async fn copy_image_from_remote(
 }
 
 /// POST /1.0/images/<fingerprint>/refresh — trigger image refresh
-pub async fn refresh_image(
-    client: &LxdClient,
-    fingerprint: &str,
-) -> LxdResult<LxdOperation> {
+pub async fn refresh_image(client: &LxdClient, fingerprint: &str) -> LxdResult<LxdOperation> {
     let empty: serde_json::Value = serde_json::json!({});
     client
         .post_async(&format!("/images/{fingerprint}/refresh"), &empty)

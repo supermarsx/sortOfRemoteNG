@@ -3,10 +3,7 @@ use crate::client::LxdClient;
 use crate::types::*;
 
 /// GET /1.0/instances/<name>/backups?recursion=1
-pub async fn list_backups(
-    client: &LxdClient,
-    instance: &str,
-) -> LxdResult<Vec<InstanceBackup>> {
+pub async fn list_backups(client: &LxdClient, instance: &str) -> LxdResult<Vec<InstanceBackup>> {
     client
         .list_recursion(&format!("/instances/{instance}/backups"))
         .await

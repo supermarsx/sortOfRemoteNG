@@ -40,13 +40,8 @@ pub async fn create_profile(client: &LxdClient, req: &CreateProfileRequest) -> L
 }
 
 /// PUT /1.0/profiles/<name> — replace profile
-pub async fn update_profile(
-    client: &LxdClient,
-    req: &UpdateProfileRequest,
-) -> LxdResult<()> {
-    client
-        .put(&format!("/profiles/{}", req.name), req)
-        .await
+pub async fn update_profile(client: &LxdClient, req: &UpdateProfileRequest) -> LxdResult<()> {
+    client.put(&format!("/profiles/{}", req.name), req).await
 }
 
 /// PATCH /1.0/profiles/<name> — partial update
@@ -64,11 +59,7 @@ pub async fn delete_profile(client: &LxdClient, name: &str) -> LxdResult<()> {
 }
 
 /// POST /1.0/profiles/<name> — rename profile
-pub async fn rename_profile(
-    client: &LxdClient,
-    name: &str,
-    new_name: &str,
-) -> LxdResult<()> {
+pub async fn rename_profile(client: &LxdClient, name: &str, new_name: &str) -> LxdResult<()> {
     #[derive(serde::Serialize)]
     struct Body<'a> {
         name: &'a str,
@@ -76,8 +67,6 @@ pub async fn rename_profile(
 
     let url = format!("/profiles/{name}");
     // rename returns sync 200
-    let _: serde_json::Value = client
-        .post_sync(&url, &Body { name: new_name })
-        .await?;
+    let _: serde_json::Value = client.post_sync(&url, &Body { name: new_name }).await?;
     Ok(())
 }

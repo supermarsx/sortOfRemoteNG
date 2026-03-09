@@ -275,33 +275,25 @@ pub struct LxdClusterMember {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum InstanceType {
+    #[default]
     Container,
     #[serde(rename = "virtual-machine")]
     VirtualMachine,
 }
 
-impl Default for InstanceType {
-    fn default() -> Self {
-        Self::Container
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum InstanceStatus {
     Running,
     Stopped,
     Frozen,
     Error,
     #[serde(other)]
+    #[default]
     Unknown,
-}
-
-impl Default for InstanceStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

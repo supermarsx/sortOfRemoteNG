@@ -41,11 +41,7 @@ pub async fn delete_project(client: &LxdClient, name: &str) -> LxdResult<()> {
 }
 
 /// POST /1.0/projects/<name> — rename project
-pub async fn rename_project(
-    client: &LxdClient,
-    name: &str,
-    new_name: &str,
-) -> LxdResult<()> {
+pub async fn rename_project(client: &LxdClient, name: &str, new_name: &str) -> LxdResult<()> {
     #[derive(serde::Serialize)]
     struct Body<'a> {
         name: &'a str,

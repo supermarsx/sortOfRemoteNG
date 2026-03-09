@@ -17,10 +17,7 @@ pub async fn get_network(client: &LxdClient, name: &str) -> LxdResult<LxdNetwork
 }
 
 /// POST /1.0/networks — create a managed network
-pub async fn create_network(
-    client: &LxdClient,
-    req: &CreateNetworkRequest,
-) -> LxdResult<()> {
+pub async fn create_network(client: &LxdClient, req: &CreateNetworkRequest) -> LxdResult<()> {
     client.put("/networks", req).await
 }
 
@@ -38,7 +35,13 @@ pub async fn update_network(
         description: Option<&'a str>,
     }
     client
-        .put(&format!("/networks/{name}"), &Body { config, description })
+        .put(
+            &format!("/networks/{name}"),
+            &Body {
+                config,
+                description,
+            },
+        )
         .await
 }
 
@@ -57,11 +60,7 @@ pub async fn delete_network(client: &LxdClient, name: &str) -> LxdResult<()> {
 }
 
 /// POST /1.0/networks/<name> — rename
-pub async fn rename_network(
-    client: &LxdClient,
-    name: &str,
-    new_name: &str,
-) -> LxdResult<()> {
+pub async fn rename_network(client: &LxdClient, name: &str, new_name: &str) -> LxdResult<()> {
     #[derive(serde::Serialize)]
     struct Body<'a> {
         name: &'a str,
@@ -73,10 +72,7 @@ pub async fn rename_network(
 }
 
 /// GET /1.0/networks/<name>/state — network runtime state
-pub async fn get_network_state(
-    client: &LxdClient,
-    name: &str,
-) -> LxdResult<LxdNetworkState> {
+pub async fn get_network_state(client: &LxdClient, name: &str) -> LxdResult<LxdNetworkState> {
     client.get(&format!("/networks/{name}/state")).await
 }
 
@@ -180,10 +176,7 @@ pub async fn list_network_zones(client: &LxdClient) -> LxdResult<Vec<LxdNetworkZ
 }
 
 /// GET /1.0/network-zones/<name>
-pub async fn get_network_zone(
-    client: &LxdClient,
-    name: &str,
-) -> LxdResult<LxdNetworkZone> {
+pub async fn get_network_zone(client: &LxdClient, name: &str) -> LxdResult<LxdNetworkZone> {
     client.get(&format!("/network-zones/{name}")).await
 }
 

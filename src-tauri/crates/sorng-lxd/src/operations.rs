@@ -12,28 +12,18 @@ pub async fn list_certificates(client: &LxdClient) -> LxdResult<Vec<LxdCertifica
 }
 
 /// GET /1.0/certificates/<fingerprint>
-pub async fn get_certificate(
-    client: &LxdClient,
-    fingerprint: &str,
-) -> LxdResult<LxdCertificate> {
-    client
-        .get(&format!("/certificates/{fingerprint}"))
-        .await
+pub async fn get_certificate(client: &LxdClient, fingerprint: &str) -> LxdResult<LxdCertificate> {
+    client.get(&format!("/certificates/{fingerprint}")).await
 }
 
 /// POST /1.0/certificates — add a trusted certificate
-pub async fn add_certificate(
-    client: &LxdClient,
-    req: &AddCertificateRequest,
-) -> LxdResult<()> {
+pub async fn add_certificate(client: &LxdClient, req: &AddCertificateRequest) -> LxdResult<()> {
     client.put("/certificates", req).await
 }
 
 /// DELETE /1.0/certificates/<fingerprint>
 pub async fn delete_certificate(client: &LxdClient, fingerprint: &str) -> LxdResult<()> {
-    client
-        .delete(&format!("/certificates/{fingerprint}"))
-        .await
+    client.delete(&format!("/certificates/{fingerprint}")).await
 }
 
 /// PATCH /1.0/certificates/<fingerprint>

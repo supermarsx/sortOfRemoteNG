@@ -26,10 +26,7 @@ pub async fn migrate_instance(
             &format!("/instances/{}", req.name),
             &Body {
                 migration: true,
-                name: req
-                    .target_name
-                    .as_deref()
-                    .unwrap_or(&req.name),
+                name: req.target_name.as_deref().unwrap_or(&req.name),
                 live: req.live,
                 target: Some(&req.target_server),
                 pool: req.target_pool.as_deref(),

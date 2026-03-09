@@ -40,7 +40,10 @@ pub async fn update_storage_pool(
     client
         .patch(
             &format!("/storage-pools/{name}"),
-            &Body { config, description },
+            &Body {
+                config,
+                description,
+            },
         )
         .await
 }
@@ -65,20 +68,14 @@ pub async fn get_storage_pool_resources(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// GET /1.0/storage-pools/<pool>/volumes?recursion=1
-pub async fn list_storage_volumes(
-    client: &LxdClient,
-    pool: &str,
-) -> LxdResult<Vec<StorageVolume>> {
+pub async fn list_storage_volumes(client: &LxdClient, pool: &str) -> LxdResult<Vec<StorageVolume>> {
     client
         .list_recursion(&format!("/storage-pools/{pool}/volumes"))
         .await
 }
 
 /// GET /1.0/storage-pools/<pool>/volumes/custom?recursion=1 — custom volumes only
-pub async fn list_custom_volumes(
-    client: &LxdClient,
-    pool: &str,
-) -> LxdResult<Vec<StorageVolume>> {
+pub async fn list_custom_volumes(client: &LxdClient, pool: &str) -> LxdResult<Vec<StorageVolume>> {
     client
         .list_recursion(&format!("/storage-pools/{pool}/volumes/custom"))
         .await
@@ -141,11 +138,7 @@ pub async fn update_storage_volume(
 }
 
 /// DELETE /1.0/storage-pools/<pool>/volumes/custom/<name>
-pub async fn delete_storage_volume(
-    client: &LxdClient,
-    pool: &str,
-    name: &str,
-) -> LxdResult<()> {
+pub async fn delete_storage_volume(client: &LxdClient, pool: &str, name: &str) -> LxdResult<()> {
     client
         .delete(&format!("/storage-pools/{pool}/volumes/custom/{name}"))
         .await
@@ -231,10 +224,7 @@ pub async fn delete_volume_snapshot(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// GET /1.0/storage-pools/<pool>/buckets?recursion=1
-pub async fn list_storage_buckets(
-    client: &LxdClient,
-    pool: &str,
-) -> LxdResult<Vec<StorageBucket>> {
+pub async fn list_storage_buckets(client: &LxdClient, pool: &str) -> LxdResult<Vec<StorageBucket>> {
     client
         .list_recursion(&format!("/storage-pools/{pool}/buckets"))
         .await
@@ -262,11 +252,7 @@ pub async fn create_storage_bucket(
 }
 
 /// DELETE /1.0/storage-pools/<pool>/buckets/<name>
-pub async fn delete_storage_bucket(
-    client: &LxdClient,
-    pool: &str,
-    name: &str,
-) -> LxdResult<()> {
+pub async fn delete_storage_bucket(client: &LxdClient, pool: &str, name: &str) -> LxdResult<()> {
     client
         .delete(&format!("/storage-pools/{pool}/buckets/{name}"))
         .await
@@ -279,8 +265,6 @@ pub async fn list_bucket_keys(
     bucket: &str,
 ) -> LxdResult<Vec<StorageBucketKey>> {
     client
-        .list_recursion(&format!(
-            "/storage-pools/{pool}/buckets/{bucket}/keys"
-        ))
+        .list_recursion(&format!("/storage-pools/{pool}/buckets/{bucket}/keys"))
         .await
 }

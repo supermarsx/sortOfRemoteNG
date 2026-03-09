@@ -37,18 +37,12 @@ pub async fn list_cluster_members(client: &LxdClient) -> LxdResult<Vec<LxdCluste
 }
 
 /// GET /1.0/cluster/members/<name> — get cluster member
-pub async fn get_cluster_member(
-    client: &LxdClient,
-    name: &str,
-) -> LxdResult<LxdClusterMember> {
+pub async fn get_cluster_member(client: &LxdClient, name: &str) -> LxdResult<LxdClusterMember> {
     client.get(&format!("/cluster/members/{name}")).await
 }
 
 /// POST /1.0/cluster/members/<name>/state — evacuate a cluster member
-pub async fn evacuate_cluster_member(
-    client: &LxdClient,
-    name: &str,
-) -> LxdResult<LxdOperation> {
+pub async fn evacuate_cluster_member(client: &LxdClient, name: &str) -> LxdResult<LxdOperation> {
     #[derive(serde::Serialize)]
     struct Body {
         action: &'static str,
@@ -62,10 +56,7 @@ pub async fn evacuate_cluster_member(
 }
 
 /// POST /1.0/cluster/members/<name>/state — restore an evacuated member
-pub async fn restore_cluster_member(
-    client: &LxdClient,
-    name: &str,
-) -> LxdResult<LxdOperation> {
+pub async fn restore_cluster_member(client: &LxdClient, name: &str) -> LxdResult<LxdOperation> {
     #[derive(serde::Serialize)]
     struct Body {
         action: &'static str,
@@ -79,11 +70,7 @@ pub async fn restore_cluster_member(
 }
 
 /// DELETE /1.0/cluster/members/<name> — remove cluster member
-pub async fn remove_cluster_member(
-    client: &LxdClient,
-    name: &str,
-    force: bool,
-) -> LxdResult<()> {
+pub async fn remove_cluster_member(client: &LxdClient, name: &str, force: bool) -> LxdResult<()> {
     let path = if force {
         format!("/cluster/members/{name}?force=true")
     } else {

@@ -23,9 +23,7 @@ impl LxdClient {
             .danger_accept_invalid_certs(config.skip_tls_verify);
 
         // mTLS identity
-        if let (Some(cert_pem), Some(key_pem)) =
-            (&config.client_cert_pem, &config.client_key_pem)
-        {
+        if let (Some(cert_pem), Some(key_pem)) = (&config.client_cert_pem, &config.client_key_pem) {
             let ident = reqwest::Identity::from_pkcs8_pem(cert_pem.as_bytes(), key_pem.as_bytes())
                 .map_err(|e| LxdError::auth(format!("invalid client cert/key: {e}")))?;
             builder = builder.identity(ident);
@@ -128,12 +126,7 @@ impl LxdClient {
         Ok(sync
             .metadata
             .into_iter()
-            .map(|u| {
-                u.rsplit('/')
-                    .next()
-                    .unwrap_or(&u)
-                    .to_string()
-            })
+            .map(|u| u.rsplit('/').next().unwrap_or(&u).to_string())
             .collect())
     }
 
@@ -175,11 +168,7 @@ impl LxdClient {
         self.handle_sync_response(resp).await
     }
 
-    pub async fn post_async<B: Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> LxdResult<LxdOperation> {
+    pub async fn post_async<B: Serialize>(&self, path: &str, body: &B) -> LxdResult<LxdOperation> {
         let url = self.url_with_project(path);
         debug!("LXD POST (async) {url}");
 
@@ -286,10 +275,7 @@ impl LxdClient {
 
     // ─── Response handling ───────────────────────────────────────────────
 
-    async fn parse_response<T: DeserializeOwned>(
-        &self,
-        resp: reqwest::Response,
-    ) -> LxdResult<T> {
+    async fn parse_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> LxdResult<T> {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -323,10 +309,7 @@ impl LxdClient {
             .map_err(|e| LxdError::api(format!("parse sync response: {e}\nBody: {body_text}")))
     }
 
-    async fn handle_async_response(
-        &self,
-        resp: reqwest::Response,
-    ) -> LxdResult<LxdOperation> {
+    async fn handle_async_response(&self, resp: reqwest::Response) -> LxdResult<LxdOperation> {
         let status = resp.status();
         let body_text = resp
             .text()
