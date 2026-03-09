@@ -23,10 +23,7 @@ impl FtpClient {
 
     /// Create a directory and all missing parents (emulated – FTP has no MKDIRP).
     pub async fn mkdir_all(&mut self, path: &str) -> FtpResult<()> {
-        let components: Vec<&str> = path
-            .split('/')
-            .filter(|c| !c.is_empty())
-            .collect();
+        let components: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
 
         let mut current = String::new();
         if path.starts_with('/') {
@@ -59,9 +56,7 @@ impl FtpClient {
 
     /// Remove an empty directory.
     pub async fn rmdir(&mut self, path: &str) -> FtpResult<()> {
-        self.codec
-            .expect_ok(&format!("RMD {}", path))
-            .await?;
+        self.codec.expect_ok(&format!("RMD {}", path)).await?;
         self.touch();
         Ok(())
     }
@@ -98,9 +93,7 @@ impl FtpClient {
         if !rnfr.is_intermediate() && !rnfr.is_success() {
             return Err(FtpError::from_reply(rnfr.code, &rnfr.text()));
         }
-        self.codec
-            .expect_ok(&format!("RNTO {}", to))
-            .await?;
+        self.codec.expect_ok(&format!("RNTO {}", to)).await?;
         self.touch();
         Ok(())
     }
@@ -109,9 +102,7 @@ impl FtpClient {
 
     /// Delete a remote file.
     pub async fn delete(&mut self, path: &str) -> FtpResult<()> {
-        self.codec
-            .expect_ok(&format!("DELE {}", path))
-            .await?;
+        self.codec.expect_ok(&format!("DELE {}", path)).await?;
         self.touch();
         Ok(())
     }
@@ -145,11 +136,7 @@ impl FtpClient {
     // ─── MFMT (set modification time) ───────────────────────────
 
     /// Set the modification time of a remote file (RFC 3659 MFMT).
-    pub async fn set_modified(
-        &mut self,
-        path: &str,
-        timestamp: &str,
-    ) -> FtpResult<()> {
+    pub async fn set_modified(&mut self, path: &str, timestamp: &str) -> FtpResult<()> {
         if !self.features.mfmt {
             return Err(FtpError::unsupported("Server does not support MFMT"));
         }

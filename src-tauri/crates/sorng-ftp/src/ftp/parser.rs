@@ -9,7 +9,7 @@
 //! then Unix, then Windows, falling back to a raw entry.
 
 use crate::ftp::types::{FtpEntry, FtpEntryKind};
-use chrono::{DateTime, NaiveDateTime, Utc, TimeZone, NaiveDate, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -197,10 +197,7 @@ fn parse_unix_date(s: &str) -> Option<DateTime<Utc>> {
     }
 
     // Normalise double-spaces
-    let normalised: String = s
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let normalised: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
 
     // Try "Jan 1 12:00"
     if let Ok(dt) = NaiveDateTime::parse_from_str(
@@ -247,10 +244,7 @@ fn parse_windows(line: &str) -> Option<FtpEntry> {
     let (kind, size) = if size_or_dir == "<DIR>" {
         (FtpEntryKind::Directory, 0)
     } else {
-        (
-            FtpEntryKind::File,
-            size_or_dir.parse::<u64>().unwrap_or(0),
-        )
+        (FtpEntryKind::File, size_or_dir.parse::<u64>().unwrap_or(0))
     };
 
     let modified = parse_windows_date(date_str, time_str);

@@ -9,8 +9,8 @@ use crate::ftp::error::{FtpError, FtpResult};
 use crate::ftp::types::FtpResponse;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio_native_tls::TlsStream;
 use tokio::net::TcpStream;
+use tokio_native_tls::TlsStream;
 
 /// Abstraction over plain TCP or TLS-wrapped read half.
 pub enum ReadHalf {
@@ -83,7 +83,7 @@ impl FtpCodec {
     /// ```
     pub async fn read_response(&mut self) -> FtpResult<FtpResponse> {
         let first = self.read_line_raw().await?;
-        let first_trimmed = first.trim_end_matches(|c| c == '\r' || c == '\n');
+        let first_trimmed = first.trim_end_matches(['\r', '\n']);
 
         if first_trimmed.len() < 3 {
             return Err(FtpError::protocol_error(format!(
@@ -101,7 +101,7 @@ impl FtpCodec {
             let terminator = format!("{} ", code);
             loop {
                 let next = self.read_line_raw().await?;
-                let next_trimmed = next.trim_end_matches(|c| c == '\r' || c == '\n');
+                let next_trimmed = next.trim_end_matches(['\r', '\n']);
                 lines.push(next_trimmed.to_string());
                 if next_trimmed.starts_with(&terminator) {
                     break;
@@ -110,7 +110,11 @@ impl FtpCodec {
         }
 
         let resp = FtpResponse { code, lines };
-        log::trace!("<<< {} {}", resp.code, resp.lines.last().unwrap_or(&String::new()));
+        log::trace!(
+            "<<< {} {}",
+            resp.code,
+            resp.lines.last().unwrap_or(&String::new())
+        );
         Ok(resp)
     }
 
@@ -139,7 +143,9 @@ impl FtpCodec {
 /// Parse the 3-digit reply code from the start of a line.
 fn parse_code(line: &str) -> FtpResult<u16> {
     if line.len() < 3 {
-        return Err(FtpError::protocol_error("Response too short to contain code"));
+        return Err(FtpError::protocol_error(
+            "Response too short to contain code",
+        ));
     }
     line[..3]
         .parse::<u16>()

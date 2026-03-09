@@ -21,7 +21,7 @@ pub struct TransferQueue {
 
 impl TransferQueue {
     pub fn new(config: TransferQueueConfig) -> Self {
-        let semaphore = Arc::new(Semaphore::new(config.max_concurrent as usize));
+        let semaphore = Arc::new(Semaphore::new(config.max_concurrent));
         Self {
             items: HashMap::new(),
             order: VecDeque::new(),
@@ -89,7 +89,10 @@ impl TransferQueue {
     /// Cancel all pending/in-progress transfers.
     pub fn cancel_all(&mut self) {
         for item in self.items.values_mut() {
-            if matches!(item.state, TransferState::Queued | TransferState::InProgress) {
+            if matches!(
+                item.state,
+                TransferState::Queued | TransferState::InProgress
+            ) {
                 item.state = TransferState::Cancelled;
                 item.completed_at = Some(Utc::now());
             }
@@ -127,10 +130,7 @@ impl TransferQueue {
                 matches!(
                     item.state,
                     TransferState::Completed | TransferState::Cancelled | TransferState::Failed
-                ) && item
-                    .completed_at
-                    .map(|t| t < cutoff)
-                    .unwrap_or(false)
+                ) && item.completed_at.map(|t| t < cutoff).unwrap_or(false)
             })
             .map(|(id, _)| id.clone())
             .collect();
@@ -210,10 +210,7 @@ impl TransferQueue {
 
 /// Process the next pending item in the queue using the pool.
 /// Returns `true` if an item was processed, `false` if the queue is empty.
-pub async fn process_next(
-    queue: &Arc<Mutex<TransferQueue>>,
-    pool: &Arc<Mutex<FtpPool>>,
-) -> bool {
+pub async fn process_next(queue: &Arc<Mutex<TransferQueue>>, pool: &Arc<Mutex<FtpPool>>) -> bool {
     let (transfer_id, session_id, direction, local_path, remote_path) = {
         let mut q = queue.lock().await;
         match q.next_pending() {
@@ -282,9 +279,7 @@ pub async fn process_next(
         }
         Err(e) => {
             let item = q.items.get(&transfer_id);
-            let should_retry = item
-                .map(|i| i.retry_count < i.max_retries)
-                .unwrap_or(false);
+            let should_retry = item.map(|i| i.retry_count < i.max_retries).unwrap_or(false);
 
             if should_retry {
                 q.mark_failed(&transfer_id, &e.to_string());
@@ -304,10 +299,7 @@ pub async fn process_next(
 }
 
 /// Drain the entire queue, processing items concurrently up to the limit.
-pub async fn drain_queue(
-    queue: Arc<Mutex<TransferQueue>>,
-    pool: Arc<Mutex<FtpPool>>,
-) {
+pub async fn drain_queue(queue: Arc<Mutex<TransferQueue>>, pool: Arc<Mutex<FtpPool>>) {
     loop {
         if !process_next(&queue, &pool).await {
             break;

@@ -18,6 +18,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{timeout, Duration};
 
 /// Abstraction over a plain or TLS-wrapped data stream.
+#[allow(clippy::large_enum_variant)]
 pub enum DataStream {
     Plain(TcpStream),
     Tls(tokio_native_tls::TlsStream<TcpStream>),
@@ -128,9 +129,9 @@ async fn open_port(
     let listener = TcpListener::bind(format!("{}:0", bind))
         .await
         .map_err(|e| FtpError::data_channel(format!("PORT bind: {}", e)))?;
-    let local = listener.local_addr().map_err(|e| {
-        FtpError::data_channel(format!("PORT local_addr: {}", e))
-    })?;
+    let local = listener
+        .local_addr()
+        .map_err(|e| FtpError::data_channel(format!("PORT local_addr: {}", e)))?;
 
     let ip = match local.ip() {
         IpAddr::V4(v4) => v4,
@@ -168,9 +169,9 @@ async fn open_eprt(
     let listener = TcpListener::bind(format!("{}:0", bind))
         .await
         .map_err(|e| FtpError::data_channel(format!("EPRT bind: {}", e)))?;
-    let local = listener.local_addr().map_err(|e| {
-        FtpError::data_channel(format!("EPRT local_addr: {}", e))
-    })?;
+    let local = listener
+        .local_addr()
+        .map_err(|e| FtpError::data_channel(format!("EPRT local_addr: {}", e)))?;
 
     let af = match local.ip() {
         IpAddr::V4(_) => 1,

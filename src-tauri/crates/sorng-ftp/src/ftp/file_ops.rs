@@ -76,10 +76,7 @@ impl FtpClient {
 
         // Open data channel + issue RETR
         let ds = self.open_data_channel().await?;
-        let resp = self
-            .codec
-            .execute(&format!("RETR {}", remote_path))
-            .await?;
+        let resp = self.codec.execute(&format!("RETR {}", remote_path)).await?;
         if !resp.is_preliminary() && !resp.is_success() {
             return Err(FtpError::from_reply(resp.code, &resp.text()));
         }
@@ -315,6 +312,7 @@ impl FtpClient {
 
     // ─── Progress helpers ────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     fn update_progress(
         &self,
         transfer_id: &str,
@@ -333,16 +331,22 @@ impl FtpClient {
         let eta = if speed > 0 {
             total_bytes.map(|t| {
                 if t > transferred {
-                    Some(((t - transferred) / speed) as u32)
+                    ((t - transferred) / speed) as u32
                 } else {
-                    Some(0)
+                    0
                 }
-            }).flatten()
+            })
         } else {
             None
         };
         let percent = total_bytes
-            .map(|t| if t > 0 { (transferred as f64 / t as f64 * 100.0) as f32 } else { 100.0 })
+            .map(|t| {
+                if t > 0 {
+                    (transferred as f64 / t as f64 * 100.0) as f32
+                } else {
+                    100.0
+                }
+            })
             .unwrap_or(0.0);
 
         let progress = TransferProgress {

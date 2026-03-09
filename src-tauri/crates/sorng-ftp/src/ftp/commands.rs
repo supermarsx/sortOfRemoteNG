@@ -27,9 +27,7 @@ pub async fn ftp_disconnect(
 }
 
 #[tauri::command]
-pub async fn ftp_disconnect_all(
-    state: tauri::State<'_, FtpServiceState>,
-) -> Result<(), String> {
+pub async fn ftp_disconnect_all(state: tauri::State<'_, FtpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect_all().await
 }

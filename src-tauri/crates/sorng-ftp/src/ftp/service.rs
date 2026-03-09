@@ -37,9 +37,7 @@ impl FtpService {
             .await
             .map_err(|e| e.to_string())?;
         let info = client.info.clone();
-        self.pool
-            .insert(client)
-            .map_err(|e| e.to_string())?;
+        self.pool.insert(client).map_err(|e| e.to_string())?;
         Ok(info)
     }
 
@@ -110,12 +108,14 @@ impl FtpService {
         // Apply sort
         if let Some(ref sort_by) = opts.sort_by {
             match sort_by {
-                FtpSortField::Name => entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+                FtpSortField::Name => {
+                    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                }
                 FtpSortField::Size => entries.sort_by(|a, b| a.size.cmp(&b.size)),
                 FtpSortField::Modified => entries.sort_by(|a, b| a.modified.cmp(&b.modified)),
-                FtpSortField::Kind => entries.sort_by(|a, b| {
-                    format!("{:?}", a.kind).cmp(&format!("{:?}", b.kind))
-                }),
+                FtpSortField::Kind => {
+                    entries.sort_by(|a, b| format!("{:?}", a.kind).cmp(&format!("{:?}", b.kind)))
+                }
             }
         }
 
@@ -127,20 +127,13 @@ impl FtpService {
     }
 
     /// Change working directory.
-    pub async fn set_directory(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<String, String> {
+    pub async fn set_directory(&mut self, session_id: &str, path: &str) -> Result<String, String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client.cwd(path).await.map_err(|e| e.to_string())
     }
 
     /// Get current directory.
-    pub async fn get_current_directory(
-        &mut self,
-        session_id: &str,
-    ) -> Result<String, String> {
+    pub async fn get_current_directory(&mut self, session_id: &str) -> Result<String, String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         Ok(client.info.current_directory.clone())
     }
@@ -164,11 +157,7 @@ impl FtpService {
     }
 
     /// Remove a directory recursively.
-    pub async fn rmdir_recursive(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<(), String> {
+    pub async fn rmdir_recursive(&mut self, session_id: &str, path: &str) -> Result<(), String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client
             .rmdir_recursive(path)
@@ -177,33 +166,19 @@ impl FtpService {
     }
 
     /// Rename a file or directory.
-    pub async fn rename(
-        &mut self,
-        session_id: &str,
-        from: &str,
-        to: &str,
-    ) -> Result<(), String> {
+    pub async fn rename(&mut self, session_id: &str, from: &str, to: &str) -> Result<(), String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client.rename(from, to).await.map_err(|e| e.to_string())
     }
 
     /// Delete a remote file.
-    pub async fn delete_file(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<(), String> {
+    pub async fn delete_file(&mut self, session_id: &str, path: &str) -> Result<(), String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client.delete(path).await.map_err(|e| e.to_string())
     }
 
     /// Set file permissions (SITE CHMOD).
-    pub async fn chmod(
-        &mut self,
-        session_id: &str,
-        path: &str,
-        mode: &str,
-    ) -> Result<(), String> {
+    pub async fn chmod(&mut self, session_id: &str, path: &str, mode: &str) -> Result<(), String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client.chmod(path, mode).await.map_err(|e| e.to_string())
     }
@@ -211,11 +186,7 @@ impl FtpService {
     // ─── File info ───────────────────────────────────────────────
 
     /// Get file size (SIZE).
-    pub async fn get_file_size(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<u64, String> {
+    pub async fn get_file_size(&mut self, session_id: &str, path: &str) -> Result<u64, String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client.size(path).await.map_err(|e| e.to_string())
     }
@@ -231,11 +202,7 @@ impl FtpService {
     }
 
     /// Get MLST entry info.
-    pub async fn stat_entry(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<FtpEntry, String> {
+    pub async fn stat_entry(&mut self, session_id: &str, path: &str) -> Result<FtpEntry, String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client.stat_entry(path).await.map_err(|e| e.to_string())
     }
@@ -328,9 +295,7 @@ impl FtpService {
 
     /// Cancel a queued transfer.
     pub fn cancel_transfer(&mut self, transfer_id: &str) -> Result<(), String> {
-        self.queue
-            .cancel(transfer_id)
-            .map_err(|e| e.to_string())
+        self.queue.cancel(transfer_id).map_err(|e| e.to_string())
     }
 
     /// List all transfers.
@@ -399,11 +364,7 @@ impl FtpService {
     // ─── SITE command ────────────────────────────────────────────
 
     /// Execute a raw SITE command.
-    pub async fn site_command(
-        &mut self,
-        session_id: &str,
-        args: &str,
-    ) -> Result<String, String> {
+    pub async fn site_command(&mut self, session_id: &str, args: &str) -> Result<String, String> {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         let resp = client.site(args).await.map_err(|e| e.to_string())?;
         Ok(resp.text())

@@ -19,6 +19,12 @@ pub struct FtpPool {
     pub idle_timeout_sec: u64,
 }
 
+impl Default for FtpPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FtpPool {
     pub fn new() -> Self {
         Self {
@@ -86,8 +92,7 @@ impl FtpPool {
 
     /// Reap sessions that have been idle beyond `idle_timeout_sec`.
     pub async fn reap_idle(&mut self) {
-        let cutoff =
-            Utc::now() - chrono::Duration::seconds(self.idle_timeout_sec as i64);
+        let cutoff = Utc::now() - chrono::Duration::seconds(self.idle_timeout_sec as i64);
         let mut to_remove = Vec::new();
 
         for (id, client) in &self.sessions {

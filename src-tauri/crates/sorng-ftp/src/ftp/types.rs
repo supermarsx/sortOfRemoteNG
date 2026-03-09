@@ -9,8 +9,10 @@ use std::collections::HashMap;
 /// Security mode for the control channel.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum FtpSecurityMode {
     /// Plain-text FTP (port 21).
+    #[default]
     None,
     /// Explicit FTPS — starts plain then upgrades via AUTH TLS (port 21).
     Explicit,
@@ -18,40 +20,26 @@ pub enum FtpSecurityMode {
     Implicit,
 }
 
-impl Default for FtpSecurityMode {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// Transfer type (RFC 959 TYPE command).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum TransferType {
     Ascii,
+    #[default]
     Binary,
-}
-
-impl Default for TransferType {
-    fn default() -> Self {
-        Self::Binary
-    }
 }
 
 /// Transfer mode selected for the data channel.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum DataChannelMode {
+    #[default]
     Passive,
     ExtendedPassive,
     Active,
     ExtendedActive,
-}
-
-impl Default for DataChannelMode {
-    fn default() -> Self {
-        Self::Passive
-    }
 }
 
 /// Configuration for a single FTP connection.

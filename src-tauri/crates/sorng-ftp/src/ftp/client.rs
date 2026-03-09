@@ -59,9 +59,7 @@ impl FtpClient {
         let user_resp = codec.execute(&format!("USER {}", config.username)).await?;
         if user_resp.code == 331 {
             // Server wants a password
-            let pass_resp = codec
-                .execute(&format!("PASS {}", config.password))
-                .await?;
+            let pass_resp = codec.execute(&format!("PASS {}", config.password)).await?;
             if !pass_resp.is_success() {
                 return Err(FtpError::auth_failed(format!(
                     "Login failed: {}",
@@ -85,14 +83,14 @@ impl FtpClient {
 
         // ── SYST ─────────────────────────────────────────────────
         let system_type = match codec.execute("SYST").await {
-            Ok(r) if r.is_success() => {
-                Some(r.text().trim_start_matches("215 ").to_string())
-            }
+            Ok(r) if r.is_success() => Some(r.text().trim_start_matches("215 ").to_string()),
             _ => None,
         };
 
         // ── PWD ──────────────────────────────────────────────────
-        let cwd = Self::get_pwd(&mut codec).await.unwrap_or_else(|_| "/".into());
+        let cwd = Self::get_pwd(&mut codec)
+            .await
+            .unwrap_or_else(|_| "/".into());
 
         // ── TYPE ─────────────────────────────────────────────────
         let type_cmd = match config.transfer_type {
@@ -105,7 +103,9 @@ impl FtpClient {
         let initial_dir = if let Some(ref dir) = config.initial_directory {
             let resp = codec.execute(&format!("CWD {}", dir)).await?;
             if resp.is_success() {
-                Self::get_pwd(&mut codec).await.unwrap_or_else(|_| dir.clone())
+                Self::get_pwd(&mut codec)
+                    .await
+                    .unwrap_or_else(|_| dir.clone())
             } else {
                 cwd
             }
@@ -172,9 +172,7 @@ impl FtpClient {
 
     /// Change into `path` and update `current_directory`.
     pub async fn cwd(&mut self, path: &str) -> FtpResult<String> {
-        self.codec
-            .expect_ok(&format!("CWD {}", path))
-            .await?;
+        self.codec.expect_ok(&format!("CWD {}", path)).await?;
         let new_pwd = Self::get_pwd(&mut self.codec).await?;
         self.info.current_directory = new_pwd.clone();
         self.touch();
@@ -263,7 +261,11 @@ impl FtpClient {
     // ─── Listing ─────────────────────────────────────────────────
 
     /// Retrieve a directory listing (prefers MLSD, falls back to LIST).
-    pub async fn list(&mut self, path: Option<&str>, prefer_mlsd: bool) -> FtpResult<Vec<FtpEntry>> {
+    pub async fn list(
+        &mut self,
+        path: Option<&str>,
+        prefer_mlsd: bool,
+    ) -> FtpResult<Vec<FtpEntry>> {
         if prefer_mlsd && self.features.mlsd {
             self.mlsd(path).await
         } else {
@@ -416,6 +418,5 @@ async fn read_data_stream_to_string(ds: DataStream) -> FtpResult<String> {
             tls.read_to_end(&mut buf).await?;
         }
     }
-    String::from_utf8(buf)
-        .map_err(|e| FtpError::protocol_error(format!("Data not UTF-8: {}", e)))
+    String::from_utf8(buf).map_err(|e| FtpError::protocol_error(format!("Data not UTF-8: {}", e)))
 }

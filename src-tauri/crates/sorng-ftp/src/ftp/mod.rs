@@ -22,26 +22,26 @@
 //! - `service` — high-level orchestrator (owns sessions, pool, queue)
 //! - `commands` — thin `#[tauri::command]` wrappers
 
-pub mod types;
-pub mod error;
-pub mod protocol;
-pub mod connection;
 pub mod client;
-pub mod parser;
-pub mod transfer;
-pub mod tls;
+pub mod commands;
+pub mod connection;
 pub mod directory;
+pub mod error;
 pub mod file_ops;
+pub mod parser;
 pub mod pool;
+pub mod protocol;
 pub mod queue;
 pub mod service;
-pub mod commands;
+pub mod tls;
+pub mod transfer;
+pub mod types;
 
 // Re-exports for lib.rs consumers
-pub use types::*;
+pub use commands::*;
 pub use error::{FtpError, FtpResult};
 pub use service::{FtpService, FtpServiceState};
-pub use commands::*;
+pub use types::*;
 
 use lazy_static::lazy_static;
 use std::collections::HashMap;
