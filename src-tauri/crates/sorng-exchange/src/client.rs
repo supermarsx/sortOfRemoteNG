@@ -90,6 +90,7 @@ impl ExchangeClient {
             .ok_or_else(|| ExchangeError::auth("not authenticated (no Graph token)"))
     }
 
+    #[allow(dead_code)]
     fn bearer_exo(&self) -> ExchangeResult<String> {
         self.exo_token
             .as_ref()
@@ -118,7 +119,10 @@ impl ExchangeClient {
     }
 
     /// GET a paged list from Graph API.
-    pub async fn graph_list<T: DeserializeOwned + Default>(&self, path: &str) -> ExchangeResult<Vec<T>> {
+    pub async fn graph_list<T: DeserializeOwned + Default>(
+        &self,
+        path: &str,
+    ) -> ExchangeResult<Vec<T>> {
         let mut results = Vec::new();
         let mut url = format!("{}{}", api::GRAPH_BASE, path);
         let auth = self.bearer_graph()?;
@@ -168,11 +172,7 @@ impl ExchangeClient {
     }
 
     /// PATCH JSON on Graph API.
-    pub async fn graph_patch<B: Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> ExchangeResult<()> {
+    pub async fn graph_patch<B: Serialize>(&self, path: &str, body: &B) -> ExchangeResult<()> {
         let url = format!("{}{}", api::GRAPH_BASE, path);
         let auth = self.bearer_graph()?;
 
@@ -239,7 +239,10 @@ impl ExchangeClient {
         // the real sorng-powershell execution engine.
         // For now we return a placeholder indicating the script that would run.
         warn!("run_ps stub – real execution via sorng-powershell session required");
-        Ok(format!("{{\"_stub\": true, \"script\": \"{}\"}}", script.replace('"', "\\\"")))
+        Ok(format!(
+            "{{\"_stub\": true, \"script\": \"{}\"}}",
+            script.replace('"', "\\\"")
+        ))
     }
 
     /// Execute a PowerShell command and deserialise the JSON output.

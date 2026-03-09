@@ -63,7 +63,10 @@ pub async fn ps_update_group(
         req.identity.replace('\'', "''")
     );
     cmd.push_str(&ps_param_opt("DisplayName", req.display_name.as_deref()));
-    cmd.push_str(&ps_param_opt("PrimarySmtpAddress", req.primary_smtp_address.as_deref()));
+    cmd.push_str(&ps_param_opt(
+        "PrimarySmtpAddress",
+        req.primary_smtp_address.as_deref(),
+    ));
     cmd.push_str(&ps_param_list("ManagedBy", &req.managed_by));
     if let Some(ref d) = req.description {
         cmd.push_str(&format!(" -Notes '{}'", d.replace('\'', "''")));

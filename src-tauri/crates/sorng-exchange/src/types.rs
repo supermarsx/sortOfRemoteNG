@@ -283,9 +283,17 @@ pub struct TokenResponse {
 pub struct GraphList<T> {
     #[serde(default)]
     pub value: Vec<T>,
-    #[serde(rename = "@odata.nextLink", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@odata.nextLink",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub next_link: Option<String>,
-    #[serde(rename = "@odata.count", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@odata.count",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub count: Option<i64>,
 }
 
@@ -2173,8 +2181,7 @@ pub mod api {
     /// EWS endpoint template (on-prem)
     pub const EWS_URL_TEMPLATE: &str = "https://{server}/EWS/Exchange.asmx";
     /// PowerShell remoting URI template (on-prem)
-    pub const PS_REMOTING_TEMPLATE: &str =
-        "https://{server}/PowerShell/";
+    pub const PS_REMOTING_TEMPLATE: &str = "https://{server}/PowerShell/";
 
     /// Graph API scopes used by this crate
     pub mod scopes {

@@ -127,9 +127,7 @@ pub async fn ps_remove_send_on_behalf(
 }
 
 /// List all Room mailboxes.
-pub async fn ps_list_room_mailboxes(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<Mailbox>> {
+pub async fn ps_list_room_mailboxes(client: &ExchangeClient) -> ExchangeResult<Vec<Mailbox>> {
     let cmd = "Get-Mailbox -RecipientTypeDetails RoomMailbox -ResultSize Unlimited | \
          Select-Object Identity,DisplayName,PrimarySmtpAddress,Alias,Database,\
          ServerName,WhenCreated";
@@ -137,9 +135,7 @@ pub async fn ps_list_room_mailboxes(
 }
 
 /// List all Equipment mailboxes.
-pub async fn ps_list_equipment_mailboxes(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<Mailbox>> {
+pub async fn ps_list_equipment_mailboxes(client: &ExchangeClient) -> ExchangeResult<Vec<Mailbox>> {
     let cmd = "Get-Mailbox -RecipientTypeDetails EquipmentMailbox -ResultSize Unlimited | \
          Select-Object Identity,DisplayName,PrimarySmtpAddress,Alias,Database,\
          ServerName,WhenCreated";
@@ -147,9 +143,7 @@ pub async fn ps_list_equipment_mailboxes(
 }
 
 /// List room lists (distribution groups containing room mailboxes).
-pub async fn ps_list_room_lists(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<DistributionGroup>> {
+pub async fn ps_list_room_lists(client: &ExchangeClient) -> ExchangeResult<Vec<DistributionGroup>> {
     let cmd = "Get-DistributionGroup -RecipientTypeDetails RoomList | \
          Select-Object Identity,DisplayName,PrimarySmtpAddress,Alias,MemberCount";
     client.run_ps_json(cmd).await

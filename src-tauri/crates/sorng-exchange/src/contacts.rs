@@ -3,8 +3,8 @@
 //! Manages external recipient objects: MailContact (no AD logon) and
 //! MailUser (AD-enabled with external email).
 
-use crate::client::ExchangeClient;
 use crate::auth::ps_param_opt;
+use crate::client::ExchangeClient;
 use crate::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -96,10 +96,7 @@ pub async fn ps_list_mail_users(
     client.run_ps_json(&cmd).await
 }
 
-pub async fn ps_get_mail_user(
-    client: &ExchangeClient,
-    identity: &str,
-) -> ExchangeResult<MailUser> {
+pub async fn ps_get_mail_user(client: &ExchangeClient, identity: &str) -> ExchangeResult<MailUser> {
     let cmd = format!(
         "Get-MailUser -Identity '{identity}' | Select-Object Identity,DisplayName,Alias,\
          ExternalEmailAddress,UserPrincipalName,PrimarySmtpAddress,EmailAddresses,\
@@ -115,8 +112,11 @@ pub async fn ps_create_mail_user(
     let mut cmd = format!(
         "New-MailUser -Name '{}' -Alias '{}' -ExternalEmailAddress '{}' \
          -UserPrincipalName '{}' -Password (ConvertTo-SecureString '{}' -AsPlainText -Force)",
-        req.display_name, req.alias, req.external_email_address,
-        req.user_principal_name, req.password
+        req.display_name,
+        req.alias,
+        req.external_email_address,
+        req.user_principal_name,
+        req.password
     );
     cmd += &ps_param_opt("FirstName", req.first_name.as_deref());
     cmd += &ps_param_opt("LastName", req.last_name.as_deref());
@@ -138,9 +138,7 @@ pub async fn ps_remove_mail_user(
 // Graph API – external contacts
 // ═══════════════════════════════════════════════════════════════════════════════
 
-pub async fn graph_list_contacts(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<MailContact>> {
+pub async fn graph_list_contacts(client: &ExchangeClient) -> ExchangeResult<Vec<MailContact>> {
     let items: Vec<serde_json::Value> = client
         .graph_list(&format!("{}/contacts?$top=999", api::GRAPH_BASE))
         .await?;

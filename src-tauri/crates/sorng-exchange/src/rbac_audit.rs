@@ -3,17 +3,15 @@
 //! Role-Based Access Control management and administrator/mailbox audit log
 //! searching.
 
+use crate::auth::{ps_param_list, ps_param_opt};
 use crate::client::ExchangeClient;
-use crate::auth::{ps_param_opt, ps_param_list};
 use crate::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Role Groups
 // ═══════════════════════════════════════════════════════════════════════════════
 
-pub async fn ps_list_role_groups(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<RoleGroup>> {
+pub async fn ps_list_role_groups(client: &ExchangeClient) -> ExchangeResult<Vec<RoleGroup>> {
     let cmd = "Get-RoleGroup | Select-Object Name,Description,Members,Roles,ManagedBy";
     client.run_ps_json(cmd).await
 }

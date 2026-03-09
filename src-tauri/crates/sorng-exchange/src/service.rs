@@ -98,11 +98,8 @@ impl ExchangeService {
         let config = self.config.as_ref();
         ExchangeConnectionSummary {
             connected: self.connected,
-            environment: config
-                .map(|c| c.environment.clone())
-                .unwrap_or_default(),
-            server: config
-                .and_then(|c| c.on_prem.as_ref().map(|p| p.server.clone())),
+            environment: config.map(|c| c.environment.clone()).unwrap_or_default(),
+            server: config.and_then(|c| c.on_prem.as_ref().map(|p| p.server.clone())),
             organization: config
                 .and_then(|c| c.online.as_ref().and_then(|o| o.organization.clone())),
             connected_as: config.and_then(|c| {
@@ -285,10 +282,7 @@ impl ExchangeService {
         distribution_groups::ps_remove_group(self.client()?, identity).await
     }
 
-    pub async fn list_group_members(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<Vec<GroupMember>> {
+    pub async fn list_group_members(&mut self, identity: &str) -> ExchangeResult<Vec<GroupMember>> {
         self.ensure_auth().await?;
         let c = self.client()?;
         match self.config.as_ref().map(|c| &c.environment) {
@@ -299,11 +293,7 @@ impl ExchangeService {
         }
     }
 
-    pub async fn add_group_member(
-        &mut self,
-        group: &str,
-        member: &str,
-    ) -> ExchangeResult<String> {
+    pub async fn add_group_member(&mut self, group: &str, member: &str) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         distribution_groups::ps_add_group_member(self.client()?, group, member).await
     }
@@ -439,10 +429,7 @@ impl ExchangeService {
         .await
     }
 
-    pub async fn list_queues(
-        &mut self,
-        server: Option<String>,
-    ) -> ExchangeResult<Vec<MailQueue>> {
+    pub async fn list_queues(&mut self, server: Option<String>) -> ExchangeResult<Vec<MailQueue>> {
         self.ensure_auth().await?;
         mail_flow::ps_list_queues(self.client()?, server.as_deref()).await
     }
@@ -620,10 +607,7 @@ impl ExchangeService {
         migration::ps_list_migration_batches(self.client()?).await
     }
 
-    pub async fn get_migration_batch(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<MigrationBatch> {
+    pub async fn get_migration_batch(&mut self, identity: &str) -> ExchangeResult<MigrationBatch> {
         self.ensure_auth().await?;
         migration::ps_get_migration_batch(self.client()?, identity).await
     }
@@ -795,10 +779,7 @@ impl ExchangeService {
         health::ps_list_dags(self.client()?).await
     }
 
-    pub async fn get_dag(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<DatabaseAvailabilityGroup> {
+    pub async fn get_dag(&mut self, identity: &str) -> ExchangeResult<DatabaseAvailabilityGroup> {
         self.ensure_auth().await?;
         health::ps_get_dag(self.client()?, identity).await
     }
@@ -809,12 +790,7 @@ impl ExchangeService {
         database: Option<String>,
     ) -> ExchangeResult<Vec<DagReplicationStatus>> {
         self.ensure_auth().await?;
-        health::ps_get_dag_copy_status(
-            self.client()?,
-            server.as_deref(),
-            database.as_deref(),
-        )
-        .await
+        health::ps_get_dag_copy_status(self.client()?, server.as_deref(), database.as_deref()).await
     }
 
     pub async fn test_replication_health(
@@ -915,7 +891,10 @@ impl ExchangeService {
         contacts::ps_get_mail_user(self.client()?, identity).await
     }
 
-    pub async fn create_mail_user(&mut self, req: CreateMailUserRequest) -> ExchangeResult<MailUser> {
+    pub async fn create_mail_user(
+        &mut self,
+        req: CreateMailUserRequest,
+    ) -> ExchangeResult<MailUser> {
         self.ensure_auth().await?;
         contacts::ps_create_mail_user(self.client()?, &req).await
     }
@@ -937,7 +916,10 @@ impl ExchangeService {
         shared_mailbox::ps_convert_mailbox(self.client()?, req).await
     }
 
-    pub async fn list_shared_mailboxes(&mut self, result_size: Option<i32>) -> ExchangeResult<Vec<Mailbox>> {
+    pub async fn list_shared_mailboxes(
+        &mut self,
+        result_size: Option<i32>,
+    ) -> ExchangeResult<Vec<Mailbox>> {
         self.ensure_auth().await?;
         shared_mailbox::ps_list_shared_mailboxes(self.client()?, result_size).await
     }
@@ -952,11 +934,7 @@ impl ExchangeService {
         shared_mailbox::ps_list_equipment_mailboxes(self.client()?).await
     }
 
-    pub async fn add_automapping(
-        &mut self,
-        mailbox: &str,
-        user: &str,
-    ) -> ExchangeResult<String> {
+    pub async fn add_automapping(&mut self, mailbox: &str, user: &str) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         shared_mailbox::ps_add_automapping(self.client()?, mailbox, user).await
     }
@@ -970,20 +948,12 @@ impl ExchangeService {
         shared_mailbox::ps_remove_automapping(self.client()?, mailbox, user).await
     }
 
-    pub async fn add_send_as(
-        &mut self,
-        mailbox: &str,
-        trustee: &str,
-    ) -> ExchangeResult<String> {
+    pub async fn add_send_as(&mut self, mailbox: &str, trustee: &str) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         shared_mailbox::ps_add_send_as(self.client()?, mailbox, trustee).await
     }
 
-    pub async fn remove_send_as(
-        &mut self,
-        mailbox: &str,
-        trustee: &str,
-    ) -> ExchangeResult<String> {
+    pub async fn remove_send_as(&mut self, mailbox: &str, trustee: &str) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         shared_mailbox::ps_remove_send_as(self.client()?, mailbox, trustee).await
     }
@@ -1015,15 +985,16 @@ impl ExchangeService {
     // Archive Mailboxes
     // ═══════════════════════════════════════════════════════════════════════
 
-    pub async fn get_archive_info(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<ArchiveMailboxInfo> {
+    pub async fn get_archive_info(&mut self, identity: &str) -> ExchangeResult<ArchiveMailboxInfo> {
         self.ensure_auth().await?;
         archive::ps_get_archive_info(self.client()?, identity).await
     }
 
-    pub async fn enable_archive(&mut self, identity: &str, database: Option<&str>) -> ExchangeResult<String> {
+    pub async fn enable_archive(
+        &mut self,
+        identity: &str,
+        database: Option<&str>,
+    ) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         archive::ps_enable_archive(self.client()?, identity, database).await
     }
@@ -1048,13 +1019,7 @@ impl ExchangeService {
         warning_quota: &str,
     ) -> ExchangeResult<String> {
         self.ensure_auth().await?;
-        archive::ps_set_archive_quota(
-            self.client()?,
-            identity,
-            quota,
-            warning_quota,
-        )
-        .await
+        archive::ps_set_archive_quota(self.client()?, identity, quota, warning_quota).await
     }
 
     pub async fn get_archive_statistics(
@@ -1105,7 +1070,10 @@ impl ExchangeService {
         mobile_devices::ps_remove_mobile_device(self.client()?, identity).await
     }
 
-    pub async fn list_all_mobile_devices(&mut self, result_size: Option<i32>) -> ExchangeResult<Vec<MobileDevice>> {
+    pub async fn list_all_mobile_devices(
+        &mut self,
+        result_size: Option<i32>,
+    ) -> ExchangeResult<Vec<MobileDevice>> {
         self.ensure_auth().await?;
         mobile_devices::ps_list_all_mobile_devices(self.client()?, result_size).await
     }
@@ -1114,10 +1082,7 @@ impl ExchangeService {
     // Inbox Rules
     // ═══════════════════════════════════════════════════════════════════════
 
-    pub async fn list_inbox_rules(
-        &mut self,
-        mailbox: &str,
-    ) -> ExchangeResult<Vec<InboxRule>> {
+    pub async fn list_inbox_rules(&mut self, mailbox: &str) -> ExchangeResult<Vec<InboxRule>> {
         self.ensure_auth().await?;
         inbox_rules::ps_list_inbox_rules(self.client()?, mailbox).await
     }
@@ -1185,10 +1150,7 @@ impl ExchangeService {
         policies::ps_list_owa_policies(self.client()?).await
     }
 
-    pub async fn get_owa_policy(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<OwaMailboxPolicy> {
+    pub async fn get_owa_policy(&mut self, identity: &str) -> ExchangeResult<OwaMailboxPolicy> {
         self.ensure_auth().await?;
         policies::ps_get_owa_policy(self.client()?, identity).await
     }
@@ -1313,10 +1275,7 @@ impl ExchangeService {
         rbac_audit::ps_list_management_roles(self.client()?).await
     }
 
-    pub async fn get_management_role(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<ManagementRole> {
+    pub async fn get_management_role(&mut self, identity: &str) -> ExchangeResult<ManagementRole> {
         self.ensure_auth().await?;
         rbac_audit::ps_get_management_role(self.client()?, identity).await
     }
@@ -1343,9 +1302,7 @@ impl ExchangeService {
         rbac_audit::ps_search_admin_audit_log(self.client()?, &req).await
     }
 
-    pub async fn get_admin_audit_log_config(
-        &mut self,
-    ) -> ExchangeResult<serde_json::Value> {
+    pub async fn get_admin_audit_log_config(&mut self) -> ExchangeResult<serde_json::Value> {
         self.ensure_auth().await?;
         rbac_audit::ps_get_admin_audit_log_config(self.client()?).await
     }
@@ -1370,18 +1327,12 @@ impl ExchangeService {
         .await
     }
 
-    pub async fn enable_mailbox_audit(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<String> {
+    pub async fn enable_mailbox_audit(&mut self, identity: &str) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         rbac_audit::ps_enable_mailbox_audit(self.client()?, identity).await
     }
 
-    pub async fn disable_mailbox_audit(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<String> {
+    pub async fn disable_mailbox_audit(&mut self, identity: &str) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         rbac_audit::ps_disable_mailbox_audit(self.client()?, identity).await
     }
@@ -1450,13 +1401,8 @@ impl ExchangeService {
         server: Option<String>,
     ) -> ExchangeResult<String> {
         self.ensure_auth().await?;
-        certificates::ps_enable_certificate(
-            self.client()?,
-            thumbprint,
-            services,
-            server.as_deref(),
-        )
-        .await
+        certificates::ps_enable_certificate(self.client()?, thumbprint, services, server.as_deref())
+            .await
     }
 
     pub async fn import_certificate(
@@ -1638,9 +1584,7 @@ impl ExchangeService {
         hygiene::ps_set_content_filter_config(self.client()?, &params).await
     }
 
-    pub async fn get_connection_filter_config(
-        &mut self,
-    ) -> ExchangeResult<ConnectionFilterConfig> {
+    pub async fn get_connection_filter_config(&mut self) -> ExchangeResult<ConnectionFilterConfig> {
         self.ensure_auth().await?;
         hygiene::ps_get_connection_filter_config(self.client()?).await
     }
@@ -1672,12 +1616,8 @@ impl ExchangeService {
         quarantine_type: Option<String>,
     ) -> ExchangeResult<Vec<QuarantineMessage>> {
         self.ensure_auth().await?;
-        hygiene::ps_list_quarantine_messages(
-            self.client()?,
-            page_size,
-            quarantine_type.as_deref(),
-        )
-        .await
+        hygiene::ps_list_quarantine_messages(self.client()?, page_size, quarantine_type.as_deref())
+            .await
     }
 
     pub async fn get_quarantine_message(
@@ -1697,10 +1637,7 @@ impl ExchangeService {
         hygiene::ps_release_quarantine_message(self.client()?, identity, release_to_all).await
     }
 
-    pub async fn delete_quarantine_message(
-        &mut self,
-        identity: &str,
-    ) -> ExchangeResult<String> {
+    pub async fn delete_quarantine_message(&mut self, identity: &str) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         hygiene::ps_delete_quarantine_message(self.client()?, identity).await
     }

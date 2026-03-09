@@ -10,9 +10,7 @@ use crate::types::*;
 pub async fn ps_list_address_policies(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<EmailAddressPolicy>> {
-    client
-        .run_ps_json("Get-EmailAddressPolicy")
-        .await
+    client.run_ps_json("Get-EmailAddressPolicy").await
 }
 
 /// Get a specific email address policy.
@@ -47,9 +45,7 @@ pub async fn ps_apply_address_policy(
 pub async fn ps_list_accepted_domains(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<AcceptedDomain>> {
-    client
-        .run_ps_json("Get-AcceptedDomain")
-        .await
+    client.run_ps_json("Get-AcceptedDomain").await
 }
 
 /// Get a specific accepted domain.
@@ -97,12 +93,8 @@ pub async fn ps_remove_accepted_domain(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List address lists.
-pub async fn ps_list_address_lists(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<AddressList>> {
-    client
-        .run_ps_json("Get-AddressList")
-        .await
+pub async fn ps_list_address_lists(client: &ExchangeClient) -> ExchangeResult<Vec<AddressList>> {
+    client.run_ps_json("Get-AddressList").await
 }
 
 /// Get a specific address list.
@@ -129,9 +121,7 @@ pub async fn ps_update_gal(client: &ExchangeClient) -> ExchangeResult<String> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List verified domains in the tenant.
-pub async fn graph_list_domains(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<AcceptedDomain>> {
+pub async fn graph_list_domains(client: &ExchangeClient) -> ExchangeResult<Vec<AcceptedDomain>> {
     let domains: Vec<serde_json::Value> = client
         .graph_list("/domains?$select=id,isVerified,isDefault,supportedServices")
         .await

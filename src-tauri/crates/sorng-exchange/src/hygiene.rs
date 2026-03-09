@@ -4,8 +4,8 @@
 //! quarantine management for Exchange on-premises.  Also handle mailbox
 //! import/export requests (PST).
 
-use crate::client::ExchangeClient;
 use crate::auth::ps_param_opt;
+use crate::client::ExchangeClient;
 use crate::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -122,9 +122,7 @@ pub async fn ps_get_quarantine_message(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<QuarantineMessage> {
-    let cmd = format!(
-        "Get-QuarantineMessage -Identity '{identity}'"
-    );
+    let cmd = format!("Get-QuarantineMessage -Identity '{identity}'");
     client.run_ps_json(&cmd).await
 }
 
@@ -162,9 +160,7 @@ pub async fn ps_new_mailbox_import_request(
     file_path: &str,
     target_root_folder: Option<&str>,
 ) -> ExchangeResult<String> {
-    let mut cmd = format!(
-        "New-MailboxImportRequest -Mailbox '{mailbox}' -FilePath '{file_path}'"
-    );
+    let mut cmd = format!("New-MailboxImportRequest -Mailbox '{mailbox}' -FilePath '{file_path}'");
     cmd += &ps_param_opt("TargetRootFolder", target_root_folder);
     client.run_ps(&cmd).await
 }
@@ -176,15 +172,21 @@ pub async fn ps_new_mailbox_export_request(
     include_folders: Option<&[String]>,
     exclude_folders: Option<&[String]>,
 ) -> ExchangeResult<String> {
-    let mut cmd = format!(
-        "New-MailboxExportRequest -Mailbox '{mailbox}' -FilePath '{file_path}'"
-    );
+    let mut cmd = format!("New-MailboxExportRequest -Mailbox '{mailbox}' -FilePath '{file_path}'");
     if let Some(inc) = include_folders {
-        let list = inc.iter().map(|f| format!("'{f}'")).collect::<Vec<_>>().join(",");
+        let list = inc
+            .iter()
+            .map(|f| format!("'{f}'"))
+            .collect::<Vec<_>>()
+            .join(",");
         cmd += &format!(" -IncludeFolders {list}");
     }
     if let Some(exc) = exclude_folders {
-        let list = exc.iter().map(|f| format!("'{f}'")).collect::<Vec<_>>().join(",");
+        let list = exc
+            .iter()
+            .map(|f| format!("'{f}'"))
+            .collect::<Vec<_>>()
+            .join(",");
         cmd += &format!(" -ExcludeFolders {list}");
     }
     client.run_ps(&cmd).await

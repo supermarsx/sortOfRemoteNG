@@ -10,9 +10,7 @@ use crate::types::*;
 pub async fn ps_list_migration_batches(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<MigrationBatch>> {
-    client
-        .run_ps_json("Get-MigrationBatch")
-        .await
+    client.run_ps_json("Get-MigrationBatch").await
 }
 
 /// Get a specific migration batch.
@@ -81,10 +79,7 @@ pub async fn ps_list_migration_users(
     batch_id: Option<&str>,
 ) -> ExchangeResult<Vec<MigrationUser>> {
     let cmd = match batch_id {
-        Some(id) => format!(
-            "Get-MigrationUser -BatchId '{}'",
-            id.replace('\'', "''")
-        ),
+        Some(id) => format!("Get-MigrationUser -BatchId '{}'", id.replace('\'', "''")),
         None => "Get-MigrationUser".to_string(),
     };
     client.run_ps_json(&cmd).await
@@ -95,9 +90,7 @@ pub async fn ps_list_migration_users(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List move requests.
-pub async fn ps_list_move_requests(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<MoveRequest>> {
+pub async fn ps_list_move_requests(client: &ExchangeClient) -> ExchangeResult<Vec<MoveRequest>> {
     client
         .run_ps_json("Get-MoveRequest -ResultSize Unlimited")
         .await

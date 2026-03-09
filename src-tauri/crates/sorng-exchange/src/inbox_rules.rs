@@ -2,8 +2,8 @@
 //!
 //! Manage per-mailbox inbox rules: list, create, update, remove, enable/disable.
 
+use crate::auth::{ps_param_bool, ps_param_list, ps_param_opt};
 use crate::client::ExchangeClient;
-use crate::auth::{ps_param_opt, ps_param_bool, ps_param_list};
 use crate::types::*;
 
 /// List inbox rules for a mailbox.
@@ -28,9 +28,7 @@ pub async fn ps_get_inbox_rule(
     mailbox: &str,
     rule_id: &str,
 ) -> ExchangeResult<InboxRule> {
-    let cmd = format!(
-        "Get-InboxRule -Mailbox '{mailbox}' -Identity '{rule_id}'"
-    );
+    let cmd = format!("Get-InboxRule -Mailbox '{mailbox}' -Identity '{rule_id}'");
     client.run_ps_json(&cmd).await
 }
 

@@ -33,21 +33,27 @@ pub async fn ps_create_transport_rule(
     client: &ExchangeClient,
     req: &CreateTransportRuleRequest,
 ) -> ExchangeResult<TransportRule> {
-    let mut cmd = format!(
-        "New-TransportRule -Name '{}'",
-        req.name.replace('\'', "''")
-    );
+    let mut cmd = format!("New-TransportRule -Name '{}'", req.name.replace('\'', "''"));
     if let Some(p) = req.priority {
         cmd.push_str(&format!(" -Priority {p}"));
     }
     cmd.push_str(&ps_param_list("From", &req.from_addresses));
     cmd.push_str(&ps_param_list("SentTo", &req.sent_to_addresses));
-    cmd.push_str(&ps_param_list("SubjectContainsWords", &req.subject_contains_words));
+    cmd.push_str(&ps_param_list(
+        "SubjectContainsWords",
+        &req.subject_contains_words,
+    ));
     if let Some(true) = req.has_attachment {
         cmd.push_str(" -AttachmentHasExecutableContent $true");
     }
-    cmd.push_str(&ps_param_opt("PrependSubject", req.prepend_subject.as_deref()));
-    cmd.push_str(&ps_param_list("RedirectMessageTo", &req.redirect_message_to));
+    cmd.push_str(&ps_param_opt(
+        "PrependSubject",
+        req.prepend_subject.as_deref(),
+    ));
+    cmd.push_str(&ps_param_list(
+        "RedirectMessageTo",
+        &req.redirect_message_to,
+    ));
     cmd.push_str(&ps_param_opt(
         "RejectMessageReasonText",
         req.reject_message_reason.as_deref(),

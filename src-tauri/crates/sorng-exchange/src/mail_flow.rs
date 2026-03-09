@@ -29,10 +29,7 @@ pub async fn ps_message_trace(
         ));
     }
     if let Some(ref end) = req.end_date {
-        cmd.push_str(&format!(
-            " -EndDate '{}'",
-            end.format("%m/%d/%Y %H:%M:%S")
-        ));
+        cmd.push_str(&format!(" -EndDate '{}'", end.format("%m/%d/%Y %H:%M:%S")));
     }
     cmd.push_str(&format!(" -PageSize {}", req.page_size));
     if req.page > 0 {
@@ -95,22 +92,13 @@ pub async fn ps_list_queues(
 }
 
 /// Get a specific queue.
-pub async fn ps_get_queue(
-    client: &ExchangeClient,
-    identity: &str,
-) -> ExchangeResult<MailQueue> {
-    let cmd = format!(
-        "Get-Queue -Identity '{}'",
-        identity.replace('\'', "''")
-    );
+pub async fn ps_get_queue(client: &ExchangeClient, identity: &str) -> ExchangeResult<MailQueue> {
+    let cmd = format!("Get-Queue -Identity '{}'", identity.replace('\'', "''"));
     client.run_ps_json(&cmd).await
 }
 
 /// Retry a queue.
-pub async fn ps_retry_queue(
-    client: &ExchangeClient,
-    identity: &str,
-) -> ExchangeResult<String> {
+pub async fn ps_retry_queue(client: &ExchangeClient, identity: &str) -> ExchangeResult<String> {
     let cmd = format!(
         "Retry-Queue -Identity '{}' -Confirm:$false",
         identity.replace('\'', "''")
@@ -119,10 +107,7 @@ pub async fn ps_retry_queue(
 }
 
 /// Suspend a queue.
-pub async fn ps_suspend_queue(
-    client: &ExchangeClient,
-    identity: &str,
-) -> ExchangeResult<String> {
+pub async fn ps_suspend_queue(client: &ExchangeClient, identity: &str) -> ExchangeResult<String> {
     let cmd = format!(
         "Suspend-Queue -Identity '{}' -Confirm:$false",
         identity.replace('\'', "''")
@@ -131,10 +116,7 @@ pub async fn ps_suspend_queue(
 }
 
 /// Resume a queue.
-pub async fn ps_resume_queue(
-    client: &ExchangeClient,
-    identity: &str,
-) -> ExchangeResult<String> {
+pub async fn ps_resume_queue(client: &ExchangeClient, identity: &str) -> ExchangeResult<String> {
     let cmd = format!(
         "Resume-Queue -Identity '{}' -Confirm:$false",
         identity.replace('\'', "''")
@@ -143,9 +125,7 @@ pub async fn ps_resume_queue(
 }
 
 /// Get queue message count summary across all servers.
-pub async fn ps_queue_summary(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<MailQueue>> {
+pub async fn ps_queue_summary(client: &ExchangeClient) -> ExchangeResult<Vec<MailQueue>> {
     client
         .run_ps_json("Get-Queue | Where-Object { $_.MessageCount -gt 0 }")
         .await

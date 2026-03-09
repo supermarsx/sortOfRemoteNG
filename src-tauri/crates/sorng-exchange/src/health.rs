@@ -7,9 +7,7 @@ use crate::types::*;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List Exchange servers in the organisation.
-pub async fn ps_list_servers(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<ExchangeServer>> {
+pub async fn ps_list_servers(client: &ExchangeClient) -> ExchangeResult<Vec<ExchangeServer>> {
     client
         .run_ps_json("Get-ExchangeServer | Select-Object Name,Fqdn,ServerRole,Edition,AdminDisplayVersion,DatabaseAvailabilityGroup,Site")
         .await
@@ -71,10 +69,7 @@ pub async fn ps_get_database(
 }
 
 /// Mount a database.
-pub async fn ps_mount_database(
-    client: &ExchangeClient,
-    identity: &str,
-) -> ExchangeResult<String> {
+pub async fn ps_mount_database(client: &ExchangeClient, identity: &str) -> ExchangeResult<String> {
     let cmd = format!(
         "Mount-Database -Identity '{}' -Confirm:$false",
         identity.replace('\'', "''")
@@ -156,14 +151,19 @@ pub async fn graph_service_health(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<ServiceHealthStatus>> {
     let items: Vec<serde_json::Value> = client
-        .graph_list("/admin/serviceAnnouncement/healthOverviews?$filter=service eq 'Exchange Online'")
+        .graph_list(
+            "/admin/serviceAnnouncement/healthOverviews?$filter=service eq 'Exchange Online'",
+        )
         .await
         .unwrap_or_default();
 
     Ok(items
         .into_iter()
         .map(|v| ServiceHealthStatus {
-            service: v["service"].as_str().unwrap_or("Exchange Online").to_string(),
+            service: v["service"]
+                .as_str()
+                .unwrap_or("Exchange Online")
+                .to_string(),
             status: v["status"].as_str().unwrap_or_default().to_string(),
             status_display_name: v["statusDisplayName"].as_str().map(String::from),
             feature_status: v["featureStatus"]
@@ -171,10 +171,7 @@ pub async fn graph_service_health(
                 .map(|arr| {
                     arr.iter()
                         .map(|f| FeatureStatus {
-                            feature_name: f["featureName"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
+                            feature_name: f["featureName"].as_str().unwrap_or_default().to_string(),
                             feature_service_status: f["featureServiceStatus"]
                                 .as_str()
                                 .unwrap_or_default()

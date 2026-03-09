@@ -3,14 +3,12 @@
 //! Manage Exchange remote domain settings (message format, auto-replies,
 //! auto-forward, NDR, delivery reports for external domains).
 
+use crate::auth::{ps_param_bool, ps_param_opt};
 use crate::client::ExchangeClient;
-use crate::auth::{ps_param_opt, ps_param_bool};
 use crate::types::*;
 
 /// List all remote domains.
-pub async fn ps_list_remote_domains(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<RemoteDomain>> {
+pub async fn ps_list_remote_domains(client: &ExchangeClient) -> ExchangeResult<Vec<RemoteDomain>> {
     let cmd = "Get-RemoteDomain | Select-Object Name,DomainName,IsInternal,\
          AutoReplyEnabled,AutoForwardEnabled,DeliveryReportEnabled,\
          NDREnabled,TNEFEnabled,AllowedOOFType,ContentType,CharacterSet";

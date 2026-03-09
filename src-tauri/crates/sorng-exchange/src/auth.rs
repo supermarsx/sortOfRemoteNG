@@ -22,7 +22,9 @@ pub async fn acquire_graph_token(
 
     let client_secret = creds.client_secret.as_deref().unwrap_or_default();
     if client_secret.is_empty() {
-        return Err(ExchangeError::auth("client_secret is required for client-credential flow"));
+        return Err(ExchangeError::auth(
+            "client_secret is required for client-credential flow",
+        ));
     }
 
     let mut form = HashMap::new();
@@ -191,7 +193,10 @@ pub fn ps_param_bool(name: &str, value: bool) -> String {
 pub fn ps_param_list(name: &str, values: &Option<Vec<String>>) -> String {
     match values {
         Some(v) if !v.is_empty() => {
-            let quoted: Vec<String> = v.iter().map(|s| format!("'{}'", s.replace('\'', "''"))).collect();
+            let quoted: Vec<String> = v
+                .iter()
+                .map(|s| format!("'{}'", s.replace('\'', "''")))
+                .collect();
             format!(" -{name} @({})", quoted.join(","))
         }
         _ => String::new(),

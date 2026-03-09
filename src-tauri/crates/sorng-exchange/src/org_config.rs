@@ -3,8 +3,8 @@
 //! Manage OWA, ECP, ActiveSync, EWS, PowerShell, Autodiscover, MAPI, and OAB
 //! virtual directories.  Also retrieve and update organization-level configuration.
 
-use crate::client::ExchangeClient;
 use crate::auth::ps_param_opt;
+use crate::client::ExchangeClient;
 use crate::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -180,9 +180,7 @@ pub async fn ps_set_organization_config(
 // Transport Configuration
 // ═══════════════════════════════════════════════════════════════════════════════
 
-pub async fn ps_get_transport_config(
-    client: &ExchangeClient,
-) -> ExchangeResult<TransportConfig> {
+pub async fn ps_get_transport_config(client: &ExchangeClient) -> ExchangeResult<TransportConfig> {
     let cmd = "Get-TransportConfig | Select-Object MaxSendSize,MaxReceiveSize,\
          ExternalPostmasterAddress,InternalSMTPServers,\
          TLSReceiveDomainSecureList,TLSSendDomainSecureList,\

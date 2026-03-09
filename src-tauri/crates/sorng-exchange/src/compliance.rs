@@ -11,9 +11,7 @@ use crate::types::*;
 pub async fn ps_list_retention_policies(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<RetentionPolicy>> {
-    client
-        .run_ps_json("Get-RetentionPolicy")
-        .await
+    client.run_ps_json("Get-RetentionPolicy").await
 }
 
 /// Get a specific retention policy.
@@ -33,12 +31,8 @@ pub async fn ps_get_retention_policy(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List retention tags.
-pub async fn ps_list_retention_tags(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<RetentionTag>> {
-    client
-        .run_ps_json("Get-RetentionPolicyTag")
-        .await
+pub async fn ps_list_retention_tags(client: &ExchangeClient) -> ExchangeResult<Vec<RetentionTag>> {
+    client.run_ps_json("Get-RetentionPolicyTag").await
 }
 
 /// Get a specific retention tag.
@@ -110,14 +104,8 @@ pub async fn ps_enable_litigation_hold(
         "Set-Mailbox -Identity '{}' -LitigationHoldEnabled $true",
         identity.replace('\'', "''")
     );
-    cmd.push_str(&ps_param_opt(
-        "LitigationHoldDuration",
-        duration,
-    ));
-    cmd.push_str(&ps_param_opt(
-        "LitigationHoldOwner",
-        owner,
-    ));
+    cmd.push_str(&ps_param_opt("LitigationHoldDuration", duration));
+    cmd.push_str(&ps_param_opt("LitigationHoldOwner", owner));
     client.run_ps(&cmd).await
 }
 
@@ -138,12 +126,8 @@ pub async fn ps_disable_litigation_hold(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List DLP policies.
-pub async fn ps_list_dlp_policies(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<DlpPolicy>> {
-    client
-        .run_ps_json("Get-DlpPolicy")
-        .await
+pub async fn ps_list_dlp_policies(client: &ExchangeClient) -> ExchangeResult<Vec<DlpPolicy>> {
+    client.run_ps_json("Get-DlpPolicy").await
 }
 
 /// Get a specific DLP policy.
@@ -151,10 +135,7 @@ pub async fn ps_get_dlp_policy(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<DlpPolicy> {
-    let cmd = format!(
-        "Get-DlpPolicy -Identity '{}'",
-        identity.replace('\'', "''")
-    );
+    let cmd = format!("Get-DlpPolicy -Identity '{}'", identity.replace('\'', "''"));
     client.run_ps_json(&cmd).await
 }
 
@@ -190,7 +171,10 @@ pub async fn ps_start_compliance_search(
     );
     match mailboxes {
         Some(mbs) if !mbs.is_empty() => {
-            let quoted: Vec<String> = mbs.iter().map(|m| format!("'{}'", m.replace('\'', "''"))).collect();
+            let quoted: Vec<String> = mbs
+                .iter()
+                .map(|m| format!("'{}'", m.replace('\'', "''")))
+                .collect();
             cmd.push_str(&quoted.join(","));
         }
         _ => cmd.push_str("All"),

@@ -7,9 +7,7 @@ use crate::types::*;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List send connectors.
-pub async fn ps_list_send_connectors(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<Connector>> {
+pub async fn ps_list_send_connectors(client: &ExchangeClient) -> ExchangeResult<Vec<Connector>> {
     client.run_ps_json("Get-SendConnector").await
 }
 
@@ -49,10 +47,7 @@ pub async fn ps_list_receive_connectors(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<Connector>> {
     let cmd = match server {
-        Some(s) => format!(
-            "Get-ReceiveConnector -Server '{}'",
-            s.replace('\'', "''")
-        ),
+        Some(s) => format!("Get-ReceiveConnector -Server '{}'", s.replace('\'', "''")),
         None => "Get-ReceiveConnector".to_string(),
     };
     client.run_ps_json(&cmd).await
@@ -89,9 +84,7 @@ pub async fn ps_set_receive_connector_enabled(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// List inbound connectors (Exchange Online).
-pub async fn ps_list_inbound_connectors(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<Connector>> {
+pub async fn ps_list_inbound_connectors(client: &ExchangeClient) -> ExchangeResult<Vec<Connector>> {
     client.run_ps_json("Get-InboundConnector").await
 }
 

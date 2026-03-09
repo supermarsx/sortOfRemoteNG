@@ -28,9 +28,7 @@ pub async fn ps_get_owa_policy(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<OwaMailboxPolicy> {
-    let cmd = format!(
-        "Get-OwaMailboxPolicy -Identity '{identity}'"
-    );
+    let cmd = format!("Get-OwaMailboxPolicy -Identity '{identity}'");
     client.run_ps_json(&cmd).await
 }
 
@@ -73,9 +71,7 @@ pub async fn ps_get_mobile_device_policy(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<MobileDeviceMailboxPolicy> {
-    let cmd = format!(
-        "Get-MobileDeviceMailboxPolicy -Identity '{identity}'"
-    );
+    let cmd = format!("Get-MobileDeviceMailboxPolicy -Identity '{identity}'");
     client.run_ps_json(&cmd).await
 }
 
@@ -115,8 +111,6 @@ pub async fn ps_get_throttling_policy(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<ThrottlingPolicy> {
-    let cmd = format!(
-        "Get-ThrottlingPolicy -Identity '{identity}'"
-    );
+    let cmd = format!("Get-ThrottlingPolicy -Identity '{identity}'");
     client.run_ps_json(&cmd).await
 }

@@ -2,8 +2,8 @@
 //!
 //! Manage Exchange server TLS/SSL certificates.
 
-use crate::client::ExchangeClient;
 use crate::auth::ps_param_opt;
+use crate::client::ExchangeClient;
 use crate::types::*;
 
 /// List certificates on an Exchange server.
@@ -66,9 +66,7 @@ pub async fn ps_remove_certificate(
     thumbprint: &str,
     server: Option<&str>,
 ) -> ExchangeResult<String> {
-    let mut cmd = format!(
-        "Remove-ExchangeCertificate -Thumbprint '{thumbprint}' -Confirm:$false"
-    );
+    let mut cmd = format!("Remove-ExchangeCertificate -Thumbprint '{thumbprint}' -Confirm:$false");
     cmd += &ps_param_opt("Server", server);
     client.run_ps(&cmd).await
 }

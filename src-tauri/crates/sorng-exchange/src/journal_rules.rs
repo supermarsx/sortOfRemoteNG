@@ -2,14 +2,12 @@
 //!
 //! Manage Exchange journal rules for compliance archiving.
 
-use crate::client::ExchangeClient;
 use crate::auth::ps_param_opt;
+use crate::client::ExchangeClient;
 use crate::types::*;
 
 /// List all journal rules.
-pub async fn ps_list_journal_rules(
-    client: &ExchangeClient,
-) -> ExchangeResult<Vec<JournalRule>> {
+pub async fn ps_list_journal_rules(client: &ExchangeClient) -> ExchangeResult<Vec<JournalRule>> {
     let cmd = "Get-JournalRule | Select-Object Name,JournalEmailAddress,Scope,Enabled,Recipient";
     client.run_ps_json(cmd).await
 }
@@ -19,9 +17,7 @@ pub async fn ps_get_journal_rule(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<JournalRule> {
-    let cmd = format!(
-        "Get-JournalRule -Identity '{identity}'"
-    );
+    let cmd = format!("Get-JournalRule -Identity '{identity}'");
     client.run_ps_json(&cmd).await
 }
 
@@ -64,9 +60,7 @@ pub async fn ps_enable_journal_rule(
     identity: &str,
 ) -> ExchangeResult<String> {
     client
-        .run_ps(&format!(
-            "Enable-JournalRule -Identity '{identity}'"
-        ))
+        .run_ps(&format!("Enable-JournalRule -Identity '{identity}'"))
         .await
 }
 
@@ -76,8 +70,6 @@ pub async fn ps_disable_journal_rule(
     identity: &str,
 ) -> ExchangeResult<String> {
     client
-        .run_ps(&format!(
-            "Disable-JournalRule -Identity '{identity}'"
-        ))
+        .run_ps(&format!("Disable-JournalRule -Identity '{identity}'"))
         .await
 }

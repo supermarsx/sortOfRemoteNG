@@ -14,7 +14,10 @@ pub async fn ps_list_public_folders(
 ) -> ExchangeResult<Vec<PublicFolder>> {
     let mut cmd = String::from("Get-PublicFolder");
     match root {
-        Some(r) => cmd.push_str(&format!(" -Identity '{}' -GetChildren", r.replace('\'', "''"))),
+        Some(r) => cmd.push_str(&format!(
+            " -Identity '{}' -GetChildren",
+            r.replace('\'', "''")
+        )),
         None => cmd.push_str(" -Identity '\\' -GetChildren"),
     }
     if recurse {

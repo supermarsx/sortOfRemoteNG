@@ -90,7 +90,10 @@ pub async fn ps_set_booking_config(
     if let Some(d) = config.max_duration_in_minutes {
         cmd.push_str(&format!(" -MaximumDurationInMinutes {d}"));
     }
-    cmd.push_str(&ps_param_list("ResourceDelegates", &config.resource_delegates));
+    cmd.push_str(&ps_param_list(
+        "ResourceDelegates",
+        &config.resource_delegates,
+    ));
 
     client.run_ps(&cmd).await
 }
@@ -105,9 +108,7 @@ pub async fn graph_list_calendar_permissions(
     user_id: &str,
 ) -> ExchangeResult<Vec<CalendarPermission>> {
     let perms: Vec<serde_json::Value> = client
-        .graph_list(&format!(
-            "/users/{user_id}/calendar/calendarPermissions"
-        ))
+        .graph_list(&format!("/users/{user_id}/calendar/calendarPermissions"))
         .await
         .unwrap_or_default();
 
