@@ -45,7 +45,8 @@ impl BinlogManager {
     ) -> MysqlResult<Vec<BinlogEvent>> {
         let sql = format!(
             "SHOW BINLOG EVENTS IN '{}' LIMIT {}",
-            sql_escape(log_name), limit
+            sql_escape(log_name),
+            limit
         );
         let out = client.exec_sql(&sql).await?;
         let mut events = Vec::new();

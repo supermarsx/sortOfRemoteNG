@@ -43,7 +43,10 @@ impl std::error::Error for MysqlError {}
 
 impl MysqlError {
     pub fn new(kind: MysqlErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(MysqlErrorKind::NotConnected, msg)
@@ -58,13 +61,22 @@ impl MysqlError {
         Self::new(MysqlErrorKind::AuthenticationFailed, msg)
     }
     pub fn database_not_found(name: &str) -> Self {
-        Self::new(MysqlErrorKind::DatabaseNotFound, format!("Database not found: {name}"))
+        Self::new(
+            MysqlErrorKind::DatabaseNotFound,
+            format!("Database not found: {name}"),
+        )
     }
     pub fn table_not_found(name: &str) -> Self {
-        Self::new(MysqlErrorKind::TableNotFound, format!("Table not found: {name}"))
+        Self::new(
+            MysqlErrorKind::TableNotFound,
+            format!("Table not found: {name}"),
+        )
     }
     pub fn user_not_found(user: &str, host: &str) -> Self {
-        Self::new(MysqlErrorKind::UserNotFound, format!("User not found: '{user}'@'{host}'"))
+        Self::new(
+            MysqlErrorKind::UserNotFound,
+            format!("User not found: '{user}'@'{host}'"),
+        )
     }
     pub fn replication(msg: impl Into<String>) -> Self {
         Self::new(MysqlErrorKind::ReplicationError, msg)
@@ -82,10 +94,16 @@ impl MysqlError {
         Self::new(MysqlErrorKind::PermissionDenied, msg)
     }
     pub fn variable_not_found(name: &str) -> Self {
-        Self::new(MysqlErrorKind::VariableNotFound, format!("Variable not found: {name}"))
+        Self::new(
+            MysqlErrorKind::VariableNotFound,
+            format!("Variable not found: {name}"),
+        )
     }
     pub fn process_not_found(id: u64) -> Self {
-        Self::new(MysqlErrorKind::ProcessNotFound, format!("Process not found: {id}"))
+        Self::new(
+            MysqlErrorKind::ProcessNotFound,
+            format!("Process not found: {id}"),
+        )
     }
     pub fn binlog(msg: impl Into<String>) -> Self {
         Self::new(MysqlErrorKind::BinlogError, msg)

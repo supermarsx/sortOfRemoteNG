@@ -29,9 +29,17 @@ pub struct MysqlService {
     connections: HashMap<String, MysqlClient>,
 }
 
+impl Default for MysqlService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MysqlService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
@@ -43,14 +51,17 @@ impl MysqlService {
     ) -> MysqlResult<MysqlConnectionSummary> {
         let client = MysqlClient::new(config)?;
 
-        let version = VariableManager::get_server_info(&client).await.unwrap_or_default();
+        let version = VariableManager::get_server_info(&client)
+            .await
+            .unwrap_or_default();
         let uptime_str = client.exec_sql("SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'Uptime'")
             .await
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
         let uptime: u64 = uptime_str.parse().unwrap_or(0);
 
-        let databases_count = DatabaseManager::list(&client).await
+        let databases_count = DatabaseManager::list(&client)
+            .await
             .map(|dbs| dbs.len() as u64)
             .unwrap_or(0);
 
@@ -73,7 +84,8 @@ impl MysqlService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> MysqlResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| MysqlError::not_connected(format!("No connection '{}'", id)))
     }
@@ -83,7 +95,8 @@ impl MysqlService {
     }
 
     fn client(&self, id: &str) -> MysqlResult<&MysqlClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| MysqlError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -98,7 +111,12 @@ impl MysqlService {
     }
 
     pub async fn create_user(
-        &self, id: &str, user: &str, host: &str, password: &str, plugin: Option<&str>,
+        &self,
+        id: &str,
+        user: &str,
+        host: &str,
+        password: &str,
+        plugin: Option<&str>,
     ) -> MysqlResult<()> {
         UserManager::create(self.client(id)?, user, host, password, plugin).await
     }
@@ -108,13 +126,22 @@ impl MysqlService {
     }
 
     pub async fn rename_user(
-        &self, id: &str, old_user: &str, old_host: &str, new_user: &str, new_host: &str,
+        &self,
+        id: &str,
+        old_user: &str,
+        old_host: &str,
+        new_user: &str,
+        new_host: &str,
     ) -> MysqlResult<()> {
         UserManager::rename(self.client(id)?, old_user, old_host, new_user, new_host).await
     }
 
     pub async fn set_user_password(
-        &self, id: &str, user: &str, host: &str, password: &str,
+        &self,
+        id: &str,
+        user: &str,
+        host: &str,
+        password: &str,
     ) -> MysqlResult<()> {
         UserManager::set_password(self.client(id)?, user, host, password).await
     }
@@ -128,21 +155,45 @@ impl MysqlService {
     }
 
     pub async fn list_grants(
-        &self, id: &str, user: &str, host: &str,
+        &self,
+        id: &str,
+        user: &str,
+        host: &str,
     ) -> MysqlResult<Vec<MysqlGrant>> {
         UserManager::list_grants(self.client(id)?, user, host).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn grant_privilege(
-        &self, id: &str, privilege: &str, database: &str, table: &str,
-        user: &str, host: &str, with_grant: bool,
+        &self,
+        id: &str,
+        privilege: &str,
+        database: &str,
+        table: &str,
+        user: &str,
+        host: &str,
+        with_grant: bool,
     ) -> MysqlResult<()> {
-        UserManager::grant(self.client(id)?, privilege, database, table, user, host, with_grant).await
+        UserManager::grant(
+            self.client(id)?,
+            privilege,
+            database,
+            table,
+            user,
+            host,
+            with_grant,
+        )
+        .await
     }
 
     pub async fn revoke_privilege(
-        &self, id: &str, privilege: &str, database: &str, table: &str,
-        user: &str, host: &str,
+        &self,
+        id: &str,
+        privilege: &str,
+        database: &str,
+        table: &str,
+        user: &str,
+        host: &str,
     ) -> MysqlResult<()> {
         UserManager::revoke(self.client(id)?, privilege, database, table, user, host).await
     }
@@ -177,15 +228,27 @@ impl MysqlService {
         ReplicationManager::reset_slave(self.client(id)?).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn change_master(
-        &self, id: &str, master_host: &str, master_port: u16,
-        master_user: &str, master_password: &str,
-        master_log_file: Option<&str>, master_log_pos: Option<u64>,
+        &self,
+        id: &str,
+        master_host: &str,
+        master_port: u16,
+        master_user: &str,
+        master_password: &str,
+        master_log_file: Option<&str>,
+        master_log_pos: Option<u64>,
     ) -> MysqlResult<()> {
         ReplicationManager::change_master(
-            self.client(id)?, master_host, master_port,
-            master_user, master_password, master_log_file, master_log_pos,
-        ).await
+            self.client(id)?,
+            master_host,
+            master_port,
+            master_user,
+            master_password,
+            master_log_file,
+            master_log_pos,
+        )
+        .await
     }
 
     pub async fn skip_counter(&self, id: &str, count: u64) -> MysqlResult<()> {
@@ -215,7 +278,11 @@ impl MysqlService {
     }
 
     pub async fn create_database(
-        &self, id: &str, name: &str, charset: Option<&str>, collation: Option<&str>,
+        &self,
+        id: &str,
+        name: &str,
+        charset: Option<&str>,
+        collation: Option<&str>,
     ) -> MysqlResult<()> {
         DatabaseManager::create(self.client(id)?, name, charset, collation).await
     }
@@ -233,14 +300,16 @@ impl MysqlService {
     }
 
     pub async fn alter_database_charset(
-        &self, id: &str, name: &str, charset: &str, collation: &str,
+        &self,
+        id: &str,
+        name: &str,
+        charset: &str,
+        collation: &str,
     ) -> MysqlResult<()> {
         DatabaseManager::alter_charset(self.client(id)?, name, charset, collation).await
     }
 
-    pub async fn list_database_tables(
-        &self, id: &str, db: &str,
-    ) -> MysqlResult<Vec<MysqlTable>> {
+    pub async fn list_database_tables(&self, id: &str, db: &str) -> MysqlResult<Vec<MysqlTable>> {
         DatabaseManager::list_tables(self.client(id)?, db).await
     }
 
@@ -255,26 +324,36 @@ impl MysqlService {
     }
 
     pub async fn describe_table(
-        &self, id: &str, db: &str, table: &str,
+        &self,
+        id: &str,
+        db: &str,
+        table: &str,
     ) -> MysqlResult<Vec<MysqlColumn>> {
         TableManager::describe(self.client(id)?, db, table).await
     }
 
     pub async fn list_indexes(
-        &self, id: &str, db: &str, table: &str,
+        &self,
+        id: &str,
+        db: &str,
+        table: &str,
     ) -> MysqlResult<Vec<MysqlIndex>> {
         TableManager::list_indexes(self.client(id)?, db, table).await
     }
 
     pub async fn create_index(
-        &self, id: &str, db: &str, table: &str, name: &str, columns: &[String], unique: bool,
+        &self,
+        id: &str,
+        db: &str,
+        table: &str,
+        name: &str,
+        columns: &[String],
+        unique: bool,
     ) -> MysqlResult<()> {
         TableManager::create_index(self.client(id)?, db, table, name, columns, unique).await
     }
 
-    pub async fn drop_index(
-        &self, id: &str, db: &str, table: &str, name: &str,
-    ) -> MysqlResult<()> {
+    pub async fn drop_index(&self, id: &str, db: &str, table: &str, name: &str) -> MysqlResult<()> {
         TableManager::drop_index(self.client(id)?, db, table, name).await
     }
 
@@ -299,7 +378,10 @@ impl MysqlService {
     }
 
     pub async fn get_create_statement(
-        &self, id: &str, db: &str, table: &str,
+        &self,
+        id: &str,
+        db: &str,
+        table: &str,
     ) -> MysqlResult<String> {
         TableManager::get_create_statement(self.client(id)?, db, table).await
     }
@@ -335,7 +417,9 @@ impl MysqlService {
     }
 
     pub async fn list_slow_queries(
-        &self, id: &str, limit: u64,
+        &self,
+        id: &str,
+        limit: u64,
     ) -> MysqlResult<Vec<SlowQueryEntry>> {
         QueryManager::list_slow_queries(self.client(id)?, limit).await
     }
@@ -434,7 +518,11 @@ impl MysqlService {
 
     // ── Backup ───────────────────────────────────────────────────
 
-    pub async fn create_backup(&self, id: &str, config: &BackupConfig) -> MysqlResult<BackupResult> {
+    pub async fn create_backup(
+        &self,
+        id: &str,
+        config: &BackupConfig,
+    ) -> MysqlResult<BackupResult> {
         BackupManager::create_backup(self.client(id)?, config).await
     }
 
@@ -455,7 +543,11 @@ impl MysqlService {
     }
 
     pub async fn export_table(
-        &self, id: &str, db: &str, table: &str, path: &str,
+        &self,
+        id: &str,
+        db: &str,
+        table: &str,
+        path: &str,
     ) -> MysqlResult<()> {
         BackupManager::export_table(self.client(id)?, db, table, path).await
     }
@@ -483,14 +575,14 @@ impl MysqlService {
     }
 
     pub async fn list_processes_by_user(
-        &self, id: &str, user: &str,
+        &self,
+        id: &str,
+        user: &str,
     ) -> MysqlResult<Vec<MysqlProcess>> {
         ProcessManager::list_by_user(self.client(id)?, user).await
     }
 
-    pub async fn list_processes_by_db(
-        &self, id: &str, db: &str,
-    ) -> MysqlResult<Vec<MysqlProcess>> {
+    pub async fn list_processes_by_db(&self, id: &str, db: &str) -> MysqlResult<Vec<MysqlProcess>> {
         ProcessManager::list_by_db(self.client(id)?, db).await
     }
 
@@ -513,7 +605,10 @@ impl MysqlService {
     }
 
     pub async fn list_binlog_events(
-        &self, id: &str, log_name: &str, limit: u64,
+        &self,
+        id: &str,
+        log_name: &str,
+        limit: u64,
     ) -> MysqlResult<Vec<BinlogEvent>> {
         BinlogManager::list_events(self.client(id)?, log_name, limit).await
     }

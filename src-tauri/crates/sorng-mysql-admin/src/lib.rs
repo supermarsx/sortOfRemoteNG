@@ -4,18 +4,18 @@
 //! InnoDB internals, variables, backup/restore, processes, binary logs,
 //! and service lifecycle — all executed remotely via SSH.
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod users;
-pub mod replication;
-pub mod databases;
-pub mod tables;
-pub mod queries;
-pub mod innodb;
-pub mod variables;
 pub mod backup;
-pub mod processes;
 pub mod binlogs;
-pub mod service;
+pub mod client;
 pub mod commands;
+pub mod databases;
+pub mod error;
+pub mod innodb;
+pub mod processes;
+pub mod queries;
+pub mod replication;
+pub mod service;
+pub mod tables;
+pub mod types;
+pub mod users;
+pub mod variables;

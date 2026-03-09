@@ -11,8 +11,9 @@ impl ReplicationManager {
     /// Get master/primary status.
     pub async fn get_master_status(client: &MysqlClient) -> MysqlResult<ReplicationStatus> {
         let out = client.exec_sql("SHOW MASTER STATUS").await?;
-        let line = out.lines().next()
-            .ok_or_else(|| MysqlError::replication("no master status output — binary logging may be disabled"))?;
+        let line = out.lines().next().ok_or_else(|| {
+            MysqlError::replication("no master status output — binary logging may be disabled")
+        })?;
         let cols: Vec<&str> = line.split('\t').collect();
 
         Ok(ReplicationStatus {
@@ -59,17 +60,29 @@ impl ReplicationManager {
         client: &MysqlClient,
         config: &ReplicationConfig,
     ) -> MysqlResult<()> {
-        client.exec_sql(&format!("SET GLOBAL server_id = {}", config.server_id)).await?;
+        client
+            .exec_sql(&format!("SET GLOBAL server_id = {}", config.server_id))
+            .await?;
         if !config.binlog_format.is_empty() {
-            client.exec_sql(&format!(
-                "SET GLOBAL binlog_format = '{}'", config.binlog_format
-            )).await?;
+            client
+                .exec_sql(&format!(
+                    "SET GLOBAL binlog_format = '{}'",
+                    config.binlog_format
+                ))
+                .await?;
         }
         if let Some(ref gtid) = config.gtid_mode {
-            client.exec_sql(&format!("SET GLOBAL gtid_mode = '{}'", gtid)).await?;
+            client
+                .exec_sql(&format!("SET GLOBAL gtid_mode = '{}'", gtid))
+                .await?;
         }
         if let Some(ref enforce) = config.enforce_gtid_consistency {
-            client.exec_sql(&format!("SET GLOBAL enforce_gtid_consistency = '{}'", enforce)).await?;
+            client
+                .exec_sql(&format!(
+                    "SET GLOBAL enforce_gtid_consistency = '{}'",
+                    enforce
+                ))
+                .await?;
         }
         Ok(())
     }
@@ -119,7 +132,9 @@ impl ReplicationManager {
 
     /// Skip N events on the slave.
     pub async fn skip_counter(client: &MysqlClient, count: u64) -> MysqlResult<()> {
-        client.exec_sql(&format!("SET GLOBAL sql_slave_skip_counter = {}", count)).await?;
+        client
+            .exec_sql(&format!("SET GLOBAL sql_slave_skip_counter = {}", count))
+            .await?;
         Ok(())
     }
 
@@ -138,7 +153,9 @@ impl ReplicationManager {
     /// Set or unset read-only mode.
     pub async fn set_read_only(client: &MysqlClient, enabled: bool) -> MysqlResult<()> {
         let val = if enabled { "ON" } else { "OFF" };
-        client.exec_sql(&format!("SET GLOBAL read_only = {}", val)).await?;
+        client
+            .exec_sql(&format!("SET GLOBAL read_only = {}", val))
+            .await?;
         Ok(())
     }
 }

@@ -51,11 +51,15 @@ impl DatabaseManager {
             sql_escape(name)
         );
         let out = client.exec_sql(&sql).await?;
-        let line = out.lines().next()
+        let line = out
+            .lines()
+            .next()
             .ok_or_else(|| MysqlError::database_not_found(name))?;
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 5 {
-            return Err(MysqlError::parse("unexpected column count for database query"));
+            return Err(MysqlError::parse(
+                "unexpected column count for database query",
+            ));
         }
         Ok(MysqlDatabase {
             name: cols[0].to_string(),
@@ -126,7 +130,9 @@ impl DatabaseManager {
     ) -> MysqlResult<()> {
         let sql = format!(
             "ALTER DATABASE `{}` CHARACTER SET {} COLLATE {}",
-            sql_escape(name), charset, collation
+            sql_escape(name),
+            charset,
+            collation
         );
         client.exec_sql(&sql).await?;
         Ok(())

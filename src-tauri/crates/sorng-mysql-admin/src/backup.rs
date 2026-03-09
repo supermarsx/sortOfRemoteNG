@@ -32,7 +32,11 @@ impl BackupManager {
         let dump_cmd = client.mysqldump_cmd(&db_refs, extra_flags.trim());
 
         let cmd = if config.compress {
-            format!("{} | gzip > {}", dump_cmd, shell_escape(&config.output_path))
+            format!(
+                "{} | gzip > {}",
+                dump_cmd,
+                shell_escape(&config.output_path)
+            )
         } else {
             format!("{} > {}", dump_cmd, shell_escape(&config.output_path))
         };
@@ -53,10 +57,12 @@ impl BackupManager {
         }
 
         // Get the backup file size
-        let size_out = client.exec_ssh(&format!(
-            "stat -c%s {} 2>/dev/null || echo 0",
-            shell_escape(&config.output_path)
-        )).await?;
+        let size_out = client
+            .exec_ssh(&format!(
+                "stat -c%s {} 2>/dev/null || echo 0",
+                shell_escape(&config.output_path)
+            ))
+            .await?;
         let size_bytes: u64 = size_out.stdout.trim().parse().unwrap_or(0);
 
         Ok(BackupResult {
@@ -120,10 +126,7 @@ impl BackupManager {
 
     /// Verify a backup file by checking if it's readable and non-empty.
     pub async fn verify_backup(client: &MysqlClient, path: &str) -> MysqlResult<bool> {
-        let cmd = format!(
-            "test -s {} && echo yes || echo no",
-            shell_escape(path)
-        );
+        let cmd = format!("test -s {} && echo yes || echo no", shell_escape(path));
         let out = client.exec_ssh(&cmd).await?;
         Ok(out.stdout.trim() == "yes")
     }
@@ -147,7 +150,12 @@ impl BackupManager {
         if let Some(ref pw) = client.config.mysql_password {
             cmd = format!(
                 "mysqldump -u {} -p'{}' -h {} -P {} --single-transaction {} {}",
-                user, pw.replace('\'', "'\\''"), host, port, db, table
+                user,
+                pw.replace('\'', "'\\''"),
+                host,
+                port,
+                db,
+                table
             );
         }
 

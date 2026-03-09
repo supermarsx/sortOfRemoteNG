@@ -24,7 +24,9 @@ impl VariableManager {
     pub async fn get_global(client: &MysqlClient, name: &str) -> MysqlResult<MysqlVariable> {
         let sql = format!("SHOW GLOBAL VARIABLES LIKE '{}'", sql_escape(name));
         let out = client.exec_sql(&sql).await?;
-        let line = out.lines().next()
+        let line = out
+            .lines()
+            .next()
             .ok_or_else(|| MysqlError::variable_not_found(name))?;
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 2 {
@@ -42,7 +44,9 @@ impl VariableManager {
     pub async fn get_session(client: &MysqlClient, name: &str) -> MysqlResult<MysqlVariable> {
         let sql = format!("SHOW SESSION VARIABLES LIKE '{}'", sql_escape(name));
         let out = client.exec_sql(&sql).await?;
-        let line = out.lines().next()
+        let line = out
+            .lines()
+            .next()
             .ok_or_else(|| MysqlError::variable_not_found(name))?;
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 2 {
@@ -80,7 +84,9 @@ impl VariableManager {
     pub async fn get_status(client: &MysqlClient, name: &str) -> MysqlResult<MysqlVariable> {
         let sql = format!("SHOW GLOBAL STATUS LIKE '{}'", sql_escape(name));
         let out = client.exec_sql(&sql).await?;
-        let line = out.lines().next()
+        let line = out
+            .lines()
+            .next()
             .ok_or_else(|| MysqlError::variable_not_found(name))?;
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 2 {

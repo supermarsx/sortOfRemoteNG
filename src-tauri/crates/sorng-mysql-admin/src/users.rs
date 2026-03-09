@@ -46,7 +46,9 @@ impl UserManager {
             sql_escape(host)
         );
         let out = client.exec_sql(&sql).await?;
-        let line = out.lines().next()
+        let line = out
+            .lines()
+            .next()
             .ok_or_else(|| MysqlError::user_not_found(user, host))?;
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 7 {
@@ -74,11 +76,16 @@ impl UserManager {
         let auth = match plugin {
             Some(p) => format!(
                 "CREATE USER '{}'@'{}' IDENTIFIED WITH {} BY '{}'",
-                sql_escape(user), sql_escape(host), p, sql_escape(password)
+                sql_escape(user),
+                sql_escape(host),
+                p,
+                sql_escape(password)
             ),
             None => format!(
                 "CREATE USER '{}'@'{}' IDENTIFIED BY '{}'",
-                sql_escape(user), sql_escape(host), sql_escape(password)
+                sql_escape(user),
+                sql_escape(host),
+                sql_escape(password)
             ),
         };
         client.exec_sql(&auth).await?;
@@ -102,8 +109,10 @@ impl UserManager {
     ) -> MysqlResult<()> {
         let sql = format!(
             "RENAME USER '{}'@'{}' TO '{}'@'{}'",
-            sql_escape(old_user), sql_escape(old_host),
-            sql_escape(new_user), sql_escape(new_host)
+            sql_escape(old_user),
+            sql_escape(old_host),
+            sql_escape(new_user),
+            sql_escape(new_host)
         );
         client.exec_sql(&sql).await?;
         Ok(())
@@ -118,7 +127,9 @@ impl UserManager {
     ) -> MysqlResult<()> {
         let sql = format!(
             "ALTER USER '{}'@'{}' IDENTIFIED BY '{}'",
-            sql_escape(user), sql_escape(host), sql_escape(password)
+            sql_escape(user),
+            sql_escape(host),
+            sql_escape(password)
         );
         client.exec_sql(&sql).await?;
         Ok(())
@@ -128,7 +139,8 @@ impl UserManager {
     pub async fn lock(client: &MysqlClient, user: &str, host: &str) -> MysqlResult<()> {
         let sql = format!(
             "ALTER USER '{}'@'{}' ACCOUNT LOCK",
-            sql_escape(user), sql_escape(host)
+            sql_escape(user),
+            sql_escape(host)
         );
         client.exec_sql(&sql).await?;
         Ok(())
@@ -138,7 +150,8 @@ impl UserManager {
     pub async fn unlock(client: &MysqlClient, user: &str, host: &str) -> MysqlResult<()> {
         let sql = format!(
             "ALTER USER '{}'@'{}' ACCOUNT UNLOCK",
-            sql_escape(user), sql_escape(host)
+            sql_escape(user),
+            sql_escape(host)
         );
         client.exec_sql(&sql).await?;
         Ok(())
@@ -150,7 +163,11 @@ impl UserManager {
         user: &str,
         host: &str,
     ) -> MysqlResult<Vec<MysqlGrant>> {
-        let sql = format!("SHOW GRANTS FOR '{}'@'{}'", sql_escape(user), sql_escape(host));
+        let sql = format!(
+            "SHOW GRANTS FOR '{}'@'{}'",
+            sql_escape(user),
+            sql_escape(host)
+        );
         let out = client.exec_sql(&sql).await?;
         let mut grants = Vec::new();
         for line in out.lines() {
@@ -184,8 +201,12 @@ impl UserManager {
         let grant_option = if with_grant { " WITH GRANT OPTION" } else { "" };
         let sql = format!(
             "GRANT {} ON {}.{} TO '{}'@'{}'{}",
-            privilege, database, table,
-            sql_escape(user), sql_escape(host), grant_option
+            privilege,
+            database,
+            table,
+            sql_escape(user),
+            sql_escape(host),
+            grant_option
         );
         client.exec_sql(&sql).await?;
         Ok(())
@@ -202,8 +223,11 @@ impl UserManager {
     ) -> MysqlResult<()> {
         let sql = format!(
             "REVOKE {} ON {}.{} FROM '{}'@'{}'",
-            privilege, database, table,
-            sql_escape(user), sql_escape(host)
+            privilege,
+            database,
+            table,
+            sql_escape(user),
+            sql_escape(host)
         );
         client.exec_sql(&sql).await?;
         Ok(())

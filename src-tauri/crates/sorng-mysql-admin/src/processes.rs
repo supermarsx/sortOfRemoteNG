@@ -22,10 +22,11 @@ impl ProcessManager {
             id
         );
         let out = client.exec_sql(&sql).await?;
-        let line = out.lines().next()
+        let line = out
+            .lines()
+            .next()
             .ok_or_else(|| MysqlError::process_not_found(id))?;
-        parse_process_line(line)
-            .ok_or_else(|| MysqlError::parse("failed to parse process info"))
+        parse_process_line(line).ok_or_else(|| MysqlError::parse("failed to parse process info"))
     }
 
     /// Kill a connection by process ID.
@@ -94,11 +95,19 @@ fn parse_process_line(line: &str) -> Option<MysqlProcess> {
             id: cols[0].parse().unwrap_or(0),
             user: cols[1].to_string(),
             host: cols[2].to_string(),
-            db: if cols[3] == "NULL" { None } else { Some(cols[3].to_string()) },
+            db: if cols[3] == "NULL" {
+                None
+            } else {
+                Some(cols[3].to_string())
+            },
             command: cols[4].to_string(),
             time: cols[5].parse().unwrap_or(0),
             state: cols[6].to_string(),
-            info: if cols[7] == "NULL" { None } else { Some(cols[7].to_string()) },
+            info: if cols[7] == "NULL" {
+                None
+            } else {
+                Some(cols[7].to_string())
+            },
         })
     } else {
         None

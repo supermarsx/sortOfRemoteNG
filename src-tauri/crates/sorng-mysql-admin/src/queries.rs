@@ -28,7 +28,9 @@ impl QueryManager {
 
     /// Get the slow query log file path.
     pub async fn get_slow_log_file(client: &MysqlClient) -> MysqlResult<String> {
-        let out = client.exec_sql("SELECT @@global.slow_query_log_file").await?;
+        let out = client
+            .exec_sql("SELECT @@global.slow_query_log_file")
+            .await?;
         Ok(out.trim().to_string())
     }
 
@@ -40,7 +42,9 @@ impl QueryManager {
 
     /// Set the long_query_time threshold.
     pub async fn set_long_query_time(client: &MysqlClient, seconds: f64) -> MysqlResult<()> {
-        client.exec_sql(&format!("SET GLOBAL long_query_time = {}", seconds)).await?;
+        client
+            .exec_sql(&format!("SET GLOBAL long_query_time = {}", seconds))
+            .await?;
         Ok(())
     }
 
@@ -84,18 +88,16 @@ impl QueryManager {
     }
 
     /// Run EXPLAIN on a query.
-    pub async fn explain_query(
-        client: &MysqlClient,
-        db: &str,
-        sql: &str,
-    ) -> MysqlResult<String> {
+    pub async fn explain_query(client: &MysqlClient, db: &str, sql: &str) -> MysqlResult<String> {
         let explain_sql = format!("EXPLAIN {}", sql);
         client.exec_sql_db(db, &explain_sql).await
     }
 
     /// Kill a connection/query by process ID.
     pub async fn kill_query(client: &MysqlClient, process_id: u64) -> MysqlResult<()> {
-        client.exec_sql(&format!("KILL QUERY {}", process_id)).await?;
+        client
+            .exec_sql(&format!("KILL QUERY {}", process_id))
+            .await?;
         Ok(())
     }
 
@@ -152,14 +154,16 @@ fn parse_time_to_secs(s: &str) -> f64 {
 /// Parse "user[user] @ host [ip]" into (user, host).
 fn parse_user_host(s: &str) -> (String, String) {
     let parts: Vec<&str> = s.split('@').collect();
-    let user = parts.first()
+    let user = parts
+        .first()
         .unwrap_or(&"")
         .split('[')
         .next()
         .unwrap_or("")
         .trim()
         .to_string();
-    let host = parts.get(1)
+    let host = parts
+        .get(1)
         .unwrap_or(&"")
         .split('[')
         .next()

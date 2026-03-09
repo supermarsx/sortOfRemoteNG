@@ -37,7 +37,12 @@ impl MysqlClient {
         let mut args = format!("{} -u {} -h {} -P {}", self.mysql_bin(), user, host, port);
 
         if let Some(ref socket) = self.config.mysql_socket {
-            args = format!("{} -u {} --socket={}", self.mysql_bin(), user, shell_escape(socket));
+            args = format!(
+                "{} -u {} --socket={}",
+                self.mysql_bin(),
+                user,
+                shell_escape(socket)
+            );
         }
 
         if let Some(ref pw) = self.config.mysql_password {
@@ -58,7 +63,12 @@ impl MysqlClient {
     pub fn mysql_cmd_db(&self, db: &str, sql: &str) -> String {
         let base = self.mysql_base_args();
         let escaped_sql = sql.replace('\'', "'\\''");
-        format!("{} --batch --skip-column-names {} -e '{}'", base, shell_escape(db), escaped_sql)
+        format!(
+            "{} --batch --skip-column-names {} -e '{}'",
+            base,
+            shell_escape(db),
+            escaped_sql
+        )
     }
 
     /// Build a `mysqldump` invocation with credentials and connection options.
@@ -67,10 +77,21 @@ impl MysqlClient {
         let host = self.config.mysql_host.as_deref().unwrap_or("127.0.0.1");
         let port = self.config.mysql_port.unwrap_or(3306);
 
-        let mut args = format!("{} -u {} -h {} -P {}", self.mysqldump_bin(), user, host, port);
+        let mut args = format!(
+            "{} -u {} -h {} -P {}",
+            self.mysqldump_bin(),
+            user,
+            host,
+            port
+        );
 
         if let Some(ref socket) = self.config.mysql_socket {
-            args = format!("{} -u {} --socket={}", self.mysqldump_bin(), user, shell_escape(socket));
+            args = format!(
+                "{} -u {} --socket={}",
+                self.mysqldump_bin(),
+                user,
+                shell_escape(socket)
+            );
         }
 
         if let Some(ref pw) = self.config.mysql_password {
@@ -132,7 +153,9 @@ impl MysqlClient {
     // ── Remote file helpers ──────────────────────────────────────
 
     pub async fn read_remote_file(&self, path: &str) -> MysqlResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 
