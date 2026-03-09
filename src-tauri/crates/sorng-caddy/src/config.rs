@@ -16,26 +16,45 @@ impl CaddyConfigManager {
     }
 
     pub async fn get_path(client: &CaddyClient, path: &str) -> CaddyResult<serde_json::Value> {
-        client.get(&format!("/config/{}", path.trim_start_matches('/'))).await
+        client
+            .get(&format!("/config/{}", path.trim_start_matches('/')))
+            .await
     }
 
-    pub async fn set_path(client: &CaddyClient, path: &str, value: &serde_json::Value) -> CaddyResult<()> {
-        client.put(&format!("/config/{}", path.trim_start_matches('/')), value).await
+    pub async fn set_path(
+        client: &CaddyClient,
+        path: &str,
+        value: &serde_json::Value,
+    ) -> CaddyResult<()> {
+        client
+            .put(&format!("/config/{}", path.trim_start_matches('/')), value)
+            .await
     }
 
-    pub async fn patch_path(client: &CaddyClient, path: &str, value: &serde_json::Value) -> CaddyResult<()> {
-        client.patch(&format!("/config/{}", path.trim_start_matches('/')), value).await
+    pub async fn patch_path(
+        client: &CaddyClient,
+        path: &str,
+        value: &serde_json::Value,
+    ) -> CaddyResult<()> {
+        client
+            .patch(&format!("/config/{}", path.trim_start_matches('/')), value)
+            .await
     }
 
     pub async fn delete_path(client: &CaddyClient, path: &str) -> CaddyResult<()> {
-        client.delete(&format!("/config/{}", path.trim_start_matches('/'))).await
+        client
+            .delete(&format!("/config/{}", path.trim_start_matches('/')))
+            .await
     }
 
     pub async fn load(client: &CaddyClient, config: &serde_json::Value) -> CaddyResult<()> {
         client.load_config(config).await
     }
 
-    pub async fn adapt_caddyfile(client: &CaddyClient, caddyfile: &str) -> CaddyResult<CaddyfileAdaptResult> {
+    pub async fn adapt_caddyfile(
+        client: &CaddyClient,
+        caddyfile: &str,
+    ) -> CaddyResult<CaddyfileAdaptResult> {
         client.adapt_caddyfile(caddyfile).await
     }
 

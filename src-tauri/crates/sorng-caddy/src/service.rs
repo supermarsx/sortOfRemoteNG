@@ -11,10 +11,10 @@ use crate::error::{CaddyError, CaddyResult};
 use crate::types::*;
 
 use crate::config::CaddyConfigManager;
-use crate::servers::ServerManager;
-use crate::routes::RouteManager;
-use crate::tls::CaddyTlsManager;
 use crate::reverse_proxy::ReverseProxyManager;
+use crate::routes::RouteManager;
+use crate::servers::ServerManager;
+use crate::tls::CaddyTlsManager;
 
 /// Shared Tauri state handle.
 pub type CaddyServiceState = Arc<Mutex<CaddyService>>;
@@ -24,14 +24,26 @@ pub struct CaddyService {
     connections: HashMap<String, CaddyClient>,
 }
 
+impl Default for CaddyService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CaddyService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: CaddyConnectionConfig) -> CaddyResult<CaddyConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: CaddyConnectionConfig,
+    ) -> CaddyResult<CaddyConnectionSummary> {
         let client = CaddyClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
@@ -39,7 +51,8 @@ impl CaddyService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> CaddyResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| CaddyError::not_connected(format!("No connection '{}'", id)))
     }
@@ -49,7 +62,8 @@ impl CaddyService {
     }
 
     fn client(&self, id: &str) -> CaddyResult<&CaddyClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| CaddyError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -71,11 +85,21 @@ impl CaddyService {
         CaddyConfigManager::get_path(self.client(id)?, path).await
     }
 
-    pub async fn set_config_path(&self, id: &str, path: &str, value: serde_json::Value) -> CaddyResult<()> {
+    pub async fn set_config_path(
+        &self,
+        id: &str,
+        path: &str,
+        value: serde_json::Value,
+    ) -> CaddyResult<()> {
         CaddyConfigManager::set_path(self.client(id)?, path, &value).await
     }
 
-    pub async fn patch_config_path(&self, id: &str, path: &str, value: serde_json::Value) -> CaddyResult<()> {
+    pub async fn patch_config_path(
+        &self,
+        id: &str,
+        path: &str,
+        value: serde_json::Value,
+    ) -> CaddyResult<()> {
         CaddyConfigManager::patch_path(self.client(id)?, path, &value).await
     }
 
@@ -87,7 +111,11 @@ impl CaddyService {
         CaddyConfigManager::load(self.client(id)?, &config).await
     }
 
-    pub async fn adapt_caddyfile(&self, id: &str, caddyfile: String) -> CaddyResult<CaddyfileAdaptResult> {
+    pub async fn adapt_caddyfile(
+        &self,
+        id: &str,
+        caddyfile: String,
+    ) -> CaddyResult<CaddyfileAdaptResult> {
         CaddyConfigManager::adapt_caddyfile(self.client(id)?, &caddyfile).await
     }
 
@@ -127,7 +155,13 @@ impl CaddyService {
         RouteManager::add(self.client(id)?, server, &route).await
     }
 
-    pub async fn set_route(&self, id: &str, server: &str, index: usize, route: CaddyRoute) -> CaddyResult<()> {
+    pub async fn set_route(
+        &self,
+        id: &str,
+        server: &str,
+        index: usize,
+        route: CaddyRoute,
+    ) -> CaddyResult<()> {
         RouteManager::set(self.client(id)?, server, index, &route).await
     }
 
@@ -135,7 +169,12 @@ impl CaddyService {
         RouteManager::delete(self.client(id)?, server, index).await
     }
 
-    pub async fn set_all_routes(&self, id: &str, server: &str, routes: Vec<CaddyRoute>) -> CaddyResult<()> {
+    pub async fn set_all_routes(
+        &self,
+        id: &str,
+        server: &str,
+        routes: Vec<CaddyRoute>,
+    ) -> CaddyResult<()> {
         RouteManager::set_all(self.client(id)?, server, &routes).await
     }
 
@@ -171,7 +210,12 @@ impl CaddyService {
 
     // ── Reverse Proxy helpers ────────────────────────────────────
 
-    pub async fn create_reverse_proxy(&self, id: &str, server: &str, req: CreateReverseProxyRequest) -> CaddyResult<()> {
+    pub async fn create_reverse_proxy(
+        &self,
+        id: &str,
+        server: &str,
+        req: CreateReverseProxyRequest,
+    ) -> CaddyResult<()> {
         ReverseProxyManager::create(self.client(id)?, server, &req).await
     }
 
@@ -179,11 +223,21 @@ impl CaddyService {
         ReverseProxyManager::get_upstreams(self.client(id)?).await
     }
 
-    pub async fn create_file_server(&self, id: &str, server: &str, req: CreateFileServerRequest) -> CaddyResult<()> {
+    pub async fn create_file_server(
+        &self,
+        id: &str,
+        server: &str,
+        req: CreateFileServerRequest,
+    ) -> CaddyResult<()> {
         ReverseProxyManager::create_file_server(self.client(id)?, server, &req).await
     }
 
-    pub async fn create_redirect(&self, id: &str, server: &str, req: CreateRedirectRequest) -> CaddyResult<()> {
+    pub async fn create_redirect(
+        &self,
+        id: &str,
+        server: &str,
+        req: CreateRedirectRequest,
+    ) -> CaddyResult<()> {
         ReverseProxyManager::create_redirect(self.client(id)?, server, &req).await
     }
 }

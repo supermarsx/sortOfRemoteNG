@@ -20,14 +20,19 @@ impl CaddyTlsManager {
     }
 
     pub async fn set_automate_domains(client: &CaddyClient, domains: &[String]) -> CaddyResult<()> {
-        client.put("/config/apps/tls/certificates/automate", &domains).await
+        client
+            .put("/config/apps/tls/certificates/automate", &domains)
+            .await
     }
 
     pub async fn get_automation(client: &CaddyClient) -> CaddyResult<TlsAutomation> {
         client.get("/config/apps/tls/automation").await
     }
 
-    pub async fn set_automation(client: &CaddyClient, automation: &TlsAutomation) -> CaddyResult<()> {
+    pub async fn set_automation(
+        client: &CaddyClient,
+        automation: &TlsAutomation,
+    ) -> CaddyResult<()> {
         client.put("/config/apps/tls/automation", automation).await
     }
 

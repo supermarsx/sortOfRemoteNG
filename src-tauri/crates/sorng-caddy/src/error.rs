@@ -36,7 +36,10 @@ impl std::error::Error for CaddyError {}
 
 impl CaddyError {
     pub fn new(kind: CaddyErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(CaddyErrorKind::NotConnected, msg)
@@ -48,7 +51,10 @@ impl CaddyError {
         Self::new(CaddyErrorKind::ParseError, msg)
     }
     pub fn route_not_found(id: &str) -> Self {
-        Self::new(CaddyErrorKind::RouteNotFound, format!("Route not found: {id}"))
+        Self::new(
+            CaddyErrorKind::RouteNotFound,
+            format!("Route not found: {id}"),
+        )
     }
     pub fn http(e: impl fmt::Display) -> Self {
         Self::new(CaddyErrorKind::HttpError, e.to_string())

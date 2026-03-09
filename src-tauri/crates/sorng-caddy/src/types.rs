@@ -101,7 +101,7 @@ pub struct CaddyRoute {
     pub terminal: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CaddyMatcher {
     pub host: Option<Vec<String>>,
     pub path: Option<Vec<String>>,
@@ -131,7 +131,7 @@ pub struct RemoteIpMatcher {
 // Handlers
 // ═══════════════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CaddyHandler {
     pub handler: String,
     // reverse_proxy
@@ -170,7 +170,6 @@ pub struct CaddyHandler {
     pub strip_path_suffix: Option<String>,
     pub uri_substring: Option<Vec<SubstringReplace>>,
     // redirect
-    #[serde(rename = "status_code")]
     pub redirect_status: Option<u16>,
 }
 
