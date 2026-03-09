@@ -7,8 +7,14 @@ use crate::types::*;
 pub struct ApacheLogManager;
 
 impl ApacheLogManager {
-    pub async fn query_access_log(client: &ApacheClient, query: &LogQuery) -> ApacheResult<Vec<ApacheAccessLogEntry>> {
-        let path = query.path.as_deref().unwrap_or("/var/log/apache2/access.log");
+    pub async fn query_access_log(
+        client: &ApacheClient,
+        query: &LogQuery,
+    ) -> ApacheResult<Vec<ApacheAccessLogEntry>> {
+        let path = query
+            .path
+            .as_deref()
+            .unwrap_or("/var/log/apache2/access.log");
         let limit = query.lines.unwrap_or(100);
         let cmd = format!("tail -n {} '{}'", limit, path.replace('\'', "'\\''"));
         let out = client.exec_ssh(&cmd).await?;
@@ -16,8 +22,14 @@ impl ApacheLogManager {
         Ok(entries)
     }
 
-    pub async fn query_error_log(client: &ApacheClient, query: &LogQuery) -> ApacheResult<Vec<ApacheErrorLogEntry>> {
-        let path = query.path.as_deref().unwrap_or("/var/log/apache2/error.log");
+    pub async fn query_error_log(
+        client: &ApacheClient,
+        query: &LogQuery,
+    ) -> ApacheResult<Vec<ApacheErrorLogEntry>> {
+        let path = query
+            .path
+            .as_deref()
+            .unwrap_or("/var/log/apache2/error.log");
         let limit = query.lines.unwrap_or(100);
         let cmd = format!("tail -n {} '{}'", limit, path.replace('\'', "'\\''"));
         let out = client.exec_ssh(&cmd).await?;
@@ -25,14 +37,19 @@ impl ApacheLogManager {
         Ok(entries)
     }
 
-    pub async fn list_log_files(client: &ApacheClient, log_dir: Option<&str>) -> ApacheResult<Vec<String>> {
+    pub async fn list_log_files(
+        client: &ApacheClient,
+        log_dir: Option<&str>,
+    ) -> ApacheResult<Vec<String>> {
         let dir = log_dir.unwrap_or("/var/log/apache2");
         client.list_remote_dir(dir).await
     }
 }
 
 fn parse_access_line(line: &str) -> Option<ApacheAccessLogEntry> {
-    if line.is_empty() { return None; }
+    if line.is_empty() {
+        return None;
+    }
     Some(ApacheAccessLogEntry {
         remote_host: line.split_whitespace().next().unwrap_or("").to_string(),
         identity: None,
@@ -47,7 +64,9 @@ fn parse_access_line(line: &str) -> Option<ApacheAccessLogEntry> {
 }
 
 fn parse_error_line(line: &str) -> Option<ApacheErrorLogEntry> {
-    if line.is_empty() { return None; }
+    if line.is_empty() {
+        return None;
+    }
     Some(ApacheErrorLogEntry {
         timestamp: String::new(),
         module: None,

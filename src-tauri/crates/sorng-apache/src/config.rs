@@ -27,7 +27,9 @@ impl ApacheConfigManager {
     }
 
     pub async fn update_main_config(client: &ApacheClient, content: &str) -> ApacheResult<()> {
-        client.write_remote_file(client.config_path(), content).await
+        client
+            .write_remote_file(client.config_path(), content)
+            .await
     }
 
     pub async fn test(client: &ApacheClient) -> ApacheResult<ConfigTestResult> {

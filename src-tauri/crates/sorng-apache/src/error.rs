@@ -42,7 +42,10 @@ impl std::error::Error for ApacheError {}
 
 impl ApacheError {
     pub fn new(kind: ApacheErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(ApacheErrorKind::NotConnected, msg)
@@ -60,7 +63,10 @@ impl ApacheError {
         Self::new(ApacheErrorKind::ProcessError, msg)
     }
     pub fn vhost_not_found(name: &str) -> Self {
-        Self::new(ApacheErrorKind::VhostNotFound, format!("VirtualHost not found: {name}"))
+        Self::new(
+            ApacheErrorKind::VhostNotFound,
+            format!("VirtualHost not found: {name}"),
+        )
     }
     pub fn config_syntax(msg: &str) -> Self {
         Self::new(ApacheErrorKind::ConfigSyntaxError, msg)

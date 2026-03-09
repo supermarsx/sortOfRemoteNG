@@ -29,31 +29,52 @@ impl ApacheClient {
     }
 
     pub fn config_path(&self) -> &str {
-        self.config.config_path.as_deref().unwrap_or("/etc/apache2/apache2.conf")
+        self.config
+            .config_path
+            .as_deref()
+            .unwrap_or("/etc/apache2/apache2.conf")
     }
 
     pub fn sites_available_dir(&self) -> &str {
-        self.config.sites_available_dir.as_deref().unwrap_or("/etc/apache2/sites-available")
+        self.config
+            .sites_available_dir
+            .as_deref()
+            .unwrap_or("/etc/apache2/sites-available")
     }
 
     pub fn sites_enabled_dir(&self) -> &str {
-        self.config.sites_enabled_dir.as_deref().unwrap_or("/etc/apache2/sites-enabled")
+        self.config
+            .sites_enabled_dir
+            .as_deref()
+            .unwrap_or("/etc/apache2/sites-enabled")
     }
 
     pub fn mods_available_dir(&self) -> &str {
-        self.config.mods_available_dir.as_deref().unwrap_or("/etc/apache2/mods-available")
+        self.config
+            .mods_available_dir
+            .as_deref()
+            .unwrap_or("/etc/apache2/mods-available")
     }
 
     pub fn mods_enabled_dir(&self) -> &str {
-        self.config.mods_enabled_dir.as_deref().unwrap_or("/etc/apache2/mods-enabled")
+        self.config
+            .mods_enabled_dir
+            .as_deref()
+            .unwrap_or("/etc/apache2/mods-enabled")
     }
 
     pub fn conf_available_dir(&self) -> &str {
-        self.config.conf_available_dir.as_deref().unwrap_or("/etc/apache2/conf-available")
+        self.config
+            .conf_available_dir
+            .as_deref()
+            .unwrap_or("/etc/apache2/conf-available")
     }
 
     pub fn conf_enabled_dir(&self) -> &str {
-        self.config.conf_enabled_dir.as_deref().unwrap_or("/etc/apache2/conf-enabled")
+        self.config
+            .conf_enabled_dir
+            .as_deref()
+            .unwrap_or("/etc/apache2/conf-enabled")
     }
 
     // ── SSH command execution stub ───────────────────────────────────
@@ -67,46 +88,76 @@ impl ApacheClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> ApacheResult<String> {
-        let out = self.exec_ssh(&format!("cat '{}'", path.replace('\'', "'\\''"))).await?;
+        let out = self
+            .exec_ssh(&format!("cat '{}'", path.replace('\'', "'\\''")))
+            .await?;
         Ok(out.stdout)
     }
 
     pub async fn write_remote_file(&self, path: &str, content: &str) -> ApacheResult<()> {
         let escaped = content.replace('\'', "'\\''");
-        let cmd = format!("printf '%s' '{}' | sudo tee '{}' > /dev/null", escaped, path.replace('\'', "'\\''"));
+        let cmd = format!(
+            "printf '%s' '{}' | sudo tee '{}' > /dev/null",
+            escaped,
+            path.replace('\'', "'\\''")
+        );
         self.exec_ssh(&cmd).await?;
         Ok(())
     }
 
     pub async fn file_exists(&self, path: &str) -> ApacheResult<bool> {
-        let out = self.exec_ssh(&format!("test -f '{}' && echo yes || echo no", path.replace('\'', "'\\''"))).await?;
+        let out = self
+            .exec_ssh(&format!(
+                "test -f '{}' && echo yes || echo no",
+                path.replace('\'', "'\\''")
+            ))
+            .await?;
         Ok(out.stdout.trim() == "yes")
     }
 
     pub async fn list_remote_dir(&self, path: &str) -> ApacheResult<Vec<String>> {
-        let out = self.exec_ssh(&format!("ls -1 '{}'", path.replace('\'', "'\\''"))).await?;
-        Ok(out.stdout.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+        let out = self
+            .exec_ssh(&format!("ls -1 '{}'", path.replace('\'', "'\\''")))
+            .await?;
+        Ok(out
+            .stdout
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect())
     }
 
     pub async fn create_symlink(&self, src: &str, dst: &str) -> ApacheResult<()> {
-        self.exec_ssh(&format!("sudo ln -sf '{}' '{}'", src.replace('\'', "'\\''"), dst.replace('\'', "'\\''"))).await?;
+        self.exec_ssh(&format!(
+            "sudo ln -sf '{}' '{}'",
+            src.replace('\'', "'\\''"),
+            dst.replace('\'', "'\\''")
+        ))
+        .await?;
         Ok(())
     }
 
     pub async fn remove_file(&self, path: &str) -> ApacheResult<()> {
-        self.exec_ssh(&format!("sudo rm -f '{}'", path.replace('\'', "'\\''"))).await?;
+        self.exec_ssh(&format!("sudo rm -f '{}'", path.replace('\'', "'\\''")))
+            .await?;
         Ok(())
     }
 
     // ── Apache process commands ──────────────────────────────────────
 
     pub async fn test_config(&self) -> ApacheResult<ConfigTestResult> {
-        let out = self.exec_ssh(&format!("sudo {} configtest 2>&1", self.apache_bin())).await;
+        let out = self
+            .exec_ssh(&format!("sudo {} configtest 2>&1", self.apache_bin()))
+            .await;
         match out {
             Ok(o) => Ok(ConfigTestResult {
                 success: o.exit_code == 0,
                 output: o.stdout,
-                errors: if o.exit_code != 0 { vec![o.stderr] } else { vec![] },
+                errors: if o.exit_code != 0 {
+                    vec![o.stderr]
+                } else {
+                    vec![]
+                },
                 warnings: vec![],
             }),
             Err(_) => Ok(ConfigTestResult {
@@ -119,9 +170,14 @@ impl ApacheClient {
     }
 
     pub async fn reload(&self) -> ApacheResult<()> {
-        let out = self.exec_ssh(&format!("sudo {} graceful", self.apache_bin())).await?;
+        let out = self
+            .exec_ssh(&format!("sudo {} graceful", self.apache_bin()))
+            .await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::reload(format!("reload failed: {}", out.stderr)));
+            return Err(ApacheError::reload(format!(
+                "reload failed: {}",
+                out.stderr
+            )));
         }
         Ok(())
     }
@@ -129,7 +185,10 @@ impl ApacheClient {
     pub async fn start(&self) -> ApacheResult<()> {
         let out = self.exec_ssh("sudo systemctl start apache2").await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("start failed: {}", out.stderr)));
+            return Err(ApacheError::process(format!(
+                "start failed: {}",
+                out.stderr
+            )));
         }
         Ok(())
     }
@@ -145,21 +204,35 @@ impl ApacheClient {
     pub async fn restart(&self) -> ApacheResult<()> {
         let out = self.exec_ssh("sudo systemctl restart apache2").await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("restart failed: {}", out.stderr)));
+            return Err(ApacheError::process(format!(
+                "restart failed: {}",
+                out.stderr
+            )));
         }
         Ok(())
     }
 
     pub async fn version(&self) -> ApacheResult<String> {
-        let out = self.exec_ssh(&format!("{} -v 2>&1", self.apache_bin())).await?;
+        let out = self
+            .exec_ssh(&format!("{} -v 2>&1", self.apache_bin()))
+            .await?;
         Ok(out.stdout.lines().next().unwrap_or("").trim().to_string())
     }
 
     pub async fn info(&self) -> ApacheResult<ApacheInfo> {
-        let v_out = self.exec_ssh(&format!("{} -V 2>&1", self.apache_bin())).await?;
+        let v_out = self
+            .exec_ssh(&format!("{} -V 2>&1", self.apache_bin()))
+            .await?;
         let raw = v_out.stdout;
-        let version = raw.lines().next().unwrap_or("").replace("Server version: ", "").trim().to_string();
-        let mpm = raw.lines()
+        let version = raw
+            .lines()
+            .next()
+            .unwrap_or("")
+            .replace("Server version: ", "")
+            .trim()
+            .to_string();
+        let mpm = raw
+            .lines()
             .find(|l| l.contains("Server MPM:"))
             .map(|l| l.replace("Server MPM:", "").trim().to_string());
         Ok(ApacheInfo {
@@ -177,12 +250,21 @@ impl ApacheClient {
     pub async fn status(&self) -> ApacheResult<ApacheProcess> {
         let out = self.exec_ssh("systemctl is-active apache2 2>&1").await?;
         let active = out.stdout.trim() == "active";
-        let pid_out = self.exec_ssh("cat /run/apache2/apache2.pid 2>/dev/null || echo 0").await;
-        let pid = pid_out.ok().and_then(|o| o.stdout.trim().parse().ok()).unwrap_or(0);
+        let pid_out = self
+            .exec_ssh("cat /run/apache2/apache2.pid 2>/dev/null || echo 0")
+            .await;
+        let pid = pid_out
+            .ok()
+            .and_then(|o| o.stdout.trim().parse().ok())
+            .unwrap_or(0);
         Ok(ApacheProcess {
             pid,
             ppid: None,
-            process_type: if active { "active".into() } else { "inactive".into() },
+            process_type: if active {
+                "active".into()
+            } else {
+                "inactive".into()
+            },
             cpu_percent: None,
             memory_rss: None,
             uptime_secs: None,
@@ -192,49 +274,79 @@ impl ApacheClient {
     // ── Module management (Debian-style) ─────────────────────────────
 
     pub async fn enable_module(&self, module: &str) -> ApacheResult<()> {
-        let out = self.exec_ssh(&format!("sudo a2enmod {} 2>&1", module)).await?;
+        let out = self
+            .exec_ssh(&format!("sudo a2enmod {} 2>&1", module))
+            .await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("a2enmod {} failed: {}", module, out.stderr)));
+            return Err(ApacheError::process(format!(
+                "a2enmod {} failed: {}",
+                module, out.stderr
+            )));
         }
         Ok(())
     }
 
     pub async fn disable_module(&self, module: &str) -> ApacheResult<()> {
-        let out = self.exec_ssh(&format!("sudo a2dismod {} 2>&1", module)).await?;
+        let out = self
+            .exec_ssh(&format!("sudo a2dismod {} 2>&1", module))
+            .await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("a2dismod {} failed: {}", module, out.stderr)));
+            return Err(ApacheError::process(format!(
+                "a2dismod {} failed: {}",
+                module, out.stderr
+            )));
         }
         Ok(())
     }
 
     pub async fn enable_site(&self, site: &str) -> ApacheResult<()> {
-        let out = self.exec_ssh(&format!("sudo a2ensite {} 2>&1", site)).await?;
+        let out = self
+            .exec_ssh(&format!("sudo a2ensite {} 2>&1", site))
+            .await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("a2ensite {} failed: {}", site, out.stderr)));
+            return Err(ApacheError::process(format!(
+                "a2ensite {} failed: {}",
+                site, out.stderr
+            )));
         }
         Ok(())
     }
 
     pub async fn disable_site(&self, site: &str) -> ApacheResult<()> {
-        let out = self.exec_ssh(&format!("sudo a2dissite {} 2>&1", site)).await?;
+        let out = self
+            .exec_ssh(&format!("sudo a2dissite {} 2>&1", site))
+            .await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("a2dissite {} failed: {}", site, out.stderr)));
+            return Err(ApacheError::process(format!(
+                "a2dissite {} failed: {}",
+                site, out.stderr
+            )));
         }
         Ok(())
     }
 
     pub async fn enable_conf(&self, conf: &str) -> ApacheResult<()> {
-        let out = self.exec_ssh(&format!("sudo a2enconf {} 2>&1", conf)).await?;
+        let out = self
+            .exec_ssh(&format!("sudo a2enconf {} 2>&1", conf))
+            .await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("a2enconf {} failed: {}", conf, out.stderr)));
+            return Err(ApacheError::process(format!(
+                "a2enconf {} failed: {}",
+                conf, out.stderr
+            )));
         }
         Ok(())
     }
 
     pub async fn disable_conf(&self, conf: &str) -> ApacheResult<()> {
-        let out = self.exec_ssh(&format!("sudo a2disconf {} 2>&1", conf)).await?;
+        let out = self
+            .exec_ssh(&format!("sudo a2disconf {} 2>&1", conf))
+            .await?;
         if out.exit_code != 0 {
-            return Err(ApacheError::process(format!("a2disconf {} failed: {}", conf, out.stderr)));
+            return Err(ApacheError::process(format!(
+                "a2disconf {} failed: {}",
+                conf, out.stderr
+            )));
         }
         Ok(())
     }
@@ -242,13 +354,22 @@ impl ApacheClient {
     // ── mod_status (HTTP) ────────────────────────────────────────────
 
     pub async fn server_status(&self) -> ApacheResult<String> {
-        let url = self.config.status_url.as_deref()
+        let url = self
+            .config
+            .status_url
+            .as_deref()
             .ok_or_else(|| ApacheError::not_connected("No status_url configured"))?;
         let auto_url = format!("{}?auto", url.trim_end_matches('?'));
         debug!("APACHE server-status GET {auto_url}");
-        let resp = self.http.get(&auto_url).send().await
+        let resp = self
+            .http
+            .get(&auto_url)
+            .send()
+            .await
             .map_err(|e| ApacheError::http(format!("server-status: {e}")))?;
-        resp.text().await.map_err(|e| ApacheError::http(format!("body: {e}")))
+        resp.text()
+            .await
+            .map_err(|e| ApacheError::http(format!("body: {e}")))
     }
 
     // ── Ping ─────────────────────────────────────────────────────────

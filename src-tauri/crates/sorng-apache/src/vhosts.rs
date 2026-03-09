@@ -9,12 +9,17 @@ pub struct VhostManager;
 impl VhostManager {
     pub async fn list(client: &ApacheClient) -> ApacheResult<Vec<ApacheVhost>> {
         let available = client.list_remote_dir(client.sites_available_dir()).await?;
-        let enabled_files = client.list_remote_dir(client.sites_enabled_dir()).await.unwrap_or_default();
+        let enabled_files = client
+            .list_remote_dir(client.sites_enabled_dir())
+            .await
+            .unwrap_or_default();
         let mut vhosts = Vec::new();
         for filename in &available {
             let path = format!("{}/{}", client.sites_available_dir(), filename);
             let raw = client.read_remote_file(&path).await.unwrap_or_default();
-            let enabled = enabled_files.iter().any(|e| e.contains(filename.trim_end_matches(".conf")));
+            let enabled = enabled_files
+                .iter()
+                .any(|e| e.contains(filename.trim_end_matches(".conf")));
             let vhost = parse_vhost(filename, &raw, enabled);
             vhosts.push(vhost);
         }
@@ -29,9 +34,16 @@ impl VhostManager {
         Ok(parse_vhost(name, &raw, enabled))
     }
 
-    pub async fn create(client: &ApacheClient, req: &CreateVhostRequest) -> ApacheResult<ApacheVhost> {
+    pub async fn create(
+        client: &ApacheClient,
+        req: &CreateVhostRequest,
+    ) -> ApacheResult<ApacheVhost> {
         let content = generate_vhost_config(req);
-        let filename = if req.name.ends_with(".conf") { req.name.clone() } else { format!("{}.conf", req.name) };
+        let filename = if req.name.ends_with(".conf") {
+            req.name.clone()
+        } else {
+            format!("{}.conf", req.name)
+        };
         let path = format!("{}/{}", client.sites_available_dir(), filename);
         client.write_remote_file(&path, &content).await?;
         if req.enable.unwrap_or(true) {
@@ -40,7 +52,11 @@ impl VhostManager {
         Self::get(client, &filename).await
     }
 
-    pub async fn update(client: &ApacheClient, name: &str, req: &UpdateVhostRequest) -> ApacheResult<ApacheVhost> {
+    pub async fn update(
+        client: &ApacheClient,
+        name: &str,
+        req: &UpdateVhostRequest,
+    ) -> ApacheResult<ApacheVhost> {
         let path = format!("{}/{}", client.sites_available_dir(), name);
         client.write_remote_file(&path, &req.content).await?;
         Self::get(client, name).await
@@ -73,12 +89,25 @@ fn parse_vhost(filename: &str, raw: &str, enabled: bool) -> ApacheVhost {
         if t.starts_with("ServerName ") {
             server_name = Some(t.trim_start_matches("ServerName ").trim().to_string());
         } else if t.starts_with("ServerAlias ") {
-            let aliases = t.trim_start_matches("ServerAlias ").split_whitespace().map(String::from);
+            let aliases = t
+                .trim_start_matches("ServerAlias ")
+                .split_whitespace()
+                .map(String::from);
             server_aliases.extend(aliases);
         } else if t.starts_with("DocumentRoot ") {
-            document_root = Some(t.trim_start_matches("DocumentRoot ").trim().trim_matches('"').to_string());
+            document_root = Some(
+                t.trim_start_matches("DocumentRoot ")
+                    .trim()
+                    .trim_matches('"')
+                    .to_string(),
+            );
         } else if t.starts_with("<VirtualHost ") {
-            listen = Some(t.trim_start_matches("<VirtualHost ").trim_end_matches('>').trim().to_string());
+            listen = Some(
+                t.trim_start_matches("<VirtualHost ")
+                    .trim_end_matches('>')
+                    .trim()
+                    .to_string(),
+            );
         }
     }
 

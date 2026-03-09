@@ -31,7 +31,9 @@ fn parse_server_status(raw: &str) -> ApacheServerStatus {
 
     for line in raw.lines() {
         let parts: Vec<&str> = line.splitn(2, ':').collect();
-        if parts.len() != 2 { continue; }
+        if parts.len() != 2 {
+            continue;
+        }
         let key = parts[0].trim();
         let val = parts[1].trim();
         match key {
