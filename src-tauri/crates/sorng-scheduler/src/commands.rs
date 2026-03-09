@@ -187,18 +187,14 @@ pub async fn sched_get_next_occurrences(
 // ─── Global Pause / Resume ──────────────────────────────────────────
 
 #[tauri::command]
-pub async fn sched_pause_all(
-    state: State<'_, SchedulerServiceState>,
-) -> Result<(), String> {
+pub async fn sched_pause_all(state: State<'_, SchedulerServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.pause_all();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn sched_resume_all(
-    state: State<'_, SchedulerServiceState>,
-) -> Result<(), String> {
+pub async fn sched_resume_all(state: State<'_, SchedulerServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.resume_all();
     Ok(())

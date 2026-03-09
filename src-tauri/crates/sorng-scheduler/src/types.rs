@@ -202,9 +202,10 @@ impl Default for RetryPolicy {
 // ─── TaskPriority ───────────────────────────────────────────────────
 
 /// Priority levels used for ordering concurrent tasks.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum TaskPriority {
     Low,
+    #[default]
     Normal,
     High,
     Critical,
@@ -219,12 +220,6 @@ impl TaskPriority {
             Self::High => 2,
             Self::Critical => 3,
         }
-    }
-}
-
-impl Default for TaskPriority {
-    fn default() -> Self {
-        Self::Normal
     }
 }
 
@@ -254,11 +249,7 @@ pub struct ScheduledTask {
 
 impl ScheduledTask {
     /// Create a new task with sensible defaults.
-    pub fn new(
-        name: impl Into<String>,
-        schedule: TaskSchedule,
-        action: TaskAction,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, schedule: TaskSchedule, action: TaskAction) -> Self {
         let now = Utc::now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -333,9 +324,7 @@ impl TaskExecutionRecord {
     pub fn complete(&mut self, result: Option<serde_json::Value>) {
         let now = Utc::now();
         self.completed_at = Some(now);
-        self.duration_ms = Some(
-            (now - self.started_at).num_milliseconds().max(0) as u64,
-        );
+        self.duration_ms = Some((now - self.started_at).num_milliseconds().max(0) as u64);
         self.status = ExecutionStatus::Completed;
         self.result = result;
     }
@@ -344,9 +333,7 @@ impl TaskExecutionRecord {
     pub fn fail(&mut self, error: impl Into<String>) {
         let now = Utc::now();
         self.completed_at = Some(now);
-        self.duration_ms = Some(
-            (now - self.started_at).num_milliseconds().max(0) as u64,
-        );
+        self.duration_ms = Some((now - self.started_at).num_milliseconds().max(0) as u64);
         self.status = ExecutionStatus::Failed;
         self.error = Some(error.into());
     }
@@ -355,9 +342,7 @@ impl TaskExecutionRecord {
     pub fn timeout(&mut self) {
         let now = Utc::now();
         self.completed_at = Some(now);
-        self.duration_ms = Some(
-            (now - self.started_at).num_milliseconds().max(0) as u64,
-        );
+        self.duration_ms = Some((now - self.started_at).num_milliseconds().max(0) as u64);
         self.status = ExecutionStatus::TimedOut;
         self.error = Some("task timed out".to_string());
     }

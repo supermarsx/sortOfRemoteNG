@@ -131,7 +131,9 @@ impl TaskExecutor {
             TaskAction::Pipeline { steps } => {
                 info!("scheduler: running pipeline with {} steps", steps.len());
                 let step_records = self.execute_pipeline(steps);
-                let all_ok = step_records.iter().all(|r| r.status == ExecutionStatus::Completed);
+                let all_ok = step_records
+                    .iter()
+                    .all(|r| r.status == ExecutionStatus::Completed);
                 if all_ok {
                     record.complete(Some(serde_json::json!({
                         "action": "pipeline",
@@ -395,16 +397,16 @@ mod tests {
         ];
         let records = executor.execute_pipeline(&steps);
         assert_eq!(records.len(), 2);
-        assert!(records.iter().all(|r| r.status == ExecutionStatus::Completed));
+        assert!(records
+            .iter()
+            .all(|r| r.status == ExecutionStatus::Completed));
     }
 
     #[test]
     fn conditions_day_of_week() {
         let executor = TaskExecutor::new();
         let today = Weekday::from_chrono(Utc::now().weekday());
-        let cond = TaskCondition::DayOfWeek {
-            days: vec![today],
-        };
+        let cond = TaskCondition::DayOfWeek { days: vec![today] };
         assert!(executor.evaluate_condition(&cond));
     }
 

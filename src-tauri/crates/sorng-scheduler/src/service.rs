@@ -111,11 +111,7 @@ impl SchedulerService {
 
     // ── History & upcoming ──────────────────────────────────────
 
-    pub fn get_history(
-        &self,
-        task_id: Option<&str>,
-        limit: usize,
-    ) -> Vec<TaskExecutionRecord> {
+    pub fn get_history(&self, task_id: Option<&str>, limit: usize) -> Vec<TaskExecutionRecord> {
         self.scheduler
             .get_history(task_id, limit)
             .into_iter()

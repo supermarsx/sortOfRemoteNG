@@ -46,7 +46,7 @@ impl CronField {
                 if value < *start {
                     return false;
                 }
-                (value - start) % step == 0
+                (value - start).is_multiple_of(*step)
             }
             Self::List(vals) => vals.contains(&value),
         }
@@ -56,12 +56,7 @@ impl CronField {
     /// Returns `None` if no match exists in the range.
     pub fn next_match(&self, from: u32, min: u32, max: u32) -> Option<u32> {
         let start = from.max(min);
-        for v in start..=max {
-            if self.matches(v) {
-                return Some(v);
-            }
-        }
-        None
+        (start..=max).find(|&v| self.matches(v))
     }
 }
 
@@ -237,10 +232,7 @@ pub fn matches(expr: &CronExpression, dt: &DateTime<Utc>) -> bool {
 ///
 /// Walks forward minute-by-minute up to a maximum of ~4 years.
 /// Returns `None` if no match is found within that window.
-pub fn next_occurrence(
-    expr: &CronExpression,
-    after: &DateTime<Utc>,
-) -> Option<DateTime<Utc>> {
+pub fn next_occurrence(expr: &CronExpression, after: &DateTime<Utc>) -> Option<DateTime<Utc>> {
     // Start from the next whole minute after `after`.
     let mut candidate = *after + Duration::minutes(1);
     // Zero out seconds & nanos.
@@ -267,10 +259,7 @@ pub fn next_occurrence(
                         .with_month(m)
                         .and_then(|d| d.with_day(1))
                     {
-                        candidate = d
-                            .and_hms_opt(0, 0, 0)
-                            .unwrap()
-                            .and_utc();
+                        candidate = d.and_hms_opt(0, 0, 0).unwrap().and_utc();
                         continue;
                     }
                 }
@@ -282,10 +271,7 @@ pub fn next_occurrence(
                         .and_then(|d| d.with_month(1))
                         .and_then(|d| d.with_day(1))
                     {
-                        candidate = d
-                            .and_hms_opt(0, 0, 0)
-                            .unwrap()
-                            .and_utc();
+                        candidate = d.and_hms_opt(0, 0, 0).unwrap().and_utc();
                         continue;
                     }
                 }

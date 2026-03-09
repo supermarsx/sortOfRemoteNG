@@ -130,114 +130,114 @@ impl Scheduler {
 /// Free function that computes the next run time for a task.
 /// Extracted to avoid borrow-checker conflicts with `&mut self`.
 pub fn calculate_next_run_for(task: &ScheduledTask) -> Option<DateTime<Utc>> {
-        if !task.enabled {
-            return None;
+    if !task.enabled {
+        return None;
+    }
+
+    let now = Utc::now();
+    match &task.schedule {
+        TaskSchedule::Once { at } => {
+            if *at > now {
+                Some(*at)
+            } else {
+                None
+            }
         }
+        TaskSchedule::Cron { expression } => {
+            let parsed = cron::parse(expression).ok()?;
+            let after = task.last_run_at.unwrap_or(now);
+            cron::next_occurrence(&parsed, &after)
+        }
+        TaskSchedule::Interval { every_seconds } => {
+            let base = task.last_run_at.unwrap_or(now);
+            Some(base + Duration::seconds(*every_seconds as i64))
+        }
+        TaskSchedule::Daily { time, timezone: _ } => {
+            // Parse HH:MM
+            let parts: Vec<&str> = time.split(':').collect();
+            if parts.len() != 2 {
+                return None;
+            }
+            let hour: u32 = parts[0].parse().ok()?;
+            let minute: u32 = parts[1].parse().ok()?;
+            let today = now
+                .date_naive()
+                .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
+                .and_utc();
+            if today > now {
+                Some(today)
+            } else {
+                Some(today + Duration::days(1))
+            }
+        }
+        TaskSchedule::Weekly { day, time } => {
+            let parts: Vec<&str> = time.split(':').collect();
+            if parts.len() != 2 {
+                return None;
+            }
+            let hour: u32 = parts[0].parse().ok()?;
+            let minute: u32 = parts[1].parse().ok()?;
 
-        let now = Utc::now();
-        match &task.schedule {
-            TaskSchedule::Once { at } => {
-                if *at > now {
-                    Some(*at)
-                } else {
-                    None
-                }
-            }
-            TaskSchedule::Cron { expression } => {
-                let parsed = cron::parse(expression).ok()?;
-                let after = task.last_run_at.unwrap_or(now);
-                cron::next_occurrence(&parsed, &after)
-            }
-            TaskSchedule::Interval { every_seconds } => {
-                let base = task.last_run_at.unwrap_or(now);
-                Some(base + Duration::seconds(*every_seconds as i64))
-            }
-            TaskSchedule::Daily { time, timezone: _ } => {
-                // Parse HH:MM
-                let parts: Vec<&str> = time.split(':').collect();
-                if parts.len() != 2 {
-                    return None;
-                }
-                let hour: u32 = parts[0].parse().ok()?;
-                let minute: u32 = parts[1].parse().ok()?;
-                let today = now
-                    .date_naive()
-                    .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
-                    .and_utc();
-                if today > now {
-                    Some(today)
-                } else {
-                    Some(today + Duration::days(1))
-                }
-            }
-            TaskSchedule::Weekly { day, time } => {
-                let parts: Vec<&str> = time.split(':').collect();
-                if parts.len() != 2 {
-                    return None;
-                }
-                let hour: u32 = parts[0].parse().ok()?;
-                let minute: u32 = parts[1].parse().ok()?;
-
-                let target_dow = day.to_chrono();
-                let mut candidate = now.date_naive();
-                // Walk up to 7 days to find the next matching weekday.
-                for _ in 0..7 {
-                    if candidate.weekday() == target_dow {
-                        let dt = candidate
-                            .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
-                            .and_utc();
-                        if dt > now {
-                            return Some(dt);
-                        }
-                    }
-                    candidate += Duration::days(1);
-                }
-                // Fallback: one week from matching day
-                let dt = candidate
-                    .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
-                    .and_utc();
-                Some(dt)
-            }
-            TaskSchedule::Monthly { day, time } => {
-                let parts: Vec<&str> = time.split(':').collect();
-                if parts.len() != 2 {
-                    return None;
-                }
-                let hour: u32 = parts[0].parse().ok()?;
-                let minute: u32 = parts[1].parse().ok()?;
-                let dom = *day as u32;
-
-                // Try this month first.
-                if let Some(date) = now.date_naive().with_day(dom) {
-                    let dt = date
+            let target_dow = day.to_chrono();
+            let mut candidate = now.date_naive();
+            // Walk up to 7 days to find the next matching weekday.
+            for _ in 0..7 {
+                if candidate.weekday() == target_dow {
+                    let dt = candidate
                         .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
                         .and_utc();
                     if dt > now {
                         return Some(dt);
                     }
                 }
-                // Otherwise next month.
-                let next_month = if now.month() == 12 {
-                    now.date_naive()
-                        .with_year(now.year() + 1)?
-                        .with_month(1)?
-                        .with_day(dom)?
-                } else {
-                    now.date_naive()
-                        .with_month(now.month() + 1)?
-                        .with_day(dom)?
-                };
-                Some(
-                    next_month
-                        .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
-                        .and_utc(),
-                )
+                candidate += Duration::days(1);
             }
-            TaskSchedule::OnEvent { .. } => {
-                // Event-driven tasks don't have a predictable next run.
-                None
-            }
+            // Fallback: one week from matching day
+            let dt = candidate
+                .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
+                .and_utc();
+            Some(dt)
         }
+        TaskSchedule::Monthly { day, time } => {
+            let parts: Vec<&str> = time.split(':').collect();
+            if parts.len() != 2 {
+                return None;
+            }
+            let hour: u32 = parts[0].parse().ok()?;
+            let minute: u32 = parts[1].parse().ok()?;
+            let dom = *day as u32;
+
+            // Try this month first.
+            if let Some(date) = now.date_naive().with_day(dom) {
+                let dt = date
+                    .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
+                    .and_utc();
+                if dt > now {
+                    return Some(dt);
+                }
+            }
+            // Otherwise next month.
+            let next_month = if now.month() == 12 {
+                now.date_naive()
+                    .with_year(now.year() + 1)?
+                    .with_month(1)?
+                    .with_day(dom)?
+            } else {
+                now.date_naive()
+                    .with_month(now.month() + 1)?
+                    .with_day(dom)?
+            };
+            Some(
+                next_month
+                    .and_time(NaiveTime::from_hms_opt(hour, minute, 0)?)
+                    .and_utc(),
+            )
+        }
+        TaskSchedule::OnEvent { .. } => {
+            // Event-driven tasks don't have a predictable next run.
+            None
+        }
+    }
 }
 
 impl Scheduler {
@@ -253,11 +253,7 @@ impl Scheduler {
             .tasks
             .values()
             .filter(|t| t.enabled)
-            .filter(|t| {
-                t.next_run_at
-                    .map(|nra| nra <= now)
-                    .unwrap_or(false)
-            })
+            .filter(|t| t.next_run_at.map(|nra| nra <= now).unwrap_or(false))
             .collect();
         // Sort by priority (highest first), then by next_run_at.
         due.sort_by(|a, b| {
@@ -341,11 +337,7 @@ impl Scheduler {
     /// Query execution history.  If `task_id` is given only that task's
     /// records are returned.  Results are ordered newest-first, limited
     /// to `limit`.
-    pub fn get_history(
-        &self,
-        task_id: Option<&str>,
-        limit: usize,
-    ) -> Vec<&TaskExecutionRecord> {
+    pub fn get_history(&self, task_id: Option<&str>, limit: usize) -> Vec<&TaskExecutionRecord> {
         let iter: Box<dyn Iterator<Item = &TaskExecutionRecord>> = match task_id {
             Some(id) => Box::new(self.history.iter().filter(move |r| r.task_id == id)),
             None => Box::new(self.history.iter()),
@@ -394,21 +386,14 @@ impl Scheduler {
             .filter(|r| r.status == ExecutionStatus::Failed)
             .count();
 
-        let durations: Vec<u64> = self
-            .history
-            .iter()
-            .filter_map(|r| r.duration_ms)
-            .collect();
+        let durations: Vec<u64> = self.history.iter().filter_map(|r| r.duration_ms).collect();
         let avg_duration_ms = if durations.is_empty() {
             0.0
         } else {
             durations.iter().sum::<u64>() as f64 / durations.len() as f64
         };
 
-        let next_scheduled_at = self
-            .get_upcoming(1)
-            .first()
-            .map(|(_, dt)| *dt);
+        let next_scheduled_at = self.get_upcoming(1).first().map(|(_, dt)| *dt);
 
         let mut tasks_by_priority: HashMap<String, usize> = HashMap::new();
         for task in self.tasks.values() {
