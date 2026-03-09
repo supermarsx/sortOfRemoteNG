@@ -45,13 +45,22 @@ impl std::error::Error for MssqlError {}
 
 impl MssqlError {
     pub fn new(kind: MssqlErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
     pub fn not_connected() -> Self {
-        Self::new(MssqlErrorKind::NotConnected, "No active SQL Server connection")
+        Self::new(
+            MssqlErrorKind::NotConnected,
+            "No active SQL Server connection",
+        )
     }
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(MssqlErrorKind::SessionNotFound, format!("Session not found: {id}"))
+        Self::new(
+            MssqlErrorKind::SessionNotFound,
+            format!("Session not found: {id}"),
+        )
     }
 }
 
@@ -97,11 +106,19 @@ pub struct MssqlConnectionConfig {
 }
 
 impl MssqlConnectionConfig {
-    pub fn sql_auth(host: impl Into<String>, port: u16, username: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn sql_auth(
+        host: impl Into<String>,
+        port: u16,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         Self {
             host: host.into(),
             port,
-            auth: MssqlAuthMethod::SqlAuth { username: username.into(), password: password.into() },
+            auth: MssqlAuthMethod::SqlAuth {
+                username: username.into(),
+                password: password.into(),
+            },
             database: None,
             instance_name: None,
             application_name: None,
@@ -130,9 +147,7 @@ impl MssqlConnectionConfig {
     /// Build an ADO.NET-style connection string for tiberius.
     pub fn to_ado_string(&self, override_port: Option<u16>) -> String {
         let port = override_port.unwrap_or(self.port);
-        let mut parts: Vec<String> = vec![
-            format!("server=tcp:{},{}", self.host, port),
-        ];
+        let mut parts: Vec<String> = vec![format!("server=tcp:{},{}", self.host, port)];
         if let Some(ref inst) = self.instance_name {
             parts.push(format!("instance={inst}"));
         }
@@ -161,7 +176,14 @@ impl MssqlConnectionConfig {
             parts.push(format!("Encrypt={}", if e { "true" } else { "false" }));
         }
         if let Some(ref tls) = self.tls {
-            parts.push(format!("TrustServerCertificate={}", if tls.trust_server_certificate { "true" } else { "false" }));
+            parts.push(format!(
+                "TrustServerCertificate={}",
+                if tls.trust_server_certificate {
+                    "true"
+                } else {
+                    "false"
+                }
+            ));
         }
         parts.join(";")
     }
@@ -186,7 +208,12 @@ pub struct QueryResult {
 
 impl QueryResult {
     pub fn empty(ms: u128) -> Self {
-        Self { columns: vec![], rows: vec![], affected_rows: 0, execution_time_ms: ms }
+        Self {
+            columns: vec![],
+            rows: vec![],
+            affected_rows: 0,
+            execution_time_ms: ms,
+        }
     }
 }
 
@@ -285,18 +312,13 @@ pub struct TriggerInfo {
 
 // ── Export / Import ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum ExportFormat {
+    #[default]
     Csv,
     Tsv,
     Sql,
     Json,
-}
-
-impl Default for ExportFormat {
-    fn default() -> Self {
-        Self::Csv
-    }
 }
 
 impl ExportFormat {
@@ -450,8 +472,7 @@ mod tests {
 
     #[test]
     fn config_to_ado_string_sql_auth() {
-        let c = MssqlConnectionConfig::sql_auth("srv", 1433, "sa", "pw")
-            .with_database("test");
+        let c = MssqlConnectionConfig::sql_auth("srv", 1433, "sa", "pw").with_database("test");
         let ado = c.to_ado_string(None);
         assert!(ado.contains("server=tcp:srv,1433"));
         assert!(ado.contains("user=sa"));
@@ -493,11 +514,26 @@ mod tests {
 
     #[test]
     fn export_format_from_str() {
-        assert!(matches!(ExportFormat::from_str_loose("csv"), ExportFormat::Csv));
-        assert!(matches!(ExportFormat::from_str_loose("TSV"), ExportFormat::Tsv));
-        assert!(matches!(ExportFormat::from_str_loose("SQL"), ExportFormat::Sql));
-        assert!(matches!(ExportFormat::from_str_loose("json"), ExportFormat::Json));
-        assert!(matches!(ExportFormat::from_str_loose("unknown"), ExportFormat::Csv));
+        assert!(matches!(
+            ExportFormat::from_str_loose("csv"),
+            ExportFormat::Csv
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("TSV"),
+            ExportFormat::Tsv
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("SQL"),
+            ExportFormat::Sql
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("json"),
+            ExportFormat::Json
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("unknown"),
+            ExportFormat::Csv
+        ));
     }
 
     #[test]
