@@ -15,7 +15,28 @@ async fn test_new_script_service() {
     assert!(true);
 }
 
+#[cfg(not(feature = "script-engine"))]
+#[tokio::test]
+async fn test_execute_script_requires_feature() {
+    let service = create_script_service();
+
+    let context = ScriptContext {
+        connection_id: None,
+        session_id: None,
+        trigger: "test".to_string(),
+    };
+
+    let result = service
+        .lock()
+        .await
+        .execute_script("2 + 2".to_string(), "javascript".to_string(), context)
+        .await;
+
+    assert!(result.is_err());
+}
+
 /// Test JavaScript execution with simple expression
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_simple() {
     let service = create_script_service();
@@ -38,6 +59,7 @@ async fn test_execute_javascript_simple() {
 }
 
 /// Test JavaScript execution with console.log
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_console_log() {
     let service = create_script_service();
@@ -67,6 +89,7 @@ async fn test_execute_javascript_console_log() {
 }
 
 /// Test JavaScript execution with variable assignment
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_variables() {
     let service = create_script_service();
@@ -98,6 +121,7 @@ async fn test_execute_javascript_variables() {
 }
 
 /// Test JavaScript execution with function
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_function() {
     let service = create_script_service();
@@ -130,6 +154,7 @@ async fn test_execute_javascript_function() {
 }
 
 /// Test JavaScript execution with syntax error
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_syntax_error() {
     let service = create_script_service();
@@ -155,6 +180,7 @@ async fn test_execute_javascript_syntax_error() {
 }
 
 /// Test JavaScript execution with dangerous code (should be blocked)
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_dangerous_code() {
     let service = create_script_service();
@@ -176,6 +202,7 @@ async fn test_execute_javascript_dangerous_code() {
 }
 
 /// Test JavaScript execution with require (should be blocked)
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_require_blocked() {
     let service = create_script_service();
@@ -201,6 +228,7 @@ async fn test_execute_javascript_require_blocked() {
 }
 
 /// Test JavaScript execution with Function constructor (should be blocked)
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_javascript_function_constructor_blocked() {
     let service = create_script_service();
@@ -226,6 +254,7 @@ async fn test_execute_javascript_function_constructor_blocked() {
 }
 
 /// Test execution with unsupported script type
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_unsupported_script_type() {
     let service = create_script_service();
@@ -247,6 +276,7 @@ async fn test_execute_unsupported_script_type() {
 }
 
 /// Test script execution with connection context
+#[cfg(feature = "script-engine")]
 #[tokio::test]
 async fn test_execute_script_with_connection_context() {
     let service = create_script_service();

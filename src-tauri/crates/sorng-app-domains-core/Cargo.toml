@@ -7,7 +7,7 @@ edition = "2021"
 tauri = { workspace = true }
 sorng-1password = { path = "../sorng-1password" }
 sorng-ai-agent = { path = "../sorng-ai-agent" }
-sorng-auth = { path = "../sorng-auth" }
+sorng-auth = { path = "../sorng-auth", default-features = false }
 sorng-biometrics = { path = "../sorng-biometrics" }
 sorng-bitwarden = { path = "../sorng-bitwarden" }
 sorng-core = { path = "../sorng-core" }
@@ -23,7 +23,7 @@ sorng-mysql = { path = "../sorng-mysql" }
 sorng-network = { path = "../sorng-network" }
 sorng-passbolt = { path = "../sorng-passbolt" }
 sorng-postgres = { path = "../sorng-postgres" }
-sorng-protocols = { path = "../sorng-protocols" }
+sorng-protocols = { path = "../sorng-protocols", default-features = false }
 sorng-rdp = { path = "../sorng-rdp", optional = true }
 sorng-redis = { path = "../sorng-redis" }
 sorng-remote-mgmt = { path = "../sorng-remote-mgmt" }
@@ -32,7 +32,7 @@ sorng-scp = { path = "../sorng-scp" }
 sorng-serial = { path = "../sorng-serial" }
 sorng-sftp = { path = "../sorng-sftp" }
 sorng-sqlite = { path = "../sorng-sqlite" }
-sorng-ssh = { path = "../sorng-ssh" }
+sorng-ssh = { path = "../sorng-ssh", default-features = false }
 sorng-storage = { path = "../sorng-storage" }
 sorng-telnet = { path = "../sorng-telnet" }
 sorng-vault = { path = "../sorng-vault" }
@@ -41,4 +41,7 @@ sorng-vpn = { path = "../sorng-vpn" }
 
 [features]
 default = ["rdp"]
+cert-auth = ["sorng-auth/cert-auth"]
 rdp = ["dep:sorng-rdp"]
+script-engine = ["sorng-ssh/script-engine"]
+tls-cert-details = ["sorng-protocols/tls-cert-details"]

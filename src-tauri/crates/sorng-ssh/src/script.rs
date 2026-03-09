@@ -75,7 +75,7 @@ impl ScriptService {
                                                 let result = async_with!(ctx => |ctx| {
                                                     // Add basic globals
                                                     let global = ctx.globals();
-                                                    
+
                                                     // Console mock
                                                     let _ = {
                                                         let _: () = ctx.eval::<(), _>("({
@@ -133,7 +133,7 @@ impl ScriptService {
                                                                     sk_pin: None,
                                                                     sk_application: None,
                                                                 };
-                                                                
+
                                                                 let mut service = ssh_service.lock().await;
                             service.connect_ssh(config).await.map_err(|_e| rquickjs::Error::Exception)
                                                             }
@@ -174,7 +174,7 @@ impl ScriptService {
                                                         Err(e) => Err(format!("Script eval error: {}", e))
                                                     }
                                                 }).await;
-                                                
+
                                                 let _ = tx.send(result);
                                             },
                                             Err(e) => {

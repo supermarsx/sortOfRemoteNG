@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "VNC, Telnet, Serial, Rlogin, Raw Socket, FTP, DB, and HTTP protocols"
 
+[features]
+default = []
+tls-cert-details = ["dep:x509-parser"]
+
 [dependencies]
 sorng-core = { path = "../sorng-core" }
 serde = { workspace = true }
@@ -13,7 +17,7 @@ tauri = { workspace = true }
 vnc-rs = "0.5"
 suppaftp = "4.5"
 ssh2 = { workspace = true }
-sqlx = { version = "0.7", features = ["mysql", "runtime-tokio"] }
+sqlx = { workspace = true, features = ["mysql", "runtime-tokio"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 sha2 = { workspace = true }
@@ -21,17 +25,14 @@ serialport = "4.2"
 socket2 = "0.5"
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
 regex = { workspace = true }
-rustls = "0.21"
-rustls-pemfile = "1.0"
-x509-parser = "0.15"
-native-tls = { workspace = true }
-tokio-native-tls = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+x509-parser = { version = "0.15", optional = true }
 base64 = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
-tokio-tungstenite = "0.21"
 futures-util = "0.3"
 axum = "0.7"
-image = "0.24"
 flate2 = "1.0"
 hex = { workspace = true }

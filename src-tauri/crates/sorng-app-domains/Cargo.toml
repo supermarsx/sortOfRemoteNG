@@ -12,4 +12,7 @@ sorng-app-domains-platform = { path = "../sorng-app-domains-platform" }
 
 [features]
 default = ["rdp"]
+cert-auth = ["sorng-app-domains-core/cert-auth"]
 rdp = ["sorng-app-domains-core/rdp"]
+script-engine = ["sorng-app-domains-core/script-engine"]
+tls-cert-details = ["sorng-app-domains-core/tls-cert-details"]

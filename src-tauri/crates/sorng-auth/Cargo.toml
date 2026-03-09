@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Authentication, security, and credential management"
 
+[features]
+default = []
+cert-auth = ["dep:x509-parser"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -16,10 +20,10 @@ aes-gcm = { workspace = true }
 rand = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
-x509-parser = "0.15"
+x509-parser = { version = "0.15", optional = true }
 rustls-pemfile = "1.0"
-image = "0.24"
-qrcode = "0.13"
+qrcode = "0.14"
+png = "0.18"
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
 oauth2 = "4.4"
 url = { workspace = true }
@@ -33,7 +37,7 @@ pbkdf2 = { workspace = true }
 hmac = { workspace = true }
 serde_urlencoded = "0.7"
 hostname = "0.3"
-rcgen = { version = "0.12", features = ["pem", "x509-parser"] }
+rcgen = { version = "0.12", features = ["pem"] }
 time = "0.3"
 pkcs8 = { version = "0.10", features = ["pem", "encryption", "std"] }
 rsa = { version = "0.9", features = ["pem"] }
@@ -43,4 +47,4 @@ ed25519-dalek = { version = "2", features = ["pem", "pkcs8"] }
 pem = "3.0"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Registry"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Registry"] }

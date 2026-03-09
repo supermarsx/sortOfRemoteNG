@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "SSH, SSH3, and script execution services"
 
+[features]
+default = []
+script-engine = ["dep:rquickjs"]
+
 [dependencies]
 sorng-core = { path = "../sorng-core" }
 sorng-dns = { path = "../sorng-dns" }
@@ -19,7 +23,7 @@ async-trait = { workspace = true }
 shell-escape = "0.1"
 uuid = { workspace = true }
 chrono = { workspace = true }
-rquickjs = { version = "0.6", features = ["full-async"] }
+rquickjs = { version = "0.6", features = ["full-async"], optional = true }
 lazy_static = { workspace = true }
 ssh-key = { version = "0.6", features = ["rsa", "ed25519", "encryption", "std", "getrandom"] }
 rsa = "0.9"

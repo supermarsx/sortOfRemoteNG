@@ -47,11 +47,9 @@ pub struct HttpConnectionConfig {
     /// Whether to verify SSL certificates
     #[serde(default = "default_verify_ssl")]
     pub verify_ssl: bool,
-    /// Minimum TLS version to accept ("1.0", "1.1", "1.2", "1.3").
-    /// Defaults to "1.2".  Setting this below 1.2 requires the
-    /// corresponding `LegacyCryptoPolicy` flags to be acknowledged.
-    /// Note: SSL 3.0 is not supported — `native-tls` / `rustls` do not
-    /// implement it.  The floor is TLS 1.0.
+    /// Minimum TLS version to accept ("1.2", "1.3").
+    /// Defaults to "1.2".
+    /// Note: the unified rustls backend only supports TLS 1.2+.
     #[serde(default = "default_min_tls_version")]
     pub min_tls_version: String,
 }
@@ -78,16 +76,72 @@ fn default_min_tls_version() -> String {
 
 /// Resolve a version string to a `reqwest::tls::Version`.
 ///
-/// Accepted values: `"1.0"`, `"1.1"`, `"1.2"`, `"1.3"`.
-/// Anything else (including `"ssl3"`) falls back to TLS 1.2.
+/// Accepted values: `"1.2"` and `"1.3"`.
+/// Anything else falls back to TLS 1.2 because the rustls backend
+/// used by this workspace does not support TLS 1.0/1.1.
 fn resolve_min_tls_version(v: &str) -> reqwest::tls::Version {
     match v.trim() {
-        "1.0" => reqwest::tls::Version::TLS_1_0,
-        "1.1" => reqwest::tls::Version::TLS_1_1,
         "1.3" => reqwest::tls::Version::TLS_1_3,
         // default / unknown → TLS 1.2 (safe default)
         _ => reqwest::tls::Version::TLS_1_2,
     }
+}
+
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl rustls::client::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
+    }
+}
+
+fn build_tls_config(verify: bool) -> Result<Arc<rustls::ClientConfig>, String> {
+    let config = if verify {
+        let mut roots = rustls::RootCertStore::empty();
+        for cert in rustls_native_certs::load_native_certs()
+            .map_err(|e| format!("Native cert load failed: {e}"))?
+        {
+            roots
+                .add(&rustls::Certificate(cert.0))
+                .map_err(|e| format!("Native cert parse failed: {e}"))?;
+        }
+
+        rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth()
+    } else {
+        rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+            .with_no_client_auth()
+    };
+
+    Ok(Arc::new(config))
+}
+
+fn tls_server_name(host: &str) -> Result<rustls::ServerName, String> {
+    rustls::ServerName::try_from(host).map_err(|_| format!("Invalid TLS server name: {host}"))
+}
+
+fn peer_certificate_der(
+    tls: &tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+) -> Result<Vec<u8>, String> {
+    tls.get_ref()
+        .1
+        .peer_certificates()
+        .and_then(|certs| certs.first())
+        .map(|cert| cert.0.clone())
+        .ok_or_else(|| "Server did not present a certificate".to_string())
 }
 
 /// Response from an HTTP request
@@ -1282,7 +1336,7 @@ pub async fn restart_proxy_session(
 pub struct TlsCertificateInfo {
     /// SHA-256 fingerprint (hex-encoded)
     pub fingerprint: String,
-    /// Subject (from native-tls peer certificate)
+    /// Subject (from peer certificate)
     pub subject: Option<String>,
     /// Issuer
     pub issuer: Option<String>,
@@ -1300,76 +1354,107 @@ pub struct TlsCertificateInfo {
     pub san: Vec<String>,
 }
 
+#[derive(Default)]
+struct ParsedTlsCertificateDetails {
+    subject: Option<String>,
+    issuer: Option<String>,
+    valid_from: Option<String>,
+    valid_to: Option<String>,
+    serial: Option<String>,
+    signature_algorithm: Option<String>,
+    san: Vec<String>,
+    diagnostic_detail: Option<String>,
+}
+
+#[cfg(feature = "tls-cert-details")]
+fn parse_tls_certificate_details(der: &[u8], fingerprint: &str) -> ParsedTlsCertificateDetails {
+    let mut details = ParsedTlsCertificateDetails::default();
+
+    if let Ok((_rem, cert)) = x509_parser::parse_x509_certificate(der) {
+        details.subject = Some(cert.subject().to_string());
+        details.issuer = Some(cert.issuer().to_string());
+        details.valid_from = Some(cert.validity().not_before.to_rfc2822().unwrap_or_default());
+        details.valid_to = Some(cert.validity().not_after.to_rfc2822().unwrap_or_default());
+        details.serial = Some(cert.raw_serial_as_string());
+        details.signature_algorithm = Some(cert.signature_algorithm.algorithm.to_id_string());
+
+        if let Ok(Some(san_ext)) = cert.subject_alternative_name() {
+            details.san = san_ext
+                .value
+                .general_names
+                .iter()
+                .map(|name| format!("{name}"))
+                .collect();
+        }
+
+        let san_text = if details.san.is_empty() {
+            "none".to_string()
+        } else {
+            details.san.join(", ")
+        };
+
+        let mut diagnostic_detail = format!(
+            "Fingerprint: SHA256:{fingerprint}\nSubject: {}\nIssuer: {}\nValid: {} -> {}\nSANs: {}",
+            cert.subject(),
+            cert.issuer(),
+            cert.validity().not_before.to_rfc2822().unwrap_or_default(),
+            cert.validity().not_after.to_rfc2822().unwrap_or_default(),
+            san_text,
+        );
+
+        let now = chrono::Utc::now();
+        if let Ok(not_after_str) = cert.validity().not_after.to_rfc2822() {
+            if let Ok(not_after) = chrono::DateTime::parse_from_rfc2822(&not_after_str) {
+                let days_left = (not_after.signed_duration_since(now)).num_days();
+                if days_left < 0 {
+                    diagnostic_detail.push_str(&format!("\nExpired {} days ago", -days_left));
+                } else if days_left < 30 {
+                    diagnostic_detail.push_str(&format!("\nExpires in {} days", days_left));
+                }
+            }
+        }
+
+        details.diagnostic_detail = Some(diagnostic_detail);
+    }
+
+    details
+}
+
+#[cfg(not(feature = "tls-cert-details"))]
+fn parse_tls_certificate_details(_der: &[u8], fingerprint: &str) -> ParsedTlsCertificateDetails {
+    ParsedTlsCertificateDetails {
+        diagnostic_detail: Some(format!("Fingerprint: SHA256:{fingerprint}")),
+        ..ParsedTlsCertificateDetails::default()
+    }
+}
+
 /// Fetch the TLS certificate presented by a remote server.
-/// Connects using native-tls with verification disabled so we can inspect
+/// Connects using rustls with verification disabled so we can inspect
 /// self-signed / untrusted certificates as well.
 #[command]
 pub async fn get_tls_certificate_info(
     host: String,
     port: u16,
 ) -> Result<TlsCertificateInfo, String> {
-    use tokio::net::TcpStream;
-
     let addr = format!("{}:{}", host, port);
+    let connector = tokio_rustls::TlsConnector::from(build_tls_config(false)?);
 
-    // Build a TLS connector that does NOT verify — we want the cert regardless
-    let tls_connector = native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .danger_accept_invalid_hostnames(true)
-        .build()
-        .map_err(|e| format!("TLS connector error: {}", e))?;
-
-    let connector = tokio_native_tls::TlsConnector::from(tls_connector);
-
-    let tcp = TcpStream::connect(&addr)
+    let tcp = tokio::net::TcpStream::connect(&addr)
         .await
         .map_err(|e| format!("TCP connect failed: {}", e))?;
 
     let tls = connector
-        .connect(&host, tcp)
+        .connect(tls_server_name(&host)?, tcp)
         .await
         .map_err(|e| format!("TLS handshake failed: {}", e))?;
 
-    // Get peer certificate
-    let peer_cert = tls
-        .get_ref()
-        .peer_certificate()
-        .map_err(|e| format!("Failed to get peer certificate: {}", e))?
-        .ok_or("Server did not present a certificate")?;
-
-    let der = peer_cert
-        .to_der()
-        .map_err(|e| format!("DER encode failed: {}", e))?;
+    let der = peer_certificate_der(&tls)?;
 
     // SHA-256 fingerprint
     let mut hasher = Sha256::new();
     hasher.update(&der);
     let fingerprint = hex::encode(hasher.finalize());
-
-    // Parse with x509-parser for rich details
-    let mut subject = None;
-    let mut issuer = None;
-    let mut valid_from = None;
-    let mut valid_to = None;
-    let mut serial = None;
-    let mut signature_algorithm = None;
-    let mut san: Vec<String> = Vec::new();
-
-    if let Ok((_rem, cert)) = x509_parser::parse_x509_certificate(&der) {
-        subject = Some(cert.subject().to_string());
-        issuer = Some(cert.issuer().to_string());
-        valid_from = Some(cert.validity().not_before.to_rfc2822().unwrap_or_default());
-        valid_to = Some(cert.validity().not_after.to_rfc2822().unwrap_or_default());
-        serial = Some(cert.raw_serial_as_string());
-        signature_algorithm = Some(cert.signature_algorithm.algorithm.to_id_string());
-
-        // Extract SANs
-        if let Ok(Some(san_ext)) = cert.subject_alternative_name() {
-            for name in &san_ext.value.general_names {
-                san.push(format!("{}", name));
-            }
-        }
-    }
+    let parsed = parse_tls_certificate_details(&der, &fingerprint);
 
     // Build PEM
     let pem = {
@@ -1385,14 +1470,14 @@ pub async fn get_tls_certificate_info(
 
     Ok(TlsCertificateInfo {
         fingerprint,
-        subject,
-        issuer,
+        subject: parsed.subject,
+        issuer: parsed.issuer,
         pem,
-        valid_from,
-        valid_to,
-        serial,
-        signature_algorithm,
-        san,
+        valid_from: parsed.valid_from,
+        valid_to: parsed.valid_to,
+        serial: parsed.serial,
+        signature_algorithm: parsed.signature_algorithm,
+        san: parsed.san,
     })
 }
 
@@ -1471,19 +1556,9 @@ pub async fn diagnose_http_connection(
         let h = host.clone();
         let t = std::time::Instant::now();
 
-        // Use native-tls with configurable verification
-        let tls_builder = if verify {
-            native_tls::TlsConnector::builder().build()
-        } else {
-            native_tls::TlsConnector::builder()
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true)
-                .build()
-        };
-
-        match tls_builder {
-            Ok(connector) => {
-                let tls_connector = tokio_native_tls::TlsConnector::from(connector);
+        match build_tls_config(verify) {
+            Ok(config) => {
+                let tls_connector = tokio_rustls::TlsConnector::from(config);
                 let tcp = match tokio::net::TcpStream::connect(&socket_addr).await {
                     Ok(s) => s,
                     Err(e) => {
@@ -1505,71 +1580,17 @@ pub async fn diagnose_http_connection(
                     }
                 };
 
-                match tls_connector.connect(&h, tcp).await {
+                match tls_connector.connect(tls_server_name(&h)?, tcp).await {
                     Ok(tls_stream) => {
                         let elapsed = t.elapsed().as_millis() as u64;
 
                         // Extract certificate info
-                        let cert_detail = tls_stream
-                            .get_ref()
-                            .peer_certificate()
-                            .ok()
-                            .flatten()
-                            .and_then(|cert| {
-                                let der = cert.to_der().ok()?;
-                                let mut hasher = Sha256::new();
-                                hasher.update(&der);
-                                let fp = hex::encode(hasher.finalize());
-
-                                let mut detail = format!("Fingerprint: SHA256:{}", fp);
-
-                                if let Ok((_rem, x509)) = x509_parser::parse_x509_certificate(&der)
-                                {
-                                    detail.push_str(&format!(
-                                        "\nSubject: {}\nIssuer: {}\nValid: {} → {}\nSANs: {}",
-                                        x509.subject(),
-                                        x509.issuer(),
-                                        x509.validity().not_before.to_rfc2822().unwrap_or_default(),
-                                        x509.validity().not_after.to_rfc2822().unwrap_or_default(),
-                                        x509.subject_alternative_name()
-                                            .ok()
-                                            .flatten()
-                                            .map(|san| san
-                                                .value
-                                                .general_names
-                                                .iter()
-                                                .map(|n| format!("{n}"))
-                                                .collect::<Vec<_>>()
-                                                .join(", "))
-                                            .unwrap_or_else(|| "none".into()),
-                                    ));
-
-                                    // Check expiry
-                                    let now = chrono::Utc::now();
-                                    if let Ok(not_after_str) =
-                                        x509.validity().not_after.to_rfc2822()
-                                    {
-                                        if let Ok(not_after) =
-                                            chrono::DateTime::parse_from_rfc2822(&not_after_str)
-                                        {
-                                            let days_left =
-                                                (not_after.signed_duration_since(now)).num_days();
-                                            if days_left < 0 {
-                                                detail.push_str(&format!(
-                                                    "\n⚠ EXPIRED {} days ago!",
-                                                    -days_left
-                                                ));
-                                            } else if days_left < 30 {
-                                                detail.push_str(&format!(
-                                                    "\n⚠ Expires in {} days",
-                                                    days_left
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
-                                Some(detail)
-                            });
+                        let cert_detail = peer_certificate_der(&tls_stream).ok().and_then(|der| {
+                            let mut hasher = Sha256::new();
+                            hasher.update(&der);
+                            let fp = hex::encode(hasher.finalize());
+                            parse_tls_certificate_details(&der, &fp).diagnostic_detail
+                        });
 
                         steps.push(DiagnosticStep {
                             name: "TLS Handshake".into(),
@@ -1603,7 +1624,7 @@ pub async fn diagnose_http_connection(
                 steps.push(DiagnosticStep {
                     name: "TLS Handshake".into(),
                     status: "fail".into(),
-                    message: format!("Failed to create TLS connector: {e}"),
+                    message: format!("Failed to create TLS config: {e}"),
                     duration_ms: t.elapsed().as_millis() as u64,
                     detail: None,
                 });
