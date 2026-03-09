@@ -39,20 +39,25 @@ impl RoundcubeClient {
             "user": self.config.username,
             "password": self.config.password,
         });
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .json(&body)
             .send()
             .await
             .map_err(|e| RoundcubeError::connection(format!("POST {url}: {e}")))?;
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| RoundcubeError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
         }
         let raw: serde_json::Value = serde_json::from_str(&body_text)
             .map_err(|e| RoundcubeError::parse(format!("json: {e}")))?;
-        let session_token = raw.get("token")
+        let session_token = raw
+            .get("token")
             .and_then(|v| v.as_str())
             .map(String::from)
             .unwrap_or_default();
@@ -88,8 +93,11 @@ impl RoundcubeClient {
         let url = self.url(path);
         debug!("ROUNDCUBE GET {url}");
         let req = self.http.get(&url);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("GET {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -98,23 +106,35 @@ impl RoundcubeClient {
         let url = self.url(path);
         debug!("ROUNDCUBE GET (raw) {url}");
         let req = self.http.get(&url);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(self.map_status_error(status.as_u16(), &body));
         }
-        resp.text().await.map_err(|e| RoundcubeError::parse(format!("body: {e}")))
+        resp.text()
+            .await
+            .map_err(|e| RoundcubeError::parse(format!("body: {e}")))
     }
 
-    pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> RoundcubeResult<T> {
+    pub async fn post<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> RoundcubeResult<T> {
         let url = self.url(path);
         debug!("ROUNDCUBE POST {url}");
         let req = self.http.post(&url).json(body);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -123,8 +143,11 @@ impl RoundcubeClient {
         let url = self.url(path);
         debug!("ROUNDCUBE POST (no body) {url}");
         let req = self.http.post(&url);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -134,12 +157,19 @@ impl RoundcubeClient {
         Ok(())
     }
 
-    pub async fn put<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> RoundcubeResult<T> {
+    pub async fn put<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> RoundcubeResult<T> {
         let url = self.url(path);
         debug!("ROUNDCUBE PUT {url}");
         let req = self.http.put(&url).json(body);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("PUT {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -148,8 +178,11 @@ impl RoundcubeClient {
         let url = self.url(path);
         debug!("ROUNDCUBE PUT (no response) {url}");
         let req = self.http.put(&url).json(body);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -163,8 +196,11 @@ impl RoundcubeClient {
         let url = self.url(path);
         debug!("ROUNDCUBE DELETE {url}");
         let req = self.http.delete(&url);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -181,11 +217,16 @@ impl RoundcubeClient {
         let url = self.url("/system/info");
         debug!("ROUNDCUBE GET /system/info (ping)");
         let req = self.http.get(&url);
-        let resp = self.apply_auth(req).await
-            .send().await
+        let resp = self
+            .apply_auth(req)
+            .await
+            .send()
+            .await
             .map_err(|e| RoundcubeError::connection(format!("GET /system/info: {e}")))?;
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| RoundcubeError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
@@ -194,18 +235,29 @@ impl RoundcubeClient {
             .map_err(|e| RoundcubeError::parse(format!("json: {e}")))?;
         Ok(RoundcubeConnectionSummary {
             host: self.config.base_url.clone(),
-            version: raw.get("version").and_then(|v| v.as_str()).map(String::from),
+            version: raw
+                .get("version")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             skin: raw.get("skin").and_then(|v| v.as_str()).map(String::from),
-            product_name: raw.get("product_name").and_then(|v| v.as_str()).map(String::from),
+            product_name: raw
+                .get("product_name")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             plugins_count: raw.get("plugins_count").and_then(|v| v.as_u64()),
         })
     }
 
     // ── Response handling ────────────────────────────────────────────
 
-    async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> RoundcubeResult<T> {
+    async fn handle_response<T: DeserializeOwned>(
+        &self,
+        resp: reqwest::Response,
+    ) -> RoundcubeResult<T> {
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| RoundcubeError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
@@ -223,6 +275,9 @@ impl RoundcubeClient {
             500 => RoundcubeErrorKind::InternalError,
             _ => RoundcubeErrorKind::ApiError,
         };
-        RoundcubeError { kind, message: format!("HTTP {status}: {body}") }
+        RoundcubeError {
+            kind,
+            message: format!("HTTP {status}: {body}"),
+        }
     }
 }

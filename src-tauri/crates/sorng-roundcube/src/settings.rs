@@ -9,13 +9,18 @@ pub struct SettingsManager;
 
 impl SettingsManager {
     /// GET /settings/system — get system configuration.
-    pub async fn get_system_config(client: &RoundcubeClient) -> RoundcubeResult<RoundcubeSystemConfig> {
+    pub async fn get_system_config(
+        client: &RoundcubeClient,
+    ) -> RoundcubeResult<RoundcubeSystemConfig> {
         debug!("ROUNDCUBE get_system_config");
         client.get("/settings/system").await
     }
 
     /// PUT /settings/system — update system configuration.
-    pub async fn update_system_config(client: &RoundcubeClient, config: &RoundcubeSystemConfig) -> RoundcubeResult<RoundcubeSystemConfig> {
+    pub async fn update_system_config(
+        client: &RoundcubeClient,
+        config: &RoundcubeSystemConfig,
+    ) -> RoundcubeResult<RoundcubeSystemConfig> {
         debug!("ROUNDCUBE update_system_config");
         client.put("/settings/system", config).await
     }
@@ -27,7 +32,10 @@ impl SettingsManager {
     }
 
     /// PUT /settings/smtp — update SMTP configuration.
-    pub async fn update_smtp_config(client: &RoundcubeClient, config: &RoundcubeSmtpConfig) -> RoundcubeResult<RoundcubeSmtpConfig> {
+    pub async fn update_smtp_config(
+        client: &RoundcubeClient,
+        config: &RoundcubeSmtpConfig,
+    ) -> RoundcubeResult<RoundcubeSmtpConfig> {
         debug!("ROUNDCUBE update_smtp_config");
         client.put("/settings/smtp", config).await
     }
@@ -45,7 +53,11 @@ impl SettingsManager {
     }
 
     /// GET /settings/logs — get recent log entries.
-    pub async fn get_logs(client: &RoundcubeClient, limit: Option<u64>, level: Option<&str>) -> RoundcubeResult<Vec<RoundcubeLogEntry>> {
+    pub async fn get_logs(
+        client: &RoundcubeClient,
+        limit: Option<u64>,
+        level: Option<&str>,
+    ) -> RoundcubeResult<Vec<RoundcubeLogEntry>> {
         debug!("ROUNDCUBE get_logs limit={limit:?} level={level:?}");
         let mut path = "/settings/logs".to_string();
         let mut params = Vec::new();

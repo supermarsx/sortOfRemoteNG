@@ -21,13 +21,20 @@ impl FilterManager {
     }
 
     /// POST /filters — create a new filter.
-    pub async fn create(client: &RoundcubeClient, req: &CreateFilterRequest) -> RoundcubeResult<RoundcubeFilter> {
+    pub async fn create(
+        client: &RoundcubeClient,
+        req: &CreateFilterRequest,
+    ) -> RoundcubeResult<RoundcubeFilter> {
         debug!("ROUNDCUBE create_filter name={}", req.name);
         client.post("/filters", req).await
     }
 
     /// PUT /filters/:id — update an existing filter.
-    pub async fn update(client: &RoundcubeClient, id: &str, req: &UpdateFilterRequest) -> RoundcubeResult<RoundcubeFilter> {
+    pub async fn update(
+        client: &RoundcubeClient,
+        id: &str,
+        req: &UpdateFilterRequest,
+    ) -> RoundcubeResult<RoundcubeFilter> {
         debug!("ROUNDCUBE update_filter id={id}");
         client.put(&format!("/filters/{id}"), req).await
     }

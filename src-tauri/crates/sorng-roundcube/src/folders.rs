@@ -21,15 +21,24 @@ impl FolderManager {
     }
 
     /// POST /folders — create a folder.
-    pub async fn create(client: &RoundcubeClient, req: &CreateFolderRequest) -> RoundcubeResult<()> {
+    pub async fn create(
+        client: &RoundcubeClient,
+        req: &CreateFolderRequest,
+    ) -> RoundcubeResult<()> {
         debug!("ROUNDCUBE create_folder name={}", req.name);
         let _: serde_json::Value = client.post("/folders", req).await?;
         Ok(())
     }
 
     /// PUT /folders/rename — rename a folder.
-    pub async fn rename(client: &RoundcubeClient, req: &RenameFolderRequest) -> RoundcubeResult<()> {
-        debug!("ROUNDCUBE rename_folder old={} new={}", req.old_name, req.new_name);
+    pub async fn rename(
+        client: &RoundcubeClient,
+        req: &RenameFolderRequest,
+    ) -> RoundcubeResult<()> {
+        debug!(
+            "ROUNDCUBE rename_folder old={} new={}",
+            req.old_name, req.new_name
+        );
         client.put_no_response("/folders/rename", req).await
     }
 
@@ -42,13 +51,17 @@ impl FolderManager {
     /// POST /folders/:name/subscribe — subscribe to a folder.
     pub async fn subscribe(client: &RoundcubeClient, name: &str) -> RoundcubeResult<()> {
         debug!("ROUNDCUBE subscribe_folder name={name}");
-        client.post_no_body(&format!("/folders/{name}/subscribe")).await
+        client
+            .post_no_body(&format!("/folders/{name}/subscribe"))
+            .await
     }
 
     /// POST /folders/:name/unsubscribe — unsubscribe from a folder.
     pub async fn unsubscribe(client: &RoundcubeClient, name: &str) -> RoundcubeResult<()> {
         debug!("ROUNDCUBE unsubscribe_folder name={name}");
-        client.post_no_body(&format!("/folders/{name}/unsubscribe")).await
+        client
+            .post_no_body(&format!("/folders/{name}/unsubscribe"))
+            .await
     }
 
     /// POST /folders/:name/purge — purge all messages in a folder.

@@ -27,14 +27,26 @@ pub struct RoundcubeService {
     connections: HashMap<String, RoundcubeClient>,
 }
 
+impl Default for RoundcubeService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RoundcubeService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: RoundcubeConnectionConfig) -> RoundcubeResult<RoundcubeConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: RoundcubeConnectionConfig,
+    ) -> RoundcubeResult<RoundcubeConnectionSummary> {
         let client = RoundcubeClient::new(config)?;
         client.login().await?;
         let summary = client.ping().await?;
@@ -43,7 +55,8 @@ impl RoundcubeService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> RoundcubeResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| RoundcubeError::not_connected(format!("No connection '{}'", id)))
     }
@@ -53,7 +66,8 @@ impl RoundcubeService {
     }
 
     fn client(&self, id: &str) -> RoundcubeResult<&RoundcubeClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| RoundcubeError::not_connected(format!("No connection '{}'", id)))
     }
 
@@ -71,11 +85,20 @@ impl RoundcubeService {
         UserManager::get(self.client(id)?, user_id).await
     }
 
-    pub async fn create_user(&self, id: &str, req: &CreateUserRequest) -> RoundcubeResult<RoundcubeUser> {
+    pub async fn create_user(
+        &self,
+        id: &str,
+        req: &CreateUserRequest,
+    ) -> RoundcubeResult<RoundcubeUser> {
         UserManager::create(self.client(id)?, req).await
     }
 
-    pub async fn update_user(&self, id: &str, user_id: &str, req: &UpdateUserRequest) -> RoundcubeResult<RoundcubeUser> {
+    pub async fn update_user(
+        &self,
+        id: &str,
+        user_id: &str,
+        req: &UpdateUserRequest,
+    ) -> RoundcubeResult<RoundcubeUser> {
         UserManager::update(self.client(id)?, user_id, req).await
     }
 
@@ -83,37 +106,76 @@ impl RoundcubeService {
         UserManager::delete(self.client(id)?, user_id).await
     }
 
-    pub async fn get_user_preferences(&self, id: &str, user_id: &str) -> RoundcubeResult<RoundcubeUserPreferences> {
+    pub async fn get_user_preferences(
+        &self,
+        id: &str,
+        user_id: &str,
+    ) -> RoundcubeResult<RoundcubeUserPreferences> {
         UserManager::get_preferences(self.client(id)?, user_id).await
     }
 
-    pub async fn update_user_preferences(&self, id: &str, user_id: &str, prefs: &RoundcubeUserPreferences) -> RoundcubeResult<RoundcubeUserPreferences> {
+    pub async fn update_user_preferences(
+        &self,
+        id: &str,
+        user_id: &str,
+        prefs: &RoundcubeUserPreferences,
+    ) -> RoundcubeResult<RoundcubeUserPreferences> {
         UserManager::update_preferences(self.client(id)?, user_id, prefs).await
     }
 
     // ── Identities ───────────────────────────────────────────────
 
-    pub async fn list_identities(&self, id: &str, user_id: &str) -> RoundcubeResult<Vec<RoundcubeIdentity>> {
+    pub async fn list_identities(
+        &self,
+        id: &str,
+        user_id: &str,
+    ) -> RoundcubeResult<Vec<RoundcubeIdentity>> {
         IdentityManager::list(self.client(id)?, user_id).await
     }
 
-    pub async fn get_identity(&self, id: &str, user_id: &str, identity_id: &str) -> RoundcubeResult<RoundcubeIdentity> {
+    pub async fn get_identity(
+        &self,
+        id: &str,
+        user_id: &str,
+        identity_id: &str,
+    ) -> RoundcubeResult<RoundcubeIdentity> {
         IdentityManager::get(self.client(id)?, user_id, identity_id).await
     }
 
-    pub async fn create_identity(&self, id: &str, user_id: &str, req: &CreateIdentityRequest) -> RoundcubeResult<RoundcubeIdentity> {
+    pub async fn create_identity(
+        &self,
+        id: &str,
+        user_id: &str,
+        req: &CreateIdentityRequest,
+    ) -> RoundcubeResult<RoundcubeIdentity> {
         IdentityManager::create(self.client(id)?, user_id, req).await
     }
 
-    pub async fn update_identity(&self, id: &str, user_id: &str, identity_id: &str, req: &UpdateIdentityRequest) -> RoundcubeResult<RoundcubeIdentity> {
+    pub async fn update_identity(
+        &self,
+        id: &str,
+        user_id: &str,
+        identity_id: &str,
+        req: &UpdateIdentityRequest,
+    ) -> RoundcubeResult<RoundcubeIdentity> {
         IdentityManager::update(self.client(id)?, user_id, identity_id, req).await
     }
 
-    pub async fn delete_identity(&self, id: &str, user_id: &str, identity_id: &str) -> RoundcubeResult<()> {
+    pub async fn delete_identity(
+        &self,
+        id: &str,
+        user_id: &str,
+        identity_id: &str,
+    ) -> RoundcubeResult<()> {
         IdentityManager::delete(self.client(id)?, user_id, identity_id).await
     }
 
-    pub async fn set_default_identity(&self, id: &str, user_id: &str, identity_id: &str) -> RoundcubeResult<()> {
+    pub async fn set_default_identity(
+        &self,
+        id: &str,
+        user_id: &str,
+        identity_id: &str,
+    ) -> RoundcubeResult<()> {
         IdentityManager::set_default(self.client(id)?, user_id, identity_id).await
     }
 
@@ -123,35 +185,74 @@ impl RoundcubeService {
         AddressBookManager::list(self.client(id)?).await
     }
 
-    pub async fn get_address_book(&self, id: &str, book_id: &str) -> RoundcubeResult<RoundcubeAddressBook> {
+    pub async fn get_address_book(
+        &self,
+        id: &str,
+        book_id: &str,
+    ) -> RoundcubeResult<RoundcubeAddressBook> {
         AddressBookManager::get(self.client(id)?, book_id).await
     }
 
-    pub async fn list_contacts(&self, id: &str, book_id: &str) -> RoundcubeResult<Vec<RoundcubeContact>> {
+    pub async fn list_contacts(
+        &self,
+        id: &str,
+        book_id: &str,
+    ) -> RoundcubeResult<Vec<RoundcubeContact>> {
         AddressBookManager::list_contacts(self.client(id)?, book_id).await
     }
 
-    pub async fn get_contact(&self, id: &str, book_id: &str, contact_id: &str) -> RoundcubeResult<RoundcubeContact> {
+    pub async fn get_contact(
+        &self,
+        id: &str,
+        book_id: &str,
+        contact_id: &str,
+    ) -> RoundcubeResult<RoundcubeContact> {
         AddressBookManager::get_contact(self.client(id)?, book_id, contact_id).await
     }
 
-    pub async fn create_contact(&self, id: &str, book_id: &str, req: &CreateContactRequest) -> RoundcubeResult<RoundcubeContact> {
+    pub async fn create_contact(
+        &self,
+        id: &str,
+        book_id: &str,
+        req: &CreateContactRequest,
+    ) -> RoundcubeResult<RoundcubeContact> {
         AddressBookManager::create_contact(self.client(id)?, book_id, req).await
     }
 
-    pub async fn update_contact(&self, id: &str, book_id: &str, contact_id: &str, req: &UpdateContactRequest) -> RoundcubeResult<RoundcubeContact> {
+    pub async fn update_contact(
+        &self,
+        id: &str,
+        book_id: &str,
+        contact_id: &str,
+        req: &UpdateContactRequest,
+    ) -> RoundcubeResult<RoundcubeContact> {
         AddressBookManager::update_contact(self.client(id)?, book_id, contact_id, req).await
     }
 
-    pub async fn delete_contact(&self, id: &str, book_id: &str, contact_id: &str) -> RoundcubeResult<()> {
+    pub async fn delete_contact(
+        &self,
+        id: &str,
+        book_id: &str,
+        contact_id: &str,
+    ) -> RoundcubeResult<()> {
         AddressBookManager::delete_contact(self.client(id)?, book_id, contact_id).await
     }
 
-    pub async fn search_contacts(&self, id: &str, book_id: &str, query: &str) -> RoundcubeResult<Vec<RoundcubeContact>> {
+    pub async fn search_contacts(
+        &self,
+        id: &str,
+        book_id: &str,
+        query: &str,
+    ) -> RoundcubeResult<Vec<RoundcubeContact>> {
         AddressBookManager::search_contacts(self.client(id)?, book_id, query).await
     }
 
-    pub async fn export_vcard(&self, id: &str, book_id: &str, contact_id: &str) -> RoundcubeResult<String> {
+    pub async fn export_vcard(
+        &self,
+        id: &str,
+        book_id: &str,
+        contact_id: &str,
+    ) -> RoundcubeResult<String> {
         AddressBookManager::export_vcard(self.client(id)?, book_id, contact_id).await
     }
 
@@ -203,11 +304,20 @@ impl RoundcubeService {
         FilterManager::get(self.client(id)?, filter_id).await
     }
 
-    pub async fn create_filter(&self, id: &str, req: &CreateFilterRequest) -> RoundcubeResult<RoundcubeFilter> {
+    pub async fn create_filter(
+        &self,
+        id: &str,
+        req: &CreateFilterRequest,
+    ) -> RoundcubeResult<RoundcubeFilter> {
         FilterManager::create(self.client(id)?, req).await
     }
 
-    pub async fn update_filter(&self, id: &str, filter_id: &str, req: &UpdateFilterRequest) -> RoundcubeResult<RoundcubeFilter> {
+    pub async fn update_filter(
+        &self,
+        id: &str,
+        filter_id: &str,
+        req: &UpdateFilterRequest,
+    ) -> RoundcubeResult<RoundcubeFilter> {
         FilterManager::update(self.client(id)?, filter_id, req).await
     }
 
@@ -245,11 +355,20 @@ impl RoundcubeService {
         PluginManager::disable(self.client(id)?, name).await
     }
 
-    pub async fn get_plugin_config(&self, id: &str, name: &str) -> RoundcubeResult<RoundcubePluginConfig> {
+    pub async fn get_plugin_config(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> RoundcubeResult<RoundcubePluginConfig> {
         PluginManager::get_config(self.client(id)?, name).await
     }
 
-    pub async fn update_plugin_config(&self, id: &str, name: &str, settings: &std::collections::HashMap<String, serde_json::Value>) -> RoundcubeResult<()> {
+    pub async fn update_plugin_config(
+        &self,
+        id: &str,
+        name: &str,
+        settings: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> RoundcubeResult<()> {
         PluginManager::update_config(self.client(id)?, name, settings).await
     }
 
@@ -259,7 +378,11 @@ impl RoundcubeService {
         SettingsManager::get_system_config(self.client(id)?).await
     }
 
-    pub async fn update_system_config(&self, id: &str, config: &RoundcubeSystemConfig) -> RoundcubeResult<RoundcubeSystemConfig> {
+    pub async fn update_system_config(
+        &self,
+        id: &str,
+        config: &RoundcubeSystemConfig,
+    ) -> RoundcubeResult<RoundcubeSystemConfig> {
         SettingsManager::update_system_config(self.client(id)?, config).await
     }
 
@@ -267,7 +390,11 @@ impl RoundcubeService {
         SettingsManager::get_smtp_config(self.client(id)?).await
     }
 
-    pub async fn update_smtp_config(&self, id: &str, config: &RoundcubeSmtpConfig) -> RoundcubeResult<RoundcubeSmtpConfig> {
+    pub async fn update_smtp_config(
+        &self,
+        id: &str,
+        config: &RoundcubeSmtpConfig,
+    ) -> RoundcubeResult<RoundcubeSmtpConfig> {
         SettingsManager::update_smtp_config(self.client(id)?, config).await
     }
 
@@ -279,7 +406,12 @@ impl RoundcubeService {
         SettingsManager::clear_cache(self.client(id)?).await
     }
 
-    pub async fn get_logs(&self, id: &str, limit: Option<u64>, level: Option<&str>) -> RoundcubeResult<Vec<RoundcubeLogEntry>> {
+    pub async fn get_logs(
+        &self,
+        id: &str,
+        limit: Option<u64>,
+        level: Option<&str>,
+    ) -> RoundcubeResult<Vec<RoundcubeLogEntry>> {
         SettingsManager::get_logs(self.client(id)?, limit, level).await
     }
 
@@ -309,7 +441,13 @@ impl RoundcubeService {
         MaintenanceManager::test_smtp(self.client(id)?, to).await
     }
 
-    pub async fn test_imap(&self, id: &str, host: &str, user: &str, pass: &str) -> RoundcubeResult<bool> {
+    pub async fn test_imap(
+        &self,
+        id: &str,
+        host: &str,
+        user: &str,
+        pass: &str,
+    ) -> RoundcubeResult<bool> {
         MaintenanceManager::test_imap(self.client(id)?, host, user, pass).await
     }
 }

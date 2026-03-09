@@ -21,46 +21,95 @@ impl AddressBookManager {
     }
 
     /// GET /addressbooks/:book_id/contacts — list contacts in an address book.
-    pub async fn list_contacts(client: &RoundcubeClient, book_id: &str) -> RoundcubeResult<Vec<RoundcubeContact>> {
+    pub async fn list_contacts(
+        client: &RoundcubeClient,
+        book_id: &str,
+    ) -> RoundcubeResult<Vec<RoundcubeContact>> {
         debug!("ROUNDCUBE list_contacts book_id={book_id}");
-        client.get(&format!("/addressbooks/{book_id}/contacts")).await
+        client
+            .get(&format!("/addressbooks/{book_id}/contacts"))
+            .await
     }
 
     /// GET /addressbooks/:book_id/contacts/:contact_id — get a single contact.
-    pub async fn get_contact(client: &RoundcubeClient, book_id: &str, contact_id: &str) -> RoundcubeResult<RoundcubeContact> {
+    pub async fn get_contact(
+        client: &RoundcubeClient,
+        book_id: &str,
+        contact_id: &str,
+    ) -> RoundcubeResult<RoundcubeContact> {
         debug!("ROUNDCUBE get_contact book_id={book_id} contact_id={contact_id}");
-        client.get(&format!("/addressbooks/{book_id}/contacts/{contact_id}")).await
+        client
+            .get(&format!("/addressbooks/{book_id}/contacts/{contact_id}"))
+            .await
     }
 
     /// POST /addressbooks/:book_id/contacts — create a contact.
-    pub async fn create_contact(client: &RoundcubeClient, book_id: &str, req: &CreateContactRequest) -> RoundcubeResult<RoundcubeContact> {
+    pub async fn create_contact(
+        client: &RoundcubeClient,
+        book_id: &str,
+        req: &CreateContactRequest,
+    ) -> RoundcubeResult<RoundcubeContact> {
         debug!("ROUNDCUBE create_contact book_id={book_id}");
-        client.post(&format!("/addressbooks/{book_id}/contacts"), req).await
+        client
+            .post(&format!("/addressbooks/{book_id}/contacts"), req)
+            .await
     }
 
     /// PUT /addressbooks/:book_id/contacts/:contact_id — update a contact.
-    pub async fn update_contact(client: &RoundcubeClient, book_id: &str, contact_id: &str, req: &UpdateContactRequest) -> RoundcubeResult<RoundcubeContact> {
+    pub async fn update_contact(
+        client: &RoundcubeClient,
+        book_id: &str,
+        contact_id: &str,
+        req: &UpdateContactRequest,
+    ) -> RoundcubeResult<RoundcubeContact> {
         debug!("ROUNDCUBE update_contact book_id={book_id} contact_id={contact_id}");
-        client.put(&format!("/addressbooks/{book_id}/contacts/{contact_id}"), req).await
+        client
+            .put(
+                &format!("/addressbooks/{book_id}/contacts/{contact_id}"),
+                req,
+            )
+            .await
     }
 
     /// DELETE /addressbooks/:book_id/contacts/:contact_id — delete a contact.
-    pub async fn delete_contact(client: &RoundcubeClient, book_id: &str, contact_id: &str) -> RoundcubeResult<()> {
+    pub async fn delete_contact(
+        client: &RoundcubeClient,
+        book_id: &str,
+        contact_id: &str,
+    ) -> RoundcubeResult<()> {
         debug!("ROUNDCUBE delete_contact book_id={book_id} contact_id={contact_id}");
-        client.delete(&format!("/addressbooks/{book_id}/contacts/{contact_id}")).await
+        client
+            .delete(&format!("/addressbooks/{book_id}/contacts/{contact_id}"))
+            .await
     }
 
     /// GET /addressbooks/:book_id/contacts/search?q=:query — search contacts.
-    pub async fn search_contacts(client: &RoundcubeClient, book_id: &str, query: &str) -> RoundcubeResult<Vec<RoundcubeContact>> {
+    pub async fn search_contacts(
+        client: &RoundcubeClient,
+        book_id: &str,
+        query: &str,
+    ) -> RoundcubeResult<Vec<RoundcubeContact>> {
         debug!("ROUNDCUBE search_contacts book_id={book_id} query={query}");
         let encoded = urlencoding_encode(query);
-        client.get(&format!("/addressbooks/{book_id}/contacts/search?q={encoded}")).await
+        client
+            .get(&format!(
+                "/addressbooks/{book_id}/contacts/search?q={encoded}"
+            ))
+            .await
     }
 
     /// GET /addressbooks/:book_id/contacts/:contact_id/vcard — export vCard.
-    pub async fn export_vcard(client: &RoundcubeClient, book_id: &str, contact_id: &str) -> RoundcubeResult<String> {
+    pub async fn export_vcard(
+        client: &RoundcubeClient,
+        book_id: &str,
+        contact_id: &str,
+    ) -> RoundcubeResult<String> {
         debug!("ROUNDCUBE export_vcard book_id={book_id} contact_id={contact_id}");
-        client.get_raw(&format!("/addressbooks/{book_id}/contacts/{contact_id}/vcard")).await
+        client
+            .get_raw(&format!(
+                "/addressbooks/{book_id}/contacts/{contact_id}/vcard"
+            ))
+            .await
     }
 }
 

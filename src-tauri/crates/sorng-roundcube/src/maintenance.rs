@@ -43,11 +43,19 @@ impl MaintenanceManager {
         debug!("ROUNDCUBE test_smtp to={to}");
         let body = serde_json::json!({ "to": to });
         let result: serde_json::Value = client.post("/maintenance/test-smtp", &body).await?;
-        Ok(result.get("success").and_then(|v| v.as_bool()).unwrap_or(false))
+        Ok(result
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false))
     }
 
     /// POST /maintenance/test-imap — test IMAP connectivity.
-    pub async fn test_imap(client: &RoundcubeClient, host: &str, user: &str, pass: &str) -> RoundcubeResult<bool> {
+    pub async fn test_imap(
+        client: &RoundcubeClient,
+        host: &str,
+        user: &str,
+        pass: &str,
+    ) -> RoundcubeResult<bool> {
         debug!("ROUNDCUBE test_imap host={host} user={user}");
         let body = serde_json::json!({
             "host": host,
@@ -55,6 +63,9 @@ impl MaintenanceManager {
             "password": pass,
         });
         let result: serde_json::Value = client.post("/maintenance/test-imap", &body).await?;
-        Ok(result.get("success").and_then(|v| v.as_bool()).unwrap_or(false))
+        Ok(result
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false))
     }
 }

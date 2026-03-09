@@ -24,24 +24,37 @@ impl PluginManager {
     /// POST /plugins/:name/enable — enable a plugin.
     pub async fn enable(client: &RoundcubeClient, name: &str) -> RoundcubeResult<()> {
         debug!("ROUNDCUBE enable_plugin name={name}");
-        client.post_no_body(&format!("/plugins/{name}/enable")).await
+        client
+            .post_no_body(&format!("/plugins/{name}/enable"))
+            .await
     }
 
     /// POST /plugins/:name/disable — disable a plugin.
     pub async fn disable(client: &RoundcubeClient, name: &str) -> RoundcubeResult<()> {
         debug!("ROUNDCUBE disable_plugin name={name}");
-        client.post_no_body(&format!("/plugins/{name}/disable")).await
+        client
+            .post_no_body(&format!("/plugins/{name}/disable"))
+            .await
     }
 
     /// GET /plugins/:name/config — get plugin configuration.
-    pub async fn get_config(client: &RoundcubeClient, name: &str) -> RoundcubeResult<RoundcubePluginConfig> {
+    pub async fn get_config(
+        client: &RoundcubeClient,
+        name: &str,
+    ) -> RoundcubeResult<RoundcubePluginConfig> {
         debug!("ROUNDCUBE get_plugin_config name={name}");
         client.get(&format!("/plugins/{name}/config")).await
     }
 
     /// PUT /plugins/:name/config — update plugin configuration.
-    pub async fn update_config(client: &RoundcubeClient, name: &str, settings: &HashMap<String, serde_json::Value>) -> RoundcubeResult<()> {
+    pub async fn update_config(
+        client: &RoundcubeClient,
+        name: &str,
+        settings: &HashMap<String, serde_json::Value>,
+    ) -> RoundcubeResult<()> {
         debug!("ROUNDCUBE update_plugin_config name={name}");
-        client.put_no_response(&format!("/plugins/{name}/config"), settings).await
+        client
+            .put_no_response(&format!("/plugins/{name}/config"), settings)
+            .await
     }
 }

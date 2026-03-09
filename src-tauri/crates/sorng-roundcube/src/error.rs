@@ -39,7 +39,10 @@ impl std::error::Error for RoundcubeError {}
 
 impl RoundcubeError {
     pub fn new(kind: RoundcubeErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected(msg: impl Into<String>) -> Self {

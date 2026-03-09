@@ -1,15 +1,15 @@
 // ── sorng-roundcube – Roundcube Webmail administration ────────────────────────
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod users;
-pub mod identities;
 pub mod address_books;
-pub mod folders;
-pub mod filters;
-pub mod plugins;
-pub mod settings;
-pub mod maintenance;
-pub mod service;
+pub mod client;
 pub mod commands;
+pub mod error;
+pub mod filters;
+pub mod folders;
+pub mod identities;
+pub mod maintenance;
+pub mod plugins;
+pub mod service;
+pub mod settings;
+pub mod types;
+pub mod users;

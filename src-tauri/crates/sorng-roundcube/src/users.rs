@@ -21,13 +21,20 @@ impl UserManager {
     }
 
     /// POST /users — create a new user.
-    pub async fn create(client: &RoundcubeClient, req: &CreateUserRequest) -> RoundcubeResult<RoundcubeUser> {
+    pub async fn create(
+        client: &RoundcubeClient,
+        req: &CreateUserRequest,
+    ) -> RoundcubeResult<RoundcubeUser> {
         debug!("ROUNDCUBE create_user username={}", req.username);
         client.post("/users", req).await
     }
 
     /// PUT /users/:id — update an existing user.
-    pub async fn update(client: &RoundcubeClient, id: &str, req: &UpdateUserRequest) -> RoundcubeResult<RoundcubeUser> {
+    pub async fn update(
+        client: &RoundcubeClient,
+        id: &str,
+        req: &UpdateUserRequest,
+    ) -> RoundcubeResult<RoundcubeUser> {
         debug!("ROUNDCUBE update_user id={id}");
         client.put(&format!("/users/{id}"), req).await
     }
@@ -39,13 +46,20 @@ impl UserManager {
     }
 
     /// GET /users/:id/preferences — get user preferences.
-    pub async fn get_preferences(client: &RoundcubeClient, id: &str) -> RoundcubeResult<RoundcubeUserPreferences> {
+    pub async fn get_preferences(
+        client: &RoundcubeClient,
+        id: &str,
+    ) -> RoundcubeResult<RoundcubeUserPreferences> {
         debug!("ROUNDCUBE get_user_preferences id={id}");
         client.get(&format!("/users/{id}/preferences")).await
     }
 
     /// PUT /users/:id/preferences — update user preferences.
-    pub async fn update_preferences(client: &RoundcubeClient, id: &str, prefs: &RoundcubeUserPreferences) -> RoundcubeResult<RoundcubeUserPreferences> {
+    pub async fn update_preferences(
+        client: &RoundcubeClient,
+        id: &str,
+        prefs: &RoundcubeUserPreferences,
+    ) -> RoundcubeResult<RoundcubeUserPreferences> {
         debug!("ROUNDCUBE update_user_preferences id={id}");
         client.put(&format!("/users/{id}/preferences"), prefs).await
     }
