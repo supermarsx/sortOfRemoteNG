@@ -90,15 +90,24 @@ impl AzureError {
     }
 
     pub fn not_authenticated() -> Self {
-        Self::new(AzureErrorKind::NotAuthenticated, "Not authenticated — call set_credentials and authenticate first")
+        Self::new(
+            AzureErrorKind::NotAuthenticated,
+            "Not authenticated — call set_credentials and authenticate first",
+        )
     }
 
     pub fn subscription_not_set() -> Self {
-        Self::new(AzureErrorKind::SubscriptionNotSet, "Subscription ID not configured")
+        Self::new(
+            AzureErrorKind::SubscriptionNotSet,
+            "Subscription ID not configured",
+        )
     }
 
     pub fn resource_group_required() -> Self {
-        Self::new(AzureErrorKind::ResourceGroupRequired, "Resource group name is required for this operation")
+        Self::new(
+            AzureErrorKind::ResourceGroupRequired,
+            "Resource group name is required for this operation",
+        )
     }
 }
 
@@ -1397,14 +1406,35 @@ mod tests {
 
     #[test]
     fn error_from_status_codes() {
-        assert_eq!(AzureError::from_status(400, "x").kind, AzureErrorKind::BadRequest);
+        assert_eq!(
+            AzureError::from_status(400, "x").kind,
+            AzureErrorKind::BadRequest
+        );
         assert_eq!(AzureError::from_status(401, "x").kind, AzureErrorKind::Auth);
-        assert_eq!(AzureError::from_status(403, "x").kind, AzureErrorKind::Forbidden);
-        assert_eq!(AzureError::from_status(404, "x").kind, AzureErrorKind::NotFound);
-        assert_eq!(AzureError::from_status(409, "x").kind, AzureErrorKind::Conflict);
-        assert_eq!(AzureError::from_status(429, "x").kind, AzureErrorKind::RateLimit);
-        assert_eq!(AzureError::from_status(500, "x").kind, AzureErrorKind::ServerError);
-        assert_eq!(AzureError::from_status(503, "x").kind, AzureErrorKind::ServerError);
+        assert_eq!(
+            AzureError::from_status(403, "x").kind,
+            AzureErrorKind::Forbidden
+        );
+        assert_eq!(
+            AzureError::from_status(404, "x").kind,
+            AzureErrorKind::NotFound
+        );
+        assert_eq!(
+            AzureError::from_status(409, "x").kind,
+            AzureErrorKind::Conflict
+        );
+        assert_eq!(
+            AzureError::from_status(429, "x").kind,
+            AzureErrorKind::RateLimit
+        );
+        assert_eq!(
+            AzureError::from_status(500, "x").kind,
+            AzureErrorKind::ServerError
+        );
+        assert_eq!(
+            AzureError::from_status(503, "x").kind,
+            AzureErrorKind::ServerError
+        );
     }
 
     #[test]

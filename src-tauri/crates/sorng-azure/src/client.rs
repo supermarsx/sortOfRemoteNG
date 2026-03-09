@@ -29,6 +29,12 @@ pub struct AzureClient {
     last_request_at: AtomicU64,
 }
 
+impl Default for AzureClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AzureClient {
     pub fn new() -> Self {
         Self {
@@ -137,10 +143,7 @@ impl AzureClient {
 
     // ── Core HTTP verbs ──────────────────────────────────────────────
 
-    pub async fn get_json<T: serde::de::DeserializeOwned>(
-        &self,
-        url: &str,
-    ) -> AzureResult<T> {
+    pub async fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> AzureResult<T> {
         let empty: &[(&str, &str)] = &[];
         self.get_json_with_query(url, empty).await
     }
@@ -151,8 +154,7 @@ impl AzureClient {
         query: &[(impl AsRef<str>, impl AsRef<str>)],
     ) -> AzureResult<T> {
         let headers = self.auth_headers()?;
-        self.last_request_at
-            .store(now_millis(), Ordering::Relaxed);
+        self.last_request_at.store(now_millis(), Ordering::Relaxed);
 
         let query_pairs: Vec<(&str, &str)> = query
             .iter()
@@ -199,8 +201,7 @@ impl AzureClient {
         body: &B,
     ) -> AzureResult<T> {
         let headers = self.auth_headers()?;
-        self.last_request_at
-            .store(now_millis(), Ordering::Relaxed);
+        self.last_request_at.store(now_millis(), Ordering::Relaxed);
 
         for attempt in 0..=MAX_RETRIES {
             let resp = self
@@ -238,13 +239,9 @@ impl AzureClient {
 
     /// POST that accepts 200/201/202 and returns Ok(()) on success.
     /// Used for actions like VM start/stop, app service restart, etc.
-    pub async fn post_action(
-        &self,
-        url: &str,
-    ) -> AzureResult<()> {
+    pub async fn post_action(&self, url: &str) -> AzureResult<()> {
         let headers = self.auth_headers()?;
-        self.last_request_at
-            .store(now_millis(), Ordering::Relaxed);
+        self.last_request_at.store(now_millis(), Ordering::Relaxed);
 
         for attempt in 0..=MAX_RETRIES {
             let resp = self
@@ -263,7 +260,10 @@ impl AzureClient {
 
             if should_retry(status) && attempt < MAX_RETRIES {
                 let delay = BASE_DELAY_MS * 2u64.pow(attempt);
-                warn!("Azure POST action {} → {} – retrying in {}ms", url, status, delay);
+                warn!(
+                    "Azure POST action {} → {} – retrying in {}ms",
+                    url, status, delay
+                );
                 tokio::time::sleep(Duration::from_millis(delay)).await;
                 continue;
             }
@@ -284,8 +284,7 @@ impl AzureClient {
         body: &B,
     ) -> AzureResult<T> {
         let headers = self.auth_headers()?;
-        self.last_request_at
-            .store(now_millis(), Ordering::Relaxed);
+        self.last_request_at.store(now_millis(), Ordering::Relaxed);
 
         for attempt in 0..=MAX_RETRIES {
             let resp = self
@@ -327,8 +326,7 @@ impl AzureClient {
         body: &B,
     ) -> AzureResult<T> {
         let headers = self.auth_headers()?;
-        self.last_request_at
-            .store(now_millis(), Ordering::Relaxed);
+        self.last_request_at.store(now_millis(), Ordering::Relaxed);
 
         for attempt in 0..=MAX_RETRIES {
             let resp = self
@@ -366,8 +364,7 @@ impl AzureClient {
 
     pub async fn delete(&self, url: &str) -> AzureResult<()> {
         let headers = self.auth_headers()?;
-        self.last_request_at
-            .store(now_millis(), Ordering::Relaxed);
+        self.last_request_at.store(now_millis(), Ordering::Relaxed);
 
         for attempt in 0..=MAX_RETRIES {
             let resp = self
@@ -386,7 +383,10 @@ impl AzureClient {
 
             if should_retry(status.as_u16()) && attempt < MAX_RETRIES {
                 let delay = BASE_DELAY_MS * 2u64.pow(attempt);
-                warn!("Azure DELETE {} → {} – retrying in {}ms", url, status, delay);
+                warn!(
+                    "Azure DELETE {} → {} – retrying in {}ms",
+                    url, status, delay
+                );
                 tokio::time::sleep(Duration::from_millis(delay)).await;
                 continue;
             }
@@ -430,10 +430,8 @@ impl AzureClient {
         url: &str,
         form: &[(impl AsRef<str>, impl AsRef<str>)],
     ) -> AzureResult<T> {
-        let form_pairs: Vec<(&str, &str)> = form
-            .iter()
-            .map(|(k, v)| (k.as_ref(), v.as_ref()))
-            .collect();
+        let form_pairs: Vec<(&str, &str)> =
+            form.iter().map(|(k, v)| (k.as_ref(), v.as_ref())).collect();
 
         let resp = self
             .http
@@ -444,9 +442,9 @@ impl AzureClient {
             .map_err(|e| AzureError::new(AzureErrorKind::Network, format!("{e}")))?;
 
         if resp.status().is_success() {
-            resp.json::<T>().await.map_err(|e| {
-                AzureError::new(AzureErrorKind::Parse, format!("JSON parse: {e}"))
-            })
+            resp.json::<T>()
+                .await
+                .map_err(|e| AzureError::new(AzureErrorKind::Parse, format!("JSON parse: {e}")))
         } else {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
@@ -475,9 +473,7 @@ impl Clone for AzureClient {
             token: self.token.clone(),
             credentials: self.credentials.clone(),
             config: self.config.clone(),
-            last_request_at: AtomicU64::new(
-                self.last_request_at.load(Ordering::Relaxed),
-            ),
+            last_request_at: AtomicU64::new(self.last_request_at.load(Ordering::Relaxed)),
         }
     }
 }
@@ -576,7 +572,9 @@ mod tests {
             subscription_id: "sub1".into(),
             ..Default::default()
         });
-        let url = c.resource_group_url("rg1", "/providers/Microsoft.Compute/virtualMachines").unwrap();
+        let url = c
+            .resource_group_url("rg1", "/providers/Microsoft.Compute/virtualMachines")
+            .unwrap();
         assert!(url.contains("/resourceGroups/rg1/providers"));
     }
 

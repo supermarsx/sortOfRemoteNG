@@ -3,9 +3,7 @@
 use log::debug;
 
 use crate::client::AzureClient;
-use crate::types::{
-    ActivityLogEntry, AzureResult, MetricDefinition, MetricResponse,
-};
+use crate::types::{ActivityLogEntry, AzureResult, MetricDefinition, MetricResponse};
 
 // ─── Metric Definitions ─────────────────────────────────────────────
 
@@ -116,13 +114,19 @@ mod tests {
         let json = r#"{"eventTimestamp":"2024-01-01T00:00:00Z","operationName":{"value":"Microsoft.Compute/virtualMachines/start/action","localizedValue":"Start VM"},"status":{"value":"Succeeded","localizedValue":"Succeeded"},"caller":"user@example.com","level":"Informational","resourceId":"/subscriptions/s1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"}"#;
         let entry: ActivityLogEntry = serde_json::from_str(json).unwrap();
         assert_eq!(entry.caller, Some("user@example.com".into()));
-        assert!(entry.operation_name.unwrap().value.unwrap().contains("start"));
+        assert!(entry
+            .operation_name
+            .unwrap()
+            .value
+            .unwrap()
+            .contains("start"));
     }
 
     #[test]
     fn query_url_building() {
         let base = crate::types::ARM_BASE;
-        let resource = "/subscriptions/s1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1";
+        let resource =
+            "/subscriptions/s1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1";
         let url = format!(
             "{}{}/providers/microsoft.insights/metrics?api-version=2024-02-01&metricnames=Percentage CPU&timespan=PT1H&interval=PT5M&aggregation=Average",
             base, resource

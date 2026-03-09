@@ -66,10 +66,7 @@ impl AzureService {
     pub fn connection_summary(&self) -> AzureConnectionSummary {
         AzureConnectionSummary {
             authenticated: self.is_authenticated(),
-            subscription_id: self
-                .credentials
-                .as_ref()
-                .map(|c| c.subscription_id.clone()),
+            subscription_id: self.credentials.as_ref().map(|c| c.subscription_id.clone()),
             tenant_id: self.credentials.as_ref().map(|c| c.tenant_id.clone()),
             default_resource_group: self.default_resource_group.clone(),
             default_region: self.default_region.clone(),
@@ -136,7 +133,11 @@ impl AzureService {
         virtual_machines::get_vm(&self.client, rg, vm_name).await
     }
 
-    pub async fn get_vm_instance_view(&mut self, rg: &str, vm_name: &str) -> AzureResult<VmInstanceView> {
+    pub async fn get_vm_instance_view(
+        &mut self,
+        rg: &str,
+        vm_name: &str,
+    ) -> AzureResult<VmInstanceView> {
         self.ensure_auth().await?;
         virtual_machines::get_instance_view(&self.client, rg, vm_name).await
     }
@@ -327,11 +328,7 @@ impl AzureService {
         networking::list_nsgs_in_rg(&self.client, rg).await
     }
 
-    pub async fn get_nsg(
-        &mut self,
-        rg: &str,
-        nsg_name: &str,
-    ) -> AzureResult<NetworkSecurityGroup> {
+    pub async fn get_nsg(&mut self, rg: &str, nsg_name: &str) -> AzureResult<NetworkSecurityGroup> {
         self.ensure_auth().await?;
         networking::get_nsg(&self.client, rg, nsg_name).await
     }
@@ -456,12 +453,7 @@ impl AzureService {
         sql::create_database(&self.client, rg, server, db, location, sku, max_size).await
     }
 
-    pub async fn delete_database(
-        &mut self,
-        rg: &str,
-        server: &str,
-        db: &str,
-    ) -> AzureResult<()> {
+    pub async fn delete_database(&mut self, rg: &str, server: &str, db: &str) -> AzureResult<()> {
         self.ensure_auth().await?;
         sql::delete_database(&self.client, rg, server, db).await
     }
@@ -539,11 +531,7 @@ impl AzureService {
         key_vault::set_secret(&self.client, vault_name, secret_name, value, content_type).await
     }
 
-    pub async fn delete_secret(
-        &mut self,
-        vault_name: &str,
-        secret_name: &str,
-    ) -> AzureResult<()> {
+    pub async fn delete_secret(&mut self, vault_name: &str, secret_name: &str) -> AzureResult<()> {
         self.ensure_auth().await?;
         key_vault::delete_secret(&self.client, vault_name, secret_name).await
     }

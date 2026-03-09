@@ -215,7 +215,12 @@ pub async fn azure_list_vm_sizes(
 pub async fn azure_list_vm_summaries(
     state: State<'_, AzureServiceState>,
 ) -> Result<Vec<VmSummary>, String> {
-    state.lock().await.list_vm_summaries().await.map_err(err_str)
+    state
+        .lock()
+        .await
+        .list_vm_summaries()
+        .await
+        .map_err(err_str)
 }
 
 // ── Resource Groups ──────────────────────────────────────────────────
@@ -732,7 +737,13 @@ pub async fn azure_create_firewall_rule(
     state
         .lock()
         .await
-        .create_firewall_rule(&resource_group, &server_name, &rule_name, &start_ip, &end_ip)
+        .create_firewall_rule(
+            &resource_group,
+            &server_name,
+            &rule_name,
+            &start_ip,
+            &end_ip,
+        )
         .await
         .map_err(err_str)
 }
@@ -1079,12 +1090,7 @@ pub async fn azure_get_budget(
     state: State<'_, AzureServiceState>,
     name: String,
 ) -> Result<Budget, String> {
-    state
-        .lock()
-        .await
-        .get_budget(&name)
-        .await
-        .map_err(err_str)
+    state.lock().await.get_budget(&name).await.map_err(err_str)
 }
 
 // ── Resource Search ──────────────────────────────────────────────────

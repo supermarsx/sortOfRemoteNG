@@ -4,9 +4,7 @@ use log::debug;
 use serde_json::json;
 
 use crate::client::AzureClient;
-use crate::types::{
-    AzureResult, CertificateItem, KeyItem, KeyVault, SecretBundle, SecretItem,
-};
+use crate::types::{AzureResult, CertificateItem, KeyItem, KeyVault, SecretBundle, SecretItem};
 
 // ─── Vaults (management plane) ──────────────────────────────────────
 
@@ -20,43 +18,38 @@ pub async fn list_vaults(client: &AzureClient) -> AzureResult<Vec<KeyVault>> {
     client.get_all_pages(&url).await
 }
 
-pub async fn list_vaults_in_rg(
-    client: &AzureClient,
-    rg: &str,
-) -> AzureResult<Vec<KeyVault>> {
+pub async fn list_vaults_in_rg(client: &AzureClient, rg: &str) -> AzureResult<Vec<KeyVault>> {
     let api = &client.config().api_version_keyvault_mgmt;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.KeyVault/vaults?api-version={}",
-        api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!("/providers/Microsoft.KeyVault/vaults?api-version={}", api),
+    )?;
     debug!("list_vaults_in_rg({}) → {}", rg, url);
     client.get_all_pages(&url).await
 }
 
-pub async fn get_vault(
-    client: &AzureClient,
-    rg: &str,
-    vault_name: &str,
-) -> AzureResult<KeyVault> {
+pub async fn get_vault(client: &AzureClient, rg: &str, vault_name: &str) -> AzureResult<KeyVault> {
     let api = &client.config().api_version_keyvault_mgmt;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.KeyVault/vaults/{}?api-version={}",
-        vault_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.KeyVault/vaults/{}?api-version={}",
+            vault_name, api
+        ),
+    )?;
     debug!("get_vault({}/{}) → {}", rg, vault_name, url);
     client.get_json(&url).await
 }
 
-pub async fn delete_vault(
-    client: &AzureClient,
-    rg: &str,
-    vault_name: &str,
-) -> AzureResult<()> {
+pub async fn delete_vault(client: &AzureClient, rg: &str, vault_name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_keyvault_mgmt;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.KeyVault/vaults/{}?api-version={}",
-        vault_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.KeyVault/vaults/{}?api-version={}",
+            vault_name, api
+        ),
+    )?;
     debug!("delete_vault({}/{}) → {}", rg, vault_name, url);
     client.delete(&url).await
 }
@@ -73,10 +66,7 @@ fn vault_data_url(vault_name: &str, path: &str, api_version: &str) -> String {
     )
 }
 
-pub async fn list_secrets(
-    client: &AzureClient,
-    vault_name: &str,
-) -> AzureResult<Vec<SecretItem>> {
+pub async fn list_secrets(client: &AzureClient, vault_name: &str) -> AzureResult<Vec<SecretItem>> {
     let api = &client.config().api_version_keyvault_data;
     let url = vault_data_url(vault_name, "/secrets", api);
     debug!("list_secrets({}) → {}", vault_name, url);
@@ -106,7 +96,10 @@ pub async fn get_secret_version(
         &format!("/secrets/{}/{}", secret_name, version),
         api,
     );
-    debug!("get_secret_version({}/{}/{}) → {}", vault_name, secret_name, version, url);
+    debug!(
+        "get_secret_version({}/{}/{}) → {}",
+        vault_name, secret_name, version, url
+    );
     client.get_json(&url).await
 }
 
@@ -149,16 +142,16 @@ pub async fn list_secret_versions(
         &format!("/secrets/{}/versions", secret_name),
         api,
     );
-    debug!("list_secret_versions({}/{}) → {}", vault_name, secret_name, url);
+    debug!(
+        "list_secret_versions({}/{}) → {}",
+        vault_name, secret_name, url
+    );
     client.get_all_pages(&url).await
 }
 
 // ─── Keys (data plane) ─────────────────────────────────────────────
 
-pub async fn list_keys(
-    client: &AzureClient,
-    vault_name: &str,
-) -> AzureResult<Vec<KeyItem>> {
+pub async fn list_keys(client: &AzureClient, vault_name: &str) -> AzureResult<Vec<KeyItem>> {
     let api = &client.config().api_version_keyvault_data;
     let url = vault_data_url(vault_name, "/keys", api);
     debug!("list_keys({}) → {}", vault_name, url);
@@ -186,7 +179,10 @@ mod tests {
     #[test]
     fn vault_data_url_construction() {
         let url = vault_data_url("myvault", "/secrets", "7.4");
-        assert_eq!(url, "https://myvault.vault.azure.net/secrets?api-version=7.4");
+        assert_eq!(
+            url,
+            "https://myvault.vault.azure.net/secrets?api-version=7.4"
+        );
     }
 
     #[test]
@@ -229,7 +225,8 @@ mod tests {
 
     #[test]
     fn cert_item_deserialize() {
-        let json = r#"{"id":"https://kv1.vault.azure.net/certificates/c1","attributes":{"enabled":true}}"#;
+        let json =
+            r#"{"id":"https://kv1.vault.azure.net/certificates/c1","attributes":{"enabled":true}}"#;
         let c: CertificateItem = serde_json::from_str(json).unwrap();
         assert_eq!(c.id, "https://kv1.vault.azure.net/certificates/c1");
     }

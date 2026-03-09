@@ -5,8 +5,8 @@ use log::debug;
 
 use crate::client::AzureClient;
 use crate::types::{
-    ArmList, AzureResult, NetworkInterface, NicProperties,
-    VirtualMachine, VmInstanceView, VmSize, VmSummary,
+    ArmList, AzureResult, NetworkInterface, NicProperties, VirtualMachine, VmInstanceView, VmSize,
+    VmSummary,
 };
 
 /// List all VMs in the subscription.
@@ -69,7 +69,10 @@ pub async fn get_instance_view(
             vm_name, api
         ),
     )?;
-    debug!("get_instance_view({}/{}) → {}", resource_group, vm_name, url);
+    debug!(
+        "get_instance_view({}/{}) → {}",
+        resource_group, vm_name, url
+    );
     client.get_json(&url).await
 }
 
@@ -93,11 +96,7 @@ pub async fn start_vm(
 }
 
 /// Power off a VM (still billed).
-pub async fn stop_vm(
-    client: &AzureClient,
-    resource_group: &str,
-    vm_name: &str,
-) -> AzureResult<()> {
+pub async fn stop_vm(client: &AzureClient, resource_group: &str, vm_name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_compute;
     let url = client.resource_group_url(
         resource_group,
@@ -182,7 +181,10 @@ pub async fn resize_vm(
             vm_name, api
         ),
     )?;
-    debug!("resize_vm({}/{}) → {} → {}", resource_group, vm_name, new_size, url);
+    debug!(
+        "resize_vm({}/{}) → {} → {}",
+        resource_group, vm_name, new_size, url
+    );
 
     let body = serde_json::json!({
         "properties": {
@@ -208,7 +210,10 @@ pub async fn list_available_sizes(
             vm_name, api
         ),
     )?;
-    debug!("list_available_sizes({}/{}) → {}", resource_group, vm_name, url);
+    debug!(
+        "list_available_sizes({}/{}) → {}",
+        resource_group, vm_name, url
+    );
     let list: ArmList<VmSize> = client.get_json(&url).await?;
     Ok(list.value)
 }
@@ -271,7 +276,10 @@ pub async fn resolve_vm_ips(
     vm: &VirtualMachine,
 ) -> AzureResult<(Option<String>, Option<String>)> {
     let api = &client.config().api_version_network;
-    let nic_refs = &vm.properties.network_profile.as_ref()
+    let nic_refs = &vm
+        .properties
+        .network_profile
+        .as_ref()
         .map(|np| &np.network_interfaces)
         .unwrap_or(&Vec::new())
         .clone();
@@ -286,23 +294,13 @@ pub async fn resolve_vm_ips(
         return Ok((None, None));
     }
 
-    let url = format!(
-        "{}{}?api-version={}",
-        crate::types::ARM_BASE,
-        nic_id,
-        api
-    );
+    let url = format!("{}{}?api-version={}", crate::types::ARM_BASE, nic_id, api);
     let nic: NetworkInterface = client.get_json(&url).await?;
     let (private_ip, public_ip_ref) = extract_nic_ips(&nic.properties);
 
     // If there's a public IP reference, resolve it
     let public_ip = if let Some(pip_id) = public_ip_ref {
-        let pip_url = format!(
-            "{}{}?api-version={}",
-            crate::types::ARM_BASE,
-            pip_id,
-            api
-        );
+        let pip_url = format!("{}{}?api-version={}", crate::types::ARM_BASE, pip_id, api);
         let pip: crate::types::PublicIpAddress = client.get_json(&pip_url).await?;
         pip.properties.and_then(|p| p.ip_address)
     } else {
@@ -345,11 +343,7 @@ pub fn vm_to_summary(vm: &VirtualMachine) -> VmSummary {
             .unwrap_or_default(),
         os_type: extract_os_type(vm),
         power_state: extract_power_state(vm),
-        provisioning_state: vm
-            .properties
-            .provisioning_state
-            .clone()
-            .unwrap_or_default(),
+        provisioning_state: vm.properties.provisioning_state.clone().unwrap_or_default(),
         private_ip: None,
         public_ip: None,
         tags: vm.tags.clone(),
@@ -466,7 +460,10 @@ mod tests {
             ..Default::default()
         });
         let url = c
-            .resource_group_url("rg", "/providers/Microsoft.Compute/virtualMachines/vm1?api-version=2024-03-01")
+            .resource_group_url(
+                "rg",
+                "/providers/Microsoft.Compute/virtualMachines/vm1?api-version=2024-03-01",
+            )
             .unwrap();
         assert!(url.contains("/resourceGroups/rg/"));
         assert!(url.contains("/virtualMachines/vm1"));

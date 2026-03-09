@@ -18,15 +18,12 @@ pub async fn list_sql_servers(client: &AzureClient) -> AzureResult<Vec<SqlServer
     client.get_all_pages(&url).await
 }
 
-pub async fn list_sql_servers_in_rg(
-    client: &AzureClient,
-    rg: &str,
-) -> AzureResult<Vec<SqlServer>> {
+pub async fn list_sql_servers_in_rg(client: &AzureClient, rg: &str) -> AzureResult<Vec<SqlServer>> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers?api-version={}",
-        api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!("/providers/Microsoft.Sql/servers?api-version={}", api),
+    )?;
     debug!("list_sql_servers_in_rg({}) → {}", rg, url);
     client.get_all_pages(&url).await
 }
@@ -37,10 +34,13 @@ pub async fn get_sql_server(
     server_name: &str,
 ) -> AzureResult<SqlServer> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}?api-version={}",
-        server_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}?api-version={}",
+            server_name, api
+        ),
+    )?;
     debug!("get_sql_server({}/{}) → {}", rg, server_name, url);
     client.get_json(&url).await
 }
@@ -51,10 +51,13 @@ pub async fn delete_sql_server(
     server_name: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}?api-version={}",
-        server_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}?api-version={}",
+            server_name, api
+        ),
+    )?;
     debug!("delete_sql_server({}/{}) → {}", rg, server_name, url);
     client.delete(&url).await
 }
@@ -67,10 +70,13 @@ pub async fn list_databases(
     server_name: &str,
 ) -> AzureResult<Vec<SqlDatabase>> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}/databases?api-version={}",
-        server_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}/databases?api-version={}",
+            server_name, api
+        ),
+    )?;
     debug!("list_databases({}/{}) → {}", rg, server_name, url);
     client.get_all_pages(&url).await
 }
@@ -82,10 +88,13 @@ pub async fn get_database(
     db_name: &str,
 ) -> AzureResult<SqlDatabase> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}/databases/{}?api-version={}",
-        server_name, db_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}/databases/{}?api-version={}",
+            server_name, db_name, api
+        ),
+    )?;
     debug!("get_database({}/{}/{}) → {}", rg, server_name, db_name, url);
     client.get_json(&url).await
 }
@@ -100,10 +109,13 @@ pub async fn create_database(
     max_size_bytes: Option<i64>,
 ) -> AzureResult<SqlDatabase> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}/databases/{}?api-version={}",
-        server_name, db_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}/databases/{}?api-version={}",
+            server_name, db_name, api
+        ),
+    )?;
     let mut body = json!({ "location": location, "properties": {} });
     if let Some(sku) = sku_name {
         body["sku"] = json!({ "name": sku });
@@ -111,7 +123,10 @@ pub async fn create_database(
     if let Some(max) = max_size_bytes {
         body["properties"]["maxSizeBytes"] = json!(max);
     }
-    debug!("create_database({}/{}/{}) → {}", rg, server_name, db_name, url);
+    debug!(
+        "create_database({}/{}/{}) → {}",
+        rg, server_name, db_name, url
+    );
     client.put_json(&url, &body).await
 }
 
@@ -122,11 +137,17 @@ pub async fn delete_database(
     db_name: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}/databases/{}?api-version={}",
-        server_name, db_name, api
-    ))?;
-    debug!("delete_database({}/{}/{}) → {}", rg, server_name, db_name, url);
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}/databases/{}?api-version={}",
+            server_name, db_name, api
+        ),
+    )?;
+    debug!(
+        "delete_database({}/{}/{}) → {}",
+        rg, server_name, db_name, url
+    );
     client.delete(&url).await
 }
 
@@ -138,10 +159,13 @@ pub async fn list_firewall_rules(
     server_name: &str,
 ) -> AzureResult<Vec<SqlFirewallRule>> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}/firewallRules?api-version={}",
-        server_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}/firewallRules?api-version={}",
+            server_name, api
+        ),
+    )?;
     debug!("list_firewall_rules({}/{}) → {}", rg, server_name, url);
     client.get_all_pages(&url).await
 }
@@ -155,17 +179,23 @@ pub async fn create_firewall_rule(
     end_ip: &str,
 ) -> AzureResult<SqlFirewallRule> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}/firewallRules/{}?api-version={}",
-        server_name, rule_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}/firewallRules/{}?api-version={}",
+            server_name, rule_name, api
+        ),
+    )?;
     let body = json!({
         "properties": {
             "startIpAddress": start_ip,
             "endIpAddress": end_ip
         }
     });
-    debug!("create_firewall_rule({}/{}/{}) → {}", rg, server_name, rule_name, url);
+    debug!(
+        "create_firewall_rule({}/{}/{}) → {}",
+        rg, server_name, rule_name, url
+    );
     client.put_json(&url, &body).await
 }
 
@@ -176,11 +206,17 @@ pub async fn delete_firewall_rule(
     rule_name: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_sql;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Sql/servers/{}/firewallRules/{}?api-version={}",
-        server_name, rule_name, api
-    ))?;
-    debug!("delete_firewall_rule({}/{}/{}) → {}", rg, server_name, rule_name, url);
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Sql/servers/{}/firewallRules/{}?api-version={}",
+            server_name, rule_name, api
+        ),
+    )?;
+    debug!(
+        "delete_firewall_rule({}/{}/{}) → {}",
+        rg, server_name, rule_name, url
+    );
     client.delete(&url).await
 }
 
@@ -196,7 +232,10 @@ mod tests {
         let s: SqlServer = serde_json::from_str(json).unwrap();
         assert_eq!(s.name, "srv1");
         let p = s.properties.unwrap();
-        assert_eq!(p.fully_qualified_domain_name, Some("srv1.database.windows.net".into()));
+        assert_eq!(
+            p.fully_qualified_domain_name,
+            Some("srv1.database.windows.net".into())
+        );
         assert_eq!(p.state, Some("Ready".into()));
     }
 

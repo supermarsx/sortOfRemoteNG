@@ -18,19 +18,19 @@
 //! - **Cost Management** – usage details, budgets, cost forecast
 //! - **Resource Search** – query resources across subscriptions
 
-pub mod types;
-pub mod client;
-pub mod auth;
-pub mod virtual_machines;
-pub mod resource_groups;
-pub mod storage;
-pub mod networking;
 pub mod app_service;
-pub mod sql;
-pub mod key_vault;
+pub mod auth;
+pub mod client;
+pub mod commands;
 pub mod container_instances;
-pub mod monitor;
 pub mod cost;
+pub mod key_vault;
+pub mod monitor;
+pub mod networking;
+pub mod resource_groups;
 pub mod search;
 pub mod service;
-pub mod commands;
+pub mod sql;
+pub mod storage;
+pub mod types;
+pub mod virtual_machines;

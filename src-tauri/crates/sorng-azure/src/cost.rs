@@ -68,10 +68,7 @@ pub async fn list_budgets(client: &AzureClient) -> AzureResult<Vec<Budget>> {
     client.get_all_pages(&url).await
 }
 
-pub async fn get_budget(
-    client: &AzureClient,
-    budget_name: &str,
-) -> AzureResult<Budget> {
+pub async fn get_budget(client: &AzureClient, budget_name: &str) -> AzureResult<Budget> {
     let api = &client.config().api_version_cost;
     let url = client.subscription_url(&format!(
         "/providers/Microsoft.Consumption/budgets/{}?api-version={}",
@@ -81,10 +78,7 @@ pub async fn get_budget(
     client.get_json(&url).await
 }
 
-pub async fn delete_budget(
-    client: &AzureClient,
-    budget_name: &str,
-) -> AzureResult<()> {
+pub async fn delete_budget(client: &AzureClient, budget_name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_cost;
     let url = client.subscription_url(&format!(
         "/providers/Microsoft.Consumption/budgets/{}?api-version={}",

@@ -18,85 +18,77 @@ pub async fn list_web_apps(client: &AzureClient) -> AzureResult<Vec<WebApp>> {
     client.get_all_pages(&url).await
 }
 
-pub async fn list_web_apps_in_rg(
-    client: &AzureClient,
-    rg: &str,
-) -> AzureResult<Vec<WebApp>> {
+pub async fn list_web_apps_in_rg(client: &AzureClient, rg: &str) -> AzureResult<Vec<WebApp>> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites?api-version={}",
-        api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!("/providers/Microsoft.Web/sites?api-version={}", api),
+    )?;
     debug!("list_web_apps_in_rg({}) → {}", rg, url);
     client.get_all_pages(&url).await
 }
 
-pub async fn get_web_app(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<WebApp> {
+pub async fn get_web_app(client: &AzureClient, rg: &str, name: &str) -> AzureResult<WebApp> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("get_web_app({}/{}) → {}", rg, name, url);
     client.get_json(&url).await
 }
 
-pub async fn start_web_app(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<()> {
+pub async fn start_web_app(client: &AzureClient, rg: &str, name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/start?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/start?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("start_web_app({}/{}) → {}", rg, name, url);
     client.post_action(&url).await
 }
 
-pub async fn stop_web_app(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<()> {
+pub async fn stop_web_app(client: &AzureClient, rg: &str, name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/stop?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/stop?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("stop_web_app({}/{}) → {}", rg, name, url);
     client.post_action(&url).await
 }
 
-pub async fn restart_web_app(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<()> {
+pub async fn restart_web_app(client: &AzureClient, rg: &str, name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/restart?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/restart?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("restart_web_app({}/{}) → {}", rg, name, url);
     client.post_action(&url).await
 }
 
-pub async fn delete_web_app(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<()> {
+pub async fn delete_web_app(client: &AzureClient, rg: &str, name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("delete_web_app({}/{}) → {}", rg, name, url);
     client.delete(&url).await
 }
@@ -109,10 +101,13 @@ pub async fn list_slots(
     app_name: &str,
 ) -> AzureResult<Vec<DeploymentSlot>> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/slots?api-version={}",
-        app_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/slots?api-version={}",
+            app_name, api
+        ),
+    )?;
     debug!("list_slots({}/{}) → {}", rg, app_name, url);
     client.get_all_pages(&url).await
 }
@@ -124,10 +119,13 @@ pub async fn get_slot(
     slot_name: &str,
 ) -> AzureResult<DeploymentSlot> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/slots/{}?api-version={}",
-        app_name, slot_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/slots/{}?api-version={}",
+            app_name, slot_name, api
+        ),
+    )?;
     debug!("get_slot({}/{}/{}) → {}", rg, app_name, slot_name, url);
     client.get_json(&url).await
 }
@@ -139,10 +137,13 @@ pub async fn swap_slot(
     target_slot: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/slotsswap?api-version={}",
-        app_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/slotsswap?api-version={}",
+            app_name, api
+        ),
+    )?;
     let body = json!({
         "targetSlot": target_slot,
         "preserveVnet": true
@@ -159,10 +160,13 @@ pub async fn start_slot(
     slot_name: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/slots/{}/start?api-version={}",
-        app_name, slot_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/slots/{}/start?api-version={}",
+            app_name, slot_name, api
+        ),
+    )?;
     debug!("start_slot({}/{}/{}) → {}", rg, app_name, slot_name, url);
     client.post_action(&url).await
 }
@@ -174,10 +178,13 @@ pub async fn stop_slot(
     slot_name: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/slots/{}/stop?api-version={}",
-        app_name, slot_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/slots/{}/stop?api-version={}",
+            app_name, slot_name, api
+        ),
+    )?;
     debug!("stop_slot({}/{}/{}) → {}", rg, app_name, slot_name, url);
     client.post_action(&url).await
 }
@@ -189,10 +196,13 @@ pub async fn restart_slot(
     slot_name: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_web;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.Web/sites/{}/slots/{}/restart?api-version={}",
-        app_name, slot_name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.Web/sites/{}/slots/{}/restart?api-version={}",
+            app_name, slot_name, api
+        ),
+    )?;
     debug!("restart_slot({}/{}/{}) → {}", rg, app_name, slot_name, url);
     client.post_action(&url).await
 }
@@ -207,8 +217,16 @@ mod tests {
     #[test]
     fn web_app_url_pattern() {
         let mut c = AzureClient::new();
-        c.set_credentials(AzureCredentials { subscription_id: "s1".into(), ..Default::default() });
-        let url = c.resource_group_url("rg1", "/providers/Microsoft.Web/sites?api-version=2023-12-01").unwrap();
+        c.set_credentials(AzureCredentials {
+            subscription_id: "s1".into(),
+            ..Default::default()
+        });
+        let url = c
+            .resource_group_url(
+                "rg1",
+                "/providers/Microsoft.Web/sites?api-version=2023-12-01",
+            )
+            .unwrap();
         assert!(url.contains("/sites?"));
     }
 

@@ -7,8 +7,8 @@ use log::debug;
 
 use crate::client::AzureClient;
 use crate::types::{
-    AzureResult, BlobContainer, CreateStorageAccountRequest, StorageAccount,
-    StorageAccountKey, StorageKeyList,
+    AzureResult, BlobContainer, CreateStorageAccountRequest, StorageAccount, StorageAccountKey,
+    StorageKeyList,
 };
 
 /// List all storage accounts in the subscription.
@@ -53,7 +53,10 @@ pub async fn get_storage_account(
             account_name, api
         ),
     )?;
-    debug!("get_storage_account({}/{}) → {}", resource_group, account_name, url);
+    debug!(
+        "get_storage_account({}/{}) → {}",
+        resource_group, account_name, url
+    );
     client.get_json(&url).await
 }
 
@@ -72,7 +75,10 @@ pub async fn create_storage_account(
             account_name, api
         ),
     )?;
-    debug!("create_storage_account({}/{}) → {}", resource_group, account_name, url);
+    debug!(
+        "create_storage_account({}/{}) → {}",
+        resource_group, account_name, url
+    );
     client.put_json(&url, request).await
 }
 
@@ -90,7 +96,10 @@ pub async fn delete_storage_account(
             account_name, api
         ),
     )?;
-    debug!("delete_storage_account({}/{}) → {}", resource_group, account_name, url);
+    debug!(
+        "delete_storage_account({}/{}) → {}",
+        resource_group, account_name, url
+    );
     client.delete(&url).await
 }
 
@@ -128,7 +137,10 @@ pub async fn regenerate_key(
             account_name, api
         ),
     )?;
-    debug!("regenerate_key({}/{}/{}) → {}", resource_group, account_name, key_name, url);
+    debug!(
+        "regenerate_key({}/{}/{}) → {}",
+        resource_group, account_name, key_name, url
+    );
     let body = serde_json::json!({ "keyName": key_name });
     let resp: StorageKeyList = client.post_json(&url, &body).await?;
     Ok(resp.keys)
@@ -148,7 +160,10 @@ pub async fn list_containers(
             account_name, api
         ),
     )?;
-    debug!("list_containers({}/{}) → {}", resource_group, account_name, url);
+    debug!(
+        "list_containers({}/{}) → {}",
+        resource_group, account_name, url
+    );
     client.get_all_pages(&url).await
 }
 
@@ -167,7 +182,10 @@ pub async fn get_container(
             account_name, container_name, api
         ),
     )?;
-    debug!("get_container({}/{}/{}) → {}", resource_group, account_name, container_name, url);
+    debug!(
+        "get_container({}/{}/{}) → {}",
+        resource_group, account_name, container_name, url
+    );
     client.get_json(&url).await
 }
 
@@ -187,7 +205,10 @@ pub async fn create_container(
             account_name, container_name, api
         ),
     )?;
-    debug!("create_container({}/{}/{}) → {}", resource_group, account_name, container_name, url);
+    debug!(
+        "create_container({}/{}/{}) → {}",
+        resource_group, account_name, container_name, url
+    );
     let body = if let Some(access) = public_access {
         serde_json::json!({
             "properties": { "publicAccess": access }
@@ -215,7 +236,10 @@ pub async fn delete_container(
             account_name, container_name, api
         ),
     )?;
-    debug!("delete_container({}/{}/{}) → {}", resource_group, account_name, container_name, url);
+    debug!(
+        "delete_container({}/{}/{}) → {}",
+        resource_group, account_name, container_name, url
+    );
     client.delete(&url).await
 }
 
@@ -294,7 +318,10 @@ mod tests {
             ..Default::default()
         });
         let url = c
-            .resource_group_url("rg1", "/providers/Microsoft.Storage/storageAccounts?api-version=2023-05-01")
+            .resource_group_url(
+                "rg1",
+                "/providers/Microsoft.Storage/storageAccounts?api-version=2023-05-01",
+            )
             .unwrap();
         assert!(url.contains("/resourceGroups/rg1/"));
         assert!(url.contains("storageAccounts"));

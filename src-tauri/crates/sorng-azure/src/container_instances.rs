@@ -7,9 +7,7 @@ use crate::types::{AzureResult, ContainerGroup, ContainerLogs};
 
 // ─── Container Groups ───────────────────────────────────────────────
 
-pub async fn list_container_groups(
-    client: &AzureClient,
-) -> AzureResult<Vec<ContainerGroup>> {
+pub async fn list_container_groups(client: &AzureClient) -> AzureResult<Vec<ContainerGroup>> {
     let api = &client.config().api_version_container;
     let url = client.subscription_url(&format!(
         "/providers/Microsoft.ContainerInstance/containerGroups?api-version={}",
@@ -24,10 +22,13 @@ pub async fn list_container_groups_in_rg(
     rg: &str,
 ) -> AzureResult<Vec<ContainerGroup>> {
     let api = &client.config().api_version_container;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.ContainerInstance/containerGroups?api-version={}",
-        api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.ContainerInstance/containerGroups?api-version={}",
+            api
+        ),
+    )?;
     debug!("list_container_groups_in_rg({}) → {}", rg, url);
     client.get_all_pages(&url).await
 }
@@ -38,10 +39,13 @@ pub async fn get_container_group(
     name: &str,
 ) -> AzureResult<ContainerGroup> {
     let api = &client.config().api_version_container;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.ContainerInstance/containerGroups/{}?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.ContainerInstance/containerGroups/{}?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("get_container_group({}/{}) → {}", rg, name, url);
     client.get_json(&url).await
 }
@@ -53,24 +57,26 @@ pub async fn create_container_group(
     body: &serde_json::Value,
 ) -> AzureResult<ContainerGroup> {
     let api = &client.config().api_version_container;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.ContainerInstance/containerGroups/{}?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.ContainerInstance/containerGroups/{}?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("create_container_group({}/{}) → {}", rg, name, url);
     client.put_json(&url, body).await
 }
 
-pub async fn delete_container_group(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<()> {
+pub async fn delete_container_group(client: &AzureClient, rg: &str, name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_container;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.ContainerInstance/containerGroups/{}?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.ContainerInstance/containerGroups/{}?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("delete_container_group({}/{}) → {}", rg, name, url);
     client.delete(&url).await
 }
@@ -81,38 +87,39 @@ pub async fn restart_container_group(
     name: &str,
 ) -> AzureResult<()> {
     let api = &client.config().api_version_container;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.ContainerInstance/containerGroups/{}/restart?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.ContainerInstance/containerGroups/{}/restart?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("restart_container_group({}/{}) → {}", rg, name, url);
     client.post_action(&url).await
 }
 
-pub async fn stop_container_group(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<()> {
+pub async fn stop_container_group(client: &AzureClient, rg: &str, name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_container;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.ContainerInstance/containerGroups/{}/stop?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.ContainerInstance/containerGroups/{}/stop?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("stop_container_group({}/{}) → {}", rg, name, url);
     client.post_action(&url).await
 }
 
-pub async fn start_container_group(
-    client: &AzureClient,
-    rg: &str,
-    name: &str,
-) -> AzureResult<()> {
+pub async fn start_container_group(client: &AzureClient, rg: &str, name: &str) -> AzureResult<()> {
     let api = &client.config().api_version_container;
-    let url = client.resource_group_url(rg, &format!(
-        "/providers/Microsoft.ContainerInstance/containerGroups/{}/start?api-version={}",
-        name, api
-    ))?;
+    let url = client.resource_group_url(
+        rg,
+        &format!(
+            "/providers/Microsoft.ContainerInstance/containerGroups/{}/start?api-version={}",
+            name, api
+        ),
+    )?;
     debug!("start_container_group({}/{}) → {}", rg, name, url);
     client.post_action(&url).await
 }
@@ -135,7 +142,10 @@ pub async fn get_container_logs(
         path.push_str(&format!("&tail={}", n));
     }
     let url = client.resource_group_url(rg, &path)?;
-    debug!("get_container_logs({}/{}/{}) → {}", rg, group_name, container_name, url);
+    debug!(
+        "get_container_logs({}/{}/{}) → {}",
+        rg, group_name, container_name, url
+    );
     client.get_json(&url).await
 }
 
