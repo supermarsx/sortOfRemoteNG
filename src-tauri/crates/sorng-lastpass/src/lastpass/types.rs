@@ -63,11 +63,17 @@ impl LastPassError {
     }
 
     pub fn invalid_credentials() -> Self {
-        Self::new(LastPassErrorKind::InvalidCredentials, "Invalid username or master password")
+        Self::new(
+            LastPassErrorKind::InvalidCredentials,
+            "Invalid username or master password",
+        )
     }
 
     pub fn mfa_required(method: &str) -> Self {
-        Self::new(LastPassErrorKind::MfaRequired, format!("MFA required: {}", method))
+        Self::new(
+            LastPassErrorKind::MfaRequired,
+            format!("MFA required: {}", method),
+        )
     }
 
     pub fn session_expired() -> Self {
@@ -75,7 +81,10 @@ impl LastPassError {
     }
 
     pub fn account_locked() -> Self {
-        Self::new(LastPassErrorKind::AccountLocked, "Account is locked due to too many failed attempts")
+        Self::new(
+            LastPassErrorKind::AccountLocked,
+            "Account is locked due to too many failed attempts",
+        )
     }
 
     pub fn forbidden(msg: impl Into<String>) -> Self {
@@ -83,7 +92,10 @@ impl LastPassError {
     }
 
     pub fn not_found(resource: &str, id: &str) -> Self {
-        Self::new(LastPassErrorKind::NotFound, format!("{} '{}' not found", resource, id))
+        Self::new(
+            LastPassErrorKind::NotFound,
+            format!("{} '{}' not found", resource, id),
+        )
     }
 
     pub fn decryption_error(msg: impl Into<String>) -> Self {
@@ -132,7 +144,10 @@ impl From<LastPassError> for String {
 impl From<reqwest::Error> for LastPassError {
     fn from(e: reqwest::Error) -> Self {
         if e.is_timeout() {
-            Self::new(LastPassErrorKind::Timeout, format!("Request timed out: {}", e))
+            Self::new(
+                LastPassErrorKind::Timeout,
+                format!("Request timed out: {}", e),
+            )
         } else if e.is_connect() {
             Self::connection_error(format!("Connection failed: {}", e))
         } else {

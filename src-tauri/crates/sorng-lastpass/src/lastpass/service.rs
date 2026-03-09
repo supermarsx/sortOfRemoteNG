@@ -2,13 +2,12 @@ use crate::lastpass::api_client::LastPassApiClient;
 use crate::lastpass::auth;
 use crate::lastpass::crypto;
 use crate::lastpass::folders;
-use crate::lastpass::items;
 use crate::lastpass::import_export;
-use crate::lastpass::notes;
+use crate::lastpass::items;
 use crate::lastpass::password_gen;
 use crate::lastpass::security_challenge;
-use crate::lastpass::vault_parser;
 use crate::lastpass::types::*;
+use crate::lastpass::vault_parser;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -20,6 +19,12 @@ pub struct LastPassService {
     session: Option<LastPassSession>,
     cached_accounts: Option<CacheEntry<Vec<Account>>>,
     cached_vault_blob: Option<VaultBlob>,
+}
+
+impl Default for LastPassService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LastPassService {
@@ -58,7 +63,12 @@ impl LastPassService {
     }
 
     pub fn is_logged_in(&self) -> bool {
-        self.session.is_some() && self.client.as_ref().map(|c| c.has_session()).unwrap_or(false)
+        self.session.is_some()
+            && self
+                .client
+                .as_ref()
+                .map(|c| c.has_session())
+                .unwrap_or(false)
     }
 
     // ─── Authentication ──────────────────────────────────────────
@@ -189,10 +199,8 @@ impl LastPassService {
             .ok_or_else(|| LastPassError::auth_failed("No active session"))?;
 
         let encrypted_name = crypto::encrypt_field(&request.name, &session.encryption_key)?;
-        let encrypted_username =
-            crypto::encrypt_field(&request.username, &session.encryption_key)?;
-        let encrypted_password =
-            crypto::encrypt_field(&request.password, &session.encryption_key)?;
+        let encrypted_username = crypto::encrypt_field(&request.username, &session.encryption_key)?;
+        let encrypted_password = crypto::encrypt_field(&request.password, &session.encryption_key)?;
         let notes = request.notes.as_deref().unwrap_or("");
         let encrypted_notes = crypto::encrypt_field(notes, &session.encryption_key)?;
         let group = request.group.as_deref().unwrap_or("");
@@ -233,10 +241,8 @@ impl LastPassService {
         let updated = items::apply_update(existing, &request);
 
         let encrypted_name = crypto::encrypt_field(&updated.name, &encryption_key)?;
-        let encrypted_username =
-            crypto::encrypt_field(&updated.username, &encryption_key)?;
-        let encrypted_password =
-            crypto::encrypt_field(&updated.password, &encryption_key)?;
+        let encrypted_username = crypto::encrypt_field(&updated.username, &encryption_key)?;
+        let encrypted_password = crypto::encrypt_field(&updated.password, &encryption_key)?;
         let encrypted_notes = crypto::encrypt_field(&updated.notes, &encryption_key)?;
 
         let client = self
@@ -271,11 +277,7 @@ impl LastPassService {
         Ok(())
     }
 
-    pub async fn toggle_favorite(
-        &mut self,
-        id: &str,
-        favorite: bool,
-    ) -> Result<(), LastPassError> {
+    pub async fn toggle_favorite(&mut self, id: &str, favorite: bool) -> Result<(), LastPassError> {
         let client = self
             .client
             .as_ref()
@@ -286,11 +288,7 @@ impl LastPassService {
         Ok(())
     }
 
-    pub async fn move_account(
-        &mut self,
-        id: &str,
-        new_group: &str,
-    ) -> Result<(), LastPassError> {
+    pub async fn move_account(&mut self, id: &str, new_group: &str) -> Result<(), LastPassError> {
         let client = self
             .client
             .as_ref()
@@ -332,11 +330,7 @@ impl LastPassService {
         Ok(folders::build_folder_list(&folder_entries, accounts))
     }
 
-    pub async fn create_folder(
-        &mut self,
-        name: &str,
-        shared: bool,
-    ) -> Result<(), LastPassError> {
+    pub async fn create_folder(&mut self, name: &str, shared: bool) -> Result<(), LastPassError> {
         let client = self
             .client
             .as_ref()
@@ -391,15 +385,8 @@ impl LastPassService {
         password_gen::generate_password(&config)
     }
 
-    pub fn generate_passphrase(
-        &self,
-        word_count: Option<u32>,
-        separator: Option<&str>,
-    ) -> String {
-        password_gen::generate_passphrase(
-            word_count.unwrap_or(4),
-            separator.unwrap_or("-"),
-        )
+    pub fn generate_passphrase(&self, word_count: Option<u32>, separator: Option<&str>) -> String {
+        password_gen::generate_passphrase(word_count.unwrap_or(4), separator.unwrap_or("-"))
     }
 
     pub fn check_password_strength(&self, password: &str) -> (f64, &'static str) {

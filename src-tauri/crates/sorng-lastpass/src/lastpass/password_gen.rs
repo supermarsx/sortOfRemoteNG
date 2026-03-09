@@ -22,7 +22,10 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, LastPassE
 
     if config.uppercase {
         let chars: String = if config.avoid_ambiguous {
-            uppercase.chars().filter(|c| !ambiguous.contains(*c)).collect()
+            uppercase
+                .chars()
+                .filter(|c| !ambiguous.contains(*c))
+                .collect()
         } else {
             uppercase.to_string()
         };
@@ -33,7 +36,10 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, LastPassE
 
     if config.lowercase {
         let chars: String = if config.avoid_ambiguous {
-            lowercase.chars().filter(|c| !ambiguous.contains(*c)).collect()
+            lowercase
+                .chars()
+                .filter(|c| !ambiguous.contains(*c))
+                .collect()
         } else {
             lowercase.to_string()
         };
@@ -97,14 +103,13 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, LastPassE
 /// Generate a memorable passphrase.
 pub fn generate_passphrase(word_count: u32, separator: &str) -> String {
     let words = [
-        "apple", "banana", "cherry", "dragon", "eagle", "falcon", "garden", "harbor",
-        "island", "jungle", "kernel", "lantern", "marble", "nectar", "orange", "planet",
-        "quartz", "rocket", "silver", "thunder", "umbrella", "vertex", "walnut", "xenon",
-        "yellow", "zenith", "aurora", "breeze", "cosmos", "delta", "ember", "frost",
-        "glacier", "horizon", "indigo", "jasper", "knight", "legend", "mystic", "noble",
-        "oracle", "phoenix", "quest", "realm", "storm", "titan", "unity", "voyage",
-        "wonder", "zephyr", "anchor", "beacon", "cipher", "drift", "echo", "flame",
-        "ghost", "haven", "ivory", "jade", "kite", "lotus", "mirror", "north",
+        "apple", "banana", "cherry", "dragon", "eagle", "falcon", "garden", "harbor", "island",
+        "jungle", "kernel", "lantern", "marble", "nectar", "orange", "planet", "quartz", "rocket",
+        "silver", "thunder", "umbrella", "vertex", "walnut", "xenon", "yellow", "zenith", "aurora",
+        "breeze", "cosmos", "delta", "ember", "frost", "glacier", "horizon", "indigo", "jasper",
+        "knight", "legend", "mystic", "noble", "oracle", "phoenix", "quest", "realm", "storm",
+        "titan", "unity", "voyage", "wonder", "zephyr", "anchor", "beacon", "cipher", "drift",
+        "echo", "flame", "ghost", "haven", "ivory", "jade", "kite", "lotus", "mirror", "north",
     ];
 
     let mut rng = rand::thread_rng();
@@ -121,12 +126,22 @@ pub fn calculate_entropy(password: &str) -> f64 {
     let has_lower = password.chars().any(|c| c.is_ascii_lowercase());
     let has_upper = password.chars().any(|c| c.is_ascii_uppercase());
     let has_digit = password.chars().any(|c| c.is_ascii_digit());
-    let has_symbol = password.chars().any(|c| !c.is_alphanumeric() && c.is_ascii());
+    let has_symbol = password
+        .chars()
+        .any(|c| !c.is_alphanumeric() && c.is_ascii());
 
-    if has_lower { charset_size += 26; }
-    if has_upper { charset_size += 26; }
-    if has_digit { charset_size += 10; }
-    if has_symbol { charset_size += 32; }
+    if has_lower {
+        charset_size += 26;
+    }
+    if has_upper {
+        charset_size += 26;
+    }
+    if has_digit {
+        charset_size += 10;
+    }
+    if has_symbol {
+        charset_size += 32;
+    }
 
     if charset_size == 0 {
         return 0.0;

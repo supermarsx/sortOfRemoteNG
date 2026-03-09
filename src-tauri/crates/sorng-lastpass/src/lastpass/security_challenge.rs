@@ -1,6 +1,4 @@
-use crate::lastpass::types::{
-    Account, SecurityIssue, SecurityScore, SecurityScoreDetail, LastPassError,
-};
+use crate::lastpass::types::{Account, SecurityIssue, SecurityScore, SecurityScoreDetail};
 
 /// Perform a security analysis on all accounts.
 pub fn analyze_security(accounts: &[Account]) -> SecurityScore {
@@ -112,10 +110,7 @@ pub fn analyze_security(accounts: &[Account]) -> SecurityScore {
         reused_passwords: reused_count,
         old_passwords: old_count,
         blank_passwords: blank_count,
-        duplicate_count: password_freq
-            .values()
-            .filter(|&&c| c > 1)
-            .count() as u64,
+        duplicate_count: password_freq.values().filter(|&&c| c > 1).count() as u64,
         average_password_length: avg_length,
         compromised_emails: 0,
         accounts_without_mfa: 0,
@@ -147,7 +142,11 @@ fn calculate_item_score(issues: &[SecurityIssue]) -> f64 {
 /// Get accounts with the worst security scores.
 pub fn get_worst_accounts(score: &SecurityScore, limit: usize) -> Vec<SecurityScoreDetail> {
     let mut sorted = score.details.clone();
-    sorted.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        a.score
+            .partial_cmp(&b.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     sorted.into_iter().take(limit).collect()
 }
 

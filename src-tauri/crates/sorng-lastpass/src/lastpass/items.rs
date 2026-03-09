@@ -1,4 +1,6 @@
-use crate::lastpass::types::{Account, CreateAccountRequest, LastPassError, UpdateAccountRequest, AccountListParams};
+use crate::lastpass::types::{
+    Account, AccountListParams, CreateAccountRequest, UpdateAccountRequest,
+};
 
 /// Filter accounts by search parameters.
 pub fn filter_accounts(accounts: &[Account], params: &AccountListParams) -> Vec<Account> {
@@ -133,10 +135,7 @@ pub fn apply_update(existing: &Account, update: &UpdateAccountRequest) -> Accoun
             .group
             .clone()
             .unwrap_or_else(|| existing.group.clone()),
-        folder_id: update
-            .group
-            .clone()
-            .or_else(|| existing.folder_id.clone()),
+        folder_id: update.group.clone().or_else(|| existing.folder_id.clone()),
         favorite: update.favorite.unwrap_or(existing.favorite),
         auto_login: update.auto_login.unwrap_or(existing.auto_login),
         never_autofill: existing.never_autofill,

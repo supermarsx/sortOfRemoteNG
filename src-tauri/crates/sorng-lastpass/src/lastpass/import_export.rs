@@ -1,6 +1,4 @@
-use crate::lastpass::types::{
-    Account, ExportFormat, ExportResult, ImportFormat, ImportResult, LastPassError, LastPassErrorKind,
-};
+use crate::lastpass::types::{Account, ExportFormat, ExportResult, ImportResult, LastPassError};
 
 /// Export accounts to CSV format.
 pub fn export_csv(accounts: &[Account]) -> ExportResult {
@@ -56,14 +54,21 @@ pub fn import_lastpass_csv(csv_data: &str) -> Result<(Vec<Account>, ImportResult
 
     // Skip header line
     let header = lines[0].to_lowercase();
-    let start_line = if header.contains("url") || header.contains("name") { 1 } else { 0 };
+    let start_line = if header.contains("url") || header.contains("name") {
+        1
+    } else {
+        0
+    };
 
     for (idx, line) in lines[start_line..].iter().enumerate() {
         result.total_records += 1;
 
         let fields = parse_csv_line(line);
         if fields.len() < 4 {
-            result.errors.push(format!("Line {}: insufficient fields", idx + start_line + 1));
+            result.errors.push(format!(
+                "Line {}: insufficient fields",
+                idx + start_line + 1
+            ));
             result.skipped += 1;
             continue;
         }
@@ -73,11 +78,15 @@ pub fn import_lastpass_csv(csv_data: &str) -> Result<(Vec<Account>, ImportResult
             url: fields.first().cloned().unwrap_or_default(),
             username: fields.get(1).cloned().unwrap_or_default(),
             password: fields.get(2).cloned().unwrap_or_default(),
-            totp_secret: fields.get(3).and_then(|s| if s.is_empty() { None } else { Some(s.clone()) }),
+            totp_secret: fields
+                .get(3)
+                .and_then(|s| if s.is_empty() { None } else { Some(s.clone()) }),
             notes: fields.get(4).cloned().unwrap_or_default(),
             name: fields.get(5).cloned().unwrap_or_default(),
             group: fields.get(6).cloned().unwrap_or_default(),
-            folder_id: fields.get(6).and_then(|s| if s.is_empty() { None } else { Some(s.clone()) }),
+            folder_id: fields
+                .get(6)
+                .and_then(|s| if s.is_empty() { None } else { Some(s.clone()) }),
             favorite: fields.get(7).map(|s| s == "1").unwrap_or(false),
             auto_login: false,
             never_autofill: false,
@@ -117,7 +126,9 @@ pub fn import_chrome_csv(csv_data: &str) -> Result<(Vec<Account>, ImportResult),
         let fields = parse_csv_line(line);
 
         if fields.len() < 3 {
-            result.errors.push(format!("Line {}: insufficient fields", idx + 2));
+            result
+                .errors
+                .push(format!("Line {}: insufficient fields", idx + 2));
             result.skipped += 1;
             continue;
         }

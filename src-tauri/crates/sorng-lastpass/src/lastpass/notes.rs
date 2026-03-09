@@ -1,4 +1,4 @@
-use crate::lastpass::types::{SecureNote, SecureNoteType, CustomField, LastPassError};
+use crate::lastpass::types::{CustomField, SecureNote, SecureNoteType};
 
 /// Determine the secure note type from its content/metadata.
 pub fn detect_note_type(content: &str, name: &str) -> SecureNoteType {
@@ -51,7 +51,9 @@ pub fn parse_note_fields(content: &str) -> Vec<CustomField> {
                         crate::lastpass::types::CustomFieldType::Password
                     } else if key.to_lowercase().contains("email") {
                         crate::lastpass::types::CustomFieldType::Email
-                    } else if key.to_lowercase().contains("phone") || key.to_lowercase().contains("tel") {
+                    } else if key.to_lowercase().contains("phone")
+                        || key.to_lowercase().contains("tel")
+                    {
                         crate::lastpass::types::CustomFieldType::Tel
                     } else if key.to_lowercase().contains("notes") || value.contains('\n') {
                         crate::lastpass::types::CustomFieldType::Textarea

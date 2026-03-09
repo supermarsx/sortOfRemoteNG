@@ -59,13 +59,15 @@ pub fn compute_login_hash(key: &[u8], password: &str, iterations: u32) -> String
 /// Decrypt an AES-256-CBC encrypted blob with a given key and IV.
 pub fn decrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, LastPassError> {
     use aes::Aes256;
-    use cbc::cipher::{BlockDecryptMut, KeyIvInit};
     use cbc::cipher::block_padding::Pkcs7;
+    use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 
     type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
     if key.len() != 32 {
-        return Err(LastPassError::decryption_error("Key must be 32 bytes for AES-256"));
+        return Err(LastPassError::decryption_error(
+            "Key must be 32 bytes for AES-256",
+        ));
     }
     if iv.len() != 16 {
         return Err(LastPassError::decryption_error("IV must be 16 bytes"));
@@ -77,21 +79,27 @@ pub fn decrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, La
 
     let plaintext = decryptor
         .decrypt_padded_mut::<Pkcs7>(&mut buf)
-        .map_err(|e| LastPassError::decryption_error(format!("AES-CBC decryption failed: {}", e)))?;
+        .map_err(|e| {
+            LastPassError::decryption_error(format!("AES-CBC decryption failed: {}", e))
+        })?;
 
     Ok(plaintext.to_vec())
 }
 
 /// Decrypt an AES-256-ECB encrypted blob with a given key.
 pub fn decrypt_aes_ecb(data: &[u8], key: &[u8]) -> Result<Vec<u8>, LastPassError> {
+    use aes::cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit};
     use aes::Aes256;
-    use aes::cipher::{BlockDecrypt, KeyInit, generic_array::GenericArray};
 
     if key.len() != 32 {
-        return Err(LastPassError::decryption_error("Key must be 32 bytes for AES-256"));
+        return Err(LastPassError::decryption_error(
+            "Key must be 32 bytes for AES-256",
+        ));
     }
-    if data.len() % 16 != 0 {
-        return Err(LastPassError::decryption_error("ECB data must be multiple of 16 bytes"));
+    if !data.len().is_multiple_of(16) {
+        return Err(LastPassError::decryption_error(
+            "ECB data must be multiple of 16 bytes",
+        ));
     }
 
     let cipher = Aes256::new(GenericArray::from_slice(key));
@@ -122,14 +130,16 @@ pub fn decrypt_aes_ecb(data: &[u8], key: &[u8]) -> Result<Vec<u8>, LastPassError
 /// Encrypt data using AES-256-CBC with a given key and IV.
 pub fn encrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, LastPassError> {
     use aes::Aes256;
+    use cbc::cipher::block_padding::Pkcs7;
     use cbc::cipher::BlockEncryptMut;
     use cbc::cipher::KeyIvInit;
-    use cbc::cipher::block_padding::Pkcs7;
 
     type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 
     if key.len() != 32 {
-        return Err(LastPassError::encryption_error("Key must be 32 bytes for AES-256"));
+        return Err(LastPassError::encryption_error(
+            "Key must be 32 bytes for AES-256",
+        ));
     }
     if iv.len() != 16 {
         return Err(LastPassError::encryption_error("IV must be 16 bytes"));
@@ -144,35 +154,38 @@ pub fn encrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, La
 
     let ciphertext = encryptor
         .encrypt_padded_mut::<Pkcs7>(&mut buf, data.len())
-        .map_err(|e| LastPassError::encryption_error(format!("AES-CBC encryption failed: {}", e)))?;
+        .map_err(|e| {
+            LastPassError::encryption_error(format!("AES-CBC encryption failed: {}", e))
+        })?;
 
     Ok(ciphertext.to_vec())
 }
 
 /// Decrypt a field that is either base64-encoded AES-CBC (with ! prefix) or hex AES-ECB.
 pub fn decrypt_field(data: &str, key: &[u8]) -> Result<String, LastPassError> {
-    use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
 
     if data.is_empty() {
         return Ok(String::new());
     }
 
-    if data.starts_with('!') {
+    if let Some(stripped) = data.strip_prefix('!') {
         // AES-256-CBC: !<base64_iv>|<base64_ciphertext>
-        let parts: Vec<&str> = data[1..].splitn(2, '|').collect();
+        let parts: Vec<&str> = stripped.splitn(2, '|').collect();
         if parts.len() != 2 {
             return Err(LastPassError::decryption_error("Invalid CBC field format"));
         }
         let iv = STANDARD
             .decode(parts[0])
             .map_err(|e| LastPassError::decryption_error(format!("Invalid IV base64: {}", e)))?;
-        let ciphertext = STANDARD
-            .decode(parts[1])
-            .map_err(|e| LastPassError::decryption_error(format!("Invalid ciphertext base64: {}", e)))?;
+        let ciphertext = STANDARD.decode(parts[1]).map_err(|e| {
+            LastPassError::decryption_error(format!("Invalid ciphertext base64: {}", e))
+        })?;
         let plaintext = decrypt_aes_cbc(&ciphertext, key, &iv)?;
-        String::from_utf8(plaintext)
-            .map_err(|e| LastPassError::decryption_error(format!("Invalid UTF-8 after decrypt: {}", e)))
+        String::from_utf8(plaintext).map_err(|e| {
+            LastPassError::decryption_error(format!("Invalid UTF-8 after decrypt: {}", e))
+        })
     } else {
         // AES-256-ECB with hex encoding
         let data_bytes = hex::decode(data)
@@ -181,8 +194,9 @@ pub fn decrypt_field(data: &str, key: &[u8]) -> Result<String, LastPassError> {
             return Ok(String::new());
         }
         let plaintext = decrypt_aes_ecb(&data_bytes, key)?;
-        String::from_utf8(plaintext)
-            .map_err(|e| LastPassError::decryption_error(format!("Invalid UTF-8 after ECB decrypt: {}", e)))
+        String::from_utf8(plaintext).map_err(|e| {
+            LastPassError::decryption_error(format!("Invalid UTF-8 after ECB decrypt: {}", e))
+        })
     }
 }
 
@@ -196,8 +210,8 @@ pub fn generate_iv() -> [u8; 16] {
 
 /// Encrypt a field for storage (AES-256-CBC, base64 encoded with ! prefix).
 pub fn encrypt_field(data: &str, key: &[u8]) -> Result<String, LastPassError> {
-    use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
 
     if data.is_empty() {
         return Ok(String::new());
@@ -207,7 +221,7 @@ pub fn encrypt_field(data: &str, key: &[u8]) -> Result<String, LastPassError> {
     let ciphertext = encrypt_aes_cbc(data.as_bytes(), key, &iv)?;
     Ok(format!(
         "!{}|{}",
-        STANDARD.encode(&iv),
+        STANDARD.encode(iv),
         STANDARD.encode(&ciphertext)
     ))
 }

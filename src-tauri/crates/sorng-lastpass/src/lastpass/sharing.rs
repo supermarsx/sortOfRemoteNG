@@ -1,4 +1,4 @@
-use crate::lastpass::types::{Account, SharedFolder, SharedFolderMember, LastPassError};
+use crate::lastpass::types::{Account, SharedFolderMember};
 
 /// Check if an account is in a shared folder.
 pub fn is_shared(account: &Account) -> bool {
@@ -23,20 +23,12 @@ pub fn get_shared_folder_name(group: &str) -> Option<String> {
 
 /// Filter accounts that are in shared folders.
 pub fn get_shared_accounts(accounts: &[Account]) -> Vec<Account> {
-    accounts
-        .iter()
-        .filter(|a| is_shared(a))
-        .cloned()
-        .collect()
+    accounts.iter().filter(|a| is_shared(a)).cloned().collect()
 }
 
 /// Filter accounts that are NOT in shared folders (personal vault).
 pub fn get_personal_accounts(accounts: &[Account]) -> Vec<Account> {
-    accounts
-        .iter()
-        .filter(|a| !is_shared(a))
-        .cloned()
-        .collect()
+    accounts.iter().filter(|a| !is_shared(a)).cloned().collect()
 }
 
 /// Group accounts by their shared folder.
@@ -46,10 +38,7 @@ pub fn group_by_shared_folder(accounts: &[Account]) -> Vec<(String, Vec<Account>
     let mut groups: HashMap<String, Vec<Account>> = HashMap::new();
     for account in accounts {
         if let Some(folder_name) = get_shared_folder_name(&account.group) {
-            groups
-                .entry(folder_name)
-                .or_default()
-                .push(account.clone());
+            groups.entry(folder_name).or_default().push(account.clone());
         }
     }
 

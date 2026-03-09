@@ -1,5 +1,5 @@
 use crate::lastpass::crypto;
-use crate::lastpass::types::{Account, CustomField, CustomFieldType, LastPassError, VaultBlob};
+use crate::lastpass::types::{Account, LastPassError, VaultBlob};
 
 /// Parse a vault blob into decrypted accounts.
 ///
@@ -13,12 +13,9 @@ pub fn parse_vault(blob: &VaultBlob, key: &[u8]) -> Result<Vec<Account>, LastPas
 
     while pos + 8 <= data.len() {
         let chunk_id = &data[pos..pos + 4];
-        let chunk_size = u32::from_be_bytes([
-            data[pos + 4],
-            data[pos + 5],
-            data[pos + 6],
-            data[pos + 7],
-        ]) as usize;
+        let chunk_size =
+            u32::from_be_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                as usize;
         pos += 8;
 
         if pos + chunk_size > data.len() {
@@ -73,10 +70,7 @@ fn parse_account_chunk(data: &[u8], key: &[u8]) -> Result<Account, LastPassError
     let username = get_field(7);
     let password = get_field(8);
 
-    let pwprotect = fields
-        .get(24)
-        .map(|f| f == b"1")
-        .unwrap_or(false);
+    let pwprotect = fields.get(24).map(|f| f == b"1").unwrap_or(false);
 
     let last_modified = fields.get(18).and_then(|f| {
         let s = String::from_utf8_lossy(f);
@@ -132,8 +126,8 @@ fn parse_chunk_fields(data: &[u8]) -> Result<Vec<Vec<u8>>, LastPassError> {
     let mut pos = 0;
 
     while pos + 4 <= data.len() {
-        let size = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
-            as usize;
+        let size =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
         if pos + size > data.len() {
@@ -160,7 +154,7 @@ fn decrypt_chunk_field(data: &[u8], key: &[u8]) -> Result<String, LastPassError>
         let plaintext = crypto::decrypt_aes_cbc(ciphertext, key, iv)?;
         String::from_utf8(plaintext)
             .map_err(|e| LastPassError::decryption_error(format!("Invalid UTF-8: {}", e)))
-    } else if data.len() > 0 && data.len() % 16 == 0 {
+    } else if !data.is_empty() && data.len().is_multiple_of(16) {
         // AES-ECB
         let plaintext = crypto::decrypt_aes_ecb(data, key)?;
         String::from_utf8(plaintext)
@@ -179,12 +173,9 @@ pub fn parse_folders(blob: &VaultBlob, key: &[u8]) -> Result<Vec<FolderEntry>, L
 
     while pos + 8 <= data.len() {
         let chunk_id = &data[pos..pos + 4];
-        let chunk_size = u32::from_be_bytes([
-            data[pos + 4],
-            data[pos + 5],
-            data[pos + 6],
-            data[pos + 7],
-        ]) as usize;
+        let chunk_size =
+            u32::from_be_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                as usize;
         pos += 8;
 
         if pos + chunk_size > data.len() {
@@ -207,7 +198,7 @@ pub fn parse_folders(blob: &VaultBlob, key: &[u8]) -> Result<Vec<FolderEntry>, L
             }
         } else if chunk_id == b"SHAR" {
             if let Ok(fields) = parse_chunk_fields(chunk_data) {
-                let id = fields
+                let _id = fields
                     .first()
                     .map(|f| String::from_utf8_lossy(f).to_string())
                     .unwrap_or_default();

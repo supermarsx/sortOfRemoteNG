@@ -20,7 +20,9 @@ impl LastPassApiClient {
             .cookie_store(true)
             .user_agent("sortOfRemoteNG/1.0 (LastPass Integration)")
             .build()
-            .map_err(|e| LastPassError::connection_error(format!("Failed to build HTTP client: {}", e)))?;
+            .map_err(|e| {
+                LastPassError::connection_error(format!("Failed to build HTTP client: {}", e))
+            })?;
 
         Ok(Self {
             client,
@@ -65,21 +67,27 @@ impl LastPassApiClient {
                 "HTTP {} — {}",
                 status.as_u16(),
                 body
-            )).with_status(status.as_u16()));
+            ))
+            .with_status(status.as_u16()));
         }
-        response
-            .text()
-            .await
-            .map_err(|e| LastPassError::server_error(format!("Failed to read response body: {}", e)))
+        response.text().await.map_err(|e| {
+            LastPassError::server_error(format!("Failed to read response body: {}", e))
+        })
     }
 
+    #[allow(dead_code)]
     async fn handle_json_response<T: DeserializeOwned>(
         &self,
         response: Response,
     ) -> Result<T, LastPassError> {
         let text = self.handle_response(response).await?;
-        serde_json::from_str(&text)
-            .map_err(|e| LastPassError::parse_error(format!("JSON parse error: {} — body: {}", e, &text[..text.len().min(200)])))
+        serde_json::from_str(&text).map_err(|e| {
+            LastPassError::parse_error(format!(
+                "JSON parse error: {} — body: {}",
+                e,
+                &text[..text.len().min(200)]
+            ))
+        })
     }
 
     /// Perform login request, returning the raw XML response.
@@ -142,11 +150,15 @@ impl LastPassApiClient {
 
         let body = self.handle_response(response).await?;
         use base64::Engine;
-        base64::engine::general_purpose::STANDARD.decode(body.trim())
-            .map_err(|e| LastPassError::vault_parse_error(format!("Failed to decode vault blob: {}", e)))
+        base64::engine::general_purpose::STANDARD
+            .decode(body.trim())
+            .map_err(|e| {
+                LastPassError::vault_parse_error(format!("Failed to decode vault blob: {}", e))
+            })
     }
 
     /// Add a new site/account.
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_account(
         &self,
         name: &str,
@@ -193,6 +205,7 @@ impl LastPassApiClient {
     }
 
     /// Update an existing site/account.
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_account(
         &self,
         aid: &str,
@@ -324,11 +337,7 @@ impl LastPassApiClient {
     }
 
     /// Move an account to a different folder/group.
-    pub async fn move_account(
-        &self,
-        aid: &str,
-        new_group: &str,
-    ) -> Result<String, LastPassError> {
+    pub async fn move_account(&self, aid: &str, new_group: &str) -> Result<String, LastPassError> {
         let session = self
             .session_id
             .as_ref()
@@ -368,11 +377,7 @@ impl LastPassApiClient {
             .ok_or_else(|| LastPassError::auth_failed("No CSRF token"))?;
 
         let fav_str = if fav { "1" } else { "0" };
-        let params = vec![
-            ("token", token.as_str()),
-            ("aid", aid),
-            ("fav", fav_str),
-        ];
+        let params = vec![("token", token.as_str()), ("aid", aid), ("fav", fav_str)];
 
         let response = self
             .client

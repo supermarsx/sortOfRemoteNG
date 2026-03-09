@@ -29,13 +29,17 @@ pub async fn lp_logout(state: tauri::State<'_, LastPassServiceState>) -> Result<
 }
 
 #[tauri::command]
-pub async fn lp_is_logged_in(state: tauri::State<'_, LastPassServiceState>) -> Result<bool, String> {
+pub async fn lp_is_logged_in(
+    state: tauri::State<'_, LastPassServiceState>,
+) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_logged_in())
 }
 
 #[tauri::command]
-pub async fn lp_is_configured(state: tauri::State<'_, LastPassServiceState>) -> Result<bool, String> {
+pub async fn lp_is_configured(
+    state: tauri::State<'_, LastPassServiceState>,
+) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_configured())
 }

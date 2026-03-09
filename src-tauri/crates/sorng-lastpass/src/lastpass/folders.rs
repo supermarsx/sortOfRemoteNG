@@ -1,11 +1,8 @@
-use crate::lastpass::types::{Account, Folder, LastPassError};
+use crate::lastpass::types::{Account, Folder};
 use crate::lastpass::vault_parser::FolderEntry;
 
 /// Build folder list from vault parsed entries and accounts.
-pub fn build_folder_list(
-    folder_entries: &[FolderEntry],
-    accounts: &[Account],
-) -> Vec<Folder> {
+pub fn build_folder_list(folder_entries: &[FolderEntry], accounts: &[Account]) -> Vec<Folder> {
     use std::collections::HashMap;
 
     // Count items per folder/group
@@ -71,9 +68,7 @@ fn extract_parent(name: &str) -> Option<String> {
 
 /// Find a folder by name (case-insensitive).
 pub fn find_folder_by_name<'a>(folders: &'a [Folder], name: &str) -> Option<&'a Folder> {
-    folders
-        .iter()
-        .find(|f| f.name.eq_ignore_ascii_case(name))
+    folders.iter().find(|f| f.name.eq_ignore_ascii_case(name))
 }
 
 /// Get all child folders of a given parent.
@@ -101,27 +96,17 @@ pub fn get_root_folders(folders: &[Folder]) -> Vec<Folder> {
 
 /// Get shared folders only.
 pub fn get_shared_folders(folders: &[Folder]) -> Vec<Folder> {
-    folders
-        .iter()
-        .filter(|f| f.is_shared)
-        .cloned()
-        .collect()
+    folders.iter().filter(|f| f.is_shared).cloned().collect()
 }
 
 /// Rename a folder by updating all accounts in that group.
-pub fn rename_folder_in_accounts(
-    accounts: &mut [Account],
-    old_name: &str,
-    new_name: &str,
-) {
+pub fn rename_folder_in_accounts(accounts: &mut [Account], old_name: &str, new_name: &str) {
     for account in accounts.iter_mut() {
         if account.group.eq_ignore_ascii_case(old_name) {
             account.group = new_name.to_string();
             account.folder_id = Some(new_name.to_string());
         } else if account.group.starts_with(&format!("{}/", old_name)) {
-            account.group = account
-                .group
-                .replacen(old_name, new_name, 1);
+            account.group = account.group.replacen(old_name, new_name, 1);
             account.folder_id = Some(account.group.clone());
         }
     }

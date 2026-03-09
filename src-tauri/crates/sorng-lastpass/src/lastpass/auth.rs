@@ -16,7 +16,9 @@ pub fn parse_login_response(xml: &str) -> Result<LoginResponseData, LastPassErro
         let iterations_str = extract_xml_attr(xml, "iterations");
 
         if session_id.is_empty() {
-            return Err(LastPassError::auth_failed("No session ID in login response"));
+            return Err(LastPassError::auth_failed(
+                "No session ID in login response",
+            ));
         }
 
         Ok(LoginResponseData {
@@ -62,7 +64,10 @@ pub fn parse_login_response(xml: &str) -> Result<LoginResponseData, LastPassErro
             return Err(LastPassError::account_locked());
         }
 
-        Err(LastPassError::auth_failed(format!("{}: {}", message, cause)))
+        Err(LastPassError::auth_failed(format!(
+            "{}: {}",
+            message, cause
+        )))
     } else {
         Err(LastPassError::parse_error(format!(
             "Unexpected login response: {}",
@@ -99,7 +104,10 @@ pub async fn login(
     otp: Option<&str>,
 ) -> Result<LastPassSession, LastPassError> {
     // Step 1: Get iteration count from server
-    let iterations = client.get_iterations(&config.username).await.unwrap_or(config.iterations);
+    let iterations = client
+        .get_iterations(&config.username)
+        .await
+        .unwrap_or(config.iterations);
 
     // Step 2: Derive encryption key
     let key = crypto::derive_key(master_password, &config.username, iterations);
@@ -143,6 +151,10 @@ pub async fn logout(client: &mut LastPassApiClient) -> Result<(), LastPassError>
 }
 
 /// Validate that we have an active session.
-pub fn validate_session(session: &Option<LastPassSession>) -> Result<&LastPassSession, LastPassError> {
-    session.as_ref().ok_or_else(|| LastPassError::auth_failed("Not logged in to LastPass"))
+pub fn validate_session(
+    session: &Option<LastPassSession>,
+) -> Result<&LastPassSession, LastPassError> {
+    session
+        .as_ref()
+        .ok_or_else(|| LastPassError::auth_failed("Not logged in to LastPass"))
 }

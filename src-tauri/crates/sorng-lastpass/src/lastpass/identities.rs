@@ -1,4 +1,4 @@
-use crate::lastpass::types::{Identity, LastPassError};
+use crate::lastpass::types::Identity;
 
 /// Parse an identity from a secure note's structured content.
 pub fn parse_identity_from_note(content: &str) -> Identity {

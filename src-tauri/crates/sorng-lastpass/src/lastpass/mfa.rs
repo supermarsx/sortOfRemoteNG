@@ -1,5 +1,5 @@
 use crate::lastpass::types::{
-    MfaMethod, MfaStatus, TrustedDevice, LastPassError, LastPassErrorKind,
+    LastPassError, LastPassErrorKind, MfaMethod, MfaStatus, TrustedDevice,
 };
 
 /// Parse MFA requirements from a login error to determine which method is needed.
@@ -32,7 +32,7 @@ pub fn detect_mfa_method(error: &LastPassError) -> Option<MfaMethod> {
 
 /// Validate a TOTP code format (6 digits).
 pub fn validate_totp_code(code: &str) -> Result<(), LastPassError> {
-    let cleaned = code.replace(' ', "").replace('-', "");
+    let cleaned = code.replace([' ', '-'], "");
     if cleaned.len() != 6 || !cleaned.chars().all(|c| c.is_ascii_digit()) {
         return Err(LastPassError::new(
             LastPassErrorKind::BadRequest,
