@@ -41,7 +41,10 @@ impl std::error::Error for NginxError {}
 
 impl NginxError {
     pub fn new(kind: NginxErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(NginxErrorKind::NotConnected, msg)
@@ -59,7 +62,10 @@ impl NginxError {
         Self::new(NginxErrorKind::ProcessError, msg)
     }
     pub fn site_not_found(name: &str) -> Self {
-        Self::new(NginxErrorKind::SiteNotFound, format!("Site not found: {name}"))
+        Self::new(
+            NginxErrorKind::SiteNotFound,
+            format!("Site not found: {name}"),
+        )
     }
     pub fn config_syntax(msg: &str) -> Self {
         Self::new(NginxErrorKind::ConfigSyntaxError, msg)

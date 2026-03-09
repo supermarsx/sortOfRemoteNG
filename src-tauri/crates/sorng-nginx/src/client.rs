@@ -30,19 +30,31 @@ impl NginxClient {
     }
 
     pub fn config_path(&self) -> &str {
-        self.config.config_path.as_deref().unwrap_or("/etc/nginx/nginx.conf")
+        self.config
+            .config_path
+            .as_deref()
+            .unwrap_or("/etc/nginx/nginx.conf")
     }
 
     pub fn sites_available_dir(&self) -> &str {
-        self.config.sites_available_dir.as_deref().unwrap_or("/etc/nginx/sites-available")
+        self.config
+            .sites_available_dir
+            .as_deref()
+            .unwrap_or("/etc/nginx/sites-available")
     }
 
     pub fn sites_enabled_dir(&self) -> &str {
-        self.config.sites_enabled_dir.as_deref().unwrap_or("/etc/nginx/sites-enabled")
+        self.config
+            .sites_enabled_dir
+            .as_deref()
+            .unwrap_or("/etc/nginx/sites-enabled")
     }
 
     pub fn conf_d_dir(&self) -> &str {
-        self.config.conf_d_dir.as_deref().unwrap_or("/etc/nginx/conf.d")
+        self.config
+            .conf_d_dir
+            .as_deref()
+            .unwrap_or("/etc/nginx/conf.d")
     }
 
     fn status_url(&self) -> Option<&str> {
@@ -64,46 +76,76 @@ impl NginxClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> NginxResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 
     pub async fn write_remote_file(&self, path: &str, content: &str) -> NginxResult<()> {
         let escaped = content.replace('\'', "'\\''");
-        let cmd = format!("printf '%s' '{}' | sudo tee {} > /dev/null", escaped, shell_escape(path));
+        let cmd = format!(
+            "printf '%s' '{}' | sudo tee {} > /dev/null",
+            escaped,
+            shell_escape(path)
+        );
         self.exec_ssh(&cmd).await?;
         Ok(())
     }
 
     pub async fn file_exists(&self, path: &str) -> NginxResult<bool> {
-        let out = self.exec_ssh(&format!("test -f {} && echo yes || echo no", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!(
+                "test -f {} && echo yes || echo no",
+                shell_escape(path)
+            ))
+            .await?;
         Ok(out.stdout.trim() == "yes")
     }
 
     pub async fn list_remote_dir(&self, path: &str) -> NginxResult<Vec<String>> {
-        let out = self.exec_ssh(&format!("ls -1 {}", shell_escape(path))).await?;
-        Ok(out.stdout.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+        let out = self
+            .exec_ssh(&format!("ls -1 {}", shell_escape(path)))
+            .await?;
+        Ok(out
+            .stdout
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect())
     }
 
     pub async fn create_symlink(&self, src: &str, dst: &str) -> NginxResult<()> {
-        self.exec_ssh(&format!("sudo ln -sf {} {}", shell_escape(src), shell_escape(dst))).await?;
+        self.exec_ssh(&format!(
+            "sudo ln -sf {} {}",
+            shell_escape(src),
+            shell_escape(dst)
+        ))
+        .await?;
         Ok(())
     }
 
     pub async fn remove_file(&self, path: &str) -> NginxResult<()> {
-        self.exec_ssh(&format!("sudo rm -f {}", shell_escape(path))).await?;
+        self.exec_ssh(&format!("sudo rm -f {}", shell_escape(path)))
+            .await?;
         Ok(())
     }
 
     // ── Nginx process commands ───────────────────────────────────────
 
     pub async fn test_config(&self) -> NginxResult<ConfigTestResult> {
-        let out = self.exec_ssh(&format!("sudo {} -t 2>&1", self.nginx_bin())).await;
+        let out = self
+            .exec_ssh(&format!("sudo {} -t 2>&1", self.nginx_bin()))
+            .await;
         match out {
             Ok(o) => Ok(ConfigTestResult {
                 success: o.exit_code == 0,
                 output: o.stdout,
-                errors: if o.exit_code != 0 { vec![o.stderr] } else { vec![] },
+                errors: if o.exit_code != 0 {
+                    vec![o.stderr]
+                } else {
+                    vec![]
+                },
                 warnings: vec![],
             }),
             Err(_) => Ok(ConfigTestResult {
@@ -116,7 +158,9 @@ impl NginxClient {
     }
 
     pub async fn reload(&self) -> NginxResult<()> {
-        let out = self.exec_ssh(&format!("sudo {} -s reload", self.nginx_bin())).await?;
+        let out = self
+            .exec_ssh(&format!("sudo {} -s reload", self.nginx_bin()))
+            .await?;
         if out.exit_code != 0 {
             return Err(NginxError::reload(format!("reload failed: {}", out.stderr)));
         }
@@ -142,21 +186,35 @@ impl NginxClient {
     pub async fn restart(&self) -> NginxResult<()> {
         let out = self.exec_ssh("sudo systemctl restart nginx").await?;
         if out.exit_code != 0 {
-            return Err(NginxError::process(format!("restart failed: {}", out.stderr)));
+            return Err(NginxError::process(format!(
+                "restart failed: {}",
+                out.stderr
+            )));
         }
         Ok(())
     }
 
     pub async fn version(&self) -> NginxResult<String> {
-        let out = self.exec_ssh(&format!("{} -v 2>&1", self.nginx_bin())).await?;
+        let out = self
+            .exec_ssh(&format!("{} -v 2>&1", self.nginx_bin()))
+            .await?;
         Ok(out.stdout.trim().to_string())
     }
 
     pub async fn info(&self) -> NginxResult<NginxInfo> {
-        let version_out = self.exec_ssh(&format!("{} -V 2>&1", self.nginx_bin())).await?;
+        let version_out = self
+            .exec_ssh(&format!("{} -V 2>&1", self.nginx_bin()))
+            .await?;
         let raw = version_out.stdout;
-        let version = raw.lines().next().unwrap_or("").replace("nginx version: ", "").trim().to_string();
-        let config_args = raw.lines()
+        let version = raw
+            .lines()
+            .next()
+            .unwrap_or("")
+            .replace("nginx version: ", "")
+            .trim()
+            .to_string();
+        let config_args = raw
+            .lines()
             .find(|l| l.contains("configure arguments:"))
             .map(|l| l.replace("configure arguments:", "").trim().to_string());
         Ok(NginxInfo {
@@ -174,12 +232,21 @@ impl NginxClient {
     pub async fn status(&self) -> NginxResult<NginxProcess> {
         let out = self.exec_ssh("systemctl is-active nginx 2>&1").await?;
         let active = out.stdout.trim() == "active";
-        let pid_out = self.exec_ssh("cat /run/nginx.pid 2>/dev/null || echo 0").await;
-        let pid = pid_out.ok().and_then(|o| o.stdout.trim().parse().ok()).unwrap_or(0);
+        let pid_out = self
+            .exec_ssh("cat /run/nginx.pid 2>/dev/null || echo 0")
+            .await;
+        let pid = pid_out
+            .ok()
+            .and_then(|o| o.stdout.trim().parse().ok())
+            .unwrap_or(0);
         Ok(NginxProcess {
             pid,
             ppid: None,
-            process_type: if active { "master".into() } else { "inactive".into() },
+            process_type: if active {
+                "master".into()
+            } else {
+                "inactive".into()
+            },
             cpu_percent: None,
             memory_rss: None,
             connections: None,
@@ -190,13 +257,20 @@ impl NginxClient {
     // ── Stub status (HTTP) ───────────────────────────────────────────
 
     pub async fn stub_status(&self) -> NginxResult<NginxStubStatus> {
-        let url = self.status_url()
+        let url = self
+            .status_url()
             .ok_or_else(|| NginxError::not_connected("No status_url configured"))?;
 
         debug!("NGX stub_status GET {url}");
-        let resp = self.http.get(url).send().await
+        let resp = self
+            .http
+            .get(url)
+            .send()
+            .await
             .map_err(|e| NginxError::http(format!("stub_status: {e}")))?;
-        let body = resp.text().await
+        let body = resp
+            .text()
+            .await
             .map_err(|e| NginxError::http(format!("stub_status body: {e}")))?;
 
         parse_stub_status(&body)
@@ -231,7 +305,11 @@ fn parse_stub_status(body: &str) -> NginxResult<NginxStubStatus> {
     for line in body.lines() {
         let line = line.trim();
         if line.starts_with("Active connections:") {
-            active = line.split(':').nth(1).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+            active = line
+                .split(':')
+                .nth(1)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
         } else if line.starts_with("Reading:") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             reading = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);

@@ -9,7 +9,10 @@ pub struct SiteManager;
 impl SiteManager {
     pub async fn list(client: &NginxClient) -> NginxResult<Vec<NginxSite>> {
         let available = client.list_remote_dir(client.sites_available_dir()).await?;
-        let enabled_files = client.list_remote_dir(client.sites_enabled_dir()).await.unwrap_or_default();
+        let enabled_files = client
+            .list_remote_dir(client.sites_enabled_dir())
+            .await
+            .unwrap_or_default();
         let mut sites = Vec::new();
         for filename in &available {
             let path = format!("{}/{}", client.sites_available_dir(), filename);
@@ -41,7 +44,11 @@ impl SiteManager {
         Self::get(client, &req.name).await
     }
 
-    pub async fn update(client: &NginxClient, name: &str, req: &UpdateSiteRequest) -> NginxResult<NginxSite> {
+    pub async fn update(
+        client: &NginxClient,
+        name: &str,
+        req: &UpdateSiteRequest,
+    ) -> NginxResult<NginxSite> {
         let path = format!("{}/{}", client.sites_available_dir(), name);
         client.write_remote_file(&path, &req.content).await?;
         Self::get(client, name).await
@@ -72,15 +79,29 @@ fn parse_site(filename: &str, raw: &str, enabled: bool) -> NginxSite {
     for line in raw.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("server_name ") {
-            let names = trimmed.trim_start_matches("server_name ")
-                .trim_end_matches(';').split_whitespace()
-                .map(String::from).collect::<Vec<_>>();
+            let names = trimmed
+                .trim_start_matches("server_name ")
+                .trim_end_matches(';')
+                .split_whitespace()
+                .map(String::from)
+                .collect::<Vec<_>>();
             server_names.extend(names);
         }
         if trimmed.starts_with("listen ") {
-            let val = trimmed.trim_start_matches("listen ").trim_end_matches(';').trim().to_string();
+            let val = trimmed
+                .trim_start_matches("listen ")
+                .trim_end_matches(';')
+                .trim()
+                .to_string();
             let ssl = val.contains("ssl");
-            listen.push(ListenDirective { address: Some(val), ssl, http2: false, port: 80, default_server: false, ipv6only: false });
+            listen.push(ListenDirective {
+                address: Some(val),
+                ssl,
+                http2: false,
+                port: 80,
+                default_server: false,
+                ipv6only: false,
+            });
         }
     }
     NginxSite {
@@ -104,7 +125,10 @@ fn generate_site_config(req: &CreateSiteRequest) -> String {
     let port = req.listen_port.unwrap_or(80);
     out.push_str(&format!("    listen {};\n", port));
     if !req.server_names.is_empty() {
-        out.push_str(&format!("    server_name {};\n", req.server_names.join(" ")));
+        out.push_str(&format!(
+            "    server_name {};\n",
+            req.server_names.join(" ")
+        ));
     }
     for loc in &req.locations {
         out.push_str(&format!("    location {} {{\n", loc.path));
