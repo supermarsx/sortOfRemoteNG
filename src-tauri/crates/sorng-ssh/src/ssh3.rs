@@ -1,23 +1,22 @@
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use std::collections::HashMap;
-use std::time::Duration;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use tauri::Emitter;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::{mpsc, Mutex};
+use uuid::Uuid;
 
 /// SSH3 Protocol Implementation
-/// 
+///
 /// SSH3 is a modern SSH protocol that uses HTTP/3 (QUIC) as transport layer.
 /// Key benefits:
 /// - Faster connection establishment (0-RTT with QUIC)
 /// - Better multiplexing (no head-of-line blocking)
 /// - Built-in connection migration
 /// - Modern cryptography via TLS 1.3
-/// 
+///
 /// This implementation provides SSH3-like functionality using QUIC transport.
-
+///
 /// SSH3 connection configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ssh3ConnectionConfig {
@@ -185,8 +184,8 @@ pub struct Ssh3PortForwardConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Ssh3PortForwardDirection {
-    Local,  // Local listen, forward to remote
-    Remote, // Remote listen, forward to local
+    Local,   // Local listen, forward to remote
+    Remote,  // Remote listen, forward to local
     Dynamic, // SOCKS5 proxy
 }
 
@@ -206,6 +205,12 @@ pub struct Ssh3Service {
 
 pub type Ssh3ServiceState = Arc<Mutex<Ssh3Service>>;
 
+impl Default for Ssh3Service {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ssh3Service {
     pub fn new() -> Self {
         Self {
@@ -215,14 +220,11 @@ impl Ssh3Service {
     }
 
     /// Connect to an SSH3 server
-    pub async fn connect(
-        &mut self,
-        config: Ssh3ConnectionConfig,
-    ) -> Result<String, String> {
+    pub async fn connect(&mut self, config: Ssh3ConnectionConfig) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
-        
+
         log::info!("SSH3: Connecting to {}:{}", config.host, config.port);
-        
+
         // Create session in connecting state
         let session = Ssh3Session {
             id: session_id.clone(),
@@ -233,62 +235,73 @@ impl Ssh3Service {
             channels: HashMap::new(),
             keep_alive_handle: None,
         };
-        
+
         self.sessions.insert(session_id.clone(), session);
-        
+
         // Perform QUIC connection and authentication
         self.establish_quic_connection(&session_id).await?;
         self.authenticate_ssh3(&session_id).await?;
-        
+
         // Update state to connected
         if let Some(session) = self.sessions.get_mut(&session_id) {
             session.connection_state = Ssh3ConnectionState::Connected;
             session.last_activity = Utc::now();
         }
-        
-        log::info!("SSH3: Connected successfully to {}:{}", config.host, config.port);
-        
+
+        log::info!(
+            "SSH3: Connected successfully to {}:{}",
+            config.host,
+            config.port
+        );
+
         Ok(session_id)
     }
 
     /// Establish QUIC connection to SSH3 server
     async fn establish_quic_connection(&mut self, session_id: &str) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
+
         let config = &session.config;
         let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(30));
-        
+
         // Note: Full QUIC implementation would use a crate like 'quinn'
         // For now, we simulate the connection process
-        
+
         // In a full implementation:
         // 1. Create QUIC endpoint
         // 2. Configure TLS with server certificate validation
         // 3. Establish QUIC connection with optional 0-RTT
         // 4. Open control stream for SSH3 protocol
-        
-        log::debug!("SSH3: Establishing QUIC connection (timeout: {:?})", timeout);
-        
+
+        log::debug!(
+            "SSH3: Establishing QUIC connection (timeout: {:?})",
+            timeout
+        );
+
         // Simulate connection establishment
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         session.connection_state = Ssh3ConnectionState::Authenticating;
         session.last_activity = Utc::now();
-        
+
         Ok(())
     }
 
     /// Authenticate with SSH3 server
     async fn authenticate_ssh3(&mut self, session_id: &str) -> Result<Ssh3AuthResult, String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
+
         let config = &session.config;
-        
+
         // SSH3 authentication is done via HTTP headers over QUIC
         // Supports: password, public key, certificate-based auth
-        
+
         let method_used = if config.private_key_path.is_some() {
             "publickey"
         } else if config.client_cert_path.is_some() {
@@ -298,17 +311,17 @@ impl Ssh3Service {
         } else {
             return Err("No authentication method available".to_string());
         };
-        
+
         log::debug!("SSH3: Authenticating with method: {}", method_used);
-        
+
         // In a full implementation:
         // 1. Send HTTP POST to /ssh3/auth endpoint
         // 2. Include authorization header based on method
         // 3. Handle challenge-response if needed
         // 4. Receive session token on success
-        
+
         session.last_activity = Utc::now();
-        
+
         Ok(Ssh3AuthResult {
             success: true,
             method_used: method_used.to_string(),
@@ -320,23 +333,22 @@ impl Ssh3Service {
     pub async fn start_shell(
         &mut self,
         session_id: &str,
-        app_handle: tauri::AppHandle,
+        _app_handle: tauri::AppHandle,
     ) -> Result<String, String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
+
         if session.connection_state != Ssh3ConnectionState::Connected {
             return Err("Session not connected".to_string());
         }
-        
+
         let channel_id = Uuid::new_v4().to_string();
-        let session_id_owned = session_id.to_string();
-        let channel_id_clone = channel_id.clone();
-        
+
         let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
-        
+
         // Start shell handler task
-        let app_handle_clone = app_handle.clone();
         tokio::spawn(async move {
             // In a full implementation:
             // 1. Open new bidirectional QUIC stream
@@ -344,31 +356,22 @@ impl Ssh3Service {
             // 3. Request PTY allocation
             // 4. Start shell
             // 5. Forward I/O between stream and frontend
-            
-            let running = true;
-            while running {
+
+            loop {
                 // Process input from frontend
                 while let Ok(data) = rx.try_recv() {
                     // Send to QUIC stream
                     log::trace!("SSH3: Sending {} bytes to shell", data.len());
                     // In real impl: stream.write_all(&data).await
                 }
-                
+
                 // Simulate receiving output (in real impl: read from QUIC stream)
                 // stream.read(&mut buf).await
-                
+
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            
-            let _ = app_handle_clone.emit(
-                "ssh3-shell-closed",
-                Ssh3ShellClosed {
-                    session_id: session_id_owned,
-                    channel_id: channel_id_clone,
-                },
-            );
         });
-        
+
         // Create channel record
         let channel = Ssh3Channel {
             id: channel_id.clone(),
@@ -377,10 +380,10 @@ impl Ssh3Service {
             created_at: Utc::now(),
             sender: tx,
         };
-        
+
         session.channels.insert(channel_id.clone(), channel);
         session.last_activity = Utc::now();
-        
+
         Ok(channel_id)
     }
 
@@ -391,17 +394,23 @@ impl Ssh3Service {
         channel_id: &str,
         data: String,
     ) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
-        let channel = session.channels.get(channel_id)
+
+        let channel = session
+            .channels
+            .get(channel_id)
             .ok_or("Channel not found")?;
-        
-        channel.sender.send(data.into_bytes())
+
+        channel
+            .sender
+            .send(data.into_bytes())
             .map_err(|_| "Failed to send input".to_string())?;
-        
+
         session.last_activity = Utc::now();
-        
+
         Ok(())
     }
 
@@ -413,17 +422,21 @@ impl Ssh3Service {
         cols: u32,
         rows: u32,
     ) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
-        let _channel = session.channels.get(channel_id)
+
+        let _channel = session
+            .channels
+            .get(channel_id)
             .ok_or("Channel not found")?;
-        
+
         // In full implementation: send window-change request
         log::debug!("SSH3: Resize shell {}x{}", cols, rows);
-        
+
         session.last_activity = Utc::now();
-        
+
         Ok(())
     }
 
@@ -434,27 +447,32 @@ impl Ssh3Service {
         command: String,
         timeout: Option<u64>,
     ) -> Result<String, String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
+
         if session.connection_state != Ssh3ConnectionState::Connected {
             return Err("Session not connected".to_string());
         }
-        
+
         log::debug!("SSH3: Executing command: {}", command);
-        
+
         // In full implementation:
         // 1. Open new QUIC stream
         // 2. Send exec request with command
         // 3. Read output until stream closes
         // 4. Return combined stdout/stderr
-        
+
         let _timeout_duration = Duration::from_secs(timeout.unwrap_or(30));
-        
+
         // Placeholder for actual execution
         session.last_activity = Utc::now();
-        
-        Ok(format!("SSH3 command execution placeholder for: {}", command))
+
+        Ok(format!(
+            "SSH3 command execution placeholder for: {}",
+            command
+        ))
     }
 
     /// Setup port forwarding
@@ -463,43 +481,42 @@ impl Ssh3Service {
         session_id: &str,
         config: Ssh3PortForwardConfig,
     ) -> Result<String, String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
+
         if session.connection_state != Ssh3ConnectionState::Connected {
             return Err("Session not connected".to_string());
         }
-        
+
         let forward_id = Uuid::new_v4().to_string();
         let config_clone = config.clone();
         let forward_id_clone = forward_id.clone();
-        
+
         let handle = match config.direction {
-            Ssh3PortForwardDirection::Local => {
-                tokio::spawn(async move {
-                    Self::handle_local_forward(config_clone, forward_id_clone).await
-                })
-            }
-            Ssh3PortForwardDirection::Remote => {
-                tokio::spawn(async move {
-                    Self::handle_remote_forward(config_clone, forward_id_clone).await
-                })
-            }
-            Ssh3PortForwardDirection::Dynamic => {
-                tokio::spawn(async move {
-                    Self::handle_dynamic_forward(config_clone, forward_id_clone).await
-                })
-            }
+            Ssh3PortForwardDirection::Local => tokio::spawn(async move {
+                Self::handle_local_forward(config_clone, forward_id_clone).await
+            }),
+            Ssh3PortForwardDirection::Remote => tokio::spawn(async move {
+                Self::handle_remote_forward(config_clone, forward_id_clone).await
+            }),
+            Ssh3PortForwardDirection::Dynamic => tokio::spawn(async move {
+                Self::handle_dynamic_forward(config_clone, forward_id_clone).await
+            }),
         };
-        
-        self.port_forwards.insert(forward_id.clone(), Ssh3PortForwardHandle {
-            id: forward_id.clone(),
-            config,
-            handle,
-        });
-        
+
+        self.port_forwards.insert(
+            forward_id.clone(),
+            Ssh3PortForwardHandle {
+                id: forward_id.clone(),
+                config,
+                handle,
+            },
+        );
+
         session.last_activity = Utc::now();
-        
+
         Ok(forward_id)
     }
 
@@ -507,23 +524,27 @@ impl Ssh3Service {
         config: Ssh3PortForwardConfig,
         id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        log::info!("SSH3: Starting local forward {}:{} -> {}:{}",
-            config.local_host, config.local_port,
-            config.remote_host, config.remote_port);
-        
-        let listener = tokio::net::TcpListener::bind(
-            format!("{}:{}", config.local_host, config.local_port)
-        ).await?;
-        
+        log::info!(
+            "SSH3: Starting local forward {}:{} -> {}:{}",
+            config.local_host,
+            config.local_port,
+            config.remote_host,
+            config.remote_port
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
+                .await?;
+
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {
                     log::debug!("[{}] SSH3 local forward connection from {}", id, addr);
-                    
+
                     // In full implementation:
                     // 1. Open direct-tcpip QUIC stream
                     // 2. Forward data bidirectionally
-                    
+
                     let _stream = stream;
                 }
                 Err(e) => {
@@ -537,15 +558,19 @@ impl Ssh3Service {
         config: Ssh3PortForwardConfig,
         _id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        log::info!("SSH3: Starting remote forward {}:{} -> {}:{}",
-            config.remote_host, config.remote_port,
-            config.local_host, config.local_port);
-        
+        log::info!(
+            "SSH3: Starting remote forward {}:{} -> {}:{}",
+            config.remote_host,
+            config.remote_port,
+            config.local_host,
+            config.local_port
+        );
+
         // In full implementation:
         // 1. Send tcpip-forward request to server
         // 2. Handle incoming forwarded-tcpip streams
         // 3. Connect to local target and forward
-        
+
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
@@ -555,23 +580,26 @@ impl Ssh3Service {
         config: Ssh3PortForwardConfig,
         id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        log::info!("SSH3: Starting SOCKS5 proxy on {}:{}", 
-            config.local_host, config.local_port);
-        
-        let listener = tokio::net::TcpListener::bind(
-            format!("{}:{}", config.local_host, config.local_port)
-        ).await?;
-        
+        log::info!(
+            "SSH3: Starting SOCKS5 proxy on {}:{}",
+            config.local_host,
+            config.local_port
+        );
+
+        let listener =
+            tokio::net::TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
+                .await?;
+
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {
                     log::debug!("[{}] SSH3 SOCKS5 connection from {}", id, addr);
-                    
+
                     // In full implementation:
                     // 1. Complete SOCKS5 handshake
                     // 2. Open direct-tcpip QUIC stream to target
                     // 3. Forward data bidirectionally
-                    
+
                     let _stream = stream;
                 }
                 Err(e) => {
@@ -596,16 +624,18 @@ impl Ssh3Service {
         session_id: &str,
         channel_id: &str,
     ) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
-        
+
         if let Some(_channel) = session.channels.remove(channel_id) {
             // In full implementation: send channel close request
             log::debug!("SSH3: Closed channel {}", channel_id);
         }
-        
+
         session.last_activity = Utc::now();
-        
+
         Ok(())
     }
 
@@ -616,23 +646,22 @@ impl Ssh3Service {
             if let Some(handle) = session.keep_alive_handle.take() {
                 handle.abort();
             }
-            
+
             // Close all channels
             session.channels.clear();
-            
+
             // In full implementation: close QUIC connection gracefully
-            
+
             log::info!("SSH3: Disconnected session {}", session_id);
         }
-        
+
         Ok(())
     }
 
     /// Get session information
     pub fn get_session_info(&self, session_id: &str) -> Result<Ssh3SessionInfo, String> {
-        let session = self.sessions.get(session_id)
-            .ok_or("Session not found")?;
-        
+        let session = self.sessions.get(session_id).ok_or("Session not found")?;
+
         Ok(Ssh3SessionInfo {
             id: session.id.clone(),
             config: session.config.clone(),
@@ -645,14 +674,17 @@ impl Ssh3Service {
 
     /// List all sessions
     pub fn list_sessions(&self) -> Vec<Ssh3SessionInfo> {
-        self.sessions.values().map(|s| Ssh3SessionInfo {
-            id: s.id.clone(),
-            config: s.config.clone(),
-            connected_at: s.connected_at,
-            last_activity: s.last_activity,
-            state: s.connection_state.clone(),
-            is_alive: s.connection_state == Ssh3ConnectionState::Connected,
-        }).collect()
+        self.sessions
+            .values()
+            .map(|s| Ssh3SessionInfo {
+                id: s.id.clone(),
+                config: s.config.clone(),
+                connected_at: s.connected_at,
+                last_activity: s.last_activity,
+                state: s.connection_state.clone(),
+                is_alive: s.connection_state == Ssh3ConnectionState::Connected,
+            })
+            .collect()
     }
 }
 
@@ -694,7 +726,9 @@ pub async fn send_ssh3_input(
     data: String,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.send_shell_input(&session_id, &channel_id, data).await
+    service
+        .send_shell_input(&session_id, &channel_id, data)
+        .await
 }
 
 #[tauri::command]
@@ -706,7 +740,9 @@ pub async fn resize_ssh3_shell(
     rows: u32,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.resize_shell(&session_id, &channel_id, cols, rows).await
+    service
+        .resize_shell(&session_id, &channel_id, cols, rows)
+        .await
 }
 
 #[tauri::command]
@@ -772,14 +808,18 @@ pub async fn test_ssh3_connection(
     config: Ssh3ConnectionConfig,
 ) -> Result<String, String> {
     // Test connection without storing session
-    log::info!("SSH3: Testing connection to {}:{}", config.host, config.port);
-    
+    log::info!(
+        "SSH3: Testing connection to {}:{}",
+        config.host,
+        config.port
+    );
+
     // In full implementation:
     // 1. Establish QUIC connection
     // 2. Authenticate
     // 3. Disconnect immediately
     // 4. Return result
-    
+
     Ok("SSH3 connection test successful".to_string())
 }
 

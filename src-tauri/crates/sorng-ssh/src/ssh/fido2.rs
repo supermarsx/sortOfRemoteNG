@@ -241,11 +241,7 @@ pub trait Fido2Provider: Send + Sync {
     async fn get_pin_status(&self, device_path: Option<&str>) -> Result<PinStatus, String>;
 
     /// Set a new PIN (when no PIN is set yet).
-    async fn set_pin(
-        &self,
-        device_path: Option<&str>,
-        new_pin: &str,
-    ) -> Result<(), String>;
+    async fn set_pin(&self, device_path: Option<&str>, new_pin: &str) -> Result<(), String>;
 
     /// Change an existing PIN.
     async fn change_pin(
@@ -263,17 +259,10 @@ pub trait Fido2Provider: Send + Sync {
 ///
 /// This avoids embedding an HID/CTAP stack and inherits the user's
 /// system-level authentication dialog.
+#[derive(Default)]
 pub struct OpenSshSkProvider {
     /// Optional path to `ssh-keygen` binary.  `None` = search `$PATH`.
     pub ssh_keygen_path: Option<PathBuf>,
-}
-
-impl Default for OpenSshSkProvider {
-    fn default() -> Self {
-        Self {
-            ssh_keygen_path: None,
-        }
-    }
 }
 
 impl OpenSshSkProvider {
@@ -283,23 +272,21 @@ impl OpenSshSkProvider {
 
     /// Resolve the ssh-keygen binary path.
     fn ssh_keygen(&self) -> PathBuf {
-        self.ssh_keygen_path
-            .clone()
-            .unwrap_or_else(|| {
-                // On Windows, check typical OpenSSH install paths
-                #[cfg(windows)]
-                {
-                    let system_path = PathBuf::from(r"C:\Windows\System32\OpenSSH\ssh-keygen.exe");
-                    if system_path.exists() {
-                        return system_path;
-                    }
-                    let program_files = PathBuf::from(r"C:\Program Files\OpenSSH\ssh-keygen.exe");
-                    if program_files.exists() {
-                        return program_files;
-                    }
+        self.ssh_keygen_path.clone().unwrap_or_else(|| {
+            // On Windows, check typical OpenSSH install paths
+            #[cfg(windows)]
+            {
+                let system_path = PathBuf::from(r"C:\Windows\System32\OpenSSH\ssh-keygen.exe");
+                if system_path.exists() {
+                    return system_path;
                 }
-                PathBuf::from("ssh-keygen")
-            })
+                let program_files = PathBuf::from(r"C:\Program Files\OpenSSH\ssh-keygen.exe");
+                if program_files.exists() {
+                    return program_files;
+                }
+            }
+            PathBuf::from("ssh-keygen")
+        })
     }
 
     /// Run ssh-keygen to generate an SK key pair.
@@ -368,7 +355,12 @@ impl OpenSshSkProvider {
             .stderr(std::process::Stdio::piped())
             .output()
             .await
-            .map_err(|e| format!("Failed to run ssh-keygen: {}. Ensure OpenSSH 8.2+ is installed.", e))?;
+            .map_err(|e| {
+                format!(
+                    "Failed to run ssh-keygen: {}. Ensure OpenSSH 8.2+ is installed.",
+                    e
+                )
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -393,7 +385,10 @@ impl OpenSshSkProvider {
         let _ = tokio::fs::remove_file(&key_file).await;
         let _ = tokio::fs::remove_file(&pub_file).await;
 
-        Ok((private_key.trim().to_string(), public_key.trim().to_string()))
+        Ok((
+            private_key.trim().to_string(),
+            public_key.trim().to_string(),
+        ))
     }
 
     /// Run `ssh-keygen -K` to download resident credentials from a FIDO2 token.
@@ -405,7 +400,10 @@ impl OpenSshSkProvider {
         let args = vec![
             "-K".to_string(),
             "-f".to_string(),
-            output_dir.join("resident_key").to_string_lossy().to_string(),
+            output_dir
+                .join("resident_key")
+                .to_string_lossy()
+                .to_string(),
         ];
 
         // PIN is prompted interactively by ssh-keygen; we pass it via
@@ -420,7 +418,9 @@ impl OpenSshSkProvider {
             cmd.env("SSH_SK_PIN", p);
         }
 
-        let output = cmd.output().await
+        let output = cmd
+            .output()
+            .await
             .map_err(|e| format!("Failed to run ssh-keygen -K: {}", e))?;
 
         if !output.status.success() {
@@ -439,13 +439,22 @@ impl OpenSshSkProvider {
             if path.extension().and_then(|e| e.to_str()) == Some("pub") {
                 continue;
             }
-            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             if name.starts_with("resident_key") && !name.ends_with(".pub") {
                 let priv_content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
                 let pub_path = format!("{}.pub", path.display());
-                let pub_content = tokio::fs::read_to_string(&pub_path).await.unwrap_or_default();
+                let pub_content = tokio::fs::read_to_string(&pub_path)
+                    .await
+                    .unwrap_or_default();
                 if !priv_content.is_empty() && !pub_content.is_empty() {
-                    keys.push((priv_content.trim().to_string(), pub_content.trim().to_string()));
+                    keys.push((
+                        priv_content.trim().to_string(),
+                        pub_content.trim().to_string(),
+                    ));
                 }
             }
         }
@@ -525,8 +534,8 @@ impl Fido2Provider for OpenSshSkProvider {
     }
 
     async fn generate_key(&self, opts: &SkKeyGenOptions) -> Result<SkKeyGenResult, String> {
-        let tmp_dir = tempfile::tempdir()
-            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let tmp_dir =
+            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
         let (private_key_openssh, public_key_openssh) =
             self.run_ssh_keygen_sk(opts, tmp_dir.path()).await?;
@@ -560,8 +569,8 @@ impl Fido2Provider for OpenSshSkProvider {
         // for standalone testing or non-SSH use cases.
         //
         // We write the private key to a temp file and use `ssh-keygen -Y sign`.
-        let tmp_dir = tempfile::tempdir()
-            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let tmp_dir =
+            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
         let key_file = tmp_dir.path().join("sk_key");
         // Write challenge data to sign
@@ -592,7 +601,9 @@ impl Fido2Provider for OpenSshSkProvider {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
-        let output = cmd.output().await
+        let output = cmd
+            .output()
+            .await
             .map_err(|e| format!("ssh-keygen sign failed: {}", e))?;
 
         if !output.status.success() {
@@ -617,8 +628,8 @@ impl Fido2Provider for OpenSshSkProvider {
         _device_path: Option<&str>,
         pin: Option<&str>,
     ) -> Result<Vec<ResidentCredential>, String> {
-        let tmp_dir = tempfile::tempdir()
-            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let tmp_dir =
+            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
         let keys = self.download_resident_keys(tmp_dir.path(), pin).await?;
 
@@ -648,8 +659,11 @@ impl Fido2Provider for OpenSshSkProvider {
     ) -> Result<(), String> {
         // OpenSSH doesn't directly support deleting individual resident keys
         // via ssh-keygen yet — this would require direct CTAP2 communication.
-        Err("Deleting individual resident credentials requires direct CTAP2 support. \
-             Use your authenticator's management tool to remove credentials.".into())
+        Err(
+            "Deleting individual resident credentials requires direct CTAP2 support. \
+             Use your authenticator's management tool to remove credentials."
+                .into(),
+        )
     }
 
     async fn get_pin_status(&self, _device_path: Option<&str>) -> Result<PinStatus, String> {
@@ -663,7 +677,8 @@ impl Fido2Provider for OpenSshSkProvider {
 
     async fn set_pin(&self, _device_path: Option<&str>, _new_pin: &str) -> Result<(), String> {
         Err("PIN management requires direct CTAP2 support. \
-             Use your authenticator's management tool to set a PIN.".into())
+             Use your authenticator's management tool to set a PIN."
+            .into())
     }
 
     async fn change_pin(
@@ -673,7 +688,8 @@ impl Fido2Provider for OpenSshSkProvider {
         _new_pin: &str,
     ) -> Result<(), String> {
         Err("PIN management requires direct CTAP2 support. \
-             Use your authenticator's management tool to change your PIN.".into())
+             Use your authenticator's management tool to change your PIN."
+            .into())
     }
 }
 
@@ -697,7 +713,9 @@ pub async fn check_sk_support() -> SkSupportStatus {
                     ssh_keygen_available: true,
                     sk_support: false,
                     ssh_version: detect_ssh_version().await,
-                    message: "ssh-keygen does not support security key types. Upgrade to OpenSSH 8.2+.".into(),
+                    message:
+                        "ssh-keygen does not support security key types. Upgrade to OpenSSH 8.2+."
+                            .into(),
                 }
             } else {
                 SkSupportStatus {
@@ -708,14 +726,12 @@ pub async fn check_sk_support() -> SkSupportStatus {
                 }
             }
         }
-        Err(_) => {
-            SkSupportStatus {
-                ssh_keygen_available: false,
-                sk_support: false,
-                ssh_version: None,
-                message: "ssh-keygen not found. Install OpenSSH 8.2+ for security key support.".into(),
-            }
-        }
+        Err(_) => SkSupportStatus {
+            ssh_keygen_available: false,
+            sk_support: false,
+            ssh_version: None,
+            message: "ssh-keygen not found. Install OpenSSH 8.2+ for security key support.".into(),
+        },
     }
 }
 
@@ -799,9 +815,13 @@ mod tests {
 
     #[test]
     fn detect_sk_key_types() {
-        assert!(is_sk_private_key("-----BEGIN OPENSSH PRIVATE KEY-----\nsk-ssh-ed25519\n"));
+        assert!(is_sk_private_key(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nsk-ssh-ed25519\n"
+        ));
         assert!(is_sk_private_key("... sk-ecdsa-sha2-nistp256 ..."));
-        assert!(!is_sk_private_key("-----BEGIN OPENSSH PRIVATE KEY-----\nssh-ed25519\n"));
+        assert!(!is_sk_private_key(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nssh-ed25519\n"
+        ));
     }
 
     #[test]
@@ -827,10 +847,7 @@ mod tests {
             detect_sk_algorithm_pubkey("sk-ecdsa-sha2-nistp256@openssh.com AAAA..."),
             Some(SkAlgorithm::EcdsaSk)
         );
-        assert_eq!(
-            detect_sk_algorithm_pubkey("ssh-ed25519 AAAA..."),
-            None
-        );
+        assert_eq!(detect_sk_algorithm_pubkey("ssh-ed25519 AAAA..."), None);
     }
 
     #[test]

@@ -1,9 +1,9 @@
+use crate::ssh::{SshCompressionConfig, SshConnectionConfig, SshServiceState};
+use rquickjs::prelude::Async;
+use rquickjs::{async_with, AsyncContext, AsyncRuntime, Function, Object};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use rquickjs::{AsyncRuntime, AsyncContext, Function, Object, async_with};
-use rquickjs::prelude::Async;
-use crate::ssh::{SshServiceState, SshConnectionConfig, SshCompressionConfig};
 
 pub type ScriptServiceState = Arc<Mutex<ScriptService>>;
 
@@ -37,9 +37,7 @@ pub struct ScriptService {
 
 impl ScriptService {
     pub fn new(ssh_service: SshServiceState) -> ScriptServiceState {
-        Arc::new(Mutex::new(ScriptService {
-            ssh_service,
-        }))
+        Arc::new(Mutex::new(ScriptService { ssh_service }))
     }
 
     pub async fn execute_script(
@@ -51,7 +49,8 @@ impl ScriptService {
         match script_type.as_str() {
             "javascript" => {
                 // Basic security check
-                if code.contains("eval(") || code.contains("Function(") || code.contains("require(") {
+                if code.contains("eval(") || code.contains("Function(") || code.contains("require(")
+                {
                     return Err("Potentially unsafe code detected".to_string());
                 }
 
@@ -78,11 +77,14 @@ impl ScriptService {
                                                     let global = ctx.globals();
                                                     
                                                     // Console mock
-                                                    let _ = global.set("console", ctx.eval::<(), _>("({
-                                                        log: (...args) => {},
-                                                        warn: (...args) => {},
-                                                        error: (...args) => {}
-                                                    })").unwrap_or(()));
+                                                    let _ = {
+                                                        let _: () = ctx.eval::<(), _>("({
+                                                            log: (...args) => {},
+                                                            warn: (...args) => {},
+                                                            error: (...args) => {}
+                                                        })").unwrap_or(());
+                                                        global.set("console", ())
+                                                    };
 
                                                     // SSH Module Binding
                                                     if let Ok(ssh_obj) = Object::new(ctx.clone()) {
@@ -185,7 +187,7 @@ impl ScriptService {
                                     }
                                 }
                             });
-                        },
+                        }
                         Err(e) => {
                             let _ = tx.send(Err(format!("Failed to create tokio runtime: {}", e)));
                         }
@@ -194,26 +196,22 @@ impl ScriptService {
 
                 // Await the result from the thread
                 match rx.await {
-                    Ok(res) => {
-                        match res {
-                            Ok(output) => Ok(ScriptResult {
-                                success: true,
-                                result: Some(output),
-                                error: None,
-                            }),
-                            Err(e) => Ok(ScriptResult {
-                                success: false,
-                                result: None,
-                                error: Some(e),
-                            }),
-                        }
+                    Ok(res) => match res {
+                        Ok(output) => Ok(ScriptResult {
+                            success: true,
+                            result: Some(output),
+                            error: None,
+                        }),
+                        Err(e) => Ok(ScriptResult {
+                            success: false,
+                            result: None,
+                            error: Some(e),
+                        }),
                     },
-                    Err(e) => Err(format!("Script thread panicked or cancelled: {}", e))
+                    Err(e) => Err(format!("Script thread panicked or cancelled: {}", e)),
                 }
             }
-            "typescript" => {
-                Err("TypeScript execution not yet implemented".to_string())
-            }
+            "typescript" => Err("TypeScript execution not yet implemented".to_string()),
             _ => Err(format!("Unsupported script type: {}", script_type)),
         }
     }

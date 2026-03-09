@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use chrono::Utc;
+use uuid::Uuid;
 
 use super::types::*;
 use super::{FTP_TUNNELS, RDP_TUNNELS, VNC_TUNNELS};
@@ -35,7 +35,9 @@ pub async fn setup_ftp_tunnel(
 
     let control_forward_id = ssh.setup_port_forward(&session_id, control_config).await?;
 
-    let actual_control_port = ssh.sessions.get(&session_id)
+    let actual_control_port = ssh
+        .sessions
+        .get(&session_id)
         .and_then(|s| s.port_forwards.get(&control_forward_id))
         .map(|pf| pf.config.local_port)
         .unwrap_or(local_control_port);
@@ -63,7 +65,11 @@ pub async fn setup_ftp_tunnel(
                     passive_ports.push(data_port);
                 }
                 Err(e) => {
-                    log::warn!("Failed to setup passive port forward for port {}: {}", data_port, e);
+                    log::warn!(
+                        "Failed to setup passive port forward for port {}: {}",
+                        data_port,
+                        e
+                    );
                 }
             }
         }
@@ -85,8 +91,13 @@ pub async fn setup_ftp_tunnel(
         tunnels.insert(tunnel_id.clone(), status.clone());
     }
 
-    log::info!("FTP tunnel {} created: local port {} -> {}:{}",
-               tunnel_id, actual_control_port, status.remote_ftp_host, status.remote_ftp_port);
+    log::info!(
+        "FTP tunnel {} created: local port {} -> {}:{}",
+        tunnel_id,
+        actual_control_port,
+        status.remote_ftp_host,
+        status.remote_ftp_port
+    );
 
     Ok(status)
 }
@@ -98,20 +109,26 @@ pub async fn stop_ftp_tunnel(
     tunnel_id: String,
 ) -> Result<(), String> {
     let tunnel_status = {
-        let mut tunnels = FTP_TUNNELS.lock()
+        let mut tunnels = FTP_TUNNELS
+            .lock()
             .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
-        tunnels.remove(&tunnel_id)
-            .ok_or("FTP tunnel not found")?
+        tunnels.remove(&tunnel_id).ok_or("FTP tunnel not found")?
     };
 
     let mut ssh = state.lock().await;
 
-    if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, &tunnel_status.control_forward_id).await {
+    if let Err(e) = ssh
+        .stop_port_forward(&tunnel_status.session_id, &tunnel_status.control_forward_id)
+        .await
+    {
         log::warn!("Failed to stop control port forward: {}", e);
     }
 
     for forward_id in &tunnel_status.data_forward_ids {
-        if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, forward_id).await {
+        if let Err(e) = ssh
+            .stop_port_forward(&tunnel_status.session_id, forward_id)
+            .await
+        {
             log::warn!("Failed to stop data port forward {}: {}", forward_id, e);
         }
     }
@@ -123,7 +140,8 @@ pub async fn stop_ftp_tunnel(
 /// Get status of an FTP tunnel
 #[tauri::command]
 pub fn get_ftp_tunnel_status(tunnel_id: String) -> Result<Option<FtpTunnelStatus>, String> {
-    let tunnels = FTP_TUNNELS.lock()
+    let tunnels = FTP_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
     Ok(tunnels.get(&tunnel_id).cloned())
 }
@@ -131,7 +149,8 @@ pub fn get_ftp_tunnel_status(tunnel_id: String) -> Result<Option<FtpTunnelStatus
 /// List all active FTP tunnels
 #[tauri::command]
 pub fn list_ftp_tunnels() -> Result<Vec<FtpTunnelStatus>, String> {
-    let tunnels = FTP_TUNNELS.lock()
+    let tunnels = FTP_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
     Ok(tunnels.values().cloned().collect())
 }
@@ -139,9 +158,11 @@ pub fn list_ftp_tunnels() -> Result<Vec<FtpTunnelStatus>, String> {
 /// List FTP tunnels for a specific SSH session
 #[tauri::command]
 pub fn list_session_ftp_tunnels(session_id: String) -> Result<Vec<FtpTunnelStatus>, String> {
-    let tunnels = FTP_TUNNELS.lock()
+    let tunnels = FTP_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
-    Ok(tunnels.values()
+    Ok(tunnels
+        .values()
         .filter(|t| t.session_id == session_id)
         .cloned()
         .collect())
@@ -162,7 +183,10 @@ pub async fn setup_rdp_tunnel(
     let mut ssh = state.lock().await;
 
     let local_port = config.local_port.unwrap_or(13389);
-    let bind_interface = config.bind_interface.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+    let bind_interface = config
+        .bind_interface
+        .clone()
+        .unwrap_or_else(|| "127.0.0.1".to_string());
 
     let forward_config = PortForwardConfig {
         local_host: bind_interface.clone(),
@@ -174,7 +198,9 @@ pub async fn setup_rdp_tunnel(
 
     let forward_id = ssh.setup_port_forward(&session_id, forward_config).await?;
 
-    let actual_port = ssh.sessions.get(&session_id)
+    let actual_port = ssh
+        .sessions
+        .get(&session_id)
         .and_then(|s| s.port_forwards.get(&forward_id))
         .map(|pf| pf.config.local_port)
         .unwrap_or(local_port);
@@ -205,8 +231,13 @@ pub async fn setup_rdp_tunnel(
         tunnels.insert(tunnel_id.clone(), status.clone());
     }
 
-    log::info!("RDP tunnel {} created: {} -> {}:{}",
-               tunnel_id, connection_string, status.remote_rdp_host, status.remote_rdp_port);
+    log::info!(
+        "RDP tunnel {} created: {} -> {}:{}",
+        tunnel_id,
+        connection_string,
+        status.remote_rdp_host,
+        status.remote_rdp_port
+    );
 
     Ok(status)
 }
@@ -218,15 +249,18 @@ pub async fn stop_rdp_tunnel(
     tunnel_id: String,
 ) -> Result<(), String> {
     let tunnel_status = {
-        let mut tunnels = RDP_TUNNELS.lock()
+        let mut tunnels = RDP_TUNNELS
+            .lock()
             .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
-        tunnels.remove(&tunnel_id)
-            .ok_or("RDP tunnel not found")?
+        tunnels.remove(&tunnel_id).ok_or("RDP tunnel not found")?
     };
 
     let mut ssh = state.lock().await;
 
-    if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, &tunnel_status.forward_id).await {
+    if let Err(e) = ssh
+        .stop_port_forward(&tunnel_status.session_id, &tunnel_status.forward_id)
+        .await
+    {
         log::warn!("Failed to stop RDP port forward: {}", e);
     }
 
@@ -237,7 +271,8 @@ pub async fn stop_rdp_tunnel(
 /// Get status of an RDP tunnel
 #[tauri::command]
 pub fn get_rdp_tunnel_status(tunnel_id: String) -> Result<Option<RdpTunnelStatus>, String> {
-    let tunnels = RDP_TUNNELS.lock()
+    let tunnels = RDP_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
     Ok(tunnels.get(&tunnel_id).cloned())
 }
@@ -245,7 +280,8 @@ pub fn get_rdp_tunnel_status(tunnel_id: String) -> Result<Option<RdpTunnelStatus
 /// List all active RDP tunnels
 #[tauri::command]
 pub fn list_rdp_tunnels() -> Result<Vec<RdpTunnelStatus>, String> {
-    let tunnels = RDP_TUNNELS.lock()
+    let tunnels = RDP_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
     Ok(tunnels.values().cloned().collect())
 }
@@ -253,9 +289,11 @@ pub fn list_rdp_tunnels() -> Result<Vec<RdpTunnelStatus>, String> {
 /// List RDP tunnels for a specific SSH session
 #[tauri::command]
 pub fn list_session_rdp_tunnels(session_id: String) -> Result<Vec<RdpTunnelStatus>, String> {
-    let tunnels = RDP_TUNNELS.lock()
+    let tunnels = RDP_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
-    Ok(tunnels.values()
+    Ok(tunnels
+        .values()
         .filter(|t| t.session_id == session_id)
         .cloned()
         .collect())
@@ -295,9 +333,11 @@ pub async fn stop_session_rdp_tunnels(
     session_id: String,
 ) -> Result<u32, String> {
     let tunnel_ids: Vec<String> = {
-        let tunnels = RDP_TUNNELS.lock()
+        let tunnels = RDP_TUNNELS
+            .lock()
             .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
-        tunnels.values()
+        tunnels
+            .values()
             .filter(|t| t.session_id == session_id)
             .map(|t| t.tunnel_id.clone())
             .collect()
@@ -315,12 +355,15 @@ pub async fn stop_session_rdp_tunnels(
 
 /// Generate an RDP file for a tunnel (can be opened directly by Windows Remote Desktop)
 #[tauri::command]
-pub fn generate_rdp_file(tunnel_id: String, options: Option<RdpFileOptions>) -> Result<String, String> {
-    let tunnels = RDP_TUNNELS.lock()
+pub fn generate_rdp_file(
+    tunnel_id: String,
+    options: Option<RdpFileOptions>,
+) -> Result<String, String> {
+    let tunnels = RDP_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
 
-    let tunnel = tunnels.get(&tunnel_id)
-        .ok_or("RDP tunnel not found")?;
+    let tunnel = tunnels.get(&tunnel_id).ok_or("RDP tunnel not found")?;
 
     let opts = options.unwrap_or_default();
 
@@ -420,7 +463,10 @@ pub async fn setup_vnc_tunnel(
     };
 
     let local_port = config.local_port.unwrap_or(15900);
-    let bind_interface = config.bind_interface.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+    let bind_interface = config
+        .bind_interface
+        .clone()
+        .unwrap_or_else(|| "127.0.0.1".to_string());
 
     let forward_config = PortForwardConfig {
         local_host: bind_interface.clone(),
@@ -432,7 +478,9 @@ pub async fn setup_vnc_tunnel(
 
     let forward_id = ssh.setup_port_forward(&session_id, forward_config).await?;
 
-    let actual_port = ssh.sessions.get(&session_id)
+    let actual_port = ssh
+        .sessions
+        .get(&session_id)
         .and_then(|s| s.port_forwards.get(&forward_id))
         .map(|pf| pf.config.local_port)
         .unwrap_or(local_port);
@@ -461,8 +509,13 @@ pub async fn setup_vnc_tunnel(
         tunnels.insert(tunnel_id.clone(), status.clone());
     }
 
-    log::info!("VNC tunnel {} created: {} -> {}:{}",
-               tunnel_id, connection_string, status.remote_vnc_host, status.remote_vnc_port);
+    log::info!(
+        "VNC tunnel {} created: {} -> {}:{}",
+        tunnel_id,
+        connection_string,
+        status.remote_vnc_host,
+        status.remote_vnc_port
+    );
 
     Ok(status)
 }
@@ -474,15 +527,18 @@ pub async fn stop_vnc_tunnel(
     tunnel_id: String,
 ) -> Result<(), String> {
     let tunnel_status = {
-        let mut tunnels = VNC_TUNNELS.lock()
+        let mut tunnels = VNC_TUNNELS
+            .lock()
             .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
-        tunnels.remove(&tunnel_id)
-            .ok_or("VNC tunnel not found")?
+        tunnels.remove(&tunnel_id).ok_or("VNC tunnel not found")?
     };
 
     let mut ssh = state.lock().await;
 
-    if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, &tunnel_status.forward_id).await {
+    if let Err(e) = ssh
+        .stop_port_forward(&tunnel_status.session_id, &tunnel_status.forward_id)
+        .await
+    {
         log::warn!("Failed to stop VNC port forward: {}", e);
     }
 
@@ -493,7 +549,8 @@ pub async fn stop_vnc_tunnel(
 /// Get status of a VNC tunnel
 #[tauri::command]
 pub fn get_vnc_tunnel_status(tunnel_id: String) -> Result<Option<VncTunnelStatus>, String> {
-    let tunnels = VNC_TUNNELS.lock()
+    let tunnels = VNC_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
     Ok(tunnels.get(&tunnel_id).cloned())
 }
@@ -501,7 +558,8 @@ pub fn get_vnc_tunnel_status(tunnel_id: String) -> Result<Option<VncTunnelStatus
 /// List all active VNC tunnels
 #[tauri::command]
 pub fn list_vnc_tunnels() -> Result<Vec<VncTunnelStatus>, String> {
-    let tunnels = VNC_TUNNELS.lock()
+    let tunnels = VNC_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
     Ok(tunnels.values().cloned().collect())
 }
@@ -509,9 +567,11 @@ pub fn list_vnc_tunnels() -> Result<Vec<VncTunnelStatus>, String> {
 /// List VNC tunnels for a specific SSH session
 #[tauri::command]
 pub fn list_session_vnc_tunnels(session_id: String) -> Result<Vec<VncTunnelStatus>, String> {
-    let tunnels = VNC_TUNNELS.lock()
+    let tunnels = VNC_TUNNELS
+        .lock()
         .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
-    Ok(tunnels.values()
+    Ok(tunnels
+        .values()
         .filter(|t| t.session_id == session_id)
         .cloned()
         .collect())

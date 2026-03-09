@@ -19,7 +19,7 @@ fn strip_ansi_with_map(input: &str) -> (String, Vec<usize>) {
     // and two-byte SS2/SS3/ESC-letter sequences.
     lazy_static::lazy_static! {
         static ref ANSI_RE: Regex = Regex::new(
-            r"(\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[^[\]])"
+            r"(\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[^\[\]])"
         ).unwrap();
     }
 
@@ -32,7 +32,8 @@ fn strip_ansi_with_map(input: &str) -> (String, Vec<usize>) {
         let visible = &input[last_end..m.start()];
         for (i, _) in visible.char_indices() {
             let orig_pos = last_end + i;
-            let ch = &input[orig_pos..orig_pos + input[orig_pos..].chars().next().unwrap().len_utf8()];
+            let ch =
+                &input[orig_pos..orig_pos + input[orig_pos..].chars().next().unwrap().len_utf8()];
             for _ in 0..ch.len() {
                 index_map.push(orig_pos);
             }
@@ -70,22 +71,22 @@ fn color_to_sgr(color: &str, is_bg: bool) -> Option<String> {
     let bright_base: u8 = if is_bg { 100 } else { 90 };
 
     match color.to_lowercase().as_str() {
-        "black"          => Some(format!("{}", base)),
-        "red"            => Some(format!("{}", base + 1)),
-        "green"          => Some(format!("{}", base + 2)),
-        "yellow"         => Some(format!("{}", base + 3)),
-        "blue"           => Some(format!("{}", base + 4)),
-        "magenta"        => Some(format!("{}", base + 5)),
-        "cyan"           => Some(format!("{}", base + 6)),
-        "white"          => Some(format!("{}", base + 7)),
-        "bright_black"   => Some(format!("{}", bright_base)),
-        "bright_red"     => Some(format!("{}", bright_base + 1)),
-        "bright_green"   => Some(format!("{}", bright_base + 2)),
-        "bright_yellow"  => Some(format!("{}", bright_base + 3)),
-        "bright_blue"    => Some(format!("{}", bright_base + 4)),
+        "black" => Some(format!("{}", base)),
+        "red" => Some(format!("{}", base + 1)),
+        "green" => Some(format!("{}", base + 2)),
+        "yellow" => Some(format!("{}", base + 3)),
+        "blue" => Some(format!("{}", base + 4)),
+        "magenta" => Some(format!("{}", base + 5)),
+        "cyan" => Some(format!("{}", base + 6)),
+        "white" => Some(format!("{}", base + 7)),
+        "bright_black" => Some(format!("{}", bright_base)),
+        "bright_red" => Some(format!("{}", bright_base + 1)),
+        "bright_green" => Some(format!("{}", bright_base + 2)),
+        "bright_yellow" => Some(format!("{}", bright_base + 3)),
+        "bright_blue" => Some(format!("{}", bright_base + 4)),
         "bright_magenta" => Some(format!("{}", bright_base + 5)),
-        "bright_cyan"    => Some(format!("{}", bright_base + 6)),
-        "bright_white"   => Some(format!("{}", bright_base + 7)),
+        "bright_cyan" => Some(format!("{}", bright_base + 6)),
+        "bright_white" => Some(format!("{}", bright_base + 7)),
         hex if hex.starts_with('#') && hex.len() == 7 => {
             let r = u8::from_str_radix(&hex[1..3], 16).ok()?;
             let g = u8::from_str_radix(&hex[3..5], 16).ok()?;
@@ -108,9 +109,15 @@ fn color_to_sgr(color: &str, is_bg: bool) -> Option<String> {
 /// Build the full ANSI SGR "open" sequence for a highlight rule.
 fn build_ansi_open(rule: &HighlightRule) -> String {
     let mut params: Vec<String> = Vec::new();
-    if rule.bold { params.push("1".to_string()); }
-    if rule.italic { params.push("3".to_string()); }
-    if rule.underline { params.push("4".to_string()); }
+    if rule.bold {
+        params.push("1".to_string());
+    }
+    if rule.italic {
+        params.push("3".to_string());
+    }
+    if rule.underline {
+        params.push("4".to_string());
+    }
     if let Some(ref fg) = rule.fg_color {
         if let Some(sgr) = color_to_sgr(fg, false) {
             params.push(sgr);
@@ -193,8 +200,11 @@ pub(crate) fn apply_highlights(input: &str, state: &HighlightState) -> String {
     // Sort by start position, then by priority (already sorted, but
     // re-sort by start to interleave correctly).
     all_matches.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then(state.compiled[a.2].priority.cmp(&state.compiled[b.2].priority))
+        a.0.cmp(&b.0).then(
+            state.compiled[a.2]
+                .priority
+                .cmp(&state.compiled[b.2].priority),
+        )
     });
 
     // Remove overlapping matches — first match (by position, then priority) wins.
@@ -221,7 +231,11 @@ pub(crate) fn apply_highlights(input: &str, state: &HighlightState) -> String {
             // End position: the byte *after* the last matched byte in original
             let raw = index_map[ce - 1];
             // Advance past the full character at that position
-            raw + input[raw..].chars().next().map(|c| c.len_utf8()).unwrap_or(1)
+            raw + input[raw..]
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(1)
         } else {
             index_map[ce] // sentinel = input.len()
         };
@@ -273,44 +287,46 @@ pub(crate) fn process_highlight_output(session_id: &str, output: &str) -> String
 
 /// Set (replace) the full list of highlight rules for a session.
 #[tauri::command]
-pub fn set_highlight_rules(
-    session_id: String,
-    rules: Vec<HighlightRule>,
-) -> Result<(), String> {
+pub fn set_highlight_rules(session_id: String, rules: Vec<HighlightRule>) -> Result<(), String> {
     let state = compile_rules(&rules)?;
-    let mut highlights = ACTIVE_HIGHLIGHTS.lock()
+    let mut highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
     highlights.insert(session_id.clone(), state);
-    log::info!("Set {} highlight rules for session {}", rules.len(), session_id);
+    log::info!(
+        "Set {} highlight rules for session {}",
+        rules.len(),
+        session_id
+    );
     Ok(())
 }
 
 /// Get the current highlight rules for a session.
 #[tauri::command]
 pub fn get_highlight_rules(session_id: String) -> Result<Vec<HighlightRule>, String> {
-    let highlights = ACTIVE_HIGHLIGHTS.lock()
+    let highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-    Ok(highlights.get(&session_id)
+    Ok(highlights
+        .get(&session_id)
         .map(|s| s.rules.clone())
         .unwrap_or_default())
 }
 
 /// Add a single highlight rule to a session (appended to the end).
 #[tauri::command]
-pub fn add_highlight_rule(
-    session_id: String,
-    rule: HighlightRule,
-) -> Result<(), String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS.lock()
+pub fn add_highlight_rule(session_id: String, rule: HighlightRule) -> Result<(), String> {
+    let mut highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
 
-    let mut rules = highlights.get(&session_id)
+    let mut rules = highlights
+        .get(&session_id)
         .map(|s| s.rules.clone())
         .unwrap_or_default();
 
     // Validate the regex eagerly
-    Regex::new(&rule.pattern)
-        .map_err(|e| format!("Invalid regex pattern: {}", e))?;
+    Regex::new(&rule.pattern).map_err(|e| format!("Invalid regex pattern: {}", e))?;
 
     rules.push(rule);
     let state = compile_rules(&rules)?;
@@ -320,11 +336,9 @@ pub fn add_highlight_rule(
 
 /// Remove a highlight rule by its id.
 #[tauri::command]
-pub fn remove_highlight_rule(
-    session_id: String,
-    rule_id: String,
-) -> Result<bool, String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS.lock()
+pub fn remove_highlight_rule(session_id: String, rule_id: String) -> Result<bool, String> {
+    let mut highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
 
     if let Some(existing) = highlights.get(&session_id) {
@@ -342,11 +356,9 @@ pub fn remove_highlight_rule(
 
 /// Update an existing highlight rule in-place (matched by `rule.id`).
 #[tauri::command]
-pub fn update_highlight_rule(
-    session_id: String,
-    rule: HighlightRule,
-) -> Result<bool, String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS.lock()
+pub fn update_highlight_rule(session_id: String, rule: HighlightRule) -> Result<bool, String> {
+    let mut highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
 
     if let Some(existing) = highlights.get(&session_id) {
@@ -363,8 +375,7 @@ pub fn update_highlight_rule(
             return Ok(false);
         }
         // Re-validate
-        Regex::new(&rule.pattern)
-            .map_err(|e| format!("Invalid regex pattern: {}", e))?;
+        Regex::new(&rule.pattern).map_err(|e| format!("Invalid regex pattern: {}", e))?;
         let state = compile_rules(&rules)?;
         highlights.insert(session_id, state);
         Ok(true)
@@ -376,7 +387,8 @@ pub fn update_highlight_rule(
 /// Clear all highlight rules for a session.
 #[tauri::command]
 pub fn clear_highlight_rules(session_id: String) -> Result<(), String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS.lock()
+    let mut highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
     highlights.remove(&session_id);
     log::info!("Cleared highlight rules for session {}", session_id);
@@ -386,7 +398,8 @@ pub fn clear_highlight_rules(session_id: String) -> Result<(), String> {
 /// Get highlight status for a session.
 #[tauri::command]
 pub fn get_highlight_status(session_id: String) -> Result<Option<HighlightStatus>, String> {
-    let highlights = ACTIVE_HIGHLIGHTS.lock()
+    let highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
 
     Ok(highlights.get(&session_id).map(|state| HighlightStatus {
@@ -399,7 +412,8 @@ pub fn get_highlight_status(session_id: String) -> Result<Option<HighlightStatus
 /// List all sessions that have active highlight rules.
 #[tauri::command]
 pub fn list_highlighted_sessions() -> Result<Vec<String>, String> {
-    let highlights = ACTIVE_HIGHLIGHTS.lock()
+    let highlights = ACTIVE_HIGHLIGHTS
+        .lock()
         .map_err(|e| format!("Failed to lock highlights: {}", e))?;
     Ok(highlights.keys().cloned().collect())
 }

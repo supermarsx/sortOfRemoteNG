@@ -56,13 +56,20 @@ pub fn expand_command(template: &str, host: &str, port: u16, username: &str) -> 
 }
 
 /// Build the full command string from a `ProxyCommandConfig`.
-pub fn build_command_string(config: &ProxyCommandConfig, host: &str, port: u16, username: &str) -> Result<String, String> {
+pub fn build_command_string(
+    config: &ProxyCommandConfig,
+    host: &str,
+    port: u16,
+    username: &str,
+) -> Result<String, String> {
     if let Some(ref cmd) = config.command {
         // Direct command — just expand placeholders
         return Ok(expand_command(cmd, host, port, username));
     }
 
-    let template = config.template.as_ref()
+    let template = config
+        .template
+        .as_ref()
         .ok_or("ProxyCommand requires either 'command' or 'template'")?;
 
     let proxy_host = config.proxy_host.as_deref().unwrap_or("127.0.0.1");
@@ -100,14 +107,20 @@ pub fn build_command_string(config: &ProxyCommandConfig, host: &str, port: u16, 
             let mut cmd = format!("connect {} {}:{} ", flag, proxy_host, proxy_port);
             if let (Some(user), Some(pass)) = (&config.proxy_username, &config.proxy_password) {
                 // connect uses -P for proxy password — set auth via env in practice
-                cmd = format!("connect {} {}:{}@{}:{} ", flag, user, pass, proxy_host, proxy_port);
+                cmd = format!(
+                    "connect {} {}:{}@{}:{} ",
+                    flag, user, pass, proxy_host, proxy_port
+                );
             }
             cmd.push_str(&format!("{} {}", host, port));
             Ok(cmd)
         }
         ProxyCommandTemplate::Corkscrew => {
             // corkscrew proxy_host proxy_port target_host target_port [auth_file]
-            Ok(format!("corkscrew {} {} {} {}", proxy_host, proxy_port, host, port))
+            Ok(format!(
+                "corkscrew {} {} {} {}",
+                proxy_host, proxy_port, host, port
+            ))
         }
         ProxyCommandTemplate::SshStdio => {
             // ssh -W %h:%p <proxy_host> [-p proxy_port] [-l proxy_user]
@@ -159,10 +172,15 @@ pub fn spawn_proxy_command(
     // between the child's stdio and this socket.
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
         .map_err(|e| format!("Failed to bind ProxyCommand relay listener: {}", e))?;
-    let relay_addr = listener.local_addr()
+    let relay_addr = listener
+        .local_addr()
         .map_err(|e| format!("Failed to get relay address: {}", e))?;
 
-    let timeout = Duration::from_secs(if connect_timeout > 0 { connect_timeout } else { 15 });
+    let timeout = Duration::from_secs(if connect_timeout > 0 {
+        connect_timeout
+    } else {
+        15
+    });
 
     // Accept thread: accepts one connection on the relay listener and does
     // the bi-directional relay to the child.
@@ -177,7 +195,11 @@ pub fn spawn_proxy_command(
         let socket = match listener.accept() {
             Ok((s, _)) => s,
             Err(e) => {
-                log::error!("[{}] ProxyCommand relay accept failed: {}", session_id_owned, e);
+                log::error!(
+                    "[{}] ProxyCommand relay accept failed: {}",
+                    session_id_owned,
+                    e
+                );
                 return;
             }
         };
@@ -214,11 +236,15 @@ pub fn spawn_proxy_command(
         let t1 = std::thread::spawn(move || {
             let mut buf = [0u8; 32768];
             loop {
-                if cancel_a.load(std::sync::atomic::Ordering::Relaxed) { break; }
+                if cancel_a.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
                 match child_stdout.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if socket_write.write_all(&buf[..n]).is_err() { break; }
+                        if socket_write.write_all(&buf[..n]).is_err() {
+                            break;
+                        }
                         let _ = socket_write.flush();
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -237,11 +263,15 @@ pub fn spawn_proxy_command(
             let mut buf = [0u8; 32768];
             socket_read.set_nonblocking(false).ok();
             loop {
-                if cancel_b.load(std::sync::atomic::Ordering::Relaxed) { break; }
+                if cancel_b.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
                 match socket_read.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if child_stdin.write_all(&buf[..n]).is_err() { break; }
+                        if child_stdin.write_all(&buf[..n]).is_err() {
+                            break;
+                        }
                         let _ = child_stdin.flush();
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -260,30 +290,40 @@ pub fn spawn_proxy_command(
         // Clean up child
         let _ = child_handle.kill();
         let _ = child_handle.wait();
-        log::info!("[{}] ProxyCommand `{}` terminated", session_id_owned, cmd_clone);
+        log::info!(
+            "[{}] ProxyCommand `{}` terminated",
+            session_id_owned,
+            cmd_clone
+        );
     });
 
     // Connect to the relay socket — this is the stream we'll hand to ssh2
-    let stream = std::net::TcpStream::connect_timeout(
-        &relay_addr,
-        timeout,
-    ).map_err(|e| format!("Failed to connect to ProxyCommand relay: {}", e))?;
+    let stream = std::net::TcpStream::connect_timeout(&relay_addr, timeout)
+        .map_err(|e| format!("Failed to connect to ProxyCommand relay: {}", e))?;
 
-    stream.set_nonblocking(false)
+    stream
+        .set_nonblocking(false)
         .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
 
     // Store state
     if let Ok(mut cmds) = PROXY_COMMANDS.lock() {
-        cmds.insert(session_id.to_string(), ProxyCommandState {
-            session_id: session_id.to_string(),
-            command: cmd_string.clone(),
-            child: None, // child moved into relay thread
-            cancelled,
-            relay_handles: vec![relay_thread],
-        });
+        cmds.insert(
+            session_id.to_string(),
+            ProxyCommandState {
+                session_id: session_id.to_string(),
+                command: cmd_string.clone(),
+                child: None, // child moved into relay thread
+                cancelled,
+                relay_handles: vec![relay_thread],
+            },
+        );
     }
 
-    log::info!("[{}] ProxyCommand connected via relay at {}", session_id, relay_addr);
+    log::info!(
+        "[{}] ProxyCommand connected via relay at {}",
+        session_id,
+        relay_addr
+    );
 
     Ok(stream)
 }
@@ -292,7 +332,9 @@ pub fn spawn_proxy_command(
 pub fn stop_proxy_command(session_id: &str) -> Result<(), String> {
     if let Ok(mut cmds) = PROXY_COMMANDS.lock() {
         if let Some(state) = cmds.remove(session_id) {
-            state.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+            state
+                .cancelled
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             if let Some(mut child) = state.child {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -305,11 +347,12 @@ pub fn stop_proxy_command(session_id: &str) -> Result<(), String> {
 
 /// Get ProxyCommand status for a session.
 pub fn get_proxy_command_status(session_id: &str) -> Result<Option<ProxyCommandStatus>, String> {
-    let cmds = PROXY_COMMANDS.lock()
+    let cmds = PROXY_COMMANDS
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
 
     Ok(cmds.get(session_id).map(|state| {
-        let alive = state.cancelled.load(std::sync::atomic::Ordering::Relaxed) == false;
+        let alive = !state.cancelled.load(std::sync::atomic::Ordering::Relaxed);
         ProxyCommandStatus {
             session_id: session_id.to_string(),
             command: state.command.clone(),
@@ -348,17 +391,13 @@ fn spawn_shell_command(cmd: &str) -> std::io::Result<Child> {
 
 /// Get the status of a ProxyCommand for an SSH session.
 #[tauri::command]
-pub fn get_proxy_command_info(
-    session_id: String,
-) -> Result<Option<ProxyCommandStatus>, String> {
+pub fn get_proxy_command_info(session_id: String) -> Result<Option<ProxyCommandStatus>, String> {
     get_proxy_command_status(&session_id)
 }
 
 /// Stop a running ProxyCommand for an SSH session.
 #[tauri::command]
-pub fn stop_proxy_command_cmd(
-    session_id: String,
-) -> Result<(), String> {
+pub fn stop_proxy_command_cmd(session_id: String) -> Result<(), String> {
     stop_proxy_command(&session_id)
 }
 
@@ -373,8 +412,8 @@ pub async fn test_proxy_command(
 ) -> Result<ProxyCommandStatus, String> {
     let cmd_string = build_command_string(&config, &host, port, &username)?;
 
-    let mut child = spawn_shell_command(&cmd_string)
-        .map_err(|e| format!("Failed to spawn: {}", e))?;
+    let mut child =
+        spawn_shell_command(&cmd_string).map_err(|e| format!("Failed to spawn: {}", e))?;
 
     let pid = child.id();
 
@@ -391,7 +430,9 @@ pub async fn test_proxy_command(
             Ok(Some(status)) => status.success(),
             Err(_) => false,
         }
-    }).await.unwrap_or(false);
+    })
+    .await
+    .unwrap_or(false);
 
     Ok(ProxyCommandStatus {
         session_id: String::new(),

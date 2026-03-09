@@ -162,14 +162,8 @@ impl SkPublicKey {
     /// Encode to the OpenSSH authorized_keys / `.pub` format.
     pub fn to_openssh_pubkey(&self) -> String {
         let wire = self.to_wire_bytes();
-        let b64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &wire,
-        );
-        let comment = self
-            .comment
-            .as_deref()
-            .unwrap_or("");
+        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &wire);
+        let comment = self.comment.as_deref().unwrap_or("");
         if comment.is_empty() {
             format!("{} {}", self.algorithm.as_openssh_str(), b64)
         } else {
@@ -182,16 +176,14 @@ impl SkPublicKey {
         let mut cursor = 0;
 
         let algo_bytes = read_string(data, &mut cursor)?;
-        let algo_str = std::str::from_utf8(&algo_bytes)
-            .map_err(|_| "invalid UTF-8 in algorithm field")?;
+        let algo_str =
+            std::str::from_utf8(&algo_bytes).map_err(|_| "invalid UTF-8 in algorithm field")?;
 
         let algorithm = SkAlgorithm::from_openssh_str(algo_str)
             .ok_or_else(|| format!("unknown SK algorithm: {}", algo_str))?;
 
         let public_key = match algorithm {
-            SkAlgorithm::Ed25519Sk => {
-                read_string(data, &mut cursor)?
-            }
+            SkAlgorithm::Ed25519Sk => read_string(data, &mut cursor)?,
             SkAlgorithm::EcdsaSk => {
                 let _curve = read_string(data, &mut cursor)?; // "nistp256"
                 read_string(data, &mut cursor)?
@@ -222,11 +214,8 @@ impl SkPublicKey {
         let b64 = parts[1];
         let comment = parts.get(2).map(|s| s.to_string());
 
-        let wire = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            b64,
-        )
-        .map_err(|e| format!("base64 decode error: {}", e))?;
+        let wire = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+            .map_err(|e| format!("base64 decode error: {}", e))?;
 
         let mut pk = Self::from_wire_bytes(&wire)?;
         pk.comment = comment;
@@ -238,10 +227,10 @@ impl SkPublicKey {
         use sha2::{Digest, Sha256};
         let wire = self.to_wire_bytes();
         let hash = Sha256::digest(&wire);
-        format!("SHA256:{}", base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &hash,
-        ))
+        format!(
+            "SHA256:{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash,)
+        )
     }
 }
 
@@ -331,8 +320,8 @@ impl SkSignature {
         let mut cursor = 0;
 
         let algo_bytes = read_string(data, &mut cursor)?;
-        let algo_str = std::str::from_utf8(&algo_bytes)
-            .map_err(|_| "invalid UTF-8 in signature algorithm")?;
+        let algo_str =
+            std::str::from_utf8(&algo_bytes).map_err(|_| "invalid UTF-8 in signature algorithm")?;
         let algorithm = SkAlgorithm::from_openssh_str(algo_str)
             .ok_or_else(|| format!("unknown SK algorithm in signature: {}", algo_str))?;
 

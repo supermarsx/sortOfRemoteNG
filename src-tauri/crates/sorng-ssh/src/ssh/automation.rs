@@ -1,6 +1,6 @@
-use std::time::Duration;
-use regex::Regex;
 use chrono::Utc;
+use regex::Regex;
+use std::time::Duration;
 
 use super::types::*;
 use super::{ACTIVE_AUTOMATIONS, TERMINAL_BUFFERS};
@@ -21,7 +21,9 @@ pub(crate) fn process_automation_output(session_id: &str, output: &str) {
             }
 
             // Check max matches
-            if state.script.max_matches > 0 && state.matches.len() >= state.script.max_matches as usize {
+            if state.script.max_matches > 0
+                && state.matches.len() >= state.script.max_matches as usize
+            {
                 return;
             }
 
@@ -33,7 +35,8 @@ pub(crate) fn process_automation_output(session_id: &str, output: &str) {
             for (index, pattern) in state.compiled_patterns.iter().enumerate() {
                 if let Some(captures) = pattern.captures(&state.output_buffer) {
                     matched = true;
-                    let matched_text = captures.get(0)
+                    let matched_text = captures
+                        .get(0)
                         .map(|m| m.as_str().to_string())
                         .unwrap_or_default();
 
@@ -54,9 +57,14 @@ pub(crate) fn process_automation_output(session_id: &str, output: &str) {
                         timestamp_ms: elapsed_ms,
                     });
 
-                    log::debug!("Automation pattern {} matched for session {}",
-                               expect_pattern.label.as_deref().unwrap_or(&format!("#{}", index)),
-                               session_id);
+                    log::debug!(
+                        "Automation pattern {} matched for session {}",
+                        expect_pattern
+                            .label
+                            .as_deref()
+                            .unwrap_or(&format!("#{}", index)),
+                        session_id
+                    );
 
                     // Clear buffer after match to avoid re-matching
                     state.output_buffer.clear();
@@ -91,49 +99,67 @@ pub async fn start_automation(
 ) -> Result<(), String> {
     let ssh = state.lock().await;
 
-    let shell = ssh.shells.get(&session_id)
+    let shell = ssh
+        .shells
+        .get(&session_id)
         .ok_or("No active shell for this session")?;
 
     // Compile regex patterns
-    let compiled_patterns: Vec<Regex> = script.patterns.iter()
+    let compiled_patterns: Vec<Regex> = script
+        .patterns
+        .iter()
         .map(|p| Regex::new(&p.pattern))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Invalid regex pattern: {}", e))?;
 
-    let mut automations = ACTIVE_AUTOMATIONS.lock()
+    let mut automations = ACTIVE_AUTOMATIONS
+        .lock()
         .map_err(|e| format!("Failed to lock automations: {}", e))?;
 
     if automations.contains_key(&session_id) {
         return Err("Automation already active for this session".to_string());
     }
 
-    automations.insert(session_id.clone(), AutomationState {
-        script: script.clone(),
-        compiled_patterns,
-        output_buffer: String::new(),
-        matches: Vec::new(),
-        start_time: std::time::Instant::now(),
-        start_utc: Utc::now(),
-        tx: shell.sender.clone(),
-    });
+    automations.insert(
+        session_id.clone(),
+        AutomationState {
+            script: script.clone(),
+            compiled_patterns,
+            output_buffer: String::new(),
+            matches: Vec::new(),
+            start_time: std::time::Instant::now(),
+            start_utc: Utc::now(),
+            tx: shell.sender.clone(),
+        },
+    );
 
-    log::info!("Started automation '{}' on session {}", script.name, session_id);
+    log::info!(
+        "Started automation '{}' on session {}",
+        script.name,
+        session_id
+    );
     Ok(())
 }
 
 /// Stop automation on a session and return results
 #[tauri::command]
 pub fn stop_automation(session_id: String) -> Result<AutomationStatus, String> {
-    let mut automations = ACTIVE_AUTOMATIONS.lock()
+    let mut automations = ACTIVE_AUTOMATIONS
+        .lock()
         .map_err(|e| format!("Failed to lock automations: {}", e))?;
 
-    let state = automations.remove(&session_id)
+    let state = automations
+        .remove(&session_id)
         .ok_or("No active automation for this session")?;
 
     let elapsed_ms = state.start_time.elapsed().as_millis() as u64;
 
-    log::info!("Stopped automation '{}' on session {} ({} matches)",
-               state.script.name, session_id, state.matches.len());
+    log::info!(
+        "Stopped automation '{}' on session {} ({} matches)",
+        state.script.name,
+        session_id,
+        state.matches.len()
+    );
 
     Ok(AutomationStatus {
         session_id,
@@ -149,7 +175,8 @@ pub fn stop_automation(session_id: String) -> Result<AutomationStatus, String> {
 /// Check if automation is active on a session
 #[tauri::command]
 pub fn is_automation_active(session_id: String) -> Result<bool, String> {
-    let automations = ACTIVE_AUTOMATIONS.lock()
+    let automations = ACTIVE_AUTOMATIONS
+        .lock()
         .map_err(|e| format!("Failed to lock automations: {}", e))?;
     Ok(automations.contains_key(&session_id))
 }
@@ -157,7 +184,8 @@ pub fn is_automation_active(session_id: String) -> Result<bool, String> {
 /// Get automation status for a session
 #[tauri::command]
 pub fn get_automation_status(session_id: String) -> Result<Option<AutomationStatus>, String> {
-    let automations = ACTIVE_AUTOMATIONS.lock()
+    let automations = ACTIVE_AUTOMATIONS
+        .lock()
         .map_err(|e| format!("Failed to lock automations: {}", e))?;
 
     if let Some(state) = automations.get(&session_id) {
@@ -179,7 +207,8 @@ pub fn get_automation_status(session_id: String) -> Result<Option<AutomationStat
 /// List all active automations
 #[tauri::command]
 pub fn list_active_automations() -> Result<Vec<String>, String> {
-    let automations = ACTIVE_AUTOMATIONS.lock()
+    let automations = ACTIVE_AUTOMATIONS
+        .lock()
         .map_err(|e| format!("Failed to lock automations: {}", e))?;
     Ok(automations.keys().cloned().collect())
 }
@@ -195,16 +224,20 @@ pub async fn expect_and_send(
 ) -> Result<String, String> {
     let ssh = state.lock().await;
 
-    let shell = ssh.shells.get(&session_id)
+    let shell = ssh
+        .shells
+        .get(&session_id)
         .ok_or("No active shell for this session")?;
 
-    shell.sender.send(SshShellCommand::Input(format!("{}\n", command)))
+    shell
+        .sender
+        .send(SshShellCommand::Input(format!("{}\n", command)))
         .map_err(|e| format!("Failed to send command: {}", e))?;
 
     drop(ssh);
 
-    let pattern = Regex::new(&expect_pattern)
-        .map_err(|e| format!("Invalid expect pattern: {}", e))?;
+    let pattern =
+        Regex::new(&expect_pattern).map_err(|e| format!("Invalid expect pattern: {}", e))?;
 
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(10000));
     let start = std::time::Instant::now();
@@ -217,7 +250,8 @@ pub async fn expect_and_send(
         if let Ok(buffers) = TERMINAL_BUFFERS.lock() {
             if let Some(buffer) = buffers.get(&session_id) {
                 if let Some(captures) = pattern.captures(buffer) {
-                    let matched_text = captures.get(0)
+                    let matched_text = captures
+                        .get(0)
                         .map(|m| m.as_str().to_string())
                         .unwrap_or_default();
                     return Ok(matched_text);
@@ -243,10 +277,14 @@ pub async fn execute_command_sequence(
     for (i, cmd) in commands.iter().enumerate() {
         let ssh = state.lock().await;
 
-        let shell = ssh.shells.get(&session_id)
+        let shell = ssh
+            .shells
+            .get(&session_id)
             .ok_or("No active shell for this session")?;
 
-        shell.sender.send(SshShellCommand::Input(format!("{}\n", cmd)))
+        shell
+            .sender
+            .send(SshShellCommand::Input(format!("{}\n", cmd)))
             .map_err(|e| format!("Failed to send command {}: {}", i, e))?;
 
         drop(ssh);

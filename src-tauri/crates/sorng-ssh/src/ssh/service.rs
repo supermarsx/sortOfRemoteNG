@@ -1,21 +1,21 @@
+use chrono::Utc;
+use ssh2::{KeyboardInteractivePrompt, MethodType, Prompt, Session};
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
-use std::net::{TcpStream, TcpListener};
+use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::time::Duration;
-use tokio::sync::mpsc;
-use tokio::net::TcpStream as AsyncTcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use ssh2::{MethodType, Session, KeyboardInteractivePrompt, Prompt};
-use uuid::Uuid;
-use chrono::Utc;
 use tauri::Emitter;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream as AsyncTcpStream;
+use tokio::sync::mpsc;
+use uuid::Uuid;
 
-use super::types::*;
-use super::recording::{record_output, record_input, record_resize};
 use super::automation::process_automation_output;
 use super::highlighting::process_highlight_output;
-use super::{TERMINAL_BUFFERS, MAX_BUFFER_SIZE};
+use super::recording::{record_input, record_output, record_resize};
+use super::types::*;
+use super::{MAX_BUFFER_SIZE, TERMINAL_BUFFERS};
 
 /// Generate a TOTP code from a secret
 pub fn generate_totp_code(secret: &str) -> Result<String, String> {
@@ -24,7 +24,8 @@ pub fn generate_totp_code(secret: &str) -> Result<String, String> {
     // Try to decode the secret (it might be base32 encoded)
     let secret_bytes = if secret.chars().all(|c| c.is_ascii_alphanumeric()) {
         // Likely base32 encoded
-        data_encoding::BASE32_NOPAD.decode(secret.to_uppercase().as_bytes())
+        data_encoding::BASE32_NOPAD
+            .decode(secret.to_uppercase().as_bytes())
             .unwrap_or_else(|_| secret.as_bytes().to_vec())
     } else {
         secret.as_bytes().to_vec()
@@ -36,9 +37,11 @@ pub fn generate_totp_code(secret: &str) -> Result<String, String> {
         1,  // 1 step
         30, // 30 second period
         secret_bytes,
-    ).map_err(|e| format!("Failed to create TOTP: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to create TOTP: {}", e))?;
 
-    Ok(totp.generate_current().map_err(|e| format!("Failed to generate TOTP: {}", e))?)
+    totp.generate_current()
+        .map_err(|e| format!("Failed to generate TOTP: {}", e))
 }
 
 pub struct SshService {
@@ -85,21 +88,29 @@ impl SshService {
                     )?;
                     (s, Vec::new(), Vec::new())
                 } else if let Some(ref mixed_chain) = config.mixed_chain {
-                    self.establish_mixed_chain_connection(&config, mixed_chain).await?
+                    self.establish_mixed_chain_connection(&config, mixed_chain)
+                        .await?
                 } else {
                     let s = self.establish_direct_connection(&config).await?;
                     (s, Vec::new(), Vec::new())
                 }
             } else if let Some(ref mixed_chain) = config.mixed_chain {
-                self.establish_mixed_chain_connection(&config, mixed_chain).await?
+                self.establish_mixed_chain_connection(&config, mixed_chain)
+                    .await?
             } else if let Some(ref proxy_chain) = config.proxy_chain {
-                let s = self.establish_proxy_chain_connection(&config, proxy_chain).await?;
+                let s = self
+                    .establish_proxy_chain_connection(&config, proxy_chain)
+                    .await?;
                 (s, Vec::new(), Vec::new())
             } else if let Some(ref proxy_config) = config.proxy_config {
-                let s = self.establish_proxy_connection(&config, proxy_config).await?;
+                let s = self
+                    .establish_proxy_connection(&config, proxy_config)
+                    .await?;
                 (s, Vec::new(), Vec::new())
             } else if let Some(ref openvpn_config) = config.openvpn_config {
-                let s = self.establish_openvpn_connection(&config, openvpn_config).await?;
+                let s = self
+                    .establish_openvpn_connection(&config, openvpn_config)
+                    .await?;
                 (s, Vec::new(), Vec::new())
             } else if !config.jump_hosts.is_empty() {
                 self.establish_jump_connection(&config).await?
@@ -112,8 +123,12 @@ impl SshService {
         final_stream.set_nodelay(config.tcp_no_delay).ok();
 
         let timeout_secs = config.connect_timeout.unwrap_or(15);
-        final_stream.set_read_timeout(Some(Duration::from_secs(timeout_secs * 2))).ok();
-        final_stream.set_write_timeout(Some(Duration::from_secs(timeout_secs))).ok();
+        final_stream
+            .set_read_timeout(Some(Duration::from_secs(timeout_secs * 2)))
+            .ok();
+        final_stream
+            .set_write_timeout(Some(Duration::from_secs(timeout_secs)))
+            .ok();
 
         let mut sess = Session::new().map_err(|e| format!("Failed to create session: {}", e))?;
         sess.set_tcp_stream(final_stream);
@@ -151,7 +166,8 @@ impl SshService {
                 .map_err(|e| format!("Failed to set host-key algorithm preferences: {}", e))?;
         }
 
-        sess.handshake().map_err(|e| format!("SSH handshake failed: {}", e))?;
+        sess.handshake()
+            .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
         if config.strict_host_key_checking {
             self.verify_host_key(&mut sess, &config)?;
@@ -183,9 +199,14 @@ impl SshService {
         Ok(session_id)
     }
 
-    pub(crate) async fn establish_direct_connection(&self, config: &SshConnectionConfig) -> Result<TcpStream, String> {
+    pub(crate) async fn establish_direct_connection(
+        &self,
+        config: &SshConnectionConfig,
+    ) -> Result<TcpStream, String> {
         if let Some(openvpn_config) = &config.openvpn_config {
-            return self.establish_openvpn_connection(config, openvpn_config).await;
+            return self
+                .establish_openvpn_connection(config, openvpn_config)
+                .await;
         }
 
         if let Some(proxy_config) = &config.proxy_config {
@@ -195,23 +216,33 @@ impl SshService {
         let addr = format!("{}:{}", config.host, config.port);
         let timeout = config.connect_timeout.unwrap_or(15);
 
-        let async_stream = tokio::time::timeout(
-            Duration::from_secs(timeout),
-            AsyncTcpStream::connect(&addr)
-        ).await
-        .map_err(|_| format!("Connection timeout after {} seconds - host may be unreachable", timeout))?
-        .map_err(|e| format!("Failed to connect to {}: {}", addr, e))?;
+        let async_stream =
+            tokio::time::timeout(Duration::from_secs(timeout), AsyncTcpStream::connect(&addr))
+                .await
+                .map_err(|_| {
+                    format!(
+                        "Connection timeout after {} seconds - host may be unreachable",
+                        timeout
+                    )
+                })?
+                .map_err(|e| format!("Failed to connect to {}: {}", addr, e))?;
 
-        let std_stream = async_stream.into_std()
+        let std_stream = async_stream
+            .into_std()
             .map_err(|e| format!("Failed to convert async stream: {}", e))?;
 
-        std_stream.set_nonblocking(false)
+        std_stream
+            .set_nonblocking(false)
             .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
 
         Ok(std_stream)
     }
 
-    pub(crate) async fn establish_proxy_connection(&self, config: &SshConnectionConfig, proxy_config: &ProxyConfig) -> Result<TcpStream, String> {
+    pub(crate) async fn establish_proxy_connection(
+        &self,
+        config: &SshConnectionConfig,
+        proxy_config: &ProxyConfig,
+    ) -> Result<TcpStream, String> {
         let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(15));
 
         let proxy_addr = format!("{}:{}", proxy_config.host, proxy_config.port);
@@ -224,13 +255,16 @@ impl SshService {
 
         match &proxy_config.proxy_type {
             ProxyType::Socks5 => {
-                self.connect_through_socks5(proxy_stream, &target, proxy_config).await
+                self.connect_through_socks5(proxy_stream, &target, proxy_config)
+                    .await
             }
             ProxyType::Socks4 => {
-                self.connect_through_socks4(proxy_stream, &target, proxy_config).await
+                self.connect_through_socks4(proxy_stream, &target, proxy_config)
+                    .await
             }
             ProxyType::Http | ProxyType::Https => {
-                self.connect_through_http_proxy(proxy_stream, &target, proxy_config).await
+                self.connect_through_http_proxy(proxy_stream, &target, proxy_config)
+                    .await
             }
         }
     }
@@ -250,11 +284,15 @@ impl SshService {
             vec![0x05, 0x01, 0x00]
         };
 
-        stream.write_all(&greeting).await
+        stream
+            .write_all(&greeting)
+            .await
             .map_err(|e| format!("Failed to send SOCKS5 greeting: {}", e))?;
 
         let mut response = [0u8; 2];
-        stream.read_exact(&mut response).await
+        stream
+            .read_exact(&mut response)
+            .await
             .map_err(|e| format!("Failed to read SOCKS5 greeting response: {}", e))?;
 
         if response[0] != 0x05 {
@@ -271,18 +309,25 @@ impl SshService {
             auth_request.push(password.len() as u8);
             auth_request.extend_from_slice(password.as_bytes());
 
-            stream.write_all(&auth_request).await
+            stream
+                .write_all(&auth_request)
+                .await
                 .map_err(|e| format!("Failed to send SOCKS5 auth: {}", e))?;
 
             let mut auth_response = [0u8; 2];
-            stream.read_exact(&mut auth_response).await
+            stream
+                .read_exact(&mut auth_response)
+                .await
                 .map_err(|e| format!("Failed to read SOCKS5 auth response: {}", e))?;
 
             if auth_response[1] != 0x00 {
                 return Err("SOCKS5 authentication failed".to_string());
             }
         } else if response[1] != 0x00 {
-            return Err(format!("SOCKS5 server requires unsupported auth method: {}", response[1]));
+            return Err(format!(
+                "SOCKS5 server requires unsupported auth method: {}",
+                response[1]
+            ));
         }
 
         let parts: Vec<&str> = target.split(':').collect();
@@ -290,7 +335,8 @@ impl SshService {
             return Err("Invalid target address format".to_string());
         }
         let host = parts[0];
-        let port: u16 = parts[1].parse()
+        let port: u16 = parts[1]
+            .parse()
             .map_err(|_| "Invalid port number".to_string())?;
 
         let mut request = vec![0x05, 0x01, 0x00];
@@ -309,11 +355,15 @@ impl SshService {
 
         request.extend_from_slice(&port.to_be_bytes());
 
-        stream.write_all(&request).await
+        stream
+            .write_all(&request)
+            .await
             .map_err(|e| format!("Failed to send SOCKS5 connect request: {}", e))?;
 
         let mut connect_response = [0u8; 10];
-        stream.read_exact(&mut connect_response).await
+        stream
+            .read_exact(&mut connect_response)
+            .await
             .map_err(|e| format!("Failed to read SOCKS5 connect response: {}", e))?;
 
         if connect_response[1] != 0x00 {
@@ -331,9 +381,11 @@ impl SshService {
             return Err(format!("SOCKS5 connect failed: {}", error_msg));
         }
 
-        let std_stream = stream.into_std()
+        let std_stream = stream
+            .into_std()
             .map_err(|e| format!("Failed to convert stream: {}", e))?;
-        std_stream.set_nonblocking(false)
+        std_stream
+            .set_nonblocking(false)
             .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
 
         Ok(std_stream)
@@ -352,10 +404,12 @@ impl SshService {
             return Err("Invalid target address format".to_string());
         }
         let host = parts[0];
-        let port: u16 = parts[1].parse()
+        let port: u16 = parts[1]
+            .parse()
             .map_err(|_| "Invalid port number".to_string())?;
 
-        let ip: std::net::Ipv4Addr = host.parse()
+        let ip: std::net::Ipv4Addr = host
+            .parse()
             .map_err(|_| "SOCKS4 only supports IPv4 addresses, not domain names".to_string())?;
 
         let mut request = vec![0x04, 0x01];
@@ -367,11 +421,15 @@ impl SshService {
         }
         request.push(0x00);
 
-        stream.write_all(&request).await
+        stream
+            .write_all(&request)
+            .await
             .map_err(|e| format!("Failed to send SOCKS4 request: {}", e))?;
 
         let mut response = [0u8; 8];
-        stream.read_exact(&mut response).await
+        stream
+            .read_exact(&mut response)
+            .await
             .map_err(|e| format!("Failed to read SOCKS4 response: {}", e))?;
 
         if response[1] != 0x5A {
@@ -384,9 +442,11 @@ impl SshService {
             return Err(format!("SOCKS4 connect failed: {}", error_msg));
         }
 
-        let std_stream = stream.into_std()
+        let std_stream = stream
+            .into_std()
             .map_err(|e| format!("Failed to convert stream: {}", e))?;
-        std_stream.set_nonblocking(false)
+        std_stream
+            .set_nonblocking(false)
             .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
 
         Ok(std_stream)
@@ -410,12 +470,16 @@ impl SshService {
 
         request.push_str("\r\n");
 
-        stream.write_all(request.as_bytes()).await
+        stream
+            .write_all(request.as_bytes())
+            .await
             .map_err(|e| format!("Failed to send HTTP CONNECT: {}", e))?;
 
         let mut reader = BufReader::new(&mut stream);
         let mut response_line = String::new();
-        reader.read_line(&mut response_line).await
+        reader
+            .read_line(&mut response_line)
+            .await
             .map_err(|e| format!("Failed to read HTTP response: {}", e))?;
 
         let parts: Vec<&str> = response_line.split_whitespace().collect();
@@ -423,7 +487,8 @@ impl SshService {
             return Err("Invalid HTTP proxy response".to_string());
         }
 
-        let status_code: u16 = parts[1].parse()
+        let status_code: u16 = parts[1]
+            .parse()
             .map_err(|_| "Invalid HTTP status code".to_string())?;
 
         if status_code != 200 {
@@ -432,7 +497,9 @@ impl SshService {
 
         loop {
             let mut header_line = String::new();
-            reader.read_line(&mut header_line).await
+            reader
+                .read_line(&mut header_line)
+                .await
                 .map_err(|e| format!("Failed to read HTTP headers: {}", e))?;
             if header_line.trim().is_empty() {
                 break;
@@ -440,46 +507,59 @@ impl SshService {
         }
 
         drop(reader);
-        let std_stream = stream.into_std()
+        let std_stream = stream
+            .into_std()
             .map_err(|e| format!("Failed to convert stream: {}", e))?;
-        std_stream.set_nonblocking(false)
+        std_stream
+            .set_nonblocking(false)
             .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
 
         Ok(std_stream)
     }
 
     /// Establish connection through a proxy chain
-    pub(crate) async fn establish_proxy_chain_connection(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+    pub(crate) async fn establish_proxy_chain_connection(
+        &self,
+        config: &SshConnectionConfig,
+        chain_config: &ProxyChainConfig,
+    ) -> Result<TcpStream, String> {
         if chain_config.proxies.is_empty() {
             return Err("Proxy chain is empty".to_string());
         }
 
         match chain_config.mode {
             ProxyChainMode::Strict => {
-                self.establish_strict_proxy_chain(config, chain_config).await
+                self.establish_strict_proxy_chain(config, chain_config)
+                    .await
             }
             ProxyChainMode::Dynamic => {
-                self.establish_dynamic_proxy_chain(config, chain_config).await
+                self.establish_dynamic_proxy_chain(config, chain_config)
+                    .await
             }
-            ProxyChainMode::Random => {
-                self.establish_random_proxy(config, chain_config).await
-            }
+            ProxyChainMode::Random => self.establish_random_proxy(config, chain_config).await,
         }
     }
 
-    async fn establish_strict_proxy_chain(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+    async fn establish_strict_proxy_chain(
+        &self,
+        config: &SshConnectionConfig,
+        chain_config: &ProxyChainConfig,
+    ) -> Result<TcpStream, String> {
         if chain_config.proxies.len() == 1 {
-            return self.establish_proxy_connection(config, &chain_config.proxies[0]).await;
+            return self
+                .establish_proxy_connection(config, &chain_config.proxies[0])
+                .await;
         }
 
         let first_proxy = &chain_config.proxies[0];
         let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(15));
 
         let proxy_addr = format!("{}:{}", first_proxy.host, first_proxy.port);
-        let mut current_stream = tokio::time::timeout(timeout, AsyncTcpStream::connect(&proxy_addr))
-            .await
-            .map_err(|_| format!("Proxy chain timeout connecting to {}", proxy_addr))?
-            .map_err(|e| format!("Failed to connect to first proxy {}: {}", proxy_addr, e))?;
+        let mut current_stream =
+            tokio::time::timeout(timeout, AsyncTcpStream::connect(&proxy_addr))
+                .await
+                .map_err(|_| format!("Proxy chain timeout connecting to {}", proxy_addr))?
+                .map_err(|e| format!("Failed to connect to first proxy {}: {}", proxy_addr, e))?;
 
         for (i, proxy) in chain_config.proxies.iter().skip(1).enumerate() {
             let target = if i == chain_config.proxies.len() - 2 {
@@ -488,7 +568,9 @@ impl SshService {
                 format!("{}:{}", proxy.host, proxy.port)
             };
 
-            current_stream = self.socks5_connect_internal(current_stream, &target, first_proxy).await
+            current_stream = self
+                .socks5_connect_internal(current_stream, &target, first_proxy)
+                .await
                 .map_err(|e| format!("Chain hop {} failed: {}", i + 1, e))?
                 .0;
         }
@@ -496,7 +578,9 @@ impl SshService {
         let final_target = format!("{}:{}", config.host, config.port);
         let last_proxy = chain_config.proxies.last().unwrap();
 
-        let std_stream = self.connect_through_socks5(current_stream, &final_target, last_proxy).await?;
+        let std_stream = self
+            .connect_through_socks5(current_stream, &final_target, last_proxy)
+            .await?;
         Ok(std_stream)
     }
 
@@ -515,11 +599,15 @@ impl SshService {
             vec![0x05, 0x01, 0x00]
         };
 
-        stream.write_all(&greeting).await
+        stream
+            .write_all(&greeting)
+            .await
             .map_err(|e| format!("SOCKS5 greeting failed: {}", e))?;
 
         let mut response = [0u8; 2];
-        stream.read_exact(&mut response).await
+        stream
+            .read_exact(&mut response)
+            .await
             .map_err(|e| format!("SOCKS5 response failed: {}", e))?;
 
         if response[0] != 0x05 {
@@ -536,10 +624,16 @@ impl SshService {
             auth.push(password.len() as u8);
             auth.extend_from_slice(password.as_bytes());
 
-            stream.write_all(&auth).await.map_err(|e| format!("Auth failed: {}", e))?;
+            stream
+                .write_all(&auth)
+                .await
+                .map_err(|e| format!("Auth failed: {}", e))?;
 
             let mut auth_resp = [0u8; 2];
-            stream.read_exact(&mut auth_resp).await.map_err(|e| format!("Auth response failed: {}", e))?;
+            stream
+                .read_exact(&mut auth_resp)
+                .await
+                .map_err(|e| format!("Auth response failed: {}", e))?;
 
             if auth_resp[1] != 0x00 {
                 return Err("SOCKS5 auth rejected".to_string());
@@ -557,10 +651,16 @@ impl SshService {
         request.extend_from_slice(host.as_bytes());
         request.extend_from_slice(&port.to_be_bytes());
 
-        stream.write_all(&request).await.map_err(|e| format!("Connect request failed: {}", e))?;
+        stream
+            .write_all(&request)
+            .await
+            .map_err(|e| format!("Connect request failed: {}", e))?;
 
         let mut resp = [0u8; 10];
-        stream.read_exact(&mut resp).await.map_err(|e| format!("Connect response failed: {}", e))?;
+        stream
+            .read_exact(&mut resp)
+            .await
+            .map_err(|e| format!("Connect response failed: {}", e))?;
 
         if resp[1] != 0x00 {
             return Err(format!("SOCKS5 connect failed with code {}", resp[1]));
@@ -569,23 +669,39 @@ impl SshService {
         Ok((stream, ()))
     }
 
-    async fn establish_dynamic_proxy_chain(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+    async fn establish_dynamic_proxy_chain(
+        &self,
+        config: &SshConnectionConfig,
+        chain_config: &ProxyChainConfig,
+    ) -> Result<TcpStream, String> {
         let mut last_error = String::from("No proxies available");
 
         for proxy in &chain_config.proxies {
             match self.establish_proxy_connection(config, proxy).await {
                 Ok(stream) => return Ok(stream),
                 Err(e) => {
-                    log::warn!("Proxy {}:{} failed: {}, trying next", proxy.host, proxy.port, e);
+                    log::warn!(
+                        "Proxy {}:{} failed: {}, trying next",
+                        proxy.host,
+                        proxy.port,
+                        e
+                    );
                     last_error = e;
                 }
             }
         }
 
-        Err(format!("All proxies in chain failed. Last error: {}", last_error))
+        Err(format!(
+            "All proxies in chain failed. Last error: {}",
+            last_error
+        ))
     }
 
-    async fn establish_random_proxy(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+    async fn establish_random_proxy(
+        &self,
+        config: &SshConnectionConfig,
+        chain_config: &ProxyChainConfig,
+    ) -> Result<TcpStream, String> {
         use rand::Rng;
 
         let index = {
@@ -597,7 +713,11 @@ impl SshService {
         self.establish_proxy_connection(config, proxy).await
     }
 
-    async fn establish_openvpn_connection(&self, _config: &SshConnectionConfig, _openvpn_config: &OpenVPNConfig) -> Result<TcpStream, String> {
+    async fn establish_openvpn_connection(
+        &self,
+        _config: &SshConnectionConfig,
+        _openvpn_config: &OpenVPNConfig,
+    ) -> Result<TcpStream, String> {
         Err("OpenVPN connections not yet implemented for SSH".to_string())
     }
 
@@ -611,13 +731,16 @@ impl SshService {
     fn bridge_channel_to_stream(
         mut channel: ssh2::Channel,
     ) -> Result<(TcpStream, std::thread::JoinHandle<()>), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .map_err(|e| format!("Bridge bind failed: {}", e))?;
-        let local_addr = listener.local_addr()
+        let listener =
+            TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Bridge bind failed: {}", e))?;
+        let local_addr = listener
+            .local_addr()
             .map_err(|e| format!("Bridge addr failed: {}", e))?;
 
         let handle = std::thread::spawn(move || {
-            let Ok((mut stream, _)) = listener.accept() else { return; };
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
             drop(listener);
 
             stream.set_read_timeout(Some(Duration::from_millis(2))).ok();
@@ -629,7 +752,9 @@ impl SshService {
                 match channel.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if stream.write_all(&buf[..n]).is_err() { break; }
+                        if stream.write_all(&buf[..n]).is_err() {
+                            break;
+                        }
                         stream.flush().ok();
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -640,7 +765,9 @@ impl SshService {
                 match stream.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if channel.write_all(&buf[..n]).is_err() { break; }
+                        if channel.write_all(&buf[..n]).is_err() {
+                            break;
+                        }
                         channel.flush().ok();
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -648,13 +775,15 @@ impl SshService {
                     Err(_) => break,
                 }
 
-                if channel.eof() { break; }
+                if channel.eof() {
+                    break;
+                }
                 std::thread::sleep(Duration::from_millis(1));
             }
         });
 
-        let stream = TcpStream::connect(local_addr)
-            .map_err(|e| format!("Bridge connect failed: {}", e))?;
+        let stream =
+            TcpStream::connect(local_addr).map_err(|e| format!("Bridge connect failed: {}", e))?;
         Ok((stream, handle))
     }
 
@@ -684,13 +813,11 @@ impl SshService {
         let first = &config.jump_hosts[0];
         let addr = format!("{}:{}", first.host, first.port);
         let timeout = config.connect_timeout.unwrap_or(15);
-        let async_stream = tokio::time::timeout(
-            Duration::from_secs(timeout),
-            AsyncTcpStream::connect(&addr),
-        )
-        .await
-        .map_err(|_| format!("Timeout connecting to first jump host {}", addr))?
-        .map_err(|e| format!("Failed to connect to first jump host {}: {}", addr, e))?;
+        let async_stream =
+            tokio::time::timeout(Duration::from_secs(timeout), AsyncTcpStream::connect(&addr))
+                .await
+                .map_err(|_| format!("Timeout connecting to first jump host {}", addr))?
+                .map_err(|e| format!("Failed to connect to first jump host {}: {}", addr, e))?;
 
         let current_stream = async_stream
             .into_std()
@@ -700,8 +827,8 @@ impl SshService {
             .map_err(|e| format!("set_nonblocking failed: {}", e))?;
 
         // 2. SSH session on first jump host
-        let mut sess = Session::new()
-            .map_err(|e| format!("Failed to create jump session: {}", e))?;
+        let mut sess =
+            Session::new().map_err(|e| format!("Failed to create jump session: {}", e))?;
         Self::apply_jump_cipher_prefs(&mut sess, first);
         sess.set_tcp_stream(current_stream);
         sess.handshake()
@@ -710,11 +837,21 @@ impl SshService {
 
         // 3. Chain through remaining jump hosts
         for (i, jump) in config.jump_hosts.iter().skip(1).enumerate() {
-            log::info!("Chaining through jump host {}: {}:{}", i + 1, jump.host, jump.port);
+            log::info!(
+                "Chaining through jump host {}: {}:{}",
+                i + 1,
+                jump.host,
+                jump.port
+            );
 
             let channel = sess
                 .channel_direct_tcpip(&jump.host, jump.port, None)
-                .map_err(|e| format!("channel_direct_tcpip to {}:{} failed: {}", jump.host, jump.port, e))?;
+                .map_err(|e| {
+                    format!(
+                        "channel_direct_tcpip to {}:{} failed: {}",
+                        jump.host, jump.port, e
+                    )
+                })?;
 
             // Switch session to non-blocking so the bridge thread can poll
             sess.set_blocking(false);
@@ -722,8 +859,7 @@ impl SshService {
             bridge_handles.push(handle);
             intermediate_sessions.push(sess);
 
-            sess = Session::new()
-                .map_err(|e| format!("Failed to create jump session: {}", e))?;
+            sess = Session::new().map_err(|e| format!("Failed to create jump session: {}", e))?;
             Self::apply_jump_cipher_prefs(&mut sess, jump);
             sess.set_tcp_stream(bridged);
             sess.handshake()
@@ -732,10 +868,19 @@ impl SshService {
         }
 
         // 4. Final tunnel to the actual target
-        log::info!("Final tunnel through last jump host to {}:{}", config.host, config.port);
+        log::info!(
+            "Final tunnel through last jump host to {}:{}",
+            config.host,
+            config.port
+        );
         let channel = sess
             .channel_direct_tcpip(&config.host, config.port, None)
-            .map_err(|e| format!("channel_direct_tcpip to {}:{} failed: {}", config.host, config.port, e))?;
+            .map_err(|e| {
+                format!(
+                    "channel_direct_tcpip to {}:{} failed: {}",
+                    config.host, config.port, e
+                )
+            })?;
 
         sess.set_blocking(false);
         let (final_stream, handle) = Self::bridge_channel_to_stream(channel)?;
@@ -783,7 +928,12 @@ impl SshService {
             AsyncTcpStream::connect(format!("{}:{}", first_addr.0, first_addr.1)),
         )
         .await
-        .map_err(|_| format!("Timeout connecting to first chain hop {}:{}", first_addr.0, first_addr.1))?
+        .map_err(|_| {
+            format!(
+                "Timeout connecting to first chain hop {}:{}",
+                first_addr.0, first_addr.1
+            )
+        })?
         .map_err(|e| format!("Failed to connect to first chain hop: {}", e))?;
 
         // We track the stream in an enum so we can switch between async / sync
@@ -800,8 +950,7 @@ impl SshService {
                     MixedStream::Sync(s) => {
                         s.set_nonblocking(true)
                             .map_err(|e| format!("set_nonblocking: {}", e))?;
-                        AsyncTcpStream::from_std(s)
-                            .map_err(|e| format!("from_std: {}", e))
+                        AsyncTcpStream::from_std(s).map_err(|e| format!("from_std: {}", e))
                     }
                 }
             }
@@ -810,8 +959,7 @@ impl SshService {
                 match self {
                     MixedStream::Sync(s) => Ok(s),
                     MixedStream::Async(s) => {
-                        let s = s.into_std()
-                            .map_err(|e| format!("into_std: {}", e))?;
+                        let s = s.into_std().map_err(|e| format!("into_std: {}", e))?;
                         s.set_nonblocking(false)
                             .map_err(|e| format!("set_nonblocking: {}", e))?;
                         Ok(s)
@@ -861,8 +1009,8 @@ impl SshService {
                 ChainHop::SshJump(jump) => {
                     let std_stream = current.into_sync()?;
 
-                    let mut sess = Session::new()
-                        .map_err(|e| format!("Session::new failed: {}", e))?;
+                    let mut sess =
+                        Session::new().map_err(|e| format!("Session::new failed: {}", e))?;
                     Self::apply_jump_cipher_prefs(&mut sess, jump);
                     sess.set_tcp_stream(std_stream);
                     sess.handshake()
@@ -872,10 +1020,7 @@ impl SshService {
                     let channel = sess
                         .channel_direct_tcpip(target_host, *target_port, None)
                         .map_err(|e| {
-                            format!(
-                                "channel_direct_tcpip to {} failed: {}",
-                                target_str, e
-                            )
+                            format!("channel_direct_tcpip to {} failed: {}", target_str, e)
                         })?;
 
                     sess.set_blocking(false);
@@ -914,13 +1059,20 @@ impl SshService {
         }
     }
 
-    fn authenticate_session(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
+    fn authenticate_session(
+        &self,
+        session: &mut Session,
+        config: &SshConnectionConfig,
+    ) -> Result<(), String> {
         // Try public key authentication first if key is provided
         if let Some(private_key_path) = &config.private_key_path {
             if let Ok(private_key_content) = std::fs::read_to_string(private_key_path) {
                 // Check if this is an SK (security-key) type — these require FIDO2 touch
                 if super::fido2::is_sk_private_key(&private_key_content) {
-                    log::info!("SK key detected at {}. User touch on FIDO2 authenticator may be required.", private_key_path);
+                    log::info!(
+                        "SK key detected at {}. User touch on FIDO2 authenticator may be required.",
+                        private_key_path
+                    );
 
                     // If SK PIN is configured, set it in the environment for ssh-sk-helper
                     if let Some(ref pin) = config.sk_pin {
@@ -933,12 +1085,15 @@ impl SshService {
 
                 let passphrase = config.private_key_passphrase.as_deref();
 
-                if session.userauth_pubkey_file(
-                    &config.username,
-                    None,
-                    Path::new(private_key_path),
-                    passphrase,
-                ).is_ok() {
+                if session
+                    .userauth_pubkey_file(
+                        &config.username,
+                        None,
+                        Path::new(private_key_path),
+                        passphrase,
+                    )
+                    .is_ok()
+                {
                     // Clean up SK env vars
                     std::env::remove_var("SSH_SK_PIN");
                     std::env::remove_var("SSH_SK_APPLICATION");
@@ -949,13 +1104,19 @@ impl SshService {
 
         // Try password authentication if password is provided
         if let Some(password) = &config.password {
-            if session.userauth_password(&config.username, password).is_ok() {
+            if session
+                .userauth_password(&config.username, password)
+                .is_ok()
+            {
                 return Ok(());
             }
         }
 
         // Try keyboard-interactive authentication (for MFA/2FA)
-        if config.password.is_some() || config.totp_secret.is_some() || !config.keyboard_interactive_responses.is_empty() {
+        if config.password.is_some()
+            || config.totp_secret.is_some()
+            || !config.keyboard_interactive_responses.is_empty()
+        {
             struct KeyboardInteractiveHandler {
                 password: Option<String>,
                 totp_secret: Option<String>,
@@ -963,37 +1124,49 @@ impl SshService {
             }
 
             impl KeyboardInteractivePrompt for KeyboardInteractiveHandler {
-                fn prompt(&mut self, _username: &str, _instructions: &str, prompts: &[Prompt]) -> Vec<String> {
-                    prompts.iter().map(|prompt| {
-                        let prompt_lower = prompt.text.to_lowercase();
+                fn prompt(
+                    &mut self,
+                    _username: &str,
+                    _instructions: &str,
+                    prompts: &[Prompt],
+                ) -> Vec<String> {
+                    prompts
+                        .iter()
+                        .map(|prompt| {
+                            let prompt_lower = prompt.text.to_lowercase();
 
-                        if prompt_lower.contains("verification") || prompt_lower.contains("code")
-                            || prompt_lower.contains("token") || prompt_lower.contains("otp")
-                            || prompt_lower.contains("2fa") || prompt_lower.contains("mfa") {
-                            if let Some(ref secret) = self.totp_secret {
-                                if let Ok(code) = generate_totp_code(secret) {
-                                    return code;
+                            if prompt_lower.contains("verification")
+                                || prompt_lower.contains("code")
+                                || prompt_lower.contains("token")
+                                || prompt_lower.contains("otp")
+                                || prompt_lower.contains("2fa")
+                                || prompt_lower.contains("mfa")
+                            {
+                                if let Some(ref secret) = self.totp_secret {
+                                    if let Ok(code) = generate_totp_code(secret) {
+                                        return code;
+                                    }
+                                }
+                                for resp in &self.responses {
+                                    if !resp.is_empty() {
+                                        return resp.clone();
+                                    }
                                 }
                             }
-                            for resp in &self.responses {
-                                if !resp.is_empty() {
-                                    return resp.clone();
+
+                            if prompt_lower.contains("password") {
+                                if let Some(ref pwd) = self.password {
+                                    return pwd.clone();
                                 }
                             }
-                        }
 
-                        if prompt_lower.contains("password") {
                             if let Some(ref pwd) = self.password {
                                 return pwd.clone();
                             }
-                        }
 
-                        if let Some(ref pwd) = self.password {
-                            return pwd.clone();
-                        }
-
-                        String::new()
-                    }).collect()
+                            String::new()
+                        })
+                        .collect()
                 }
             }
 
@@ -1003,7 +1176,10 @@ impl SshService {
                 responses: config.keyboard_interactive_responses.clone(),
             };
 
-            if session.userauth_keyboard_interactive(&config.username, &mut handler).is_ok() {
+            if session
+                .userauth_keyboard_interactive(&config.username, &mut handler)
+                .is_ok()
+            {
                 return Ok(());
             }
         }
@@ -1016,23 +1192,33 @@ impl SshService {
         Err("All authentication methods failed".to_string())
     }
 
-    fn authenticate_jump_session(&self, session: &mut Session, jump_config: &JumpHostConfig) -> Result<(), String> {
+    fn authenticate_jump_session(
+        &self,
+        session: &mut Session,
+        jump_config: &JumpHostConfig,
+    ) -> Result<(), String> {
         // 1. Public key
         if let Some(private_key_path) = &jump_config.private_key_path {
             let passphrase = jump_config.private_key_passphrase.as_deref();
-            if session.userauth_pubkey_file(
-                &jump_config.username,
-                None,
-                Path::new(private_key_path),
-                passphrase,
-            ).is_ok() {
+            if session
+                .userauth_pubkey_file(
+                    &jump_config.username,
+                    None,
+                    Path::new(private_key_path),
+                    passphrase,
+                )
+                .is_ok()
+            {
                 return Ok(());
             }
         }
 
         // 2. Password
         if let Some(password) = &jump_config.password {
-            if session.userauth_password(&jump_config.username, password).is_ok() {
+            if session
+                .userauth_password(&jump_config.username, password)
+                .is_ok()
+            {
                 return Ok(());
             }
         }
@@ -1115,8 +1301,16 @@ impl SshService {
         Err("All jump host authentication methods failed".to_string())
     }
 
-    pub async fn update_session_auth(&mut self, session_id: &str, password: Option<String>, private_key_path: Option<String>, private_key_passphrase: Option<String>) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn update_session_auth(
+        &mut self,
+        session_id: &str,
+        password: Option<String>,
+        private_key_path: Option<String>,
+        private_key_passphrase: Option<String>,
+    ) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         if let Some(password) = password {
@@ -1134,20 +1328,25 @@ impl SshService {
         Ok(())
     }
 
-    fn verify_host_key(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
-        let _known_hosts_path = config.known_hosts_path.clone()
-            .unwrap_or_else(|| {
-                dirs::home_dir()
-                    .map(|p| p.join(".ssh").join("known_hosts"))
-                    .unwrap_or_else(|| Path::new("/dev/null").to_path_buf())
-                    .to_string_lossy()
-                    .to_string()
-            });
+    fn verify_host_key(
+        &self,
+        session: &mut Session,
+        config: &SshConnectionConfig,
+    ) -> Result<(), String> {
+        let _known_hosts_path = config.known_hosts_path.clone().unwrap_or_else(|| {
+            dirs::home_dir()
+                .map(|p| p.join(".ssh").join("known_hosts"))
+                .unwrap_or_else(|| Path::new("/dev/null").to_path_buf())
+                .to_string_lossy()
+                .to_string()
+        });
 
-        session.host_key()
-            .ok_or("No host key available")?;
+        session.host_key().ok_or("No host key available")?;
 
-        log::info!("Host key verification would be performed here for {}", config.host);
+        log::info!(
+            "Host key verification would be performed here for {}",
+            config.host
+        );
         Ok(())
     }
 
@@ -1161,7 +1360,11 @@ impl SshService {
         })
     }
 
-    pub async fn validate_key_file(&self, key_path: &str, _passphrase: Option<&str>) -> Result<bool, String> {
+    pub async fn validate_key_file(
+        &self,
+        key_path: &str,
+        _passphrase: Option<&str>,
+    ) -> Result<bool, String> {
         if !Path::new(key_path).exists() {
             return Err(format!("Key file does not exist: {}", key_path));
         }
@@ -1170,7 +1373,8 @@ impl SshService {
             .map_err(|e| format!("Failed to read key file: {}", e))?;
 
         // Accept standard PEM private keys and OpenSSH-format SK keys
-        let is_standard = key_content.contains("-----BEGIN") && key_content.contains("PRIVATE KEY-----");
+        let is_standard =
+            key_content.contains("-----BEGIN") && key_content.contains("PRIVATE KEY-----");
         let is_sk = super::fido2::is_sk_private_key(&key_content);
 
         if !is_standard && !is_sk {
@@ -1180,10 +1384,15 @@ impl SshService {
         Ok(true)
     }
 
-    pub async fn generate_ssh_key(&self, key_type: &str, bits: Option<usize>, passphrase: Option<String>) -> Result<(String, String), String> {
-        use ssh_key::{Algorithm, PrivateKey};
+    pub async fn generate_ssh_key(
+        &self,
+        key_type: &str,
+        bits: Option<usize>,
+        passphrase: Option<String>,
+    ) -> Result<(String, String), String> {
         use ssh_key::rand_core::OsRng;
         use ssh_key::LineEnding;
+        use ssh_key::{Algorithm, PrivateKey};
 
         let lower = key_type.to_lowercase();
 
@@ -1195,18 +1404,26 @@ impl SshService {
         let private_key = match lower.as_str() {
             "rsa" => {
                 let bit_size = bits.unwrap_or(3072);
-                PrivateKey::random(&mut OsRng, Algorithm::Rsa { hash: None })
-                    .map_err(|e| format!("Failed to generate RSA-{} key: {}. Using ssh_key default size. {}", bit_size, e, ""))?
+                PrivateKey::random(&mut OsRng, Algorithm::Rsa { hash: None }).map_err(|e| {
+                    format!(
+                        "Failed to generate RSA-{} key: {}. Using ssh_key default size. {}",
+                        bit_size, e, ""
+                    )
+                })?
             }
-            "ed25519" => {
-                PrivateKey::random(&mut OsRng, Algorithm::Ed25519)
-                    .map_err(|e| format!("Failed to generate Ed25519 key: {}", e))?
-            }
-            "ecdsa" | "ecdsa-p256" => {
-                PrivateKey::random(&mut OsRng, Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP256 })
-                    .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?
-            }
-            _ => return Err(format!("Unsupported key type: {}. Supported: rsa, ed25519, ecdsa, ed25519-sk, ecdsa-sk", key_type)),
+            "ed25519" => PrivateKey::random(&mut OsRng, Algorithm::Ed25519)
+                .map_err(|e| format!("Failed to generate Ed25519 key: {}", e))?,
+            "ecdsa" | "ecdsa-p256" => PrivateKey::random(
+                &mut OsRng,
+                Algorithm::Ecdsa {
+                    curve: ssh_key::EcdsaCurve::NistP256,
+                },
+            )
+            .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?,
+            _ => return Err(format!(
+                "Unsupported key type: {}. Supported: rsa, ed25519, ecdsa, ed25519-sk, ecdsa-sk",
+                key_type
+            )),
         };
 
         let final_priv_key = if let Some(pass) = passphrase.filter(|p| !p.is_empty()) {
@@ -1224,7 +1441,9 @@ impl SshService {
         };
 
         let public_key = private_key.public_key();
-        let public_key_str = public_key.to_openssh().map_err(|e| format!("Failed to encode public key: {}", e))?;
+        let public_key_str = public_key
+            .to_openssh()
+            .map_err(|e| format!("Failed to encode public key: {}", e))?;
 
         Ok((final_priv_key, public_key_str))
     }
@@ -1233,8 +1452,12 @@ impl SshService {
     ///
     /// This requires OpenSSH 8.2+ and a connected FIDO2 authenticator.
     /// The user will be prompted to touch their security key during generation.
-    async fn generate_sk_key(&self, key_type: &str, passphrase: Option<String>) -> Result<(String, String), String> {
-        use super::fido2::{OpenSshSkProvider, Fido2Provider, SkKeyGenOptions};
+    async fn generate_sk_key(
+        &self,
+        key_type: &str,
+        passphrase: Option<String>,
+    ) -> Result<(String, String), String> {
+        use super::fido2::{Fido2Provider, OpenSshSkProvider, SkKeyGenOptions};
         use super::sk_keys::SkAlgorithm;
 
         let algorithm = match key_type.to_lowercase().as_str() {
@@ -1259,13 +1482,18 @@ impl SshService {
         &self,
         request: super::types::SkKeyGenerationRequest,
     ) -> Result<super::types::SkKeyGenerationResponse, String> {
-        use super::fido2::{OpenSshSkProvider, Fido2Provider, SkKeyGenOptions};
+        use super::fido2::{Fido2Provider, OpenSshSkProvider, SkKeyGenOptions};
         use super::sk_keys::SkAlgorithm;
 
         let algorithm = match request.key_type.to_lowercase().as_str() {
             "ed25519-sk" => SkAlgorithm::Ed25519Sk,
             "ecdsa-sk" => SkAlgorithm::EcdsaSk,
-            _ => return Err(format!("Unsupported SK key type: {}. Use ed25519-sk or ecdsa-sk.", request.key_type)),
+            _ => {
+                return Err(format!(
+                    "Unsupported SK key type: {}. Use ed25519-sk or ecdsa-sk.",
+                    request.key_type
+                ))
+            }
         };
 
         let provider = OpenSshSkProvider::new();
@@ -1322,12 +1550,17 @@ impl SshService {
         // Use the same priority as connect_ssh
         let (final_stream, _intermediate, _handles) =
             if let Some(ref mixed_chain) = config.mixed_chain {
-                self.establish_mixed_chain_connection(&config, mixed_chain).await?
+                self.establish_mixed_chain_connection(&config, mixed_chain)
+                    .await?
             } else if let Some(ref proxy_chain) = config.proxy_chain {
-                let s = self.establish_proxy_chain_connection(&config, proxy_chain).await?;
+                let s = self
+                    .establish_proxy_chain_connection(&config, proxy_chain)
+                    .await?;
                 (s, Vec::new(), Vec::new())
             } else if let Some(ref proxy_config) = config.proxy_config {
-                let s = self.establish_proxy_connection(&config, proxy_config).await?;
+                let s = self
+                    .establish_proxy_connection(&config, proxy_config)
+                    .await?;
                 (s, Vec::new(), Vec::new())
             } else if !config.jump_hosts.is_empty() {
                 self.establish_jump_connection(&config).await?
@@ -1336,9 +1569,11 @@ impl SshService {
                 (s, Vec::new(), Vec::new())
             };
 
-        let mut sess = Session::new().map_err(|e| format!("Failed to create test session: {}", e))?;
+        let mut sess =
+            Session::new().map_err(|e| format!("Failed to create test session: {}", e))?;
         sess.set_tcp_stream(final_stream);
-        sess.handshake().map_err(|e| format!("SSH handshake failed: {}", e))?;
+        sess.handshake()
+            .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
         self.authenticate_session(&mut sess, &config)?;
 
@@ -1346,56 +1581,80 @@ impl SshService {
         Ok("SSH connection test successful".to_string())
     }
 
-    pub async fn execute_command(&mut self, session_id: &str, command: String, _timeout: Option<u64>) -> Result<String, String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn execute_command(
+        &mut self,
+        session_id: &str,
+        command: String,
+        _timeout: Option<u64>,
+    ) -> Result<String, String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         session.last_activity = Utc::now();
 
-        let mut channel = session.session.channel_session()
+        let mut channel = session
+            .session
+            .channel_session()
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
-        channel.exec(&command)
+        channel
+            .exec(&command)
             .map_err(|e| format!("Failed to execute command: {}", e))?;
 
         let mut output = Vec::new();
-        channel.read_to_end(&mut output)
+        channel
+            .read_to_end(&mut output)
             .map_err(|e| format!("Failed to read output: {}", e))?;
 
-        channel.wait_close()
+        channel
+            .wait_close()
             .map_err(|e| format!("Failed to close channel: {}", e))?;
 
-        let exit_status = channel.exit_status()
+        let exit_status = channel
+            .exit_status()
             .map_err(|e| format!("Failed to get exit status: {}", e))?;
 
         if exit_status != 0 {
             return Err(format!("Command failed with exit code {}", exit_status));
         }
 
-        String::from_utf8(output)
-            .map_err(|e| format!("Invalid UTF-8 output: {}", e))
+        String::from_utf8(output).map_err(|e| format!("Invalid UTF-8 output: {}", e))
     }
 
-    pub async fn execute_command_interactive(&mut self, session_id: &str, command: String) -> Result<String, String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn execute_command_interactive(
+        &mut self,
+        session_id: &str,
+        command: String,
+    ) -> Result<String, String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         session.last_activity = Utc::now();
 
-        let mut channel = session.session.channel_session()
+        let mut channel = session
+            .session
+            .channel_session()
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
-        channel.request_pty("xterm", None, None)
+        channel
+            .request_pty("xterm", None, None)
             .map_err(|e| format!("Failed to request PTY: {}", e))?;
 
-        channel.exec(&command)
+        channel
+            .exec(&command)
             .map_err(|e| format!("Failed to execute command: {}", e))?;
 
         let mut output = String::new();
-        channel.read_to_string(&mut output)
+        channel
+            .read_to_string(&mut output)
             .map_err(|e| format!("Failed to read output: {}", e))?;
 
-        channel.wait_close()
+        channel
+            .wait_close()
             .map_err(|e| format!("Failed to close channel: {}", e))?;
 
         Ok(output)
@@ -1410,19 +1669,26 @@ impl SshService {
             return Ok(existing.id.clone());
         }
 
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         session.last_activity = Utc::now();
 
         session.session.set_blocking(true);
 
-        let mut channel = session.session.channel_session()
+        let mut channel = session
+            .session
+            .channel_session()
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
         if session.config.agent_forwarding {
             if let Err(e) = channel.request_auth_agent_forwarding() {
-                log::warn!("Failed to request agent forwarding: {} (continuing without)", e);
+                log::warn!(
+                    "Failed to request agent forwarding: {} (continuing without)",
+                    e
+                );
             }
         }
 
@@ -1431,9 +1697,16 @@ impl SshService {
         if let Some(ref x11_cfg) = session.config.x11_forwarding {
             if x11_cfg.enabled {
                 if let Err(e) = channel.handle_extended_data(ssh2::ExtendedData::Merge) {
-                    log::warn!("Failed to set up X11 forwarding: {} (continuing without)", e);
+                    log::warn!(
+                        "Failed to set up X11 forwarding: {} (continuing without)",
+                        e
+                    );
                 } else {
-                    log::info!("[{}] X11 forwarding requested (trusted={})", session_id, x11_cfg.trusted);
+                    log::info!(
+                        "[{}] X11 forwarding requested (trusted={})",
+                        session_id,
+                        x11_cfg.trusted
+                    );
                     x11_to_enable = Some(x11_cfg.clone());
                 }
             }
@@ -1442,16 +1715,23 @@ impl SshService {
         // ── Environment variables ───────────────────────────────────
         for (key, value) in &session.config.environment {
             if let Err(e) = channel.setenv(key, value) {
-                log::warn!("Failed to set env {}={}: {} (server may reject setenv)", key, value, e);
+                log::warn!(
+                    "Failed to set env {}={}: {} (server may reject setenv)",
+                    key,
+                    value,
+                    e
+                );
             }
         }
 
         // ── PTY type ────────────────────────────────────────────────
         let pty_type = session.config.pty_type.as_deref().unwrap_or("xterm");
-        channel.request_pty(pty_type, None, None)
+        channel
+            .request_pty(pty_type, None, None)
             .map_err(|e| format!("Failed to request PTY: {}", e))?;
 
-        channel.shell()
+        channel
+            .shell()
             .map_err(|e| format!("Failed to start shell: {}", e))?;
 
         session.session.set_blocking(false);
@@ -1467,7 +1747,9 @@ impl SshService {
         }
 
         // Re-borrow session for the remaining work
-        let _session = self.sessions.get_mut(session_id)
+        let _session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
@@ -1528,7 +1810,9 @@ impl SshService {
                         let output = process_highlight_output(&session_id_owned, &raw_output);
 
                         if let Ok(mut buffers) = TERMINAL_BUFFERS.lock() {
-                            let session_buffer = buffers.entry(session_id_owned.clone()).or_insert_with(String::new);
+                            let session_buffer = buffers
+                                .entry(session_id_owned.clone())
+                                .or_insert_with(String::new);
                             session_buffer.push_str(&output);
                             if session_buffer.len() > MAX_BUFFER_SIZE {
                                 let excess = session_buffer.len() - MAX_BUFFER_SIZE;
@@ -1595,16 +1879,23 @@ impl SshService {
     }
 
     pub async fn send_shell_input(&mut self, session_id: &str, data: String) -> Result<(), String> {
-        let shell = self.shells.get(session_id)
-            .ok_or("Shell not started")?;
-        shell.sender.send(SshShellCommand::Input(data))
+        let shell = self.shells.get(session_id).ok_or("Shell not started")?;
+        shell
+            .sender
+            .send(SshShellCommand::Input(data))
             .map_err(|_| "Failed to send input to shell".to_string())
     }
 
-    pub async fn resize_shell(&mut self, session_id: &str, cols: u32, rows: u32) -> Result<(), String> {
-        let shell = self.shells.get(session_id)
-            .ok_or("Shell not started")?;
-        shell.sender.send(SshShellCommand::Resize(cols, rows))
+    pub async fn resize_shell(
+        &mut self,
+        session_id: &str,
+        cols: u32,
+        rows: u32,
+    ) -> Result<(), String> {
+        let shell = self.shells.get(session_id).ok_or("Shell not started")?;
+        shell
+            .sender
+            .send(SshShellCommand::Resize(cols, rows))
             .map_err(|_| "Failed to resize shell".to_string())
     }
 
@@ -1615,55 +1906,83 @@ impl SshService {
         Ok(())
     }
 
-    pub async fn stop_port_forward(&mut self, session_id: &str, forward_id: &str) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn stop_port_forward(
+        &mut self,
+        session_id: &str,
+        forward_id: &str,
+    ) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         if let Some(handle) = session.port_forwards.remove(forward_id) {
             handle.handle.abort();
-            log::info!("Port forward {} stopped for session {}", forward_id, session_id);
+            log::info!(
+                "Port forward {} stopped for session {}",
+                forward_id,
+                session_id
+            );
             Ok(())
         } else {
             Err(format!("Port forward {} not found", forward_id))
         }
     }
 
-    pub async fn setup_port_forward(&mut self, session_id: &str, config: PortForwardConfig) -> Result<String, String> {
+    pub async fn setup_port_forward(
+        &mut self,
+        session_id: &str,
+        config: PortForwardConfig,
+    ) -> Result<String, String> {
         let forward_id = Uuid::new_v4().to_string();
 
         let handle = match config.direction {
             PortForwardDirection::Local => {
-                let session = self.sessions.get_mut(session_id)
+                let session = self
+                    .sessions
+                    .get_mut(session_id)
                     .ok_or("Session not found")?;
                 session.last_activity = Utc::now();
                 Self::setup_local_port_forward(session, &config, forward_id.clone()).await?
             }
             PortForwardDirection::Remote => {
-                let session = self.sessions.get_mut(session_id)
+                let session = self
+                    .sessions
+                    .get_mut(session_id)
                     .ok_or("Session not found")?;
                 session.last_activity = Utc::now();
                 Self::setup_remote_port_forward(session, &config, forward_id.clone()).await?
             }
             PortForwardDirection::Dynamic => {
-                let session = self.sessions.get_mut(session_id)
+                let session = self
+                    .sessions
+                    .get_mut(session_id)
                     .ok_or("Session not found")?;
                 session.last_activity = Utc::now();
                 Self::setup_dynamic_port_forward(session, &config, forward_id.clone()).await?
             }
         };
 
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
         session.last_activity = Utc::now();
         session.port_forwards.insert(forward_id.clone(), handle);
         Ok(forward_id)
     }
 
-    async fn setup_local_port_forward(session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
-        let listener = std::net::TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
-            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+    async fn setup_local_port_forward(
+        session: &mut SshSession,
+        config: &PortForwardConfig,
+        id: String,
+    ) -> Result<PortForwardHandle, String> {
+        let listener =
+            std::net::TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
+                .map_err(|e| format!("Failed to bind local port: {}", e))?;
 
-        listener.set_nonblocking(true)
+        listener
+            .set_nonblocking(true)
             .map_err(|e| format!("Failed to set non-blocking: {}", e))?;
 
         let session_clone = session.session.clone();
@@ -1671,14 +1990,19 @@ impl SshService {
         let id_clone = id.clone();
 
         let handle = tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::from_std(listener)
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+            let listener = tokio::net::TcpListener::from_std(listener).map_err(
+                |e| -> Box<dyn std::error::Error + Send + Sync> {
                     format!("Failed to convert listener: {}", e).into()
-                })?;
+                },
+            )?;
 
-            log::info!("Local port forward started on {}:{} -> {}:{}",
-                config_clone.local_host, config_clone.local_port,
-                config_clone.remote_host, config_clone.remote_port);
+            log::info!(
+                "Local port forward started on {}:{} -> {}:{}",
+                config_clone.local_host,
+                config_clone.local_port,
+                config_clone.remote_host,
+                config_clone.remote_port
+            );
 
             loop {
                 match listener.accept().await {
@@ -1692,8 +2016,13 @@ impl SshService {
 
                         tokio::spawn(async move {
                             if let Err(e) = Self::handle_local_forward_connection(
-                                local_stream, session, &remote_host, remote_port
-                            ).await {
+                                local_stream,
+                                session,
+                                &remote_host,
+                                remote_port,
+                            )
+                            .await
+                            {
                                 log::error!("[{}] Local forward connection error: {}", id, e);
                             }
                         });
@@ -1722,10 +2051,12 @@ impl SshService {
             let session = session.clone();
             let remote_host = remote_host.to_string();
             move || {
-                session.channel_direct_tcpip(&remote_host, remote_port, None)
+                session
+                    .channel_direct_tcpip(&remote_host, remote_port, None)
                     .map_err(|e| format!("Failed to create channel: {}", e))
             }
-        }).await??;
+        })
+        .await??;
 
         let (mut local_read, mut local_write) = local_stream.into_split();
 
@@ -1797,27 +2128,46 @@ impl SshService {
 
         let _ = tokio::task::spawn_blocking(move || {
             let _ = ssh_thread.join();
-        }).await;
+        })
+        .await;
 
         Ok(())
     }
 
-    async fn setup_remote_port_forward(session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
-        let (listener, actual_port) = session.session.channel_forward_listen(config.remote_port, Some(&config.remote_host), None)
+    async fn setup_remote_port_forward(
+        session: &mut SshSession,
+        config: &PortForwardConfig,
+        id: String,
+    ) -> Result<PortForwardHandle, String> {
+        let (listener, actual_port) = session
+            .session
+            .channel_forward_listen(config.remote_port, Some(&config.remote_host), None)
             .map_err(|e| format!("Failed to setup remote port forward: {}", e))?;
 
         let config_clone = config.clone();
         let id_clone = id.clone();
 
-        let bound_port = if actual_port > 0 { actual_port } else { config.remote_port };
+        let bound_port = if actual_port > 0 {
+            actual_port
+        } else {
+            config.remote_port
+        };
         if actual_port > 0 && actual_port != config.remote_port {
-            log::info!("Remote port forward bound to {} (requested {})", actual_port, config.remote_port);
+            log::info!(
+                "Remote port forward bound to {} (requested {})",
+                actual_port,
+                config.remote_port
+            );
         }
 
         let handle = tokio::spawn(async move {
-            log::info!("Remote port forward listening on {}:{} -> {}:{}",
-                config_clone.remote_host, bound_port,
-                config_clone.local_host, config_clone.local_port);
+            log::info!(
+                "Remote port forward listening on {}:{} -> {}:{}",
+                config_clone.remote_host,
+                bound_port,
+                config_clone.local_host,
+                config_clone.local_port
+            );
 
             let listener = std::sync::Arc::new(std::sync::Mutex::new(listener));
 
@@ -1825,11 +2175,15 @@ impl SshService {
                 let channel = match tokio::task::spawn_blocking({
                     let listener = listener.clone();
                     move || {
-                        let mut listener = listener.lock().map_err(|e| format!("Lock error: {}", e))?;
-                        listener.accept()
+                        let mut listener =
+                            listener.lock().map_err(|e| format!("Lock error: {}", e))?;
+                        listener
+                            .accept()
                             .map_err(|e| format!("Accept error: {}", e))
                     }
-                }).await {
+                })
+                .await
+                {
                     Ok(Ok(channel)) => channel,
                     Ok(Err(e)) => {
                         log::debug!("[{}] Forward accept error: {}", id_clone, e);
@@ -1849,9 +2203,10 @@ impl SshService {
                 let id = id_clone.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) = Self::handle_remote_forward_connection(
-                        channel, &local_host, local_port
-                    ).await {
+                    if let Err(e) =
+                        Self::handle_remote_forward_connection(channel, &local_host, local_port)
+                            .await
+                    {
                         log::error!("[{}] Remote forward connection error: {}", id, e);
                     }
                 });
@@ -1944,16 +2299,22 @@ impl SshService {
 
         let _ = tokio::task::spawn_blocking(move || {
             let _ = ssh_thread.join();
-        }).await;
+        })
+        .await;
 
         Ok(())
     }
 
-    async fn setup_dynamic_port_forward(session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
+    async fn setup_dynamic_port_forward(
+        session: &mut SshSession,
+        config: &PortForwardConfig,
+        id: String,
+    ) -> Result<PortForwardHandle, String> {
         let listener = TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
             .map_err(|e| format!("Failed to bind SOCKS port: {}", e))?;
 
-        listener.set_nonblocking(true)
+        listener
+            .set_nonblocking(true)
             .map_err(|e| format!("Failed to set non-blocking: {}", e))?;
 
         let session_clone = session.session.clone();
@@ -1961,12 +2322,17 @@ impl SshService {
         let id_clone = id.clone();
 
         let handle = tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::from_std(listener)
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+            let listener = tokio::net::TcpListener::from_std(listener).map_err(
+                |e| -> Box<dyn std::error::Error + Send + Sync> {
                     format!("Failed to convert listener: {}", e).into()
-                })?;
+                },
+            )?;
 
-            log::info!("SOCKS5 proxy started on {}:{}", config_clone.local_host, config_clone.local_port);
+            log::info!(
+                "SOCKS5 proxy started on {}:{}",
+                config_clone.local_host,
+                config_clone.local_port
+            );
 
             loop {
                 match listener.accept().await {
@@ -1977,7 +2343,9 @@ impl SshService {
                         let id = id_clone.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) = Self::handle_socks5_connection(client_stream, session).await {
+                            if let Err(e) =
+                                Self::handle_socks5_connection(client_stream, session).await
+                            {
                                 log::debug!("[{}] SOCKS5 connection error: {}", id, e);
                             }
                         });
@@ -2033,7 +2401,9 @@ impl SshService {
         let atype = buf[3];
 
         if cmd != 0x01 {
-            client_stream.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+            client_stream
+                .write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await?;
             return Err(format!("Unsupported SOCKS command: {}", cmd).into());
         }
 
@@ -2074,7 +2444,9 @@ impl SshService {
                 (addr, port, 22)
             }
             _ => {
-                client_stream.write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+                client_stream
+                    .write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                    .await?;
                 return Err(format!("Unsupported address type: {}", atype).into());
             }
         };
@@ -2084,13 +2456,15 @@ impl SshService {
         let channel = match tokio::task::spawn_blocking({
             let session = session.clone();
             let host = target_host.clone();
-            move || {
-                session.channel_direct_tcpip(&host, target_port, None)
-            }
-        }).await? {
+            move || session.channel_direct_tcpip(&host, target_port, None)
+        })
+        .await?
+        {
             Ok(ch) => ch,
             Err(e) => {
-                client_stream.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+                client_stream
+                    .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                    .await?;
                 return Err(format!("Failed to connect via SSH: {}", e).into());
             }
         };
@@ -2175,46 +2549,67 @@ impl SshService {
 
         let _ = tokio::task::spawn_blocking(move || {
             let _ = ssh_thread.join();
-        }).await;
+        })
+        .await;
 
         Ok(())
     }
 
-    pub async fn list_directory(&mut self, session_id: &str, path: &str) -> Result<Vec<SftpDirEntry>, String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn list_directory(
+        &mut self,
+        session_id: &str,
+        path: &str,
+    ) -> Result<Vec<SftpDirEntry>, String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         session.last_activity = Utc::now();
 
-        let sftp = session.session.sftp()
+        let sftp = session
+            .session
+            .sftp()
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
-        let entries = sftp.readdir(Path::new(path))
+        let entries = sftp
+            .readdir(Path::new(path))
             .map_err(|e| format!("Failed to read directory: {}", e))?;
 
-        Ok(entries.into_iter().map(|(path, stat)| {
-            SftpDirEntry {
+        Ok(entries
+            .into_iter()
+            .map(|(path, stat)| SftpDirEntry {
                 path: path.to_string_lossy().to_string(),
                 file_type: if stat.is_dir() { "directory" } else { "file" }.to_string(),
                 size: stat.size.unwrap_or(0),
-                modified: stat.mtime.unwrap_or(0) as u64,
-            }
-        }).collect())
+                modified: stat.mtime.unwrap_or(0),
+            })
+            .collect())
     }
 
-    pub async fn upload_file(&mut self, session_id: &str, local_path: &str, remote_path: &str) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn upload_file(
+        &mut self,
+        session_id: &str,
+        local_path: &str,
+        remote_path: &str,
+    ) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         session.last_activity = Utc::now();
 
-        let sftp = session.session.sftp()
+        let sftp = session
+            .session
+            .sftp()
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
         let mut local_file = std::fs::File::open(local_path)
             .map_err(|e| format!("Failed to open local file: {}", e))?;
 
-        let mut remote_file = sftp.create(Path::new(remote_path))
+        let mut remote_file = sftp
+            .create(Path::new(remote_path))
             .map_err(|e| format!("Failed to create remote file: {}", e))?;
 
         std::io::copy(&mut local_file, &mut remote_file)
@@ -2223,16 +2618,26 @@ impl SshService {
         Ok(())
     }
 
-    pub async fn download_file(&mut self, session_id: &str, remote_path: &str, local_path: &str) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn download_file(
+        &mut self,
+        session_id: &str,
+        remote_path: &str,
+        local_path: &str,
+    ) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         session.last_activity = Utc::now();
 
-        let sftp = session.session.sftp()
+        let sftp = session
+            .session
+            .sftp()
             .map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
-        let mut remote_file = sftp.open(Path::new(remote_path))
+        let mut remote_file = sftp
+            .open(Path::new(remote_path))
             .map_err(|e| format!("Failed to open remote file: {}", e))?;
 
         let mut local_file = std::fs::File::create(local_path)
@@ -2280,8 +2685,7 @@ impl SshService {
     }
 
     pub async fn get_session_info(&self, session_id: &str) -> Result<SshSessionInfo, String> {
-        let session = self.sessions.get(session_id)
-            .ok_or("Session not found")?;
+        let session = self.sessions.get(session_id).ok_or("Session not found")?;
 
         Ok(SshSessionInfo {
             id: session.id.clone(),
@@ -2293,13 +2697,16 @@ impl SshService {
     }
 
     pub async fn list_sessions(&self) -> Vec<SshSessionInfo> {
-        self.sessions.values().map(|session| SshSessionInfo {
-            id: session.id.clone(),
-            config: session.config.clone(),
-            connected_at: session.connected_at,
-            last_activity: session.last_activity,
-            is_alive: true,
-        }).collect()
+        self.sessions
+            .values()
+            .map(|session| SshSessionInfo {
+                id: session.id.clone(),
+                config: session.config.clone(),
+                connected_at: session.connected_at,
+                last_activity: session.last_activity,
+                is_alive: true,
+            })
+            .collect()
     }
 
     // ── Mixed-chain helpers exposed to commands layer ───────────────────
@@ -2322,7 +2729,11 @@ impl SshService {
                 }
                 ChainHop::Proxy(p) => {
                     proxy_count += 1;
-                    (format!("{:?}", p.proxy_type).to_lowercase(), p.host.clone(), p.port)
+                    (
+                        format!("{:?}", p.proxy_type).to_lowercase(),
+                        p.host.clone(),
+                        p.port,
+                    )
                 }
             };
             hops.push(ChainHopInfo {
@@ -2353,13 +2764,23 @@ impl SshService {
     /// Build a MixedChainConfig from the legacy `proxy_chain` field.
     pub fn proxy_chain_to_mixed_chain(proxy_chain: &ProxyChainConfig) -> MixedChainConfig {
         MixedChainConfig {
-            hops: proxy_chain.proxies.iter().cloned().map(ChainHop::Proxy).collect(),
+            hops: proxy_chain
+                .proxies
+                .iter()
+                .cloned()
+                .map(ChainHop::Proxy)
+                .collect(),
             hop_timeout_ms: proxy_chain.hop_timeout_ms,
         }
     }
 
     // Advanced SSH features
-    pub async fn execute_script(&mut self, session_id: &str, script: &str, interpreter: Option<&str>) -> Result<String, String> {
+    pub async fn execute_script(
+        &mut self,
+        session_id: &str,
+        script: &str,
+        interpreter: Option<&str>,
+    ) -> Result<String, String> {
         let interpreter = interpreter.unwrap_or("bash");
         let escaped_script = shell_escape::escape(script.into());
         let command = format!("echo {} | {}", escaped_script, interpreter);
@@ -2367,8 +2788,16 @@ impl SshService {
         self.execute_command(session_id, command, Some(300)).await
     }
 
-    pub async fn transfer_file_scp(&mut self, session_id: &str, local_path: &str, remote_path: &str, direction: TransferDirection) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+    pub async fn transfer_file_scp(
+        &mut self,
+        session_id: &str,
+        local_path: &str,
+        remote_path: &str,
+        direction: TransferDirection,
+    ) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or("Session not found")?;
 
         session.last_activity = Utc::now();
@@ -2379,29 +2808,38 @@ impl SshService {
                 let file_size = std::fs::metadata(local_path)
                     .map_err(|e| format!("Failed to get file metadata: {}", e))?
                     .len() as u64;
-                let mut channel = session.session.scp_send(Path::new(remote_path), 0o644, file_size, None)
+                let mut channel = session
+                    .session
+                    .scp_send(Path::new(remote_path), 0o644, file_size, None)
                     .map_err(|e| format!("Failed to initiate SCP upload: {}", e))?;
 
                 let content = std::fs::read(local_path)
                     .map_err(|e| format!("Failed to read local file: {}", e))?;
 
-                channel.write_all(&content)
+                channel
+                    .write_all(&content)
                     .map_err(|e| format!("Failed to write file content: {}", e))?;
 
-                channel.send_eof()
+                channel
+                    .send_eof()
                     .map_err(|e| format!("Failed to send EOF: {}", e))?;
 
-                channel.wait_eof()
+                channel
+                    .wait_eof()
                     .map_err(|e| format!("Failed to wait for EOF: {}", e))?;
 
-                channel.close()
+                channel
+                    .close()
                     .map_err(|e| format!("Failed to close channel: {}", e))?;
 
-                channel.wait_close()
+                channel
+                    .wait_close()
                     .map_err(|e| format!("Failed to wait for close: {}", e))?;
             }
             TransferDirection::Download => {
-                let (mut channel, stat) = session.session.scp_recv(Path::new(remote_path))
+                let (mut channel, stat) = session
+                    .session
+                    .scp_recv(Path::new(remote_path))
                     .map_err(|e| format!("Failed to initiate SCP download: {}", e))?;
 
                 let file_size = stat.size();
@@ -2418,8 +2856,15 @@ impl SshService {
         Ok(())
     }
 
-    pub async fn monitor_process(&mut self, session_id: &str, process_name: &str) -> Result<Vec<ProcessInfo>, String> {
-        let command = format!("ps aux | grep {} | grep -v grep", shell_escape::escape(process_name.into()));
+    pub async fn monitor_process(
+        &mut self,
+        session_id: &str,
+        process_name: &str,
+    ) -> Result<Vec<ProcessInfo>, String> {
+        let command = format!(
+            "ps aux | grep {} | grep -v grep",
+            shell_escape::escape(process_name.into())
+        );
         let output = self.execute_command(session_id, command, None).await?;
 
         let mut processes = Vec::new();
@@ -2448,10 +2893,18 @@ impl SshService {
     }
 
     pub async fn get_system_info(&mut self, session_id: &str) -> Result<SystemInfo, String> {
-        let uname_output = self.execute_command(session_id, "uname -a".to_string(), None).await?;
-        let cpu_info = self.execute_command(session_id, "cat /proc/cpuinfo | head -5".to_string(), None).await?;
-        let mem_info = self.execute_command(session_id, "free -h".to_string(), None).await?;
-        let disk_info = self.execute_command(session_id, "df -h".to_string(), None).await?;
+        let uname_output = self
+            .execute_command(session_id, "uname -a".to_string(), None)
+            .await?;
+        let cpu_info = self
+            .execute_command(session_id, "cat /proc/cpuinfo | head -5".to_string(), None)
+            .await?;
+        let mem_info = self
+            .execute_command(session_id, "free -h".to_string(), None)
+            .await?;
+        let disk_info = self
+            .execute_command(session_id, "df -h".to_string(), None)
+            .await?;
 
         Ok(SystemInfo {
             uname: uname_output.trim().to_string(),
@@ -2489,12 +2942,14 @@ impl SshService {
         sess.set_compress(true);
 
         // Determine per-direction algorithm preference strings.
-        let cs_pref = comp.client_to_server
+        let cs_pref = comp
+            .client_to_server
             .as_ref()
             .map(|d| d.algorithm.to_method_pref().to_string())
             .unwrap_or_else(|| comp.algorithm.to_method_pref().to_string());
 
-        let sc_pref = comp.server_to_client
+        let sc_pref = comp
+            .server_to_client
             .as_ref()
             .map(|d| d.algorithm.to_method_pref().to_string())
             .unwrap_or_else(|| comp.algorithm.to_method_pref().to_string());
@@ -2515,10 +2970,14 @@ impl SshService {
             return;
         }
 
-        let cs_algo = session.session.methods(MethodType::CompCs)
+        let cs_algo = session
+            .session
+            .methods(MethodType::CompCs)
             .map(|s| s.to_string())
             .unwrap_or_else(|| "none".to_string());
-        let sc_algo = session.session.methods(MethodType::CompSc)
+        let sc_algo = session
+            .session
+            .methods(MethodType::CompSc)
             .map(|s| s.to_string())
             .unwrap_or_else(|| "none".to_string());
 
@@ -2534,7 +2993,9 @@ impl SshService {
 
     /// Retrieve compression information for a live session.
     pub fn get_compression_info(&self, session_id: &str) -> Result<SshCompressionInfo, String> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
         Ok(SshCompressionInfo {
@@ -2557,7 +3018,9 @@ impl SshService {
         session_id: &str,
         new_config: SshCompressionConfig,
     ) -> Result<SshCompressionInfo, String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
         if !session.config.compression_config.allow_runtime_update {
@@ -2580,7 +3043,9 @@ impl SshService {
 
     /// Reset the compression statistics counters for a session.
     pub fn reset_compression_stats(&mut self, session_id: &str) -> Result<(), String> {
-        let session = self.sessions.get_mut(session_id)
+        let session = self
+            .sessions
+            .get_mut(session_id)
             .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
         let old = &session.compression_stats;
@@ -2629,10 +3094,7 @@ impl SshService {
 
     /// Check whether a payload of the given size should be compressed based on
     /// the adaptive compression settings.
-    pub fn should_compress_payload(
-        config: &SshCompressionConfig,
-        payload_size: u64,
-    ) -> bool {
+    pub fn should_compress_payload(config: &SshCompressionConfig, payload_size: u64) -> bool {
         if !config.enabled {
             return false;
         }
@@ -2645,7 +3107,7 @@ impl SshService {
     /// Update running compression statistics after data transfer.
     pub fn update_compression_stats(
         stats: &mut SshCompressionStats,
-        direction: &str,       // "send" or "recv"
+        direction: &str, // "send" or "recv"
         original_bytes: u64,
         compressed_bytes: u64,
     ) {
@@ -2654,16 +3116,16 @@ impl SshService {
                 stats.bytes_sent_uncompressed += original_bytes;
                 stats.bytes_sent_compressed += compressed_bytes;
                 if stats.bytes_sent_uncompressed > 0 {
-                    stats.send_ratio = stats.bytes_sent_compressed as f64
-                        / stats.bytes_sent_uncompressed as f64;
+                    stats.send_ratio =
+                        stats.bytes_sent_compressed as f64 / stats.bytes_sent_uncompressed as f64;
                 }
             }
             "recv" => {
                 stats.bytes_recv_uncompressed += original_bytes;
                 stats.bytes_recv_compressed += compressed_bytes;
                 if stats.bytes_recv_uncompressed > 0 {
-                    stats.recv_ratio = stats.bytes_recv_compressed as f64
-                        / stats.bytes_recv_uncompressed as f64;
+                    stats.recv_ratio =
+                        stats.bytes_recv_compressed as f64 / stats.bytes_recv_uncompressed as f64;
                 }
             }
             _ => {}

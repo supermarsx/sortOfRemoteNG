@@ -60,7 +60,9 @@ fn resolve_local_display(cfg: &X11ForwardingConfig) -> (String, u16) {
     if let Some(ref display) = cfg.display_override {
         // Parse "host:display.screen" or just ":display"
         if let Some((host, rest)) = display.split_once(':') {
-            let display_num: u16 = rest.split('.').next()
+            let display_num: u16 = rest
+                .split('.')
+                .next()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
             let host = if host.is_empty() { "127.0.0.1" } else { host };
@@ -71,7 +73,9 @@ fn resolve_local_display(cfg: &X11ForwardingConfig) -> (String, u16) {
     // Fallback: try DISPLAY env var
     if let Ok(env_display) = std::env::var("DISPLAY") {
         if let Some((host, rest)) = env_display.split_once(':') {
-            let display_num: u16 = rest.split('.').next()
+            let display_num: u16 = rest
+                .split('.')
+                .next()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
             let host = if host.is_empty() { "127.0.0.1" } else { host };
@@ -103,8 +107,7 @@ impl super::service::SshService {
         session_id: &str,
         config: X11ForwardingConfig,
     ) -> Result<X11ForwardInfo, String> {
-        let session = self.sessions.get(session_id)
-            .ok_or("Session not found")?;
+        let session = self.sessions.get(session_id).ok_or("Session not found")?;
 
         let (local_host, local_port) = resolve_local_display(&config);
         let remote_display = build_remote_display(config.display_offset, config.screen);
@@ -127,7 +130,8 @@ impl super::service::SshService {
         let listener = TcpListener::bind(&listen_addr)
             .or_else(|_| TcpListener::bind("127.0.0.1:0"))
             .map_err(|e| format!("Failed to bind X11 listener: {}", e))?;
-        let actual_addr = listener.local_addr()
+        let actual_addr = listener
+            .local_addr()
             .map_err(|e| format!("Failed to get listener address: {}", e))?;
 
         listener.set_nonblocking(true).ok();
@@ -147,8 +151,13 @@ impl super::service::SshService {
             let listener = tokio::net::TcpListener::from_std(listener)
                 .expect("Failed to convert X11 listener");
 
-            log::info!("[{}] X11 proxy listening on {} → local X at {}:{}",
-                       session_id_owned, actual_addr, x_host, x_port);
+            log::info!(
+                "[{}] X11 proxy listening on {} → local X at {}:{}",
+                session_id_owned,
+                actual_addr,
+                x_host,
+                x_port
+            );
 
             loop {
                 if cancelled_clone.load(std::sync::atomic::Ordering::Relaxed) {
@@ -163,7 +172,11 @@ impl super::service::SshService {
                         let local_x = match TcpStream::connect(format!("{}:{}", x_host, x_port)) {
                             Ok(s) => s,
                             Err(e) => {
-                                log::error!("[{}] Cannot connect to local X: {}", session_id_owned, e);
+                                log::error!(
+                                    "[{}] Cannot connect to local X: {}",
+                                    session_id_owned,
+                                    e
+                                );
                                 continue;
                             }
                         };
@@ -221,17 +234,20 @@ impl super::service::SshService {
         };
 
         if let Ok(mut fwds) = X11_FORWARDS.lock() {
-            fwds.insert(session_id.to_string(), X11ForwardState {
-                session_id: session_id.to_string(),
-                config: config.clone(),
-                local_bind: actual_addr.to_string(),
-                remote_display,
-                trusted: config.trusted,
-                handle: Some(handle),
-                total_channels_opened: 0,
-                active_channels,
-                cancelled,
-            });
+            fwds.insert(
+                session_id.to_string(),
+                X11ForwardState {
+                    session_id: session_id.to_string(),
+                    config: config.clone(),
+                    local_bind: actual_addr.to_string(),
+                    remote_display,
+                    trusted: config.trusted,
+                    handle: Some(handle),
+                    total_channels_opened: 0,
+                    active_channels,
+                    cancelled,
+                },
+            );
         }
 
         Ok(info)
@@ -241,7 +257,9 @@ impl super::service::SshService {
     pub fn disable_x11_forwarding(&mut self, session_id: &str) -> Result<(), String> {
         if let Ok(mut fwds) = X11_FORWARDS.lock() {
             if let Some(state) = fwds.remove(session_id) {
-                state.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                state
+                    .cancelled
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 if let Some(h) = state.handle {
                     h.abort();
                 }
@@ -253,7 +271,8 @@ impl super::service::SshService {
 
     /// Get current X11 forward status for a session.
     pub fn get_x11_forward_status(&self, session_id: &str) -> Result<X11ForwardStatus, String> {
-        let fwds = X11_FORWARDS.lock()
+        let fwds = X11_FORWARDS
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
 
         if let Some(state) = fwds.get(session_id) {
@@ -265,7 +284,9 @@ impl super::service::SshService {
                     remote_display: state.remote_display.clone(),
                     local_bind: state.local_bind.clone(),
                     trusted: state.trusted,
-                    active_channels: state.active_channels.load(std::sync::atomic::Ordering::Relaxed),
+                    active_channels: state
+                        .active_channels
+                        .load(std::sync::atomic::Ordering::Relaxed),
                     total_channels_opened: state.total_channels_opened,
                 }),
             })
@@ -293,14 +314,18 @@ fn relay_x11_streams(
     let mut buf = [0u8; 32768];
 
     loop {
-        if cancelled.load(std::sync::atomic::Ordering::Relaxed) { break; }
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
 
         // remote → local
         match remote.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
                 local.set_nonblocking(false).ok();
-                if local.write_all(&buf[..n]).is_err() { break; }
+                if local.write_all(&buf[..n]).is_err() {
+                    break;
+                }
                 local.set_nonblocking(true).ok();
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -312,7 +337,9 @@ fn relay_x11_streams(
             Ok(0) => break,
             Ok(n) => {
                 remote.set_nonblocking(false).ok();
-                if remote.write_all(&buf[..n]).is_err() { break; }
+                if remote.write_all(&buf[..n]).is_err() {
+                    break;
+                }
                 remote.set_nonblocking(true).ok();
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -361,18 +388,24 @@ pub async fn get_x11_forward_status(
 /// List all active X11 forwards across all sessions.
 #[tauri::command]
 pub fn list_x11_forwards() -> Result<Vec<X11ForwardStatus>, String> {
-    let fwds = X11_FORWARDS.lock()
+    let fwds = X11_FORWARDS
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
-    Ok(fwds.values().map(|state| X11ForwardStatus {
-        session_id: state.session_id.clone(),
-        enabled: true,
-        info: Some(X11ForwardInfo {
+    Ok(fwds
+        .values()
+        .map(|state| X11ForwardStatus {
             session_id: state.session_id.clone(),
-            remote_display: state.remote_display.clone(),
-            local_bind: state.local_bind.clone(),
-            trusted: state.trusted,
-            active_channels: state.active_channels.load(std::sync::atomic::Ordering::Relaxed),
-            total_channels_opened: state.total_channels_opened,
-        }),
-    }).collect())
+            enabled: true,
+            info: Some(X11ForwardInfo {
+                session_id: state.session_id.clone(),
+                remote_display: state.remote_display.clone(),
+                local_bind: state.local_bind.clone(),
+                trusted: state.trusted,
+                active_channels: state
+                    .active_channels
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                total_channels_opened: state.total_channels_opened,
+            }),
+        })
+        .collect())
 }

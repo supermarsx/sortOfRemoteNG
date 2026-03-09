@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
+use ssh2::Session;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use ssh2::Session;
-use chrono::{DateTime, Utc};
 
 use super::service::SshService;
 
@@ -10,18 +10,42 @@ use super::service::SshService;
 // Default value helpers
 // ===============================
 
-pub fn default_true() -> bool { true }
-pub fn default_keepalive_probes() -> u32 { 2 }
-pub(crate) fn default_ip_protocol() -> String { "auto".to_string() }
-pub(crate) fn default_compression_level() -> u32 { 6 }
-pub(crate) fn default_compression_config() -> SshCompressionConfig { SshCompressionConfig::default() }
-pub(crate) fn default_ssh_version() -> String { "auto".to_string() }
-pub(crate) fn default_proxy_timeout() -> u64 { 10000 }
-pub(crate) fn default_automation_timeout() -> u64 { 30000 }
-pub fn default_ftp_port() -> u16 { 21 }
-pub(crate) fn default_passive_port_count() -> u16 { 10 }
-pub fn default_rdp_port() -> u16 { 3389 }
-pub fn default_vnc_port() -> u16 { 5900 }
+pub fn default_true() -> bool {
+    true
+}
+pub fn default_keepalive_probes() -> u32 {
+    2
+}
+pub(crate) fn default_ip_protocol() -> String {
+    "auto".to_string()
+}
+pub(crate) fn default_compression_level() -> u32 {
+    6
+}
+pub(crate) fn default_compression_config() -> SshCompressionConfig {
+    SshCompressionConfig::default()
+}
+pub(crate) fn default_ssh_version() -> String {
+    "auto".to_string()
+}
+pub(crate) fn default_proxy_timeout() -> u64 {
+    10000
+}
+pub(crate) fn default_automation_timeout() -> u64 {
+    30000
+}
+pub fn default_ftp_port() -> u16 {
+    21
+}
+pub(crate) fn default_passive_port_count() -> u16 {
+    10
+}
+pub fn default_rdp_port() -> u16 {
+    3389
+}
+pub fn default_vnc_port() -> u16 {
+    5900
+}
 
 // ===============================
 // SSH Compression Types
@@ -31,6 +55,7 @@ pub fn default_vnc_port() -> u16 { 5900 }
 /// These map directly to the algorithm names in the SSH specification (RFC 4253).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum SshCompressionAlgorithm {
     /// No compression — raw data transfer
     None,
@@ -42,11 +67,8 @@ pub enum SshCompressionAlgorithm {
     ZlibOpenssh,
     /// Automatically negotiate the best available algorithm.
     /// Preference order: zlib@openssh.com > zlib > none
+    #[default]
     Auto,
-}
-
-impl Default for SshCompressionAlgorithm {
-    fn default() -> Self { Self::Auto }
 }
 
 impl SshCompressionAlgorithm {
@@ -105,16 +127,21 @@ pub struct SshAdaptiveCompression {
     pub incompressible_extensions: Vec<String>,
 }
 
-fn default_adaptive_min_size() -> u64 { 256 }
-fn default_adaptive_ratio_threshold() -> f64 { 0.90 }
+fn default_adaptive_min_size() -> u64 {
+    256
+}
+fn default_adaptive_ratio_threshold() -> f64 {
+    0.90
+}
 fn default_incompressible_extensions() -> Vec<String> {
     vec![
-        "gz", "bz2", "xz", "zst", "lz4", "lzma", "zip", "7z", "rar",
-        "tar.gz", "tar.bz2", "tar.xz", "tgz",
-        "jpg", "jpeg", "png", "gif", "webp", "avif",
-        "mp3", "mp4", "mkv", "avi", "flac", "ogg", "webm",
-        "pdf", "docx", "xlsx",
-    ].into_iter().map(String::from).collect()
+        "gz", "bz2", "xz", "zst", "lz4", "lzma", "zip", "7z", "rar", "tar.gz", "tar.bz2", "tar.xz",
+        "tgz", "jpg", "jpeg", "png", "gif", "webp", "avif", "mp3", "mp4", "mkv", "avi", "flac",
+        "ogg", "webm", "pdf", "docx", "xlsx",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
 
 impl Default for SshAdaptiveCompression {
@@ -894,9 +921,15 @@ pub type SshServiceState = Arc<Mutex<SshService>>;
 // X11 Forwarding Types
 // ===============================
 
-pub(crate) fn default_x11_display_offset() -> u32 { 10 }
-pub(crate) fn default_x11_screen() -> u32 { 0 }
-pub(crate) fn default_x11_timeout() -> u64 { 0 }
+pub(crate) fn default_x11_display_offset() -> u32 {
+    10
+}
+pub(crate) fn default_x11_screen() -> u32 {
+    0
+}
+pub(crate) fn default_x11_timeout() -> u64 {
+    0
+}
 
 /// X11 forwarding configuration.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

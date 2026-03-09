@@ -1,11 +1,11 @@
+use ssh2::Session;
+use std::io::Read;
 use std::net::TcpStream;
 use std::path::Path;
 use std::time::Duration;
-use std::io::Read;
-use ssh2::Session;
 
-use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 use super::types::*;
+use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
 /// Retrieve the host key information for an active SSH session.
 #[tauri::command]
@@ -14,14 +14,18 @@ pub async fn get_ssh_host_key_info(
     session_id: String,
 ) -> Result<SshHostKeyInfo, String> {
     let guard = state.lock().await;
-    let ssh_session = guard.sessions.get(&session_id)
+    let ssh_session = guard
+        .sessions
+        .get(&session_id)
         .ok_or_else(|| format!("Session {} not found", session_id))?;
 
-    let (raw_key, host_key_type) = ssh_session.session.host_key()
+    let (raw_key, host_key_type) = ssh_session
+        .session
+        .host_key()
         .ok_or("No host key available for this session")?;
 
     // SHA-256 fingerprint
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(raw_key);
     let fingerprint = hex::encode(hasher.finalize());
@@ -170,7 +174,11 @@ fn run_ssh_diagnostics(
                     }
                 },
             });
-            if is_ssh { Some(raw) } else { None }
+            if is_ssh {
+                Some(raw)
+            } else {
+                None
+            }
         }
         Err(e) => {
             let status = if e.kind() == std::io::ErrorKind::WouldBlock
@@ -247,9 +255,9 @@ fn run_ssh_diagnostics(
                 status: "pass".into(),
                 message: "SSH handshake completed successfully".into(),
                 duration_ms: t.elapsed().as_millis() as u64,
-                detail: Some(format!(
-                    "Encryption established. Session is ready for authentication."
-                )),
+                detail: Some(
+                    "Encryption established. Session is ready for authentication.".to_string(),
+                ),
             });
         }
         Err(e) => {
@@ -336,10 +344,11 @@ fn run_ssh_diagnostics(
 
     // Step 6: Authentication Methods
     let t = std::time::Instant::now();
-    let auth_methods_str = sess
-        .auth_methods(username)
-        .unwrap_or_else(|_| "");
-    let auth_methods: Vec<&str> = auth_methods_str.split(',').filter(|s| !s.is_empty()).collect();
+    let auth_methods_str = sess.auth_methods(username).unwrap_or("");
+    let auth_methods: Vec<&str> = auth_methods_str
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .collect();
 
     if auth_methods.is_empty() {
         steps.push(DiagnosticStep {
@@ -400,22 +409,17 @@ fn run_ssh_diagnostics(
             .unwrap_or(false);
 
         if is_sk {
-            auth_detail = format!(
-                "Security key (FIDO2) authentication key detected: {key_path}. \
-                 User touch on the authenticator may be required."
-            );
+            // Security key (FIDO2) authentication key detected.
+            // User touch on the authenticator may be required.
         }
 
-        match sess.userauth_pubkey_file(
-            username,
-            None,
-            Path::new(key_path),
-            private_key_passphrase,
-        ) {
+        match sess.userauth_pubkey_file(username, None, Path::new(key_path), private_key_passphrase)
+        {
             Ok(()) => {
                 auth_ok = true;
                 let sk_note = if is_sk { " (security key)" } else { "" };
-                auth_detail = format!("Public key{sk_note} authentication succeeded (key: {key_path})");
+                auth_detail =
+                    format!("Public key{sk_note} authentication succeeded (key: {key_path})");
             }
             Err(e) => {
                 let sk_hint = if is_sk {
@@ -487,10 +491,7 @@ fn run_ssh_diagnostics(
             steps.push(DiagnosticStep {
                 name: "Server Environment".into(),
                 status: "info".into(),
-                message: format!(
-                    "{}",
-                    env_info.chars().take(120).collect::<String>()
-                ),
+                message: env_info.chars().take(120).collect::<String>().to_string(),
                 duration_ms: t.elapsed().as_millis() as u64,
                 detail: if env_info.len() > 120 {
                     Some(env_info)

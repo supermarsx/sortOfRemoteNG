@@ -1,18 +1,18 @@
-use std::sync::Mutex as StdMutex;
 use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
 
-pub mod types;
-pub mod service;
-pub mod commands;
-pub mod recording;
 pub mod automation;
-pub mod highlighting;
-pub mod tunnels;
+pub mod commands;
 pub mod diagnostics;
-pub mod x11;
-pub mod proxy_command;
-pub mod sk_keys;
 pub mod fido2;
+pub mod highlighting;
+pub mod proxy_command;
+pub mod recording;
+pub mod service;
+pub mod sk_keys;
+pub mod tunnels;
+pub mod types;
+pub mod x11;
 
 // Maximum buffer size in bytes (1MB)
 pub(crate) const MAX_BUFFER_SIZE: usize = 1024 * 1024;
@@ -59,18 +59,18 @@ lazy_static::lazy_static! {
 pub use types::*;
 
 // Service struct and helpers
-pub use service::SshService;
 #[allow(unused_imports)]
 pub use service::generate_totp_code;
+pub use service::SshService;
 
 // All tauri commands (glob re-exports include __cmd__ items)
-pub use commands::*;
-pub use recording::*;
 pub use automation::*;
-pub use highlighting::*;
-pub use tunnels::*;
+pub use commands::*;
 pub use diagnostics::*;
-pub use x11::*;
-pub use proxy_command::*;
-pub use sk_keys::*;
 pub use fido2::*;
+pub use highlighting::*;
+pub use proxy_command::*;
+pub use recording::*;
+pub use sk_keys::*;
+pub use tunnels::*;
+pub use x11::*;
