@@ -9,8 +9,12 @@ pub struct StorageManager;
 impl StorageManager {
     /// Get high-level storage overview (all volumes + pools + disks).
     pub async fn get_overview(client: &SynoClient) -> SynologyResult<StorageOverview> {
-        let v = client.best_version("SYNO.Storage.CGI.Storage", 1).unwrap_or(1);
-        client.api_call("SYNO.Storage.CGI.Storage", v, "load_info", &[]).await
+        let v = client
+            .best_version("SYNO.Storage.CGI.Storage", 1)
+            .unwrap_or(1);
+        client
+            .api_call("SYNO.Storage.CGI.Storage", v, "load_info", &[])
+            .await
     }
 
     /// List all physical disks.
@@ -33,17 +37,31 @@ impl StorageManager {
 
     /// Get SMART info for a specific disk.
     pub async fn get_smart_info(client: &SynoClient, disk_id: &str) -> SynologyResult<SmartInfo> {
-        let v = client.best_version("SYNO.Storage.CGI.Smart", 1).unwrap_or(1);
-        client.api_call("SYNO.Storage.CGI.Smart", v, "get", &[("disk", disk_id)]).await
+        let v = client
+            .best_version("SYNO.Storage.CGI.Smart", 1)
+            .unwrap_or(1);
+        client
+            .api_call("SYNO.Storage.CGI.Smart", v, "get", &[("disk", disk_id)])
+            .await
     }
 
     /// Run a SMART test on a disk.
-    pub async fn run_smart_test(client: &SynoClient, disk_id: &str, test_type: &str) -> SynologyResult<()> {
-        let v = client.best_version("SYNO.Storage.CGI.Smart", 1).unwrap_or(1);
-        client.api_call_void("SYNO.Storage.CGI.Smart", v, "test", &[
-            ("disk", disk_id),
-            ("type", test_type),
-        ]).await
+    pub async fn run_smart_test(
+        client: &SynoClient,
+        disk_id: &str,
+        test_type: &str,
+    ) -> SynologyResult<()> {
+        let v = client
+            .best_version("SYNO.Storage.CGI.Smart", 1)
+            .unwrap_or(1);
+        client
+            .api_call_void(
+                "SYNO.Storage.CGI.Smart",
+                v,
+                "test",
+                &[("disk", disk_id), ("type", test_type)],
+            )
+            .await
     }
 
     /// List SSD caches if any.
@@ -66,8 +84,12 @@ impl StorageManager {
 
     /// List iSCSI targets.
     pub async fn list_iscsi_targets(client: &SynoClient) -> SynologyResult<Vec<IscsiTarget>> {
-        let v = client.best_version("SYNO.Core.ISCSI.Target", 1).unwrap_or(1);
-        client.api_call("SYNO.Core.ISCSI.Target", v, "list", &[]).await
+        let v = client
+            .best_version("SYNO.Core.ISCSI.Target", 1)
+            .unwrap_or(1);
+        client
+            .api_call("SYNO.Core.ISCSI.Target", v, "list", &[])
+            .await
     }
 
     /// Get storage utilization in percentage for each volume.

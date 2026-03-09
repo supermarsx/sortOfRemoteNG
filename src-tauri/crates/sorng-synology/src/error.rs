@@ -68,7 +68,10 @@ pub struct SynologyError {
 
 impl SynologyError {
     pub fn new(kind: SynologyErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     // ── Convenience constructors ────────────────────────────────────
@@ -124,16 +127,36 @@ impl SynologyError {
     /// Map a global DSM error code to a typed error.
     pub fn from_dsm_code(code: i32, context: &str) -> Self {
         match code {
-            100 => Self::new(SynologyErrorKind::Unknown, format!("{context}: Unknown error")),
-            101..=104 => Self::api(code, format!("{context}: Invalid API request (code {code})")),
+            100 => Self::new(
+                SynologyErrorKind::Unknown,
+                format!("{context}: Unknown error"),
+            ),
+            101..=104 => Self::api(
+                code,
+                format!("{context}: Invalid API request (code {code})"),
+            ),
             105 | 120 => Self::permission(format!("{context}: Permission denied (code {code})")),
             106 => Self::session_expired(format!("{context}: Session timeout")),
-            107 => Self::session_expired(format!("{context}: Session interrupted by duplicate login")),
-            108 => Self::new(SynologyErrorKind::FileOperationError, format!("{context}: File upload failed")),
+            107 => {
+                Self::session_expired(format!("{context}: Session interrupted by duplicate login"))
+            }
+            108 => Self::new(
+                SynologyErrorKind::FileOperationError,
+                format!("{context}: File upload failed"),
+            ),
             109..=111 => Self::busy(format!("{context}: System busy (code {code})")),
-            115 | 160 => Self::new(SynologyErrorKind::IpBlocked, format!("{context}: IP blocked (code {code})")),
-            117 => Self::new(SynologyErrorKind::FileOperationError, format!("{context}: File/folder locked")),
-            119 => Self::new(SynologyErrorKind::TokenMismatch, format!("{context}: SynoToken mismatch")),
+            115 | 160 => Self::new(
+                SynologyErrorKind::IpBlocked,
+                format!("{context}: IP blocked (code {code})"),
+            ),
+            117 => Self::new(
+                SynologyErrorKind::FileOperationError,
+                format!("{context}: File/folder locked"),
+            ),
+            119 => Self::new(
+                SynologyErrorKind::TokenMismatch,
+                format!("{context}: SynoToken mismatch"),
+            ),
             150 => Self::busy(format!("{context}: Operation timed out")),
             // Auth-specific
             400 => Self::auth(format!("{context}: Invalid credentials")),
@@ -142,7 +165,10 @@ impl SynologyError {
             403 => Self::two_factor(format!("{context}: 2FA code required")),
             404 => Self::auth(format!("{context}: Invalid 2FA code")),
             406 => Self::two_factor(format!("{context}: 2FA enforcement required")),
-            407 => Self::new(SynologyErrorKind::IpBlocked, format!("{context}: IP blocked by auto-block")),
+            407 => Self::new(
+                SynologyErrorKind::IpBlocked,
+                format!("{context}: IP blocked by auto-block"),
+            ),
             408..=410 => Self::auth(format!("{context}: Password expired (code {code})")),
             449 => Self::approve_signin(format!("{context}: Approve sign-in required")),
             _ => Self::api(code, format!("{context}: DSM error code {code}")),

@@ -12,44 +12,64 @@ impl DockerManager {
     /// List all containers.
     pub async fn list_containers(client: &SynoClient) -> SynologyResult<Vec<DockerContainer>> {
         let v = client.best_version("SYNO.Docker.Container", 1).unwrap_or(1);
-        client.api_call(
-            "SYNO.Docker.Container",
-            v,
-            "list",
-            &[("limit", "500"), ("offset", "0")],
-        )
-        .await
+        client
+            .api_call(
+                "SYNO.Docker.Container",
+                v,
+                "list",
+                &[("limit", "500"), ("offset", "0")],
+            )
+            .await
     }
 
     /// Get container details.
     pub async fn get_container(client: &SynoClient, name: &str) -> SynologyResult<DockerContainer> {
         let v = client.best_version("SYNO.Docker.Container", 1).unwrap_or(1);
-        client.api_call("SYNO.Docker.Container", v, "get", &[("name", name)]).await
+        client
+            .api_call("SYNO.Docker.Container", v, "get", &[("name", name)])
+            .await
     }
 
     /// Start a container.
     pub async fn start_container(client: &SynoClient, name: &str) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Container", 1).unwrap_or(1);
-        client.api_post_void("SYNO.Docker.Container", v, "start", &[("name", name)]).await
+        client
+            .api_post_void("SYNO.Docker.Container", v, "start", &[("name", name)])
+            .await
     }
 
     /// Stop a container.
     pub async fn stop_container(client: &SynoClient, name: &str) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Container", 1).unwrap_or(1);
-        client.api_post_void("SYNO.Docker.Container", v, "stop", &[("name", name)]).await
+        client
+            .api_post_void("SYNO.Docker.Container", v, "stop", &[("name", name)])
+            .await
     }
 
     /// Restart a container.
     pub async fn restart_container(client: &SynoClient, name: &str) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Container", 1).unwrap_or(1);
-        client.api_post_void("SYNO.Docker.Container", v, "restart", &[("name", name)]).await
+        client
+            .api_post_void("SYNO.Docker.Container", v, "restart", &[("name", name)])
+            .await
     }
 
     /// Delete a container.
-    pub async fn delete_container(client: &SynoClient, name: &str, force: bool) -> SynologyResult<()> {
+    pub async fn delete_container(
+        client: &SynoClient,
+        name: &str,
+        force: bool,
+    ) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Container", 1).unwrap_or(1);
         let f = if force { "true" } else { "false" };
-        client.api_post_void("SYNO.Docker.Container", v, "delete", &[("name", name), ("force", f)]).await
+        client
+            .api_post_void(
+                "SYNO.Docker.Container",
+                v,
+                "delete",
+                &[("name", name), ("force", f)],
+            )
+            .await
     }
 
     /// Get container logs.
@@ -57,8 +77,12 @@ impl DockerManager {
         client: &SynoClient,
         name: &str,
     ) -> SynologyResult<serde_json::Value> {
-        let v = client.best_version("SYNO.Docker.Container.Log", 1).unwrap_or(1);
-        client.api_call("SYNO.Docker.Container.Log", v, "get", &[("name", name)]).await
+        let v = client
+            .best_version("SYNO.Docker.Container.Log", 1)
+            .unwrap_or(1);
+        client
+            .api_call("SYNO.Docker.Container.Log", v, "get", &[("name", name)])
+            .await
     }
 
     /// Get container resource usage (CPU / memory).
@@ -66,8 +90,17 @@ impl DockerManager {
         client: &SynoClient,
         name: &str,
     ) -> SynologyResult<serde_json::Value> {
-        let v = client.best_version("SYNO.Docker.Container.Resource", 1).unwrap_or(1);
-        client.api_call("SYNO.Docker.Container.Resource", v, "get", &[("name", name)]).await
+        let v = client
+            .best_version("SYNO.Docker.Container.Resource", 1)
+            .unwrap_or(1);
+        client
+            .api_call(
+                "SYNO.Docker.Container.Resource",
+                v,
+                "get",
+                &[("name", name)],
+            )
+            .await
     }
 
     // ─── Images ──────────────────────────────────────────────────
@@ -75,7 +108,14 @@ impl DockerManager {
     /// List all images.
     pub async fn list_images(client: &SynoClient) -> SynologyResult<Vec<DockerImage>> {
         let v = client.best_version("SYNO.Docker.Image", 1).unwrap_or(1);
-        client.api_call("SYNO.Docker.Image", v, "list", &[("limit", "500"), ("offset", "0")]).await
+        client
+            .api_call(
+                "SYNO.Docker.Image",
+                v,
+                "list",
+                &[("limit", "500"), ("offset", "0")],
+            )
+            .await
     }
 
     /// Pull an image from a registry.
@@ -85,19 +125,22 @@ impl DockerManager {
         tag: &str,
     ) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Image", 1).unwrap_or(1);
-        client.api_post_void(
-            "SYNO.Docker.Image",
-            v,
-            "pull",
-            &[("repository", repository), ("tag", tag)],
-        )
-        .await
+        client
+            .api_post_void(
+                "SYNO.Docker.Image",
+                v,
+                "pull",
+                &[("repository", repository), ("tag", tag)],
+            )
+            .await
     }
 
     /// Delete an image.
     pub async fn delete_image(client: &SynoClient, name: &str) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Image", 1).unwrap_or(1);
-        client.api_post_void("SYNO.Docker.Image", v, "delete", &[("name", name)]).await
+        client
+            .api_post_void("SYNO.Docker.Image", v, "delete", &[("name", name)])
+            .await
     }
 
     // ─── Registries ──────────────────────────────────────────────
@@ -105,7 +148,9 @@ impl DockerManager {
     /// List configured registries.
     pub async fn list_registries(client: &SynoClient) -> SynologyResult<Vec<DockerRegistry>> {
         let v = client.best_version("SYNO.Docker.Registry", 1).unwrap_or(1);
-        client.api_call("SYNO.Docker.Registry", v, "list", &[]).await
+        client
+            .api_call("SYNO.Docker.Registry", v, "list", &[])
+            .await
     }
 
     // ─── Networks ────────────────────────────────────────────────
@@ -125,24 +170,27 @@ impl DockerManager {
         gateway: &str,
     ) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Network", 1).unwrap_or(1);
-        client.api_post_void(
-            "SYNO.Docker.Network",
-            v,
-            "create",
-            &[
-                ("name", name),
-                ("driver", driver),
-                ("subnet", subnet),
-                ("gateway", gateway),
-            ],
-        )
-        .await
+        client
+            .api_post_void(
+                "SYNO.Docker.Network",
+                v,
+                "create",
+                &[
+                    ("name", name),
+                    ("driver", driver),
+                    ("subnet", subnet),
+                    ("gateway", gateway),
+                ],
+            )
+            .await
     }
 
     /// Delete a Docker network.
     pub async fn delete_network(client: &SynoClient, name: &str) -> SynologyResult<()> {
         let v = client.best_version("SYNO.Docker.Network", 1).unwrap_or(1);
-        client.api_post_void("SYNO.Docker.Network", v, "delete", &[("name", name)]).await
+        client
+            .api_post_void("SYNO.Docker.Network", v, "delete", &[("name", name)])
+            .await
     }
 
     // ─── Container Manager Projects (Compose) ───────────────────
@@ -151,8 +199,12 @@ impl DockerManager {
     pub async fn list_projects(client: &SynoClient) -> SynologyResult<Vec<DockerProject>> {
         // Try Container Manager API first (DSM 7.2+)
         if client.has_api("SYNO.ContainerManager.Project") {
-            let v = client.best_version("SYNO.ContainerManager.Project", 1).unwrap_or(1);
-            return client.api_call("SYNO.ContainerManager.Project", v, "list", &[]).await;
+            let v = client
+                .best_version("SYNO.ContainerManager.Project", 1)
+                .unwrap_or(1);
+            return client
+                .api_call("SYNO.ContainerManager.Project", v, "list", &[])
+                .await;
         }
         // Fallback to older Docker project API
         let v = client.best_version("SYNO.Docker.Project", 1).unwrap_or(1);
@@ -167,7 +219,9 @@ impl DockerManager {
             "SYNO.Docker.Project"
         };
         let v = client.best_version(api, 1).unwrap_or(1);
-        client.api_post_void(api, v, "start", &[("name", name)]).await
+        client
+            .api_post_void(api, v, "start", &[("name", name)])
+            .await
     }
 
     /// Stop a Compose project.
@@ -178,6 +232,8 @@ impl DockerManager {
             "SYNO.Docker.Project"
         };
         let v = client.best_version(api, 1).unwrap_or(1);
-        client.api_post_void(api, v, "stop", &[("name", name)]).await
+        client
+            .api_post_void(api, v, "stop", &[("name", name)])
+            .await
     }
 }

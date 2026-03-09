@@ -35,6 +35,12 @@ pub struct SynologyService {
     config: Option<SynologyConfig>,
 }
 
+impl Default for SynologyService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SynologyService {
     pub fn new() -> Self {
         Self {
@@ -44,7 +50,7 @@ impl SynologyService {
     }
 
     pub fn is_connected(&self) -> bool {
-        self.client.as_ref().map_or(false, |c| c.sid.is_some())
+        self.client.as_ref().is_some_and(|c| c.sid.is_some())
     }
 
     fn require_client(&self) -> SynologyResult<&SynoClient> {
@@ -157,7 +163,15 @@ impl SynologyService {
         sort_by: &str,
         sort_direction: &str,
     ) -> SynologyResult<FileListResult> {
-        FileStationManager::list_files(self.require_client()?, folder_path, offset, limit, sort_by, sort_direction).await
+        FileStationManager::list_files(
+            self.require_client()?,
+            folder_path,
+            offset,
+            limit,
+            sort_by,
+            sort_direction,
+        )
+        .await
     }
 
     pub async fn list_file_shared_folders(&self) -> SynologyResult<FileListResult> {
@@ -179,7 +193,14 @@ impl SynologyService {
         content: Vec<u8>,
         overwrite: bool,
     ) -> SynologyResult<()> {
-        FileStationManager::upload(self.require_client()?, dest_folder, file_name, content, overwrite).await
+        FileStationManager::upload(
+            self.require_client()?,
+            dest_folder,
+            file_name,
+            content,
+            overwrite,
+        )
+        .await
     }
 
     pub async fn download_file(&self, file_path: &str) -> SynologyResult<Vec<u8>> {
@@ -192,7 +213,8 @@ impl SynologyService {
         name: &str,
         force_parent: bool,
     ) -> SynologyResult<serde_json::Value> {
-        FileStationManager::create_folder(self.require_client()?, folder_path, name, force_parent).await
+        FileStationManager::create_folder(self.require_client()?, folder_path, name, force_parent)
+            .await
     }
 
     pub async fn delete_files(&self, paths: &[&str], recursive: bool) -> SynologyResult<()> {
@@ -213,7 +235,8 @@ impl SynologyService {
         password: Option<&str>,
         expire_days: Option<u32>,
     ) -> SynologyResult<ShareLinkInfo> {
-        FileStationManager::create_share_link(self.require_client()?, path, password, expire_days).await
+        FileStationManager::create_share_link(self.require_client()?, path, password, expire_days)
+            .await
     }
 
     // ─── Shared Folders ──────────────────────────────────────────
@@ -239,11 +262,7 @@ impl SynologyService {
         SharesManager::delete(self.require_client()?, name).await
     }
 
-    pub async fn mount_encrypted_share(
-        &self,
-        name: &str,
-        password: &str,
-    ) -> SynologyResult<()> {
+    pub async fn mount_encrypted_share(&self, name: &str, password: &str) -> SynologyResult<()> {
         SharesManager::mount_encrypted(self.require_client()?, name, password).await
     }
 
@@ -399,11 +418,7 @@ impl SynologyService {
         VirtualizationManager::list_snapshots(self.require_client()?, guest_id).await
     }
 
-    pub async fn take_vm_snapshot(
-        &self,
-        guest_id: &str,
-        description: &str,
-    ) -> SynologyResult<()> {
+    pub async fn take_vm_snapshot(&self, guest_id: &str, description: &str) -> SynologyResult<()> {
         VirtualizationManager::take_snapshot(self.require_client()?, guest_id, description).await
     }
 
@@ -524,11 +539,7 @@ impl SynologyService {
 
     // ─── Logs ────────────────────────────────────────────────────
 
-    pub async fn get_system_logs(
-        &self,
-        offset: u64,
-        limit: u64,
-    ) -> SynologyResult<Vec<LogEntry>> {
+    pub async fn get_system_logs(&self, offset: u64, limit: u64) -> SynologyResult<Vec<LogEntry>> {
         LogsManager::get_system_logs(self.require_client()?, offset, limit).await
     }
 

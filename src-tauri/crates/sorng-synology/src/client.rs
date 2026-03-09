@@ -76,13 +76,8 @@ impl SynoClient {
             "{}/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query&query=all",
             self.base_url
         );
-        let resp: SynoResponse<HashMap<String, ApiInfoEntry>> = self
-            .http
-            .get(&url)
-            .send()
-            .await?
-            .json()
-            .await?;
+        let resp: SynoResponse<HashMap<String, ApiInfoEntry>> =
+            self.http.get(&url).send().await?.json().await?;
 
         if !resp.success {
             let code = resp.error.map(|e| e.code).unwrap_or(100);
@@ -95,12 +90,7 @@ impl SynoClient {
     }
 
     /// Resolve the full URL for an API call.
-    pub fn resolve_url(
-        &self,
-        api: &str,
-        version: u32,
-        method: &str,
-    ) -> SynologyResult<String> {
+    pub fn resolve_url(&self, api: &str, version: u32, method: &str) -> SynologyResult<String> {
         let info = self
             .api_info
             .get(api)
@@ -127,7 +117,9 @@ impl SynoClient {
 
     /// Pick the highest supported version for an API (clamped to our max).
     pub fn best_version(&self, api: &str, our_max: u32) -> Option<u32> {
-        self.api_info.get(api).map(|info| info.max_version.min(our_max))
+        self.api_info
+            .get(api)
+            .map(|info| info.max_version.min(our_max))
     }
 
     /// Check if a particular API is available.
@@ -181,10 +173,7 @@ impl SynoClient {
 
         let url = format!("{}/webapi/{}", self.base_url, info.path);
 
-        let mut params: Vec<(&str, &str)> = vec![
-            ("api", api),
-            ("method", method),
-        ];
+        let mut params: Vec<(&str, &str)> = vec![("api", api), ("method", method)];
         let ver_str = version.to_string();
         params.push(("version", &ver_str));
         if let Some(ref sid) = self.sid {

@@ -41,26 +41,26 @@
 //! - **service**          — Aggregate facade + Tauri state alias
 //! - **commands**         — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
-pub mod client;
 pub mod auth;
-pub mod system;
-pub mod storage;
-pub mod file_station;
-pub mod shares;
-pub mod network;
-pub mod users;
-pub mod packages;
-pub mod services;
-pub mod docker;
-pub mod virtualization;
-pub mod download_station;
-pub mod surveillance;
 pub mod backup;
-pub mod security;
+pub mod client;
+pub mod commands;
+pub mod docker;
+pub mod download_station;
+pub mod error;
+pub mod file_station;
 pub mod hardware;
 pub mod logs;
+pub mod network;
 pub mod notifications;
+pub mod packages;
+pub mod security;
 pub mod service;
-pub mod commands;
+pub mod services;
+pub mod shares;
+pub mod storage;
+pub mod surveillance;
+pub mod system;
+pub mod types;
+pub mod users;
+pub mod virtualization;

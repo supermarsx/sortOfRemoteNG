@@ -10,7 +10,9 @@ impl FileStationManager {
     /// Get File Station info (hostname, is_manager, etc.).
     pub async fn get_info(client: &SynoClient) -> SynologyResult<FileStationInfo> {
         let v = client.best_version("SYNO.FileStation.Info", 2).unwrap_or(1);
-        client.api_call("SYNO.FileStation.Info", v, "get", &[]).await
+        client
+            .api_call("SYNO.FileStation.Info", v, "get", &[])
+            .await
     }
 
     /// List files in a folder.
@@ -25,32 +27,40 @@ impl FileStationManager {
         let v = client.best_version("SYNO.FileStation.List", 2).unwrap_or(1);
         let off = offset.to_string();
         let lim = limit.to_string();
-        client.api_call(
-            "SYNO.FileStation.List",
-            v,
-            "list",
-            &[
-                ("folder_path", folder_path),
-                ("offset", &off),
-                ("limit", &lim),
-                ("sort_by", sort_by),
-                ("sort_direction", sort_direction),
-                ("additional", "[\"size\",\"time\",\"type\",\"perm\",\"owner\",\"real_path\"]"),
-            ],
-        )
-        .await
+        client
+            .api_call(
+                "SYNO.FileStation.List",
+                v,
+                "list",
+                &[
+                    ("folder_path", folder_path),
+                    ("offset", &off),
+                    ("limit", &lim),
+                    ("sort_by", sort_by),
+                    ("sort_direction", sort_direction),
+                    (
+                        "additional",
+                        "[\"size\",\"time\",\"type\",\"perm\",\"owner\",\"real_path\"]",
+                    ),
+                ],
+            )
+            .await
     }
 
     /// List shared root folders.
     pub async fn list_shared_folders(client: &SynoClient) -> SynologyResult<FileListResult> {
         let v = client.best_version("SYNO.FileStation.List", 2).unwrap_or(1);
-        client.api_call(
-            "SYNO.FileStation.List",
-            v,
-            "list_share",
-            &[("additional", "[\"volume_status\",\"time\",\"perm\",\"owner\",\"real_path\"]")],
-        )
-        .await
+        client
+            .api_call(
+                "SYNO.FileStation.List",
+                v,
+                "list_share",
+                &[(
+                    "additional",
+                    "[\"volume_status\",\"time\",\"perm\",\"owner\",\"real_path\"]",
+                )],
+            )
+            .await
     }
 
     /// Search for files.
@@ -59,7 +69,9 @@ impl FileStationManager {
         folder_path: &str,
         pattern: &str,
     ) -> SynologyResult<serde_json::Value> {
-        let v = client.best_version("SYNO.FileStation.Search", 2).unwrap_or(1);
+        let v = client
+            .best_version("SYNO.FileStation.Search", 2)
+            .unwrap_or(1);
         // Start the search task
         let start_result: serde_json::Value = client
             .api_call(
@@ -98,18 +110,17 @@ impl FileStationManager {
 
             if finished {
                 // Cleanup
-                let _ = client.api_call_void(
-                    "SYNO.FileStation.Search",
-                    v,
-                    "stop",
-                    &[("taskid", task_id)],
-                ).await;
-                let _ = client.api_call_void(
-                    "SYNO.FileStation.Search",
-                    v,
-                    "clean",
-                    &[("taskid", task_id)],
-                ).await;
+                let _ = client
+                    .api_call_void("SYNO.FileStation.Search", v, "stop", &[("taskid", task_id)])
+                    .await;
+                let _ = client
+                    .api_call_void(
+                        "SYNO.FileStation.Search",
+                        v,
+                        "clean",
+                        &[("taskid", task_id)],
+                    )
+                    .await;
                 return Ok(result);
             }
         }
@@ -125,7 +136,9 @@ impl FileStationManager {
         content: Vec<u8>,
         overwrite: bool,
     ) -> SynologyResult<()> {
-        let v = client.best_version("SYNO.FileStation.Upload", 3).unwrap_or(2);
+        let v = client
+            .best_version("SYNO.FileStation.Upload", 3)
+            .unwrap_or(2);
         let url = client.resolve_url("SYNO.FileStation.Upload", v, "upload")?;
 
         let overwrite_str = if overwrite { "true" } else { "false" };
@@ -133,7 +146,7 @@ impl FileStationManager {
         let part = reqwest::multipart::Part::bytes(content)
             .file_name(file_name.to_string())
             .mime_str("application/octet-stream")
-            .map_err(|e| SynologyError::api(0, &format!("Multipart error: {}", e)))?;
+            .map_err(|e| SynologyError::api(0, format!("Multipart error: {}", e)))?;
 
         let form = reqwest::multipart::Form::new()
             .text("api", "SYNO.FileStation.Upload")
@@ -161,17 +174,18 @@ impl FileStationManager {
     }
 
     /// Download a file as raw bytes.
-    pub async fn download(
-        client: &SynoClient,
-        file_path: &str,
-    ) -> SynologyResult<Vec<u8>> {
-        let v = client.best_version("SYNO.FileStation.Download", 2).unwrap_or(1);
-        client.raw_download(
-            "SYNO.FileStation.Download",
-            v,
-            "download",
-            &[("path", file_path), ("mode", "download")],
-        ).await
+    pub async fn download(client: &SynoClient, file_path: &str) -> SynologyResult<Vec<u8>> {
+        let v = client
+            .best_version("SYNO.FileStation.Download", 2)
+            .unwrap_or(1);
+        client
+            .raw_download(
+                "SYNO.FileStation.Download",
+                v,
+                "download",
+                &[("path", file_path), ("mode", "download")],
+            )
+            .await
     }
 
     /// Create a folder.
@@ -181,19 +195,22 @@ impl FileStationManager {
         name: &str,
         force_parent: bool,
     ) -> SynologyResult<serde_json::Value> {
-        let v = client.best_version("SYNO.FileStation.CreateFolder", 2).unwrap_or(1);
+        let v = client
+            .best_version("SYNO.FileStation.CreateFolder", 2)
+            .unwrap_or(1);
         let fp = if force_parent { "true" } else { "false" };
-        client.api_call(
-            "SYNO.FileStation.CreateFolder",
-            v,
-            "create",
-            &[
-                ("folder_path", folder_path),
-                ("name", name),
-                ("force_parent", fp),
-            ],
-        )
-        .await
+        client
+            .api_call(
+                "SYNO.FileStation.CreateFolder",
+                v,
+                "create",
+                &[
+                    ("folder_path", folder_path),
+                    ("name", name),
+                    ("force_parent", fp),
+                ],
+            )
+            .await
     }
 
     /// Delete file(s) or folder(s).
@@ -202,16 +219,26 @@ impl FileStationManager {
         paths: &[&str],
         recursive: bool,
     ) -> SynologyResult<()> {
-        let v = client.best_version("SYNO.FileStation.Delete", 2).unwrap_or(1);
-        let path_str = format!("[{}]", paths.iter().map(|p| format!("\"{}\"", p)).collect::<Vec<_>>().join(","));
+        let v = client
+            .best_version("SYNO.FileStation.Delete", 2)
+            .unwrap_or(1);
+        let path_str = format!(
+            "[{}]",
+            paths
+                .iter()
+                .map(|p| format!("\"{}\"", p))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         let rec = if recursive { "true" } else { "false" };
-        client.api_call_void(
-            "SYNO.FileStation.Delete",
-            v,
-            "start",
-            &[("path", &path_str), ("recursive", rec)],
-        )
-        .await
+        client
+            .api_call_void(
+                "SYNO.FileStation.Delete",
+                v,
+                "start",
+                &[("path", &path_str), ("recursive", rec)],
+            )
+            .await
     }
 
     /// Rename a file or folder.
@@ -220,14 +247,17 @@ impl FileStationManager {
         path: &str,
         new_name: &str,
     ) -> SynologyResult<serde_json::Value> {
-        let v = client.best_version("SYNO.FileStation.Rename", 2).unwrap_or(1);
-        client.api_call(
-            "SYNO.FileStation.Rename",
-            v,
-            "rename",
-            &[("path", path), ("name", new_name)],
-        )
-        .await
+        let v = client
+            .best_version("SYNO.FileStation.Rename", 2)
+            .unwrap_or(1);
+        client
+            .api_call(
+                "SYNO.FileStation.Rename",
+                v,
+                "rename",
+                &[("path", path), ("name", new_name)],
+            )
+            .await
     }
 
     /// Create a sharing link for a file/folder.
@@ -237,7 +267,9 @@ impl FileStationManager {
         password: Option<&str>,
         expire_days: Option<u32>,
     ) -> SynologyResult<ShareLinkInfo> {
-        let v = client.best_version("SYNO.FileStation.Sharing", 3).unwrap_or(1);
+        let v = client
+            .best_version("SYNO.FileStation.Sharing", 3)
+            .unwrap_or(1);
         let mut params: Vec<(&str, String)> = vec![("path", path.to_string())];
         if let Some(pw) = password {
             params.push(("password", pw.to_string()));
@@ -246,13 +278,24 @@ impl FileStationManager {
             params.push(("date_expired", days.to_string()));
         }
         let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        client.api_call("SYNO.FileStation.Sharing", v, "create", &param_refs).await
+        client
+            .api_call("SYNO.FileStation.Sharing", v, "create", &param_refs)
+            .await
     }
 
     /// List active sharing links.
     pub async fn list_share_links(client: &SynoClient) -> SynologyResult<Vec<ShareLinkInfo>> {
-        let v = client.best_version("SYNO.FileStation.Sharing", 3).unwrap_or(1);
-        client.api_call("SYNO.FileStation.Sharing", v, "list", &[("offset", "0"), ("limit", "100")]).await
+        let v = client
+            .best_version("SYNO.FileStation.Sharing", 3)
+            .unwrap_or(1);
+        client
+            .api_call(
+                "SYNO.FileStation.Sharing",
+                v,
+                "list",
+                &[("offset", "0"), ("limit", "100")],
+            )
+            .await
     }
 
     /// Get background task status.
@@ -260,7 +303,16 @@ impl FileStationManager {
         client: &SynoClient,
         task_id: &str,
     ) -> SynologyResult<BackgroundTask> {
-        let v = client.best_version("SYNO.FileStation.BackgroundTask", 3).unwrap_or(1);
-        client.api_call("SYNO.FileStation.BackgroundTask", v, "list", &[("taskid", task_id)]).await
+        let v = client
+            .best_version("SYNO.FileStation.BackgroundTask", 3)
+            .unwrap_or(1);
+        client
+            .api_call(
+                "SYNO.FileStation.BackgroundTask",
+                v,
+                "list",
+                &[("taskid", task_id)],
+            )
+            .await
     }
 }

@@ -4,8 +4,6 @@ use crate::client::SynoClient;
 use crate::error::{SynologyError, SynologyResult};
 use crate::types::*;
 
-
-
 /// Handles all authentication flows for Synology DSM.
 pub struct AuthManager;
 
@@ -74,10 +72,7 @@ impl AuthManager {
         let url = client.resolve_url("SYNO.API.Auth", version, "login")?;
 
         // Build form params as &str pairs
-        let form_pairs: Vec<(&str, &str)> = params
-            .iter()
-            .map(|(k, v)| (*k, v.as_str()))
-            .collect();
+        let form_pairs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
         let resp: SynoResponse<LoginResult> = client
             .http_client()
@@ -125,12 +120,14 @@ impl AuthManager {
             return Ok(());
         }
         let version = client.best_version("SYNO.API.Auth", 7).unwrap_or(3);
-        let _ = client.api_call_void(
-            "SYNO.API.Auth",
-            version,
-            "logout",
-            &[("session", "SortOfRemoteNG")],
-        ).await;
+        let _ = client
+            .api_call_void(
+                "SYNO.API.Auth",
+                version,
+                "logout",
+                &[("session", "SortOfRemoteNG")],
+            )
+            .await;
         client.sid = None;
         client.syno_token = None;
         Ok(())
@@ -141,7 +138,9 @@ impl AuthManager {
         let version = client.best_version("SYNO.DSM.Info", 2).unwrap_or(1);
         // First try SYNO.DSM.Info (older DSM)
         if client.has_api("SYNO.DSM.Info") {
-            return client.api_call("SYNO.DSM.Info", version, "getinfo", &[]).await;
+            return client
+                .api_call("SYNO.DSM.Info", version, "getinfo", &[])
+                .await;
         }
         // Fallback to SYNO.Core.System / SYNO.Core.System.Status
         Err(SynologyError::api_not_found("SYNO.DSM.Info not available"))
@@ -154,15 +153,17 @@ impl AuthManager {
         }
         // Attempt a lightweight call
         match client
-            .api_call::<serde_json::Value>("SYNO.API.Info", 1, "query", &[("query", "SYNO.API.Auth")])
+            .api_call::<serde_json::Value>(
+                "SYNO.API.Info",
+                1,
+                "query",
+                &[("query", "SYNO.API.Auth")],
+            )
             .await
         {
             Ok(_) => Ok(true),
             Err(e) => {
-                if matches!(
-                    e.kind,
-                    crate::error::SynologyErrorKind::SessionExpired
-                ) {
+                if matches!(e.kind, crate::error::SynologyErrorKind::SessionExpired) {
                     Ok(false)
                 } else {
                     // Other errors — session might still be valid, but API failed

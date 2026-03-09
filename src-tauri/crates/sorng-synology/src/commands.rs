@@ -9,6 +9,7 @@ use tauri::State;
 // ─── Connection ──────────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn syn_connect(
     state: State<'_, SynologyServiceState>,
     host: String,
@@ -37,25 +38,19 @@ pub async fn syn_connect(
 }
 
 #[tauri::command]
-pub async fn syn_disconnect(
-    state: State<'_, SynologyServiceState>,
-) -> Result<(), String> {
+pub async fn syn_disconnect(state: State<'_, SynologyServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn syn_is_connected(
-    state: State<'_, SynologyServiceState>,
-) -> Result<bool, String> {
+pub async fn syn_is_connected(state: State<'_, SynologyServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_connected())
 }
 
 #[tauri::command]
-pub async fn syn_check_session(
-    state: State<'_, SynologyServiceState>,
-) -> Result<bool, String> {
+pub async fn syn_check_session(state: State<'_, SynologyServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     svc.check_session().await.map_err(|e| e.to_string())
 }
@@ -95,17 +90,13 @@ pub async fn syn_list_processes(
 }
 
 #[tauri::command]
-pub async fn syn_reboot(
-    state: State<'_, SynologyServiceState>,
-) -> Result<(), String> {
+pub async fn syn_reboot(state: State<'_, SynologyServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.reboot().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn syn_shutdown(
-    state: State<'_, SynologyServiceState>,
-) -> Result<(), String> {
+pub async fn syn_shutdown(state: State<'_, SynologyServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.shutdown().await.map_err(|e| e.to_string())
 }
@@ -150,7 +141,9 @@ pub async fn syn_get_smart_info(
     disk_id: String,
 ) -> Result<SmartInfo, String> {
     let svc = state.lock().await;
-    svc.get_smart_info(&disk_id).await.map_err(|e| e.to_string())
+    svc.get_smart_info(&disk_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -199,7 +192,9 @@ pub async fn syn_list_file_shared_folders(
     state: State<'_, SynologyServiceState>,
 ) -> Result<FileListResult, String> {
     let svc = state.lock().await;
-    svc.list_file_shared_folders().await.map_err(|e| e.to_string())
+    svc.list_file_shared_folders()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -234,7 +229,9 @@ pub async fn syn_download_file(
     file_path: String,
 ) -> Result<Vec<u8>, String> {
     let svc = state.lock().await;
-    svc.download_file(&file_path).await.map_err(|e| e.to_string())
+    svc.download_file(&file_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -304,7 +301,9 @@ pub async fn syn_get_share_permissions(
     name: String,
 ) -> Result<Vec<SharePermission>, String> {
     let svc = state.lock().await;
-    svc.get_share_permissions(&name).await.map_err(|e| e.to_string())
+    svc.get_share_permissions(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -326,7 +325,9 @@ pub async fn syn_delete_shared_folder(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_shared_folder(&name).await.map_err(|e| e.to_string())
+    svc.delete_shared_folder(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -347,7 +348,9 @@ pub async fn syn_unmount_encrypted_share(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.unmount_encrypted_share(&name).await.map_err(|e| e.to_string())
+    svc.unmount_encrypted_share(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Network ─────────────────────────────────────────────────────
@@ -365,7 +368,9 @@ pub async fn syn_list_network_interfaces(
     state: State<'_, SynologyServiceState>,
 ) -> Result<Vec<NetworkInterface>, String> {
     let svc = state.lock().await;
-    svc.list_network_interfaces().await.map_err(|e| e.to_string())
+    svc.list_network_interfaces()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -467,7 +472,9 @@ pub async fn syn_install_package(
     volume: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.install_package(&id, &volume).await.map_err(|e| e.to_string())
+    svc.install_package(&id, &volume)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -519,7 +526,9 @@ pub async fn syn_set_ssh_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_ssh_enabled(enabled).await.map_err(|e| e.to_string())
+    svc.set_ssh_enabled(enabled)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Docker ──────────────────────────────────────────────────────
@@ -529,7 +538,9 @@ pub async fn syn_list_docker_containers(
     state: State<'_, SynologyServiceState>,
 ) -> Result<Vec<DockerContainer>, String> {
     let svc = state.lock().await;
-    svc.list_docker_containers().await.map_err(|e| e.to_string())
+    svc.list_docker_containers()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -538,7 +549,9 @@ pub async fn syn_start_docker_container(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.start_docker_container(&name).await.map_err(|e| e.to_string())
+    svc.start_docker_container(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -547,7 +560,9 @@ pub async fn syn_stop_docker_container(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.stop_docker_container(&name).await.map_err(|e| e.to_string())
+    svc.stop_docker_container(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -556,7 +571,9 @@ pub async fn syn_restart_docker_container(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.restart_docker_container(&name).await.map_err(|e| e.to_string())
+    svc.restart_docker_container(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -566,7 +583,9 @@ pub async fn syn_delete_docker_container(
     force: bool,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_docker_container(&name, force).await.map_err(|e| e.to_string())
+    svc.delete_docker_container(&name, force)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -584,7 +603,9 @@ pub async fn syn_pull_docker_image(
     tag: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.pull_docker_image(&repository, &tag).await.map_err(|e| e.to_string())
+    svc.pull_docker_image(&repository, &tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -609,7 +630,9 @@ pub async fn syn_start_docker_project(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.start_docker_project(&name).await.map_err(|e| e.to_string())
+    svc.start_docker_project(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -618,15 +641,15 @@ pub async fn syn_stop_docker_project(
     name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.stop_docker_project(&name).await.map_err(|e| e.to_string())
+    svc.stop_docker_project(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Virtual Machines ────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn syn_list_vms(
-    state: State<'_, SynologyServiceState>,
-) -> Result<Vec<VmGuest>, String> {
+pub async fn syn_list_vms(state: State<'_, SynologyServiceState>) -> Result<Vec<VmGuest>, String> {
     let svc = state.lock().await;
     svc.list_vms().await.map_err(|e| e.to_string())
 }
@@ -655,7 +678,9 @@ pub async fn syn_vm_force_shutdown(
     guest_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.vm_force_shutdown(&guest_id).await.map_err(|e| e.to_string())
+    svc.vm_force_shutdown(&guest_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -664,7 +689,9 @@ pub async fn syn_list_vm_snapshots(
     guest_id: String,
 ) -> Result<Vec<VmSnapshot>, String> {
     let svc = state.lock().await;
-    svc.list_vm_snapshots(&guest_id).await.map_err(|e| e.to_string())
+    svc.list_vm_snapshots(&guest_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -686,7 +713,9 @@ pub async fn syn_get_download_station_info(
     state: State<'_, SynologyServiceState>,
 ) -> Result<DownloadStationInfo, String> {
     let svc = state.lock().await;
-    svc.get_download_station_info().await.map_err(|e| e.to_string())
+    svc.get_download_station_info()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -715,7 +744,9 @@ pub async fn syn_pause_download(
     task_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.pause_download(&task_id).await.map_err(|e| e.to_string())
+    svc.pause_download(&task_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -724,7 +755,9 @@ pub async fn syn_resume_download(
     task_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.resume_download(&task_id).await.map_err(|e| e.to_string())
+    svc.resume_download(&task_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -734,7 +767,9 @@ pub async fn syn_delete_download(
     force: bool,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.delete_download(&task_id, force).await.map_err(|e| e.to_string())
+    svc.delete_download(&task_id, force)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -769,7 +804,9 @@ pub async fn syn_get_camera_snapshot(
     cam_id: String,
 ) -> Result<Vec<u8>, String> {
     let svc = state.lock().await;
-    svc.get_camera_snapshot(&cam_id).await.map_err(|e| e.to_string())
+    svc.get_camera_snapshot(&cam_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -801,7 +838,9 @@ pub async fn syn_start_backup_task(
     task_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.start_backup_task(&task_id).await.map_err(|e| e.to_string())
+    svc.start_backup_task(&task_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -810,7 +849,9 @@ pub async fn syn_cancel_backup_task(
     task_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.cancel_backup_task(&task_id).await.map_err(|e| e.to_string())
+    svc.cancel_backup_task(&task_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -819,7 +860,9 @@ pub async fn syn_list_backup_versions(
     task_id: String,
 ) -> Result<Vec<BackupVersion>, String> {
     let svc = state.lock().await;
-    svc.list_backup_versions(&task_id).await.map_err(|e| e.to_string())
+    svc.list_backup_versions(&task_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -827,7 +870,9 @@ pub async fn syn_list_active_backup_devices(
     state: State<'_, SynologyServiceState>,
 ) -> Result<Vec<ActiveBackupDevice>, String> {
     let svc = state.lock().await;
-    svc.list_active_backup_devices().await.map_err(|e| e.to_string())
+    svc.list_active_backup_devices()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Security ────────────────────────────────────────────────────
@@ -884,9 +929,7 @@ pub async fn syn_get_hardware_info(
 }
 
 #[tauri::command]
-pub async fn syn_get_ups_info(
-    state: State<'_, SynologyServiceState>,
-) -> Result<UpsInfo, String> {
+pub async fn syn_get_ups_info(state: State<'_, SynologyServiceState>) -> Result<UpsInfo, String> {
     let svc = state.lock().await;
     svc.get_ups_info().await.map_err(|e| e.to_string())
 }
@@ -930,7 +973,9 @@ pub async fn syn_get_active_connections(
     state: State<'_, SynologyServiceState>,
 ) -> Result<Vec<ConnectionEntry>, String> {
     let svc = state.lock().await;
-    svc.get_active_connections().await.map_err(|e| e.to_string())
+    svc.get_active_connections()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Notifications ───────────────────────────────────────────────
@@ -940,7 +985,9 @@ pub async fn syn_get_notification_config(
     state: State<'_, SynologyServiceState>,
 ) -> Result<NotificationConfig, String> {
     let svc = state.lock().await;
-    svc.get_notification_config().await.map_err(|e| e.to_string())
+    svc.get_notification_config()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -948,7 +995,9 @@ pub async fn syn_test_email_notification(
     state: State<'_, SynologyServiceState>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.test_email_notification().await.map_err(|e| e.to_string())
+    svc.test_email_notification()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────

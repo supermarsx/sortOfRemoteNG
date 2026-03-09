@@ -426,7 +426,7 @@ pub struct SharedFolderAdditional {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SharePermission {
-    pub name: String,           // user or group name
+    pub name: String, // user or group name
     pub is_readonly: bool,
     pub is_writable: bool,
     pub is_deny: bool,
@@ -543,7 +543,7 @@ pub struct PackageInfo {
     pub name: String,
     pub version: String,
     pub description: Option<String>,
-    pub status: String,       // "running", "stopped", "installed"
+    pub status: String, // "running", "stopped", "installed"
     pub is_uninstall_pages: Option<bool>,
     pub update_version: Option<String>,
     pub additional: Option<PackageAdditional>,
@@ -776,7 +776,7 @@ pub struct Camera {
     pub port: u16,
     pub model: Option<String>,
     pub vendor: Option<String>,
-    pub status: u32,         // 1=normal, 0=disconnected, etc.
+    pub status: u32, // 1=normal, 0=disconnected, etc.
     pub enabled: bool,
     pub recording: Option<bool>,
     pub resolution: Option<String>,
@@ -884,7 +884,7 @@ pub struct AutoBlockConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HardwareInfo {
-    pub fan_speed: Option<String>,      // "full_speed", "cool_mode", "quiet_mode"
+    pub fan_speed: Option<String>, // "full_speed", "cool_mode", "quiet_mode"
     pub fan_speeds: Vec<FanInfo>,
     pub temperatures: Vec<TempSensor>,
     pub ups: Option<UpsInfo>,
@@ -920,7 +920,7 @@ pub struct UpsInfo {
     pub battery_charge: Option<f64>,
     pub load_percent: Option<f64>,
     pub runtime_minutes: Option<u32>,
-    pub server_type: Option<String>,  // "usb" or "snmp"
+    pub server_type: Option<String>, // "usb" or "snmp"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
