@@ -156,25 +156,11 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "mongo_create_collection"
             | "mongo_drop_collection"
             | "mongo_collection_stats"
-            | "mongo_find"
-            | "mongo_count_documents"
-            | "mongo_insert_one"
-            | "mongo_insert_many"
-            | "mongo_update_one"
-            | "mongo_update_many"
-            | "mongo_delete_one"
-            | "mongo_delete_many"
-            | "mongo_aggregate"
-            | "mongo_run_command"
-            | "mongo_list_indexes"
-            | "mongo_create_index"
-            | "mongo_drop_index"
             | "mongo_server_status"
             | "mongo_list_users"
             | "mongo_replica_set_status"
             | "mongo_current_op"
             | "mongo_kill_op"
-            | "mongo_export_collection"
             | "redis_connect"
             | "redis_disconnect"
             | "redis_disconnect_all"
@@ -565,37 +551,23 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         sqlite::commands::sqlite_database_size,
         sqlite::commands::sqlite_table_count,
         // ── MongoDB ─────────────────────────────────────────────────
-        mongodb::commands::mongo_connect,
-        mongodb::commands::mongo_disconnect,
-        mongodb::commands::mongo_disconnect_all,
-        mongodb::commands::mongo_list_sessions,
-        mongodb::commands::mongo_get_session,
-        mongodb::commands::mongo_ping,
-        mongodb::commands::mongo_list_databases,
-        mongodb::commands::mongo_drop_database,
-        mongodb::commands::mongo_list_collections,
-        mongodb::commands::mongo_create_collection,
-        mongodb::commands::mongo_drop_collection,
-        mongodb::commands::mongo_collection_stats,
-        mongodb::commands::mongo_find,
-        mongodb::commands::mongo_count_documents,
-        mongodb::commands::mongo_insert_one,
-        mongodb::commands::mongo_insert_many,
-        mongodb::commands::mongo_update_one,
-        mongodb::commands::mongo_update_many,
-        mongodb::commands::mongo_delete_one,
-        mongodb::commands::mongo_delete_many,
-        mongodb::commands::mongo_aggregate,
-        mongodb::commands::mongo_run_command,
-        mongodb::commands::mongo_list_indexes,
-        mongodb::commands::mongo_create_index,
-        mongodb::commands::mongo_drop_index,
-        mongodb::commands::mongo_server_status,
-        mongodb::commands::mongo_list_users,
-        mongodb::commands::mongo_replica_set_status,
-        mongodb::commands::mongo_current_op,
-        mongodb::commands::mongo_kill_op,
-        mongodb::commands::mongo_export_collection,
+        mongodb_commands::mongo_connect,
+        mongodb_commands::mongo_disconnect,
+        mongodb_commands::mongo_disconnect_all,
+        mongodb_commands::mongo_list_sessions,
+        mongodb_commands::mongo_get_session,
+        mongodb_commands::mongo_ping,
+        mongodb_commands::mongo_list_databases,
+        mongodb_commands::mongo_drop_database,
+        mongodb_commands::mongo_list_collections,
+        mongodb_commands::mongo_create_collection,
+        mongodb_commands::mongo_drop_collection,
+        mongodb_commands::mongo_collection_stats,
+        mongodb_commands::mongo_server_status,
+        mongodb_commands::mongo_list_users,
+        mongodb_commands::mongo_replica_set_status,
+        mongodb_commands::mongo_current_op,
+        mongodb_commands::mongo_kill_op,
         // ── Redis ───────────────────────────────────────────────────
         redis::commands::redis_connect,
         redis::commands::redis_disconnect,

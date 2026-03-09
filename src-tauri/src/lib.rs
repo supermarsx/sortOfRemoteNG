@@ -32,6 +32,7 @@ mod app_auth_commands;
 mod app_shell_commands;
 mod domains;
 mod invoke_handler;
+mod mongodb_commands;
 mod state_registry;
 pub use domains::*;
 
@@ -90,4 +91,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

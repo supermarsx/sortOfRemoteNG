@@ -2,18 +2,16 @@
 name = "sorng-mongodb"
 version = "0.1.0"
 edition = "2021"
-description = "MongoDB connection management, document CRUD, aggregation, index & collection management, and session lifecycle."
+description = "Simple MongoDB connection, collection, and server management."
 
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-mongodb = { version = "3", features = ["rustls-tls"] }
-bson = { version = "2", features = ["chrono-0_4"] }
+mongodb = { version = "3", default-features = false, features = ["compat-3-0-0", "rustls-tls"] }
 tokio-stream = { workspace = true }
 
 [dev-dependencies]
