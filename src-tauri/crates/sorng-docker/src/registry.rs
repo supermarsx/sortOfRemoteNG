@@ -9,7 +9,10 @@ pub struct RegistryManager;
 
 impl RegistryManager {
     /// Authenticate with a registry.
-    pub async fn login(client: &DockerClient, creds: &RegistryCredentials) -> DockerResult<RegistryAuthResult> {
+    pub async fn login(
+        client: &DockerClient,
+        creds: &RegistryCredentials,
+    ) -> DockerResult<RegistryAuthResult> {
         let body = serde_json::json!({
             "username": creds.username,
             "password": creds.password,
@@ -20,7 +23,11 @@ impl RegistryManager {
     }
 
     /// Search images on Docker Hub (via daemon proxy).
-    pub async fn search(client: &DockerClient, term: &str, limit: Option<i32>) -> DockerResult<Vec<RegistrySearchResult>> {
+    pub async fn search(
+        client: &DockerClient,
+        term: &str,
+        limit: Option<i32>,
+    ) -> DockerResult<Vec<RegistrySearchResult>> {
         let path = if let Some(l) = limit {
             format!("/images/search?term={}&limit={}", term, l)
         } else {
@@ -30,7 +37,10 @@ impl RegistryManager {
     }
 
     /// Get distribution info (manifest/digest) for an image.
-    pub async fn distribution_info(client: &DockerClient, image: &str) -> DockerResult<serde_json::Value> {
+    pub async fn distribution_info(
+        client: &DockerClient,
+        image: &str,
+    ) -> DockerResult<serde_json::Value> {
         client.get(&format!("/distribution/{}/json", image)).await
     }
 }

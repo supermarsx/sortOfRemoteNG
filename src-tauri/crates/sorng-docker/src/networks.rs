@@ -10,7 +10,10 @@ pub struct NetworkManager;
 
 impl NetworkManager {
     /// List networks.
-    pub async fn list(client: &DockerClient, opts: &ListNetworksOptions) -> DockerResult<Vec<NetworkInfo>> {
+    pub async fn list(
+        client: &DockerClient,
+        opts: &ListNetworksOptions,
+    ) -> DockerResult<Vec<NetworkInfo>> {
         let path = if let Some(ref f) = opts.filters {
             let fs = serde_json::to_string(f).unwrap_or_default();
             format!("/networks?filters={}", fs)
@@ -26,7 +29,10 @@ impl NetworkManager {
     }
 
     /// Create a network.
-    pub async fn create(client: &DockerClient, config: &CreateNetworkConfig) -> DockerResult<CreateNetworkResponse> {
+    pub async fn create(
+        client: &DockerClient,
+        config: &CreateNetworkConfig,
+    ) -> DockerResult<CreateNetworkResponse> {
         client.post_json("/networks/create", config).await
     }
 
@@ -36,30 +42,44 @@ impl NetworkManager {
     }
 
     /// Connect a container to a network.
-    pub async fn connect(client: &DockerClient, network_id: &str, config: &ConnectNetworkConfig) -> DockerResult<()> {
+    pub async fn connect(
+        client: &DockerClient,
+        network_id: &str,
+        config: &ConnectNetworkConfig,
+    ) -> DockerResult<()> {
         let _body = serde_json::json!({
             "Container": config.container,
             "EndpointConfig": config.endpoint_config
         });
-        client.post_empty(&format!("/networks/{}/connect", network_id)).await
+        client
+            .post_empty(&format!("/networks/{}/connect", network_id))
+            .await
     }
 
     /// Disconnect a container from a network.
-    pub async fn disconnect(client: &DockerClient, network_id: &str, container_id: &str, force: bool) -> DockerResult<()> {
+    pub async fn disconnect(
+        client: &DockerClient,
+        network_id: &str,
+        container_id: &str,
+        force: bool,
+    ) -> DockerResult<()> {
         let body = serde_json::json!({
             "Container": container_id,
             "Force": force
         });
         // Use the post_json to send body, ignore typed response.
-        let _: serde_json::Value = client.post_json(
-            &format!("/networks/{}/disconnect", network_id),
-            &body,
-        ).await.unwrap_or_default();
+        let _: serde_json::Value = client
+            .post_json(&format!("/networks/{}/disconnect", network_id), &body)
+            .await
+            .unwrap_or_default();
         Ok(())
     }
 
     /// Prune unused networks.
-    pub async fn prune(client: &DockerClient, filters: Option<&HashMap<String, Vec<String>>>) -> DockerResult<PruneResult> {
+    pub async fn prune(
+        client: &DockerClient,
+        filters: Option<&HashMap<String, Vec<String>>>,
+    ) -> DockerResult<PruneResult> {
         let path = if let Some(f) = filters {
             let fs = serde_json::to_string(f).unwrap_or_default();
             format!("/networks/prune?filters={}", fs)
@@ -67,10 +87,18 @@ impl NetworkManager {
             "/networks/prune".to_string()
         };
         let resp: serde_json::Value = client.post_json(&path, &serde_json::json!({})).await?;
-        let deleted = resp.get("NetworksDeleted")
+        let deleted = resp
+            .get("NetworksDeleted")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        Ok(PruneResult { deleted_items: deleted, space_reclaimed: 0 })
+        Ok(PruneResult {
+            deleted_items: deleted,
+            space_reclaimed: 0,
+        })
     }
 }

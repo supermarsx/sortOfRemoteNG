@@ -18,7 +18,11 @@ impl DockerClient {
     pub async fn from_config(config: &DockerConnectionConfig) -> DockerResult<Self> {
         let (base_url, http) = match &config.endpoint {
             DockerEndpoint::Tcp { host, port } => {
-                let scheme = if config.tls.is_some() { "https" } else { "http" };
+                let scheme = if config.tls.is_some() {
+                    "https"
+                } else {
+                    "http"
+                };
                 let url = format!("{}://{}:{}", scheme, host, port);
                 let client = Self::build_http_client(config)?;
                 (url, client)
@@ -74,15 +78,20 @@ impl DockerClient {
 
             if let Some(ref cert_pem) = tls.client_cert_pem {
                 let key_pem = tls.client_key_pem.as_deref().unwrap_or("");
-                let identity = reqwest::Identity::from_pkcs8_pem(cert_pem.as_bytes(), key_pem.as_bytes())
-                    .map_err(|e| DockerError::connection(&format!("Invalid client cert: {}", e)))?;
+                let identity =
+                    reqwest::Identity::from_pkcs8_pem(cert_pem.as_bytes(), key_pem.as_bytes())
+                        .map_err(|e| {
+                            DockerError::connection(&format!("Invalid client cert: {}", e))
+                        })?;
                 builder = builder.identity(identity);
             } else if let Some(ref cert_path) = tls.client_cert_path {
                 let key_path = tls.client_key_path.as_deref().unwrap_or(cert_path);
-                let cert_pem = std::fs::read(cert_path)
-                    .map_err(|e| DockerError::connection(&format!("Cannot read client cert: {}", e)))?;
-                let key_pem = std::fs::read(key_path)
-                    .map_err(|e| DockerError::connection(&format!("Cannot read client key: {}", e)))?;
+                let cert_pem = std::fs::read(cert_path).map_err(|e| {
+                    DockerError::connection(&format!("Cannot read client cert: {}", e))
+                })?;
+                let key_pem = std::fs::read(key_path).map_err(|e| {
+                    DockerError::connection(&format!("Cannot read client key: {}", e))
+                })?;
                 let identity = reqwest::Identity::from_pkcs8_pem(&cert_pem, &key_pem)
                     .map_err(|e| DockerError::connection(&format!("Invalid client cert: {}", e)))?;
                 builder = builder.identity(identity);
@@ -93,7 +102,9 @@ impl DockerClient {
             }
         }
 
-        builder.build().map_err(|e| DockerError::connection(&e.to_string()))
+        builder
+            .build()
+            .map_err(|e| DockerError::connection(&e.to_string()))
     }
 
     // ── URL helpers ───────────────────────────────────────────────
@@ -119,7 +130,9 @@ impl DockerClient {
         path: &str,
         body: &impl serde::Serialize,
     ) -> DockerResult<T> {
-        let resp = self.http.post(self.url(path))
+        let resp = self
+            .http
+            .post(self.url(path))
             .header(CONTENT_TYPE, "application/json")
             .json(body)
             .send()
@@ -142,7 +155,9 @@ impl DockerClient {
         path: &str,
         body: &impl serde::Serialize,
     ) -> DockerResult<T> {
-        let resp = self.http.put(self.url(path))
+        let resp = self
+            .http
+            .put(self.url(path))
             .header(CONTENT_TYPE, "application/json")
             .json(body)
             .send()
@@ -162,7 +177,10 @@ impl DockerClient {
 
     // ── Response handlers ─────────────────────────────────────────
 
-    async fn handle_response<T: serde::de::DeserializeOwned>(&self, resp: reqwest::Response) -> DockerResult<T> {
+    async fn handle_response<T: serde::de::DeserializeOwned>(
+        &self,
+        resp: reqwest::Response,
+    ) -> DockerResult<T> {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -216,7 +234,11 @@ impl DockerClient {
 
     /// Ping the Docker daemon.
     pub async fn ping(&self) -> DockerResult<bool> {
-        let resp = self.http.get(format!("{}/_ping", self.base_url)).send().await?;
+        let resp = self
+            .http
+            .get(format!("{}/_ping", self.base_url))
+            .send()
+            .await?;
         Ok(resp.status().is_success())
     }
 

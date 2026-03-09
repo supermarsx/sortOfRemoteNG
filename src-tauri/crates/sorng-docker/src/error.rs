@@ -32,27 +32,67 @@ pub struct DockerError {
 
 impl DockerError {
     pub fn new(kind: DockerErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: None }
+        Self {
+            kind,
+            message: message.into(),
+            details: None,
+        }
     }
 
-    pub fn with_details(kind: DockerErrorKind, message: impl Into<String>, details: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), details: Some(details.into()) }
+    pub fn with_details(
+        kind: DockerErrorKind,
+        message: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            details: Some(details.into()),
+        }
     }
 
-    pub fn connection(msg: &str) -> Self { Self::new(DockerErrorKind::ConnectionFailed, msg) }
-    pub fn auth(msg: &str) -> Self { Self::new(DockerErrorKind::AuthError, msg) }
-    pub fn not_found(msg: &str) -> Self { Self::new(DockerErrorKind::NotFound, msg) }
-    pub fn conflict(msg: &str) -> Self { Self::new(DockerErrorKind::Conflict, msg) }
-    pub fn forbidden(msg: &str) -> Self { Self::new(DockerErrorKind::Forbidden, msg) }
-    pub fn timeout(msg: &str) -> Self { Self::new(DockerErrorKind::Timeout, msg) }
-    pub fn parse(msg: &str) -> Self { Self::new(DockerErrorKind::ParseError, msg) }
-    pub fn pull(msg: &str) -> Self { Self::new(DockerErrorKind::ImagePullError, msg) }
-    pub fn build(msg: &str) -> Self { Self::new(DockerErrorKind::ImageBuildError, msg) }
-    pub fn compose(msg: &str) -> Self { Self::new(DockerErrorKind::ComposeError, msg) }
-    pub fn registry(msg: &str) -> Self { Self::new(DockerErrorKind::RegistryError, msg) }
-    pub fn session(msg: &str) -> Self { Self::new(DockerErrorKind::SessionError, msg) }
-    pub fn validation(msg: &str) -> Self { Self::new(DockerErrorKind::ValidationError, msg) }
-    pub fn other(msg: &str) -> Self { Self::new(DockerErrorKind::Other, msg) }
+    pub fn connection(msg: &str) -> Self {
+        Self::new(DockerErrorKind::ConnectionFailed, msg)
+    }
+    pub fn auth(msg: &str) -> Self {
+        Self::new(DockerErrorKind::AuthError, msg)
+    }
+    pub fn not_found(msg: &str) -> Self {
+        Self::new(DockerErrorKind::NotFound, msg)
+    }
+    pub fn conflict(msg: &str) -> Self {
+        Self::new(DockerErrorKind::Conflict, msg)
+    }
+    pub fn forbidden(msg: &str) -> Self {
+        Self::new(DockerErrorKind::Forbidden, msg)
+    }
+    pub fn timeout(msg: &str) -> Self {
+        Self::new(DockerErrorKind::Timeout, msg)
+    }
+    pub fn parse(msg: &str) -> Self {
+        Self::new(DockerErrorKind::ParseError, msg)
+    }
+    pub fn pull(msg: &str) -> Self {
+        Self::new(DockerErrorKind::ImagePullError, msg)
+    }
+    pub fn build(msg: &str) -> Self {
+        Self::new(DockerErrorKind::ImageBuildError, msg)
+    }
+    pub fn compose(msg: &str) -> Self {
+        Self::new(DockerErrorKind::ComposeError, msg)
+    }
+    pub fn registry(msg: &str) -> Self {
+        Self::new(DockerErrorKind::RegistryError, msg)
+    }
+    pub fn session(msg: &str) -> Self {
+        Self::new(DockerErrorKind::SessionError, msg)
+    }
+    pub fn validation(msg: &str) -> Self {
+        Self::new(DockerErrorKind::ValidationError, msg)
+    }
+    pub fn other(msg: &str) -> Self {
+        Self::new(DockerErrorKind::Other, msg)
+    }
 
     pub fn api(status: u16, msg: &str) -> Self {
         Self::new(DockerErrorKind::ApiError(status), msg)

@@ -46,20 +46,49 @@ impl ComposeManager {
     /// Run `docker compose up`.
     pub fn up(config: &ComposeUpConfig) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in &config.files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(ref pn) = config.project_name { args.push("-p".to_string()); args.push(pn.clone()); }
+        for f in &config.files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(ref pn) = config.project_name {
+            args.push("-p".to_string());
+            args.push(pn.clone());
+        }
         args.push("up".to_string());
-        if config.detach.unwrap_or(true) { args.push("-d".to_string()); }
-        if config.build.unwrap_or(false) { args.push("--build".to_string()); }
-        if config.force_recreate.unwrap_or(false) { args.push("--force-recreate".to_string()); }
-        if config.no_recreate.unwrap_or(false) { args.push("--no-recreate".to_string()); }
-        if config.remove_orphans.unwrap_or(false) { args.push("--remove-orphans".to_string()); }
-        if config.no_deps.unwrap_or(false) { args.push("--no-deps".to_string()); }
-        if config.wait.unwrap_or(false) { args.push("--wait".to_string()); }
-        if let Some(t) = config.timeout { args.push("--timeout".to_string()); args.push(t.to_string()); }
-        if let Some(ref pull) = config.pull { args.push("--pull".to_string()); args.push(pull.clone()); }
+        if config.detach.unwrap_or(true) {
+            args.push("-d".to_string());
+        }
+        if config.build.unwrap_or(false) {
+            args.push("--build".to_string());
+        }
+        if config.force_recreate.unwrap_or(false) {
+            args.push("--force-recreate".to_string());
+        }
+        if config.no_recreate.unwrap_or(false) {
+            args.push("--no-recreate".to_string());
+        }
+        if config.remove_orphans.unwrap_or(false) {
+            args.push("--remove-orphans".to_string());
+        }
+        if config.no_deps.unwrap_or(false) {
+            args.push("--no-deps".to_string());
+        }
+        if config.wait.unwrap_or(false) {
+            args.push("--wait".to_string());
+        }
+        if let Some(t) = config.timeout {
+            args.push("--timeout".to_string());
+            args.push(t.to_string());
+        }
+        if let Some(ref pull) = config.pull {
+            args.push("--pull".to_string());
+            args.push(pull.clone());
+        }
         if let Some(ref profiles) = config.profiles {
-            for p in profiles { args.push("--profile".to_string()); args.push(p.clone()); }
+            for p in profiles {
+                args.push("--profile".to_string());
+                args.push(p.clone());
+            }
         }
         if let Some(ref scale) = config.scale {
             for (svc, n) in scale {
@@ -68,10 +97,15 @@ impl ComposeManager {
             }
         }
         if let Some(ref envfiles) = config.env_file {
-            for ef in envfiles { args.push("--env-file".to_string()); args.push(ef.clone()); }
+            for ef in envfiles {
+                args.push("--env-file".to_string());
+                args.push(ef.clone());
+            }
         }
         if let Some(ref svcs) = config.services {
-            for s in svcs { args.push(s.clone()); }
+            for s in svcs {
+                args.push(s.clone());
+            }
         }
         Self::run_command(&args)
     }
@@ -79,21 +113,43 @@ impl ComposeManager {
     /// Run `docker compose down`.
     pub fn down(config: &ComposeDownConfig) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in &config.files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(ref pn) = config.project_name { args.push("-p".to_string()); args.push(pn.clone()); }
+        for f in &config.files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(ref pn) = config.project_name {
+            args.push("-p".to_string());
+            args.push(pn.clone());
+        }
         args.push("down".to_string());
-        if config.remove_orphans.unwrap_or(false) { args.push("--remove-orphans".to_string()); }
-        if config.volumes.unwrap_or(false) { args.push("--volumes".to_string()); }
-        if let Some(ref imgs) = config.images { args.push("--rmi".to_string()); args.push(imgs.clone()); }
-        if let Some(t) = config.timeout { args.push("--timeout".to_string()); args.push(t.to_string()); }
+        if config.remove_orphans.unwrap_or(false) {
+            args.push("--remove-orphans".to_string());
+        }
+        if config.volumes.unwrap_or(false) {
+            args.push("--volumes".to_string());
+        }
+        if let Some(ref imgs) = config.images {
+            args.push("--rmi".to_string());
+            args.push(imgs.clone());
+        }
+        if let Some(t) = config.timeout {
+            args.push("--timeout".to_string());
+            args.push(t.to_string());
+        }
         Self::run_command(&args)
     }
 
     /// Run `docker compose ps`.
     pub fn ps(files: &[String], project_name: Option<&str>) -> DockerResult<Vec<ComposePsItem>> {
         let mut args = vec!["compose".to_string()];
-        for f in files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(pn) = project_name { args.push("-p".to_string()); args.push(pn.to_string()); }
+        for f in files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(pn) = project_name {
+            args.push("-p".to_string());
+            args.push(pn.to_string());
+        }
         args.push("ps".to_string());
         args.push("--format".to_string());
         args.push("json".to_string());
@@ -110,16 +166,37 @@ impl ComposeManager {
     /// Run `docker compose logs`.
     pub fn logs(config: &ComposeLogsConfig) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in &config.files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(ref pn) = config.project_name { args.push("-p".to_string()); args.push(pn.clone()); }
+        for f in &config.files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(ref pn) = config.project_name {
+            args.push("-p".to_string());
+            args.push(pn.clone());
+        }
         args.push("logs".to_string());
-        if config.timestamps.unwrap_or(false) { args.push("--timestamps".to_string()); }
-        if config.no_color.unwrap_or(false) { args.push("--no-color".to_string()); }
-        if let Some(ref tail) = config.tail { args.push("--tail".to_string()); args.push(tail.clone()); }
-        if let Some(ref since) = config.since { args.push("--since".to_string()); args.push(since.clone()); }
-        if let Some(ref until) = config.until { args.push("--until".to_string()); args.push(until.clone()); }
+        if config.timestamps.unwrap_or(false) {
+            args.push("--timestamps".to_string());
+        }
+        if config.no_color.unwrap_or(false) {
+            args.push("--no-color".to_string());
+        }
+        if let Some(ref tail) = config.tail {
+            args.push("--tail".to_string());
+            args.push(tail.clone());
+        }
+        if let Some(ref since) = config.since {
+            args.push("--since".to_string());
+            args.push(since.clone());
+        }
+        if let Some(ref until) = config.until {
+            args.push("--until".to_string());
+            args.push(until.clone());
+        }
         if let Some(ref svcs) = config.services {
-            for s in svcs { args.push(s.clone()); }
+            for s in svcs {
+                args.push(s.clone());
+            }
         }
         Self::run_command(&args)
     }
@@ -127,18 +204,38 @@ impl ComposeManager {
     /// Run `docker compose build`.
     pub fn build(config: &ComposeBuildConfig) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in &config.files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(ref pn) = config.project_name { args.push("-p".to_string()); args.push(pn.clone()); }
+        for f in &config.files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(ref pn) = config.project_name {
+            args.push("-p".to_string());
+            args.push(pn.clone());
+        }
         args.push("build".to_string());
-        if config.no_cache.unwrap_or(false) { args.push("--no-cache".to_string()); }
-        if config.pull.unwrap_or(false) { args.push("--pull".to_string()); }
-        if config.quiet.unwrap_or(false) { args.push("--quiet".to_string()); }
-        if let Some(ref progress) = config.progress { args.push("--progress".to_string()); args.push(progress.clone()); }
+        if config.no_cache.unwrap_or(false) {
+            args.push("--no-cache".to_string());
+        }
+        if config.pull.unwrap_or(false) {
+            args.push("--pull".to_string());
+        }
+        if config.quiet.unwrap_or(false) {
+            args.push("--quiet".to_string());
+        }
+        if let Some(ref progress) = config.progress {
+            args.push("--progress".to_string());
+            args.push(progress.clone());
+        }
         if let Some(ref ba) = config.build_args {
-            for (k, v) in ba { args.push("--build-arg".to_string()); args.push(format!("{}={}", k, v)); }
+            for (k, v) in ba {
+                args.push("--build-arg".to_string());
+                args.push(format!("{}={}", k, v));
+            }
         }
         if let Some(ref svcs) = config.services {
-            for s in svcs { args.push(s.clone()); }
+            for s in svcs {
+                args.push(s.clone());
+            }
         }
         Self::run_command(&args)
     }
@@ -146,52 +243,110 @@ impl ComposeManager {
     /// Run `docker compose pull`.
     pub fn pull(config: &ComposePullConfig) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in &config.files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(ref pn) = config.project_name { args.push("-p".to_string()); args.push(pn.clone()); }
+        for f in &config.files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(ref pn) = config.project_name {
+            args.push("-p".to_string());
+            args.push(pn.clone());
+        }
         args.push("pull".to_string());
-        if config.quiet.unwrap_or(false) { args.push("--quiet".to_string()); }
-        if config.ignore_pull_failures.unwrap_or(false) { args.push("--ignore-pull-failures".to_string()); }
-        if config.include_deps.unwrap_or(false) { args.push("--include-deps".to_string()); }
+        if config.quiet.unwrap_or(false) {
+            args.push("--quiet".to_string());
+        }
+        if config.ignore_pull_failures.unwrap_or(false) {
+            args.push("--ignore-pull-failures".to_string());
+        }
+        if config.include_deps.unwrap_or(false) {
+            args.push("--include-deps".to_string());
+        }
         if let Some(ref svcs) = config.services {
-            for s in svcs { args.push(s.clone()); }
+            for s in svcs {
+                args.push(s.clone());
+            }
         }
         Self::run_command(&args)
     }
 
     /// Run `docker compose restart`.
-    pub fn restart(files: &[String], project_name: Option<&str>, services: Option<&[String]>, timeout: Option<i32>) -> DockerResult<String> {
+    pub fn restart(
+        files: &[String],
+        project_name: Option<&str>,
+        services: Option<&[String]>,
+        timeout: Option<i32>,
+    ) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(pn) = project_name { args.push("-p".to_string()); args.push(pn.to_string()); }
+        for f in files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(pn) = project_name {
+            args.push("-p".to_string());
+            args.push(pn.to_string());
+        }
         args.push("restart".to_string());
-        if let Some(t) = timeout { args.push("--timeout".to_string()); args.push(t.to_string()); }
+        if let Some(t) = timeout {
+            args.push("--timeout".to_string());
+            args.push(t.to_string());
+        }
         if let Some(svcs) = services {
-            for s in svcs { args.push(s.clone()); }
+            for s in svcs {
+                args.push(s.clone());
+            }
         }
         Self::run_command(&args)
     }
 
     /// Run `docker compose stop`.
-    pub fn stop(files: &[String], project_name: Option<&str>, services: Option<&[String]>, timeout: Option<i32>) -> DockerResult<String> {
+    pub fn stop(
+        files: &[String],
+        project_name: Option<&str>,
+        services: Option<&[String]>,
+        timeout: Option<i32>,
+    ) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(pn) = project_name { args.push("-p".to_string()); args.push(pn.to_string()); }
+        for f in files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(pn) = project_name {
+            args.push("-p".to_string());
+            args.push(pn.to_string());
+        }
         args.push("stop".to_string());
-        if let Some(t) = timeout { args.push("--timeout".to_string()); args.push(t.to_string()); }
+        if let Some(t) = timeout {
+            args.push("--timeout".to_string());
+            args.push(t.to_string());
+        }
         if let Some(svcs) = services {
-            for s in svcs { args.push(s.clone()); }
+            for s in svcs {
+                args.push(s.clone());
+            }
         }
         Self::run_command(&args)
     }
 
     /// Run `docker compose start`.
-    pub fn start(files: &[String], project_name: Option<&str>, services: Option<&[String]>) -> DockerResult<String> {
+    pub fn start(
+        files: &[String],
+        project_name: Option<&str>,
+        services: Option<&[String]>,
+    ) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(pn) = project_name { args.push("-p".to_string()); args.push(pn.to_string()); }
+        for f in files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(pn) = project_name {
+            args.push("-p".to_string());
+            args.push(pn.to_string());
+        }
         args.push("start".to_string());
         if let Some(svcs) = services {
-            for s in svcs { args.push(s.clone()); }
+            for s in svcs {
+                args.push(s.clone());
+            }
         }
         Self::run_command(&args)
     }
@@ -199,8 +354,14 @@ impl ComposeManager {
     /// Run `docker compose config` — validate and render.
     pub fn config(files: &[String], project_name: Option<&str>) -> DockerResult<String> {
         let mut args = vec!["compose".to_string()];
-        for f in files { args.push("-f".to_string()); args.push(f.clone()); }
-        if let Some(pn) = project_name { args.push("-p".to_string()); args.push(pn.to_string()); }
+        for f in files {
+            args.push("-f".to_string());
+            args.push(f.clone());
+        }
+        if let Some(pn) = project_name {
+            args.push("-p".to_string());
+            args.push(pn.to_string());
+        }
         args.push("config".to_string());
         Self::run_command(&args)
     }

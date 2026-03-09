@@ -27,27 +27,53 @@ impl SystemManager {
     pub async fn disk_usage(client: &DockerClient) -> DockerResult<DockerDiskUsage> {
         let raw: serde_json::Value = client.get("/system/df").await?;
 
-        let images_count = raw.get("Images").and_then(|v| v.as_array()).map(|a| a.len() as i32).unwrap_or(0);
-        let images_size: i64 = raw.get("Images").and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|i| i.get("Size").and_then(|s| s.as_i64())).sum())
+        let images_count = raw
+            .get("Images")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len() as i32)
+            .unwrap_or(0);
+        let images_size: i64 = raw
+            .get("Images")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|i| i.get("Size").and_then(|s| s.as_i64()))
+                    .sum()
+            })
             .unwrap_or(0);
 
         let containers = raw.get("Containers").and_then(|v| v.as_array());
         let containers_count = containers.map(|a| a.len() as i32).unwrap_or(0);
         let containers_size: i64 = containers
-            .map(|arr| arr.iter().filter_map(|c| c.get("SizeRw").and_then(|s| s.as_i64())).sum())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|c| c.get("SizeRw").and_then(|s| s.as_i64()))
+                    .sum()
+            })
             .unwrap_or(0);
 
         let volumes = raw.get("Volumes").and_then(|v| v.as_array());
         let volumes_count = volumes.map(|a| a.len() as i32).unwrap_or(0);
         let volumes_size: i64 = volumes
-            .map(|arr| arr.iter().filter_map(|v| {
-                v.get("UsageData").and_then(|u| u.get("Size")).and_then(|s| s.as_i64())
-            }).sum())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        v.get("UsageData")
+                            .and_then(|u| u.get("Size"))
+                            .and_then(|s| s.as_i64())
+                    })
+                    .sum()
+            })
             .unwrap_or(0);
 
-        let build_cache_size: i64 = raw.get("BuildCache").and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|b| b.get("Size").and_then(|s| s.as_i64())).sum())
+        let build_cache_size: i64 = raw
+            .get("BuildCache")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|b| b.get("Size").and_then(|s| s.as_i64()))
+                    .sum()
+            })
             .unwrap_or(0);
 
         Ok(DockerDiskUsage {
@@ -63,10 +89,17 @@ impl SystemManager {
     }
 
     /// Get docker daemon events (one-shot snapshot with since/until).
-    pub async fn events(client: &DockerClient, filter: &DockerEventFilter) -> DockerResult<Vec<DockerEvent>> {
+    pub async fn events(
+        client: &DockerClient,
+        filter: &DockerEventFilter,
+    ) -> DockerResult<Vec<DockerEvent>> {
         let mut q = Vec::new();
-        if let Some(ref since) = filter.since { q.push(("since", since.clone())); }
-        if let Some(ref until) = filter.until { q.push(("until", until.clone())); }
+        if let Some(ref since) = filter.since {
+            q.push(("since", since.clone()));
+        }
+        if let Some(ref until) = filter.until {
+            q.push(("until", until.clone()));
+        }
         if let Some(ref f) = filter.filters {
             q.push(("filters", serde_json::to_string(f).unwrap_or_default()));
         }
@@ -88,10 +121,18 @@ impl SystemManager {
     }
 
     /// Prune everything (containers, images, networks, volumes, build cache).
-    pub async fn system_prune(client: &DockerClient, all: bool, volumes: bool) -> DockerResult<PruneResult> {
+    pub async fn system_prune(
+        client: &DockerClient,
+        all: bool,
+        volumes: bool,
+    ) -> DockerResult<PruneResult> {
         let mut q = Vec::new();
-        if all { q.push(("all", "true")); }
-        if volumes { q.push(("volumes", "true")); }
+        if all {
+            q.push(("all", "true"));
+        }
+        if volumes {
+            q.push(("volumes", "true"));
+        }
         let path = if q.is_empty() {
             "/system/prune".to_string()
         } else {
@@ -99,7 +140,10 @@ impl SystemManager {
             format!("/system/prune?{}", qs.join("&"))
         };
         let resp: serde_json::Value = client.post_json(&path, &serde_json::json!({})).await?;
-        let space = resp.get("SpaceReclaimed").and_then(|v| v.as_i64()).unwrap_or(0);
+        let space = resp
+            .get("SpaceReclaimed")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
         Ok(PruneResult {
             deleted_items: vec!["system prune executed".to_string()],
             space_reclaimed: space,

@@ -56,10 +56,7 @@ pub async fn docker_system_version(
 }
 
 #[tauri::command]
-pub async fn docker_ping(
-    state: State<'_, DockerServiceState>,
-    id: String,
-) -> Result<bool, String> {
+pub async fn docker_ping(state: State<'_, DockerServiceState>, id: String) -> Result<bool, String> {
     let svc = state.lock().await;
     svc.ping(&id).await.map_err(|e| e.to_string())
 }
@@ -80,7 +77,9 @@ pub async fn docker_system_events(
     filter: Option<DockerEventFilter>,
 ) -> Result<Vec<DockerEvent>, String> {
     let svc = state.lock().await;
-    svc.system_events(&id, &filter.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.system_events(&id, &filter.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -91,7 +90,9 @@ pub async fn docker_system_prune(
     volumes: Option<bool>,
 ) -> Result<PruneResult, String> {
     let svc = state.lock().await;
-    svc.system_prune(&id, all.unwrap_or(false), volumes.unwrap_or(false)).await.map_err(|e| e.to_string())
+    svc.system_prune(&id, all.unwrap_or(false), volumes.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Containers ────────────────────────────────────────────────────────────────
@@ -103,7 +104,9 @@ pub async fn docker_list_containers(
     opts: Option<ListContainersOptions>,
 ) -> Result<Vec<ContainerSummary>, String> {
     let svc = state.lock().await;
-    svc.list_containers(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_containers(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -113,7 +116,9 @@ pub async fn docker_inspect_container(
     container_id: String,
 ) -> Result<ContainerInspect, String> {
     let svc = state.lock().await;
-    svc.inspect_container(&id, &container_id).await.map_err(|e| e.to_string())
+    svc.inspect_container(&id, &container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -123,7 +128,9 @@ pub async fn docker_create_container(
     config: CreateContainerConfig,
 ) -> Result<CreateContainerResponse, String> {
     let svc = state.lock().await;
-    svc.create_container(&id, &config).await.map_err(|e| e.to_string())
+    svc.create_container(&id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -133,7 +140,9 @@ pub async fn docker_run_container(
     config: CreateContainerConfig,
 ) -> Result<CreateContainerResponse, String> {
     let svc = state.lock().await;
-    svc.run_container(&id, &config).await.map_err(|e| e.to_string())
+    svc.run_container(&id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -143,7 +152,9 @@ pub async fn docker_start_container(
     container_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.start_container(&id, &container_id).await.map_err(|e| e.to_string())
+    svc.start_container(&id, &container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -154,7 +165,9 @@ pub async fn docker_stop_container(
     timeout: Option<i32>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.stop_container(&id, &container_id, timeout).await.map_err(|e| e.to_string())
+    svc.stop_container(&id, &container_id, timeout)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -165,7 +178,9 @@ pub async fn docker_restart_container(
     timeout: Option<i32>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.restart_container(&id, &container_id, timeout).await.map_err(|e| e.to_string())
+    svc.restart_container(&id, &container_id, timeout)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -176,7 +191,9 @@ pub async fn docker_kill_container(
     signal: Option<String>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.kill_container(&id, &container_id, signal).await.map_err(|e| e.to_string())
+    svc.kill_container(&id, &container_id, signal)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -186,7 +203,9 @@ pub async fn docker_pause_container(
     container_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.pause_container(&id, &container_id).await.map_err(|e| e.to_string())
+    svc.pause_container(&id, &container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -196,7 +215,9 @@ pub async fn docker_unpause_container(
     container_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.unpause_container(&id, &container_id).await.map_err(|e| e.to_string())
+    svc.unpause_container(&id, &container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -208,7 +229,14 @@ pub async fn docker_remove_container(
     remove_volumes: Option<bool>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.remove_container(&id, &container_id, force.unwrap_or(false), remove_volumes.unwrap_or(false)).await.map_err(|e| e.to_string())
+    svc.remove_container(
+        &id,
+        &container_id,
+        force.unwrap_or(false),
+        remove_volumes.unwrap_or(false),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -219,7 +247,9 @@ pub async fn docker_rename_container(
     new_name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.rename_container(&id, &container_id, &new_name).await.map_err(|e| e.to_string())
+    svc.rename_container(&id, &container_id, &new_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -230,7 +260,9 @@ pub async fn docker_container_logs(
     opts: Option<ContainerLogOptions>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.container_logs(&id, &container_id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.container_logs(&id, &container_id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -240,7 +272,9 @@ pub async fn docker_container_stats(
     container_id: String,
 ) -> Result<ContainerStats, String> {
     let svc = state.lock().await;
-    svc.container_stats(&id, &container_id).await.map_err(|e| e.to_string())
+    svc.container_stats(&id, &container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -251,7 +285,9 @@ pub async fn docker_container_top(
     ps_args: Option<String>,
 ) -> Result<ContainerTop, String> {
     let svc = state.lock().await;
-    svc.container_top(&id, &container_id, ps_args).await.map_err(|e| e.to_string())
+    svc.container_top(&id, &container_id, ps_args)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -261,7 +297,9 @@ pub async fn docker_container_changes(
     container_id: String,
 ) -> Result<Vec<ContainerChange>, String> {
     let svc = state.lock().await;
-    svc.container_changes(&id, &container_id).await.map_err(|e| e.to_string())
+    svc.container_changes(&id, &container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -271,7 +309,9 @@ pub async fn docker_container_wait(
     container_id: String,
 ) -> Result<ContainerWaitResult, String> {
     let svc = state.lock().await;
-    svc.container_wait(&id, &container_id).await.map_err(|e| e.to_string())
+    svc.container_wait(&id, &container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -282,7 +322,9 @@ pub async fn docker_container_exec(
     config: ExecConfig,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.container_exec(&id, &container_id, &config).await.map_err(|e| e.to_string())
+    svc.container_exec(&id, &container_id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -293,7 +335,9 @@ pub async fn docker_container_update(
     update: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let svc = state.lock().await;
-    svc.container_update(&id, &container_id, &update).await.map_err(|e| e.to_string())
+    svc.container_update(&id, &container_id, &update)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -314,7 +358,9 @@ pub async fn docker_list_images(
     opts: Option<ListImagesOptions>,
 ) -> Result<Vec<ImageSummary>, String> {
     let svc = state.lock().await;
-    svc.list_images(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_images(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -324,7 +370,9 @@ pub async fn docker_inspect_image(
     name: String,
 ) -> Result<ImageInspect, String> {
     let svc = state.lock().await;
-    svc.inspect_image(&id, &name).await.map_err(|e| e.to_string())
+    svc.inspect_image(&id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -334,7 +382,9 @@ pub async fn docker_image_history(
     name: String,
 ) -> Result<Vec<ImageHistoryEntry>, String> {
     let svc = state.lock().await;
-    svc.image_history(&id, &name).await.map_err(|e| e.to_string())
+    svc.image_history(&id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -345,7 +395,9 @@ pub async fn docker_pull_image(
     tag: Option<String>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.pull_image(&id, &image, tag).await.map_err(|e| e.to_string())
+    svc.pull_image(&id, &image, tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -357,7 +409,9 @@ pub async fn docker_tag_image(
     tag: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.tag_image(&id, &source, &repo, &tag).await.map_err(|e| e.to_string())
+    svc.tag_image(&id, &source, &repo, &tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -368,7 +422,9 @@ pub async fn docker_push_image(
     tag: Option<String>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.push_image(&id, &name, tag).await.map_err(|e| e.to_string())
+    svc.push_image(&id, &name, tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -379,7 +435,9 @@ pub async fn docker_remove_image(
     force: Option<bool>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.remove_image(&id, &name, force.unwrap_or(false)).await.map_err(|e| e.to_string())
+    svc.remove_image(&id, &name, force.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -390,7 +448,9 @@ pub async fn docker_search_images(
     limit: Option<i32>,
 ) -> Result<Vec<RegistrySearchResult>, String> {
     let svc = state.lock().await;
-    svc.search_images(&id, &term, limit).await.map_err(|e| e.to_string())
+    svc.search_images(&id, &term, limit)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -400,7 +460,9 @@ pub async fn docker_prune_images(
     dangling_only: Option<bool>,
 ) -> Result<PruneResult, String> {
     let svc = state.lock().await;
-    svc.prune_images(&id, dangling_only.unwrap_or(true)).await.map_err(|e| e.to_string())
+    svc.prune_images(&id, dangling_only.unwrap_or(true))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -412,7 +474,9 @@ pub async fn docker_commit_container(
     tag: String,
 ) -> Result<serde_json::Value, String> {
     let svc = state.lock().await;
-    svc.commit_container(&id, &container_id, &repo, &tag).await.map_err(|e| e.to_string())
+    svc.commit_container(&id, &container_id, &repo, &tag)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── Volumes ───────────────────────────────────────────────────────────────────
@@ -424,7 +488,9 @@ pub async fn docker_list_volumes(
     opts: Option<ListVolumesOptions>,
 ) -> Result<Vec<VolumeInfo>, String> {
     let svc = state.lock().await;
-    svc.list_volumes(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_volumes(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -434,7 +500,9 @@ pub async fn docker_inspect_volume(
     name: String,
 ) -> Result<VolumeInfo, String> {
     let svc = state.lock().await;
-    svc.inspect_volume(&id, &name).await.map_err(|e| e.to_string())
+    svc.inspect_volume(&id, &name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -444,7 +512,9 @@ pub async fn docker_create_volume(
     config: CreateVolumeConfig,
 ) -> Result<VolumeInfo, String> {
     let svc = state.lock().await;
-    svc.create_volume(&id, &config).await.map_err(|e| e.to_string())
+    svc.create_volume(&id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -455,7 +525,9 @@ pub async fn docker_remove_volume(
     force: Option<bool>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.remove_volume(&id, &name, force.unwrap_or(false)).await.map_err(|e| e.to_string())
+    svc.remove_volume(&id, &name, force.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -476,7 +548,9 @@ pub async fn docker_list_networks(
     opts: Option<ListNetworksOptions>,
 ) -> Result<Vec<NetworkInfo>, String> {
     let svc = state.lock().await;
-    svc.list_networks(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+    svc.list_networks(&id, &opts.unwrap_or_default())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -486,7 +560,9 @@ pub async fn docker_inspect_network(
     network_id: String,
 ) -> Result<NetworkInfo, String> {
     let svc = state.lock().await;
-    svc.inspect_network(&id, &network_id).await.map_err(|e| e.to_string())
+    svc.inspect_network(&id, &network_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -496,7 +572,9 @@ pub async fn docker_create_network(
     config: CreateNetworkConfig,
 ) -> Result<CreateNetworkResponse, String> {
     let svc = state.lock().await;
-    svc.create_network(&id, &config).await.map_err(|e| e.to_string())
+    svc.create_network(&id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -506,7 +584,9 @@ pub async fn docker_remove_network(
     network_id: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.remove_network(&id, &network_id).await.map_err(|e| e.to_string())
+    svc.remove_network(&id, &network_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -517,7 +597,9 @@ pub async fn docker_connect_network(
     config: ConnectNetworkConfig,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.connect_network(&id, &network_id, &config).await.map_err(|e| e.to_string())
+    svc.connect_network(&id, &network_id, &config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -529,7 +611,9 @@ pub async fn docker_disconnect_network(
     force: Option<bool>,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.disconnect_network(&id, &network_id, &container_id, force.unwrap_or(false)).await.map_err(|e| e.to_string())
+    svc.disconnect_network(&id, &network_id, &container_id, force.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -592,7 +676,8 @@ pub async fn docker_compose_ps(
     project_name: Option<String>,
 ) -> Result<Vec<ComposePsItem>, String> {
     let svc = state.lock().await;
-    svc.compose_ps(&files, project_name.as_deref()).map_err(|e| e.to_string())
+    svc.compose_ps(&files, project_name.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -631,7 +716,13 @@ pub async fn docker_compose_restart(
     timeout: Option<i32>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.compose_restart(&files, project_name.as_deref(), services.as_deref(), timeout).map_err(|e| e.to_string())
+    svc.compose_restart(
+        &files,
+        project_name.as_deref(),
+        services.as_deref(),
+        timeout,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -643,7 +734,13 @@ pub async fn docker_compose_stop(
     timeout: Option<i32>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.compose_stop(&files, project_name.as_deref(), services.as_deref(), timeout).map_err(|e| e.to_string())
+    svc.compose_stop(
+        &files,
+        project_name.as_deref(),
+        services.as_deref(),
+        timeout,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -654,7 +751,8 @@ pub async fn docker_compose_start(
     services: Option<Vec<String>>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.compose_start(&files, project_name.as_deref(), services.as_deref()).map_err(|e| e.to_string())
+    svc.compose_start(&files, project_name.as_deref(), services.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -664,7 +762,8 @@ pub async fn docker_compose_config(
     project_name: Option<String>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.compose_config(&files, project_name.as_deref()).map_err(|e| e.to_string())
+    svc.compose_config(&files, project_name.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────────
@@ -676,7 +775,9 @@ pub async fn docker_registry_login(
     creds: RegistryCredentials,
 ) -> Result<RegistryAuthResult, String> {
     let svc = state.lock().await;
-    svc.registry_login(&id, &creds).await.map_err(|e| e.to_string())
+    svc.registry_login(&id, &creds)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -687,5 +788,7 @@ pub async fn docker_registry_search(
     limit: Option<i32>,
 ) -> Result<Vec<RegistrySearchResult>, String> {
     let svc = state.lock().await;
-    svc.registry_search(&id, &term, limit).await.map_err(|e| e.to_string())
+    svc.registry_search(&id, &term, limit)
+        .await
+        .map_err(|e| e.to_string())
 }

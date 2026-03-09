@@ -42,7 +42,11 @@ pub enum DockerEndpoint {
     Tcp { host: String, port: u16 },
     /// SSH tunnel, e.g. `ssh://user@host`.
     #[serde(rename_all = "camelCase")]
-    Ssh { host: String, port: Option<u16>, user: Option<String> },
+    Ssh {
+        host: String,
+        port: Option<u16>,
+        user: Option<String>,
+    },
 }
 
 /// TLS configuration for remote Docker daemons.
