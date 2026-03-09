@@ -61,7 +61,13 @@ pub async fn boot_get_host(
 pub async fn boot_list_hosts(
     state: State<'_, BootloaderServiceState>,
 ) -> CmdResult<Vec<BootloaderHost>> {
-    Ok(state.lock().await.list_hosts().into_iter().cloned().collect())
+    Ok(state
+        .lock()
+        .await
+        .list_hosts()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 // ── Detection (detect.rs) ─────────────────────────────────────────
@@ -217,9 +223,7 @@ pub async fn boot_enable_grub_script(
 ) -> CmdResult<()> {
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(map_err)?;
-    grub::enable_grub_script(host, &name)
-        .await
-        .map_err(map_err)
+    grub::enable_grub_script(host, &name).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -267,9 +271,7 @@ pub async fn boot_list_sd_entries(
 ) -> CmdResult<Vec<SystemdBootEntry>> {
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(map_err)?;
-    systemd_boot::list_boot_entries(host)
-        .await
-        .map_err(map_err)
+    systemd_boot::list_boot_entries(host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -391,9 +393,7 @@ pub async fn boot_set_next_boot(
 ) -> CmdResult<()> {
     let svc = state.lock().await;
     let host = svc.get_host(&host_id).map_err(map_err)?;
-    uefi::set_next_boot(host, &boot_num)
-        .await
-        .map_err(map_err)
+    uefi::set_next_boot(host, &boot_num).await.map_err(map_err)
 }
 
 #[tauri::command]

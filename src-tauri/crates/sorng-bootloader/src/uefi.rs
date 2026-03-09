@@ -114,9 +114,7 @@ pub async fn create_uefi_entry(
 ) -> Result<String, BootloaderError> {
     // Detect ESP disk and partition
     let (disk, part) = detect_esp_disk_part(host).await?;
-    let mut args = vec![
-        "-c", "-d", &disk, "-p", &part, "-L", label, "-l", loader,
-    ];
+    let mut args = vec!["-c", "-d", &disk, "-p", &part, "-L", label, "-l", loader];
     if let Some(p) = params {
         args.push("-u");
         args.push(p);
@@ -152,10 +150,7 @@ pub async fn deactivate_uefi_entry(
 }
 
 /// Set a one-time next boot entry.
-pub async fn set_next_boot(
-    host: &BootloaderHost,
-    boot_num: &str,
-) -> Result<(), BootloaderError> {
+pub async fn set_next_boot(host: &BootloaderHost, boot_num: &str) -> Result<(), BootloaderError> {
     client::exec_ok(host, "efibootmgr", &["-n", boot_num]).await?;
     Ok(())
 }
@@ -199,11 +194,8 @@ pub async fn get_uefi_info(host: &BootloaderHost) -> Result<UefiInfo, Bootloader
 
 async fn detect_secure_boot(host: &BootloaderHost) -> Result<bool, BootloaderError> {
     // Try mokutil first
-    match client::exec(host, "mokutil", &["--sb-state"]).await {
-        Ok((stdout, _, 0)) => {
-            return Ok(stdout.to_lowercase().contains("secureboot enabled"));
-        }
-        _ => {}
+    if let Ok((stdout, _, 0)) = client::exec(host, "mokutil", &["--sb-state"]).await {
+        return Ok(stdout.to_lowercase().contains("secureboot enabled"));
     }
     // Fallback: read EFI variable
     let content = client::exec_shell(
@@ -217,7 +209,8 @@ async fn detect_secure_boot(host: &BootloaderHost) -> Result<bool, BootloaderErr
 
 async fn detect_esp_disk_part(host: &BootloaderHost) -> Result<(String, String), BootloaderError> {
     // Find the ESP mount point via findmnt
-    let output = match client::exec_ok(host, "findmnt", &["-n", "-o", "SOURCE", "/boot/efi"]).await {
+    let output = match client::exec_ok(host, "findmnt", &["-n", "-o", "SOURCE", "/boot/efi"]).await
+    {
         Ok(out) => out,
         Err(_) => {
             // Some systems mount ESP at /efi
@@ -273,10 +266,7 @@ Boot0003  Network Boot\tPXEv4(...)
         assert_eq!(entries[0].boot_num, "0001");
         assert_eq!(entries[0].description, "ubuntu");
         assert!(entries[0].active);
-        assert_eq!(
-            entries[0].path.as_deref(),
-            Some("/EFI/ubuntu/shimx64.efi")
-        );
+        assert_eq!(entries[0].path.as_deref(), Some("/EFI/ubuntu/shimx64.efi"));
         assert_eq!(entries[1].description, "Windows Boot Manager");
         assert!(!entries[2].active);
     }

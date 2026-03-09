@@ -30,7 +30,10 @@ fn parse_grub_defaults(content: &str) -> Result<GrubConfig, BootloaderError> {
         }
     }
 
-    let default_entry = params.get("GRUB_DEFAULT").cloned().unwrap_or_else(|| "0".into());
+    let default_entry = params
+        .get("GRUB_DEFAULT")
+        .cloned()
+        .unwrap_or_else(|| "0".into());
     let timeout = params
         .get("GRUB_TIMEOUT")
         .and_then(|v| v.parse::<i32>().ok())
@@ -86,7 +89,9 @@ pub async fn set_grub_param(
 // ─── GRUB environment ──────────────────────────────────────────────
 
 /// Read the GRUB environment block via `grub-editenv list` / `grub2-editenv list`.
-pub async fn get_grub_environment(host: &BootloaderHost) -> Result<GrubEnvironment, BootloaderError> {
+pub async fn get_grub_environment(
+    host: &BootloaderHost,
+) -> Result<GrubEnvironment, BootloaderError> {
     let output = try_grub_cmd(host, "editenv", &["list"]).await?;
     parse_grub_env(&output)
 }
@@ -100,7 +105,11 @@ fn parse_grub_env(output: &str) -> Result<GrubEnvironment, BootloaderError> {
     }
     let saved_entry = variables.get("saved_entry").cloned();
     let next_entry = variables.get("next_entry").cloned();
-    Ok(GrubEnvironment { saved_entry, next_entry, variables })
+    Ok(GrubEnvironment {
+        saved_entry,
+        next_entry,
+        variables,
+    })
 }
 
 /// Set a variable in the GRUB environment block.
@@ -117,7 +126,9 @@ pub async fn set_grub_environment(
 // ─── Menu entries (grub.cfg parsing) ────────────────────────────────
 
 /// List all GRUB menu entries by parsing the generated `grub.cfg`.
-pub async fn list_grub_entries(host: &BootloaderHost) -> Result<Vec<GrubMenuEntry>, BootloaderError> {
+pub async fn list_grub_entries(
+    host: &BootloaderHost,
+) -> Result<Vec<GrubMenuEntry>, BootloaderError> {
     let cfg_path = find_grub_cfg_path(host).await?;
     let content = client::read_remote_file(host, &cfg_path).await?;
     Ok(parse_grub_cfg_entries(&content))
@@ -202,7 +213,12 @@ fn parse_menuentry<'a, I: Iterator<Item = &'a str>>(
                 initrd = Some(parts[1].to_string());
             }
         } else if t.starts_with("set root=") {
-            root = Some(t.trim_start_matches("set root=").trim_matches('\'').trim_matches('"').to_string());
+            root = Some(
+                t.trim_start_matches("set root=")
+                    .trim_matches('\'')
+                    .trim_matches('"')
+                    .to_string(),
+            );
         }
     }
 
@@ -304,23 +320,20 @@ pub async fn set_default_entry(
 /// Regenerate `grub.cfg` via `update-grub` or `grub-mkconfig`.
 pub async fn update_grub(host: &BootloaderHost) -> Result<String, BootloaderError> {
     // Try update-grub first (Debian/Ubuntu), then grub-mkconfig (RHEL/Fedora/Arch)
-    let cfg_path = find_grub_cfg_path(host).await.unwrap_or_else(|_| "/boot/grub/grub.cfg".into());
+    let cfg_path = find_grub_cfg_path(host)
+        .await
+        .unwrap_or_else(|_| "/boot/grub/grub.cfg".into());
     match client::exec_ok(host, "update-grub", &[]).await {
         Ok(out) => Ok(out),
-        Err(_) => {
-            match try_grub_cmd(host, "mkconfig", &["-o", &cfg_path]).await {
-                Ok(out) => Ok(out),
-                Err(e) => Err(e),
-            }
-        }
+        Err(_) => match try_grub_cmd(host, "mkconfig", &["-o", &cfg_path]).await {
+            Ok(out) => Ok(out),
+            Err(e) => Err(e),
+        },
     }
 }
 
 /// Install GRUB to a device (e.g., /dev/sda).
-pub async fn install_grub(
-    host: &BootloaderHost,
-    device: &str,
-) -> Result<String, BootloaderError> {
+pub async fn install_grub(host: &BootloaderHost, device: &str) -> Result<String, BootloaderError> {
     try_grub_cmd(host, "install", &[device]).await
 }
 
@@ -366,19 +379,13 @@ pub async fn list_grub_scripts(host: &BootloaderHost) -> Result<Vec<GrubScript>,
 }
 
 /// Enable a GRUB script by making it executable.
-pub async fn enable_grub_script(
-    host: &BootloaderHost,
-    name: &str,
-) -> Result<(), BootloaderError> {
+pub async fn enable_grub_script(host: &BootloaderHost, name: &str) -> Result<(), BootloaderError> {
     client::exec_ok(host, "chmod", &["+x", &format!("/etc/grub.d/{name}")]).await?;
     Ok(())
 }
 
 /// Disable a GRUB script by removing its executable bit.
-pub async fn disable_grub_script(
-    host: &BootloaderHost,
-    name: &str,
-) -> Result<(), BootloaderError> {
+pub async fn disable_grub_script(host: &BootloaderHost, name: &str) -> Result<(), BootloaderError> {
     client::exec_ok(host, "chmod", &["-x", &format!("/etc/grub.d/{name}")]).await?;
     Ok(())
 }
@@ -445,7 +452,10 @@ GRUB_GFXMODE=1024x768
         assert_eq!(cfg.default_entry, "saved");
         assert_eq!(cfg.timeout, 10);
         assert_eq!(cfg.gfx_mode.as_deref(), Some("1024x768"));
-        assert_eq!(cfg.params.get("GRUB_CMDLINE_LINUX_DEFAULT").unwrap(), "quiet splash");
+        assert_eq!(
+            cfg.params.get("GRUB_CMDLINE_LINUX_DEFAULT").unwrap(),
+            "quiet splash"
+        );
     }
 
     const SAMPLE_ENV: &str = "saved_entry=0\nnext_entry=\nrecordfail=1\n";
@@ -485,12 +495,18 @@ menuentry 'Windows Boot Manager' --class windows {
         let entries = parse_grub_cfg_entries(SAMPLE_CFG);
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].title, "Ubuntu");
-        assert_eq!(entries[0].kernel.as_deref(), Some("/vmlinuz-5.15.0-91-generic"));
+        assert_eq!(
+            entries[0].kernel.as_deref(),
+            Some("/vmlinuz-5.15.0-91-generic")
+        );
         assert_eq!(entries[0].entry_class.as_deref(), Some("ubuntu"));
         // submenu
         assert_eq!(entries[1].title, "Advanced options for Ubuntu");
         assert_eq!(entries[1].submenu_entries.len(), 2);
-        assert_eq!(entries[1].submenu_entries[0].title, "Ubuntu, with Linux 5.15.0-91-generic");
+        assert_eq!(
+            entries[1].submenu_entries[0].title,
+            "Ubuntu, with Linux 5.15.0-91-generic"
+        );
         // windows
         assert_eq!(entries[2].title, "Windows Boot Manager");
     }

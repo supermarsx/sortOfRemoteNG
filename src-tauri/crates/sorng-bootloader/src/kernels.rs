@@ -5,7 +5,7 @@
 
 use crate::client;
 use crate::error::BootloaderError;
-use crate::types::{BootloaderHost, BootParameter, KernelVersion};
+use crate::types::{BootParameter, BootloaderHost, KernelVersion};
 use chrono::{DateTime, Utc};
 
 /// List installed kernels by scanning `/boot/vmlinuz*` and `/boot/vmlinux*`.
@@ -27,12 +27,10 @@ pub async fn list_installed_kernels(
         }
         let parts: Vec<&str> = line.splitn(2, '\t').collect();
         let full_path = parts[0].to_string();
-        let installed_at = parts
-            .get(1)
-            .and_then(|epoch_str| {
-                let secs = epoch_str.trim().parse::<f64>().ok()?;
-                DateTime::<Utc>::from_timestamp(secs as i64, 0)
-            });
+        let installed_at = parts.get(1).and_then(|epoch_str| {
+            let secs = epoch_str.trim().parse::<f64>().ok()?;
+            DateTime::<Utc>::from_timestamp(secs as i64, 0)
+        });
 
         let filename = full_path.rsplit('/').next().unwrap_or(&full_path);
         // vmlinuz-6.6.10-arch1-1 -> version part after first '-'
@@ -188,9 +186,8 @@ mod tests {
 
     #[test]
     fn test_parse_cmdline() {
-        let params = parse_cmdline(
-            "BOOT_IMAGE=/vmlinuz-linux root=UUID=abc-123 rw quiet splash loglevel=3",
-        );
+        let params =
+            parse_cmdline("BOOT_IMAGE=/vmlinuz-linux root=UUID=abc-123 rw quiet splash loglevel=3");
         assert_eq!(params.len(), 6);
         assert_eq!(params[0].key, "BOOT_IMAGE");
         assert_eq!(params[0].value.as_deref(), Some("/vmlinuz-linux"));

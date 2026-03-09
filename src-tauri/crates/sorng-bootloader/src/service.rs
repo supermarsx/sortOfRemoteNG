@@ -21,7 +21,10 @@ impl BootloaderService {
 
     pub fn add_host(&mut self, h: BootloaderHost) -> Result<(), BootloaderError> {
         if self.hosts.contains_key(&h.id) {
-            return Err(BootloaderError::Other(format!("Host {} already exists", h.id)));
+            return Err(BootloaderError::Other(format!(
+                "Host {} already exists",
+                h.id
+            )));
         }
         self.hosts.insert(h.id.clone(), h);
         Ok(())

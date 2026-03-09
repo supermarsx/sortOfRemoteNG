@@ -5,12 +5,10 @@
 
 use crate::client;
 use crate::error::BootloaderError;
-use crate::types::{BootloaderHost, BootloaderType, BootPartitionInfo};
+use crate::types::{BootPartitionInfo, BootloaderHost, BootloaderType};
 
 /// Detect the primary boot loader installed on the host.
-pub async fn detect_bootloader(
-    host: &BootloaderHost,
-) -> Result<BootloaderType, BootloaderError> {
+pub async fn detect_bootloader(host: &BootloaderHost) -> Result<BootloaderType, BootloaderError> {
     // Check for systemd-boot first (bootctl exists and reports systemd-boot)
     if let Ok((stdout, _, 0)) = client::exec(host, "bootctl", &["is-installed"]).await {
         let _ = stdout;
@@ -97,7 +95,13 @@ pub async fn get_boot_partitions(
     let output = client::exec_ok(
         host,
         "findmnt",
-        &["-n", "-o", "SOURCE,TARGET,FSTYPE", "-t", "vfat,ext4,ext2,xfs,btrfs"],
+        &[
+            "-n",
+            "-o",
+            "SOURCE,TARGET,FSTYPE",
+            "-t",
+            "vfat,ext4,ext2,xfs,btrfs",
+        ],
     )
     .await?;
 
@@ -120,8 +124,8 @@ pub async fn get_boot_partitions(
             continue;
         }
 
-        let is_esp = (mount_point.contains("efi") || mount_point.contains("EFI"))
-            && fs_type == "vfat";
+        let is_esp =
+            (mount_point.contains("efi") || mount_point.contains("EFI")) && fs_type == "vfat";
 
         partitions.push(BootPartitionInfo {
             device,
@@ -148,8 +152,18 @@ pub async fn get_boot_partitions(
                     if parttype.to_lowercase().contains("c12a7328") {
                         let mount = parts.get(3).unwrap_or(&"").to_string();
                         partitions.push(BootPartitionInfo {
-                            device: format!("/dev/{}", parts[0].trim_start_matches('└').trim_start_matches('├').trim_start_matches('─')),
-                            mount_point: if mount.is_empty() { "(unmounted)".into() } else { mount },
+                            device: format!(
+                                "/dev/{}",
+                                parts[0]
+                                    .trim_start_matches('└')
+                                    .trim_start_matches('├')
+                                    .trim_start_matches('─')
+                            ),
+                            mount_point: if mount.is_empty() {
+                                "(unmounted)".into()
+                            } else {
+                                mount
+                            },
                             fs_type: parts.get(1).unwrap_or(&"vfat").to_string(),
                             is_esp: true,
                         });

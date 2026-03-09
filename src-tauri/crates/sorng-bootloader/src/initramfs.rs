@@ -8,9 +8,7 @@ use crate::types::{BootloaderHost, InitramfsInfo, InitramfsTool};
 use std::collections::HashMap;
 
 /// List initramfs images in `/boot/`.
-pub async fn list_initramfs(
-    host: &BootloaderHost,
-) -> Result<Vec<InitramfsInfo>, BootloaderError> {
+pub async fn list_initramfs(host: &BootloaderHost) -> Result<Vec<InitramfsInfo>, BootloaderError> {
     let output = client::exec_shell(
         host,
         "find /boot -maxdepth 1 \\( -name 'initramfs*' -o -name 'initrd*' \\) -printf '%p\\t%s\\n' 2>/dev/null",
@@ -64,21 +62,14 @@ pub async fn rebuild_initramfs(
         }
         InitramfsTool::Dracut => {
             let output_path = format!("/boot/initramfs-{kernel_version}.img");
-            client::exec_ok(
-                host,
-                "dracut",
-                &["--force", &output_path, kernel_version],
-            )
-            .await
+            client::exec_ok(host, "dracut", &["--force", &output_path, kernel_version]).await
         }
         InitramfsTool::UpdateInitramfs => {
             client::exec_ok(host, "update-initramfs", &["-u", "-k", kernel_version]).await
         }
-        InitramfsTool::Unknown => {
-            Err(BootloaderError::CommandNotFound(
-                "No initramfs tool found (tried mkinitcpio, dracut, update-initramfs)".into(),
-            ))
-        }
+        InitramfsTool::Unknown => Err(BootloaderError::CommandNotFound(
+            "No initramfs tool found (tried mkinitcpio, dracut, update-initramfs)".into(),
+        )),
     }
 }
 
@@ -92,7 +83,9 @@ pub async fn get_initramfs_config(
         InitramfsTool::Dracut => "/etc/dracut.conf",
         InitramfsTool::UpdateInitramfs => "/etc/initramfs-tools/initramfs.conf",
         InitramfsTool::Unknown => {
-            return Err(BootloaderError::CommandNotFound("No initramfs tool found".into()));
+            return Err(BootloaderError::CommandNotFound(
+                "No initramfs tool found".into(),
+            ));
         }
     };
     let content = client::read_remote_file(host, config_path).await?;
@@ -127,7 +120,9 @@ pub async fn set_initramfs_config(
         InitramfsTool::Dracut => "/etc/dracut.conf",
         InitramfsTool::UpdateInitramfs => "/etc/initramfs-tools/initramfs.conf",
         InitramfsTool::Unknown => {
-            return Err(BootloaderError::CommandNotFound("No initramfs tool found".into()));
+            return Err(BootloaderError::CommandNotFound(
+                "No initramfs tool found".into(),
+            ));
         }
     };
 
@@ -175,14 +170,21 @@ pub async fn list_initramfs_modules(
             client::exec_ok(host, "lsinitrd", &[&initrd]).await?
         }
         InitramfsTool::Unknown => {
-            return Err(BootloaderError::CommandNotFound("No initramfs inspection tool found".into()));
+            return Err(BootloaderError::CommandNotFound(
+                "No initramfs inspection tool found".into(),
+            ));
         }
     };
 
     // Extract .ko module entries
     let modules: Vec<String> = output
         .lines()
-        .filter(|l| l.ends_with(".ko") || l.ends_with(".ko.zst") || l.ends_with(".ko.xz") || l.ends_with(".ko.gz"))
+        .filter(|l| {
+            l.ends_with(".ko")
+                || l.ends_with(".ko.zst")
+                || l.ends_with(".ko.xz")
+                || l.ends_with(".ko.gz")
+        })
         .map(|l| {
             l.rsplit('/')
                 .next()

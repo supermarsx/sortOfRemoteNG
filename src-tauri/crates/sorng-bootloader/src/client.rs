@@ -39,7 +39,10 @@ pub async fn exec_ok(
 }
 
 /// Read a remote/local file via `cat`.
-pub async fn read_remote_file(host: &BootloaderHost, path: &str) -> Result<String, BootloaderError> {
+pub async fn read_remote_file(
+    host: &BootloaderHost,
+    path: &str,
+) -> Result<String, BootloaderError> {
     exec_ok(host, "cat", &[path]).await
 }
 
@@ -50,16 +53,17 @@ pub async fn write_remote_file(
     content: &str,
 ) -> Result<(), BootloaderError> {
     // Use a shell pipeline: echo ... | tee path
-    let shell_cmd = format!("printf '%s' '{}' | tee {} > /dev/null", shell_escape(content), path);
+    let shell_cmd = format!(
+        "printf '%s' '{}' | tee {} > /dev/null",
+        shell_escape(content),
+        path
+    );
     exec_shell(host, &shell_cmd).await?;
     Ok(())
 }
 
 /// Execute an arbitrary shell command string on the host.
-pub async fn exec_shell(
-    host: &BootloaderHost,
-    shell_cmd: &str,
-) -> Result<String, BootloaderError> {
+pub async fn exec_shell(host: &BootloaderHost, shell_cmd: &str) -> Result<String, BootloaderError> {
     exec_ok(host, "sh", &["-c", shell_cmd]).await
 }
 
@@ -91,13 +95,17 @@ async fn exec_remote(
         format!("{} {}", prog, shell_escape_args(args))
     };
     let mut cmd = Command::new("ssh");
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg(format!("ConnectTimeout={}", ssh.timeout_secs))
-        .arg("-p").arg(ssh.port.to_string());
+    cmd.arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", ssh.timeout_secs))
+        .arg("-p")
+        .arg(ssh.port.to_string());
     if let SshAuth::PrivateKey { key_path, .. } = &ssh.auth {
         cmd.arg("-i").arg(key_path);
     }
-    cmd.arg(format!("{}@{}", ssh.username, ssh.host)).arg(&remote_cmd);
+    cmd.arg(format!("{}@{}", ssh.username, ssh.host))
+        .arg(&remote_cmd);
     Ok(cmd.output().await?)
 }
 

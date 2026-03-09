@@ -36,8 +36,12 @@ fn parse_loader_conf(content: &str) -> SystemdBootConfig {
                 "timeout" => cfg.timeout = val.parse().ok(),
                 "console-mode" => cfg.console_mode = Some(val.to_string()),
                 "editor" => cfg.editor_enabled = Some(val == "yes" || val == "1" || val == "true"),
-                "auto-entries" => cfg.auto_entries = Some(val == "yes" || val == "1" || val == "true"),
-                "auto-firmware" => cfg.auto_firmware = Some(val == "yes" || val == "1" || val == "true"),
+                "auto-entries" => {
+                    cfg.auto_entries = Some(val == "yes" || val == "1" || val == "true")
+                }
+                "auto-firmware" => {
+                    cfg.auto_firmware = Some(val == "yes" || val == "1" || val == "true")
+                }
                 _ => {}
             }
         }
@@ -114,9 +118,9 @@ pub async fn get_boot_entry(
     id: &str,
 ) -> Result<SystemdBootEntry, BootloaderError> {
     let path = format!("/boot/loader/entries/{id}.conf");
-    let content = client::read_remote_file(host, &path).await.map_err(|_| {
-        BootloaderError::BootEntryNotFound(id.into())
-    })?;
+    let content = client::read_remote_file(host, &path)
+        .await
+        .map_err(|_| BootloaderError::BootEntryNotFound(id.into()))?;
     Ok(parse_boot_entry(id, &content))
 }
 
@@ -178,10 +182,7 @@ pub async fn update_boot_entry(
 }
 
 /// Delete a boot entry.
-pub async fn delete_boot_entry(
-    host: &BootloaderHost,
-    id: &str,
-) -> Result<(), BootloaderError> {
+pub async fn delete_boot_entry(host: &BootloaderHost, id: &str) -> Result<(), BootloaderError> {
     let path = format!("/boot/loader/entries/{id}.conf");
     client::exec_ok(host, "rm", &["-f", &path]).await?;
     Ok(())
