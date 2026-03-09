@@ -1,9 +1,9 @@
-use async_trait::async_trait;
 use crate::config::ProviderConfig;
 use crate::error::LlmResult;
 use crate::provider::LlmProvider;
 use crate::providers::openai::OpenAiProvider;
 use crate::types::*;
+use async_trait::async_trait;
 
 /// Local GGUF model provider — uses Ollama or llama.cpp compatible server
 pub struct LocalProvider {
@@ -26,10 +26,17 @@ impl LocalProvider {
 
 #[async_trait]
 impl LlmProvider for LocalProvider {
-    fn provider_type(&self) -> ProviderType { ProviderType::Local }
-    fn display_name(&self) -> String { self.config.display_name.clone() }
+    fn provider_type(&self) -> ProviderType {
+        ProviderType::Local
+    }
+    fn display_name(&self) -> String {
+        self.config.display_name.clone()
+    }
 
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         self.inner.chat_completion(request).await
     }
 
@@ -48,7 +55,13 @@ impl LlmProvider for LocalProvider {
         self.inner.health_check().await
     }
 
-    fn supports_tools(&self) -> bool { false }
-    fn supports_streaming(&self) -> bool { true }
-    fn config(&self) -> &ProviderConfig { &self.config }
+    fn supports_tools(&self) -> bool {
+        false
+    }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
 }

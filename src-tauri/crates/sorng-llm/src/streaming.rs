@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use serde::{Serialize, Deserialize};
 
-use crate::types::{StreamChunk, StreamDelta, TokenUsage, ChatMessage, MessageRole, MessageContent, ToolCall, FunctionCall};
-use crate::error::{LlmError, LlmResult};
+use crate::error::LlmResult;
+use crate::types::{
+    ChatMessage, FunctionCall, MessageContent, MessageRole, StreamChunk, TokenUsage, ToolCall,
+};
 
 /// Accumulates stream chunks into a complete response message
 pub struct StreamAccumulator {
@@ -20,6 +22,12 @@ struct ToolCallAccumulator {
     id: String,
     name: String,
     arguments: String,
+}
+
+impl Default for StreamAccumulator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StreamAccumulator {
@@ -131,6 +139,12 @@ pub struct StreamMultiplexer {
     senders: Vec<mpsc::Sender<LlmResult<StreamChunk>>>,
 }
 
+impl Default for StreamMultiplexer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamMultiplexer {
     pub fn new() -> Self {
         Self {
@@ -181,10 +195,7 @@ pub enum StreamEvent {
         usage: Option<TokenUsage>,
     },
     #[serde(rename = "error")]
-    Error {
-        id: String,
-        error: String,
-    },
+    Error { id: String, error: String },
 }
 
 /// Convert a stream receiver into StreamEvents for Tauri event emission
@@ -210,9 +221,11 @@ pub async fn stream_to_events(
                     started = true;
                 }
 
-                let tool_call = chunk.delta.tool_calls.as_ref().map(|tcs| {
-                    serde_json::to_value(tcs).unwrap_or_default()
-                });
+                let tool_call = chunk
+                    .delta
+                    .tool_calls
+                    .as_ref()
+                    .map(|tcs| serde_json::to_value(tcs).unwrap_or_default());
 
                 let _ = event_tx
                     .send(StreamEvent::Delta {

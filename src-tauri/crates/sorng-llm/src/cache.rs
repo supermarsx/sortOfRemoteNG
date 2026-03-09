@@ -1,11 +1,10 @@
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use sha2::{Sha256, Digest};
-use serde::{Serialize, Deserialize};
 
-use crate::types::{ChatCompletionRequest, ChatCompletionResponse};
-use crate::error::LlmResult;
 use crate::config::CacheConfig;
+use crate::types::{ChatCompletionRequest, ChatCompletionResponse};
 
 /// Cached response entry
 struct CacheEntry {
@@ -128,7 +127,9 @@ impl ResponseCache {
 
         // Evict if needed
         let max_bytes = (self.config.max_memory_mb as usize) * 1024 * 1024;
-        while self.total_size + size_bytes > max_bytes || self.entries.len() >= self.config.max_entries {
+        while self.total_size + size_bytes > max_bytes
+            || self.entries.len() >= self.config.max_entries
+        {
             if !self.evict_one() {
                 break;
             }

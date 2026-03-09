@@ -139,7 +139,11 @@ pub struct FunctionDefinition {
 #[serde(untagged)]
 pub enum ToolChoice {
     Mode(String),
-    Specific { #[serde(rename = "type")] tool_type: String, function: ToolChoiceFunction },
+    Specific {
+        #[serde(rename = "type")]
+        tool_type: String,
+        function: ToolChoiceFunction,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

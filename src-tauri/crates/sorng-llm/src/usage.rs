@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{Utc, DateTime};
 
 use crate::types::TokenUsage;
 
@@ -89,6 +89,12 @@ pub struct ModelUsageSummary {
     pub cost_usd: f64,
 }
 
+impl Default for UsageTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UsageTracker {
     pub fn new() -> Self {
         Self {
@@ -98,6 +104,7 @@ impl UsageTracker {
     }
 
     /// Record a completed request
+    #[allow(clippy::too_many_arguments)]
     pub fn record(
         &mut self,
         provider: &str,
@@ -126,10 +133,13 @@ impl UsageTracker {
         self.records.push(record);
 
         // Update daily totals
-        let daily = self.daily_totals.entry(date_key.clone()).or_insert_with(|| DailyUsage {
-            date: date_key,
-            ..Default::default()
-        });
+        let daily = self
+            .daily_totals
+            .entry(date_key.clone())
+            .or_insert_with(|| DailyUsage {
+                date: date_key,
+                ..Default::default()
+            });
         daily.total_requests += 1;
         daily.total_tokens += usage.total_tokens as u64;
         daily.total_cost_usd += cost_usd;
@@ -147,7 +157,11 @@ impl UsageTracker {
     }
 
     /// Calculate cost for a given usage and model info
-    pub fn calculate_cost(usage: &TokenUsage, input_cost_per_million: f64, output_cost_per_million: f64) -> f64 {
+    pub fn calculate_cost(
+        usage: &TokenUsage,
+        input_cost_per_million: f64,
+        output_cost_per_million: f64,
+    ) -> f64 {
         let input_cost = (usage.prompt_tokens as f64 / 1_000_000.0) * input_cost_per_million;
         let output_cost = (usage.completion_tokens as f64 / 1_000_000.0) * output_cost_per_million;
         input_cost + output_cost
@@ -155,9 +169,7 @@ impl UsageTracker {
 
     /// Get summary for a date range
     pub fn summary(&self, days: Option<u32>) -> UsageSummary {
-        let cutoff = days.map(|d| {
-            Utc::now() - chrono::Duration::days(d as i64)
-        });
+        let cutoff = days.map(|d| Utc::now() - chrono::Duration::days(d as i64));
 
         let filtered: Vec<&UsageRecord> = self
             .records

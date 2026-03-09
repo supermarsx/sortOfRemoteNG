@@ -23,7 +23,10 @@ impl AnthropicProvider {
     }
 
     fn base_url(&self) -> &str {
-        self.config.base_url.as_deref().unwrap_or("https://api.anthropic.com/v1")
+        self.config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.anthropic.com/v1")
     }
 
     fn build_messages(&self, messages: &[ChatMessage]) -> (Option<String>, Vec<serde_json::Value>) {
@@ -65,10 +68,17 @@ impl AnthropicProvider {
 
 #[async_trait]
 impl LlmProvider for AnthropicProvider {
-    fn provider_type(&self) -> ProviderType { ProviderType::Anthropic }
-    fn display_name(&self) -> String { self.config.display_name.clone() }
+    fn provider_type(&self) -> ProviderType {
+        ProviderType::Anthropic
+    }
+    fn display_name(&self) -> String {
+        self.config.display_name.clone()
+    }
 
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         let url = format!("{}/messages", self.base_url());
         let start = Instant::now();
         let (system, messages) = self.build_messages(&request.messages);
@@ -79,16 +89,26 @@ impl LlmProvider for AnthropicProvider {
             "max_tokens": request.max_tokens.unwrap_or(4096),
         });
 
-        if let Some(sys) = system { body["system"] = serde_json::json!(sys); }
-        if let Some(t) = request.temperature { body["temperature"] = serde_json::json!(t); }
-        if let Some(tp) = request.top_p { body["top_p"] = serde_json::json!(tp); }
+        if let Some(sys) = system {
+            body["system"] = serde_json::json!(sys);
+        }
+        if let Some(t) = request.temperature {
+            body["temperature"] = serde_json::json!(t);
+        }
+        if let Some(tp) = request.top_p {
+            body["top_p"] = serde_json::json!(tp);
+        }
         if let Some(ref tools) = request.tools {
             body["tools"] = crate::tools::tools_to_anthropic(tools);
         }
-        if let Some(ref stop) = request.stop { body["stop_sequences"] = serde_json::json!(stop); }
+        if let Some(ref stop) = request.stop {
+            body["stop_sequences"] = serde_json::json!(stop);
+        }
 
         let api_key = self.config.api_key.as_deref().unwrap_or("");
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
@@ -101,7 +121,11 @@ impl LlmProvider for AnthropicProvider {
 
         if !status.is_success() {
             let err = resp.text().await.unwrap_or_default();
-            return Err(LlmError::provider_error("Anthropic", &err, Some(status.as_u16())));
+            return Err(LlmError::provider_error(
+                "Anthropic",
+                &err,
+                Some(status.as_u16()),
+            ));
         }
 
         let response: serde_json::Value = resp.json().await?;
@@ -138,21 +162,33 @@ impl LlmProvider for AnthropicProvider {
             prompt_tokens: response["usage"]["input_tokens"].as_u64().unwrap_or(0) as u32,
             completion_tokens: response["usage"]["output_tokens"].as_u64().unwrap_or(0) as u32,
             total_tokens: (response["usage"]["input_tokens"].as_u64().unwrap_or(0)
-                + response["usage"]["output_tokens"].as_u64().unwrap_or(0)) as u32,
-            cache_read_tokens: response["usage"]["cache_read_input_tokens"].as_u64().map(|v| v as u32),
-            cache_creation_tokens: response["usage"]["cache_creation_input_tokens"].as_u64().map(|v| v as u32),
+                + response["usage"]["output_tokens"].as_u64().unwrap_or(0))
+                as u32,
+            cache_read_tokens: response["usage"]["cache_read_input_tokens"]
+                .as_u64()
+                .map(|v| v as u32),
+            cache_creation_tokens: response["usage"]["cache_creation_input_tokens"]
+                .as_u64()
+                .map(|v| v as u32),
         };
 
         Ok(ChatCompletionResponse {
             id: response["id"].as_str().unwrap_or("").to_string(),
-            model: response["model"].as_str().unwrap_or(&request.model).to_string(),
+            model: response["model"]
+                .as_str()
+                .unwrap_or(&request.model)
+                .to_string(),
             choices: vec![Choice {
                 index: 0,
                 message: ChatMessage {
                     role: MessageRole::Assistant,
                     content: MessageContent::Text(text_content),
                     name: None,
-                    tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+                    tool_calls: if tool_calls.is_empty() {
+                        None
+                    } else {
+                        Some(tool_calls)
+                    },
                     tool_call_id: None,
                 },
                 finish_reason: response["stop_reason"].as_str().map(|r| match r {
@@ -185,8 +221,12 @@ impl LlmProvider for AnthropicProvider {
             "stream": true,
         });
 
-        if let Some(sys) = system { body["system"] = serde_json::json!(sys); }
-        if let Some(t) = request.temperature { body["temperature"] = serde_json::json!(t); }
+        if let Some(sys) = system {
+            body["system"] = serde_json::json!(sys);
+        }
+        if let Some(t) = request.temperature {
+            body["temperature"] = serde_json::json!(t);
+        }
         if let Some(ref tools) = request.tools {
             body["tools"] = crate::tools::tools_to_anthropic(tools);
         }
@@ -195,7 +235,9 @@ impl LlmProvider for AnthropicProvider {
         let provider_name = self.config.id.clone();
         let model = request.model.clone();
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .header("x-api-key", &api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
@@ -226,7 +268,10 @@ impl LlmProvider for AnthropicProvider {
                                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
                                     match val["type"].as_str() {
                                         Some("message_start") => {
-                                            msg_id = val["message"]["id"].as_str().unwrap_or("").to_string();
+                                            msg_id = val["message"]["id"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .to_string();
                                         }
                                         Some("content_block_delta") => {
                                             let delta = &val["delta"];
@@ -247,19 +292,30 @@ impl LlmProvider for AnthropicProvider {
                                             let _ = tx.send(Ok(chunk)).await;
                                         }
                                         Some("message_delta") => {
-                                            let usage = val["usage"].as_object().map(|u| TokenUsage {
-                                                prompt_tokens: 0,
-                                                completion_tokens: u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                                                total_tokens: u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                                                cache_read_tokens: None,
-                                                cache_creation_tokens: None,
-                                            });
+                                            let usage =
+                                                val["usage"].as_object().map(|u| TokenUsage {
+                                                    prompt_tokens: 0,
+                                                    completion_tokens: u
+                                                        .get("output_tokens")
+                                                        .and_then(|v| v.as_u64())
+                                                        .unwrap_or(0)
+                                                        as u32,
+                                                    total_tokens: u
+                                                        .get("output_tokens")
+                                                        .and_then(|v| v.as_u64())
+                                                        .unwrap_or(0)
+                                                        as u32,
+                                                    cache_read_tokens: None,
+                                                    cache_creation_tokens: None,
+                                                });
                                             let chunk = StreamChunk {
                                                 id: msg_id.clone(),
                                                 model: model.clone(),
                                                 provider: provider_name.clone(),
                                                 delta: StreamDelta::default(),
-                                                finish_reason: val["delta"]["stop_reason"].as_str().map(|r| r.to_string()),
+                                                finish_reason: val["delta"]["stop_reason"]
+                                                    .as_str()
+                                                    .map(|r| r.to_string()),
                                                 usage,
                                                 index: 0,
                                             };
@@ -295,8 +351,16 @@ impl LlmProvider for AnthropicProvider {
         Ok(resp.is_ok())
     }
 
-    fn supports_tools(&self) -> bool { true }
-    fn supports_streaming(&self) -> bool { true }
-    fn supports_vision(&self) -> bool { true }
-    fn config(&self) -> &ProviderConfig { &self.config }
+    fn supports_tools(&self) -> bool {
+        true
+    }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+    fn supports_vision(&self) -> bool {
+        true
+    }
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
 }

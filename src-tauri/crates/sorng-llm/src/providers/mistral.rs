@@ -1,9 +1,9 @@
-use async_trait::async_trait;
 use crate::config::ProviderConfig;
 use crate::error::LlmResult;
 use crate::provider::LlmProvider;
 use crate::providers::openai::OpenAiProvider;
 use crate::types::*;
+use async_trait::async_trait;
 
 /// Mistral AI provider — uses OpenAI-compatible API
 pub struct MistralProvider {
@@ -26,10 +26,17 @@ impl MistralProvider {
 
 #[async_trait]
 impl LlmProvider for MistralProvider {
-    fn provider_type(&self) -> ProviderType { ProviderType::Mistral }
-    fn display_name(&self) -> String { self.config.display_name.clone() }
+    fn provider_type(&self) -> ProviderType {
+        ProviderType::Mistral
+    }
+    fn display_name(&self) -> String {
+        self.config.display_name.clone()
+    }
 
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         self.inner.chat_completion(request).await
     }
 
@@ -51,7 +58,13 @@ impl LlmProvider for MistralProvider {
         self.inner.health_check().await
     }
 
-    fn supports_tools(&self) -> bool { true }
-    fn supports_streaming(&self) -> bool { true }
-    fn config(&self) -> &ProviderConfig { &self.config }
+    fn supports_tools(&self) -> bool {
+        true
+    }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
 }

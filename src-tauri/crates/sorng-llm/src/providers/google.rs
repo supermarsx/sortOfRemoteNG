@@ -23,10 +23,16 @@ impl GoogleProvider {
     }
 
     fn base_url(&self) -> &str {
-        self.config.base_url.as_deref().unwrap_or("https://generativelanguage.googleapis.com/v1beta")
+        self.config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://generativelanguage.googleapis.com/v1beta")
     }
 
-    fn build_contents(&self, messages: &[ChatMessage]) -> (Option<serde_json::Value>, Vec<serde_json::Value>) {
+    fn build_contents(
+        &self,
+        messages: &[ChatMessage],
+    ) -> (Option<serde_json::Value>, Vec<serde_json::Value>) {
         let mut system_instruction = None;
         let mut contents = Vec::new();
 
@@ -67,26 +73,45 @@ impl GoogleProvider {
 
 #[async_trait]
 impl LlmProvider for GoogleProvider {
-    fn provider_type(&self) -> ProviderType { ProviderType::Google }
-    fn display_name(&self) -> String { self.config.display_name.clone() }
+    fn provider_type(&self) -> ProviderType {
+        ProviderType::Google
+    }
+    fn display_name(&self) -> String {
+        self.config.display_name.clone()
+    }
 
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         let api_key = self.config.api_key.as_deref().unwrap_or("");
         let url = format!(
             "{}/models/{}:generateContent?key={}",
-            self.base_url(), request.model, api_key
+            self.base_url(),
+            request.model,
+            api_key
         );
         let start = Instant::now();
         let (system_instruction, contents) = self.build_contents(&request.messages);
 
         let mut body = serde_json::json!({ "contents": contents });
-        if let Some(si) = system_instruction { body["systemInstruction"] = si; }
+        if let Some(si) = system_instruction {
+            body["systemInstruction"] = si;
+        }
 
         let mut gen_config = serde_json::Map::new();
-        if let Some(t) = request.temperature { gen_config.insert("temperature".into(), serde_json::json!(t)); }
-        if let Some(tp) = request.top_p { gen_config.insert("topP".into(), serde_json::json!(tp)); }
-        if let Some(mt) = request.max_tokens { gen_config.insert("maxOutputTokens".into(), serde_json::json!(mt)); }
-        if let Some(ref stop) = request.stop { gen_config.insert("stopSequences".into(), serde_json::json!(stop)); }
+        if let Some(t) = request.temperature {
+            gen_config.insert("temperature".into(), serde_json::json!(t));
+        }
+        if let Some(tp) = request.top_p {
+            gen_config.insert("topP".into(), serde_json::json!(tp));
+        }
+        if let Some(mt) = request.max_tokens {
+            gen_config.insert("maxOutputTokens".into(), serde_json::json!(mt));
+        }
+        if let Some(ref stop) = request.stop {
+            gen_config.insert("stopSequences".into(), serde_json::json!(stop));
+        }
         if !gen_config.is_empty() {
             body["generationConfig"] = serde_json::Value::Object(gen_config);
         }
@@ -101,7 +126,11 @@ impl LlmProvider for GoogleProvider {
 
         if !status.is_success() {
             let err = resp.text().await.unwrap_or_default();
-            return Err(LlmError::provider_error("Google", &err, Some(status.as_u16())));
+            return Err(LlmError::provider_error(
+                "Google",
+                &err,
+                Some(status.as_u16()),
+            ));
         }
 
         let response: serde_json::Value = resp.json().await?;
@@ -134,7 +163,9 @@ impl LlmProvider for GoogleProvider {
             prompt_tokens: usage_meta["promptTokenCount"].as_u64().unwrap_or(0) as u32,
             completion_tokens: usage_meta["candidatesTokenCount"].as_u64().unwrap_or(0) as u32,
             total_tokens: usage_meta["totalTokenCount"].as_u64().unwrap_or(0) as u32,
-            cache_read_tokens: usage_meta["cachedContentTokenCount"].as_u64().map(|v| v as u32),
+            cache_read_tokens: usage_meta["cachedContentTokenCount"]
+                .as_u64()
+                .map(|v| v as u32),
             cache_creation_tokens: None,
         };
 
@@ -153,7 +184,11 @@ impl LlmProvider for GoogleProvider {
                     role: MessageRole::Assistant,
                     content: MessageContent::Text(text),
                     name: None,
-                    tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+                    tool_calls: if tool_calls.is_empty() {
+                        None
+                    } else {
+                        Some(tool_calls)
+                    },
                     tool_call_id: None,
                 },
                 finish_reason,
@@ -174,13 +209,17 @@ impl LlmProvider for GoogleProvider {
         let api_key = self.config.api_key.clone().unwrap_or_default();
         let url = format!(
             "{}/models/{}:streamGenerateContent?key={}&alt=sse",
-            self.base_url(), request.model, api_key
+            self.base_url(),
+            request.model,
+            api_key
         );
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         let (system_instruction, contents) = self.build_contents(&request.messages);
 
         let mut body = serde_json::json!({ "contents": contents });
-        if let Some(si) = system_instruction { body["systemInstruction"] = si; }
+        if let Some(si) = system_instruction {
+            body["systemInstruction"] = si;
+        }
         if let Some(ref tools) = request.tools {
             body["tools"] = crate::tools::tools_to_gemini(tools);
         }
@@ -209,15 +248,23 @@ impl LlmProvider for GoogleProvider {
                             buffer = buffer[pos + 2..].to_string();
                             if let Some(data) = line.strip_prefix("data: ") {
                                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
-                                    if let Some(parts) = val["candidates"][0]["content"]["parts"].as_array() {
+                                    if let Some(parts) =
+                                        val["candidates"][0]["content"]["parts"].as_array()
+                                    {
                                         for part in parts {
                                             let content = part["text"].as_str().map(String::from);
                                             let chunk = StreamChunk {
                                                 id: stream_id.clone(),
                                                 model: model.clone(),
                                                 provider: provider_name.clone(),
-                                                delta: StreamDelta { role: None, content, tool_calls: None },
-                                                finish_reason: val["candidates"][0]["finishReason"].as_str().map(String::from),
+                                                delta: StreamDelta {
+                                                    role: None,
+                                                    content,
+                                                    tool_calls: None,
+                                                },
+                                                finish_reason: val["candidates"][0]["finishReason"]
+                                                    .as_str()
+                                                    .map(String::from),
                                                 usage: None,
                                                 index: 0,
                                             };
@@ -253,8 +300,16 @@ impl LlmProvider for GoogleProvider {
         Ok(resp.map(|r| r.status().is_success()).unwrap_or(false))
     }
 
-    fn supports_tools(&self) -> bool { true }
-    fn supports_streaming(&self) -> bool { true }
-    fn supports_vision(&self) -> bool { true }
-    fn config(&self) -> &ProviderConfig { &self.config }
+    fn supports_tools(&self) -> bool {
+        true
+    }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+    fn supports_vision(&self) -> bool {
+        true
+    }
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
 }

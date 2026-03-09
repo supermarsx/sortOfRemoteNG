@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::config::ProviderConfig;
 use crate::error::{LlmError, LlmResult};
 use crate::types::*;
-use crate::config::ProviderConfig;
 
 /// Trait that every LLM provider backend must implement
 #[async_trait]
@@ -17,7 +17,10 @@ pub trait LlmProvider: Send + Sync {
     fn display_name(&self) -> String;
 
     /// Send a chat completion request and receive a full response
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse>;
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse>;
 
     /// Start a streaming chat completion. Returns a stream receiver.
     async fn stream_chat_completion(
@@ -42,13 +45,19 @@ pub trait LlmProvider: Send + Sync {
     }
 
     /// Whether this provider supports tool/function calling
-    fn supports_tools(&self) -> bool { true }
+    fn supports_tools(&self) -> bool {
+        true
+    }
 
     /// Whether this provider supports streaming
-    fn supports_streaming(&self) -> bool { true }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
 
     /// Whether this provider supports vision/image inputs
-    fn supports_vision(&self) -> bool { false }
+    fn supports_vision(&self) -> bool {
+        false
+    }
 
     /// Get the provider configuration
     fn config(&self) -> &ProviderConfig;
@@ -59,6 +68,12 @@ pub struct ProviderRegistry {
     providers: HashMap<String, Arc<dyn LlmProvider>>,
     configs: HashMap<String, ProviderConfig>,
     default_provider: Option<String>,
+}
+
+impl Default for ProviderRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProviderRegistry {
@@ -112,12 +127,7 @@ impl ProviderRegistry {
         let mut entries: Vec<_> = self
             .providers
             .iter()
-            .filter(|(id, _)| {
-                self.configs
-                    .get(*id)
-                    .map(|c| c.enabled)
-                    .unwrap_or(false)
-            })
+            .filter(|(id, _)| self.configs.get(*id).map(|c| c.enabled).unwrap_or(false))
             .collect();
         entries.sort_by(|(a, _), (b, _)| {
             let pa = self.configs.get(*a).map(|c| c.priority).unwrap_or(0);

@@ -7,7 +7,7 @@ use crate::balancer::LoadBalancer;
 use crate::cache::ResponseCache;
 use crate::config::*;
 use crate::error::{LlmError, LlmResult};
-use crate::provider::{LlmProvider, ProviderRegistry};
+use crate::provider::ProviderRegistry;
 use crate::providers;
 use crate::rate_limit::RateLimitManager;
 use crate::tokens::TokenCounter;
@@ -45,6 +45,7 @@ impl LlmService {
 
     // ── Provider Management ────────────────────────────────────────────
 
+    #[allow(clippy::result_large_err)]
     pub fn add_provider(&mut self, config: ProviderConfig) -> LlmResult<()> {
         let id = config.id.clone();
         let provider = providers::create_provider(&config);
@@ -68,6 +69,7 @@ impl LlmService {
         self.registry.unregister(id)
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn update_provider(&mut self, config: ProviderConfig) -> LlmResult<()> {
         let id = config.id.clone();
         self.remove_provider(&id);
@@ -78,6 +80,7 @@ impl LlmService {
         self.registry.list_configs().into_iter().cloned().collect()
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn set_default_provider(&mut self, id: &str) -> LlmResult<()> {
         if self.registry.get(id).is_some() {
             self.registry.set_default(id);
@@ -89,9 +92,14 @@ impl LlmService {
 
     // ── Chat Completion ────────────────────────────────────────────────
 
-    pub async fn chat_completion(&mut self, request: ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    pub async fn chat_completion(
+        &mut self,
+        request: ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         // 1. Resolve model aliases
-        let model = self.config.model_aliases
+        let model = self
+            .config
+            .model_aliases
             .get(&request.model)
             .cloned()
             .unwrap_or_else(|| request.model.clone());
@@ -113,7 +121,8 @@ impl LlmService {
 
         // 4. Rate limit check
         let estimated_tokens = TokenCounter::estimate_messages(&req.messages);
-        self.rate_limiter.try_acquire(&provider_id, estimated_tokens)?;
+        self.rate_limiter
+            .try_acquire(&provider_id, estimated_tokens)?;
 
         // 5. Execute with fallback
         let start = Instant::now();
@@ -127,7 +136,13 @@ impl LlmService {
                 // 6. Record usage
                 let model_info = self.find_model_info(&response.model);
                 let cost = model_info
-                    .map(|m| UsageTracker::calculate_cost(&response.usage, m.input_cost_per_million, m.output_cost_per_million))
+                    .map(|m| {
+                        UsageTracker::calculate_cost(
+                            &response.usage,
+                            m.input_cost_per_million,
+                            m.output_cost_per_million,
+                        )
+                    })
                     .unwrap_or(0.0);
 
                 self.usage_tracker.record(
@@ -141,7 +156,8 @@ impl LlmService {
                 );
 
                 // 7. Release rate limiter
-                self.rate_limiter.release(&provider_id, response.usage.total_tokens);
+                self.rate_limiter
+                    .release(&provider_id, response.usage.total_tokens);
 
                 // 8. Update balancer
                 self.balancer.record_success(&provider_id, latency);
@@ -176,7 +192,9 @@ impl LlmService {
         }
 
         // Try fallback chain
-        let fallback_ids: Vec<String> = self.config.fallback_chain
+        let fallback_ids: Vec<String> = self
+            .config
+            .fallback_chain
             .iter()
             .filter(|id| id.as_str() != primary_id)
             .cloned()
@@ -201,6 +219,7 @@ impl LlmService {
         Err(LlmError::all_providers_failed(errors))
     }
 
+    #[allow(clippy::result_large_err)]
     fn select_provider(&mut self, model: &str) -> LlmResult<String> {
         // First check if model maps to a specific provider
         if let Some((id, _)) = self.registry.find_provider_for_model(model) {
@@ -209,7 +228,8 @@ impl LlmService {
 
         // Use load balancer
         let available: Vec<String> = self.registry.list_ids();
-        let priorities: HashMap<String, i32> = self.registry
+        let priorities: HashMap<String, i32> = self
+            .registry
             .list_configs()
             .iter()
             .map(|c| (c.id.clone(), c.priority))
@@ -220,13 +240,20 @@ impl LlmService {
 
     // ── Embedding ──────────────────────────────────────────────────────
 
-    pub async fn create_embedding(&self, request: EmbeddingRequest) -> LlmResult<EmbeddingResponse> {
-        let provider_id = request.provider_id.as_deref()
+    pub async fn create_embedding(
+        &self,
+        request: EmbeddingRequest,
+    ) -> LlmResult<EmbeddingResponse> {
+        let provider_id = request
+            .provider_id
+            .as_deref()
             .or(self.registry.default_provider_id())
             .ok_or_else(|| LlmError::provider_not_found("none configured"))?
             .to_string();
 
-        let provider = self.registry.get(&provider_id)
+        let provider = self
+            .registry
+            .get(&provider_id)
             .ok_or_else(|| LlmError::provider_not_found(&provider_id))?;
 
         provider.create_embedding(&request).await
@@ -235,7 +262,9 @@ impl LlmService {
     // ── Health ──────────────────────────────────────────────────────────
 
     pub async fn health_check(&self, provider_id: &str) -> LlmResult<ProviderHealth> {
-        let provider = self.registry.get(provider_id)
+        let provider = self
+            .registry
+            .get(provider_id)
             .ok_or_else(|| LlmError::provider_not_found(provider_id))?;
 
         let start = Instant::now();
@@ -275,7 +304,10 @@ impl LlmService {
     }
 
     pub fn models_for_provider(&self, provider: &str) -> Vec<&ModelInfo> {
-        self.model_catalog.iter().filter(|m| m.provider == provider).collect()
+        self.model_catalog
+            .iter()
+            .filter(|m| m.provider == provider)
+            .collect()
     }
 
     fn find_model_info(&self, model_id: &str) -> Option<&ModelInfo> {
@@ -315,7 +347,9 @@ impl LlmService {
                 .iter()
                 .map(|h| ProviderHealth {
                     provider_id: h.provider_id.clone(),
-                    provider_type: self.registry.get(&h.provider_id)
+                    provider_type: self
+                        .registry
+                        .get(&h.provider_id)
                         .map(|p| p.provider_type())
                         .unwrap_or(ProviderType::Custom),
                     healthy: h.healthy,

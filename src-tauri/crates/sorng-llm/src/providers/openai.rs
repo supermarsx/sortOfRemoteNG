@@ -54,7 +54,10 @@ impl LlmProvider for OpenAiProvider {
         self.config.display_name.clone()
     }
 
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         let url = format!("{}/chat/completions", self.base_url());
         let start = Instant::now();
 
@@ -64,16 +67,36 @@ impl LlmProvider for OpenAiProvider {
             "stream": false,
         });
 
-        if let Some(t) = request.temperature { body["temperature"] = serde_json::json!(t); }
-        if let Some(tp) = request.top_p { body["top_p"] = serde_json::json!(tp); }
-        if let Some(mt) = request.max_tokens { body["max_tokens"] = serde_json::json!(mt); }
-        if let Some(ref stop) = request.stop { body["stop"] = serde_json::json!(stop); }
-        if let Some(ref tools) = request.tools { body["tools"] = serde_json::json!(tools); }
-        if let Some(ref tc) = request.tool_choice { body["tool_choice"] = serde_json::json!(tc); }
-        if let Some(ref rf) = request.response_format { body["response_format"] = serde_json::json!(rf); }
-        if let Some(s) = request.seed { body["seed"] = serde_json::json!(s); }
-        if let Some(fp) = request.frequency_penalty { body["frequency_penalty"] = serde_json::json!(fp); }
-        if let Some(pp) = request.presence_penalty { body["presence_penalty"] = serde_json::json!(pp); }
+        if let Some(t) = request.temperature {
+            body["temperature"] = serde_json::json!(t);
+        }
+        if let Some(tp) = request.top_p {
+            body["top_p"] = serde_json::json!(tp);
+        }
+        if let Some(mt) = request.max_tokens {
+            body["max_tokens"] = serde_json::json!(mt);
+        }
+        if let Some(ref stop) = request.stop {
+            body["stop"] = serde_json::json!(stop);
+        }
+        if let Some(ref tools) = request.tools {
+            body["tools"] = serde_json::json!(tools);
+        }
+        if let Some(ref tc) = request.tool_choice {
+            body["tool_choice"] = serde_json::json!(tc);
+        }
+        if let Some(ref rf) = request.response_format {
+            body["response_format"] = serde_json::json!(rf);
+        }
+        if let Some(s) = request.seed {
+            body["seed"] = serde_json::json!(s);
+        }
+        if let Some(fp) = request.frequency_penalty {
+            body["frequency_penalty"] = serde_json::json!(fp);
+        }
+        if let Some(pp) = request.presence_penalty {
+            body["presence_penalty"] = serde_json::json!(pp);
+        }
 
         let mut req_builder = self.client.post(&url).json(&body);
         for (key, value) in self.auth_headers() {
@@ -178,11 +201,21 @@ impl LlmProvider for OpenAiProvider {
             "stream_options": {"include_usage": true},
         });
 
-        if let Some(t) = request.temperature { body["temperature"] = serde_json::json!(t); }
-        if let Some(tp) = request.top_p { body["top_p"] = serde_json::json!(tp); }
-        if let Some(mt) = request.max_tokens { body["max_tokens"] = serde_json::json!(mt); }
-        if let Some(ref tools) = request.tools { body["tools"] = serde_json::json!(tools); }
-        if let Some(ref tc) = request.tool_choice { body["tool_choice"] = serde_json::json!(tc); }
+        if let Some(t) = request.temperature {
+            body["temperature"] = serde_json::json!(t);
+        }
+        if let Some(tp) = request.top_p {
+            body["top_p"] = serde_json::json!(tp);
+        }
+        if let Some(mt) = request.max_tokens {
+            body["max_tokens"] = serde_json::json!(mt);
+        }
+        if let Some(ref tools) = request.tools {
+            body["tools"] = serde_json::json!(tools);
+        }
+        if let Some(ref tc) = request.tool_choice {
+            body["tool_choice"] = serde_json::json!(tc);
+        }
 
         let mut req_builder = self.client.post(&url).json(&body);
         for (key, value) in self.auth_headers() {
@@ -221,34 +254,52 @@ impl LlmProvider for OpenAiProvider {
                                 if let Some(choices) = val["choices"].as_array() {
                                     for choice in choices {
                                         let delta = &choice["delta"];
-                                        let tool_calls = delta["tool_calls"].as_array().map(|tcs| {
-                                            tcs.iter().filter_map(|tc| {
-                                                Some(ToolCallDelta {
-                                                    index: tc["index"].as_u64()? as u32,
-                                                    id: tc["id"].as_str().map(String::from),
-                                                    function: Some(FunctionCallDelta {
-                                                        name: tc["function"]["name"].as_str().map(String::from),
-                                                        arguments: tc["function"]["arguments"].as_str().map(String::from),
-                                                    }),
-                                                })
-                                            }).collect()
-                                        });
+                                        let tool_calls =
+                                            delta["tool_calls"].as_array().map(|tcs| {
+                                                tcs.iter()
+                                                    .filter_map(|tc| {
+                                                        Some(ToolCallDelta {
+                                                            index: tc["index"].as_u64()? as u32,
+                                                            id: tc["id"].as_str().map(String::from),
+                                                            function: Some(FunctionCallDelta {
+                                                                name: tc["function"]["name"]
+                                                                    .as_str()
+                                                                    .map(String::from),
+                                                                arguments: tc["function"]
+                                                                    ["arguments"]
+                                                                    .as_str()
+                                                                    .map(String::from),
+                                                            }),
+                                                        })
+                                                    })
+                                                    .collect()
+                                            });
 
                                         let chunk = StreamChunk {
                                             id: val["id"].as_str().unwrap_or("").to_string(),
                                             model: model.clone(),
                                             provider: provider_name.clone(),
                                             delta: StreamDelta {
-                                                role: delta["role"].as_str().map(|_| MessageRole::Assistant),
-                                                content: delta["content"].as_str().map(String::from),
+                                                role: delta["role"]
+                                                    .as_str()
+                                                    .map(|_| MessageRole::Assistant),
+                                                content: delta["content"]
+                                                    .as_str()
+                                                    .map(String::from),
                                                 tool_calls,
                                             },
-                                            finish_reason: choice["finish_reason"].as_str().map(String::from),
+                                            finish_reason: choice["finish_reason"]
+                                                .as_str()
+                                                .map(String::from),
                                             usage: val.get("usage").and_then(|u| {
                                                 Some(TokenUsage {
-                                                    prompt_tokens: u["prompt_tokens"].as_u64()? as u32,
-                                                    completion_tokens: u["completion_tokens"].as_u64()? as u32,
-                                                    total_tokens: u["total_tokens"].as_u64()? as u32,
+                                                    prompt_tokens: u["prompt_tokens"].as_u64()?
+                                                        as u32,
+                                                    completion_tokens: u["completion_tokens"]
+                                                        .as_u64()?
+                                                        as u32,
+                                                    total_tokens: u["total_tokens"].as_u64()?
+                                                        as u32,
                                                     cache_read_tokens: None,
                                                     cache_creation_tokens: None,
                                                 })
@@ -334,7 +385,11 @@ impl LlmProvider for OpenAiProvider {
         let resp = req.send().await?;
         if !resp.status().is_success() {
             let err = resp.text().await.unwrap_or_default();
-            return Err(LlmError::provider_error(&self.config.display_name, &err, None));
+            return Err(LlmError::provider_error(
+                &self.config.display_name,
+                &err,
+                None,
+            ));
         }
         let body: serde_json::Value = resp.json().await?;
         let embeddings: Vec<Vec<f32>> = body["data"]
@@ -342,9 +397,11 @@ impl LlmProvider for OpenAiProvider {
             .unwrap_or(&Vec::new())
             .iter()
             .filter_map(|d| {
-                d["embedding"]
-                    .as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect())
+                d["embedding"].as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect()
+                })
             })
             .collect();
 
@@ -364,8 +421,16 @@ impl LlmProvider for OpenAiProvider {
         })
     }
 
-    fn supports_tools(&self) -> bool { true }
-    fn supports_streaming(&self) -> bool { true }
-    fn supports_vision(&self) -> bool { true }
-    fn config(&self) -> &ProviderConfig { &self.config }
+    fn supports_tools(&self) -> bool {
+        true
+    }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+    fn supports_vision(&self) -> bool {
+        true
+    }
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
 }

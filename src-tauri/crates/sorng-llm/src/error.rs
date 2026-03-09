@@ -102,7 +102,10 @@ impl LlmError {
     pub fn context_overflow(model: &str, tokens: u32, max: u32) -> Self {
         Self {
             code: "CONTEXT_OVERFLOW".to_string(),
-            message: format!("Token count {} exceeds model {} context window of {}", tokens, model, max),
+            message: format!(
+                "Token count {} exceeds model {} context window of {}",
+                tokens, model, max
+            ),
             provider: None,
             model: Some(model.to_string()),
             retryable: false,

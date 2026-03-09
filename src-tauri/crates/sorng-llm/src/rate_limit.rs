@@ -1,8 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
-use serde::{Serialize, Deserialize};
 
 use crate::config::RateLimitConfig;
 use crate::error::{LlmError, LlmResult};
@@ -41,6 +39,7 @@ impl ProviderLimiter {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn check_capacity(&mut self, estimated_tokens: u32) -> LlmResult<()> {
         self.cleanup_window();
 
@@ -55,10 +54,7 @@ impl ProviderLimiter {
             let wait = Duration::from_secs(60)
                 .checked_sub(oldest.elapsed())
                 .unwrap_or_default();
-            return Err(LlmError::rate_limited(
-                "provider",
-                Some(wait.as_secs()),
-            ));
+            return Err(LlmError::rate_limited("provider", Some(wait.as_secs())));
         }
 
         // Check TPM
@@ -95,6 +91,12 @@ pub struct RateLimitManager {
     limiters: HashMap<String, ProviderLimiter>,
 }
 
+impl Default for RateLimitManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RateLimitManager {
     pub fn new() -> Self {
         Self {
@@ -114,6 +116,7 @@ impl RateLimitManager {
     }
 
     /// Check if a request can be made (and acquire the slot)
+    #[allow(clippy::result_large_err)]
     pub fn try_acquire(&mut self, provider_id: &str, estimated_tokens: u32) -> LlmResult<()> {
         if let Some(limiter) = self.limiters.get_mut(provider_id) {
             limiter.check_capacity(estimated_tokens)?;

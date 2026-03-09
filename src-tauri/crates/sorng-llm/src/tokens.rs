@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 /// Approximate token counter for LLM requests.
 ///
 /// Uses character-based heuristics (≈4 chars per token for English)
@@ -70,7 +68,26 @@ impl TokenCounter {
         }
         let code_chars: usize = text
             .chars()
-            .filter(|c| matches!(c, '{' | '}' | '(' | ')' | '[' | ']' | ';' | '=' | '<' | '>' | '/' | '\\' | '|' | '&' | '#' | '$'))
+            .filter(|c| {
+                matches!(
+                    c,
+                    '{' | '}'
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | ';'
+                        | '='
+                        | '<'
+                        | '>'
+                        | '/'
+                        | '\\'
+                        | '|'
+                        | '&'
+                        | '#'
+                        | '$'
+                )
+            })
             .count();
         let ratio = code_chars as f64 / text.len() as f64;
         (ratio * 10.0).min(1.0) // scale up since code chars are sparse

@@ -23,16 +23,26 @@ impl CohereProvider {
     }
 
     fn base_url(&self) -> &str {
-        self.config.base_url.as_deref().unwrap_or("https://api.cohere.ai/v1")
+        self.config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.cohere.ai/v1")
     }
 }
 
 #[async_trait]
 impl LlmProvider for CohereProvider {
-    fn provider_type(&self) -> ProviderType { ProviderType::Cohere }
-    fn display_name(&self) -> String { self.config.display_name.clone() }
+    fn provider_type(&self) -> ProviderType {
+        ProviderType::Cohere
+    }
+    fn display_name(&self) -> String {
+        self.config.display_name.clone()
+    }
 
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         let url = format!("{}/chat", self.base_url());
         let start = Instant::now();
 
@@ -65,15 +75,23 @@ impl LlmProvider for CohereProvider {
             "chat_history": chat_history,
         });
 
-        if let Some(p) = preamble { body["preamble"] = serde_json::json!(p); }
-        if let Some(t) = request.temperature { body["temperature"] = serde_json::json!(t); }
-        if let Some(mt) = request.max_tokens { body["max_tokens"] = serde_json::json!(mt); }
+        if let Some(p) = preamble {
+            body["preamble"] = serde_json::json!(p);
+        }
+        if let Some(t) = request.temperature {
+            body["temperature"] = serde_json::json!(t);
+        }
+        if let Some(mt) = request.max_tokens {
+            body["max_tokens"] = serde_json::json!(mt);
+        }
         if let Some(ref tools) = request.tools {
             body["tools"] = crate::tools::tools_to_cohere(tools);
         }
 
         let api_key = self.config.api_key.as_deref().unwrap_or("");
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .json(&body)
             .send()
@@ -84,7 +102,11 @@ impl LlmProvider for CohereProvider {
 
         if !status.is_success() {
             let err = resp.text().await.unwrap_or_default();
-            return Err(LlmError::provider_error("Cohere", &err, Some(status.as_u16())));
+            return Err(LlmError::provider_error(
+                "Cohere",
+                &err,
+                Some(status.as_u16()),
+            ));
         }
 
         let response: serde_json::Value = resp.json().await?;
@@ -99,7 +121,8 @@ impl LlmProvider for CohereProvider {
             prompt_tokens: meta["tokens"]["input_tokens"].as_u64().unwrap_or(0) as u32,
             completion_tokens: meta["tokens"]["output_tokens"].as_u64().unwrap_or(0) as u32,
             total_tokens: (meta["tokens"]["input_tokens"].as_u64().unwrap_or(0)
-                + meta["tokens"]["output_tokens"].as_u64().unwrap_or(0)) as u32,
+                + meta["tokens"]["output_tokens"].as_u64().unwrap_or(0))
+                as u32,
             cache_read_tokens: None,
             cache_creation_tokens: None,
         };
@@ -155,7 +178,9 @@ impl LlmProvider for CohereProvider {
         let provider_name = self.config.id.clone();
         let model = request.model.clone();
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .json(&body)
             .send()
@@ -216,8 +241,16 @@ impl LlmProvider for CohereProvider {
             .collect())
     }
 
-    async fn health_check(&self) -> LlmResult<bool> { Ok(true) }
-    fn supports_tools(&self) -> bool { true }
-    fn supports_streaming(&self) -> bool { true }
-    fn config(&self) -> &ProviderConfig { &self.config }
+    async fn health_check(&self) -> LlmResult<bool> {
+        Ok(true)
+    }
+    fn supports_tools(&self) -> bool {
+        true
+    }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
 }

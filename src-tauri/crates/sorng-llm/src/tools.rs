@@ -1,8 +1,7 @@
-use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
-use crate::types::{ToolDefinition, ToolCall, FunctionDefinition, FunctionCall, ToolChoice, ToolChoiceFunction};
 use crate::error::{LlmError, LlmResult};
+use crate::types::{FunctionCall, ToolCall, ToolChoice, ToolDefinition};
 
 /// Normalized tool/function calling layer.
 ///
@@ -12,8 +11,8 @@ use crate::error::{LlmError, LlmResult};
 /// - Anthropic style (tools array with input_schema)
 /// - Google Gemini style (functionDeclarations)
 /// - Cohere style (tools with parameterDefinitions)
-
-/// Converts tool definitions to provider-specific format
+///
+///   Converts tool definitions to provider-specific format
 pub fn tools_to_openai(tools: &[ToolDefinition]) -> Value {
     serde_json::to_value(tools).unwrap_or_default()
 }
@@ -71,10 +70,7 @@ pub fn tools_to_cohere(tools: &[ToolDefinition]) -> Value {
                         if let Some(typ) = schema.get("type") {
                             def.insert("type".to_string(), typ.clone());
                         }
-                        def.insert(
-                            "required".to_string(),
-                            Value::Bool(required.contains(name)),
-                        );
+                        def.insert("required".to_string(), Value::Bool(required.contains(name)));
                         defs.insert(name.clone(), Value::Object(def));
                     }
                     Value::Object(defs)
@@ -170,6 +166,7 @@ pub fn tool_choice_to_anthropic(choice: &ToolChoice) -> Value {
 }
 
 /// Validate tool call arguments against a function definition
+#[allow(clippy::result_large_err)]
 pub fn validate_tool_call(call: &ToolCall, definition: &ToolDefinition) -> LlmResult<()> {
     if call.function.name != definition.function.name {
         return Err(LlmError::tool_error(&format!(

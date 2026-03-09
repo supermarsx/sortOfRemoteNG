@@ -1,11 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::config::{BalancerConfig, BalancerStrategy};
 use crate::error::{LlmError, LlmResult};
-use crate::provider::LlmProvider;
-use crate::types::ProviderHealth;
 
 /// Health state tracked per provider
 struct ProviderState {
@@ -94,9 +91,7 @@ impl LoadBalancer {
 
     /// Register a provider for balancing
     pub fn register(&mut self, provider_id: &str) {
-        self.states
-            .entry(provider_id.to_string())
-            .or_insert_with(ProviderState::default);
+        self.states.entry(provider_id.to_string()).or_default();
     }
 
     /// Remove a provider
@@ -105,7 +100,12 @@ impl LoadBalancer {
     }
 
     /// Select the next provider based on strategy
-    pub fn select(&mut self, available_ids: &[String], priorities: &HashMap<String, i32>) -> LlmResult<String> {
+    #[allow(clippy::result_large_err)]
+    pub fn select(
+        &mut self,
+        available_ids: &[String],
+        priorities: &HashMap<String, i32>,
+    ) -> LlmResult<String> {
         let candidates: Vec<&String> = available_ids
             .iter()
             .filter(|id| {
@@ -121,28 +121,32 @@ impl LoadBalancer {
         }
 
         let selected = match self.config.strategy {
-            BalancerStrategy::Priority => {
-                candidates
-                    .iter()
-                    .min_by_key(|id| priorities.get(id.as_str()).copied().unwrap_or(i32::MAX))
-                    .unwrap()
-            }
+            BalancerStrategy::Priority => candidates
+                .iter()
+                .min_by_key(|id| priorities.get(id.as_str()).copied().unwrap_or(i32::MAX))
+                .unwrap(),
             BalancerStrategy::RoundRobin => {
-                self.round_robin_index = (self.round_robin_index) % candidates.len();
+                self.round_robin_index %= candidates.len();
                 let pick = candidates[self.round_robin_index];
                 self.round_robin_index += 1;
                 pick
             }
-            BalancerStrategy::LeastLatency => {
-                candidates
-                    .iter()
-                    .min_by(|a, b| {
-                        let la = self.states.get(a.as_str()).map(|s| s.avg_latency_ms).unwrap_or(f64::MAX);
-                        let lb = self.states.get(b.as_str()).map(|s| s.avg_latency_ms).unwrap_or(f64::MAX);
-                        la.partial_cmp(&lb).unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap()
-            }
+            BalancerStrategy::LeastLatency => candidates
+                .iter()
+                .min_by(|a, b| {
+                    let la = self
+                        .states
+                        .get(a.as_str())
+                        .map(|s| s.avg_latency_ms)
+                        .unwrap_or(f64::MAX);
+                    let lb = self
+                        .states
+                        .get(b.as_str())
+                        .map(|s| s.avg_latency_ms)
+                        .unwrap_or(f64::MAX);
+                    la.partial_cmp(&lb).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap(),
             BalancerStrategy::LeastCost => {
                 // Cost-based selection requires external info; fall back to priority
                 candidates
@@ -157,7 +161,12 @@ impl LoadBalancer {
             BalancerStrategy::WeightedRandom => {
                 let total_weight: f64 = candidates
                     .iter()
-                    .map(|id| self.states.get(id.as_str()).map(|s| s.weight).unwrap_or(1.0))
+                    .map(|id| {
+                        self.states
+                            .get(id.as_str())
+                            .map(|s| s.weight)
+                            .unwrap_or(1.0)
+                    })
                     .sum();
                 let mut r = rand::random::<f64>() * total_weight;
                 let mut picked = candidates[0];

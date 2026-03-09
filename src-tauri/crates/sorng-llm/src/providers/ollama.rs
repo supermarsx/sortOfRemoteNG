@@ -23,16 +23,26 @@ impl OllamaProvider {
     }
 
     fn base_url(&self) -> &str {
-        self.config.base_url.as_deref().unwrap_or("http://localhost:11434")
+        self.config
+            .base_url
+            .as_deref()
+            .unwrap_or("http://localhost:11434")
     }
 }
 
 #[async_trait]
 impl LlmProvider for OllamaProvider {
-    fn provider_type(&self) -> ProviderType { ProviderType::Ollama }
-    fn display_name(&self) -> String { self.config.display_name.clone() }
+    fn provider_type(&self) -> ProviderType {
+        ProviderType::Ollama
+    }
+    fn display_name(&self) -> String {
+        self.config.display_name.clone()
+    }
 
-    async fn chat_completion(&self, request: &ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         // Use Ollama's OpenAI-compatible endpoint
         let url = format!("{}/v1/chat/completions", self.base_url());
         let start = Instant::now();
@@ -43,10 +53,18 @@ impl LlmProvider for OllamaProvider {
             "stream": false,
         });
 
-        if let Some(t) = request.temperature { body["temperature"] = serde_json::json!(t); }
-        if let Some(tp) = request.top_p { body["top_p"] = serde_json::json!(tp); }
-        if let Some(mt) = request.max_tokens { body["max_tokens"] = serde_json::json!(mt); }
-        if let Some(ref tools) = request.tools { body["tools"] = serde_json::json!(tools); }
+        if let Some(t) = request.temperature {
+            body["temperature"] = serde_json::json!(t);
+        }
+        if let Some(tp) = request.top_p {
+            body["top_p"] = serde_json::json!(tp);
+        }
+        if let Some(mt) = request.max_tokens {
+            body["max_tokens"] = serde_json::json!(mt);
+        }
+        if let Some(ref tools) = request.tools {
+            body["tools"] = serde_json::json!(tools);
+        }
 
         let resp = self.client.post(&url).json(&body).send().await?;
         let status = resp.status();
@@ -54,7 +72,11 @@ impl LlmProvider for OllamaProvider {
 
         if !status.is_success() {
             let err = resp.text().await.unwrap_or_default();
-            return Err(LlmError::provider_error("Ollama", &err, Some(status.as_u16())));
+            return Err(LlmError::provider_error(
+                "Ollama",
+                &err,
+                Some(status.as_u16()),
+            ));
         }
 
         let response: serde_json::Value = resp.json().await?;
@@ -113,8 +135,12 @@ impl LlmProvider for OllamaProvider {
             "messages": request.messages,
             "stream": true,
         });
-        if let Some(t) = request.temperature { body["temperature"] = serde_json::json!(t); }
-        if let Some(mt) = request.max_tokens { body["max_tokens"] = serde_json::json!(mt); }
+        if let Some(t) = request.temperature {
+            body["temperature"] = serde_json::json!(t);
+        }
+        if let Some(mt) = request.max_tokens {
+            body["max_tokens"] = serde_json::json!(mt);
+        }
 
         let provider_name = self.config.id.clone();
         let model = request.model.clone();
@@ -138,7 +164,9 @@ impl LlmProvider for OllamaProvider {
                             let line = buffer[..pos].to_string();
                             buffer = buffer[pos + 2..].to_string();
                             let data = line.strip_prefix("data: ").unwrap_or(&line);
-                            if data.trim() == "[DONE]" { return; }
+                            if data.trim() == "[DONE]" {
+                                return;
+                            }
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
                                 if let Some(choices) = val["choices"].as_array() {
                                     for choice in choices {
@@ -148,10 +176,14 @@ impl LlmProvider for OllamaProvider {
                                             provider: provider_name.clone(),
                                             delta: StreamDelta {
                                                 role: None,
-                                                content: choice["delta"]["content"].as_str().map(String::from),
+                                                content: choice["delta"]["content"]
+                                                    .as_str()
+                                                    .map(String::from),
                                                 tool_calls: None,
                                             },
-                                            finish_reason: choice["finish_reason"].as_str().map(String::from),
+                                            finish_reason: choice["finish_reason"]
+                                                .as_str()
+                                                .map(String::from),
                                             usage: None,
                                             index: 0,
                                         };
@@ -217,8 +249,16 @@ impl LlmProvider for OllamaProvider {
         Ok(resp.map(|r| r.status().is_success()).unwrap_or(false))
     }
 
-    fn supports_tools(&self) -> bool { true }
-    fn supports_streaming(&self) -> bool { true }
-    fn supports_vision(&self) -> bool { false }
-    fn config(&self) -> &ProviderConfig { &self.config }
+    fn supports_tools(&self) -> bool {
+        true
+    }
+    fn supports_streaming(&self) -> bool {
+        true
+    }
+    fn supports_vision(&self) -> bool {
+        false
+    }
+    fn config(&self) -> &ProviderConfig {
+        &self.config
+    }
 }

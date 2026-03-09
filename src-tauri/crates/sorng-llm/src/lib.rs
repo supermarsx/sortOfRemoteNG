@@ -26,24 +26,24 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod error;
-pub mod types;
+pub mod balancer;
+pub mod cache;
+pub mod commands;
 pub mod config;
+pub mod error;
 pub mod provider;
 pub mod providers;
-pub mod tokens;
-pub mod cache;
 pub mod rate_limit;
-pub mod balancer;
-pub mod streaming;
-pub mod tools;
-pub mod usage;
 pub mod service;
-pub mod commands;
+pub mod streaming;
+pub mod tokens;
+pub mod tools;
+pub mod types;
+pub mod usage;
 
-pub use error::LlmError;
-pub use types::*;
+pub use commands::*;
 pub use config::*;
+pub use error::LlmError;
 pub use provider::{LlmProvider, ProviderRegistry};
 pub use service::{LlmService, LlmServiceState};
-pub use commands::*;
+pub use types::*;

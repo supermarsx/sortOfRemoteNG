@@ -1,6 +1,4 @@
-use std::sync::Arc;
 use tauri::State;
-use tokio::sync::RwLock;
 
 use crate::config::*;
 use crate::error::LlmError;
@@ -39,9 +37,7 @@ pub async fn llm_update_provider(
 }
 
 #[tauri::command]
-pub async fn llm_list_providers(
-    state: State<'_, LlmServiceState>,
-) -> Res<Vec<ProviderConfig>> {
+pub async fn llm_list_providers(state: State<'_, LlmServiceState>) -> Res<Vec<ProviderConfig>> {
     let svc = state.0.read().await;
     Ok(svc.list_providers())
 }
@@ -80,9 +76,7 @@ pub async fn llm_create_embedding(
 // ── Model Catalog ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn llm_list_models(
-    state: State<'_, LlmServiceState>,
-) -> Res<Vec<ModelInfo>> {
+pub async fn llm_list_models(state: State<'_, LlmServiceState>) -> Res<Vec<ModelInfo>> {
     let svc = state.0.read().await;
     Ok(svc.list_models().to_vec())
 }
@@ -93,7 +87,11 @@ pub async fn llm_models_for_provider(
     provider: String,
 ) -> Res<Vec<ModelInfo>> {
     let svc = state.0.read().await;
-    Ok(svc.models_for_provider(&provider).into_iter().cloned().collect())
+    Ok(svc
+        .models_for_provider(&provider)
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 #[tauri::command]
@@ -117,9 +115,7 @@ pub async fn llm_health_check(
 }
 
 #[tauri::command]
-pub async fn llm_health_check_all(
-    state: State<'_, LlmServiceState>,
-) -> Res<Vec<ProviderHealth>> {
+pub async fn llm_health_check_all(state: State<'_, LlmServiceState>) -> Res<Vec<ProviderHealth>> {
     let svc = state.0.read().await;
     Ok(svc.health_check_all().await)
 }
@@ -136,26 +132,20 @@ pub async fn llm_usage_summary(
 }
 
 #[tauri::command]
-pub async fn llm_cache_stats(
-    state: State<'_, LlmServiceState>,
-) -> Res<crate::cache::CacheStats> {
+pub async fn llm_cache_stats(state: State<'_, LlmServiceState>) -> Res<crate::cache::CacheStats> {
     let svc = state.0.read().await;
     Ok(svc.cache_stats())
 }
 
 #[tauri::command]
-pub async fn llm_clear_cache(
-    state: State<'_, LlmServiceState>,
-) -> Res<()> {
+pub async fn llm_clear_cache(state: State<'_, LlmServiceState>) -> Res<()> {
     let mut svc = state.0.write().await;
     svc.clear_cache();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn llm_status(
-    state: State<'_, LlmServiceState>,
-) -> Res<LlmStatus> {
+pub async fn llm_status(state: State<'_, LlmServiceState>) -> Res<LlmStatus> {
     let svc = state.0.read().await;
     Ok(svc.status())
 }
@@ -163,18 +153,13 @@ pub async fn llm_status(
 // ── Config ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn llm_get_config(
-    state: State<'_, LlmServiceState>,
-) -> Res<LlmConfig> {
+pub async fn llm_get_config(state: State<'_, LlmServiceState>) -> Res<LlmConfig> {
     let svc = state.0.read().await;
     Ok(svc.config().clone())
 }
 
 #[tauri::command]
-pub async fn llm_update_config(
-    state: State<'_, LlmServiceState>,
-    config: LlmConfig,
-) -> Res<()> {
+pub async fn llm_update_config(state: State<'_, LlmServiceState>, config: LlmConfig) -> Res<()> {
     let mut svc = state.0.write().await;
     svc.update_config(config);
     Ok(())
@@ -193,10 +178,7 @@ pub async fn llm_set_balancer_strategy(
 // ── Token Estimation ───────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn llm_estimate_tokens(
-    text: String,
-    model: Option<String>,
-) -> Res<u32> {
+pub async fn llm_estimate_tokens(text: String, model: Option<String>) -> Res<u32> {
     let count = if let Some(ref m) = model {
         crate::tokens::TokenCounter::estimate_for_model(&text, m)
     } else {
