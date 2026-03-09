@@ -65,10 +65,7 @@ impl<'a> OneDriveSyncEngine<'a> {
             }
         }
 
-        info!(
-            "Delta sync complete: {} items processed",
-            total_items
-        );
+        info!("Delta sync complete: {} items processed", total_items);
 
         Ok(DeltaSyncState {
             drive_id: self.drive_id.clone(),
@@ -88,10 +85,7 @@ impl<'a> OneDriveSyncEngine<'a> {
         let initial_url = if let Some(ref dl) = state.delta_link {
             dl.clone()
         } else {
-            format!(
-                "drives/{}/items/{}/delta",
-                self.drive_id, folder_id
-            )
+            format!("drives/{}/items/{}/delta", self.drive_id, folder_id)
         };
 
         let mut url = initial_url;
@@ -126,10 +120,7 @@ impl<'a> OneDriveSyncEngine<'a> {
 
     /// Get the latest delta link without processing items (initialise cursor).
     pub async fn get_latest_delta_link(&self) -> OneDriveResult<String> {
-        let path = format!(
-            "drives/{}/root/delta?token=latest",
-            self.drive_id
-        );
+        let path = format!("drives/{}/root/delta?token=latest", self.drive_id);
         let resp = self.client.get(&path, &[]).await?;
 
         // The `token=latest` request returns a deltaLink immediately.

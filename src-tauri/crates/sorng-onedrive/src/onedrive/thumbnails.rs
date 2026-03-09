@@ -21,10 +21,7 @@ impl<'a> OneDriveThumbnails<'a> {
 
     /// List all thumbnail sets for an item.
     pub async fn list(&self, item_id: &str) -> OneDriveResult<Vec<ThumbnailSet>> {
-        let path = format!(
-            "drives/{}/items/{}/thumbnails",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/thumbnails", self.drive_id, item_id);
         let resp = self.client.get(&path, &[]).await?;
         let sets: Vec<ThumbnailSet> = resp["value"]
             .as_array()
@@ -39,11 +36,7 @@ impl<'a> OneDriveThumbnails<'a> {
     }
 
     /// Get a specific thumbnail set by index (usually 0).
-    pub async fn get_set(
-        &self,
-        item_id: &str,
-        set_index: i32,
-    ) -> OneDriveResult<ThumbnailSet> {
+    pub async fn get_set(&self, item_id: &str, set_index: i32) -> OneDriveResult<ThumbnailSet> {
         let path = format!(
             "drives/{}/items/{}/thumbnails/{}",
             self.drive_id, item_id, set_index

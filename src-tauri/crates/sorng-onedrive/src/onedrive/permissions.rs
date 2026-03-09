@@ -24,10 +24,7 @@ impl<'a> OneDrivePermissions<'a> {
 
     /// List all permissions on an item.
     pub async fn list(&self, item_id: &str) -> OneDriveResult<Vec<Permission>> {
-        let path = format!(
-            "drives/{}/items/{}/permissions",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/permissions", self.drive_id, item_id);
         let resp = self.client.get(&path, &[]).await?;
         let perms: Vec<Permission> = resp["value"]
             .as_array()
@@ -42,11 +39,7 @@ impl<'a> OneDrivePermissions<'a> {
     }
 
     /// Get a specific permission by ID.
-    pub async fn get(
-        &self,
-        item_id: &str,
-        permission_id: &str,
-    ) -> OneDriveResult<Permission> {
+    pub async fn get(&self, item_id: &str, permission_id: &str) -> OneDriveResult<Permission> {
         let path = format!(
             "drives/{}/items/{}/permissions/{}",
             self.drive_id, item_id, permission_id
@@ -78,11 +71,7 @@ impl<'a> OneDrivePermissions<'a> {
     }
 
     /// Remove a permission.
-    pub async fn remove(
-        &self,
-        item_id: &str,
-        permission_id: &str,
-    ) -> OneDriveResult<()> {
+    pub async fn remove(&self, item_id: &str, permission_id: &str) -> OneDriveResult<()> {
         let path = format!(
             "drives/{}/items/{}/permissions/{}",
             self.drive_id, item_id, permission_id

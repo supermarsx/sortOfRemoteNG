@@ -24,15 +24,10 @@ impl<'a> OneDriveSearch<'a> {
 
     /// Simple search within the current drive (KQL-compatible on SharePoint).
     pub async fn search(&self, query: &str, top: Option<i32>) -> OneDriveResult<Vec<DriveItem>> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            query,
-            percent_encoding::NON_ALPHANUMERIC,
-        );
+        let encoded =
+            percent_encoding::utf8_percent_encode(query, percent_encoding::NON_ALPHANUMERIC);
         let top_str = top.unwrap_or(200).to_string();
-        let path = format!(
-            "drives/{}/root/search(q='{}')",
-            self.drive_id, encoded
-        );
+        let path = format!("drives/{}/root/search(q='{}')", self.drive_id, encoded);
         let resp = self.client.get(&path, &[("$top", &top_str)]).await?;
         let items: Vec<DriveItem> = resp["value"]
             .as_array()
@@ -47,19 +42,13 @@ impl<'a> OneDriveSearch<'a> {
     }
 
     /// Search with full `SearchOptions`.
-    pub async fn search_advanced(
-        &self,
-        options: &SearchOptions,
-    ) -> OneDriveResult<Vec<DriveItem>> {
+    pub async fn search_advanced(&self, options: &SearchOptions) -> OneDriveResult<Vec<DriveItem>> {
         let encoded = percent_encoding::utf8_percent_encode(
             &options.query,
             percent_encoding::NON_ALPHANUMERIC,
         );
         let top_str = options.top.unwrap_or(200).to_string();
-        let path = format!(
-            "drives/{}/root/search(q='{}')",
-            self.drive_id, encoded
-        );
+        let path = format!("drives/{}/root/search(q='{}')", self.drive_id, encoded);
 
         let mut params: Vec<(&str, &str)> = vec![("$top", &top_str)];
 
@@ -99,10 +88,8 @@ impl<'a> OneDriveSearch<'a> {
         query: &str,
         top: Option<i32>,
     ) -> OneDriveResult<Vec<DriveItem>> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            query,
-            percent_encoding::NON_ALPHANUMERIC,
-        );
+        let encoded =
+            percent_encoding::utf8_percent_encode(query, percent_encoding::NON_ALPHANUMERIC);
         let top_str = top.unwrap_or(200).to_string();
         let path = format!("me/drive/search(q='{}')", encoded);
         let resp = self.client.get(&path, &[("$top", &top_str)]).await?;
@@ -124,10 +111,8 @@ impl<'a> OneDriveSearch<'a> {
         query: &str,
         top: Option<i32>,
     ) -> OneDriveResult<Vec<DriveItem>> {
-        let encoded = percent_encoding::utf8_percent_encode(
-            query,
-            percent_encoding::NON_ALPHANUMERIC,
-        );
+        let encoded =
+            percent_encoding::utf8_percent_encode(query, percent_encoding::NON_ALPHANUMERIC);
         let top_str = top.unwrap_or(200).to_string();
         let path = format!(
             "drives/{}/items/{}/search(q='{}')",

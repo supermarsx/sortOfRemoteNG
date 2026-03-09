@@ -24,8 +24,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 
 /// Default OAuth2 scopes for OneDrive access.
-pub const DEFAULT_SCOPES: &str =
-    "offline_access Files.ReadWrite.All User.Read Sites.ReadWrite.All";
+pub const DEFAULT_SCOPES: &str = "offline_access Files.ReadWrite.All User.Read Sites.ReadWrite.All";
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Public API
@@ -52,8 +51,14 @@ pub fn build_auth_url(config: &OneDriveConfig, pkce: &PkceChallenge, state: &str
          client_id={}&response_type=code&redirect_uri={}&scope={}&\
          code_challenge={}&code_challenge_method={}&state={}&response_mode=query",
         config.tenant_id,
-        percent_encoding::utf8_percent_encode(&config.client_id, percent_encoding::NON_ALPHANUMERIC),
-        percent_encoding::utf8_percent_encode(&config.redirect_uri, percent_encoding::NON_ALPHANUMERIC),
+        percent_encoding::utf8_percent_encode(
+            &config.client_id,
+            percent_encoding::NON_ALPHANUMERIC
+        ),
+        percent_encoding::utf8_percent_encode(
+            &config.redirect_uri,
+            percent_encoding::NON_ALPHANUMERIC
+        ),
         percent_encoding::utf8_percent_encode(DEFAULT_SCOPES, percent_encoding::NON_ALPHANUMERIC),
         pkce.code_challenge,
         pkce.method,
@@ -149,9 +154,7 @@ pub async fn refresh_token(
 
 /// Start the device-code flow — returns a `DeviceCodeInfo` the caller should
 /// present to the user, then poll `poll_device_code` until it succeeds.
-pub async fn start_device_code_flow(
-    config: &OneDriveConfig,
-) -> OneDriveResult<DeviceCodeInfo> {
+pub async fn start_device_code_flow(config: &OneDriveConfig) -> OneDriveResult<DeviceCodeInfo> {
     let url = format!(
         "https://login.microsoftonline.com/{}/oauth2/v2.0/devicecode",
         config.tenant_id,
@@ -179,10 +182,7 @@ pub async fn start_device_code_flow(
 
     let v: serde_json::Value = serde_json::from_str(&body)?;
     Ok(DeviceCodeInfo {
-        device_code: v["device_code"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string(),
+        device_code: v["device_code"].as_str().unwrap_or_default().to_string(),
         user_code: v["user_code"].as_str().unwrap_or_default().to_string(),
         verification_uri: v["verification_uri"]
             .as_str()
@@ -251,13 +251,10 @@ pub async fn poll_device_code(
 }
 
 /// Client-credentials token grant (no user, daemon-style).
-pub async fn client_credentials_token(
-    config: &OneDriveConfig,
-) -> OneDriveResult<OAuthTokenSet> {
-    let secret = config
-        .client_secret
-        .as_deref()
-        .ok_or_else(|| OneDriveError::auth("client_secret is required for client-credentials flow"))?;
+pub async fn client_credentials_token(config: &OneDriveConfig) -> OneDriveResult<OAuthTokenSet> {
+    let secret = config.client_secret.as_deref().ok_or_else(|| {
+        OneDriveError::auth("client_secret is required for client-credentials flow")
+    })?;
 
     let token_url = format!(
         "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
@@ -335,10 +332,7 @@ fn parse_token_response(body: &str) -> OneDriveResult<OAuthTokenSet> {
     Ok(OAuthTokenSet {
         access_token,
         refresh_token: v["refresh_token"].as_str().map(String::from),
-        token_type: v["token_type"]
-            .as_str()
-            .unwrap_or("Bearer")
-            .to_string(),
+        token_type: v["token_type"].as_str().unwrap_or("Bearer").to_string(),
         expires_at,
         scope: v["scope"].as_str().unwrap_or_default().to_string(),
         id_token: v["id_token"].as_str().map(String::from),

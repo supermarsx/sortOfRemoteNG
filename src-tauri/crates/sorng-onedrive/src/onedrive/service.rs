@@ -84,14 +84,8 @@ impl OneDriveService {
             .values()
             .map(|s| OneDriveSessionSummary {
                 session_id: s.id.clone(),
-                display_name: s
-                    .user_profile
-                    .as_ref()
-                    .and_then(|p| p.display_name.clone()),
-                email: s
-                    .user_profile
-                    .as_ref()
-                    .and_then(|p| p.mail.clone()),
+                display_name: s.user_profile.as_ref().and_then(|p| p.display_name.clone()),
+                email: s.user_profile.as_ref().and_then(|p| p.mail.clone()),
                 drive_type: None,
                 quota_used: None,
                 quota_total: None,
@@ -107,10 +101,7 @@ impl OneDriveService {
     }
 
     /// Get a mutable session reference.
-    pub fn get_session_mut(
-        &mut self,
-        session_id: &str,
-    ) -> OneDriveResult<&mut OneDriveSession> {
+    pub fn get_session_mut(&mut self, session_id: &str) -> OneDriveResult<&mut OneDriveSession> {
         self.sessions
             .get_mut(session_id)
             .ok_or_else(|| OneDriveError::session_not_found(session_id))
@@ -166,29 +157,17 @@ impl OneDriveService {
     // ─── Convenience accessors for sub-modules ───────────────────────
 
     /// Get a `OneDriveFiles` helper.
-    pub fn files<'a>(
-        &self,
-        client: &'a GraphApiClient,
-        drive_id: &str,
-    ) -> OneDriveFiles<'a> {
+    pub fn files<'a>(&self, client: &'a GraphApiClient, drive_id: &str) -> OneDriveFiles<'a> {
         OneDriveFiles::new(client, drive_id)
     }
 
     /// Get a `OneDriveSharing` helper.
-    pub fn sharing<'a>(
-        &self,
-        client: &'a GraphApiClient,
-        drive_id: &str,
-    ) -> OneDriveSharing<'a> {
+    pub fn sharing<'a>(&self, client: &'a GraphApiClient, drive_id: &str) -> OneDriveSharing<'a> {
         OneDriveSharing::new(client, drive_id)
     }
 
     /// Get a `OneDriveSearch` helper.
-    pub fn search<'a>(
-        &self,
-        client: &'a GraphApiClient,
-        drive_id: &str,
-    ) -> OneDriveSearch<'a> {
+    pub fn search<'a>(&self, client: &'a GraphApiClient, drive_id: &str) -> OneDriveSearch<'a> {
         OneDriveSearch::new(client, drive_id)
     }
 
@@ -225,10 +204,7 @@ impl OneDriveService {
     }
 
     /// Get a `OneDriveSpecialFolders` helper.
-    pub fn special_folders<'a>(
-        &self,
-        client: &'a GraphApiClient,
-    ) -> OneDriveSpecialFolders<'a> {
+    pub fn special_folders<'a>(&self, client: &'a GraphApiClient) -> OneDriveSpecialFolders<'a> {
         OneDriveSpecialFolders::new(client)
     }
 

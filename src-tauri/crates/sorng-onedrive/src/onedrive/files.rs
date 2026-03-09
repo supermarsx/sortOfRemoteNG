@@ -7,8 +7,8 @@
 use crate::onedrive::api_client::GraphApiClient;
 use crate::onedrive::error::{OneDriveError, OneDriveResult};
 use crate::onedrive::types::{
-    ConflictBehavior, CopyRequest, DriveItem, DriveItemVersion, ItemPreview,
-    MoveRequest, UploadProgress, UploadSession,
+    ConflictBehavior, CopyRequest, DriveItem, DriveItemVersion, ItemPreview, MoveRequest,
+    UploadProgress, UploadSession,
 };
 use log::{debug, info};
 use serde_json::json;
@@ -63,18 +63,12 @@ impl<'a> OneDriveFiles<'a> {
     ) -> OneDriveResult<Vec<DriveItem>> {
         let mut all = Vec::new();
         let top_str = top.unwrap_or(200).to_string();
-        let path = format!(
-            "drives/{}/items/{}/children",
-            self.drive_id, folder_id
-        );
+        let path = format!("drives/{}/items/{}/children", self.drive_id, folder_id);
         let mut next_link: Option<String> = None;
 
         loop {
             let url = next_link.as_deref().unwrap_or(&path);
-            let resp = self
-                .client
-                .get(url, &[("$top", &top_str)])
-                .await?;
+            let resp = self.client.get(url, &[("$top", &top_str)]).await?;
 
             if let Some(arr) = resp["value"].as_array() {
                 let items: Vec<DriveItem> = arr
@@ -84,9 +78,7 @@ impl<'a> OneDriveFiles<'a> {
                 all.extend(items);
             }
 
-            next_link = resp["@odata.nextLink"]
-                .as_str()
-                .map(String::from);
+            next_link = resp["@odata.nextLink"].as_str().map(String::from);
             if next_link.is_none() {
                 break;
             }
@@ -111,10 +103,7 @@ impl<'a> OneDriveFiles<'a> {
             folder_path.trim_start_matches('/'),
             percent_encoding::NON_ALPHANUMERIC,
         );
-        let path = format!(
-            "drives/{}/root:/{}:/children",
-            self.drive_id, encoded
-        );
+        let path = format!("drives/{}/root:/{}:/children", self.drive_id, encoded);
         let top_str = top.unwrap_or(200).to_string();
         let resp = self.client.get(&path, &[("$top", &top_str)]).await?;
 
@@ -134,10 +123,7 @@ impl<'a> OneDriveFiles<'a> {
 
     /// Download file content by item ID.
     pub async fn download(&self, item_id: &str) -> OneDriveResult<Vec<u8>> {
-        let path = format!(
-            "drives/{}/items/{}/content",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/content", self.drive_id, item_id);
         info!("Downloading item {}", item_id);
         self.client.get_bytes(&path).await
     }
@@ -148,10 +134,7 @@ impl<'a> OneDriveFiles<'a> {
             file_path.trim_start_matches('/'),
             percent_encoding::NON_ALPHANUMERIC,
         );
-        let path = format!(
-            "drives/{}/root:/{}:/content",
-            self.drive_id, encoded
-        );
+        let path = format!("drives/{}/root:/{}:/content", self.drive_id, encoded);
         self.client.get_bytes(&path).await
     }
 
@@ -165,10 +148,8 @@ impl<'a> OneDriveFiles<'a> {
         data: Vec<u8>,
         content_type: &str,
     ) -> OneDriveResult<DriveItem> {
-        let encoded_name = percent_encoding::utf8_percent_encode(
-            file_name,
-            percent_encoding::NON_ALPHANUMERIC,
-        );
+        let encoded_name =
+            percent_encoding::utf8_percent_encode(file_name, percent_encoding::NON_ALPHANUMERIC);
         let path = format!(
             "drives/{}/items/{}:/{}:/content",
             self.drive_id, parent_id, encoded_name
@@ -190,10 +171,7 @@ impl<'a> OneDriveFiles<'a> {
             file_path.trim_start_matches('/'),
             percent_encoding::NON_ALPHANUMERIC,
         );
-        let path = format!(
-            "drives/{}/root:/{}:/content",
-            self.drive_id, encoded
-        );
+        let path = format!("drives/{}/root:/{}:/content", self.drive_id, encoded);
         let resp = self.client.put_bytes(&path, data, content_type).await?;
         let item: DriveItem = serde_json::from_value(resp)?;
         Ok(item)
@@ -208,10 +186,8 @@ impl<'a> OneDriveFiles<'a> {
         file_name: &str,
         conflict: Option<ConflictBehavior>,
     ) -> OneDriveResult<UploadSession> {
-        let encoded_name = percent_encoding::utf8_percent_encode(
-            file_name,
-            percent_encoding::NON_ALPHANUMERIC,
-        );
+        let encoded_name =
+            percent_encoding::utf8_percent_encode(file_name, percent_encoding::NON_ALPHANUMERIC);
         let path = format!(
             "drives/{}/items/{}:/{}:/createUploadSession",
             self.drive_id, parent_id, encoded_name
@@ -270,13 +246,7 @@ impl<'a> OneDriveFiles<'a> {
 
             let resp = self
                 .client
-                .put_upload_range(
-                    &session.upload_url,
-                    chunk,
-                    offset,
-                    end - 1,
-                    total_size,
-                )
+                .put_upload_range(&session.upload_url, chunk, offset, end - 1, total_size)
                 .await?;
 
             offset = end;
@@ -325,10 +295,7 @@ impl<'a> OneDriveFiles<'a> {
         name: &str,
         conflict: Option<ConflictBehavior>,
     ) -> OneDriveResult<DriveItem> {
-        let path = format!(
-            "drives/{}/items/{}/children",
-            self.drive_id, parent_id
-        );
+        let path = format!("drives/{}/items/{}/children", self.drive_id, parent_id);
         let body = json!({
             "name": name,
             "folder": {},
@@ -379,11 +346,7 @@ impl<'a> OneDriveFiles<'a> {
     // ─── Copy ────────────────────────────────────────────────────────
 
     /// Initiate an asynchronous copy.  Returns a monitor URL.
-    pub async fn copy(
-        &self,
-        item_id: &str,
-        request: &CopyRequest,
-    ) -> OneDriveResult<String> {
+    pub async fn copy(&self, item_id: &str, request: &CopyRequest) -> OneDriveResult<String> {
         let path = format!("drives/{}/items/{}/copy", self.drive_id, item_id);
         let body = serde_json::to_value(request)?;
 
@@ -391,7 +354,7 @@ impl<'a> OneDriveFiles<'a> {
         let url = self.client.url(&path);
         let resp = reqwest::Client::new()
             .post(&url)
-            .bearer_auth(&self.client.url("").trim_end_matches('/')) // Reuse token
+            .bearer_auth(self.client.url("").trim_end_matches('/')) // Reuse token
             .json(&body)
             .send()
             .await
@@ -434,10 +397,7 @@ impl<'a> OneDriveFiles<'a> {
 
     /// Restore an item from the recycle bin.
     pub async fn restore(&self, item_id: &str) -> OneDriveResult<DriveItem> {
-        let path = format!(
-            "drives/{}/items/{}/restore",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/restore", self.drive_id, item_id);
         let resp = self.client.post_empty(&path).await?;
         let item: DriveItem = serde_json::from_value(resp)?;
         info!("Restored item {}", item_id);
@@ -448,10 +408,7 @@ impl<'a> OneDriveFiles<'a> {
 
     /// List versions of a file.
     pub async fn list_versions(&self, item_id: &str) -> OneDriveResult<Vec<DriveItemVersion>> {
-        let path = format!(
-            "drives/{}/items/{}/versions",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/versions", self.drive_id, item_id);
         let resp = self.client.get(&path, &[]).await?;
         let versions: Vec<DriveItemVersion> = resp["value"]
             .as_array()
@@ -478,11 +435,7 @@ impl<'a> OneDriveFiles<'a> {
     }
 
     /// Restore a specific version.
-    pub async fn restore_version(
-        &self,
-        item_id: &str,
-        version_id: &str,
-    ) -> OneDriveResult<()> {
+    pub async fn restore_version(&self, item_id: &str, version_id: &str) -> OneDriveResult<()> {
         let path = format!(
             "drives/{}/items/{}/versions/{}/restoreVersion",
             self.drive_id, item_id, version_id
@@ -501,10 +454,7 @@ impl<'a> OneDriveFiles<'a> {
         page: Option<i32>,
         zoom: Option<f64>,
     ) -> OneDriveResult<ItemPreview> {
-        let path = format!(
-            "drives/{}/items/{}/preview",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/preview", self.drive_id, item_id);
         let mut body = json!({});
         if let Some(p) = page {
             body["page"] = json!(p);

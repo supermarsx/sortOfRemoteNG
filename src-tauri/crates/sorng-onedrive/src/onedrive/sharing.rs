@@ -3,12 +3,10 @@
 //! Covers creating anonymous / organization links, sending sharing
 //! invitations, listing shared items, and accessing items via share tokens.
 
-use base64::Engine;
 use crate::onedrive::api_client::GraphApiClient;
 use crate::onedrive::error::OneDriveResult;
-use crate::onedrive::types::{
-    CreateLinkRequest, DriveItem, InviteRequest, Permission,
-};
+use crate::onedrive::types::{CreateLinkRequest, DriveItem, InviteRequest, Permission};
+use base64::Engine;
 use log::info;
 
 /// Sharing operations.
@@ -31,10 +29,7 @@ impl<'a> OneDriveSharing<'a> {
         item_id: &str,
         request: &CreateLinkRequest,
     ) -> OneDriveResult<Permission> {
-        let path = format!(
-            "drives/{}/items/{}/createLink",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/createLink", self.drive_id, item_id);
         let body = serde_json::to_value(request)?;
         let resp = self.client.post(&path, &body).await?;
         let perm: Permission = serde_json::from_value(resp)?;
@@ -51,10 +46,7 @@ impl<'a> OneDriveSharing<'a> {
         item_id: &str,
         request: &InviteRequest,
     ) -> OneDriveResult<Vec<Permission>> {
-        let path = format!(
-            "drives/{}/items/{}/invite",
-            self.drive_id, item_id
-        );
+        let path = format!("drives/{}/items/{}/invite", self.drive_id, item_id);
         let body = serde_json::to_value(request)?;
         let resp = self.client.post(&path, &body).await?;
         let perms: Vec<Permission> = resp["value"]
@@ -65,7 +57,11 @@ impl<'a> OneDriveSharing<'a> {
                     .collect()
             })
             .unwrap_or_default();
-        info!("Invited {} recipients to item {}", request.recipients.len(), item_id);
+        info!(
+            "Invited {} recipients to item {}",
+            request.recipients.len(),
+            item_id
+        );
         Ok(perms)
     }
 
@@ -85,12 +81,9 @@ impl<'a> OneDriveSharing<'a> {
     }
 
     /// Resolve a sharing token / URL to a DriveItem.
-    pub async fn resolve_sharing_url(
-        &self,
-        sharing_url: &str,
-    ) -> OneDriveResult<DriveItem> {
-        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(sharing_url.as_bytes());
+    pub async fn resolve_sharing_url(&self, sharing_url: &str) -> OneDriveResult<DriveItem> {
+        let encoded =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sharing_url.as_bytes());
         let token = format!("u!{}", encoded);
         let path = format!("shares/{}/driveItem", token);
         let resp = self.client.get(&path, &[]).await?;
@@ -99,12 +92,9 @@ impl<'a> OneDriveSharing<'a> {
     }
 
     /// Get the root folder of a shared drive item (for shared folders).
-    pub async fn resolve_sharing_url_root(
-        &self,
-        sharing_url: &str,
-    ) -> OneDriveResult<DriveItem> {
-        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(sharing_url.as_bytes());
+    pub async fn resolve_sharing_url_root(&self, sharing_url: &str) -> OneDriveResult<DriveItem> {
+        let encoded =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sharing_url.as_bytes());
         let token = format!("u!{}", encoded);
         let path = format!("shares/{}/root", token);
         let resp = self.client.get(&path, &[]).await?;
@@ -113,12 +103,9 @@ impl<'a> OneDriveSharing<'a> {
     }
 
     /// List children within a shared folder via sharing token.
-    pub async fn list_shared_children(
-        &self,
-        sharing_url: &str,
-    ) -> OneDriveResult<Vec<DriveItem>> {
-        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(sharing_url.as_bytes());
+    pub async fn list_shared_children(&self, sharing_url: &str) -> OneDriveResult<Vec<DriveItem>> {
+        let encoded =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sharing_url.as_bytes());
         let token = format!("u!{}", encoded);
         let path = format!("shares/{}/driveItem/children", token);
         let resp = self.client.get(&path, &[]).await?;
@@ -181,8 +168,7 @@ mod tests {
     #[test]
     fn test_sharing_url_encoding() {
         let url = "https://onedrive.live.com/redir?resid=ABC123";
-        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(url.as_bytes());
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(url.as_bytes());
         let token = format!("u!{}", encoded);
         assert!(token.starts_with("u!"));
         assert!(!token.contains('='));

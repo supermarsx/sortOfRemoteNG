@@ -53,10 +53,7 @@ impl<'a> OneDriveWebhooks<'a> {
     }
 
     /// Get an existing subscription.
-    pub async fn get_subscription(
-        &self,
-        subscription_id: &str,
-    ) -> OneDriveResult<Subscription> {
+    pub async fn get_subscription(&self, subscription_id: &str) -> OneDriveResult<Subscription> {
         let path = format!("subscriptions/{}", subscription_id);
         let resp = self.client.get(&path, &[]).await?;
         let sub: Subscription = serde_json::from_value(resp)?;
@@ -64,10 +61,7 @@ impl<'a> OneDriveWebhooks<'a> {
     }
 
     /// Delete a subscription.
-    pub async fn delete_subscription(
-        &self,
-        subscription_id: &str,
-    ) -> OneDriveResult<()> {
+    pub async fn delete_subscription(&self, subscription_id: &str) -> OneDriveResult<()> {
         let path = format!("subscriptions/{}", subscription_id);
         self.client.delete(&path).await?;
         info!("Deleted subscription {}", subscription_id);
@@ -89,9 +83,7 @@ impl<'a> OneDriveWebhooks<'a> {
     }
 
     /// Parse an incoming webhook notification body.
-    pub fn parse_notification(
-        body: &str,
-    ) -> OneDriveResult<Vec<WebhookNotification>> {
+    pub fn parse_notification(body: &str) -> OneDriveResult<Vec<WebhookNotification>> {
         let envelope: WebhookNotificationEnvelope = serde_json::from_str(body)?;
         Ok(envelope.value)
     }
@@ -106,10 +98,7 @@ impl<'a> OneDriveWebhooks<'a> {
     }
 
     /// Verify the `clientState` in an incoming notification.
-    pub fn verify_client_state(
-        notification: &WebhookNotification,
-        expected: &str,
-    ) -> bool {
+    pub fn verify_client_state(notification: &WebhookNotification, expected: &str) -> bool {
         notification
             .client_state
             .as_deref()
@@ -161,10 +150,7 @@ mod tests {
 
     #[test]
     fn test_validate_token() {
-        assert_eq!(
-            OneDriveWebhooks::validate_token("abc-123"),
-            "abc-123"
-        );
+        assert_eq!(OneDriveWebhooks::validate_token("abc-123"), "abc-123");
     }
 
     #[test]

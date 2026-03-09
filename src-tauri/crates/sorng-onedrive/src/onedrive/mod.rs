@@ -28,21 +28,21 @@
 //! - **Versions** – list file versions, download specific versions, restore
 //!   previous versions.
 
-pub mod types;
-pub mod error;
-pub mod auth;
 pub mod api_client;
-pub mod files;
-pub mod sharing;
-pub mod search;
-pub mod sync_engine;
-pub mod webhooks;
-pub mod drives;
-pub mod permissions;
-pub mod thumbnails;
-pub mod special_folders;
-pub mod service;
+pub mod auth;
 pub mod commands;
+pub mod drives;
+pub mod error;
+pub mod files;
+pub mod permissions;
+pub mod search;
+pub mod service;
+pub mod sharing;
+pub mod special_folders;
+pub mod sync_engine;
+pub mod thumbnails;
+pub mod types;
+pub mod webhooks;
 
 // Re-exports
 pub use commands::*;

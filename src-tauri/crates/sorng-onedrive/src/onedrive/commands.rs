@@ -22,11 +22,7 @@ pub fn od_generate_pkce() -> PkceChallenge {
 
 /// Build the authorization URL.
 #[tauri::command]
-pub fn od_build_auth_url(
-    config: OneDriveConfig,
-    pkce: PkceChallenge,
-    state: String,
-) -> String {
+pub fn od_build_auth_url(config: OneDriveConfig, pkce: PkceChallenge, state: String) -> String {
     auth::build_auth_url(&config, &pkce, &state)
 }
 
@@ -42,9 +38,7 @@ pub async fn od_exchange_code(
 
 /// Start a device-code flow.
 #[tauri::command]
-pub async fn od_start_device_code(
-    config: OneDriveConfig,
-) -> OneDriveResult<DeviceCodeInfo> {
+pub async fn od_start_device_code(config: OneDriveConfig) -> OneDriveResult<DeviceCodeInfo> {
     auth::start_device_code_flow(&config).await
 }
 
@@ -59,9 +53,7 @@ pub async fn od_poll_device_code(
 
 /// Client-credentials token grant.
 #[tauri::command]
-pub async fn od_client_credentials(
-    config: OneDriveConfig,
-) -> OneDriveResult<OAuthTokenSet> {
+pub async fn od_client_credentials(config: OneDriveConfig) -> OneDriveResult<OAuthTokenSet> {
     auth::client_credentials_token(&config).await
 }
 

@@ -165,9 +165,7 @@ impl OneDriveError {
         let err = &v["error"];
         let code = err["code"].as_str().map(String::from);
         let msg = err["message"].as_str().map(String::from);
-        let req_id = err["innerError"]["request-id"]
-            .as_str()
-            .map(String::from);
+        let req_id = err["innerError"]["request-id"].as_str().map(String::from);
         (code, msg, req_id)
     }
 }

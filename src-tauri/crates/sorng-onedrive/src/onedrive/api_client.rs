@@ -23,10 +23,7 @@ impl GraphApiClient {
     /// Create a new Graph client.
     pub fn new(config: &OneDriveConfig, access_token: &str) -> OneDriveResult<Self> {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
         let inner = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_sec))
@@ -73,10 +70,7 @@ impl GraphApiClient {
     }
 
     /// GET raw bytes (for downloads).
-    pub async fn get_bytes(
-        &self,
-        url: &str,
-    ) -> OneDriveResult<Vec<u8>> {
+    pub async fn get_bytes(&self, url: &str) -> OneDriveResult<Vec<u8>> {
         let full_url = self.url(url);
         debug!("GET (bytes) {}", full_url);
 
@@ -117,10 +111,7 @@ impl GraphApiClient {
     }
 
     /// POST with empty body (actions).
-    pub async fn post_empty(
-        &self,
-        path: &str,
-    ) -> OneDriveResult<serde_json::Value> {
+    pub async fn post_empty(&self, path: &str) -> OneDriveResult<serde_json::Value> {
         let url = self.url(path);
         self.request_with_retry(|| {
             self.inner
@@ -180,10 +171,7 @@ impl GraphApiClient {
         range_end: u64,
         total_size: u64,
     ) -> OneDriveResult<serde_json::Value> {
-        let content_range = format!(
-            "bytes {}-{}/{}",
-            range_start, range_end, total_size
-        );
+        let content_range = format!("bytes {}-{}/{}", range_start, range_end, total_size);
         debug!("PUT upload range: {}", content_range);
 
         let resp = self
@@ -270,10 +258,7 @@ impl GraphApiClient {
         Err(last_err)
     }
 
-    async fn handle_response(
-        &self,
-        resp: reqwest::Response,
-    ) -> OneDriveResult<serde_json::Value> {
+    async fn handle_response(&self, resp: reqwest::Response) -> OneDriveResult<serde_json::Value> {
         let status = resp.status().as_u16();
         let body = resp.text().await.unwrap_or_default();
 
@@ -329,9 +314,15 @@ mod tests {
 
     #[test]
     fn test_is_retryable() {
-        assert!(GraphApiClient::is_retryable(&OneDriveError::network("timeout")));
-        assert!(GraphApiClient::is_retryable(&OneDriveError::internal("500")));
-        assert!(!GraphApiClient::is_retryable(&OneDriveError::not_found("nope")));
+        assert!(GraphApiClient::is_retryable(&OneDriveError::network(
+            "timeout"
+        )));
+        assert!(GraphApiClient::is_retryable(&OneDriveError::internal(
+            "500"
+        )));
+        assert!(!GraphApiClient::is_retryable(&OneDriveError::not_found(
+            "nope"
+        )));
     }
 
     #[test]

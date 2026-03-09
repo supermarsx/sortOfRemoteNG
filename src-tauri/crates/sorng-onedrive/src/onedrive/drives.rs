@@ -78,10 +78,7 @@ impl<'a> OneDriveDrives<'a> {
     }
 
     /// Get the default document library drive for a SharePoint site.
-    pub async fn get_site_default_drive(
-        &self,
-        site_id: &str,
-    ) -> OneDriveResult<Drive> {
+    pub async fn get_site_default_drive(&self, site_id: &str) -> OneDriveResult<Drive> {
         let path = format!("sites/{}/drive", site_id);
         let resp = self.client.get(&path, &[]).await?;
         let drive: Drive = serde_json::from_value(resp)?;
