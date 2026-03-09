@@ -53,7 +53,10 @@ pub fn get_vmdk_info(path: &str) -> VmwResult<VmdkInfo> {
         }
 
         // Extent lines: RW 83886080 SPARSE "disk-s001.vmdk"
-        if trimmed.starts_with("RW ") || trimmed.starts_with("RDONLY ") || trimmed.starts_with("NOACCESS ") {
+        if trimmed.starts_with("RW ")
+            || trimmed.starts_with("RDONLY ")
+            || trimmed.starts_with("NOACCESS ")
+        {
             let parts: Vec<&str> = trimmed.splitn(4, ' ').collect();
             if parts.len() >= 4 {
                 let sectors: u64 = parts[1].parse().unwrap_or(0);
@@ -95,7 +98,9 @@ pub async fn convert_vmdk(
     disk_type: &str,
     dest: Option<&str>,
 ) -> VmwResult<()> {
-    vmrun.convert_disk(source, dest.unwrap_or(source), disk_type).await
+    vmrun
+        .convert_disk(source, dest.unwrap_or(source), disk_type)
+        .await
 }
 
 /// Rename/move a VMDK.
@@ -104,10 +109,7 @@ pub async fn rename_vmdk(vmrun: &VmRun, source: &str, dest: &str) -> VmwResult<(
 }
 
 /// Add a disk to a VM configuration.
-pub async fn add_disk_to_vm(
-    vmrun: &VmRun,
-    req: AddDiskRequest,
-) -> VmwResult<()> {
+pub async fn add_disk_to_vm(vmrun: &VmRun, req: AddDiskRequest) -> VmwResult<()> {
     let running = vmrun.list().await.unwrap_or_default();
     if running.iter().any(|p| p == &req.vmx_path) {
         return Err(VmwError::new(
@@ -125,7 +127,7 @@ pub async fn add_disk_to_vm(
         'outer: for b in 0..4u32 {
             for u in 0..16u32 {
                 let key = format!("{controller}{b}:{u}.present");
-                if vmx.settings.get(&key).is_none() {
+                if !vmx.settings.contains_key(&key) {
                     found = (b, u);
                     break 'outer;
                 }
@@ -149,7 +151,9 @@ pub async fn add_disk_to_vm(
     }
 
     updates.insert(format!("{prefix}.present"), "TRUE".to_string());
-    let disk_file = req.file_name.unwrap_or_else(|| format!("{}.vmdk", req.vmx_path.replace(".vmx", "")));
+    let disk_file = req
+        .file_name
+        .unwrap_or_else(|| format!("{}.vmdk", req.vmx_path.replace(".vmx", "")));
     updates.insert(format!("{prefix}.filename"), disk_file);
     updates.insert(
         format!("{prefix}.mode"),

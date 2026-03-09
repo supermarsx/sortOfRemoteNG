@@ -11,8 +11,8 @@ use std::path::Path;
 
 /// Parse a VMX file from disk.
 pub fn parse_vmx(path: &str) -> VmwResult<VmxFile> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| VmwError::new(VmwErrorKind::VmxParseError, e.to_string()))?;
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| VmwError::new(VmwErrorKind::VmxParseError, e.to_string()))?;
     parse_vmx_content(path, &content)
 }
 
@@ -122,9 +122,15 @@ pub fn get_guest_os_family(settings: &HashMap<String, String>) -> GuestOsFamily 
         .unwrap_or_default();
     if os.contains("windows") || os.starts_with("win") {
         GuestOsFamily::Windows
-    } else if os.contains("linux") || os.contains("ubuntu") || os.contains("centos")
-        || os.contains("debian") || os.contains("rhel") || os.contains("fedora")
-        || os.contains("suse") || os.contains("oracle") || os.contains("amazon")
+    } else if os.contains("linux")
+        || os.contains("ubuntu")
+        || os.contains("centos")
+        || os.contains("debian")
+        || os.contains("rhel")
+        || os.contains("fedora")
+        || os.contains("suse")
+        || os.contains("oracle")
+        || os.contains("amazon")
     {
         GuestOsFamily::Linux
     } else if os.contains("darwin") || os.contains("macos") || os.contains("osx") {
@@ -146,15 +152,11 @@ pub fn vmx_to_detail(path: &str, settings: &HashMap<String, String>) -> VmDetail
     let hw_version = settings
         .get("virtualhw.version")
         .and_then(|s| s.parse::<u32>().ok());
-    let num_cpus = settings
-        .get("numvcpus")
-        .and_then(|s| s.parse::<u32>().ok());
+    let num_cpus = settings.get("numvcpus").and_then(|s| s.parse::<u32>().ok());
     let cores_per_socket = settings
         .get("cpuid.corespersocket")
         .and_then(|s| s.parse::<u32>().ok());
-    let memory_mb = settings
-        .get("memsize")
-        .and_then(|s| s.parse::<u64>().ok());
+    let memory_mb = settings.get("memsize").and_then(|s| s.parse::<u64>().ok());
     let firmware = settings.get("firmware").cloned();
     let uefi_secure_boot = settings
         .get("uefi.secureBoot.enabled")
@@ -163,17 +165,12 @@ pub fn vmx_to_detail(path: &str, settings: &HashMap<String, String>) -> VmDetail
         .get("managedvm.autoaddvtpm")
         .or_else(|| settings.get("vtpm.present"))
         .map(|v| v == "TRUE" || v == "true");
-    let encryption = settings
-        .get("encryption.keysafe")
-        .map(|_| true);
+    let encryption = settings.get("encryption.keysafe").map(|_| true);
     let annotation = settings.get("annotation").cloned();
 
     // NICs
     let nics = parse_nics(settings);
-    let mac_addresses: Vec<String> = nics
-        .iter()
-        .filter_map(|n| n.mac_address.clone())
-        .collect();
+    let mac_addresses: Vec<String> = nics.iter().filter_map(|n| n.mac_address.clone()).collect();
 
     // Disks
     let disks = parse_disks(settings);
@@ -201,7 +198,7 @@ pub fn vmx_to_detail(path: &str, settings: &HashMap<String, String>) -> VmDetail
         memory_mb,
         firmware,
         bios_type: settings.get("bios.bootorder").cloned(),
-        uefi_secure_boot: uefi_secure_boot,
+        uefi_secure_boot,
         vtpm_present: vtpm,
         encryption_enabled: encryption,
         tools_status: None,
@@ -214,7 +211,12 @@ pub fn vmx_to_detail(path: &str, settings: &HashMap<String, String>) -> VmDetail
         usb_controllers: parse_usb_controllers(settings),
         sound_card: settings.get("sound.present").and_then(|v| {
             if v == "TRUE" || v == "true" {
-                Some(settings.get("sound.virtualdev").cloned().unwrap_or_else(|| "hdaudio".to_string()))
+                Some(
+                    settings
+                        .get("sound.virtualdev")
+                        .cloned()
+                        .unwrap_or_else(|| "hdaudio".to_string()),
+                )
             } else {
                 None
             }
@@ -222,7 +224,9 @@ pub fn vmx_to_detail(path: &str, settings: &HashMap<String, String>) -> VmDetail
         display,
         shared_folders,
         snapshots: Vec::new(),
-        auto_start: settings.get("autostart").map(|v| v == "TRUE" || v == "true"),
+        auto_start: settings
+            .get("autostart")
+            .map(|v| v == "TRUE" || v == "true"),
         vmx_settings: settings.clone(),
     }
 }
@@ -234,15 +238,22 @@ fn parse_nics(s: &HashMap<String, String>) -> Vec<VmNic> {
     for i in 0..10 {
         let prefix = format!("ethernet{i}");
         let present_key = format!("{prefix}.present");
-        if s.get(&present_key).map(|v| v == "TRUE" || v == "true").unwrap_or(false) {
+        if s.get(&present_key)
+            .map(|v| v == "TRUE" || v == "true")
+            .unwrap_or(false)
+        {
             nics.push(VmNic {
                 index: i,
-                adapter_type: s.get(&format!("{prefix}.virtualdev")).cloned().unwrap_or_default(),
+                adapter_type: s
+                    .get(&format!("{prefix}.virtualdev"))
+                    .cloned()
+                    .unwrap_or_default(),
                 network_type: s
                     .get(&format!("{prefix}.connectiontype"))
                     .cloned()
                     .unwrap_or_default(),
-                mac_address: s.get(&format!("{prefix}.address"))
+                mac_address: s
+                    .get(&format!("{prefix}.address"))
                     .or_else(|| s.get(&format!("{prefix}.generatedaddress")))
                     .cloned(),
                 connected: s
@@ -269,7 +280,10 @@ pub fn parse_disks(s: &HashMap<String, String>) -> Vec<VmDisk> {
                 let prefix = format!("{ctrl}{bus}:{unit}");
                 let present = format!("{prefix}.present");
                 let fname = format!("{prefix}.filename");
-                if s.get(&present).map(|v| v == "TRUE" || v == "true").unwrap_or(false) {
+                if s.get(&present)
+                    .map(|v| v == "TRUE" || v == "true")
+                    .unwrap_or(false)
+                {
                     if let Some(file) = s.get(&fname) {
                         disks.push(VmDisk {
                             index: disks.len() as u32,
@@ -300,9 +314,16 @@ fn parse_cdroms(s: &HashMap<String, String>) -> Vec<VmCdrom> {
                 let prefix = format!("{ctrl}{bus}:{unit}");
                 let present = format!("{prefix}.present");
                 let dev_type = format!("{prefix}.devicetype");
-                if s.get(&present).map(|v| v == "TRUE" || v == "true").unwrap_or(false) {
+                if s.get(&present)
+                    .map(|v| v == "TRUE" || v == "true")
+                    .unwrap_or(false)
+                {
                     let dt = s.get(&dev_type).cloned().unwrap_or_default();
-                    if dt.contains("cdrom") || dt.contains("atapi-cdrom") || dt == "cdrom-image" || dt == "cdrom-raw" {
+                    if dt.contains("cdrom")
+                        || dt.contains("atapi-cdrom")
+                        || dt == "cdrom-image"
+                        || dt == "cdrom-raw"
+                    {
                         cdroms.push(VmCdrom {
                             index: cdroms.len() as u32,
                             device_type: dt,
@@ -333,7 +354,10 @@ pub fn parse_shared_folders(s: &HashMap<String, String>) -> Vec<SharedFolder> {
     for i in 0..max {
         let prefix = format!("sharedfolder{i}");
         let present = format!("{prefix}.present");
-        if s.get(&present).map(|v| v == "TRUE" || v == "true").unwrap_or(false) {
+        if s.get(&present)
+            .map(|v| v == "TRUE" || v == "true")
+            .unwrap_or(false)
+        {
             folders.push(SharedFolder {
                 name: s
                     .get(&format!("{prefix}.guestname"))
@@ -359,13 +383,22 @@ pub fn parse_shared_folders(s: &HashMap<String, String>) -> Vec<SharedFolder> {
 
 fn parse_usb_controllers(s: &HashMap<String, String>) -> Vec<String> {
     let mut usb = Vec::new();
-    if s.get("usb.present").map(|v| v == "TRUE" || v == "true").unwrap_or(false) {
+    if s.get("usb.present")
+        .map(|v| v == "TRUE" || v == "true")
+        .unwrap_or(false)
+    {
         usb.push("USB 1.1".to_string());
     }
-    if s.get("ehci.present").map(|v| v == "TRUE" || v == "true").unwrap_or(false) {
+    if s.get("ehci.present")
+        .map(|v| v == "TRUE" || v == "true")
+        .unwrap_or(false)
+    {
         usb.push("USB 2.0 (EHCI)".to_string());
     }
-    if s.get("usb_xhci.present").map(|v| v == "TRUE" || v == "true").unwrap_or(false) {
+    if s.get("usb_xhci.present")
+        .map(|v| v == "TRUE" || v == "true")
+        .unwrap_or(false)
+    {
         usb.push("USB 3.1 (xHCI)".to_string());
     }
     usb
@@ -382,12 +415,8 @@ fn parse_display(s: &HashMap<String, String>) -> Option<VmDisplay> {
             .get("mks.enable3d")
             .map(|v| v == "TRUE" || v == "true")
             .unwrap_or(false),
-        vram_size_kb: s
-            .get("svga.graphicsmemorykb")
-            .and_then(|v| v.parse().ok()),
-        num_displays: s
-            .get("svga.numDisplays")
-            .and_then(|v| v.parse().ok()),
+        vram_size_kb: s.get("svga.graphicsmemorykb").and_then(|v| v.parse().ok()),
+        num_displays: s.get("svga.numDisplays").and_then(|v| v.parse().ok()),
     })
 }
 
@@ -414,7 +443,10 @@ pub fn generate_vmx(req: &CreateVmRequest) -> HashMap<String, String> {
     );
     m.insert("pciBridge0.present".to_string(), "TRUE".to_string());
     m.insert("pciBridge4.present".to_string(), "TRUE".to_string());
-    m.insert("pciBridge4.virtualdev".to_string(), "pcieRootPort".to_string());
+    m.insert(
+        "pciBridge4.virtualdev".to_string(),
+        "pcieRootPort".to_string(),
+    );
     m.insert("pciBridge4.functions".to_string(), "8".to_string());
     m.insert("vmci0.present".to_string(), "TRUE".to_string());
     m.insert("hpet0.present".to_string(), "TRUE".to_string());
@@ -428,7 +460,9 @@ pub fn generate_vmx(req: &CreateVmRequest) -> HashMap<String, String> {
     m.insert("ethernet0.present".to_string(), "TRUE".to_string());
     m.insert(
         "ethernet0.connectiontype".to_string(),
-        req.network_type.clone().unwrap_or_else(|| "nat".to_string()),
+        req.network_type
+            .clone()
+            .unwrap_or_else(|| "nat".to_string()),
     );
     m.insert("ethernet0.virtualdev".to_string(), "e1000e".to_string());
     m.insert("ethernet0.addresstype".to_string(), "generated".to_string());
@@ -440,10 +474,7 @@ pub fn generate_vmx(req: &CreateVmRequest) -> HashMap<String, String> {
 
     // Primary disk placeholder (actual VMDK must be created separately)
     m.insert("scsi0:0.present".to_string(), "TRUE".to_string());
-    m.insert(
-        "scsi0:0.filename".to_string(),
-        format!("{}.vmdk", req.name),
-    );
+    m.insert("scsi0:0.filename".to_string(), format!("{}.vmdk", req.name));
 
     // CDROM
     m.insert("sata0.present".to_string(), "TRUE".to_string());
@@ -484,9 +515,9 @@ pub fn discover_vmx_files(dir: &str) -> VmwResult<Vec<String>> {
 }
 
 fn discover_vmx_recursive(dir: &Path, results: &mut Vec<String>) -> VmwResult<()> {
-    let entries = std::fs::read_dir(dir).map_err(|e| VmwError::io(e))?;
+    let entries = std::fs::read_dir(dir).map_err(VmwError::io)?;
     for entry in entries {
-        let entry = entry.map_err(|e| VmwError::io(e))?;
+        let entry = entry.map_err(VmwError::io)?;
         let path = entry.path();
         if path.is_dir() {
             // Don't recurse too deep

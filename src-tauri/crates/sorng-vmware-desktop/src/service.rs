@@ -24,6 +24,12 @@ pub struct VmwDesktopService {
     connected: bool,
 }
 
+impl Default for VmwDesktopService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VmwDesktopService {
     /// Create a new (disconnected) service.
     pub fn new() -> Self {
@@ -41,9 +47,7 @@ impl VmwDesktopService {
     }
 
     fn require_vmrun(&self) -> VmwResult<&VmRun> {
-        self.vmrun
-            .as_ref()
-            .ok_or_else(|| VmwError::not_connected())
+        self.vmrun.as_ref().ok_or_else(VmwError::not_connected)
     }
 
     // ── Connection ──────────────────────────────────────────────────
@@ -59,7 +63,15 @@ impl VmwDesktopService {
 
         // Detect / configure vmrun
         let vmrun = if let Some(ref path) = config.vmrun_path {
-            VmRun::new(path, if cfg!(target_os = "macos") { "fusion" } else { "ws" }, config.timeout_secs)
+            VmRun::new(
+                path,
+                if cfg!(target_os = "macos") {
+                    "fusion"
+                } else {
+                    "ws"
+                },
+                config.timeout_secs,
+            )
         } else {
             VmRun::detect().map_err(|_| VmwError::vmrun_not_found())?
         };
@@ -125,7 +137,10 @@ impl VmwDesktopService {
                 .as_ref()
                 .map(|h| h.product)
                 .unwrap_or(VmwProduct::Unknown),
-            product_version: self.host_info.as_ref().and_then(|h| h.product_version.clone()),
+            product_version: self
+                .host_info
+                .as_ref()
+                .and_then(|h| h.product_version.clone()),
             vmrun_available: self.vmrun.is_some(),
             vmrest_available: self.rest.is_some(),
             vm_count: 0,
@@ -181,7 +196,10 @@ impl VmwDesktopService {
     /// Register an existing VMX.
     pub async fn register_vm(&self, vmx_path: &str) -> VmwResult<String> {
         let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required to register VMs")
+            VmwError::new(
+                VmwErrorKind::VmRestNotAvailable,
+                "vmrest required to register VMs",
+            )
         })?;
         crate::vm::register_vm(rest, vmx_path).await
     }
@@ -189,7 +207,10 @@ impl VmwDesktopService {
     /// Unregister a VM.
     pub async fn unregister_vm(&self, id: &str) -> VmwResult<()> {
         let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required to unregister VMs")
+            VmwError::new(
+                VmwErrorKind::VmRestNotAvailable,
+                "vmrest required to unregister VMs",
+            )
         })?;
         crate::vm::unregister_vm(rest, id).await
     }
@@ -349,8 +370,10 @@ impl VmwDesktopService {
         guest_path: &str,
     ) -> VmwResult<()> {
         let vmrun = self.require_vmrun()?;
-        crate::guest::copy_to_guest(vmrun, vmx_path, guest_user, guest_pass, host_path, guest_path)
-            .await
+        crate::guest::copy_to_guest(
+            vmrun, vmx_path, guest_user, guest_pass, host_path, guest_path,
+        )
+        .await
     }
 
     /// Copy a file from guest to host.
@@ -404,8 +427,7 @@ impl VmwDesktopService {
         file_path: &str,
     ) -> VmwResult<()> {
         let vmrun = self.require_vmrun()?;
-        crate::guest::delete_file_in_guest(vmrun, vmx_path, guest_user, guest_pass, file_path)
-            .await
+        crate::guest::delete_file_in_guest(vmrun, vmx_path, guest_user, guest_pass, file_path).await
     }
 
     /// Check if file exists in guest.
@@ -417,8 +439,7 @@ impl VmwDesktopService {
         file_path: &str,
     ) -> VmwResult<bool> {
         let vmrun = self.require_vmrun()?;
-        crate::guest::file_exists_in_guest(vmrun, vmx_path, guest_user, guest_pass, file_path)
-            .await
+        crate::guest::file_exists_in_guest(vmrun, vmx_path, guest_user, guest_pass, file_path).await
     }
 
     /// Check if directory exists in guest.
@@ -510,8 +531,10 @@ impl VmwDesktopService {
         value: &str,
     ) -> VmwResult<()> {
         let vmrun = self.require_vmrun()?;
-        crate::guest::write_variable(vmrun, vmx_path, guest_user, guest_pass, var_type, name, value)
-            .await
+        crate::guest::write_variable(
+            vmrun, vmx_path, guest_user, guest_pass, var_type, name, value,
+        )
+        .await
     }
 
     /// List guest environment variables.
@@ -606,17 +629,19 @@ impl VmwDesktopService {
 
     /// Get a network by name.
     pub async fn get_network(&self, name: &str) -> VmwResult<VirtualNetwork> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::get_network(rest, name).await
     }
 
     /// Create a network.
     pub async fn create_network(&self, req: CreateNetworkRequest) -> VmwResult<VirtualNetwork> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::create_network(rest, req).await
     }
 
@@ -628,25 +653,28 @@ impl VmwDesktopService {
         subnet: Option<&str>,
         mask: Option<&str>,
     ) -> VmwResult<VirtualNetwork> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::update_network(rest, name, network_type, subnet, mask).await
     }
 
     /// Delete a network.
     pub async fn delete_network(&self, name: &str) -> VmwResult<()> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::delete_network(rest, name).await
     }
 
     /// List port forwards for a network.
     pub async fn list_port_forwards(&self, network: &str) -> VmwResult<Vec<NatPortForward>> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::list_port_forwards(rest, network).await
     }
 
@@ -656,9 +684,10 @@ impl VmwDesktopService {
         network: &str,
         req: AddPortForwardRequest,
     ) -> VmwResult<()> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::set_port_forward(rest, network, req).await
     }
 
@@ -669,24 +698,24 @@ impl VmwDesktopService {
         protocol: &str,
         host_port: u16,
     ) -> VmwResult<()> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::delete_port_forward(rest, network, protocol, host_port).await
     }
 
     /// DHCP leases for a network.
     pub async fn get_dhcp_leases(&self, network: &str) -> VmwResult<Vec<DhcpLease>> {
-        let rest = self.rest.as_ref().ok_or_else(|| {
-            VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required")
-        })?;
+        let rest = self
+            .rest
+            .as_ref()
+            .ok_or_else(|| VmwError::new(VmwErrorKind::VmRestNotAvailable, "vmrest required"))?;
         crate::networks::get_dhcp_leases(rest, network).await
     }
 
     /// Read networking config file.
-    pub fn read_networking_config(
-        &self,
-    ) -> VmwResult<std::collections::HashMap<String, String>> {
+    pub fn read_networking_config(&self) -> VmwResult<std::collections::HashMap<String, String>> {
         crate::networks::read_networking_config()
     }
 

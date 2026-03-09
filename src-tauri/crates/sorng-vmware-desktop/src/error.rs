@@ -49,16 +49,25 @@ impl VmwError {
         }
     }
     pub fn not_connected() -> Self {
-        Self::new(VmwErrorKind::NotConnected, "Not connected to VMware Desktop host")
+        Self::new(
+            VmwErrorKind::NotConnected,
+            "Not connected to VMware Desktop host",
+        )
     }
     pub fn vm_not_found(id: &str) -> Self {
         Self::new(VmwErrorKind::VmNotFound, format!("VM not found: {id}"))
     }
     pub fn snapshot_not_found(name: &str) -> Self {
-        Self::new(VmwErrorKind::SnapshotNotFound, format!("Snapshot not found: {name}"))
+        Self::new(
+            VmwErrorKind::SnapshotNotFound,
+            format!("Snapshot not found: {name}"),
+        )
     }
     pub fn vmrun_not_found() -> Self {
-        Self::new(VmwErrorKind::VmRunNotFound, "vmrun executable not found on PATH")
+        Self::new(
+            VmwErrorKind::VmRunNotFound,
+            "vmrun executable not found on PATH",
+        )
     }
     pub fn command_failed(cmd: &str, stderr: &str) -> Self {
         Self::new(VmwErrorKind::CommandFailed, format!("{cmd}: {stderr}"))

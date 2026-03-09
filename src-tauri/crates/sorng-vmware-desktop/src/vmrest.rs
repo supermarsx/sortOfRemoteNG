@@ -20,17 +20,12 @@ pub struct VmRestClient {
 
 impl VmRestClient {
     /// Create a new vmrest client.
-    pub fn new(
-        host: &str,
-        port: u16,
-        username: &str,
-        password: &str,
-    ) -> VmwResult<Self> {
+    pub fn new(host: &str, port: u16, username: &str, password: &str) -> VmwResult<Self> {
         let http = HttpClient::builder()
             .danger_accept_invalid_certs(true) // vmrest uses self-signed by default
             .timeout(std::time::Duration::from_secs(60))
             .build()
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         Ok(Self {
             http,
             base_url: format!("http://{}:{}/api", host, port),
@@ -47,7 +42,7 @@ impl VmRestClient {
             .basic_auth(&self.username, Some(&self.password))
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         Ok(resp.status().is_success())
     }
 
@@ -61,10 +56,11 @@ impl VmRestClient {
             .basic_auth(&self.username, Some(&self.password))
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         self.handle_response(resp).await
     }
 
+    #[allow(dead_code)]
     async fn get_text(&self, path: &str) -> VmwResult<String> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
@@ -73,7 +69,7 @@ impl VmRestClient {
             .basic_auth(&self.username, Some(&self.password))
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
@@ -82,9 +78,10 @@ impl VmRestClient {
                 format!("HTTP {status}: {body}"),
             ));
         }
-        resp.text().await.map_err(|e| VmwError::http(e))
+        resp.text().await.map_err(VmwError::http)
     }
 
+    #[allow(dead_code)]
     async fn put<B: serde::Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -98,15 +95,11 @@ impl VmRestClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         self.handle_response(resp).await
     }
 
-    async fn put_value<B: serde::Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> VmwResult<Value> {
+    async fn put_value<B: serde::Serialize>(&self, path: &str, body: &B) -> VmwResult<Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .http
@@ -115,7 +108,7 @@ impl VmRestClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         self.handle_response(resp).await
     }
 
@@ -132,15 +125,11 @@ impl VmRestClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         self.handle_response(resp).await
     }
 
-    async fn post_value<B: serde::Serialize>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> VmwResult<Value> {
+    async fn post_value<B: serde::Serialize>(&self, path: &str, body: &B) -> VmwResult<Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .http
@@ -149,10 +138,11 @@ impl VmRestClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         self.handle_response(resp).await
     }
 
+    #[allow(dead_code)]
     async fn post_empty(&self, path: &str) -> VmwResult<Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
@@ -161,7 +151,7 @@ impl VmRestClient {
             .basic_auth(&self.username, Some(&self.password))
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         self.handle_response(resp).await
     }
 
@@ -173,16 +163,13 @@ impl VmRestClient {
             .basic_auth(&self.username, Some(&self.password))
             .send()
             .await
-            .map_err(|e| VmwError::http(e))?;
+            .map_err(VmwError::http)?;
         self.handle_response(resp).await
     }
 
-    async fn handle_response<T: DeserializeOwned>(
-        &self,
-        resp: reqwest::Response,
-    ) -> VmwResult<T> {
+    async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> VmwResult<T> {
         let status = resp.status();
-        let body = resp.text().await.map_err(|e| VmwError::http(e))?;
+        let body = resp.text().await.map_err(VmwError::http)?;
         if !status.is_success() {
             return Err(VmwError::new(
                 match status.as_u16() {
@@ -198,8 +185,12 @@ impl VmRestClient {
             return serde_json::from_str("null")
                 .map_err(|e| VmwError::new(VmwErrorKind::InternalError, e.to_string()));
         }
-        serde_json::from_str(&body)
-            .map_err(|e| VmwError::new(VmwErrorKind::InternalError, format!("JSON parse error: {e}: {body}")))
+        serde_json::from_str(&body).map_err(|e| {
+            VmwError::new(
+                VmwErrorKind::InternalError,
+                format!("JSON parse error: {e}: {body}"),
+            )
+        })
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -261,7 +252,8 @@ impl VmRestClient {
 
     /// PUT /vms/{id}/nic/{index} — update a NIC.
     pub async fn update_nic(&self, id: &str, index: u32, body: &Value) -> VmwResult<Value> {
-        self.put_value(&format!("/vms/{id}/nic/{index}"), body).await
+        self.put_value(&format!("/vms/{id}/nic/{index}"), body)
+            .await
     }
 
     /// POST /vms/{id}/nic — create a NIC.
@@ -288,7 +280,8 @@ impl VmRestClient {
 
     /// POST /vms/{id}/sharedfolders — add a shared folder.
     pub async fn add_shared_folder(&self, id: &str, body: &Value) -> VmwResult<Value> {
-        self.post_value(&format!("/vms/{id}/sharedfolders"), body).await
+        self.post_value(&format!("/vms/{id}/sharedfolders"), body)
+            .await
     }
 
     /// PUT /vms/{id}/sharedfolders/{id2} — update a shared folder.
@@ -298,16 +291,14 @@ impl VmRestClient {
         folder_id: &str,
         body: &Value,
     ) -> VmwResult<Value> {
-        self.put_value(&format!("/vms/{vm_id}/sharedfolders/{folder_id}"), body).await
+        self.put_value(&format!("/vms/{vm_id}/sharedfolders/{folder_id}"), body)
+            .await
     }
 
     /// DELETE /vms/{id}/sharedfolders/{id2} — remove a shared folder.
-    pub async fn delete_shared_folder(
-        &self,
-        vm_id: &str,
-        folder_id: &str,
-    ) -> VmwResult<Value> {
-        self.delete(&format!("/vms/{vm_id}/sharedfolders/{folder_id}")).await
+    pub async fn delete_shared_folder(&self, vm_id: &str, folder_id: &str) -> VmwResult<Value> {
+        self.delete(&format!("/vms/{vm_id}/sharedfolders/{folder_id}"))
+            .await
     }
 
     // ── Virtual Networks (vmnet) ─────────────────────────────────────────
@@ -349,10 +340,8 @@ impl VmRestClient {
         proto: &str,
         host_port: u16,
     ) -> VmwResult<Value> {
-        self.delete(&format!(
-            "/vmnet/{name}/portforward/{proto}/{host_port}"
-        ))
-        .await
+        self.delete(&format!("/vmnet/{name}/portforward/{proto}/{host_port}"))
+            .await
     }
 
     /// POST /vmnet — create a virtual network.
@@ -401,7 +390,8 @@ pub struct VmRestNic {
     #[serde(rename = "type")]
     pub nic_type: Option<String>,
     pub vmnet: Option<String>,
-    pub macAddress: Option<String>,
+    #[serde(rename = "macAddress")]
+    pub mac_address: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

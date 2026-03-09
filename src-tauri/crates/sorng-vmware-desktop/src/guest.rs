@@ -291,10 +291,7 @@ pub async fn list_env_vars(
             let key = line[..eq_pos].to_string();
             let value = line[eq_pos + 1..].to_string();
             if !key.is_empty() {
-                vars.push(GuestEnvVar {
-                    name: key,
-                    value,
-                });
+                vars.push(GuestEnvVar { name: key, value });
             }
         }
     }
@@ -309,7 +306,11 @@ pub async fn get_tools_status(vmrun: &VmRun, vmx_path: &str) -> VmwResult<ToolsS
         installed: !lower.contains("not installed"),
         running: lower.contains("running"),
         version: None,
-        upgrade_status: if lower.contains("update") { Some("update_available".to_string()) } else { None },
+        upgrade_status: if lower.contains("update") {
+            Some("update_available".to_string())
+        } else {
+            None
+        },
     })
 }
 

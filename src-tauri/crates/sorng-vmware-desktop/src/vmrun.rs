@@ -73,9 +73,13 @@ impl VmRun {
             }
         }
         // Fall back to PATH
-        if let Ok(output) = std::process::Command::new(if cfg!(target_os = "windows") { "where" } else { "which" })
-            .arg("vmrun")
-            .output()
+        if let Ok(output) = std::process::Command::new(if cfg!(target_os = "windows") {
+            "where"
+        } else {
+            "which"
+        })
+        .arg("vmrun")
+        .output()
         {
             if output.status.success() {
                 let s = String::from_utf8_lossy(&output.stdout);
@@ -102,13 +106,17 @@ impl VmRun {
         )
         .await
         .map_err(|_| VmwError::new(VmwErrorKind::Timeout, "vmrun command timed out"))?
-        .map_err(|e| VmwError::io(e))?;
+        .map_err(VmwError::io)?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
         if !output.status.success() {
-            let msg = if stderr.trim().is_empty() { &stdout } else { &stderr };
+            let msg = if stderr.trim().is_empty() {
+                &stdout
+            } else {
+                &stderr
+            };
             return Err(VmwError::command_failed("vmrun", msg.trim()));
         }
         Ok(stdout)
@@ -120,19 +128,21 @@ impl VmRun {
         for a in args {
             cmd.arg(a);
         }
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout_secs),
-            cmd.output(),
-        )
-        .await
-        .map_err(|_| VmwError::new(VmwErrorKind::Timeout, "vmrun command timed out"))?
-        .map_err(|e| VmwError::io(e))?;
+        let output =
+            tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), cmd.output())
+                .await
+                .map_err(|_| VmwError::new(VmwErrorKind::Timeout, "vmrun command timed out"))?
+                .map_err(VmwError::io)?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
         if !output.status.success() {
-            let msg = if stderr.trim().is_empty() { &stdout } else { &stderr };
+            let msg = if stderr.trim().is_empty() {
+                &stdout
+            } else {
+                &stderr
+            };
             return Err(VmwError::command_failed("vmrun", msg.trim()));
         }
         Ok(stdout)
@@ -227,9 +237,15 @@ impl VmRun {
     }
 
     /// Delete a snapshot.
-    pub async fn delete_snapshot(&self, vmx: &str, name: &str, and_children: bool) -> VmwResult<()> {
+    pub async fn delete_snapshot(
+        &self,
+        vmx: &str,
+        name: &str,
+        and_children: bool,
+    ) -> VmwResult<()> {
         if and_children {
-            self.run(&["deleteSnapshot", vmx, name, "andDeleteChildren"]).await?;
+            self.run(&["deleteSnapshot", vmx, name, "andDeleteChildren"])
+                .await?;
         } else {
             self.run(&["deleteSnapshot", vmx, name]).await?;
         }
@@ -262,6 +278,7 @@ impl VmRun {
     // ── Guest Operations ─────────────────────────────────────────────────
 
     /// Run a program in the guest.
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_program_in_guest(
         &self,
         vmx: &str,
@@ -314,9 +331,16 @@ impl VmRun {
         guest_path: &str,
     ) -> VmwResult<()> {
         self.run(&[
-            "-gu", user, "-gp", pass,
-            "copyFileFromHostToGuest", vmx, host_path, guest_path,
-        ]).await?;
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "copyFileFromHostToGuest",
+            vmx,
+            host_path,
+            guest_path,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -330,9 +354,16 @@ impl VmRun {
         host_path: &str,
     ) -> VmwResult<()> {
         self.run(&[
-            "-gu", user, "-gp", pass,
-            "copyFileFromGuestToHost", vmx, guest_path, host_path,
-        ]).await?;
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "copyFileFromGuestToHost",
+            vmx,
+            guest_path,
+            host_path,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -345,9 +376,15 @@ impl VmRun {
         dir_path: &str,
     ) -> VmwResult<()> {
         self.run(&[
-            "-gu", user, "-gp", pass,
-            "createDirectoryInGuest", vmx, dir_path,
-        ]).await?;
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "createDirectoryInGuest",
+            vmx,
+            dir_path,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -360,9 +397,15 @@ impl VmRun {
         dir_path: &str,
     ) -> VmwResult<()> {
         self.run(&[
-            "-gu", user, "-gp", pass,
-            "deleteDirectoryInGuest", vmx, dir_path,
-        ]).await?;
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "deleteDirectoryInGuest",
+            vmx,
+            dir_path,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -375,9 +418,15 @@ impl VmRun {
         file_path: &str,
     ) -> VmwResult<()> {
         self.run(&[
-            "-gu", user, "-gp", pass,
-            "deleteFileInGuest", vmx, file_path,
-        ]).await?;
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "deleteFileInGuest",
+            vmx,
+            file_path,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -390,7 +439,15 @@ impl VmRun {
         file_path: &str,
     ) -> VmwResult<bool> {
         match self
-            .run(&["-gu", user, "-gp", pass, "fileExistsInGuest", vmx, file_path])
+            .run(&[
+                "-gu",
+                user,
+                "-gp",
+                pass,
+                "fileExistsInGuest",
+                vmx,
+                file_path,
+            ])
             .await
         {
             Ok(_) => Ok(true),
@@ -408,7 +465,15 @@ impl VmRun {
         dir_path: &str,
     ) -> VmwResult<bool> {
         match self
-            .run(&["-gu", user, "-gp", pass, "directoryExistsInGuest", vmx, dir_path])
+            .run(&[
+                "-gu",
+                user,
+                "-gp",
+                pass,
+                "directoryExistsInGuest",
+                vmx,
+                dir_path,
+            ])
             .await
         {
             Ok(_) => Ok(true),
@@ -427,9 +492,16 @@ impl VmRun {
         new_name: &str,
     ) -> VmwResult<()> {
         self.run(&[
-            "-gu", user, "-gp", pass,
-            "renameFileInGuest", vmx, old_name, new_name,
-        ]).await?;
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "renameFileInGuest",
+            vmx,
+            old_name,
+            new_name,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -441,10 +513,17 @@ impl VmRun {
         pass: &str,
         dir_path: &str,
     ) -> VmwResult<Vec<String>> {
-        let out = self.run(&[
-            "-gu", user, "-gp", pass,
-            "listDirectoryInGuest", vmx, dir_path,
-        ]).await?;
+        let out = self
+            .run(&[
+                "-gu",
+                user,
+                "-gp",
+                pass,
+                "listDirectoryInGuest",
+                vmx,
+                dir_path,
+            ])
+            .await?;
         Ok(out.lines().map(|l| l.to_string()).collect())
     }
 
@@ -455,7 +534,8 @@ impl VmRun {
         user: &str,
         pass: &str,
     ) -> VmwResult<String> {
-        self.run(&["-gu", user, "-gp", pass, "listProcessesInGuest", vmx]).await
+        self.run(&["-gu", user, "-gp", pass, "listProcessesInGuest", vmx])
+            .await
     }
 
     /// Kill a guest process by PID.
@@ -467,7 +547,16 @@ impl VmRun {
         pid: u64,
     ) -> VmwResult<()> {
         let pid_str = pid.to_string();
-        self.run(&["-gu", user, "-gp", pass, "killProcessInGuest", vmx, &pid_str]).await?;
+        self.run(&[
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "killProcessInGuest",
+            vmx,
+            &pid_str,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -480,10 +569,18 @@ impl VmRun {
         var_type: &str,
         name: &str,
     ) -> VmwResult<String> {
-        let out = self.run(&[
-            "-gu", user, "-gp", pass,
-            "readVariable", vmx, var_type, name,
-        ]).await?;
+        let out = self
+            .run(&[
+                "-gu",
+                user,
+                "-gp",
+                pass,
+                "readVariable",
+                vmx,
+                var_type,
+                name,
+            ])
+            .await?;
         Ok(out.trim().to_string())
     }
 
@@ -498,9 +595,17 @@ impl VmRun {
         value: &str,
     ) -> VmwResult<()> {
         self.run(&[
-            "-gu", user, "-gp", pass,
-            "writeVariable", vmx, var_type, name, value,
-        ]).await?;
+            "-gu",
+            user,
+            "-gp",
+            pass,
+            "writeVariable",
+            vmx,
+            var_type,
+            name,
+            value,
+        ])
+        .await?;
         Ok(())
     }
 
@@ -525,7 +630,8 @@ impl VmRun {
         share_name: &str,
         host_path: &str,
     ) -> VmwResult<()> {
-        self.run(&["addSharedFolder", vmx, share_name, host_path]).await?;
+        self.run(&["addSharedFolder", vmx, share_name, host_path])
+            .await?;
         Ok(())
     }
 
@@ -544,7 +650,8 @@ impl VmRun {
         writable: bool,
     ) -> VmwResult<()> {
         let perm = if writable { "writable" } else { "readonly" };
-        self.run(&["setSharedFolderState", vmx, share_name, host_path, perm]).await?;
+        self.run(&["setSharedFolderState", vmx, share_name, host_path, perm])
+            .await?;
         Ok(())
     }
 
@@ -587,7 +694,7 @@ impl VmRun {
         let ovftool = self.find_ovftool()?;
         let mut cmd = Command::new(&ovftool);
         cmd.arg(source).arg(dest_vmx);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(VmwError::command_failed("ovftool", stderr.trim()));
@@ -600,7 +707,7 @@ impl VmRun {
         let ovftool = self.find_ovftool()?;
         let mut cmd = Command::new(&ovftool);
         cmd.arg(vmx).arg(dest);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(VmwError::command_failed("ovftool", stderr.trim()));
@@ -668,10 +775,13 @@ impl VmRun {
             cmd.arg("-a").arg(at);
         }
         cmd.arg(path);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(VmwError::command_failed("vmware-vdiskmanager", stderr.trim()));
+            return Err(VmwError::command_failed(
+                "vmware-vdiskmanager",
+                stderr.trim(),
+            ));
         }
         Ok(())
     }
@@ -681,10 +791,13 @@ impl VmRun {
         let vdm = self.find_vdiskmanager()?;
         let mut cmd = Command::new(&vdm);
         cmd.arg("-d").arg(vmdk_path);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(VmwError::command_failed("vmware-vdiskmanager", stderr.trim()));
+            return Err(VmwError::command_failed(
+                "vmware-vdiskmanager",
+                stderr.trim(),
+            ));
         }
         Ok(())
     }
@@ -694,10 +807,13 @@ impl VmRun {
         let vdm = self.find_vdiskmanager()?;
         let mut cmd = Command::new(&vdm);
         cmd.arg("-k").arg(vmdk_path);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(VmwError::command_failed("vmware-vdiskmanager", stderr.trim()));
+            return Err(VmwError::command_failed(
+                "vmware-vdiskmanager",
+                stderr.trim(),
+            ));
         }
         Ok(())
     }
@@ -708,10 +824,13 @@ impl VmRun {
         let size_str = format!("{}MB", new_size_mb);
         let mut cmd = Command::new(&vdm);
         cmd.arg("-x").arg(&size_str).arg(vmdk_path);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(VmwError::command_failed("vmware-vdiskmanager", stderr.trim()));
+            return Err(VmwError::command_failed(
+                "vmware-vdiskmanager",
+                stderr.trim(),
+            ));
         }
         Ok(())
     }
@@ -727,10 +846,13 @@ impl VmRun {
         };
         let mut cmd = Command::new(&vdm);
         cmd.arg("-r").arg(source).arg("-t").arg(t).arg(dest);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(VmwError::command_failed("vmware-vdiskmanager", stderr.trim()));
+            return Err(VmwError::command_failed(
+                "vmware-vdiskmanager",
+                stderr.trim(),
+            ));
         }
         Ok(())
     }
@@ -740,10 +862,13 @@ impl VmRun {
         let vdm = self.find_vdiskmanager()?;
         let mut cmd = Command::new(&vdm);
         cmd.arg("-n").arg(source).arg(dest);
-        let output = cmd.output().await.map_err(|e| VmwError::io(e))?;
+        let output = cmd.output().await.map_err(VmwError::io)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(VmwError::command_failed("vmware-vdiskmanager", stderr.trim()));
+            return Err(VmwError::command_failed(
+                "vmware-vdiskmanager",
+                stderr.trim(),
+            ));
         }
         Ok(())
     }

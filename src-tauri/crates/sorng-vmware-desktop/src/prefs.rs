@@ -45,12 +45,9 @@ fn find_vmrun_in(install_path: &str) -> Option<String> {
     } else {
         vec!["/usr/bin/vmrun".to_string()]
     };
-    for c in candidates {
-        if std::path::Path::new(&c).exists() {
-            return Some(c);
-        }
-    }
-    None
+    candidates
+        .into_iter()
+        .find(|c| std::path::Path::new(c).exists())
 }
 
 #[cfg(target_os = "windows")]
@@ -61,14 +58,16 @@ fn detect_windows() -> VmwResult<(VmwProduct, Option<String>, Option<String>, St
         ("SOFTWARE\\VMware, Inc.\\VMware Player", false),
     ];
     for (key_path, is_workstation) in &paths {
-        if let Ok(hklm) = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE)
-            .open_subkey(key_path)
+        if let Ok(hklm) =
+            winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE).open_subkey(key_path)
         {
             let version: Option<String> = hklm.get_value::<String, _>("ProductVersion").ok();
             let build: Option<String> = hklm.get_value::<String, _>("BuildNumber").ok();
-            let install_path: String = hklm
-                .get_value::<String, _>("InstallPath")
-                .unwrap_or_else(|_| "C:\\Program Files (x86)\\VMware\\VMware Workstation".to_string());
+            let install_path: String =
+                hklm.get_value::<String, _>("InstallPath")
+                    .unwrap_or_else(|_| {
+                        "C:\\Program Files (x86)\\VMware\\VMware Workstation".to_string()
+                    });
             let product = if *is_workstation {
                 // Determine Pro vs regular
                 let lic: Option<String> = hklm.get_value::<String, _>("License.ws.e1.bType").ok();
@@ -144,10 +143,8 @@ fn detect_macos() -> VmwResult<(VmwProduct, Option<String>, Option<String>, Stri
         });
 
     // Determine Pro vs standard
-    let is_pro = std::path::Path::new(&format!(
-        "{app_path}/Contents/Library/vmware-vmx-stats"
-    ))
-    .exists();
+    let is_pro =
+        std::path::Path::new(&format!("{app_path}/Contents/Library/vmware-vmx-stats")).exists();
     let product = if is_pro {
         VmwProduct::FusionPro
     } else {
@@ -165,7 +162,12 @@ fn detect_linux() -> VmwResult<(VmwProduct, Option<String>, Option<String>, Stri
         let player_path = "/usr/bin/vmplayer";
         if std::path::Path::new(player_path).exists() {
             let version = read_vmware_version_linux();
-            return Ok((VmwProduct::Player, version, None, "/usr/lib/vmware".to_string()));
+            return Ok((
+                VmwProduct::Player,
+                version,
+                None,
+                "/usr/lib/vmware".to_string(),
+            ));
         }
         return Err(VmwError::new(
             VmwErrorKind::UnsupportedPlatform,
@@ -204,8 +206,8 @@ fn read_vmware_version_linux() -> Option<String> {
 /// Read VMware application preferences.
 pub fn read_preferences() -> VmwResult<VmwPreferences> {
     let prefs_path = if cfg!(target_os = "windows") {
-        let appdata =
-            std::env::var("APPDATA").unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
+        let appdata = std::env::var("APPDATA")
+            .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
         format!("{appdata}\\VMware\\preferences.ini")
     } else if cfg!(target_os = "macos") {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Shared".to_string());
@@ -236,18 +238,23 @@ pub fn read_preferences() -> VmwResult<VmwPreferences> {
     }
 
     Ok(VmwPreferences {
-        default_vm_path: settings.get("prefvmx.defaultvmpath")
+        default_vm_path: settings
+            .get("prefvmx.defaultvmpath")
             .or_else(|| settings.get("prefsvmx.defaultvmpath"))
             .cloned(),
-        auto_connect_usb: settings.get("usb.autoconnect")
+        auto_connect_usb: settings
+            .get("usb.autoconnect")
             .map(|v| v == "TRUE" || v == "true" || v == "1"),
         hot_key_combo: settings.get("pref.hotkey.ctrl").cloned(),
-        show_tray_icon: settings.get("pref.trayicon")
+        show_tray_icon: settings
+            .get("pref.trayicon")
             .map(|v| v == "TRUE" || v == "true" || v == "1"),
-        updates_check: settings.get("pref.vmplayer.updates.enabled")
+        updates_check: settings
+            .get("pref.vmplayer.updates.enabled")
             .or_else(|| settings.get("pref.updates.enabled"))
             .map(|v| v == "TRUE" || v == "true" || v == "1"),
-        ceip_enabled: settings.get("telemetry.consent")
+        ceip_enabled: settings
+            .get("telemetry.consent")
             .or_else(|| settings.get("telemetryceiplevel"))
             .map(|v| v == "1" || v == "TRUE" || v == "true"),
         shared_vms_path: settings.get("prefvmx.sharedpath").cloned(),
@@ -279,8 +286,8 @@ pub fn get_default_vm_dir() -> String {
 /// Update a preference value.
 pub fn set_preference(key: &str, value: &str) -> VmwResult<()> {
     let prefs_path = if cfg!(target_os = "windows") {
-        let appdata =
-            std::env::var("APPDATA").unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
+        let appdata = std::env::var("APPDATA")
+            .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
         format!("{appdata}\\VMware\\preferences.ini")
     } else if cfg!(target_os = "macos") {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Shared".to_string());
@@ -312,6 +319,6 @@ pub fn set_preference(key: &str, value: &str) -> VmwResult<()> {
     }
 
     let out = lines.join("\n");
-    std::fs::write(&prefs_path, out).map_err(|e| VmwError::io(e))?;
+    std::fs::write(&prefs_path, out).map_err(VmwError::io)?;
     Ok(())
 }

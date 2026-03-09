@@ -10,6 +10,7 @@ use tauri::State;
 // ── Connection ──────────────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn vmwd_connect(
     state: State<'_, VmwDesktopServiceState>,
     vmrun_path: Option<String>,
@@ -34,17 +35,13 @@ pub async fn vmwd_connect(
 }
 
 #[tauri::command]
-pub async fn vmwd_disconnect(
-    state: State<'_, VmwDesktopServiceState>,
-) -> Result<(), String> {
+pub async fn vmwd_disconnect(state: State<'_, VmwDesktopServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn vmwd_is_connected(
-    state: State<'_, VmwDesktopServiceState>,
-) -> Result<bool, String> {
+pub async fn vmwd_is_connected(state: State<'_, VmwDesktopServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_connected())
 }
@@ -85,6 +82,7 @@ pub async fn vmwd_get_vm(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn vmwd_create_vm(
     state: State<'_, VmwDesktopServiceState>,
     name: String,
@@ -119,6 +117,7 @@ pub async fn vmwd_create_vm(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn vmwd_update_vm(
     state: State<'_, VmwDesktopServiceState>,
     vmx_path: String,
@@ -185,9 +184,7 @@ pub async fn vmwd_register_vm(
     vmx_path: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    svc.register_vm(&vmx_path)
-        .await
-        .map_err(|e| e.to_string())
+    svc.register_vm(&vmx_path).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -200,6 +197,7 @@ pub async fn vmwd_unregister_vm(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn vmwd_configure_nic(
     state: State<'_, VmwDesktopServiceState>,
     vmx_path: String,
@@ -322,9 +320,7 @@ pub async fn vmwd_unpause_vm(
     vmx_path: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.unpause_vm(&vmx_path)
-        .await
-        .map_err(|e| e.to_string())
+    svc.unpause_vm(&vmx_path).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -436,6 +432,7 @@ pub async fn vmwd_get_snapshot(
 // ── Guest Operations ────────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn vmwd_exec_in_guest(
     state: State<'_, VmwDesktopServiceState>,
     vmx_path: String,
@@ -451,7 +448,11 @@ pub async fn vmwd_exec_in_guest(
         guest_user: guest_user.clone(),
         guest_password: guest_pass.clone(),
         program,
-        arguments: if arguments.is_empty() { None } else { Some(arguments.join(" ")) },
+        arguments: if arguments.is_empty() {
+            None
+        } else {
+            Some(arguments.join(" "))
+        },
         no_wait: !wait.unwrap_or(true),
         interactive: interactive.unwrap_or(false),
     };
@@ -666,9 +667,16 @@ pub async fn vmwd_write_variable(
     value: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.write_variable(&vmx_path, &guest_user, &guest_pass, &var_type, &name, &value)
-        .await
-        .map_err(|e| e.to_string())
+    svc.write_variable(
+        &vmx_path,
+        &guest_user,
+        &guest_pass,
+        &var_type,
+        &name,
+        &value,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -963,9 +971,7 @@ pub async fn vmwd_defragment_vmdk(
     path: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.defragment_vmdk(&path)
-        .await
-        .map_err(|e| e.to_string())
+    svc.defragment_vmdk(&path).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1020,8 +1026,8 @@ pub async fn vmwd_add_disk_to_vm(
     vmx_path: String,
     vmdk_path: String,
     controller_type: Option<String>,
-    bus_number: Option<u32>,
-    unit_number: Option<u32>,
+    _bus_number: Option<u32>,
+    _unit_number: Option<u32>,
     mode: Option<String>,
 ) -> Result<(), String> {
     let req = AddDiskRequest {
@@ -1161,6 +1167,5 @@ pub async fn vmwd_set_preference(
     value: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.set_preference(&key, &value)
-        .map_err(|e| e.to_string())
+    svc.set_preference(&key, &value).map_err(|e| e.to_string())
 }

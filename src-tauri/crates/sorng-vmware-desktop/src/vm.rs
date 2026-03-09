@@ -31,7 +31,7 @@ pub async fn list_vms(
                         id: rv.id.clone().unwrap_or_else(|| path.clone()),
                         vmx_path: path.clone(),
                         name: settings
-                            .map(|s| vmx::get_display_name(s))
+                            .map(vmx::get_display_name)
                             .unwrap_or_else(|| path.clone()),
                         power_state: if is_running {
                             VmPowerState::PoweredOn
@@ -40,10 +40,12 @@ pub async fn list_vms(
                         },
                         guest_os: settings.and_then(|s| s.get("guestos").cloned()),
                         guest_os_family: settings
-                            .map(|s| vmx::get_guest_os_family(s))
+                            .map(vmx::get_guest_os_family)
                             .unwrap_or(GuestOsFamily::Other),
-                        num_cpus: settings.and_then(|s| s.get("numvcpus").and_then(|v| v.parse().ok())),
-                        memory_mb: settings.and_then(|s| s.get("memsize").and_then(|v| v.parse().ok())),
+                        num_cpus: settings
+                            .and_then(|s| s.get("numvcpus").and_then(|v| v.parse().ok())),
+                        memory_mb: settings
+                            .and_then(|s| s.get("memsize").and_then(|v| v.parse().ok())),
                     });
                 }
             }
@@ -74,7 +76,7 @@ pub async fn list_vms(
             id: path.clone(),
             vmx_path: path.clone(),
             name: settings
-                .map(|s| vmx::get_display_name(s))
+                .map(vmx::get_display_name)
                 .unwrap_or_else(|| path.clone()),
             power_state: if is_running {
                 VmPowerState::PoweredOn
@@ -83,7 +85,7 @@ pub async fn list_vms(
             },
             guest_os: settings.and_then(|s| s.get("guestos").cloned()),
             guest_os_family: settings
-                .map(|s| vmx::get_guest_os_family(s))
+                .map(vmx::get_guest_os_family)
                 .unwrap_or(GuestOsFamily::Other),
             num_cpus: settings.and_then(|s| s.get("numvcpus").and_then(|v| v.parse().ok())),
             memory_mb: settings.and_then(|s| s.get("memsize").and_then(|v| v.parse().ok())),
@@ -167,7 +169,7 @@ pub async fn create_vm(
     });
 
     // Create directory
-    std::fs::create_dir_all(&target_dir).map_err(|e| VmwError::io(e))?;
+    std::fs::create_dir_all(&target_dir).map_err(VmwError::io)?;
 
     let vmx_path = format!(
         "{}{}{}.vmx",
@@ -201,10 +203,7 @@ pub async fn create_vm(
 }
 
 /// Update VM configuration (must be powered off).
-pub async fn update_vm(
-    vmrun: &VmRun,
-    req: UpdateVmRequest,
-) -> VmwResult<()> {
+pub async fn update_vm(vmrun: &VmRun, req: UpdateVmRequest) -> VmwResult<()> {
     // Verify powered off
     let running = vmrun.list().await.unwrap_or_default();
     if running.iter().any(|p| p == &req.vmx_path) {
@@ -333,10 +332,7 @@ pub async fn clone_vm(
 }
 
 /// Register a VM from an existing VMX path.
-pub async fn register_vm(
-    rest: &VmRestClient,
-    vmx_path: &str,
-) -> VmwResult<String> {
+pub async fn register_vm(rest: &VmRestClient, vmx_path: &str) -> VmwResult<String> {
     let rv = rest.register_vm(vmx_path).await?;
     Ok(rv.id.unwrap_or_else(|| vmx_path.to_string()))
 }
@@ -348,10 +344,7 @@ pub async fn unregister_vm(rest: &VmRestClient, id: &str) -> VmwResult<()> {
 }
 
 /// Configure a NIC on a VM.
-pub async fn configure_nic(
-    vmrun: &VmRun,
-    req: ConfigureNicRequest,
-) -> VmwResult<()> {
+pub async fn configure_nic(vmrun: &VmRun, req: ConfigureNicRequest) -> VmwResult<()> {
     let running = vmrun.list().await.unwrap_or_default();
     if running.iter().any(|p| p == &req.vmx_path) {
         return Err(VmwError::new(
@@ -418,10 +411,7 @@ pub async fn remove_nic(vmrun: &VmRun, vmx_path: &str, nic_index: u32) -> VmwRes
 }
 
 /// Configure a CD/DVD drive.
-pub async fn configure_cdrom(
-    vmrun: &VmRun,
-    req: ConfigureCdromRequest,
-) -> VmwResult<()> {
+pub async fn configure_cdrom(vmrun: &VmRun, req: ConfigureCdromRequest) -> VmwResult<()> {
     let running = vmrun.list().await.unwrap_or_default();
     if running.iter().any(|p| p == &req.vmx_path) {
         return Err(VmwError::new(

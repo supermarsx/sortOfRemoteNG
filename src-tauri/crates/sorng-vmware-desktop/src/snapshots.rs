@@ -8,7 +8,7 @@ use crate::vmrun::VmRun;
 pub async fn list_snapshots(vmrun: &VmRun, vmx_path: &str) -> VmwResult<Vec<SnapshotInfo>> {
     let raw = vmrun.list_snapshots(vmx_path).await?;
     let mut snapshots = Vec::new();
-    for (i, name) in raw.iter().enumerate() {
+    for name in raw.iter() {
         snapshots.push(SnapshotInfo {
             name: name.clone(),
             display_name: Some(name.clone()),
@@ -51,7 +51,9 @@ pub async fn list_snapshots(vmrun: &VmRun, vmx_path: &str) -> VmwResult<Vec<Snap
                     .unwrap_or_else(|| format!("Snapshot {idx}"));
                 let desc = vmx.settings.get(&format!("{prefix}.description")).cloned();
                 let parent = vmx.settings.get(&format!("{prefix}.parent")).cloned();
-                let created_str = vmx.settings.get(&format!("{prefix}.createtimehigh"))
+                let created_str = vmx
+                    .settings
+                    .get(&format!("{prefix}.createtimehigh"))
                     .and_then(|_h| vmx.settings.get(&format!("{prefix}.createtimelow")))
                     .map(|_| String::new()); // timestamp reconstruction is complex
                 let has_memory = vmx
@@ -97,7 +99,7 @@ pub async fn list_snapshots(vmrun: &VmRun, vmx_path: &str) -> VmwResult<Vec<Snap
 /// Get the snapshot tree for a VM.
 pub async fn get_snapshot_tree(vmrun: &VmRun, vmx_path: &str) -> VmwResult<SnapshotTree> {
     let snapshots = list_snapshots(vmrun, vmx_path).await?;
-    let roots: Vec<String> = snapshots
+    let _roots: Vec<String> = snapshots
         .iter()
         .filter(|s| s.parent.is_none())
         .map(|s| s.name.clone())
@@ -139,11 +141,7 @@ pub async fn revert_to_snapshot(vmrun: &VmRun, vmx_path: &str, name: &str) -> Vm
 }
 
 /// Get details for a specific snapshot by name.
-pub async fn get_snapshot(
-    vmrun: &VmRun,
-    vmx_path: &str,
-    name: &str,
-) -> VmwResult<SnapshotInfo> {
+pub async fn get_snapshot(vmrun: &VmRun, vmx_path: &str, name: &str) -> VmwResult<SnapshotInfo> {
     let all = list_snapshots(vmrun, vmx_path).await?;
     all.into_iter()
         .find(|s| s.name == name)

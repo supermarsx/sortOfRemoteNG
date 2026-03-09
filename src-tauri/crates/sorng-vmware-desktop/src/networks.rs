@@ -17,7 +17,10 @@ pub async fn list_networks(rest: &VmRestClient) -> VmwResult<Vec<VirtualNetwork>
             network_type: n.net_type.clone().unwrap_or_default(),
             subnet: n.subnet.clone(),
             subnet_mask: n.mask.clone(),
-            dhcp_enabled: n.dhcp.as_ref().map(|v: &String| v.to_lowercase() == "true" || v == "1"),
+            dhcp_enabled: n
+                .dhcp
+                .as_ref()
+                .map(|v: &String| v.to_lowercase() == "true" || v == "1"),
             nat_enabled: Some(
                 n.net_type
                     .as_deref()
@@ -34,9 +37,12 @@ pub async fn list_networks(rest: &VmRestClient) -> VmwResult<Vec<VirtualNetwork>
 /// Get a specific network by name.
 pub async fn get_network(rest: &VmRestClient, name: &str) -> VmwResult<VirtualNetwork> {
     let all = list_networks(rest).await?;
-    all.into_iter()
-        .find(|n| n.name == name)
-        .ok_or_else(|| VmwError::new(VmwErrorKind::NetworkError, format!("Network {name} not found")))
+    all.into_iter().find(|n| n.name == name).ok_or_else(|| {
+        VmwError::new(
+            VmwErrorKind::NetworkError,
+            format!("Network {name} not found"),
+        )
+    })
 }
 
 /// Create a new virtual network.
@@ -93,7 +99,10 @@ pub async fn list_port_forwards(
                 host_port: p.get("port")?.as_u64()? as u16,
                 guest_ip: p.get("guest_ip")?.as_str()?.to_string(),
                 guest_port: p.get("guest_port")?.as_u64()? as u16,
-                description: p.get("desc").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                description: p
+                    .get("desc")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             })
         })
         .collect())
@@ -128,10 +137,7 @@ pub async fn delete_port_forward(
 }
 
 /// Get MAC-to-IP address mappings (DHCP leases) for a network.
-pub async fn get_dhcp_leases(
-    rest: &VmRestClient,
-    network: &str,
-) -> VmwResult<Vec<DhcpLease>> {
+pub async fn get_dhcp_leases(rest: &VmRestClient, network: &str) -> VmwResult<Vec<DhcpLease>> {
     let mappings: Value = rest.get_mac_to_ip(network).await?;
     let mut leases = Vec::new();
     if let Some(arr) = mappings.as_array() {
