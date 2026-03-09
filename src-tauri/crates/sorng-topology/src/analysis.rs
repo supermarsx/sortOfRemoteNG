@@ -15,10 +15,7 @@ type Result<T> = std::result::Result<T, TopologyError>;
 /// Strategy: enumerate connected components *without* the target node and
 /// compare to the component the target node belonged to. Nodes that are no
 /// longer reachable from the largest remaining sub-component are "affected".
-pub fn calculate_blast_radius(
-    graph: &TopologyGraph,
-    node_id: &str,
-) -> Result<BlastRadius> {
+pub fn calculate_blast_radius(graph: &TopologyGraph, node_id: &str) -> Result<BlastRadius> {
     if !graph.nodes.contains_key(node_id) {
         return Err(TopologyError::NodeNotFound(node_id.to_string()));
     }
@@ -98,7 +95,7 @@ pub fn calculate_blast_radius(
 
     // The largest remaining sub-component is the "surviving" set; everything
     // else becomes unreachable.
-    components.sort_by(|a, b| b.len().cmp(&a.len()));
+    components.sort_by_key(|b| std::cmp::Reverse(b.len()));
     let surviving: HashSet<&str> = components.first().cloned().unwrap_or_default();
 
     let affected_node_ids: Vec<String> = original_component
@@ -176,6 +173,7 @@ pub fn find_bottlenecks(graph: &TopologyGraph) -> Vec<String> {
     let mut ap: Vec<bool> = vec![false; n];
     let mut timer: i32 = 0;
 
+    #[allow(clippy::too_many_arguments)]
     fn dfs(
         u: usize,
         adj: &HashMap<String, Vec<String>>,
@@ -267,6 +265,7 @@ pub fn find_critical_edges(graph: &TopologyGraph) -> Vec<String> {
     let mut bridges: Vec<(usize, usize)> = Vec::new();
     let mut timer: i32 = 0;
 
+    #[allow(clippy::too_many_arguments)]
     fn dfs_bridge(
         u: usize,
         adj: &HashMap<String, Vec<String>>,
@@ -287,7 +286,9 @@ pub fn find_critical_edges(graph: &TopologyGraph) -> Vec<String> {
             if let Some(&v) = id_to_idx.get(nbr_id.as_str()) {
                 if disc[v] == -1 {
                     parent[v] = u as i32;
-                    dfs_bridge(v, adj, node_ids, id_to_idx, disc, low, parent, bridges, timer);
+                    dfs_bridge(
+                        v, adj, node_ids, id_to_idx, disc, low, parent, bridges, timer,
+                    );
                     low[u] = low[u].min(low[v]);
 
                     if low[v] > disc[u] {
@@ -392,10 +393,7 @@ pub fn calculate_dependency_depth(graph: &TopologyGraph, node_id: &str) -> Resul
 /// ```json
 /// { "id": "A", "label": "...", "children": [ { "id": "B", ... }, ... ] }
 /// ```
-pub fn get_dependency_tree(
-    graph: &TopologyGraph,
-    node_id: &str,
-) -> Result<serde_json::Value> {
+pub fn get_dependency_tree(graph: &TopologyGraph, node_id: &str) -> Result<serde_json::Value> {
     if !graph.nodes.contains_key(node_id) {
         return Err(TopologyError::NodeNotFound(node_id.to_string()));
     }
@@ -459,9 +457,7 @@ pub fn get_dependency_tree(
 ///
 /// Returns `(node_a, node_b, paths)` triples. Only considers nodes with
 /// edges (not isolated).
-pub fn detect_redundancy(
-    graph: &TopologyGraph,
-) -> Vec<(String, String, Vec<Vec<String>>)> {
+pub fn detect_redundancy(graph: &TopologyGraph) -> Vec<(String, String, Vec<Vec<String>>)> {
     let mut result: Vec<(String, String, Vec<Vec<String>>)> = Vec::new();
 
     // Only check pairs that share at least one edge.

@@ -5,10 +5,10 @@ edition = "2021"
 description = "Connection topology and network map engine for SortOfRemote NG — graph-based network visualization, dependency analysis, geographic mapping, tunnel/proxy chain tracing, blast-radius calculation, auto-layout with force-directed placement, and topology diff/change detection"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1", features = ["full"] }
-tauri = { version = "2.9.5", features = ["devtools"] }
-uuid = { version = "1.0", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
-log = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }

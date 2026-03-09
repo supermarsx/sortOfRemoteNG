@@ -29,14 +29,8 @@ pub fn compute_diff(old: &TopologyGraph, new: &TopologyGraph) -> TopologyDiff {
     let old_edge_ids: HashSet<String> = old.edges.iter().map(|e| e.id.clone()).collect();
     let new_edge_ids: HashSet<String> = new.edges.iter().map(|e| e.id.clone()).collect();
 
-    let added_edges: Vec<String> = new_edge_ids
-        .difference(&old_edge_ids)
-        .cloned()
-        .collect();
-    let removed_edges: Vec<String> = old_edge_ids
-        .difference(&new_edge_ids)
-        .cloned()
-        .collect();
+    let added_edges: Vec<String> = new_edge_ids.difference(&old_edge_ids).cloned().collect();
+    let removed_edges: Vec<String> = old_edge_ids.difference(&new_edge_ids).cloned().collect();
 
     let old_edge_map: HashMap<&str, &TopologyEdge> =
         old.edges.iter().map(|e| (e.id.as_str(), e)).collect();
@@ -45,7 +39,10 @@ pub fn compute_diff(old: &TopologyGraph, new: &TopologyGraph) -> TopologyDiff {
 
     let mut changed_edges: Vec<EdgeChange> = Vec::new();
     for eid in old_edge_ids.intersection(&new_edge_ids) {
-        if let (Some(oe), Some(ne)) = (old_edge_map.get(eid.as_str()), new_edge_map.get(eid.as_str())) {
+        if let (Some(oe), Some(ne)) = (
+            old_edge_map.get(eid.as_str()),
+            new_edge_map.get(eid.as_str()),
+        ) {
             diff_edge(oe, ne, &mut changed_edges);
         }
     }

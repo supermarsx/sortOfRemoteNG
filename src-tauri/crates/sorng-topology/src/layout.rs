@@ -301,8 +301,8 @@ pub fn circular_layout(graph: &mut TopologyGraph, config: &LayoutConfig) -> Resu
 
     let cx = config.width / 2.0;
     let cy = config.height / 2.0;
-    let radius = ((config.width - 2.0 * config.padding).min(config.height - 2.0 * config.padding))
-        / 2.0;
+    let radius =
+        ((config.width - 2.0 * config.padding).min(config.height - 2.0 * config.padding)) / 2.0;
 
     for (i, id) in node_ids.iter().enumerate() {
         let angle = 2.0 * std::f64::consts::PI * i as f64 / n as f64 - std::f64::consts::FRAC_PI_2;
@@ -339,7 +339,7 @@ pub fn grid_layout(graph: &mut TopologyGraph, config: &LayoutConfig) -> Result<(
     } else {
         0.0
     };
-    let rows = (n + cols - 1) / cols;
+    let rows = n.div_ceil(cols);
     let row_gap = if rows > 1 {
         usable_h / (rows - 1) as f64
     } else {

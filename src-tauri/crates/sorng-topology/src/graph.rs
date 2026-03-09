@@ -205,7 +205,14 @@ impl TopologyGraph {
         let mut visited: HashSet<String> = HashSet::new();
         visited.insert(from.to_string());
 
-        Self::dfs_all_paths(&adj, from, to, &mut visited, &mut vec![from.to_string()], &mut results);
+        Self::dfs_all_paths(
+            &adj,
+            from,
+            to,
+            &mut visited,
+            &mut vec![from.to_string()],
+            &mut results,
+        );
         results
     }
 
@@ -264,7 +271,7 @@ impl TopologyGraph {
                 components.push(component);
             }
         }
-        components.sort_by(|a, b| b.len().cmp(&a.len()));
+        components.sort_by_key(|b| std::cmp::Reverse(b.len()));
         components
     }
 
@@ -296,16 +303,14 @@ impl TopologyGraph {
                 if gray.contains(neighbor.as_str()) {
                     return true;
                 }
-                if white.contains(neighbor.as_str())
-                    && Self::dfs_cycle(adj, neighbor, white, gray)
+                if white.contains(neighbor.as_str()) && Self::dfs_cycle(adj, neighbor, white, gray)
                 {
                     return true;
                 }
             }
         }
         gray.remove(node);
-        true // mark as black implicitly — not needed in set
-        ;
+        // mark as black implicitly — not needed in set
         false
     }
 
@@ -331,8 +336,7 @@ impl TopologyGraph {
         for (id, node) in &other.nodes {
             self.nodes.insert(id.clone(), node.clone());
         }
-        let existing_edge_ids: HashSet<String> =
-            self.edges.iter().map(|e| e.id.clone()).collect();
+        let existing_edge_ids: HashSet<String> = self.edges.iter().map(|e| e.id.clone()).collect();
         for edge in &other.edges {
             if !existing_edge_ids.contains(&edge.id) {
                 self.edges.push(edge.clone());
@@ -356,19 +360,13 @@ impl TopologyGraph {
         let mut by_status: HashMap<String, usize> = HashMap::new();
 
         for node in self.nodes.values() {
-            *by_node_type
-                .entry(node.node_type.to_string())
-                .or_insert(0) += 1;
+            *by_node_type.entry(node.node_type.to_string()).or_insert(0) += 1;
             let status_key = serde_json::to_string(&node.status).unwrap_or_default();
             let status_key = status_key.trim_matches('"').to_string();
             *by_status.entry(status_key).or_insert(0) += 1;
         }
 
-        let latencies: Vec<f64> = self
-            .edges
-            .iter()
-            .filter_map(|e| e.latency_ms)
-            .collect();
+        let latencies: Vec<f64> = self.edges.iter().filter_map(|e| e.latency_ms).collect();
         let avg_latency_ms = if latencies.is_empty() {
             0.0
         } else {

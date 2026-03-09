@@ -178,7 +178,11 @@ pub fn build_from_connections(connections: &[ConnectionData]) -> TopologyGraph {
                     source_id: proxy_id.clone(),
                     target_id: prev_id.clone(),
                     edge_type: EdgeType::ProxyChain,
-                    label: Some(format!("{} proxy hop {}", hop.proxy_type, proxy_chain.len() - i)),
+                    label: Some(format!(
+                        "{} proxy hop {}",
+                        hop.proxy_type,
+                        proxy_chain.len() - i
+                    )),
                     latency_ms: None,
                     bandwidth: None,
                     encrypted: hop.proxy_type.to_lowercase().contains("socks5")
@@ -227,7 +231,11 @@ pub fn build_from_connections(connections: &[ConnectionData]) -> TopologyGraph {
                     source_id: tunnel_id.clone(),
                     target_id: prev_id.clone(),
                     edge_type: EdgeType::SshTunnel,
-                    label: Some(format!("{} tunnel hop {}", hop.tunnel_type, tunnel_chain.len() - i)),
+                    label: Some(format!(
+                        "{} tunnel hop {}",
+                        hop.tunnel_type,
+                        tunnel_chain.len() - i
+                    )),
                     latency_ms: None,
                     bandwidth: None,
                     encrypted: true,

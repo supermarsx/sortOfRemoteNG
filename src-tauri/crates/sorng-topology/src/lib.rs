@@ -14,16 +14,16 @@
 //!   restore prior snapshots
 //! - **Tauri commands** — full set of `topo_*` IPC commands for the frontend
 
-pub mod types;
+pub mod analysis;
+pub mod builder;
+pub mod commands;
+pub mod diff;
 pub mod error;
 pub mod graph;
 pub mod layout;
-pub mod analysis;
-pub mod builder;
-pub mod diff;
 pub mod service;
-pub mod commands;
+pub mod types;
 
-pub use types::*;
 pub use error::TopologyError;
 pub use service::{TopologyService, TopologyServiceState};
+pub use types::*;

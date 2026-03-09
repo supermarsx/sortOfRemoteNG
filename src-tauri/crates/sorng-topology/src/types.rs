@@ -46,18 +46,14 @@ impl std::fmt::Display for NodeType {
 /// Operational status of a node.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum NodeStatus {
     Online,
     Offline,
     Degraded,
+    #[default]
     Unknown,
     Maintenance,
-}
-
-impl Default for NodeStatus {
-    fn default() -> Self {
-        NodeStatus::Unknown
-    }
 }
 
 /// Geographic location information.
@@ -145,19 +141,15 @@ pub struct NodeGroup {
 /// Which layout algorithm to use.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum LayoutAlgorithm {
+    #[default]
     ForceDirected,
     Hierarchical,
     Circular,
     Grid,
     Geographic,
     Manual,
-}
-
-impl Default for LayoutAlgorithm {
-    fn default() -> Self {
-        LayoutAlgorithm::ForceDirected
-    }
 }
 
 /// Configuration for layout algorithms.
