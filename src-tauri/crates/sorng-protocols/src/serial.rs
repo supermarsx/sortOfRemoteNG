@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use tokio::task;
-use tokio::sync::mpsc;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::Read;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio::task;
+use uuid::Uuid;
 
 pub type SerialServiceState = Arc<Mutex<SerialService>>;
 
@@ -172,7 +172,11 @@ impl SerialService {
         }
     }
 
-    pub async fn send_serial_data(&mut self, _session_id: &str, _data: Vec<u8>) -> Result<(), String> {
+    pub async fn send_serial_data(
+        &mut self,
+        _session_id: &str,
+        _data: Vec<u8>,
+    ) -> Result<(), String> {
         // In this basic implementation, we don't maintain a persistent port for sending data
         // A more complete implementation would need to use channels or other IPC mechanisms
         Err("Data sending not implemented in this basic serial client".to_string())
@@ -187,7 +191,8 @@ impl SerialService {
     }
 
     pub async fn list_serial_sessions(&self) -> Vec<SerialSession> {
-        self.connections.values()
+        self.connections
+            .values()
             .map(|conn| conn.session.clone())
             .collect()
     }
@@ -197,9 +202,7 @@ impl SerialService {
             let ports = serialport::available_ports()
                 .map_err(|e| format!("Failed to list serial ports: {}", e))?;
 
-            Ok(ports.into_iter()
-                .map(|port| port.port_name)
-                .collect())
+            Ok(ports.into_iter().map(|port| port.port_name).collect())
         })
         .await
         .map_err(|e| format!("Task join error: {}", e))?
@@ -216,7 +219,9 @@ pub async fn connect_serial(
     state: tauri::State<'_, SerialServiceState>,
 ) -> Result<String, String> {
     let mut service = state.lock().await;
-    service.connect_serial(port_name, baud_rate, data_bits, parity, stop_bits).await
+    service
+        .connect_serial(port_name, baud_rate, data_bits, parity, stop_bits)
+        .await
 }
 
 #[tauri::command]

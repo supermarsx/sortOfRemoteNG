@@ -6,32 +6,32 @@ description = "VNC, Telnet, Serial, Rlogin, Raw Socket, FTP, DB, and HTTP protoc
 
 [dependencies]
 sorng-core = { path = "../sorng-core" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1", features = ["full"] }
-tauri = { version = "2.9.5", features = ["devtools"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
 vnc-rs = "0.5"
 suppaftp = "4.5"
-ssh2 = "0.9"
+ssh2 = { workspace = true }
 sqlx = { version = "0.7", features = ["mysql", "runtime-tokio"] }
-uuid = { version = "1.0", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
-sha2 = "0.10"
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
 serialport = "4.2"
 socket2 = "0.5"
-reqwest = { version = "0.11", features = ["json", "cookies", "blocking"] }
-regex = "1.10"
+reqwest = { workspace = true, features = ["cookies", "blocking"] }
+regex = { workspace = true }
 rustls = "0.21"
 rustls-pemfile = "1.0"
 x509-parser = "0.15"
-native-tls = "0.2"
-tokio-native-tls = "0.3"
-base64 = "0.21"
-log = "0.4"
-rand = "0.8"
+native-tls = { workspace = true }
+tokio-native-tls = { workspace = true }
+base64 = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
 axum = "0.7"
 image = "0.24"
 flate2 = "1.0"
-hex = "0.4"
+hex = { workspace = true }

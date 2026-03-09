@@ -4,13 +4,13 @@
 //! including basic auth, bearer tokens, and custom headers.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::sync::OnceLock;
 use tauri::command;
 use tokio::sync::Mutex;
-use sha2::{Sha256, Digest};
 
 /// Configuration for an HTTP connection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,7 +248,11 @@ pub async fn http_get(
     let config = HttpConnectionConfig {
         url,
         method: "GET".to_string(),
-        auth_type: if username.is_some() { Some("basic".to_string()) } else { None },
+        auth_type: if username.is_some() {
+            Some("basic".to_string())
+        } else {
+            None
+        },
         username,
         password,
         bearer_token: None,
@@ -277,7 +281,11 @@ pub async fn http_post(
     let config = HttpConnectionConfig {
         url,
         method: "POST".to_string(),
-        auth_type: if username.is_some() { Some("basic".to_string()) } else { None },
+        auth_type: if username.is_some() {
+            Some("basic".to_string())
+        } else {
+            None
+        },
         username,
         password,
         bearer_token: None,
@@ -336,7 +344,6 @@ pub struct ProxyMediatorResponse {
 /// authentication headers automatically injected. This approach works with
 /// all WebView2 versions (unlike custom URI scheme handlers which require
 /// ICoreWebView2_22 for iframe support).
-
 /// Tracks active proxy mediator sessions so they can be stopped.
 pub struct ProxySessionManager {
     pub(crate) sessions: HashMap<String, ProxySessionEntry>,
@@ -446,7 +453,8 @@ pub struct WebRecording {
 }
 
 fn active_web_recordings() -> &'static std::sync::Mutex<HashMap<String, WebRecordingState>> {
-    static INSTANCE: OnceLock<std::sync::Mutex<HashMap<String, WebRecordingState>>> = OnceLock::new();
+    static INSTANCE: OnceLock<std::sync::Mutex<HashMap<String, WebRecordingState>>> =
+        OnceLock::new();
     INSTANCE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -522,7 +530,10 @@ async fn axum_proxy_handler(
         if k == "referer" || k == "origin" {
             if let Ok(v) = value.to_str() {
                 if v.contains("127.0.0.1") {
-                    fwd_headers.push((key.as_str().to_string(), format!("{}/", state.target_origin)));
+                    fwd_headers.push((
+                        key.as_str().to_string(),
+                        format!("{}/", state.target_origin),
+                    ));
                     continue;
                 }
             }
@@ -580,12 +591,27 @@ async fn axum_proxy_handler(
 
     // Try once, and retry on transient failures.
     let req_start = std::time::Instant::now();
-    let result = match send_upstream(&state, &reqwest_method, &full_url, &fwd_headers, &body_bytes).await {
+    let result = match send_upstream(
+        &state,
+        &reqwest_method,
+        &full_url,
+        &fwd_headers,
+        &body_bytes,
+    )
+    .await
+    {
         Ok(resp) => Ok(resp),
         Err(e) if is_retryable(&e) => {
             // Brief pause before retry
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            send_upstream(&state, &reqwest_method, &full_url, &fwd_headers, &body_bytes).await
+            send_upstream(
+                &state,
+                &reqwest_method,
+                &full_url,
+                &fwd_headers,
+                &body_bytes,
+            )
+            .await
         }
         Err(e) => Err(e),
     };
@@ -648,7 +674,10 @@ async fn axum_proxy_handler(
                 if let Some(rec_state) = recordings.get_mut(&state.session_id) {
                     let timestamp_ms = rec_state.start_time.elapsed().as_millis() as u64;
                     let req_headers = if rec_state.record_headers {
-                        fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                        fwd_headers
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect()
                     } else {
                         HashMap::new()
                     };
@@ -781,7 +810,14 @@ async fn axum_proxy_handler(
                         timestamp_ms,
                         method: method_str.clone(),
                         url: full_url.clone(),
-                        request_headers: if rec_state.record_headers { fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect() } else { HashMap::new() },
+                        request_headers: if rec_state.record_headers {
+                            fwd_headers
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect()
+                        } else {
+                            HashMap::new()
+                        },
                         request_body_size: body_bytes.len() as u64,
                         status: 502,
                         response_headers: HashMap::new(),
@@ -827,9 +863,7 @@ pub async fn start_basic_auth_proxy(
     // If a proxy already exists for this connection_id, shut it down first so
     // we never have duplicate proxies for the same connection.
     if !connection_id.is_empty() {
-        let mut mgr = sessions
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         let stale_ids: Vec<String> = mgr
             .sessions
             .iter()
@@ -884,8 +918,7 @@ pub async fn start_basic_auth_proxy(
 
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
-    let last_error: Arc<std::sync::Mutex<Option<String>>> =
-        Arc::new(std::sync::Mutex::new(None));
+    let last_error: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
 
     // Shared state for the axum handler.
     let proxy_state = Arc::new(AxumProxyState {
@@ -920,9 +953,7 @@ pub async fn start_basic_auth_proxy(
 
     // Store the session.
     {
-        let mut mgr = sessions
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         mgr.sessions.insert(
             session_id.clone(),
             ProxySessionEntry {
@@ -956,9 +987,7 @@ pub fn stop_basic_auth_proxy(
     session_id: String,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<(), String> {
-    let mut mgr = sessions
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     if let Some(mut entry) = mgr.sessions.remove(&session_id) {
         // Signal the axum server to shut down.
         if let Some(tx) = entry.shutdown_tx.take() {
@@ -975,9 +1004,7 @@ pub fn stop_basic_auth_proxy(
 pub fn list_proxy_sessions(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<Vec<ProxyMediatorResponse>, String> {
-    let mgr = sessions
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     Ok(mgr
         .sessions
         .iter()
@@ -994,9 +1021,7 @@ pub fn list_proxy_sessions(
 pub fn get_proxy_session_details(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<Vec<ProxySessionDetail>, String> {
-    let mgr = sessions
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     Ok(mgr
         .sessions
         .iter()
@@ -1009,11 +1034,7 @@ pub fn get_proxy_session_details(
             created_at: entry.created_at.clone(),
             request_count: entry.request_count.load(Ordering::Relaxed),
             error_count: entry.error_count.load(Ordering::Relaxed),
-            last_error: entry
-                .last_error
-                .lock()
-                .ok()
-                .and_then(|g| g.clone()),
+            last_error: entry.last_error.lock().ok().and_then(|g| g.clone()),
         })
         .collect())
 }
@@ -1023,9 +1044,7 @@ pub fn get_proxy_session_details(
 pub fn get_proxy_request_log(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<Vec<ProxyRequestLogEntry>, String> {
-    let mgr = sessions
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     Ok(mgr.request_log.clone())
 }
 
@@ -1034,9 +1053,7 @@ pub fn get_proxy_request_log(
 pub fn clear_proxy_request_log(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<(), String> {
-    let mut mgr = sessions
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     mgr.request_log.clear();
     Ok(())
 }
@@ -1046,9 +1063,7 @@ pub fn clear_proxy_request_log(
 pub fn stop_all_proxy_sessions(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<u32, String> {
-    let mut mgr = sessions
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
     let count = mgr.sessions.len() as u32;
     for (_id, mut entry) in mgr.sessions.drain() {
         if let Some(tx) = entry.shutdown_tx.take() {
@@ -1076,14 +1091,10 @@ pub async fn check_proxy_health(
 ) -> Result<Vec<ProxyHealthResult>, String> {
     // Collect info while holding the lock briefly.
     let entries: Vec<(String, u16)> = {
-        let mgr = sessions
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         session_ids
             .iter()
-            .filter_map(|id| {
-                mgr.sessions.get(id).map(|e| (id.clone(), e.local_port))
-            })
+            .filter_map(|id| mgr.sessions.get(id).map(|e| (id.clone(), e.local_port)))
             .collect()
     };
 
@@ -1150,9 +1161,7 @@ pub async fn restart_proxy_session(
 ) -> Result<ProxyMediatorResponse, String> {
     // Extract the config from the existing (dead) session entry.
     let (target_url, username, password, target_origin, connection_id, verify_ssl, min_tls) = {
-        let mgr = sessions
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         let entry = mgr
             .sessions
             .get(&session_id)
@@ -1170,9 +1179,7 @@ pub async fn restart_proxy_session(
 
     // Shut down the old axum server (may already be dead).
     {
-        let mut mgr = sessions
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         if let Some(mut entry) = mgr.sessions.remove(&session_id) {
             if let Some(tx) = entry.shutdown_tx.take() {
                 let _ = tx.send(());
@@ -1206,8 +1213,7 @@ pub async fn restart_proxy_session(
     let new_session_id = uuid::Uuid::new_v4().to_string();
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
-    let last_error: Arc<std::sync::Mutex<Option<String>>> =
-        Arc::new(std::sync::Mutex::new(None));
+    let last_error: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
 
     let proxy_state = Arc::new(AxumProxyState {
         session_id: new_session_id.clone(),
@@ -1239,9 +1245,7 @@ pub async fn restart_proxy_session(
 
     // Store the new session.
     {
-        let mut mgr = sessions
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         mgr.sessions.insert(
             new_session_id.clone(),
             ProxySessionEntry {
@@ -1333,7 +1337,9 @@ pub async fn get_tls_certificate_info(
         .map_err(|e| format!("Failed to get peer certificate: {}", e))?
         .ok_or("Server did not present a certificate")?;
 
-    let der = peer_cert.to_der().map_err(|e| format!("DER encode failed: {}", e))?;
+    let der = peer_cert
+        .to_der()
+        .map_err(|e| format!("DER encode failed: {}", e))?;
 
     // SHA-256 fingerprint
     let mut hasher = Sha256::new();
@@ -1355,9 +1361,7 @@ pub async fn get_tls_certificate_info(
         valid_from = Some(cert.validity().not_before.to_rfc2822().unwrap_or_default());
         valid_to = Some(cert.validity().not_after.to_rfc2822().unwrap_or_default());
         serial = Some(cert.raw_serial_as_string());
-        signature_algorithm = Some(
-            cert.signature_algorithm.algorithm.to_id_string(),
-        );
+        signature_algorithm = Some(cert.signature_algorithm.algorithm.to_id_string());
 
         // Extract SANs
         if let Ok(Some(san_ext)) = cert.subject_alternative_name() {
@@ -1406,6 +1410,7 @@ use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 ///   5. Redirect Chain (if any)
 ///   6. Response Body Probe (first bytes, content-type, size)
 #[command]
+#[allow(clippy::too_many_arguments)]
 pub async fn diagnose_http_connection(
     host: String,
     port: u16,
@@ -1435,7 +1440,14 @@ pub async fn diagnose_http_connection(
             a
         }
         None => {
-            return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+            return Ok(diagnostics::finish_report(
+                &host,
+                port,
+                protocol,
+                resolved_ip,
+                steps,
+                run_start,
+            ));
         }
     };
 
@@ -1443,7 +1455,14 @@ pub async fn diagnose_http_connection(
     // We use the shared probe for consistency
     let tcp_ok = diagnostics::probe_tcp(socket_addr, timeout, true, &mut steps).is_some();
     if !tcp_ok {
-        return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+        return Ok(diagnostics::finish_report(
+            &host,
+            port,
+            protocol,
+            resolved_ip,
+            steps,
+            run_start,
+        ));
     }
 
     // ── Step 3: TLS Handshake + Certificate (HTTPS only) ────────────────
@@ -1475,7 +1494,14 @@ pub async fn diagnose_http_connection(
                             duration_ms: t.elapsed().as_millis() as u64,
                             detail: None,
                         });
-                        return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+                        return Ok(diagnostics::finish_report(
+                            &host,
+                            port,
+                            protocol,
+                            resolved_ip,
+                            steps,
+                            run_start,
+                        ));
                     }
                 };
 
@@ -1497,7 +1523,8 @@ pub async fn diagnose_http_connection(
 
                                 let mut detail = format!("Fingerprint: SHA256:{}", fp);
 
-                                if let Ok((_rem, x509)) = x509_parser::parse_x509_certificate(&der) {
+                                if let Ok((_rem, x509)) = x509_parser::parse_x509_certificate(&der)
+                                {
                                     detail.push_str(&format!(
                                         "\nSubject: {}\nIssuer: {}\nValid: {} → {}\nSANs: {}",
                                         x509.subject(),
@@ -1519,13 +1546,24 @@ pub async fn diagnose_http_connection(
 
                                     // Check expiry
                                     let now = chrono::Utc::now();
-                                    if let Ok(not_after_str) = x509.validity().not_after.to_rfc2822() {
-                                        if let Ok(not_after) = chrono::DateTime::parse_from_rfc2822(&not_after_str) {
-                                            let days_left = (not_after.signed_duration_since(now)).num_days();
+                                    if let Ok(not_after_str) =
+                                        x509.validity().not_after.to_rfc2822()
+                                    {
+                                        if let Ok(not_after) =
+                                            chrono::DateTime::parse_from_rfc2822(&not_after_str)
+                                        {
+                                            let days_left =
+                                                (not_after.signed_duration_since(now)).num_days();
                                             if days_left < 0 {
-                                                detail.push_str(&format!("\n⚠ EXPIRED {} days ago!", -days_left));
+                                                detail.push_str(&format!(
+                                                    "\n⚠ EXPIRED {} days ago!",
+                                                    -days_left
+                                                ));
                                             } else if days_left < 30 {
-                                                detail.push_str(&format!("\n⚠ Expires in {} days", days_left));
+                                                detail.push_str(&format!(
+                                                    "\n⚠ Expires in {} days",
+                                                    days_left
+                                                ));
                                             }
                                         }
                                     }
@@ -1594,7 +1632,14 @@ pub async fn diagnose_http_connection(
                 duration_ms: t.elapsed().as_millis() as u64,
                 detail: None,
             });
-            return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+            return Ok(diagnostics::finish_report(
+                &host,
+                port,
+                protocol,
+                resolved_ip,
+                steps,
+                run_start,
+            ));
         }
     };
 
@@ -1639,7 +1684,9 @@ pub async fn diagnose_http_connection(
                 status: if status_ok { "pass" } else { "warn" }.into(),
                 message: format!(
                     "{} {} → {} {} ({}ms)",
-                    req_method, req_path, status_code,
+                    req_method,
+                    req_path,
+                    status_code,
                     status.canonical_reason().unwrap_or(""),
                     elapsed
                 ),
@@ -1677,12 +1724,11 @@ pub async fn diagnose_http_connection(
             match response.bytes().await {
                 Ok(body) => {
                     let body_len = body.len();
-                    let preview: String = String::from_utf8_lossy(
-                        &body[..std::cmp::min(body_len, 200)],
-                    )
-                    .chars()
-                    .filter(|c| !c.is_control() || *c == '\n')
-                    .collect();
+                    let preview: String =
+                        String::from_utf8_lossy(&body[..std::cmp::min(body_len, 200)])
+                            .chars()
+                            .filter(|c| !c.is_control() || *c == '\n')
+                            .collect();
 
                     steps.push(DiagnosticStep {
                         name: "Response Body".into(),
@@ -1737,7 +1783,14 @@ pub async fn diagnose_http_connection(
         }
     }
 
-    Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start))
+    Ok(diagnostics::finish_report(
+        &host,
+        port,
+        protocol,
+        resolved_ip,
+        steps,
+        run_start,
+    ))
 }
 
 // ─── Web Session Recording Commands ──────────────────────────────
@@ -1750,7 +1803,9 @@ pub fn start_web_recording(
 ) -> Result<(), String> {
     // Verify the proxy session exists
     let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
-    let entry = mgr.sessions.get(&session_id)
+    let entry = mgr
+        .sessions
+        .get(&session_id)
         .ok_or_else(|| format!("Proxy session {} not found", session_id))?;
 
     let host = {
@@ -1767,38 +1822,44 @@ pub fn start_web_recording(
     let connection_id = entry.connection_id.clone();
     drop(mgr);
 
-    let mut recordings = active_web_recordings().lock()
+    let mut recordings = active_web_recordings()
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
 
     if recordings.contains_key(&session_id) {
         return Err("Web recording already active for this session".into());
     }
 
-    recordings.insert(session_id.clone(), WebRecordingState {
-        start_time: std::time::Instant::now(),
-        start_utc: chrono::Utc::now(),
-        session_id: session_id.clone(),
-        target_url,
-        connection_id,
-        host,
-        entries: Vec::new(),
-        record_headers: record_headers.unwrap_or(true),
-    });
+    recordings.insert(
+        session_id.clone(),
+        WebRecordingState {
+            start_time: std::time::Instant::now(),
+            start_utc: chrono::Utc::now(),
+            session_id: session_id.clone(),
+            target_url,
+            connection_id,
+            host,
+            entries: Vec::new(),
+            record_headers: record_headers.unwrap_or(true),
+        },
+    );
 
     Ok(())
 }
 
 #[command]
-pub fn stop_web_recording(
-    session_id: String,
-) -> Result<WebRecording, String> {
-    let mut recordings = active_web_recordings().lock()
+pub fn stop_web_recording(session_id: String) -> Result<WebRecording, String> {
+    let mut recordings = active_web_recordings()
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
 
-    let state = recordings.remove(&session_id)
+    let state = recordings
+        .remove(&session_id)
         .ok_or_else(|| format!("No active web recording for session {}", session_id))?;
 
-    let total_bytes: u64 = state.entries.iter()
+    let total_bytes: u64 = state
+        .entries
+        .iter()
         .map(|e| e.request_body_size + e.response_body_size)
         .sum();
 
@@ -1819,18 +1880,24 @@ pub fn stop_web_recording(
 
 #[command]
 pub fn is_web_recording(session_id: String) -> Result<bool, String> {
-    let recordings = active_web_recordings().lock()
+    let recordings = active_web_recordings()
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
     Ok(recordings.contains_key(&session_id))
 }
 
 #[command]
-pub fn get_web_recording_status(session_id: String) -> Result<Option<WebRecordingMetadata>, String> {
-    let recordings = active_web_recordings().lock()
+pub fn get_web_recording_status(
+    session_id: String,
+) -> Result<Option<WebRecordingMetadata>, String> {
+    let recordings = active_web_recordings()
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
 
     Ok(recordings.get(&session_id).map(|state| {
-        let total_bytes: u64 = state.entries.iter()
+        let total_bytes: u64 = state
+            .entries
+            .iter()
             .map(|e| e.request_body_size + e.response_body_size)
             .sum();
         WebRecordingMetadata {
@@ -1849,44 +1916,48 @@ pub fn get_web_recording_status(session_id: String) -> Result<Option<WebRecordin
 #[command]
 pub fn export_web_recording_har(recording: WebRecording) -> Result<String, String> {
     // HAR 1.2 format
-    let entries: Vec<serde_json::Value> = recording.entries.iter().map(|e| {
-        serde_json::json!({
-            "startedDateTime": recording.metadata.start_time,
-            "time": e.duration_ms,
-            "request": {
-                "method": e.method,
-                "url": e.url,
-                "httpVersion": "HTTP/1.1",
-                "headers": e.request_headers.iter().map(|(k, v)| {
-                    serde_json::json!({"name": k, "value": v})
-                }).collect::<Vec<_>>(),
-                "queryString": [],
-                "headersSize": -1,
-                "bodySize": e.request_body_size as i64,
-            },
-            "response": {
-                "status": e.status,
-                "statusText": "",
-                "httpVersion": "HTTP/1.1",
-                "headers": e.response_headers.iter().map(|(k, v)| {
-                    serde_json::json!({"name": k, "value": v})
-                }).collect::<Vec<_>>(),
-                "content": {
-                    "size": e.response_body_size as i64,
-                    "mimeType": e.content_type.as_deref().unwrap_or(""),
+    let entries: Vec<serde_json::Value> = recording
+        .entries
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "startedDateTime": recording.metadata.start_time,
+                "time": e.duration_ms,
+                "request": {
+                    "method": e.method,
+                    "url": e.url,
+                    "httpVersion": "HTTP/1.1",
+                    "headers": e.request_headers.iter().map(|(k, v)| {
+                        serde_json::json!({"name": k, "value": v})
+                    }).collect::<Vec<_>>(),
+                    "queryString": [],
+                    "headersSize": -1,
+                    "bodySize": e.request_body_size as i64,
                 },
-                "redirectURL": "",
-                "headersSize": -1,
-                "bodySize": e.response_body_size as i64,
-            },
-            "cache": {},
-            "timings": {
-                "send": 0,
-                "wait": e.duration_ms,
-                "receive": 0,
-            },
+                "response": {
+                    "status": e.status,
+                    "statusText": "",
+                    "httpVersion": "HTTP/1.1",
+                    "headers": e.response_headers.iter().map(|(k, v)| {
+                        serde_json::json!({"name": k, "value": v})
+                    }).collect::<Vec<_>>(),
+                    "content": {
+                        "size": e.response_body_size as i64,
+                        "mimeType": e.content_type.as_deref().unwrap_or(""),
+                    },
+                    "redirectURL": "",
+                    "headersSize": -1,
+                    "bodySize": e.response_body_size as i64,
+                },
+                "cache": {},
+                "timings": {
+                    "send": 0,
+                    "wait": e.duration_ms,
+                    "receive": 0,
+                },
+            })
         })
-    }).collect();
+        .collect();
 
     let har = serde_json::json!({
         "log": {

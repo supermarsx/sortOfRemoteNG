@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use tokio::net::{TcpStream, UdpSocket};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use tokio::task;
-use tokio::sync::mpsc;
-use socket2::{Socket, Domain, Type, Protocol};
+use socket2::{Domain, Protocol, Socket, Type};
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio::task;
+use uuid::Uuid;
 
 pub type RawSocketServiceState = Arc<Mutex<RawSocketService>>;
 
@@ -82,7 +82,8 @@ impl RawSocketService {
                     .parse()
                     .map_err(|e| format!("Invalid address: {}", e))?;
 
-                socket.connect(addr)
+                socket
+                    .connect(addr)
                     .await
                     .map_err(|e| format!("Failed to connect UDP to {}:{}: {}", host, port, e))?;
 
@@ -98,8 +99,9 @@ impl RawSocketService {
                     .parse()
                     .map_err(|e| format!("Invalid address: {}", e))?;
 
-                socket.connect(&addr.into())
-                    .map_err(|e| format!("Failed to connect raw TCP to {}:{}: {}", host, port, e))?;
+                socket.connect(&addr.into()).map_err(|e| {
+                    format!("Failed to connect raw TCP to {}:{}: {}", host, port, e)
+                })?;
 
                 // Convert to tokio TcpStream
                 let stream = TcpStream::connect(format!("{}:{}", host, port))
@@ -122,13 +124,17 @@ impl RawSocketService {
                     .parse()
                     .map_err(|e| format!("Invalid address: {}", e))?;
 
-                udp_socket.connect(addr)
-                    .await
-                    .map_err(|e| format!("Failed to connect raw UDP to {}:{}: {}", host, port, e))?;
+                udp_socket.connect(addr).await.map_err(|e| {
+                    format!("Failed to connect raw UDP to {}:{}: {}", host, port, e)
+                })?;
 
                 SocketType::RawUdp(udp_socket)
             }
-            _ => return Err("Unsupported protocol. Use 'tcp', 'udp', 'raw_tcp', or 'raw_udp'".to_string()),
+            _ => {
+                return Err(
+                    "Unsupported protocol. Use 'tcp', 'udp', 'raw_tcp', or 'raw_udp'".to_string(),
+                )
+            }
         };
 
         // Create session info
@@ -190,7 +196,10 @@ impl RawSocketService {
         Ok(session_id)
     }
 
-    async fn read_from_socket_async(socket: &mut SocketType, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+    async fn read_from_socket_async(
+        socket: &mut SocketType,
+        buf: &mut [u8],
+    ) -> Result<usize, std::io::Error> {
         match socket {
             SocketType::Tcp(stream) => stream.read(buf).await,
             SocketType::Udp(udp) => udp.recv(buf).await,
@@ -230,13 +239,20 @@ impl RawSocketService {
         }
     }
 
-    pub async fn send_raw_socket_data(&mut self, _session_id: &str, _data: Vec<u8>) -> Result<(), String> {
+    pub async fn send_raw_socket_data(
+        &mut self,
+        _session_id: &str,
+        _data: Vec<u8>,
+    ) -> Result<(), String> {
         // In this basic implementation, we don't maintain a persistent socket for sending data
         // A more complete implementation would need to use channels or other IPC mechanisms
         Err("Data sending not implemented in this basic raw socket client".to_string())
     }
 
-    pub async fn get_raw_socket_session_info(&self, session_id: &str) -> Result<RawSocketSession, String> {
+    pub async fn get_raw_socket_session_info(
+        &self,
+        session_id: &str,
+    ) -> Result<RawSocketSession, String> {
         if let Some(connection) = self.connections.get(session_id) {
             Ok(connection.session.clone())
         } else {
@@ -245,7 +261,8 @@ impl RawSocketService {
     }
 
     pub async fn list_raw_socket_sessions(&self) -> Vec<RawSocketSession> {
-        self.connections.values()
+        self.connections
+            .values()
             .map(|conn| conn.session.clone())
             .collect()
     }

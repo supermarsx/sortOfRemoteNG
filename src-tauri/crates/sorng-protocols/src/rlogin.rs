@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use tokio::task;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio::task;
+use uuid::Uuid;
 
 pub type RloginServiceState = Arc<Mutex<RloginService>>;
 
@@ -59,8 +59,12 @@ impl RloginService {
 
         // Send rlogin protocol initialization
         // Rlogin protocol: null + local_username + null + remote_username + null + terminal_type + null
-        let init_data = format!("\0{}\0{}\0{}\0", local_username, remote_username, terminal_type);
-        stream.write_all(init_data.as_bytes())
+        let init_data = format!(
+            "\0{}\0{}\0{}\0",
+            local_username, remote_username, terminal_type
+        );
+        stream
+            .write_all(init_data.as_bytes())
             .await
             .map_err(|e| format!("Failed to send rlogin initialization: {}", e))?;
 
@@ -140,7 +144,11 @@ impl RloginService {
         }
     }
 
-    pub async fn send_rlogin_command(&mut self, _session_id: &str, _command: String) -> Result<(), String> {
+    pub async fn send_rlogin_command(
+        &mut self,
+        _session_id: &str,
+        _command: String,
+    ) -> Result<(), String> {
         // In this basic implementation, we don't maintain a persistent stream for sending commands
         // A more complete implementation would need to use channels or other IPC mechanisms
         Err("Command sending not implemented in this basic rlogin client".to_string())
@@ -155,7 +163,8 @@ impl RloginService {
     }
 
     pub async fn list_rlogin_sessions(&self) -> Vec<RloginSession> {
-        self.connections.values()
+        self.connections
+            .values()
             .map(|conn| conn.session.clone())
             .collect()
     }
@@ -171,7 +180,9 @@ pub async fn connect_rlogin(
     state: tauri::State<'_, RloginServiceState>,
 ) -> Result<String, String> {
     let mut service = state.lock().await;
-    service.connect_rlogin(host, port, local_username, remote_username, terminal_type).await
+    service
+        .connect_rlogin(host, port, local_username, remote_username, terminal_type)
+        .await
 }
 
 #[tauri::command]

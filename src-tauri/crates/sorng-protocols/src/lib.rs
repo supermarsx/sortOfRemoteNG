@@ -3,9 +3,9 @@
 //! Additional connectivity protocols: Serial, Rlogin, Raw Socket,
 //! FTP/SFTP, MySQL database, and HTTP services.
 
-pub mod serial;
-pub mod rlogin;
-pub mod raw_socket;
-pub mod ftp;
 pub mod db;
+pub mod ftp;
 pub mod http;
+pub mod raw_socket;
+pub mod rlogin;
+pub mod serial;
