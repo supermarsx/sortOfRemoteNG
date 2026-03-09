@@ -18,15 +18,15 @@
 //! ## Example
 //!
 
+use base64::{engine::general_purpose, Engine as _};
+use image::Rgb;
+use qrcode::QrCode;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 use totp_rs::{Algorithm, TOTP};
-use image::Rgb;
-use qrcode::QrCode;
-use base64::{Engine as _, engine::general_purpose};
-use rand::RngCore;
 
 /// Supported 2FA methods
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -75,12 +75,14 @@ impl TwoFactorService {
     }
 
     /// Enables 2FA for a user
-    pub async fn enable_2fa(&mut self, username: String, method: TwoFactorMethod) -> Result<String, String> {
+    pub async fn enable_2fa(
+        &mut self,
+        username: String,
+        method: TwoFactorMethod,
+    ) -> Result<String, String> {
         match method {
-            TwoFactorMethod::TOTP => {
-                self.enable_totp(username).await
-            }
-            _ => Err("Unsupported 2FA method".to_string())
+            TwoFactorMethod::TOTP => self.enable_totp(username).await,
+            _ => Err("Unsupported 2FA method".to_string()),
         }
     }
 
@@ -98,16 +100,24 @@ impl TwoFactorService {
             1,  // 1 digit step (30 seconds)
             30, // 30 second period
             secret.clone().into_bytes(),
-        ).map_err(|e| format!("Failed to create TOTP: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to create TOTP: {}", e))?;
 
         // Generate QR code URL
-        let url = format!("otpauth://totp/SortOfRemote NG:{}?secret={}&issuer=SortOfRemote NG", username, secret);
+        let url = format!(
+            "otpauth://totp/SortOfRemote NG:{}?secret={}&issuer=SortOfRemote NG",
+            username, secret
+        );
         let code = QrCode::new(url.as_bytes())
             .map_err(|e| format!("Failed to generate QR code: {}", e))?;
 
         let image = code.render::<Rgb<u8>>().build();
         let mut png_data = Vec::new();
-        image.write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageFormat::Png)
+        image
+            .write_to(
+                &mut std::io::Cursor::new(&mut png_data),
+                image::ImageFormat::Png,
+            )
             .map_err(|e| format!("Failed to encode QR code: {}", e))?;
 
         let qr_base64 = general_purpose::STANDARD.encode(&png_data);
@@ -146,14 +156,15 @@ impl TwoFactorService {
             match config.method {
                 TwoFactorMethod::TOTP => {
                     if let Some(totp) = self.totp_instances.get(username) {
-                        let is_valid = totp.check_current(token)
+                        let is_valid = totp
+                            .check_current(token)
                             .map_err(|e| format!("TOTP verification failed: {}", e))?;
                         Ok(is_valid)
                     } else {
                         Err("TOTP instance not found".to_string())
                     }
                 }
-                _ => Err("Unsupported 2FA method".to_string())
+                _ => Err("Unsupported 2FA method".to_string()),
             }
         } else {
             Ok(false) // No 2FA configured
@@ -161,12 +172,16 @@ impl TwoFactorService {
     }
 
     /// Confirms 2FA setup after successful verification
-
-    pub async fn confirm_2fa_setup(&mut self, username: String, token: String) -> Result<(), String> {
+    pub async fn confirm_2fa_setup(
+        &mut self,
+        username: String,
+        token: String,
+    ) -> Result<(), String> {
         if let Some(config) = self.configs.get_mut(&username) {
             // Check if the token is valid first
             if let Some(totp) = self.totp_instances.get(&username) {
-                let is_valid = totp.check_current(&token)
+                let is_valid = totp
+                    .check_current(&token)
                     .map_err(|e| format!("TOTP verification failed: {}", e))?;
                 if is_valid {
                     config.enabled = true;
@@ -194,7 +209,11 @@ impl TwoFactorService {
     }
 
     /// Verifies a backup code
-    pub async fn verify_backup_code(&mut self, username: String, code: String) -> Result<bool, String> {
+    pub async fn verify_backup_code(
+        &mut self,
+        username: String,
+        code: String,
+    ) -> Result<bool, String> {
         if let Some(config) = self.configs.get_mut(&username) {
             if let Some(pos) = config.backup_codes.iter().position(|c| c == &code) {
                 config.backup_codes.remove(pos);
@@ -208,7 +227,10 @@ impl TwoFactorService {
     }
 
     /// Regenerates backup codes for a user
-    pub async fn regenerate_backup_codes(&mut self, username: String) -> Result<Vec<String>, String> {
+    pub async fn regenerate_backup_codes(
+        &mut self,
+        username: String,
+    ) -> Result<Vec<String>, String> {
         let codes = self.generate_backup_codes();
         if let Some(config) = self.configs.get_mut(&username) {
             config.backup_codes = codes.clone();
@@ -220,7 +242,8 @@ impl TwoFactorService {
 
     /// Checks if 2FA is enabled for a user
     pub async fn is_2fa_enabled(&self, username: &str) -> bool {
-        self.configs.get(username)
+        self.configs
+            .get(username)
             .map(|config| config.enabled)
             .unwrap_or(false)
     }
@@ -234,8 +257,8 @@ impl TwoFactorService {
     fn generate_backup_codes(&self) -> Vec<String> {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        (0..10).map(|_| {
-            (0..8).map(|_| rng.gen_range(0..10).to_string()).collect()
-        }).collect()
+        (0..10)
+            .map(|_| (0..8).map(|_| rng.gen_range(0..10).to_string()).collect())
+            .collect()
     }
 }

@@ -1,10 +1,10 @@
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
+use base64::{engine::general_purpose, Engine as _};
+use rand::RngCore;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use totp_rs::{Algorithm, TOTP};
-use aes_gcm::{Aes256Gcm, Nonce};
-use aes_gcm::aead::{Aead, KeyInit};
-use rand::RngCore;
-use base64::{Engine as _, engine::general_purpose};
 
 pub type SecurityServiceState = Arc<Mutex<SecurityService>>;
 
@@ -30,7 +30,8 @@ impl SecurityService {
             1,
             30,
             secret.to_vec(), // raw secret bytes, NOT the encoded string
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
         self.totp = Some(totp);
         Ok(secret_b32)
     }
@@ -55,7 +56,8 @@ impl SecurityService {
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // Encrypt the data
-        let ciphertext = cipher.encrypt(nonce, data.as_bytes())
+        let ciphertext = cipher
+            .encrypt(nonce, data.as_bytes())
             .map_err(|e| format!("Encryption failed: {:?}", e))?;
 
         // Combine nonce and ciphertext, then base64 encode
@@ -68,7 +70,8 @@ impl SecurityService {
 
     pub async fn decrypt_data(&self, data: String, key: String) -> Result<String, String> {
         // Decode from base64
-        let combined = general_purpose::STANDARD.decode(data.as_bytes())
+        let combined = general_purpose::STANDARD
+            .decode(data.as_bytes())
             .map_err(|e| format!("Base64 decode failed: {}", e))?;
 
         if combined.len() < 12 {
@@ -85,11 +88,11 @@ impl SecurityService {
         let nonce = Nonce::from_slice(nonce_bytes);
 
         // Decrypt
-        let plaintext = cipher.decrypt(nonce, ciphertext)
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| format!("Decryption failed: {:?}", e))?;
 
-        String::from_utf8(plaintext)
-            .map_err(|e| format!("UTF-8 decode failed: {}", e))
+        String::from_utf8(plaintext).map_err(|e| format!("UTF-8 decode failed: {}", e))
     }
 
     /// Derive a 256-bit key from a password using PBKDF2-HMAC-SHA256.
@@ -100,7 +103,7 @@ impl SecurityService {
     /// the ciphertext, but this keeps backward-compatible API parity
     /// (encrypt/decrypt with the same key string always matches).
     fn derive_key(password: &str) -> [u8; 32] {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         // Deterministic salt = SHA-256("sorng-kdf-salt:" || password)
         let mut salt_hasher = Sha256::new();
@@ -109,36 +112,44 @@ impl SecurityService {
         let salt = salt_hasher.finalize();
 
         let mut key = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(
-            password.as_bytes(),
-            &salt,
-            600_000,
-            &mut key,
-        );
+        pbkdf2::pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 600_000, &mut key);
         key
     }
 }
 
 #[tauri::command]
-pub async fn generate_totp_secret(state: tauri::State<'_, SecurityServiceState>) -> Result<String, String> {
+pub async fn generate_totp_secret(
+    state: tauri::State<'_, SecurityServiceState>,
+) -> Result<String, String> {
     let mut security = state.lock().await;
     security.generate_totp_secret().await
 }
 
 #[tauri::command]
-pub async fn verify_totp(state: tauri::State<'_, SecurityServiceState>, code: String) -> Result<bool, String> {
+pub async fn verify_totp(
+    state: tauri::State<'_, SecurityServiceState>,
+    code: String,
+) -> Result<bool, String> {
     let security = state.lock().await;
     security.verify_totp(code).await
 }
 
 #[tauri::command]
-pub async fn encrypt_data(state: tauri::State<'_, SecurityServiceState>, data: String, key: String) -> Result<String, String> {
+pub async fn encrypt_data(
+    state: tauri::State<'_, SecurityServiceState>,
+    data: String,
+    key: String,
+) -> Result<String, String> {
     let security = state.lock().await;
     security.encrypt_data(data, key).await
 }
 
 #[tauri::command]
-pub async fn decrypt_data(state: tauri::State<'_, SecurityServiceState>, data: String, key: String) -> Result<String, String> {
+pub async fn decrypt_data(
+    state: tauri::State<'_, SecurityServiceState>,
+    data: String,
+    key: String,
+) -> Result<String, String> {
     let security = state.lock().await;
     security.decrypt_data(data, key).await
 }

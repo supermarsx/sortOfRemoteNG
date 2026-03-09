@@ -19,9 +19,9 @@
 //! ## Example
 //!
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 use tokio::time::{Duration, Instant};
 
 /// Auto-lock configuration
@@ -109,8 +109,10 @@ impl AutoLockService {
                 }
 
                 let idle_duration = service.last_activity.elapsed();
-                let timeout_duration = Duration::from_secs(service.config.idle_timeout_minutes as u64 * 60);
-                let warning_duration = Duration::from_secs(service.config.warning_minutes as u64 * 60);
+                let timeout_duration =
+                    Duration::from_secs(service.config.idle_timeout_minutes as u64 * 60);
+                let warning_duration =
+                    Duration::from_secs(service.config.warning_minutes as u64 * 60);
 
                 if idle_duration >= timeout_duration {
                     service.lock_application().await;

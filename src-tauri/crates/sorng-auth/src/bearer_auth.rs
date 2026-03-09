@@ -18,14 +18,14 @@
 //! ## Example
 //!
 
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use oauth2::basic::BasicClient;
+use oauth2::{ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
-use oauth2::{ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope};
-use oauth2::basic::BasicClient;
 
 /// OAuth2 provider configuration
 #[derive(Serialize, Deserialize, Clone)]
@@ -102,10 +102,16 @@ impl BearerAuthService {
     }
 
     /// Authenticates a user with username/password and returns a Bearer token
-    pub async fn authenticate_user(&mut self, username: String, password: String, provider_url: Option<String>) -> Result<String, String> {
+    pub async fn authenticate_user(
+        &mut self,
+        username: String,
+        password: String,
+        provider_url: Option<String>,
+    ) -> Result<String, String> {
         if let Some(provider_url) = provider_url {
             // External provider authentication
-            self.authenticate_with_provider(username, password, &provider_url).await
+            self.authenticate_with_provider(username, password, &provider_url)
+                .await
         } else {
             // Local authentication - this would typically call your existing auth service
             // For now, return a mock token
@@ -123,7 +129,12 @@ impl BearerAuthService {
     }
 
     /// Authenticates with an external OAuth2 provider
-    async fn authenticate_with_provider(&mut self, username: String, _password: String, provider_url: &str) -> Result<String, String> {
+    async fn authenticate_with_provider(
+        &mut self,
+        username: String,
+        _password: String,
+        provider_url: &str,
+    ) -> Result<String, String> {
         // This is a simplified implementation
         // In a real implementation, you would:
         // 1. Redirect user to provider's authorization URL
@@ -162,7 +173,7 @@ impl BearerAuthService {
     /// Validates a JWT token
     fn validate_jwt_token(&self, token: &str) -> Result<String, String> {
         // Try to decode with available keys
-        for (_issuer, key) in &self.jwt_keys {
+        for key in self.jwt_keys.values() {
             let validation = Validation::new(Algorithm::RS256);
             match decode::<Claims>(token, key, &validation) {
                 Ok(token_data) => {
@@ -204,7 +215,9 @@ impl BearerAuthService {
             }
         }
 
-        if let (Some(old_token), Some((new_access_token, new_token_info))) = (token_to_refresh, new_token) {
+        if let (Some(old_token), Some((new_access_token, new_token_info))) =
+            (token_to_refresh, new_token)
+        {
             self.tokens.remove(&old_token);
             self.tokens.insert(new_access_token.clone(), new_token_info);
             Ok(new_access_token)
@@ -220,7 +233,11 @@ impl BearerAuthService {
     }
 
     /// Initiates OAuth2 authorization flow
-    pub fn initiate_oauth_flow(&self, provider_name: &str, redirect_uri: &str) -> Result<String, String> {
+    pub fn initiate_oauth_flow(
+        &self,
+        provider_name: &str,
+        redirect_uri: &str,
+    ) -> Result<String, String> {
         if let Some(provider) = self.providers.get(provider_name) {
             let client = BasicClient::new(
                 ClientId::new(provider.client_id.clone()),
@@ -228,7 +245,9 @@ impl BearerAuthService {
                 oauth2::AuthUrl::new(provider.auth_url.clone()).map_err(|e| e.to_string())?,
                 Some(oauth2::TokenUrl::new(provider.token_url.clone()).map_err(|e| e.to_string())?),
             )
-            .set_redirect_uri(RedirectUrl::new(redirect_uri.to_string()).map_err(|e| e.to_string())?);
+            .set_redirect_uri(
+                RedirectUrl::new(redirect_uri.to_string()).map_err(|e| e.to_string())?,
+            );
 
             let (pkce_challenge, _pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -245,7 +264,12 @@ impl BearerAuthService {
     }
 
     /// Handles OAuth2 callback
-    pub async fn handle_oauth_callback(&mut self, provider_name: &str, code: &str, _state: &str) -> Result<String, String> {
+    pub async fn handle_oauth_callback(
+        &mut self,
+        provider_name: &str,
+        code: &str,
+        _state: &str,
+    ) -> Result<String, String> {
         // This would complete the OAuth flow and return a token
         // Simplified implementation
         let token = format!("oauth_callback_{}_{}", provider_name, code);
@@ -253,8 +277,14 @@ impl BearerAuthService {
     }
 
     /// Completes OAuth2 authorization flow
-    pub async fn complete_oauth_flow(&mut self, provider_name: String, code: String, state: String) -> Result<String, String> {
-        self.handle_oauth_callback(&provider_name, &code, &state).await
+    pub async fn complete_oauth_flow(
+        &mut self,
+        provider_name: String,
+        code: String,
+        state: String,
+    ) -> Result<String, String> {
+        self.handle_oauth_callback(&provider_name, &code, &state)
+            .await
     }
 
     /// Lists available OAuth2 providers
@@ -272,7 +302,7 @@ impl BearerAuthService {
 
     /// Generates a simple token (for demo purposes)
     fn generate_token(&self, username: &str) -> String {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(format!("{}_{}", username, chrono::Utc::now().timestamp()));
         let result = hasher.finalize();
@@ -281,7 +311,8 @@ impl BearerAuthService {
 
     /// Lists active tokens for a user
     pub async fn list_user_tokens(&self, username: &str) -> Vec<TokenInfo> {
-        self.tokens.values()
+        self.tokens
+            .values()
             .filter(|token| token.username == username)
             .cloned()
             .collect()

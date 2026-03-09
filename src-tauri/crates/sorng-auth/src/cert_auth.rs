@@ -18,15 +18,15 @@
 //! ## Example
 //!
 
+use chrono::{DateTime, Utc};
+use rustls_pemfile::Item;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 use x509_parser::prelude::*;
-use rustls_pemfile::Item;
-use chrono::{DateTime, Utc};
 
 /// Certificate information structure
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -142,7 +142,11 @@ impl CertAuthService {
     }
 
     /// Registers a new certificate for a user
-    pub async fn register_certificate(&mut self, username: String, cert_data: Vec<u8>) -> Result<(), String> {
+    pub async fn register_certificate(
+        &mut self,
+        username: String,
+        cert_data: Vec<u8>,
+    ) -> Result<(), String> {
         let cert = self.parse_certificate_internal(&cert_data)?;
         let fingerprint = self.calculate_fingerprint(&cert_data);
 
@@ -175,9 +179,9 @@ impl CertAuthService {
     }
 
     /// Parses a certificate from DER or PEM data (internal)
-    fn parse_certificate_internal(&self, cert_data: &[u8]) -> Result<CertInfo, String> {
+    fn parse_certificate_internal(&self, mut cert_data: &[u8]) -> Result<CertInfo, String> {
         // Try PEM first
-        if let Ok(pems) = rustls_pemfile::read_all(&mut cert_data.as_ref()) {
+        if let Ok(pems) = rustls_pemfile::read_all(&mut cert_data) {
             for item in pems {
                 if let Item::X509Certificate(cert) = item {
                     let cert = X509Certificate::from_der(&cert)
@@ -244,7 +248,7 @@ impl CertAuthService {
 
     /// Calculates SHA256 fingerprint of certificate
     fn calculate_fingerprint(&self, cert_data: &[u8]) -> String {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(cert_data);
         let result = hasher.finalize();
@@ -278,10 +282,7 @@ impl CertAuthService {
             return Ok(dt.with_timezone(&Utc));
         }
 
-        let legacy_formats = [
-            "%Y-%m-%d %H:%M:%S %Z",
-            "%Y-%m-%d %H:%M:%S %z",
-        ];
+        let legacy_formats = ["%Y-%m-%d %H:%M:%S %Z", "%Y-%m-%d %H:%M:%S %z"];
 
         for format in legacy_formats {
             if let Ok(dt) = DateTime::parse_from_str(value, format) {

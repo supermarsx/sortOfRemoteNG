@@ -18,13 +18,13 @@
 //! ## Example
 //!
 
+use bcrypt::{hash, verify, DEFAULT_COST};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
-use bcrypt::{hash, verify, DEFAULT_COST};
-use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 /// Represents a user stored in the authentication system.
@@ -114,7 +114,8 @@ impl AuthService {
 
         let data = fs::read_to_string(path)?;
         let users: Vec<StoredUser> = serde_json::from_str(&data)?;
-        self.users = users.into_iter()
+        self.users = users
+            .into_iter()
             .map(|u| (u.username, u.password_hash))
             .collect();
         Ok(())
@@ -136,7 +137,9 @@ impl AuthService {
     /// - JSON serialization fails
     /// - File system permissions are insufficient
     fn persist(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let users: Vec<StoredUser> = self.users.iter()
+        let users: Vec<StoredUser> = self
+            .users
+            .iter()
             .map(|(username, password_hash)| StoredUser {
                 username: username.clone(),
                 password_hash: password_hash.clone(),
@@ -207,14 +210,18 @@ impl AuthService {
                     ));
                 }
                 // Lockout expired, reset
-                self.failed_attempts.remove(&username.to_string());
+                self.failed_attempts.remove(username);
             }
         }
 
         // Constant-time path: always perform bcrypt verify to prevent timing oracle.
         // If user doesn't exist, verify against a dummy hash so the timing is the same.
         let dummy_hash = "$2b$12$LJ3m4ys3Lz0Y.Q5eTQJbxOgHQmEDZ0gN2X3qK8vR5tU6wP7yC9nSq";
-        let stored_hash = self.users.get(username).map(|h| h.as_str()).unwrap_or(dummy_hash);
+        let stored_hash = self
+            .users
+            .get(username)
+            .map(|h| h.as_str())
+            .unwrap_or(dummy_hash);
 
         let result = verify(password, stored_hash).unwrap_or(false);
 
@@ -224,12 +231,15 @@ impl AuthService {
 
         if !valid && user_exists {
             // Track failed attempt
-            let entry = self.failed_attempts.entry(username.to_string()).or_insert((0, Instant::now()));
+            let entry = self
+                .failed_attempts
+                .entry(username.to_string())
+                .or_insert((0, Instant::now()));
             entry.0 += 1;
             entry.1 = Instant::now();
         } else if valid {
             // Reset on successful login
-            self.failed_attempts.remove(&username.to_string());
+            self.failed_attempts.remove(username);
         }
 
         Ok(valid)
@@ -302,10 +312,14 @@ impl AuthService {
     ///
     /// # Example
     ///
-    pub async fn update_password(&mut self, username: String, new_password: String) -> Result<bool, String> {
-        if self.users.contains_key(&username) {
+    pub async fn update_password(
+        &mut self,
+        username: String,
+        new_password: String,
+    ) -> Result<bool, String> {
+        if let std::collections::hash_map::Entry::Occupied(mut e) = self.users.entry(username) {
             let hash = hash(new_password, DEFAULT_COST).map_err(|e| e.to_string())?;
-            self.users.insert(username, hash);
+            e.insert(hash);
             self.persist().map_err(|e| e.to_string())?;
             Ok(true)
         } else {

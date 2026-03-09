@@ -17,8 +17,8 @@ use chrono::Utc;
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose, SanType, SignatureAlgorithm,
-    PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384, PKCS_ED25519, PKCS_RSA_SHA256,
-    PKCS_RSA_SHA384, PKCS_RSA_SHA512,
+    PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384, PKCS_ED25519, PKCS_RSA_SHA256, PKCS_RSA_SHA384,
+    PKCS_RSA_SHA512,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -54,7 +54,6 @@ pub enum KeyAlgorithm {
 
     // ── Legacy / deprecated algorithms ─────────────────────────
     // These are disabled by default and gated by `LegacyCryptoPolicy`.
-
     /// **LEGACY** RSA 1024-bit — NIST deprecated since 2013.  Can be
     /// factored with moderate resources.  Only use for interop with
     /// equipment that cannot be upgraded.
@@ -302,10 +301,7 @@ impl CertGenService {
     /// Resolve the rcgen `SignatureAlgorithm` given a key algorithm and hash.
     /// For ECDSA and Ed25519 the hash is dictated by the curve, so `hash` is
     /// ignored for those variants.
-    fn rcgen_sign_algo(
-        algo: &KeyAlgorithm,
-        hash: &SignatureHash,
-    ) -> &'static SignatureAlgorithm {
+    fn rcgen_sign_algo(algo: &KeyAlgorithm, hash: &SignatureHash) -> &'static SignatureAlgorithm {
         match algo {
             KeyAlgorithm::EcdsaP256 => &PKCS_ECDSA_P256_SHA256,
             KeyAlgorithm::EcdsaP384 => &PKCS_ECDSA_P384_SHA384,
@@ -343,8 +339,9 @@ impl CertGenService {
                 KeyPair::from_der_and_sign_algo(pkcs8_der.as_bytes(), &PKCS_ECDSA_P384_SHA384)
                     .map_err(|e| format!("KeyPair from P-384: {}", e))
             }
-            KeyAlgorithm::Ed25519 => KeyPair::generate(&PKCS_ED25519)
-                .map_err(|e| format!("Ed25519 keygen: {}", e)),
+            KeyAlgorithm::Ed25519 => {
+                KeyPair::generate(&PKCS_ED25519).map_err(|e| format!("Ed25519 keygen: {}", e))
+            }
         }
     }
 
@@ -701,7 +698,10 @@ impl CertGenService {
         }
 
         match params.algorithm {
-            KeyAlgorithm::Rsa1024 | KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa3072 | KeyAlgorithm::Rsa4096
+            KeyAlgorithm::Rsa1024
+            | KeyAlgorithm::Rsa2048
+            | KeyAlgorithm::Rsa3072
+            | KeyAlgorithm::Rsa4096
             | KeyAlgorithm::Rsa8192 => {
                 cp.alg = Self::rcgen_sign_algo(&params.algorithm, &params.signature_hash);
             }
@@ -718,8 +718,7 @@ impl CertGenService {
 
         cp.key_pair = Some(key_pair);
 
-        let cert =
-            Certificate::from_params(cp).map_err(|e| format!("CSR cert creation: {}", e))?;
+        let cert = Certificate::from_params(cp).map_err(|e| format!("CSR cert creation: {}", e))?;
         let csr_pem = cert
             .serialize_request_pem()
             .map_err(|e| format!("CSR PEM: {}", e))?;
@@ -796,10 +795,7 @@ impl CertGenService {
         ca_cp.key_pair = Some(ca_key_pair);
 
         // Use the CA's stored algorithm + signature hash
-        ca_cp.alg = Self::rcgen_sign_algo(
-            &ca_entry.cert.algorithm,
-            &ca_entry.cert.signature_hash,
-        );
+        ca_cp.alg = Self::rcgen_sign_algo(&ca_entry.cert.algorithm, &ca_entry.cert.signature_hash);
 
         let ca_cert =
             Certificate::from_params(ca_cp).map_err(|e| format!("Rebuild CA cert: {}", e))?;
@@ -902,10 +898,7 @@ impl CertGenService {
         ee_cp.key_pair = Some(ee_key_pair);
 
         // Inherit algorithm selection from the CA
-        ee_cp.alg = Self::rcgen_sign_algo(
-            &ca_entry.cert.algorithm,
-            &ca_entry.cert.signature_hash,
-        );
+        ee_cp.alg = Self::rcgen_sign_algo(&ca_entry.cert.algorithm, &ca_entry.cert.signature_hash);
 
         let ee_cert =
             Certificate::from_params(ee_cp).map_err(|e| format!("EE cert creation: {}", e))?;
@@ -996,13 +989,9 @@ impl CertGenService {
         ];
         ca_cp.key_pair = Some(ca_key_pair);
 
-        ca_cp.alg = Self::rcgen_sign_algo(
-            &ca_entry.cert.algorithm,
-            &ca_entry.cert.signature_hash,
-        );
+        ca_cp.alg = Self::rcgen_sign_algo(&ca_entry.cert.algorithm, &ca_entry.cert.signature_hash);
 
-        let ca_cert =
-            Certificate::from_params(ca_cp).map_err(|e| format!("Rebuild CA: {}", e))?;
+        let ca_cert = Certificate::from_params(ca_cp).map_err(|e| format!("Rebuild CA: {}", e))?;
 
         // Build the end-entity certificate
         let ee_key_pair = Self::generate_key_pair(&params.algorithm)?;
@@ -1017,8 +1006,7 @@ impl CertGenService {
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_default();
 
-        let ee_cert =
-            Certificate::from_params(ee_cp).map_err(|e| format!("EE cert: {}", e))?;
+        let ee_cert = Certificate::from_params(ee_cp).map_err(|e| format!("EE cert: {}", e))?;
 
         let cert_pem = ee_cert
             .serialize_pem_with_signer(&ca_cert)
@@ -1068,11 +1056,7 @@ impl CertGenService {
     // Public API: Export to PEM files
     // -----------------------------------------------------------------------
 
-    pub async fn export_pem(
-        &self,
-        cert_id: &str,
-        dir: &str,
-    ) -> Result<(String, String), String> {
+    pub async fn export_pem(&self, cert_id: &str, dir: &str) -> Result<(String, String), String> {
         let entry = self
             .store
             .certs
@@ -1086,10 +1070,8 @@ impl CertGenService {
         let cert_path = Path::new(dir).join(format!("{}.crt", safe_name));
         let key_path = Path::new(dir).join(format!("{}.key", safe_name));
 
-        fs::write(&cert_path, &entry.cert.cert_pem)
-            .map_err(|e| format!("Write cert: {}", e))?;
-        fs::write(&key_path, &entry.cert.key_pem)
-            .map_err(|e| format!("Write key: {}", e))?;
+        fs::write(&cert_path, &entry.cert.cert_pem).map_err(|e| format!("Write cert: {}", e))?;
+        fs::write(&key_path, &entry.cert.key_pem).map_err(|e| format!("Write key: {}", e))?;
 
         Ok((
             cert_path.to_string_lossy().to_string(),
@@ -1108,15 +1090,13 @@ impl CertGenService {
             .get(cert_id)
             .ok_or("Certificate not found")?;
 
-        let pem_data = pem::parse(&entry.cert.cert_pem)
-            .map_err(|e| format!("PEM parse: {}", e))?;
+        let pem_data = pem::parse(&entry.cert.cert_pem).map_err(|e| format!("PEM parse: {}", e))?;
         let safe_name = entry
             .cert
             .common_name
             .replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
         let der_path = Path::new(dir).join(format!("{}.der", safe_name));
-        fs::write(&der_path, pem_data.contents())
-            .map_err(|e| format!("Write DER: {}", e))?;
+        fs::write(&der_path, pem_data.contents()).map_err(|e| format!("Write DER: {}", e))?;
 
         Ok(der_path.to_string_lossy().to_string())
     }
@@ -1177,11 +1157,15 @@ impl CertGenService {
     }
 
     pub async fn list_generated_csrs(&self) -> Vec<GeneratedCsr> {
-        self.store.csrs.values().map(|e| {
-            let mut csr = e.csr.clone();
-            csr.key_pem = String::new();
-            csr
-        }).collect()
+        self.store
+            .csrs
+            .values()
+            .map(|e| {
+                let mut csr = e.csr.clone();
+                csr.key_pem = String::new();
+                csr
+            })
+            .collect()
     }
 
     pub async fn delete_generated_csr(&mut self, id: &str) -> Result<(), String> {

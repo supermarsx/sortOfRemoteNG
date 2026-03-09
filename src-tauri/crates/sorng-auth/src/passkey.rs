@@ -5,10 +5,10 @@
 //! - Touch ID / Keychain (macOS)
 //! - Secret Service / libsecret (Linux)
 
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
 
 pub type PasskeyServiceState = Arc<Mutex<PasskeyService>>;
 
@@ -113,14 +113,14 @@ impl PasskeyService {
     async fn authenticate_windows(&mut self, reason: &str) -> Result<Vec<u8>, String> {
         // Get machine-specific identifier and derive key
         let machine_id = self.get_machine_id()?;
-        
+
         // Derive a key using machine ID and the reason/challenge
         let mut hasher = Sha256::new();
         hasher.update(machine_id.as_bytes());
         hasher.update(reason.as_bytes());
         hasher.update(b"windows-hello-sortofremoteng");
         let result = hasher.finalize();
-        
+
         let derived = result.to_vec();
         self.derived_key = Some(derived.clone());
         Ok(derived)
@@ -130,18 +130,20 @@ impl PasskeyService {
     #[cfg(target_os = "macos")]
     async fn authenticate_macos(&mut self, reason: &str) -> Result<Vec<u8>, String> {
         use std::process::Command;
-        
+
         // Use security command to prompt for keychain authentication
         // This will trigger Touch ID if available, or password prompt
         let output = Command::new("security")
             .args([
                 "find-generic-password",
-                "-a", "sortofremoteng",
-                "-s", "sortofremoteng-passkey",
-                "-w"
+                "-a",
+                "sortofremoteng",
+                "-s",
+                "sortofremoteng-passkey",
+                "-w",
             ])
             .output();
-        
+
         let machine_id = match output {
             Ok(out) if out.status.success() => {
                 String::from_utf8_lossy(&out.stdout).trim().to_string()
@@ -152,23 +154,27 @@ impl PasskeyService {
                 let _ = Command::new("security")
                     .args([
                         "add-generic-password",
-                        "-a", "sortofremoteng",
-                        "-s", "sortofremoteng-passkey",
-                        "-w", &secret,
-                        "-T", "" // Require authentication
+                        "-a",
+                        "sortofremoteng",
+                        "-s",
+                        "sortofremoteng-passkey",
+                        "-w",
+                        &secret,
+                        "-T",
+                        "", // Require authentication
                     ])
                     .output();
                 secret
             }
         };
-        
+
         // If we got here, authentication succeeded (Touch ID or password)
         let mut hasher = Sha256::new();
         hasher.update(machine_id.as_bytes());
         hasher.update(reason.as_bytes());
         hasher.update(b"macos-touchid-sortofremoteng");
         let result = hasher.finalize();
-        
+
         let derived = result.to_vec();
         self.derived_key = Some(derived.clone());
         Ok(derived)
@@ -178,16 +184,12 @@ impl PasskeyService {
     #[cfg(target_os = "linux")]
     async fn authenticate_linux(&mut self, reason: &str) -> Result<Vec<u8>, String> {
         use std::process::Command;
-        
+
         // Try secret-tool first (GNOME Keyring / KDE Wallet)
         let output = Command::new("secret-tool")
-            .args([
-                "lookup",
-                "application", "sortofremoteng",
-                "type", "passkey"
-            ])
+            .args(["lookup", "application", "sortofremoteng", "type", "passkey"])
             .output();
-        
+
         let machine_id = match output {
             Ok(out) if out.status.success() && !out.stdout.is_empty() => {
                 String::from_utf8_lossy(&out.stdout).trim().to_string()
@@ -199,8 +201,10 @@ impl PasskeyService {
                     .args([
                         "store",
                         "--label=sortOfRemoteNG Passkey",
-                        "application", "sortofremoteng",
-                        "type", "passkey"
+                        "application",
+                        "sortofremoteng",
+                        "type",
+                        "passkey",
                     ])
                     .stdin(std::process::Stdio::piped())
                     .spawn()
@@ -211,19 +215,19 @@ impl PasskeyService {
                         }
                         child.wait()
                     });
-                
+
                 // Fallback to machine ID if secret-tool isn't available
                 self.get_machine_id().unwrap_or(secret)
             }
         };
-        
+
         // Derive the key
         let mut hasher = Sha256::new();
         hasher.update(machine_id.as_bytes());
         hasher.update(reason.as_bytes());
         hasher.update(b"linux-secret-sortofremoteng");
         let result = hasher.finalize();
-        
+
         let derived = result.to_vec();
         self.derived_key = Some(derived.clone());
         Ok(derived)
@@ -254,17 +258,17 @@ impl PasskeyService {
     /// Get Windows machine GUID from registry
     #[cfg(target_os = "windows")]
     fn get_windows_machine_id(&self) -> Result<String, String> {
-        use windows::Win32::System::Registry::{
-            RegOpenKeyExW, RegQueryValueExW, RegCloseKey,
-            HKEY_LOCAL_MACHINE, KEY_READ, REG_VALUE_TYPE,
-        };
         use windows::core::{HSTRING, PCWSTR};
-        
+        use windows::Win32::System::Registry::{
+            RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ,
+            REG_VALUE_TYPE,
+        };
+
         unsafe {
             let key_path = HSTRING::from("SOFTWARE\\Microsoft\\Cryptography");
             let value_name = HSTRING::from("MachineGuid");
             let mut hkey = windows::Win32::System::Registry::HKEY::default();
-            
+
             let result = RegOpenKeyExW(
                 HKEY_LOCAL_MACHINE,
                 PCWSTR(key_path.as_ptr()),
@@ -272,17 +276,17 @@ impl PasskeyService {
                 KEY_READ,
                 &mut hkey,
             );
-            
+
             if result.is_err() {
                 return Ok(hostname::get()
                     .map(|h| h.to_string_lossy().to_string())
                     .unwrap_or_else(|_| "default-machine".to_string()));
             }
-            
+
             let mut buffer = [0u16; 256];
             let mut size = (buffer.len() * 2) as u32;
             let mut value_type = REG_VALUE_TYPE::default();
-            
+
             let result = RegQueryValueExW(
                 hkey,
                 PCWSTR(value_name.as_ptr()),
@@ -291,15 +295,15 @@ impl PasskeyService {
                 Some(buffer.as_mut_ptr() as *mut u8),
                 Some(&mut size),
             );
-            
+
             let _ = RegCloseKey(hkey);
-            
+
             if result.is_ok() {
                 let len = (size as usize / 2).saturating_sub(1);
                 let guid = String::from_utf16_lossy(&buffer[..len]);
                 return Ok(guid);
             }
-            
+
             Ok(hostname::get()
                 .map(|h| h.to_string_lossy().to_string())
                 .unwrap_or_else(|_| "default-machine".to_string()))
@@ -310,15 +314,15 @@ impl PasskeyService {
     #[cfg(target_os = "macos")]
     fn get_macos_machine_id(&self) -> Result<String, String> {
         use std::process::Command;
-        
+
         // Get hardware UUID using ioreg
         let output = Command::new("ioreg")
             .args(["-rd1", "-c", "IOPlatformExpertDevice"])
             .output()
             .map_err(|e| e.to_string())?;
-        
+
         let stdout = String::from_utf8_lossy(&output.stdout);
-        
+
         // Parse the IOPlatformUUID
         for line in stdout.lines() {
             if line.contains("IOPlatformUUID") {
@@ -327,7 +331,7 @@ impl PasskeyService {
                 }
             }
         }
-        
+
         // Fallback to hostname
         Ok(hostname::get()
             .map(|h| h.to_string_lossy().to_string())
@@ -344,7 +348,7 @@ impl PasskeyService {
                 return Ok(trimmed.to_string());
             }
         }
-        
+
         // Try /var/lib/dbus/machine-id
         if let Ok(id) = std::fs::read_to_string("/var/lib/dbus/machine-id") {
             let trimmed = id.trim();
@@ -352,7 +356,7 @@ impl PasskeyService {
                 return Ok(trimmed.to_string());
             }
         }
-        
+
         // Fallback to hostname
         Ok(hostname::get()
             .map(|h| h.to_string_lossy().to_string())
@@ -368,7 +372,7 @@ impl PasskeyService {
             created_at: chrono::Utc::now().to_rfc3339(),
             last_used: None,
         };
-        
+
         self.registered_credentials.push(credential.clone());
         Ok(credential)
     }
@@ -382,11 +386,11 @@ impl PasskeyService {
     pub async fn remove_credential(&mut self, id: &str) -> Result<(), String> {
         let initial_len = self.registered_credentials.len();
         self.registered_credentials.retain(|c| c.id != id);
-        
+
         if self.registered_credentials.len() == initial_len {
             return Err("Credential not found".to_string());
         }
-        
+
         Ok(())
     }
 

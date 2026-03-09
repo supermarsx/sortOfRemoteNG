@@ -35,7 +35,6 @@ use tokio::sync::Mutex;
 #[serde(rename_all = "camelCase")]
 pub struct LegacyCryptoPolicy {
     // ── Certificate / Key Generation ────────────────────────────────
-
     /// Allow generating RSA-1024 key pairs (NIST deprecated 2013).
     #[serde(default)]
     pub allow_rsa_1024: bool,
@@ -53,7 +52,6 @@ pub struct LegacyCryptoPolicy {
     pub allow_sha1_signatures: bool,
 
     // ── SSH Transport Ciphers ───────────────────────────────────────
-
     /// Allow CBC-mode ciphers (aes128-cbc, aes256-cbc, 3des-cbc).
     /// CBC is vulnerable to plaintext-recovery attacks (Bellare et al, 2004).
     #[serde(default)]
@@ -77,7 +75,6 @@ pub struct LegacyCryptoPolicy {
     pub allow_cast128: bool,
 
     // ── SSH Key Exchange ────────────────────────────────────────────
-
     /// Allow `diffie-hellman-group1-sha1` (1024-bit DH, SHA-1).
     /// Both the group size and the hash are considered weak.
     #[serde(default)]
@@ -93,7 +90,6 @@ pub struct LegacyCryptoPolicy {
     pub allow_dh_gex_sha1: bool,
 
     // ── SSH MACs ────────────────────────────────────────────────────
-
     /// Allow `hmac-sha1` and `hmac-sha1-96` MACs.
     /// SHA-1 HMAC is not as critically broken as SHA-1 signatures, but
     /// it is deprecated in favour of SHA-2 / ETM variants.
@@ -105,7 +101,6 @@ pub struct LegacyCryptoPolicy {
     pub allow_hmac_md5: bool,
 
     // ── SSH Host Key Algorithms ─────────────────────────────────────
-
     /// Allow `ssh-dss` (DSA) host keys.
     #[serde(default)]
     pub allow_ssh_dss_host_key: bool,
@@ -116,7 +111,6 @@ pub struct LegacyCryptoPolicy {
     pub allow_ssh_rsa_sha1_host_key: bool,
 
     // ── SSL / TLS (for HTTPS proxies, FTPS, etc.) ───────────────────
-
     /// Allow SSL 3.0 connections.  SSL 3.0 is fundamentally broken by the
     /// POODLE attack (CVE-2014-3566) and was formally deprecated by
     /// RFC 7568 (June 2015).  No modern software should use it, but some
@@ -146,7 +140,6 @@ pub struct LegacyCryptoPolicy {
     pub allow_tls_static_rsa: bool,
 
     // ── Global guard ────────────────────────────────────────────────
-
     /// When `false` (default), *all* legacy options above are forcibly
     /// ignored regardless of their individual settings.  The operator
     /// must first set this to `true` to acknowledge the security impact.
@@ -316,11 +309,7 @@ impl LegacyCryptoPolicy {
 
     /// Build the list of allowed SSH key types for key generation.
     pub fn ssh_keygen_types(&self) -> Vec<&'static str> {
-        let mut types = vec![
-            "ed25519",
-            "ecdsa",
-            "rsa",
-        ];
+        let mut types = vec!["ed25519", "ecdsa", "rsa"];
 
         if self.legacy_mode_acknowledged && self.allow_dsa {
             types.push("dsa");
@@ -341,10 +330,8 @@ impl LegacyCryptoPolicy {
             "ed25519",
         ];
 
-        if self.legacy_mode_acknowledged {
-            if self.allow_rsa_1024 {
-                algos.push("rsa1024");
-            }
+        if self.legacy_mode_acknowledged && self.allow_rsa_1024 {
+            algos.push("rsa1024");
         }
 
         algos
@@ -371,27 +358,132 @@ impl LegacyCryptoPolicy {
             };
         }
 
-        warn!(self.allow_rsa_1024,              "rsa1024",         WarningSeverity::Critical, "RSA-1024 keys can be factored — NIST deprecated since 2013");
-        warn!(self.allow_dsa,                    "dsa",             WarningSeverity::Critical, "DSA removed from FIPS 186-5 — use Ed25519 or ECDSA instead");
-        warn!(self.allow_sha1_signatures,        "sha1-sig",        WarningSeverity::High,     "SHA-1 signatures are collision-vulnerable (SHAttered, 2017)");
-        warn!(self.allow_cbc_ciphers,            "cbc",             WarningSeverity::Medium,   "CBC ciphers are vulnerable to plaintext-recovery attacks");
-        warn!(self.allow_arcfour,                "arcfour",         WarningSeverity::Critical, "RC4/arcfour is fully broken — prohibited by RFC 7465");
-        warn!(self.allow_3des,                   "3des",            WarningSeverity::High,     "3DES has only ~112-bit security and is vulnerable to Sweet32");
-        warn!(self.allow_blowfish,               "blowfish",        WarningSeverity::Medium,   "Blowfish has a 64-bit block size — vulnerable to birthday attacks");
-        warn!(self.allow_cast128,                "cast128",         WarningSeverity::Medium,   "CAST-128 has a 64-bit block size — vulnerable to birthday attacks");
-        warn!(self.allow_dh_group1_sha1,         "dh-group1",       WarningSeverity::Critical, "DH group1 uses 1024-bit prime + SHA-1 — both are weak");
-        warn!(self.allow_dh_group14_sha1,        "dh-group14-sha1", WarningSeverity::Medium,   "DH group14-sha1 uses SHA-1 hash — prefer group14-sha256");
-        warn!(self.allow_dh_gex_sha1,            "dh-gex-sha1",     WarningSeverity::Medium,   "DH group-exchange with SHA-1 — prefer SHA-256 variant");
-        warn!(self.allow_hmac_sha1,              "hmac-sha1",       WarningSeverity::Low,      "HMAC-SHA1 is not critically broken but deprecated for SHA-2");
-        warn!(self.allow_hmac_md5,               "hmac-md5",        WarningSeverity::High,     "MD5 is fundamentally broken — known collision attacks since 2004");
-        warn!(self.allow_ssh_dss_host_key,       "ssh-dss",         WarningSeverity::Critical, "DSA host keys use 1024-bit keys only — trivially weak");
-        warn!(self.allow_ssh_rsa_sha1_host_key,  "ssh-rsa-sha1",    WarningSeverity::Medium,   "ssh-rsa uses SHA-1 signatures — prefer rsa-sha2-256/512");
-        warn!(self.allow_ssl_3_0,                "ssl30",           WarningSeverity::Critical, "SSL 3.0 is broken beyond repair — POODLE (CVE-2014-3566), deprecated by RFC 7568");
-        warn!(self.allow_tls_1_0,                "tls10",           WarningSeverity::High,     "TLS 1.0 prohibited by PCI-DSS — POODLE/BEAST attacks");
-        warn!(self.allow_tls_1_1,                "tls11",           WarningSeverity::High,     "TLS 1.1 deprecated by RFC 8996");
-        warn!(self.allow_tls_3des,               "tls-3des",        WarningSeverity::High,     "TLS 3DES suites vulnerable to Sweet32");
-        warn!(self.allow_tls_rc4,                "tls-rc4",         WarningSeverity::Critical, "TLS RC4 prohibited by RFC 7465");
-        warn!(self.allow_tls_static_rsa,         "tls-static-rsa",  WarningSeverity::Medium,   "Static RSA key exchange lacks forward secrecy");
+        warn!(
+            self.allow_rsa_1024,
+            "rsa1024",
+            WarningSeverity::Critical,
+            "RSA-1024 keys can be factored — NIST deprecated since 2013"
+        );
+        warn!(
+            self.allow_dsa,
+            "dsa",
+            WarningSeverity::Critical,
+            "DSA removed from FIPS 186-5 — use Ed25519 or ECDSA instead"
+        );
+        warn!(
+            self.allow_sha1_signatures,
+            "sha1-sig",
+            WarningSeverity::High,
+            "SHA-1 signatures are collision-vulnerable (SHAttered, 2017)"
+        );
+        warn!(
+            self.allow_cbc_ciphers,
+            "cbc",
+            WarningSeverity::Medium,
+            "CBC ciphers are vulnerable to plaintext-recovery attacks"
+        );
+        warn!(
+            self.allow_arcfour,
+            "arcfour",
+            WarningSeverity::Critical,
+            "RC4/arcfour is fully broken — prohibited by RFC 7465"
+        );
+        warn!(
+            self.allow_3des,
+            "3des",
+            WarningSeverity::High,
+            "3DES has only ~112-bit security and is vulnerable to Sweet32"
+        );
+        warn!(
+            self.allow_blowfish,
+            "blowfish",
+            WarningSeverity::Medium,
+            "Blowfish has a 64-bit block size — vulnerable to birthday attacks"
+        );
+        warn!(
+            self.allow_cast128,
+            "cast128",
+            WarningSeverity::Medium,
+            "CAST-128 has a 64-bit block size — vulnerable to birthday attacks"
+        );
+        warn!(
+            self.allow_dh_group1_sha1,
+            "dh-group1",
+            WarningSeverity::Critical,
+            "DH group1 uses 1024-bit prime + SHA-1 — both are weak"
+        );
+        warn!(
+            self.allow_dh_group14_sha1,
+            "dh-group14-sha1",
+            WarningSeverity::Medium,
+            "DH group14-sha1 uses SHA-1 hash — prefer group14-sha256"
+        );
+        warn!(
+            self.allow_dh_gex_sha1,
+            "dh-gex-sha1",
+            WarningSeverity::Medium,
+            "DH group-exchange with SHA-1 — prefer SHA-256 variant"
+        );
+        warn!(
+            self.allow_hmac_sha1,
+            "hmac-sha1",
+            WarningSeverity::Low,
+            "HMAC-SHA1 is not critically broken but deprecated for SHA-2"
+        );
+        warn!(
+            self.allow_hmac_md5,
+            "hmac-md5",
+            WarningSeverity::High,
+            "MD5 is fundamentally broken — known collision attacks since 2004"
+        );
+        warn!(
+            self.allow_ssh_dss_host_key,
+            "ssh-dss",
+            WarningSeverity::Critical,
+            "DSA host keys use 1024-bit keys only — trivially weak"
+        );
+        warn!(
+            self.allow_ssh_rsa_sha1_host_key,
+            "ssh-rsa-sha1",
+            WarningSeverity::Medium,
+            "ssh-rsa uses SHA-1 signatures — prefer rsa-sha2-256/512"
+        );
+        warn!(
+            self.allow_ssl_3_0,
+            "ssl30",
+            WarningSeverity::Critical,
+            "SSL 3.0 is broken beyond repair — POODLE (CVE-2014-3566), deprecated by RFC 7568"
+        );
+        warn!(
+            self.allow_tls_1_0,
+            "tls10",
+            WarningSeverity::High,
+            "TLS 1.0 prohibited by PCI-DSS — POODLE/BEAST attacks"
+        );
+        warn!(
+            self.allow_tls_1_1,
+            "tls11",
+            WarningSeverity::High,
+            "TLS 1.1 deprecated by RFC 8996"
+        );
+        warn!(
+            self.allow_tls_3des,
+            "tls-3des",
+            WarningSeverity::High,
+            "TLS 3DES suites vulnerable to Sweet32"
+        );
+        warn!(
+            self.allow_tls_rc4,
+            "tls-rc4",
+            WarningSeverity::Critical,
+            "TLS RC4 prohibited by RFC 7465"
+        );
+        warn!(
+            self.allow_tls_static_rsa,
+            "tls-static-rsa",
+            WarningSeverity::Medium,
+            "Static RSA key exchange lacks forward secrecy"
+        );
 
         warnings
     }
@@ -473,7 +565,13 @@ pub async fn get_legacy_crypto_warnings(
 pub async fn get_legacy_ssh_ciphers(
     state: tauri::State<'_, LegacyCryptoPolicyState>,
 ) -> Result<Vec<String>, String> {
-    Ok(state.lock().await.ssh_ciphers().into_iter().map(String::from).collect())
+    Ok(state
+        .lock()
+        .await
+        .ssh_ciphers()
+        .into_iter()
+        .map(String::from)
+        .collect())
 }
 
 /// Get the SSH KEX list derived from the current policy.
@@ -481,7 +579,13 @@ pub async fn get_legacy_ssh_ciphers(
 pub async fn get_legacy_ssh_kex(
     state: tauri::State<'_, LegacyCryptoPolicyState>,
 ) -> Result<Vec<String>, String> {
-    Ok(state.lock().await.ssh_kex().into_iter().map(String::from).collect())
+    Ok(state
+        .lock()
+        .await
+        .ssh_kex()
+        .into_iter()
+        .map(String::from)
+        .collect())
 }
 
 /// Get the SSH MAC list derived from the current policy.
@@ -489,7 +593,13 @@ pub async fn get_legacy_ssh_kex(
 pub async fn get_legacy_ssh_macs(
     state: tauri::State<'_, LegacyCryptoPolicyState>,
 ) -> Result<Vec<String>, String> {
-    Ok(state.lock().await.ssh_macs().into_iter().map(String::from).collect())
+    Ok(state
+        .lock()
+        .await
+        .ssh_macs()
+        .into_iter()
+        .map(String::from)
+        .collect())
 }
 
 /// Get the SSH host-key algorithm list derived from the current policy.
@@ -497,7 +607,13 @@ pub async fn get_legacy_ssh_macs(
 pub async fn get_legacy_ssh_host_key_algorithms(
     state: tauri::State<'_, LegacyCryptoPolicyState>,
 ) -> Result<Vec<String>, String> {
-    Ok(state.lock().await.ssh_host_key_algorithms().into_iter().map(String::from).collect())
+    Ok(state
+        .lock()
+        .await
+        .ssh_host_key_algorithms()
+        .into_iter()
+        .map(String::from)
+        .collect())
 }
 
 /// Check whether a specific key algorithm is currently allowed.
@@ -520,7 +636,9 @@ pub async fn is_legacy_algorithm_allowed(
         "dh-group14-sha1" => policy.legacy_mode_acknowledged && policy.allow_dh_group14_sha1,
         "hmac-sha1" => policy.legacy_mode_acknowledged && policy.allow_hmac_sha1,
         "hmac-md5" => policy.legacy_mode_acknowledged && policy.allow_hmac_md5,
-        "ssl3" | "ssl3.0" | "ssl30" | "sslv3" => policy.legacy_mode_acknowledged && policy.allow_ssl_3_0,
+        "ssl3" | "ssl3.0" | "ssl30" | "sslv3" => {
+            policy.legacy_mode_acknowledged && policy.allow_ssl_3_0
+        }
         "tls1.0" | "tls10" => policy.legacy_mode_acknowledged && policy.allow_tls_1_0,
         "tls1.1" | "tls11" => policy.legacy_mode_acknowledged && policy.allow_tls_1_1,
         _ => false,

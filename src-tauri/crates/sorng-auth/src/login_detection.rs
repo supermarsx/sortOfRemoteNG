@@ -19,12 +19,12 @@
 //! ## Example
 //!
 
+use regex::Regex;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
-use regex::Regex;
 
 /// Detected form field
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -127,7 +127,9 @@ impl LoginDetectionService {
     /// Analyzes a web page for login forms
     pub async fn analyze_page(&self, url: &str) -> Result<LoginDetectionResult, String> {
         // Fetch the page
-        let response = self.client.get(url)
+        let response = self
+            .client
+            .get(url)
             .send()
             .await
             .map_err(|e| format!("Failed to fetch page: {}", e))?;
@@ -136,7 +138,8 @@ impl LoginDetectionService {
             return Err(format!("HTTP error: {}", response.status()));
         }
 
-        let html = response.text()
+        let html = response
+            .text()
             .await
             .map_err(|e| format!("Failed to read response: {}", e))?;
 
@@ -159,11 +162,9 @@ impl LoginDetectionService {
     /// Extracts page title from HTML
     fn extract_title(&self, html: &str) -> Option<String> {
         let title_regex = Regex::new(r"(?i)<title[^>]*>([^<]*)</title>").unwrap();
-        if let Some(captures) = title_regex.captures(html) {
-            Some(captures[1].trim().to_string())
-        } else {
-            None
-        }
+        title_regex
+            .captures(html)
+            .map(|captures| captures[1].trim().to_string())
     }
 
     /// Detects forms in HTML
@@ -184,8 +185,12 @@ impl LoginDetectionService {
     /// Analyzes a single form
     fn analyze_form(&self, form_html: &str, base_url: &str) -> Result<Option<LoginForm>, String> {
         // Extract form attributes
-        let action = self.extract_form_attribute(form_html, "action").unwrap_or_else(|| base_url.to_string());
-        let method = self.extract_form_attribute(form_html, "method").unwrap_or_else(|| "POST".to_string());
+        let action = self
+            .extract_form_attribute(form_html, "action")
+            .unwrap_or_else(|| base_url.to_string());
+        let method = self
+            .extract_form_attribute(form_html, "method")
+            .unwrap_or_else(|| "POST".to_string());
         let form_id = self.extract_form_attribute(form_html, "id");
 
         // Extract fields
@@ -195,7 +200,8 @@ impl LoginDetectionService {
         let is_login_form = self.is_login_form(&fields);
         let confidence = self.calculate_confidence(&fields, form_html);
 
-        if confidence > 30 { // Only return forms with reasonable confidence
+        if confidence > 30 {
+            // Only return forms with reasonable confidence
             Ok(Some(LoginForm {
                 action_url: action,
                 method,
@@ -213,11 +219,9 @@ impl LoginDetectionService {
     fn extract_form_attribute(&self, form_html: &str, attr: &str) -> Option<String> {
         let pattern = format!(r#"(?i){}="([^"]*)""#, attr);
         let regex = Regex::new(&pattern).unwrap();
-        if let Some(captures) = regex.captures(form_html) {
-            Some(captures[1].to_string())
-        } else {
-            None
-        }
+        regex
+            .captures(form_html)
+            .map(|captures| captures[1].to_string())
     }
 
     /// Extracts input fields from form HTML
@@ -238,9 +242,14 @@ impl LoginDetectionService {
     /// Analyzes a single input field
     fn analyze_input_field(&self, input_html: &str) -> Result<Option<FormField>, String> {
         let name_opt = self.extract_attribute(input_html, "name")?;
-        let field_type = self.extract_attribute(input_html, "type")?.unwrap_or_else(|| "text".to_string());
+        let field_type = self
+            .extract_attribute(input_html, "type")?
+            .unwrap_or_else(|| "text".to_string());
         let id = self.extract_attribute(input_html, "id").ok().flatten();
-        let placeholder = self.extract_attribute(input_html, "placeholder").ok().flatten();
+        let placeholder = self
+            .extract_attribute(input_html, "placeholder")
+            .ok()
+            .flatten();
 
         // Skip fields without names
         let name = match name_opt {
@@ -249,7 +258,10 @@ impl LoginDetectionService {
         };
 
         // Skip hidden, submit, and button fields
-        if matches!(field_type.as_str(), "hidden" | "submit" | "button" | "reset") {
+        if matches!(
+            field_type.as_str(),
+            "hidden" | "submit" | "button" | "reset"
+        ) {
             return Ok(None);
         }
 
@@ -278,20 +290,33 @@ impl LoginDetectionService {
     }
 
     /// Determines if a field is likely a username field
-    fn is_username_field(&self, name: &str, field_type: &str, placeholder: &Option<String>) -> bool {
+    fn is_username_field(
+        &self,
+        name: &str,
+        field_type: &str,
+        placeholder: &Option<String>,
+    ) -> bool {
         // Check field type
         if !matches!(field_type, "text" | "email" | "tel") {
             return false;
         }
 
         // Check name
-        if self.username_patterns.iter().any(|pattern| pattern.is_match(name)) {
+        if self
+            .username_patterns
+            .iter()
+            .any(|pattern| pattern.is_match(name))
+        {
             return true;
         }
 
         // Check placeholder
         if let Some(placeholder) = placeholder {
-            if self.username_patterns.iter().any(|pattern| pattern.is_match(placeholder)) {
+            if self
+                .username_patterns
+                .iter()
+                .any(|pattern| pattern.is_match(placeholder))
+            {
                 return true;
             }
         }
@@ -300,7 +325,12 @@ impl LoginDetectionService {
     }
 
     /// Determines if a field is likely a password field
-    fn is_password_field(&self, name: &str, field_type: &str, placeholder: &Option<String>) -> bool {
+    fn is_password_field(
+        &self,
+        name: &str,
+        field_type: &str,
+        placeholder: &Option<String>,
+    ) -> bool {
         // Check field type
         if field_type != "password" {
             return false;
@@ -308,7 +338,9 @@ impl LoginDetectionService {
 
         // Check name and placeholder
         let combined_text = format!("{} {}", name, placeholder.as_deref().unwrap_or(""));
-        self.password_patterns.iter().any(|pattern| pattern.is_match(&combined_text))
+        self.password_patterns
+            .iter()
+            .any(|pattern| pattern.is_match(&combined_text))
     }
 
     /// Determines if a form is likely a login form
@@ -339,7 +371,11 @@ impl LoginDetectionService {
         }
 
         // Form HTML contains login-related keywords
-        if self.login_form_patterns.iter().any(|pattern| pattern.is_match(form_html)) {
+        if self
+            .login_form_patterns
+            .iter()
+            .any(|pattern| pattern.is_match(form_html))
+        {
             score += 20;
         }
 
@@ -349,12 +385,21 @@ impl LoginDetectionService {
     /// Determines if a page is likely a login page
     fn is_login_page(&self, html: &str, forms: &[LoginForm]) -> bool {
         // Check for login-related keywords in page content
-        let login_keywords = ["login", "sign in", "signin", "log in", "authenticate", "auth"];
+        let login_keywords = [
+            "login",
+            "sign in",
+            "signin",
+            "log in",
+            "authenticate",
+            "auth",
+        ];
         let content_lower = html.to_lowercase();
 
-        let keyword_score = login_keywords.iter()
+        let keyword_score = login_keywords
+            .iter()
             .filter(|keyword| content_lower.contains(*keyword))
-            .count() as u8 * 10;
+            .count() as u8
+            * 10;
 
         // Check forms
         let has_login_form = forms.iter().any(|f| f.is_login_form);
@@ -367,7 +412,7 @@ impl LoginDetectionService {
         &self,
         form: &LoginForm,
         username: String,
-        password: String
+        password: String,
     ) -> Result<String, String> {
         let mut credentials = HashMap::new();
         credentials.insert("username".to_string(), username);
@@ -392,7 +437,8 @@ impl LoginDetectionService {
 
         // Submit the form
         let response = if form.method.to_uppercase() == "POST" {
-            self.client.post(&form.action_url)
+            self.client
+                .post(&form.action_url)
                 .form(&form_data)
                 .send()
                 .await
@@ -419,7 +465,7 @@ impl LoginDetectionService {
                     Err(format!("Login failed with status: {}", resp.status()))
                 }
             }
-            Err(e) => Err(format!("Failed to submit form: {}", e))
+            Err(e) => Err(format!("Failed to submit form: {}", e)),
         }
     }
 }
