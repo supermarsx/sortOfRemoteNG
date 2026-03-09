@@ -1,11 +1,9 @@
-use crate::types::*;
 use crate::context::ContextBuilder;
 use crate::error::AiAssistError;
 use crate::suggestions::SuggestionEngine;
+use crate::types::*;
 
-use sorng_llm::{
-    ChatMessage, MessageRole, ChatCompletionRequest, LlmServiceState,
-};
+use sorng_llm::{ChatCompletionRequest, ChatMessage, LlmServiceState, MessageRole};
 
 /// AI-powered tab completion engine that combines heuristics with LLM intelligence.
 pub struct CompletionEngine;
@@ -28,7 +26,7 @@ impl CompletionEngine {
             config,
         );
 
-        let mut from_cache = false;
+        let from_cache = false;
 
         // Phase 2: AI-powered suggestions (if local suggestions are insufficient)
         if suggestions.len() < config.max_suggestions / 2 {
@@ -52,7 +50,9 @@ impl CompletionEngine {
 
         // Sort and truncate
         suggestions.sort_by(|a, b| {
-            b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         suggestions.truncate(request.max_suggestions);
 
@@ -88,7 +88,7 @@ impl CompletionEngine {
         let system_msg = ChatMessage {
             role: MessageRole::System,
             content: sorng_llm::MessageContent::Text(
-                "You are an SSH terminal assistant. Return only valid JSON arrays.".to_string()
+                "You are an SSH terminal assistant. Return only valid JSON arrays.".to_string(),
             ),
             name: None,
             tool_calls: None,
@@ -104,7 +104,10 @@ impl CompletionEngine {
         };
 
         let llm_request = ChatCompletionRequest {
-            model: config.llm_model.clone().unwrap_or_else(|| "default".to_string()),
+            model: config
+                .llm_model
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
             messages: vec![system_msg, user_msg],
             temperature: Some(0.3),
             max_tokens: Some(1000),
@@ -135,43 +138,49 @@ impl CompletionEngine {
         // Extract JSON from possible markdown fencing
         let json_str = extract_json_from_response(content);
 
-        let items: Vec<serde_json::Value> = serde_json::from_str(&json_str)
-            .map_err(|e| AiAssistError::parse_error(
-                &format!("Failed to parse AI completion response: {}", e)
-            ))?;
+        let items: Vec<serde_json::Value> = serde_json::from_str(&json_str).map_err(|e| {
+            AiAssistError::parse_error(&format!("Failed to parse AI completion response: {}", e))
+        })?;
 
-        let suggestions: Vec<Suggestion> = items.iter().filter_map(|item| {
-            let text = item.get("text")?.as_str()?;
-            let description = item.get("description").and_then(|v| v.as_str());
-            let kind_str = item.get("kind").and_then(|v| v.as_str()).unwrap_or("command");
-            let confidence = item.get("confidence")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.5);
+        let suggestions: Vec<Suggestion> = items
+            .iter()
+            .filter_map(|item| {
+                let text = item.get("text")?.as_str()?;
+                let description = item.get("description").and_then(|v| v.as_str());
+                let kind_str = item
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("command");
+                let confidence = item
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.5);
 
-            let kind = match kind_str {
-                "command" => SuggestionKind::Command,
-                "flag" => SuggestionKind::Flag,
-                "argument" => SuggestionKind::Argument,
-                "path" => SuggestionKind::Path,
-                "variable" => SuggestionKind::Variable,
-                "pipe" => SuggestionKind::Pipe,
-                "redirect" => SuggestionKind::Redirect,
-                _ => SuggestionKind::Command,
-            };
+                let kind = match kind_str {
+                    "command" => SuggestionKind::Command,
+                    "flag" => SuggestionKind::Flag,
+                    "argument" => SuggestionKind::Argument,
+                    "path" => SuggestionKind::Path,
+                    "variable" => SuggestionKind::Variable,
+                    "pipe" => SuggestionKind::Pipe,
+                    "redirect" => SuggestionKind::Redirect,
+                    _ => SuggestionKind::Command,
+                };
 
-            Some(Suggestion {
-                text: text.to_string(),
-                display: text.to_string(),
-                kind,
-                description: description.map(|s| s.to_string()),
-                confidence,
-                source: SuggestionSource::Ai,
-                insert_text: None,
-                documentation: None,
-                risk_level: RiskLevel::Safe,
-                tags: vec!["ai".to_string()],
+                Some(Suggestion {
+                    text: text.to_string(),
+                    display: text.to_string(),
+                    kind,
+                    description: description.map(|s| s.to_string()),
+                    confidence,
+                    source: SuggestionSource::Ai,
+                    insert_text: None,
+                    documentation: None,
+                    risk_level: RiskLevel::Safe,
+                    tags: vec!["ai".to_string()],
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(suggestions)
     }

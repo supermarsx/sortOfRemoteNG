@@ -1,11 +1,9 @@
-use crate::types::*;
-use crate::context::ContextBuilder;
 use crate::completion::extract_json_from_response;
+use crate::context::ContextBuilder;
 use crate::error::AiAssistError;
+use crate::types::*;
 
-use sorng_llm::{
-    ChatMessage, MessageRole, ChatCompletionRequest, LlmServiceState,
-};
+use sorng_llm::{ChatCompletionRequest, ChatMessage, LlmServiceState, MessageRole};
 
 /// Translates natural language descriptions into shell commands.
 pub struct NaturalLanguageTranslator;
@@ -17,11 +15,8 @@ impl NaturalLanguageTranslator {
         ctx: &SessionContext,
         llm_state: &LlmServiceState,
     ) -> Result<NaturalLanguageResult, AiAssistError> {
-        let prompt = ContextBuilder::build_nl_to_command_prompt(
-            &query.query,
-            ctx,
-            &query.constraints,
-        );
+        let prompt =
+            ContextBuilder::build_nl_to_command_prompt(&query.query, ctx, &query.constraints);
 
         let system_msg = ChatMessage {
             role: MessageRole::System,
@@ -73,37 +68,60 @@ impl NaturalLanguageTranslator {
         let val: serde_json::Value = serde_json::from_str(&json_str)
             .map_err(|e| AiAssistError::parse_error(&e.to_string()))?;
 
-        let commands: Vec<GeneratedCommand> = val.get("commands")
+        let commands: Vec<GeneratedCommand> = val
+            .get("commands")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| {
-                let cmd = v.get("command")?.as_str()?.to_string();
-                let explanation = v.get("explanation")?.as_str()?.to_string();
-                let risk_str = v.get("risk_level").and_then(|r| r.as_str()).unwrap_or("low");
-                let risk = match risk_str {
-                    "safe" => RiskLevel::Safe,
-                    "low" => RiskLevel::Low,
-                    "medium" => RiskLevel::Medium,
-                    "high" => RiskLevel::High,
-                    "critical" => RiskLevel::Critical,
-                    _ => RiskLevel::Low,
-                };
-                let shell_specific = v.get("shell_specific").and_then(|b| b.as_bool()).unwrap_or(false);
-                Some(GeneratedCommand { command: cmd, explanation, risk_level: risk, shell_specific })
-            }).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        let cmd = v.get("command")?.as_str()?.to_string();
+                        let explanation = v.get("explanation")?.as_str()?.to_string();
+                        let risk_str = v
+                            .get("risk_level")
+                            .and_then(|r| r.as_str())
+                            .unwrap_or("low");
+                        let risk = match risk_str {
+                            "safe" => RiskLevel::Safe,
+                            "low" => RiskLevel::Low,
+                            "medium" => RiskLevel::Medium,
+                            "high" => RiskLevel::High,
+                            "critical" => RiskLevel::Critical,
+                            _ => RiskLevel::Low,
+                        };
+                        let shell_specific = v
+                            .get("shell_specific")
+                            .and_then(|b| b.as_bool())
+                            .unwrap_or(false);
+                        Some(GeneratedCommand {
+                            command: cmd,
+                            explanation,
+                            risk_level: risk,
+                            shell_specific,
+                        })
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let explanation = val.get("explanation")
+        let explanation = val
+            .get("explanation")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
 
-        let confidence = val.get("confidence")
+        let confidence = val
+            .get("confidence")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.5);
 
-        let alternatives: Vec<String> = val.get("alternatives")
+        let alternatives: Vec<String> = val
+            .get("alternatives")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(NaturalLanguageResult {

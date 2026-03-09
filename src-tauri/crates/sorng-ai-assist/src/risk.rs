@@ -1,9 +1,8 @@
-use crate::types::*;
-use crate::context::ContextBuilder;
 use crate::completion::extract_json_from_response;
+use crate::context::ContextBuilder;
 use crate::error::AiAssistError;
+use crate::types::*;
 
-use regex::Regex;
 use sorng_llm::LlmServiceState;
 
 /// Analyzes commands for potential risk before execution.
@@ -38,10 +37,10 @@ impl RiskAnalyzer {
     }
 
     /// Fast, local rule-based risk assessment.
-    pub fn local_assess(command: &str, ctx: &SessionContext) -> RiskAssessment {
+    pub fn local_assess(command: &str, _ctx: &SessionContext) -> RiskAssessment {
         let trimmed = command.trim();
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        let base_cmd = parts.first().map(|s| *s).unwrap_or("");
+        let base_cmd = parts.first().copied().unwrap_or("");
 
         let mut risk = RiskLevel::Safe;
         let mut reasons: Vec<String> = Vec::new();
@@ -65,7 +64,11 @@ impl RiskAnalyzer {
         }
 
         // dd writing to disk devices
-        if base_cmd == "dd" && (trimmed.contains("of=/dev/sd") || trimmed.contains("of=/dev/nvme") || trimmed.contains("of=/dev/hd")) {
+        if base_cmd == "dd"
+            && (trimmed.contains("of=/dev/sd")
+                || trimmed.contains("of=/dev/nvme")
+                || trimmed.contains("of=/dev/hd"))
+        {
             risk = RiskLevel::Critical;
             reasons.push("Writing directly to a block device".to_string());
             scope = AffectedScope::System;
@@ -123,7 +126,11 @@ impl RiskAnalyzer {
             }
 
             // iptables / firewall modification
-            if base_cmd == "iptables" || base_cmd == "ip6tables" || base_cmd == "nft" || base_cmd == "ufw" {
+            if base_cmd == "iptables"
+                || base_cmd == "ip6tables"
+                || base_cmd == "nft"
+                || base_cmd == "ufw"
+            {
                 risk = RiskLevel::High;
                 reasons.push("Modifying firewall rules".to_string());
                 scope = AffectedScope::Network;
@@ -131,7 +138,11 @@ impl RiskAnalyzer {
             }
 
             // shutdown / reboot
-            if base_cmd == "shutdown" || base_cmd == "reboot" || base_cmd == "poweroff" || base_cmd == "halt" {
+            if base_cmd == "shutdown"
+                || base_cmd == "reboot"
+                || base_cmd == "poweroff"
+                || base_cmd == "halt"
+            {
                 risk = RiskLevel::High;
                 reasons.push("System will be shut down or rebooted".to_string());
                 scope = AffectedScope::System;
@@ -139,7 +150,14 @@ impl RiskAnalyzer {
             }
 
             // /etc modifications
-            if trimmed.contains("/etc/") && (base_cmd == "vim" || base_cmd == "nano" || base_cmd == "sed" || base_cmd == "tee" || base_cmd == "mv" || base_cmd == "cp") {
+            if trimmed.contains("/etc/")
+                && (base_cmd == "vim"
+                    || base_cmd == "nano"
+                    || base_cmd == "sed"
+                    || base_cmd == "tee"
+                    || base_cmd == "mv"
+                    || base_cmd == "cp")
+            {
                 risk = RiskLevel::High;
                 reasons.push("Modifying system configuration files".to_string());
                 scope = AffectedScope::System;
@@ -166,7 +184,12 @@ impl RiskAnalyzer {
             }
 
             // wget/curl piped to shell
-            if (base_cmd == "curl" || base_cmd == "wget") && (trimmed.contains("| sh") || trimmed.contains("| bash") || trimmed.contains("|sh") || trimmed.contains("|bash")) {
+            if (base_cmd == "curl" || base_cmd == "wget")
+                && (trimmed.contains("| sh")
+                    || trimmed.contains("| bash")
+                    || trimmed.contains("|sh")
+                    || trimmed.contains("|bash"))
+            {
                 risk = RiskLevel::High;
                 reasons.push("Downloading and executing remote code".to_string());
                 scope = AffectedScope::System;
@@ -183,7 +206,9 @@ impl RiskAnalyzer {
 
             // Package install/remove
             if (base_cmd == "apt" || base_cmd == "yum" || base_cmd == "dnf" || base_cmd == "pacman")
-                && (trimmed.contains("install") || trimmed.contains("remove") || trimmed.contains("purge"))
+                && (trimmed.contains("install")
+                    || trimmed.contains("remove")
+                    || trimmed.contains("purge"))
             {
                 risk = RiskLevel::Medium;
                 reasons.push("Installing or removing system packages".to_string());
@@ -191,7 +216,11 @@ impl RiskAnalyzer {
             }
 
             // Service management
-            if base_cmd == "systemctl" && (trimmed.contains("stop") || trimmed.contains("restart") || trimmed.contains("disable")) {
+            if base_cmd == "systemctl"
+                && (trimmed.contains("stop")
+                    || trimmed.contains("restart")
+                    || trimmed.contains("disable"))
+            {
                 risk = RiskLevel::Medium;
                 reasons.push("Managing system services".to_string());
                 scope = AffectedScope::System;
@@ -245,7 +274,7 @@ impl RiskAnalyzer {
         let system_msg = sorng_llm::ChatMessage {
             role: sorng_llm::MessageRole::System,
             content: sorng_llm::MessageContent::Text(
-                "You are a security-focused command analyst. Return only valid JSON.".to_string()
+                "You are a security-focused command analyst. Return only valid JSON.".to_string(),
             ),
             name: None,
             tool_calls: None,
@@ -288,7 +317,10 @@ impl RiskAnalyzer {
         let val: serde_json::Value = serde_json::from_str(&json_str)
             .map_err(|e| AiAssistError::parse_error(&e.to_string()))?;
 
-        let risk_str = val.get("risk_level").and_then(|v| v.as_str()).unwrap_or("low");
+        let risk_str = val
+            .get("risk_level")
+            .and_then(|v| v.as_str())
+            .unwrap_or("low");
         let risk = match risk_str {
             "safe" => RiskLevel::Safe,
             "low" => RiskLevel::Low,
@@ -298,12 +330,20 @@ impl RiskAnalyzer {
             _ => RiskLevel::Low,
         };
 
-        let reasons: Vec<String> = val.get("reasons")
+        let reasons: Vec<String> = val
+            .get("reasons")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let scope_str = val.get("affected_scope").and_then(|v| v.as_str()).unwrap_or("none");
+        let scope_str = val
+            .get("affected_scope")
+            .and_then(|v| v.as_str())
+            .unwrap_or("none");
         let scope = match scope_str {
             "none" => AffectedScope::None,
             "current_directory" => AffectedScope::CurrentDirectory,
@@ -314,12 +354,23 @@ impl RiskAnalyzer {
             _ => AffectedScope::Unknown,
         };
 
-        let reversible = val.get("reversible").and_then(|v| v.as_bool()).unwrap_or(true);
-        let confirmation = val.get("confirmation_required").and_then(|v| v.as_bool()).unwrap_or(false);
+        let reversible = val
+            .get("reversible")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let confirmation = val
+            .get("confirmation_required")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
-        let safer: Vec<String> = val.get("safer_alternatives")
+        let safer: Vec<String> = val
+            .get("safer_alternatives")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(RiskAssessment {

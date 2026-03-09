@@ -1,18 +1,25 @@
-use crate::types::*;
 use crate::error::AiAssistError;
 use crate::shell_detect::ShellDetector;
+use crate::types::*;
 
 use std::collections::HashMap;
-use chrono::Utc;
 
 /// Manages per-connection AI assist sessions.
 pub struct SessionManager {
     sessions: HashMap<String, SessionContext>,
 }
 
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionManager {
     pub fn new() -> Self {
-        Self { sessions: HashMap::new() }
+        Self {
+            sessions: HashMap::new(),
+        }
     }
 
     /// Create a new session for an SSH connection.
@@ -56,8 +63,9 @@ impl SessionManager {
         uname_output: Option<String>,
         env_vars: Option<Vec<(String, String)>>,
     ) -> Result<(), AiAssistError> {
-        let ctx = self.sessions.get_mut(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_mut(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
 
         if let Some(dir) = cwd {
             ctx.cwd = dir;
@@ -87,8 +95,9 @@ impl SessionManager {
         output: Option<String>,
         duration_ms: Option<u64>,
     ) -> Result<(), AiAssistError> {
-        let ctx = self.sessions.get_mut(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_mut(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
 
         ctx.add_command(command, exit_code, duration_ms);
         ctx.last_exit_code = exit_code;
@@ -103,8 +112,9 @@ impl SessionManager {
         session_id: &str,
         tools: Vec<String>,
     ) -> Result<(), AiAssistError> {
-        let ctx = self.sessions.get_mut(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_mut(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
         ctx.installed_tools = tools;
         Ok(())
     }

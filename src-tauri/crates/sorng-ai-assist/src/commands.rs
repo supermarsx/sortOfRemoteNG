@@ -1,6 +1,6 @@
-use crate::types::*;
 use crate::error::AiAssistError;
 use crate::service::AiAssistServiceState;
+use crate::types::*;
 
 use std::collections::HashMap;
 use tauri::State;
@@ -95,7 +95,9 @@ pub async fn ai_assist_explain_error(
     command: Option<String>,
 ) -> Result<ErrorExplanation, AiAssistError> {
     let service = state.read().await;
-    service.explain_error(&session_id, &error_output, command.as_deref()).await
+    service
+        .explain_error(&session_id, &error_output, command.as_deref())
+        .await
 }
 
 // ─── Man page commands ───────────────────────────────────────────
@@ -128,11 +130,9 @@ pub async fn ai_assist_translate(
     constraints: Option<Vec<String>>,
 ) -> Result<NaturalLanguageResult, AiAssistError> {
     let service = state.read().await;
-    service.translate_natural_language(
-        &session_id,
-        &query,
-        constraints.unwrap_or_default(),
-    ).await
+    service
+        .translate_natural_language(&session_id, &query, constraints.unwrap_or_default())
+        .await
 }
 
 // ─── Risk assessment commands ────────────────────────────────────
@@ -172,7 +172,11 @@ pub async fn ai_assist_search_snippets(
     query: String,
 ) -> Result<Vec<CommandSnippet>, AiAssistError> {
     let service = state.read().await;
-    Ok(service.search_snippets(&query).into_iter().cloned().collect())
+    Ok(service
+        .search_snippets(&query)
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 #[tauri::command]
@@ -181,7 +185,8 @@ pub async fn ai_assist_get_snippet(
     id: String,
 ) -> Result<CommandSnippet, AiAssistError> {
     let service = state.read().await;
-    service.get_snippet(&id)
+    service
+        .get_snippet(&id)
         .cloned()
         .ok_or_else(|| AiAssistError::not_found(&format!("snippet '{}'", id)))
 }
@@ -212,7 +217,8 @@ pub async fn ai_assist_remove_snippet(
     id: String,
 ) -> Result<(), AiAssistError> {
     let mut service = state.write().await;
-    service.remove_snippet(&id)
+    service
+        .remove_snippet(&id)
         .ok_or_else(|| AiAssistError::not_found(&format!("snippet '{}'", id)))?;
     Ok(())
 }

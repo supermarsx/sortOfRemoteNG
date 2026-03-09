@@ -1,11 +1,13 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 // ─── Shell & OS context ───────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ShellType {
+    #[default]
     Bash,
     Zsh,
     Fish,
@@ -19,12 +21,6 @@ pub enum ShellType {
     Ksh,
     Nushell,
     Unknown,
-}
-
-impl Default for ShellType {
-    fn default() -> Self {
-        Self::Bash
-    }
 }
 
 impl ShellType {
@@ -48,25 +44,41 @@ impl ShellType {
 
     pub fn from_path(path: &str) -> Self {
         let lower = path.to_lowercase();
-        if lower.contains("bash") { Self::Bash }
-        else if lower.contains("zsh") { Self::Zsh }
-        else if lower.contains("fish") { Self::Fish }
-        else if lower.contains("pwsh") || lower.contains("powershell") { Self::PowerShell }
-        else if lower.contains("cmd") { Self::Cmd }
-        else if lower.contains("ash") { Self::Ash }
-        else if lower.contains("dash") { Self::Dash }
-        else if lower.contains("csh") { Self::Csh }
-        else if lower.contains("tcsh") { Self::Tcsh }
-        else if lower.contains("ksh") { Self::Ksh }
-        else if lower.contains("nu") { Self::Nushell }
-        else if lower.ends_with("/sh") || lower == "sh" { Self::Sh }
-        else { Self::Unknown }
+        if lower.contains("bash") {
+            Self::Bash
+        } else if lower.contains("zsh") {
+            Self::Zsh
+        } else if lower.contains("fish") {
+            Self::Fish
+        } else if lower.contains("pwsh") || lower.contains("powershell") {
+            Self::PowerShell
+        } else if lower.contains("cmd") {
+            Self::Cmd
+        } else if lower.contains("ash") {
+            Self::Ash
+        } else if lower.contains("dash") {
+            Self::Dash
+        } else if lower.contains("csh") {
+            Self::Csh
+        } else if lower.contains("tcsh") {
+            Self::Tcsh
+        } else if lower.contains("ksh") {
+            Self::Ksh
+        } else if lower.contains("nu") {
+            Self::Nushell
+        } else if lower.ends_with("/sh") || lower == "sh" {
+            Self::Sh
+        } else {
+            Self::Unknown
+        }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum OsType {
+    #[default]
     Linux,
     MacOs,
     Windows,
@@ -76,12 +88,6 @@ pub enum OsType {
     Solaris,
     Aix,
     Unknown,
-}
-
-impl Default for OsType {
-    fn default() -> Self {
-        Self::Linux
-    }
 }
 
 impl OsType {
@@ -271,18 +277,14 @@ pub enum ManPageSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum RiskLevel {
+    #[default]
     Safe,
     Low,
     Medium,
     High,
     Critical,
-}
-
-impl Default for RiskLevel {
-    fn default() -> Self {
-        Self::Safe
-    }
 }
 
 impl RiskLevel {
@@ -320,7 +322,9 @@ pub struct RiskAssessment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum AffectedScope {
+    #[default]
     None,
     CurrentDirectory,
     UserHome,
@@ -328,12 +332,6 @@ pub enum AffectedScope {
     Network,
     MultiHost,
     Unknown,
-}
-
-impl Default for AffectedScope {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 // ─── Snippets / templates ────────────────────────────────────────

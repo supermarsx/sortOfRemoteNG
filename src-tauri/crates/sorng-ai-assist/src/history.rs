@@ -1,7 +1,6 @@
-use crate::types::{HistoryEntry, HistoryPattern, HistoryAnalysis, SessionContext};
-use crate::error::AiAssistError;
-use std::collections::HashMap;
+use crate::types::{HistoryAnalysis, HistoryEntry, HistoryPattern, SessionContext};
 use chrono::Utc;
+use std::collections::HashMap;
 
 /// Analyzes command history for patterns, frequent commands, and sequences.
 pub struct HistoryAnalyzer;
@@ -80,8 +79,12 @@ impl HistoryAnalyzer {
                 continue;
             }
 
-            let last = occurrences.last().map(|e| e.timestamp).unwrap_or_else(Utc::now);
-            let typical_sequence: Vec<String> = occurrences.iter()
+            let last = occurrences
+                .last()
+                .map(|e| e.timestamp)
+                .unwrap_or_else(Utc::now);
+            let typical_sequence: Vec<String> = occurrences
+                .iter()
                 .take(5)
                 .map(|e| e.command.clone())
                 .collect();
@@ -171,7 +174,7 @@ impl HistoryAnalyzer {
             }
         }
 
-        sequences.sort_by(|a, b| b.len().cmp(&a.len()));
+        sequences.sort_by_key(|b| std::cmp::Reverse(b.len()));
         sequences.truncate(20);
         sequences
     }
@@ -181,11 +184,17 @@ impl HistoryAnalyzer {
         let mut hourly: HashMap<u32, u64> = HashMap::new();
 
         for entry in entries {
-            let hour = entry.timestamp.format("%H").to_string().parse::<u32>().unwrap_or(0);
+            let hour = entry
+                .timestamp
+                .format("%H")
+                .to_string()
+                .parse::<u32>()
+                .unwrap_or(0);
             *hourly.entry(hour).or_insert(0) += 1;
         }
 
-        let mut result: Vec<(String, u64)> = hourly.into_iter()
+        let mut result: Vec<(String, u64)> = hourly
+            .into_iter()
             .map(|(h, c)| (format!("{:02}:00", h), c))
             .collect();
         result.sort_by(|a, b| a.0.cmp(&b.0));
@@ -218,7 +227,8 @@ impl HistoryAnalyzer {
             return Vec::new();
         }
 
-        let mut suggestions: Vec<(String, f64)> = followers.into_iter()
+        let mut suggestions: Vec<(String, f64)> = followers
+            .into_iter()
             .map(|(cmd, count)| {
                 let confidence = count as f64 / total as f64;
                 (cmd, confidence)

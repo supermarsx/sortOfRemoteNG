@@ -1,9 +1,7 @@
-use crate::types::*;
-use crate::context::{ContextBuilder, parse_command_line, CommandLineState};
-use crate::error::AiAssistError;
+use crate::context::{parse_command_line, CommandLineState};
 use crate::history::HistoryAnalyzer;
+use crate::types::*;
 
-use regex::Regex;
 use std::collections::HashMap;
 
 /// Provides AI-powered and heuristic-based command suggestions.
@@ -13,7 +11,7 @@ impl SuggestionEngine {
     /// Generate suggestions by combining AI, history, and builtin sources.
     pub fn generate_suggestions(
         input: &str,
-        cursor_pos: usize,
+        _cursor_pos: usize,
         ctx: &SessionContext,
         config: &AiAssistConfig,
     ) -> Vec<Suggestion> {
@@ -78,14 +76,15 @@ impl SuggestionEngine {
             CommandLineState::PartialFlag { command, partial } => {
                 Self::common_flags(command, partial)
             }
-            CommandLineState::ExpectingArgument { command, args_so_far } => {
-                Self::common_arguments(command, args_so_far)
-            }
+            CommandLineState::ExpectingArgument {
+                command,
+                args_so_far,
+            } => Self::common_arguments(command, args_so_far),
             _ => Vec::new(),
         }
     }
 
-    fn common_first_commands(shell: &ShellType, _os: &OsType) -> Vec<Suggestion> {
+    fn common_first_commands(_shell: &ShellType, _os: &OsType) -> Vec<Suggestion> {
         let commands = vec![
             ("ls", "List directory contents"),
             ("cd", "Change directory"),
@@ -119,8 +118,9 @@ impl SuggestionEngine {
             ("yum", "Package manager (RHEL)"),
         ];
 
-        commands.iter().map(|(cmd, desc)| {
-            Suggestion {
+        commands
+            .iter()
+            .map(|(cmd, desc)| Suggestion {
                 text: cmd.to_string(),
                 display: cmd.to_string(),
                 kind: SuggestionKind::Command,
@@ -131,8 +131,8 @@ impl SuggestionEngine {
                 documentation: None,
                 risk_level: RiskLevel::Safe,
                 tags: Vec::new(),
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     fn common_pipe_targets() -> Vec<Suggestion> {
@@ -154,8 +154,9 @@ impl SuggestionEngine {
             ("column", "Columnate output"),
         ];
 
-        targets.iter().map(|(cmd, desc)| {
-            Suggestion {
+        targets
+            .iter()
+            .map(|(cmd, desc)| Suggestion {
                 text: cmd.to_string(),
                 display: cmd.to_string(),
                 kind: SuggestionKind::Pipe,
@@ -166,8 +167,8 @@ impl SuggestionEngine {
                 documentation: None,
                 risk_level: RiskLevel::Safe,
                 tags: vec!["pipe".to_string()],
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     fn common_flags(command: &str, partial: &str) -> Vec<Suggestion> {
@@ -177,25 +178,24 @@ impl SuggestionEngine {
             None => return Vec::new(),
         };
 
-        flags.iter()
+        flags
+            .iter()
             .filter(|(flag, _, _)| flag.starts_with(partial))
-            .map(|(flag, long, desc)| {
-                Suggestion {
-                    text: flag.to_string(),
-                    display: if long.is_empty() {
-                        flag.to_string()
-                    } else {
-                        format!("{} / {}", flag, long)
-                    },
-                    kind: SuggestionKind::Flag,
-                    description: Some(desc.to_string()),
-                    confidence: 0.6,
-                    source: SuggestionSource::Builtin,
-                    insert_text: None,
-                    documentation: None,
-                    risk_level: RiskLevel::Safe,
-                    tags: Vec::new(),
-                }
+            .map(|(flag, long, desc)| Suggestion {
+                text: flag.to_string(),
+                display: if long.is_empty() {
+                    flag.to_string()
+                } else {
+                    format!("{} / {}", flag, long)
+                },
+                kind: SuggestionKind::Flag,
+                description: Some(desc.to_string()),
+                confidence: 0.6,
+                source: SuggestionSource::Builtin,
+                insert_text: None,
+                documentation: None,
+                risk_level: RiskLevel::Safe,
+                tags: Vec::new(),
             })
             .collect()
     }
@@ -337,13 +337,15 @@ impl SuggestionEngine {
     }
 
     fn fuzzy_match_commands(partial: &str, installed: &[String]) -> Vec<Suggestion> {
-        use fuzzy_matcher::FuzzyMatcher;
         use fuzzy_matcher::skim::SkimMatcherV2;
+        use fuzzy_matcher::FuzzyMatcher;
 
         let matcher = SkimMatcherV2::default();
-        let mut results: Vec<(String, i64)> = installed.iter()
+        let mut results: Vec<(String, i64)> = installed
+            .iter()
             .filter_map(|tool| {
-                matcher.fuzzy_match(tool, partial)
+                matcher
+                    .fuzzy_match(tool, partial)
                     .map(|score| (tool.clone(), score))
             })
             .collect();
@@ -351,21 +353,24 @@ impl SuggestionEngine {
         results.sort_by(|a, b| b.1.cmp(&a.1));
         results.truncate(10);
 
-        results.into_iter().map(|(tool, score)| {
-            let confidence = (score as f64 / 100.0).min(1.0).max(0.1);
-            Suggestion {
-                text: tool.clone(),
-                display: tool,
-                kind: SuggestionKind::Command,
-                description: Some("Installed tool (fuzzy match)".to_string()),
-                confidence,
-                source: SuggestionSource::Fuzzy,
-                insert_text: None,
-                documentation: None,
-                risk_level: RiskLevel::Safe,
-                tags: vec!["fuzzy".to_string()],
-            }
-        }).collect()
+        results
+            .into_iter()
+            .map(|(tool, score)| {
+                let confidence = (score as f64 / 100.0).clamp(0.1, 1.0);
+                Suggestion {
+                    text: tool.clone(),
+                    display: tool,
+                    kind: SuggestionKind::Command,
+                    description: Some("Installed tool (fuzzy match)".to_string()),
+                    confidence,
+                    source: SuggestionSource::Fuzzy,
+                    insert_text: None,
+                    documentation: None,
+                    risk_level: RiskLevel::Safe,
+                    tags: vec!["fuzzy".to_string()],
+                }
+            })
+            .collect()
     }
 
     fn deduplicate_and_sort(suggestions: &mut Vec<Suggestion>) {
@@ -385,7 +390,11 @@ impl SuggestionEngine {
             }
         }
 
-        unique.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        unique.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         *suggestions = unique;
     }
 }
@@ -394,104 +403,131 @@ impl SuggestionEngine {
 fn get_common_flags_db() -> HashMap<&'static str, Vec<(&'static str, &'static str, &'static str)>> {
     let mut db: HashMap<&str, Vec<(&str, &str, &str)>> = HashMap::new();
 
-    db.insert("ls", vec![
-        ("-l", "--long", "Long listing format"),
-        ("-a", "--all", "Include hidden files"),
-        ("-h", "--human-readable", "Human-readable sizes"),
-        ("-R", "--recursive", "List subdirectories recursively"),
-        ("-t", "", "Sort by modification time"),
-        ("-S", "", "Sort by file size"),
-        ("-r", "--reverse", "Reverse sort order"),
-    ]);
+    db.insert(
+        "ls",
+        vec![
+            ("-l", "--long", "Long listing format"),
+            ("-a", "--all", "Include hidden files"),
+            ("-h", "--human-readable", "Human-readable sizes"),
+            ("-R", "--recursive", "List subdirectories recursively"),
+            ("-t", "", "Sort by modification time"),
+            ("-S", "", "Sort by file size"),
+            ("-r", "--reverse", "Reverse sort order"),
+        ],
+    );
 
-    db.insert("grep", vec![
-        ("-i", "--ignore-case", "Case insensitive"),
-        ("-r", "--recursive", "Search recursively"),
-        ("-n", "--line-number", "Show line numbers"),
-        ("-l", "--files-with-matches", "Only show filenames"),
-        ("-v", "--invert-match", "Invert match"),
-        ("-c", "--count", "Count matches"),
-        ("-E", "--extended-regexp", "Extended regex"),
-        ("-w", "--word-regexp", "Match whole words"),
-        ("-A", "--after-context", "Lines after match"),
-        ("-B", "--before-context", "Lines before match"),
-    ]);
+    db.insert(
+        "grep",
+        vec![
+            ("-i", "--ignore-case", "Case insensitive"),
+            ("-r", "--recursive", "Search recursively"),
+            ("-n", "--line-number", "Show line numbers"),
+            ("-l", "--files-with-matches", "Only show filenames"),
+            ("-v", "--invert-match", "Invert match"),
+            ("-c", "--count", "Count matches"),
+            ("-E", "--extended-regexp", "Extended regex"),
+            ("-w", "--word-regexp", "Match whole words"),
+            ("-A", "--after-context", "Lines after match"),
+            ("-B", "--before-context", "Lines before match"),
+        ],
+    );
 
-    db.insert("find", vec![
-        ("-name", "", "Match filename pattern"),
-        ("-type", "", "File type (f/d/l)"),
-        ("-size", "", "File size"),
-        ("-mtime", "", "Modified time"),
-        ("-exec", "", "Execute command"),
-        ("-delete", "", "Delete matching files"),
-        ("-maxdepth", "", "Max directory depth"),
-        ("-mindepth", "", "Min directory depth"),
-        ("-perm", "", "File permissions"),
-    ]);
+    db.insert(
+        "find",
+        vec![
+            ("-name", "", "Match filename pattern"),
+            ("-type", "", "File type (f/d/l)"),
+            ("-size", "", "File size"),
+            ("-mtime", "", "Modified time"),
+            ("-exec", "", "Execute command"),
+            ("-delete", "", "Delete matching files"),
+            ("-maxdepth", "", "Max directory depth"),
+            ("-mindepth", "", "Min directory depth"),
+            ("-perm", "", "File permissions"),
+        ],
+    );
 
-    db.insert("curl", vec![
-        ("-X", "--request", "HTTP method"),
-        ("-H", "--header", "Add header"),
-        ("-d", "--data", "POST data"),
-        ("-o", "--output", "Output to file"),
-        ("-s", "--silent", "Silent mode"),
-        ("-v", "--verbose", "Verbose output"),
-        ("-L", "--location", "Follow redirects"),
-        ("-k", "--insecure", "Skip TLS verification"),
-        ("-u", "--user", "User:password"),
-        ("-I", "--head", "HEAD request only"),
-    ]);
+    db.insert(
+        "curl",
+        vec![
+            ("-X", "--request", "HTTP method"),
+            ("-H", "--header", "Add header"),
+            ("-d", "--data", "POST data"),
+            ("-o", "--output", "Output to file"),
+            ("-s", "--silent", "Silent mode"),
+            ("-v", "--verbose", "Verbose output"),
+            ("-L", "--location", "Follow redirects"),
+            ("-k", "--insecure", "Skip TLS verification"),
+            ("-u", "--user", "User:password"),
+            ("-I", "--head", "HEAD request only"),
+        ],
+    );
 
-    db.insert("tar", vec![
-        ("-c", "--create", "Create archive"),
-        ("-x", "--extract", "Extract archive"),
-        ("-z", "--gzip", "Gzip compression"),
-        ("-j", "--bzip2", "Bzip2 compression"),
-        ("-v", "--verbose", "Verbose output"),
-        ("-f", "--file", "Archive file name"),
-        ("-t", "--list", "List archive contents"),
-        ("-C", "--directory", "Change to directory"),
-    ]);
+    db.insert(
+        "tar",
+        vec![
+            ("-c", "--create", "Create archive"),
+            ("-x", "--extract", "Extract archive"),
+            ("-z", "--gzip", "Gzip compression"),
+            ("-j", "--bzip2", "Bzip2 compression"),
+            ("-v", "--verbose", "Verbose output"),
+            ("-f", "--file", "Archive file name"),
+            ("-t", "--list", "List archive contents"),
+            ("-C", "--directory", "Change to directory"),
+        ],
+    );
 
-    db.insert("ssh", vec![
-        ("-p", "", "Port"),
-        ("-i", "", "Identity file"),
-        ("-L", "", "Local port forwarding"),
-        ("-R", "", "Remote port forwarding"),
-        ("-D", "", "Dynamic port forwarding (SOCKS)"),
-        ("-N", "", "No remote command"),
-        ("-f", "", "Background before command"),
-        ("-v", "", "Verbose mode"),
-        ("-o", "", "SSH option"),
-        ("-J", "", "Jump host"),
-    ]);
+    db.insert(
+        "ssh",
+        vec![
+            ("-p", "", "Port"),
+            ("-i", "", "Identity file"),
+            ("-L", "", "Local port forwarding"),
+            ("-R", "", "Remote port forwarding"),
+            ("-D", "", "Dynamic port forwarding (SOCKS)"),
+            ("-N", "", "No remote command"),
+            ("-f", "", "Background before command"),
+            ("-v", "", "Verbose mode"),
+            ("-o", "", "SSH option"),
+            ("-J", "", "Jump host"),
+        ],
+    );
 
-    db.insert("chmod", vec![
-        ("-R", "--recursive", "Recursive"),
-        ("-v", "--verbose", "Verbose"),
-        ("-c", "--changes", "Only report changes"),
-    ]);
+    db.insert(
+        "chmod",
+        vec![
+            ("-R", "--recursive", "Recursive"),
+            ("-v", "--verbose", "Verbose"),
+            ("-c", "--changes", "Only report changes"),
+        ],
+    );
 
-    db.insert("rsync", vec![
-        ("-a", "--archive", "Archive mode"),
-        ("-v", "--verbose", "Verbose"),
-        ("-z", "--compress", "Compress during transfer"),
-        ("-P", "--progress", "Show progress"),
-        ("-n", "--dry-run", "Dry run"),
-        ("-e", "", "Specify remote shell"),
-        ("--delete", "", "Delete extraneous files"),
-        ("--exclude", "", "Exclude files matching pattern"),
-    ]);
+    db.insert(
+        "rsync",
+        vec![
+            ("-a", "--archive", "Archive mode"),
+            ("-v", "--verbose", "Verbose"),
+            ("-z", "--compress", "Compress during transfer"),
+            ("-P", "--progress", "Show progress"),
+            ("-n", "--dry-run", "Dry run"),
+            ("-e", "", "Specify remote shell"),
+            ("--delete", "", "Delete extraneous files"),
+            ("--exclude", "", "Exclude files matching pattern"),
+        ],
+    );
 
-    db.insert("apt", vec![
-        ("install", "", "Install packages"),
-        ("remove", "", "Remove packages"),
-        ("update", "", "Update package lists"),
-        ("upgrade", "", "Upgrade packages"),
-        ("search", "", "Search packages"),
-        ("show", "", "Show package details"),
-        ("autoremove", "", "Remove unused packages"),
-    ]);
+    db.insert(
+        "apt",
+        vec![
+            ("install", "", "Install packages"),
+            ("remove", "", "Remove packages"),
+            ("update", "", "Update package lists"),
+            ("upgrade", "", "Upgrade packages"),
+            ("search", "", "Search packages"),
+            ("show", "", "Show package details"),
+            ("autoremove", "", "Remove unused packages"),
+        ],
+    );
 
     db
 }

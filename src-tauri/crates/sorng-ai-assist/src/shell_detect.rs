@@ -1,4 +1,4 @@
-use crate::types::{ShellType, OsType};
+use crate::types::{OsType, ShellType};
 
 /// Detects the remote shell type and OS from available signals.
 pub struct ShellDetector;
@@ -36,14 +36,32 @@ impl ShellDetector {
         // Check uname output first
         if let Some(uname) = uname_output {
             let lower = uname.to_lowercase();
-            if lower.contains("linux") { return OsType::Linux; }
-            if lower.contains("darwin") { return OsType::MacOs; }
-            if lower.contains("freebsd") { return OsType::FreeBsd; }
-            if lower.contains("openbsd") { return OsType::OpenBsd; }
-            if lower.contains("netbsd") { return OsType::NetBsd; }
-            if lower.contains("sunos") || lower.contains("solaris") { return OsType::Solaris; }
-            if lower.contains("aix") { return OsType::Aix; }
-            if lower.contains("mingw") || lower.contains("msys") || lower.contains("cygwin") || lower.contains("windows") {
+            if lower.contains("linux") {
+                return OsType::Linux;
+            }
+            if lower.contains("darwin") {
+                return OsType::MacOs;
+            }
+            if lower.contains("freebsd") {
+                return OsType::FreeBsd;
+            }
+            if lower.contains("openbsd") {
+                return OsType::OpenBsd;
+            }
+            if lower.contains("netbsd") {
+                return OsType::NetBsd;
+            }
+            if lower.contains("sunos") || lower.contains("solaris") {
+                return OsType::Solaris;
+            }
+            if lower.contains("aix") {
+                return OsType::Aix;
+            }
+            if lower.contains("mingw")
+                || lower.contains("msys")
+                || lower.contains("cygwin")
+                || lower.contains("windows")
+            {
                 return OsType::Windows;
             }
         }
@@ -53,10 +71,18 @@ impl ShellDetector {
             let k = key.to_uppercase();
             if k == "OSTYPE" {
                 let v = val.to_lowercase();
-                if v.contains("linux") { return OsType::Linux; }
-                if v.contains("darwin") { return OsType::MacOs; }
-                if v.contains("freebsd") { return OsType::FreeBsd; }
-                if v.contains("msys") || v.contains("cygwin") { return OsType::Windows; }
+                if v.contains("linux") {
+                    return OsType::Linux;
+                }
+                if v.contains("darwin") {
+                    return OsType::MacOs;
+                }
+                if v.contains("freebsd") {
+                    return OsType::FreeBsd;
+                }
+                if v.contains("msys") || v.contains("cygwin") {
+                    return OsType::Windows;
+                }
             }
         }
 
@@ -92,9 +118,7 @@ impl ShellDetector {
                     None
                 }
             }
-            OsType::FreeBsd | OsType::OpenBsd | OsType::NetBsd => {
-                Some("pkg".to_string())
-            }
+            OsType::FreeBsd | OsType::OpenBsd | OsType::NetBsd => Some("pkg".to_string()),
             _ => None,
         }
     }

@@ -1,13 +1,13 @@
-use crate::types::*;
-use crate::error::AiAssistError;
 use crate::completion::CompletionEngine;
+use crate::error::AiAssistError;
 use crate::explanation::ErrorExplainer;
+use crate::history::HistoryAnalyzer;
 use crate::manpage::ManPageLookup;
 use crate::natural_language::NaturalLanguageTranslator;
 use crate::risk::RiskAnalyzer;
-use crate::snippets::SnippetManager;
 use crate::session::SessionManager;
-use crate::history::HistoryAnalyzer;
+use crate::snippets::SnippetManager;
+use crate::types::*;
 
 use sorng_llm::LlmServiceState;
 use std::collections::HashMap;
@@ -36,8 +36,15 @@ impl AiAssistService {
 
     // ─── Session management ──────────────────────────────────
 
-    pub fn create_session(&mut self, session_id: &str, host: &str, username: &str) -> SessionContext {
-        self.sessions.create_session(session_id, host, username).clone()
+    pub fn create_session(
+        &mut self,
+        session_id: &str,
+        host: &str,
+        username: &str,
+    ) -> SessionContext {
+        self.sessions
+            .create_session(session_id, host, username)
+            .clone()
     }
 
     pub fn get_session(&self, session_id: &str) -> Option<&SessionContext> {
@@ -60,7 +67,8 @@ impl AiAssistService {
         uname: Option<String>,
         env_vars: Option<Vec<(String, String)>>,
     ) -> Result<(), AiAssistError> {
-        self.sessions.update_context(session_id, cwd, shell, uname, env_vars)
+        self.sessions
+            .update_context(session_id, cwd, shell, uname, env_vars)
     }
 
     pub fn record_command(
@@ -71,7 +79,8 @@ impl AiAssistService {
         output: Option<String>,
         duration_ms: Option<u64>,
     ) -> Result<(), AiAssistError> {
-        self.sessions.record_command(session_id, command, exit_code, output, duration_ms)
+        self.sessions
+            .record_command(session_id, command, exit_code, output, duration_ms)
     }
 
     pub fn set_installed_tools(
@@ -90,8 +99,9 @@ impl AiAssistService {
         input: &str,
         cursor_position: usize,
     ) -> Result<CompletionResponse, AiAssistError> {
-        let ctx = self.sessions.get_session(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_session(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
 
         let request = CompletionRequest {
             session_id: session_id.to_string(),
@@ -117,8 +127,9 @@ impl AiAssistService {
         error_output: &str,
         command: Option<&str>,
     ) -> Result<ErrorExplanation, AiAssistError> {
-        let ctx = self.sessions.get_session(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_session(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
 
         ErrorExplainer::explain(error_output, command, ctx, self.llm.as_ref()).await
     }
@@ -141,11 +152,13 @@ impl AiAssistService {
         query: &str,
         constraints: Vec<String>,
     ) -> Result<NaturalLanguageResult, AiAssistError> {
-        let ctx = self.sessions.get_session(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_session(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
 
-        let llm = self.llm.as_ref()
-            .ok_or_else(|| AiAssistError::llm_error("No LLM configured for natural language translation"))?;
+        let llm = self.llm.as_ref().ok_or_else(|| {
+            AiAssistError::llm_error("No LLM configured for natural language translation")
+        })?;
 
         let nl_query = NaturalLanguageQuery {
             query: query.to_string(),
@@ -165,8 +178,9 @@ impl AiAssistService {
         session_id: &str,
         command: &str,
     ) -> Result<RiskAssessment, AiAssistError> {
-        let ctx = self.sessions.get_session(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_session(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
 
         RiskAnalyzer::assess(command, ctx, self.llm.as_ref()).await
     }
@@ -210,8 +224,9 @@ impl AiAssistService {
     // ─── History analysis ────────────────────────────────────
 
     pub fn analyze_history(&self, session_id: &str) -> Result<HistoryAnalysis, AiAssistError> {
-        let ctx = self.sessions.get_session(session_id)
-            .ok_or_else(|| AiAssistError::session_error(&format!("Session '{}' not found", session_id)))?;
+        let ctx = self.sessions.get_session(session_id).ok_or_else(|| {
+            AiAssistError::session_error(&format!("Session '{}' not found", session_id))
+        })?;
 
         Ok(HistoryAnalyzer::analyze(&ctx.history))
     }

@@ -1,9 +1,7 @@
-use serde::{Serialize, Deserialize};
-use crate::types::{SessionContext, ShellType, OsType};
-use crate::error::AiAssistError;
+use crate::types::SessionContext;
+use serde::{Deserialize, Serialize};
 
 /// Builds rich context strings for LLM prompts based on the current session state.
-
 pub struct ContextBuilder;
 
 impl ContextBuilder {
@@ -26,7 +24,9 @@ impl ContextBuilder {
         }
 
         if !ctx.env_vars.is_empty() {
-            let relevant: Vec<String> = ctx.env_vars.iter()
+            let relevant: Vec<String> = ctx
+                .env_vars
+                .iter()
                 .filter(|(k, _)| is_relevant_env_var(k))
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect();
@@ -68,7 +68,10 @@ impl ContextBuilder {
             None => "Exit code: unknown".to_string(),
         };
 
-        Some(format!("Last command output:\n{}\n{}", exit_info, truncated))
+        Some(format!(
+            "Last command output:\n{}\n{}",
+            exit_info, truncated
+        ))
     }
 
     /// Build a full system prompt for the AI assistant.
@@ -146,12 +149,7 @@ Respond with a JSON array of objects, each with:
 - "confidence": 0.0-1.0
 
 Only include high-quality suggestions. Order by relevance."#,
-            max_suggestions,
-            input,
-            before_cursor,
-            after_cursor,
-            env,
-            history,
+            max_suggestions, input, before_cursor, after_cursor, env, history,
         )
     }
 
@@ -162,7 +160,8 @@ Only include high-quality suggestions. Order by relevance."#,
         ctx: &SessionContext,
     ) -> String {
         let env = Self::build_environment_context(ctx);
-        let cmd_info = command.map(|c| format!("Command that caused the error: `{}`\n", c))
+        let cmd_info = command
+            .map(|c| format!("Command that caused the error: `{}`\n", c))
             .unwrap_or_default();
 
         format!(
@@ -192,9 +191,7 @@ Respond with JSON:
   "related_commands": ["man page or related cmd"],
   "documentation_links": ["url1"]
 }}"#,
-            cmd_info,
-            error_output,
-            env,
+            cmd_info, error_output, env,
         )
     }
 
@@ -208,10 +205,14 @@ Respond with JSON:
         let constraint_str = if constraints.is_empty() {
             String::new()
         } else {
-            format!("\nConstraints:\n{}", constraints.iter()
-                .map(|c| format!("- {}", c))
-                .collect::<Vec<_>>()
-                .join("\n"))
+            format!(
+                "\nConstraints:\n{}",
+                constraints
+                    .iter()
+                    .map(|c| format!("- {}", c))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
         };
 
         format!(
@@ -236,9 +237,7 @@ Respond with JSON:
   "confidence": 0.0-1.0,
   "alternatives": ["alternative approaches"]
 }}"#,
-            query,
-            env,
-            constraint_str,
+            query, env, constraint_str,
         )
     }
 
@@ -262,8 +261,7 @@ Respond with JSON:
   "confirmation_required": true/false,
   "safer_alternatives": ["alternative1"]
 }}"#,
-            command,
-            env,
+            command, env,
         )
     }
 }
@@ -273,12 +271,27 @@ fn is_relevant_env_var(key: &str) -> bool {
     let upper = key.to_uppercase();
     matches!(
         upper.as_str(),
-        "PATH" | "SHELL" | "HOME" | "USER" | "LANG" | "LC_ALL"
-        | "TERM" | "EDITOR" | "VISUAL" | "PAGER"
-        | "VIRTUAL_ENV" | "CONDA_DEFAULT_ENV" | "GOPATH"
-        | "JAVA_HOME" | "NODE_ENV" | "PYTHON_PATH"
-        | "SSH_AUTH_SOCK" | "SSH_AGENT_PID"
-        | "DISPLAY" | "WAYLAND_DISPLAY" | "XDG_SESSION_TYPE"
+        "PATH"
+            | "SHELL"
+            | "HOME"
+            | "USER"
+            | "LANG"
+            | "LC_ALL"
+            | "TERM"
+            | "EDITOR"
+            | "VISUAL"
+            | "PAGER"
+            | "VIRTUAL_ENV"
+            | "CONDA_DEFAULT_ENV"
+            | "GOPATH"
+            | "JAVA_HOME"
+            | "NODE_ENV"
+            | "PYTHON_PATH"
+            | "SSH_AUTH_SOCK"
+            | "SSH_AGENT_PID"
+            | "DISPLAY"
+            | "WAYLAND_DISPLAY"
+            | "XDG_SESSION_TYPE"
     )
 }
 
@@ -347,11 +360,20 @@ pub fn parse_command_line(input: &str) -> CommandLineState {
 pub enum CommandLineState {
     Empty,
     PartialCommand(String),
-    PartialFlag { command: String, partial: String },
-    PartialArgument { command: String, partial: String },
+    PartialFlag {
+        command: String,
+        partial: String,
+    },
+    PartialArgument {
+        command: String,
+        partial: String,
+    },
     PartialPath(String),
     PartialVariable(String),
-    ExpectingArgument { command: String, args_so_far: Vec<String> },
+    ExpectingArgument {
+        command: String,
+        args_so_far: Vec<String>,
+    },
     AfterPipe,
     AfterRedirect,
     ChainedCommand,

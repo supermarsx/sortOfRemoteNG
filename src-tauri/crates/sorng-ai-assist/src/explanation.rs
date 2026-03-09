@@ -1,11 +1,9 @@
-use crate::types::*;
-use crate::context::ContextBuilder;
 use crate::completion::extract_json_from_response;
+use crate::context::ContextBuilder;
 use crate::error::AiAssistError;
+use crate::types::*;
 
-use sorng_llm::{
-    ChatMessage, MessageRole, ChatCompletionRequest, LlmServiceState,
-};
+use sorng_llm::{ChatCompletionRequest, ChatMessage, LlmServiceState, MessageRole};
 
 /// AI-powered error explanation and fix suggestion engine.
 pub struct ErrorExplainer;
@@ -124,7 +122,8 @@ impl ErrorExplainer {
             return Some(ErrorExplanation {
                 original_error: error_output.to_string(),
                 summary: "File or directory not found".to_string(),
-                detailed_explanation: "The specified file or directory does not exist at the given path.".to_string(),
+                detailed_explanation:
+                    "The specified file or directory does not exist at the given path.".to_string(),
                 probable_causes: vec![
                     "Typo in the file path".to_string(),
                     "The file was moved or deleted".to_string(),
@@ -141,7 +140,9 @@ impl ErrorExplainer {
                     },
                     SuggestedFix {
                         description: "Search for the file".to_string(),
-                        command: Some("find . -name '*' -type f 2>/dev/null | head -20".to_string()),
+                        command: Some(
+                            "find . -name '*' -type f 2>/dev/null | head -20".to_string(),
+                        ),
                         risk_level: RiskLevel::Safe,
                         auto_applicable: true,
                         steps: vec!["Search for files matching a pattern".to_string()],
@@ -229,7 +230,9 @@ impl ErrorExplainer {
         }
 
         // Host key verification
-        if lower.contains("host key verification failed") || lower.contains("remote host identification has changed") {
+        if lower.contains("host key verification failed")
+            || lower.contains("remote host identification has changed")
+        {
             return Some(ErrorExplanation {
                 original_error: error_output.to_string(),
                 summary: "SSH host key mismatch".to_string(),
@@ -260,7 +263,10 @@ impl ErrorExplainer {
         }
 
         // Out of memory
-        if lower.contains("out of memory") || lower.contains("cannot allocate memory") || lower.contains("oom") {
+        if lower.contains("out of memory")
+            || lower.contains("cannot allocate memory")
+            || lower.contains("oom")
+        {
             return Some(ErrorExplanation {
                 original_error: error_output.to_string(),
                 summary: "Out of memory".to_string(),
@@ -287,7 +293,12 @@ impl ErrorExplainer {
                         steps: vec!["List processes sorted by memory usage".to_string()],
                     },
                 ],
-                related_commands: vec!["free".to_string(), "top".to_string(), "htop".to_string(), "vmstat".to_string()],
+                related_commands: vec![
+                    "free".to_string(),
+                    "top".to_string(),
+                    "htop".to_string(),
+                    "vmstat".to_string(),
+                ],
                 documentation_links: Vec::new(),
                 confidence: 0.9,
             });
@@ -320,7 +331,8 @@ impl ErrorExplainer {
         let system_msg = ChatMessage {
             role: MessageRole::System,
             content: sorng_llm::MessageContent::Text(
-                "You are an expert Linux/Unix troubleshooter. Respond only with valid JSON.".to_string()
+                "You are an expert Linux/Unix troubleshooter. Respond only with valid JSON."
+                    .to_string(),
             ),
             name: None,
             tool_calls: None,
@@ -362,51 +374,103 @@ impl ErrorExplainer {
         Self::parse_explanation_response(error_output, &content)
     }
 
-    fn parse_explanation_response(original_error: &str, content: &str) -> Result<ErrorExplanation, AiAssistError> {
+    fn parse_explanation_response(
+        original_error: &str,
+        content: &str,
+    ) -> Result<ErrorExplanation, AiAssistError> {
         let json_str = extract_json_from_response(content);
-        let val: serde_json::Value = serde_json::from_str(&json_str)
-            .map_err(|e| AiAssistError::parse_error(&format!("Failed to parse error explanation: {}", e)))?;
+        let val: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            AiAssistError::parse_error(&format!("Failed to parse error explanation: {}", e))
+        })?;
 
-        let summary = val.get("summary").and_then(|v| v.as_str()).unwrap_or("Error").to_string();
-        let detailed = val.get("detailed_explanation").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let summary = val
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Error")
+            .to_string();
+        let detailed = val
+            .get("detailed_explanation")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
-        let causes: Vec<String> = val.get("probable_causes")
+        let causes: Vec<String> = val
+            .get("probable_causes")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let fixes: Vec<SuggestedFix> = val.get("suggested_fixes")
+        let fixes: Vec<SuggestedFix> = val
+            .get("suggested_fixes")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| {
-                let desc = v.get("description")?.as_str()?.to_string();
-                let cmd = v.get("command").and_then(|c| c.as_str()).map(|s| s.to_string());
-                let risk_str = v.get("risk_level").and_then(|r| r.as_str()).unwrap_or("low");
-                let risk = match risk_str {
-                    "safe" => RiskLevel::Safe,
-                    "low" => RiskLevel::Low,
-                    "medium" => RiskLevel::Medium,
-                    "high" => RiskLevel::High,
-                    "critical" => RiskLevel::Critical,
-                    _ => RiskLevel::Low,
-                };
-                let auto = v.get("auto_applicable").and_then(|a| a.as_bool()).unwrap_or(false);
-                let steps: Vec<String> = v.get("steps")
-                    .and_then(|s| s.as_array())
-                    .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
-                    .unwrap_or_default();
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        let desc = v.get("description")?.as_str()?.to_string();
+                        let cmd = v
+                            .get("command")
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.to_string());
+                        let risk_str = v
+                            .get("risk_level")
+                            .and_then(|r| r.as_str())
+                            .unwrap_or("low");
+                        let risk = match risk_str {
+                            "safe" => RiskLevel::Safe,
+                            "low" => RiskLevel::Low,
+                            "medium" => RiskLevel::Medium,
+                            "high" => RiskLevel::High,
+                            "critical" => RiskLevel::Critical,
+                            _ => RiskLevel::Low,
+                        };
+                        let auto = v
+                            .get("auto_applicable")
+                            .and_then(|a| a.as_bool())
+                            .unwrap_or(false);
+                        let steps: Vec<String> = v
+                            .get("steps")
+                            .and_then(|s| s.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|s| s.as_str().map(|x| x.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
 
-                Some(SuggestedFix { description: desc, command: cmd, risk_level: risk, auto_applicable: auto, steps })
-            }).collect())
+                        Some(SuggestedFix {
+                            description: desc,
+                            command: cmd,
+                            risk_level: risk,
+                            auto_applicable: auto,
+                            steps,
+                        })
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let related: Vec<String> = val.get("related_commands")
+        let related: Vec<String> = val
+            .get("related_commands")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let links: Vec<String> = val.get("documentation_links")
+        let links: Vec<String> = val
+            .get("documentation_links")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(ErrorExplanation {

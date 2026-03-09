@@ -1,18 +1,25 @@
-use crate::types::*;
 use crate::error::AiAssistError;
+use crate::types::*;
 
-use std::collections::HashMap;
 use chrono::Utc;
-use uuid::Uuid;
+use std::collections::HashMap;
 
 /// Manages a library of command snippets/templates.
 pub struct SnippetManager {
     snippets: HashMap<String, CommandSnippet>,
 }
 
+impl Default for SnippetManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SnippetManager {
     pub fn new() -> Self {
-        let mut mgr = Self { snippets: HashMap::new() };
+        let mut mgr = Self {
+            snippets: HashMap::new(),
+        };
         mgr.load_builtins();
         mgr
     }
@@ -32,7 +39,9 @@ impl SnippetManager {
     /// Search snippets by query string.
     pub fn search(&self, query: &str) -> Vec<&CommandSnippet> {
         let lower = query.to_lowercase();
-        let mut results: Vec<&CommandSnippet> = self.snippets.values()
+        let mut results: Vec<&CommandSnippet> = self
+            .snippets
+            .values()
             .filter(|s| {
                 s.name.to_lowercase().contains(&lower)
                     || s.description.to_lowercase().contains(&lower)
@@ -45,7 +54,8 @@ impl SnippetManager {
 
     /// Filter snippets by category.
     pub fn by_category(&self, category: &SnippetCategory) -> Vec<&CommandSnippet> {
-        self.snippets.values()
+        self.snippets
+            .values()
             .filter(|s| &s.category == category)
             .collect()
     }
@@ -73,27 +83,35 @@ impl SnippetManager {
         id: &str,
         params: &HashMap<String, String>,
     ) -> Result<String, AiAssistError> {
-        let snippet = self.snippets.get(id)
+        let snippet = self
+            .snippets
+            .get(id)
             .ok_or_else(|| AiAssistError::not_found(&format!("snippet '{}'", id)))?;
 
         let mut result = snippet.template.clone();
 
         for param in &snippet.parameters {
             let placeholder = format!("{{{{{}}}}}", param.name);
-            let value = params.get(&param.name)
+            let value = params
+                .get(&param.name)
                 .or(param.default_value.as_ref())
-                .ok_or_else(|| AiAssistError::snippet_error(
-                    &format!("Missing required parameter: {}", param.name)
-                ))?;
+                .ok_or_else(|| {
+                    AiAssistError::snippet_error(&format!(
+                        "Missing required parameter: {}",
+                        param.name
+                    ))
+                })?;
 
             // Validate if regex is present
             if let Some(ref regex_str) = param.validation_regex {
-                let re = regex::Regex::new(regex_str)
-                    .map_err(|e| AiAssistError::snippet_error(&format!("Invalid validation regex: {}", e)))?;
+                let re = regex::Regex::new(regex_str).map_err(|e| {
+                    AiAssistError::snippet_error(&format!("Invalid validation regex: {}", e))
+                })?;
                 if !re.is_match(value) {
-                    return Err(AiAssistError::snippet_error(
-                        &format!("Parameter '{}' value '{}' doesn't match validation pattern", param.name, value)
-                    ));
+                    return Err(AiAssistError::snippet_error(&format!(
+                        "Parameter '{}' value '{}' doesn't match validation pattern",
+                        param.name, value
+                    )));
                 }
             }
 
