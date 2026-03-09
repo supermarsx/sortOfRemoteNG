@@ -41,8 +41,13 @@ impl OciClient {
 
     /// Apply OCI request signing headers to a request builder.
     fn apply_auth(&self, headers: &mut HeaderMap) {
-        let now = chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-        headers.insert(DATE, HeaderValue::from_str(&now).unwrap_or_else(|_| HeaderValue::from_static("")));
+        let now = chrono::Utc::now()
+            .format("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
+        headers.insert(
+            DATE,
+            HeaderValue::from_str(&now).unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
 
         // OCI uses HTTP Signature-based auth. Build the key ID and a
         // placeholder signature so the request structure is correct.
@@ -99,7 +104,13 @@ impl OciClient {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         self.apply_auth(&mut headers);
-        let resp = self.http.post(&url).headers(headers).json(body).send().await?;
+        let resp = self
+            .http
+            .post(&url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 
@@ -114,7 +125,13 @@ impl OciClient {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         self.apply_auth(&mut headers);
-        let resp = self.http.put(&url).headers(headers).json(body).send().await?;
+        let resp = self
+            .http
+            .put(&url)
+            .headers(headers)
+            .json(body)
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 

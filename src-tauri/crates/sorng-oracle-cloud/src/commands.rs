@@ -12,7 +12,9 @@ pub async fn oci_connect(
     config: OciConnectionConfig,
 ) -> Result<OciConnectionSummary, String> {
     let mut svc = state.lock().await;
-    svc.connect(connection_id, config).await.map_err(|e| e.to_string())
+    svc.connect(connection_id, config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -47,7 +49,9 @@ pub async fn oci_get_dashboard(
     connection_id: String,
 ) -> Result<OciDashboard, String> {
     let svc = state.lock().await;
-    svc.get_dashboard(&connection_id).await.map_err(|e| e.to_string())
+    svc.get_dashboard(&connection_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -808,9 +808,7 @@ mod tests {
             description: "Admin access".into(),
             compartment_id: "comp-1".into(),
             lifecycle_state: "ACTIVE".into(),
-            statements: vec![
-                "Allow group Admins to manage all-resources in tenancy".into(),
-            ],
+            statements: vec!["Allow group Admins to manage all-resources in tenancy".into()],
             time_created: "2025-01-01T00:00:00Z".into(),
         };
         let json = serde_json::to_string(&policy).unwrap();

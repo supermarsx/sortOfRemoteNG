@@ -22,10 +22,7 @@ impl DatabaseManager {
 
     pub async fn get_db_system(client: &OciClient, db_system_id: &str) -> OciResult<OciDbSystem> {
         client
-            .get(
-                "database",
-                &format!("/20160918/dbSystems/{db_system_id}"),
-            )
+            .get("database", &format!("/20160918/dbSystems/{db_system_id}"))
             .await
     }
 
@@ -36,15 +33,9 @@ impl DatabaseManager {
         client.post("database", "/20160918/dbSystems", body).await
     }
 
-    pub async fn terminate_db_system(
-        client: &OciClient,
-        db_system_id: &str,
-    ) -> OciResult<()> {
+    pub async fn terminate_db_system(client: &OciClient, db_system_id: &str) -> OciResult<()> {
         client
-            .delete(
-                "database",
-                &format!("/20160918/dbSystems/{db_system_id}"),
-            )
+            .delete("database", &format!("/20160918/dbSystems/{db_system_id}"))
             .await
     }
 
@@ -83,10 +74,7 @@ impl DatabaseManager {
             .await
     }
 
-    pub async fn delete_autonomous_db(
-        client: &OciClient,
-        autonomous_db_id: &str,
-    ) -> OciResult<()> {
+    pub async fn delete_autonomous_db(client: &OciClient, autonomous_db_id: &str) -> OciResult<()> {
         client
             .delete(
                 "database",

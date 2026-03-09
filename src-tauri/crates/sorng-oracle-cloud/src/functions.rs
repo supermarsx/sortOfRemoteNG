@@ -51,10 +51,7 @@ impl FunctionsManager {
             .await
     }
 
-    pub async fn delete_application(
-        client: &OciClient,
-        application_id: &str,
-    ) -> OciResult<()> {
+    pub async fn delete_application(client: &OciClient, application_id: &str) -> OciResult<()> {
         client
             .delete(
                 "functions",
@@ -77,15 +74,9 @@ impl FunctionsManager {
             .await
     }
 
-    pub async fn get_function(
-        client: &OciClient,
-        function_id: &str,
-    ) -> OciResult<OciFunction> {
+    pub async fn get_function(client: &OciClient, function_id: &str) -> OciResult<OciFunction> {
         client
-            .get(
-                "functions",
-                &format!("/20181201/functions/{function_id}"),
-            )
+            .get("functions", &format!("/20181201/functions/{function_id}"))
             .await
     }
 
@@ -98,10 +89,7 @@ impl FunctionsManager {
 
     pub async fn delete_function(client: &OciClient, function_id: &str) -> OciResult<()> {
         client
-            .delete(
-                "functions",
-                &format!("/20181201/functions/{function_id}"),
-            )
+            .delete("functions", &format!("/20181201/functions/{function_id}"))
             .await
     }
 

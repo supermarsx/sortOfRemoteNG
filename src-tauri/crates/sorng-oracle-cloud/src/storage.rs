@@ -91,7 +91,10 @@ impl StorageManager {
 
     pub async fn detach_volume(client: &OciClient, attachment_id: &str) -> OciResult<()> {
         client
-            .delete("iaas", &format!("/20160918/volumeAttachments/{attachment_id}"))
+            .delete(
+                "iaas",
+                &format!("/20160918/volumeAttachments/{attachment_id}"),
+            )
             .await
     }
 
@@ -116,10 +119,7 @@ impl StorageManager {
         bucket_name: &str,
     ) -> OciResult<OciBucket> {
         client
-            .get(
-                "objectstorage",
-                &format!("/n/{namespace}/b/{bucket_name}"),
-            )
+            .get("objectstorage", &format!("/n/{namespace}/b/{bucket_name}"))
             .await
     }
 
@@ -147,10 +147,7 @@ impl StorageManager {
         bucket_name: &str,
     ) -> OciResult<()> {
         client
-            .delete(
-                "objectstorage",
-                &format!("/n/{namespace}/b/{bucket_name}"),
-            )
+            .delete("objectstorage", &format!("/n/{namespace}/b/{bucket_name}"))
             .await
     }
 

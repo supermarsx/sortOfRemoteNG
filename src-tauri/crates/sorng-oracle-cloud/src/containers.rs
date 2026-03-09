@@ -67,10 +67,7 @@ impl ContainerManager {
             .await
     }
 
-    pub async fn get_oke_cluster(
-        client: &OciClient,
-        cluster_id: &str,
-    ) -> OciResult<OkeCluster> {
+    pub async fn get_oke_cluster(client: &OciClient, cluster_id: &str) -> OciResult<OkeCluster> {
         client
             .get(
                 "containerEngine",
@@ -111,10 +108,7 @@ impl ContainerManager {
         client.get("containerEngine", &path).await
     }
 
-    pub async fn get_node_pool(
-        client: &OciClient,
-        node_pool_id: &str,
-    ) -> OciResult<OkeNodePool> {
+    pub async fn get_node_pool(client: &OciClient, node_pool_id: &str) -> OciResult<OkeNodePool> {
         client
             .get(
                 "containerEngine",

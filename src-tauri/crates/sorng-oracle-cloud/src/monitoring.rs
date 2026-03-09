@@ -8,10 +8,7 @@ pub struct MonitoringManager;
 impl MonitoringManager {
     // ── Alarms ───────────────────────────────────────────────────────
 
-    pub async fn list_alarms(
-        client: &OciClient,
-        compartment_id: &str,
-    ) -> OciResult<Vec<OciAlarm>> {
+    pub async fn list_alarms(client: &OciClient, compartment_id: &str) -> OciResult<Vec<OciAlarm>> {
         client
             .get(
                 "monitoring",
@@ -26,10 +23,7 @@ impl MonitoringManager {
             .await
     }
 
-    pub async fn create_alarm(
-        client: &OciClient,
-        body: &serde_json::Value,
-    ) -> OciResult<OciAlarm> {
+    pub async fn create_alarm(client: &OciClient, body: &serde_json::Value) -> OciResult<OciAlarm> {
         client.post("monitoring", "/20180401/alarms", body).await
     }
 
@@ -60,7 +54,9 @@ impl MonitoringManager {
         client
             .post(
                 "monitoring",
-                &format!("/20180401/metrics/actions/summarizeMetricsData?compartmentId={compartment_id}"),
+                &format!(
+                    "/20180401/metrics/actions/summarizeMetricsData?compartmentId={compartment_id}"
+                ),
                 &serde_json::json!({
                     "namespace": namespace,
                     "query": query,

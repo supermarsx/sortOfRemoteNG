@@ -51,10 +51,7 @@ impl IdentityManager {
             .await
     }
 
-    pub async fn delete_compartment(
-        client: &OciClient,
-        compartment_id: &str,
-    ) -> OciResult<()> {
+    pub async fn delete_compartment(client: &OciClient, compartment_id: &str) -> OciResult<()> {
         client
             .delete(
                 "identity",
@@ -65,10 +62,7 @@ impl IdentityManager {
 
     // ── Users ────────────────────────────────────────────────────────
 
-    pub async fn list_users(
-        client: &OciClient,
-        compartment_id: &str,
-    ) -> OciResult<Vec<OciUser>> {
+    pub async fn list_users(client: &OciClient, compartment_id: &str) -> OciResult<Vec<OciUser>> {
         client
             .get(
                 "identity",
@@ -109,10 +103,7 @@ impl IdentityManager {
 
     // ── Groups ───────────────────────────────────────────────────────
 
-    pub async fn list_groups(
-        client: &OciClient,
-        compartment_id: &str,
-    ) -> OciResult<Vec<OciGroup>> {
+    pub async fn list_groups(client: &OciClient, compartment_id: &str) -> OciResult<Vec<OciGroup>> {
         client
             .get(
                 "identity",
@@ -144,10 +135,7 @@ impl IdentityManager {
             .await
     }
 
-    pub async fn remove_user_from_group(
-        client: &OciClient,
-        membership_id: &str,
-    ) -> OciResult<()> {
+    pub async fn remove_user_from_group(client: &OciClient, membership_id: &str) -> OciResult<()> {
         client
             .delete(
                 "identity",

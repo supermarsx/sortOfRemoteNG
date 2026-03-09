@@ -11,12 +11,12 @@ pub struct NetworkingManager;
 impl NetworkingManager {
     // ── VCNs ─────────────────────────────────────────────────────────
 
-    pub async fn list_vcns(
-        client: &OciClient,
-        compartment_id: &str,
-    ) -> OciResult<Vec<OciVcn>> {
+    pub async fn list_vcns(client: &OciClient, compartment_id: &str) -> OciResult<Vec<OciVcn>> {
         client
-            .get("iaas", &format!("/20160918/vcns?compartmentId={compartment_id}"))
+            .get(
+                "iaas",
+                &format!("/20160918/vcns?compartmentId={compartment_id}"),
+            )
             .await
     }
 
@@ -46,7 +46,9 @@ impl NetworkingManager {
     }
 
     pub async fn delete_vcn(client: &OciClient, vcn_id: &str) -> OciResult<()> {
-        client.delete("iaas", &format!("/20160918/vcns/{vcn_id}")).await
+        client
+            .delete("iaas", &format!("/20160918/vcns/{vcn_id}"))
+            .await
     }
 
     // ── Subnets ──────────────────────────────────────────────────────
@@ -101,7 +103,10 @@ impl NetworkingManager {
         security_list_id: &str,
     ) -> OciResult<OciSecurityList> {
         client
-            .get("iaas", &format!("/20160918/securityLists/{security_list_id}"))
+            .get(
+                "iaas",
+                &format!("/20160918/securityLists/{security_list_id}"),
+            )
             .await
     }
 
@@ -126,12 +131,12 @@ impl NetworkingManager {
             .await
     }
 
-    pub async fn delete_security_list(
-        client: &OciClient,
-        security_list_id: &str,
-    ) -> OciResult<()> {
+    pub async fn delete_security_list(client: &OciClient, security_list_id: &str) -> OciResult<()> {
         client
-            .delete("iaas", &format!("/20160918/securityLists/{security_list_id}"))
+            .delete(
+                "iaas",
+                &format!("/20160918/securityLists/{security_list_id}"),
+            )
             .await
     }
 
@@ -259,8 +264,7 @@ impl NetworkingManager {
         compartment_id: &str,
         vcn_id: Option<&str>,
     ) -> OciResult<Vec<OciNetworkSecurityGroup>> {
-        let mut path =
-            format!("/20160918/networkSecurityGroups?compartmentId={compartment_id}");
+        let mut path = format!("/20160918/networkSecurityGroups?compartmentId={compartment_id}");
         if let Some(vid) = vcn_id {
             path.push_str(&format!("&vcnId={vid}"));
         }
@@ -290,10 +294,7 @@ impl NetworkingManager {
             .await
     }
 
-    pub async fn get_load_balancer(
-        client: &OciClient,
-        lb_id: &str,
-    ) -> OciResult<OciLoadBalancer> {
+    pub async fn get_load_balancer(client: &OciClient, lb_id: &str) -> OciResult<OciLoadBalancer> {
         client
             .get("iaas", &format!("/20160918/loadBalancers/{lb_id}"))
             .await

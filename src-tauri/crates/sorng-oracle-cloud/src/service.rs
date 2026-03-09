@@ -193,11 +193,7 @@ impl OciService {
         ComputeManager::list_images(self.client(connection_id)?, compartment_id).await
     }
 
-    pub async fn get_image(
-        &self,
-        connection_id: &str,
-        image_id: &str,
-    ) -> OciResult<OciImage> {
+    pub async fn get_image(&self, connection_id: &str, image_id: &str) -> OciResult<OciImage> {
         ComputeManager::get_image(self.client(connection_id)?, image_id).await
     }
 
@@ -244,11 +240,7 @@ impl OciService {
         NetworkingManager::list_subnets(self.client(connection_id)?, compartment_id, vcn_id).await
     }
 
-    pub async fn get_subnet(
-        &self,
-        connection_id: &str,
-        subnet_id: &str,
-    ) -> OciResult<OciSubnet> {
+    pub async fn get_subnet(&self, connection_id: &str, subnet_id: &str) -> OciResult<OciSubnet> {
         NetworkingManager::get_subnet(self.client(connection_id)?, subnet_id).await
     }
 
@@ -260,11 +252,7 @@ impl OciService {
         NetworkingManager::create_subnet(self.client(connection_id)?, body).await
     }
 
-    pub async fn delete_subnet(
-        &self,
-        connection_id: &str,
-        subnet_id: &str,
-    ) -> OciResult<()> {
+    pub async fn delete_subnet(&self, connection_id: &str, subnet_id: &str) -> OciResult<()> {
         NetworkingManager::delete_subnet(self.client(connection_id)?, subnet_id).await
     }
 
@@ -274,12 +262,8 @@ impl OciService {
         compartment_id: &str,
         vcn_id: Option<&str>,
     ) -> OciResult<Vec<OciSecurityList>> {
-        NetworkingManager::list_security_lists(
-            self.client(connection_id)?,
-            compartment_id,
-            vcn_id,
-        )
-        .await
+        NetworkingManager::list_security_lists(self.client(connection_id)?, compartment_id, vcn_id)
+            .await
     }
 
     pub async fn get_security_list(
@@ -376,11 +360,7 @@ impl OciService {
         .await
     }
 
-    pub async fn delete_block_volume(
-        &self,
-        connection_id: &str,
-        volume_id: &str,
-    ) -> OciResult<()> {
+    pub async fn delete_block_volume(&self, connection_id: &str, volume_id: &str) -> OciResult<()> {
         StorageManager::delete_block_volume(self.client(connection_id)?, volume_id).await
     }
 
@@ -480,11 +460,7 @@ impl OciService {
         IdentityManager::list_users(self.client(connection_id)?, compartment_id).await
     }
 
-    pub async fn get_user(
-        &self,
-        connection_id: &str,
-        user_id: &str,
-    ) -> OciResult<OciUser> {
+    pub async fn get_user(&self, connection_id: &str, user_id: &str) -> OciResult<OciUser> {
         IdentityManager::get_user(self.client(connection_id)?, user_id).await
     }
 
@@ -506,11 +482,7 @@ impl OciService {
         .await
     }
 
-    pub async fn delete_user(
-        &self,
-        connection_id: &str,
-        user_id: &str,
-    ) -> OciResult<()> {
+    pub async fn delete_user(&self, connection_id: &str, user_id: &str) -> OciResult<()> {
         IdentityManager::delete_user(self.client(connection_id)?, user_id).await
     }
 
@@ -621,12 +593,8 @@ impl OciService {
         compartment_id: &str,
         cluster_id: Option<&str>,
     ) -> OciResult<Vec<OkeNodePool>> {
-        ContainerManager::list_node_pools(
-            self.client(connection_id)?,
-            compartment_id,
-            cluster_id,
-        )
-        .await
+        ContainerManager::list_node_pools(self.client(connection_id)?, compartment_id, cluster_id)
+            .await
     }
 
     // ── Functions ────────────────────────────────────────────────────
@@ -674,11 +642,7 @@ impl OciService {
         MonitoringManager::list_alarms(self.client(connection_id)?, compartment_id).await
     }
 
-    pub async fn get_alarm(
-        &self,
-        connection_id: &str,
-        alarm_id: &str,
-    ) -> OciResult<OciAlarm> {
+    pub async fn get_alarm(&self, connection_id: &str, alarm_id: &str) -> OciResult<OciAlarm> {
         MonitoringManager::get_alarm(self.client(connection_id)?, alarm_id).await
     }
 

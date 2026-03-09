@@ -15,7 +15,10 @@ impl ComputeManager {
         compartment_id: &str,
     ) -> OciResult<Vec<OciInstance>> {
         client
-            .get("iaas", &format!("/20160918/instances?compartmentId={compartment_id}"))
+            .get(
+                "iaas",
+                &format!("/20160918/instances?compartmentId={compartment_id}"),
+            )
             .await
     }
 
@@ -66,23 +69,23 @@ impl ComputeManager {
 
     // ── Shapes ──────────────────────────────────────────────────────
 
-    pub async fn list_shapes(
-        client: &OciClient,
-        compartment_id: &str,
-    ) -> OciResult<Vec<OciShape>> {
+    pub async fn list_shapes(client: &OciClient, compartment_id: &str) -> OciResult<Vec<OciShape>> {
         client
-            .get("iaas", &format!("/20160918/shapes?compartmentId={compartment_id}"))
+            .get(
+                "iaas",
+                &format!("/20160918/shapes?compartmentId={compartment_id}"),
+            )
             .await
     }
 
     // ── Images ──────────────────────────────────────────────────────
 
-    pub async fn list_images(
-        client: &OciClient,
-        compartment_id: &str,
-    ) -> OciResult<Vec<OciImage>> {
+    pub async fn list_images(client: &OciClient, compartment_id: &str) -> OciResult<Vec<OciImage>> {
         client
-            .get("iaas", &format!("/20160918/images?compartmentId={compartment_id}"))
+            .get(
+                "iaas",
+                &format!("/20160918/images?compartmentId={compartment_id}"),
+            )
             .await
     }
 
