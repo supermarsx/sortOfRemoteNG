@@ -26,8 +26,12 @@ pub struct JiraConnectionConfig {
     pub skip_tls_verify: bool,
 }
 
-fn default_timeout() -> u64 { 30 }
-fn default_api() -> String { "2".into() }
+fn default_timeout() -> u64 {
+    30
+}
+fn default_api() -> String {
+    "2".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JiraConnectionStatus {

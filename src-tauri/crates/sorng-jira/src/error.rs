@@ -25,7 +25,10 @@ pub enum JiraErrorKind {
 
 impl JiraError {
     pub fn new(kind: JiraErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn session(msg: impl Into<String>) -> Self {
         Self::new(JiraErrorKind::SessionError, msg)

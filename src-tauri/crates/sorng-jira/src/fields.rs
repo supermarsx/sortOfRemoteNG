@@ -26,10 +26,20 @@ impl FieldManager {
         client.get(&client.api_url("/resolution")).await
     }
 
-    pub async fn create_custom_field(client: &JiraClient, name: &str, field_type: &str, description: Option<&str>, searcher_key: Option<&str>) -> JiraResult<JiraField> {
+    pub async fn create_custom_field(
+        client: &JiraClient,
+        name: &str,
+        field_type: &str,
+        description: Option<&str>,
+        searcher_key: Option<&str>,
+    ) -> JiraResult<JiraField> {
         let mut body = serde_json::json!({ "name": name, "type": field_type });
-        if let Some(d) = description { body["description"] = serde_json::json!(d); }
-        if let Some(s) = searcher_key { body["searcherKey"] = serde_json::json!(s); }
+        if let Some(d) = description {
+            body["description"] = serde_json::json!(d);
+        }
+        if let Some(s) = searcher_key {
+            body["searcherKey"] = serde_json::json!(s);
+        }
         client.post(&client.api_url("/field"), &body).await
     }
 }
