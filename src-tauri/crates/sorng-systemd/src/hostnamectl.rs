@@ -30,7 +30,8 @@ pub async fn set_chassis(host: &SystemdHost, chassis: &str) -> Result<(), System
 
 fn parse_hostnamectl(output: &str) -> Result<HostnameInfo, SystemdError> {
     let get = |key: &str| -> Option<String> {
-        output.lines()
+        output
+            .lines()
             .find(|l| l.trim_start().starts_with(key))
             .and_then(|l| l.split_once(':'))
             .map(|(_, v)| v.trim().to_string())

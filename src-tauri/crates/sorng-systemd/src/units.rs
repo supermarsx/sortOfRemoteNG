@@ -5,8 +5,17 @@ use crate::error::SystemdError;
 use crate::types::*;
 
 /// List all units, optionally filtered by type.
-pub async fn list_units(host: &SystemdHost, unit_type: Option<&UnitType>) -> Result<Vec<SystemdUnit>, SystemdError> {
-    let mut args = vec!["list-units", "--all", "--no-pager", "--plain", "--no-legend"];
+pub async fn list_units(
+    host: &SystemdHost,
+    unit_type: Option<&UnitType>,
+) -> Result<Vec<SystemdUnit>, SystemdError> {
+    let mut args = vec![
+        "list-units",
+        "--all",
+        "--no-pager",
+        "--plain",
+        "--no-legend",
+    ];
     let type_str;
     if let Some(ut) = unit_type {
         type_str = format!("--type={}", unit_type_str(ut));
@@ -78,7 +87,18 @@ pub async fn daemon_reload(host: &SystemdHost) -> Result<(), SystemdError> {
 
 /// List failed units.
 pub async fn list_failed(host: &SystemdHost) -> Result<Vec<SystemdUnit>, SystemdError> {
-    let stdout = client::exec_ok(host, "systemctl", &["list-units", "--failed", "--no-pager", "--plain", "--no-legend"]).await?;
+    let stdout = client::exec_ok(
+        host,
+        "systemctl",
+        &[
+            "list-units",
+            "--failed",
+            "--no-pager",
+            "--plain",
+            "--no-legend",
+        ],
+    )
+    .await?;
     Ok(parse_list_units(&stdout))
 }
 
@@ -116,12 +136,19 @@ fn parse_list_units(output: &str) -> Vec<SystemdUnit> {
             continue;
         }
         let name = parts[0].to_string();
-        let unit_type = if name.ends_with(".service") { UnitType::Service }
-            else if name.ends_with(".socket") { UnitType::Socket }
-            else if name.ends_with(".timer") { UnitType::Timer }
-            else if name.ends_with(".target") { UnitType::Target }
-            else if name.ends_with(".mount") { UnitType::Mount }
-            else { UnitType::Service };
+        let unit_type = if name.ends_with(".service") {
+            UnitType::Service
+        } else if name.ends_with(".socket") {
+            UnitType::Socket
+        } else if name.ends_with(".timer") {
+            UnitType::Timer
+        } else if name.ends_with(".target") {
+            UnitType::Target
+        } else if name.ends_with(".mount") {
+            UnitType::Mount
+        } else {
+            UnitType::Service
+        };
 
         units.push(SystemdUnit {
             name,
@@ -157,15 +184,37 @@ fn parse_unit_show(output: &str, unit_name: &str) -> Result<SystemdUnit, Systemd
         }
     }
 
-    let name = props.get("Id").cloned().unwrap_or_else(|| unit_name.to_string());
+    let name = props
+        .get("Id")
+        .cloned()
+        .unwrap_or_else(|| unit_name.to_string());
 
     Ok(SystemdUnit {
         name: name.clone(),
-        unit_type: if name.ends_with(".service") { UnitType::Service } else { UnitType::Service },
+        unit_type: if name.ends_with(".service") {
+            UnitType::Service
+        } else {
+            UnitType::Service
+        },
         description: props.get("Description").cloned().unwrap_or_default(),
-        load_state: parse_load_state(props.get("LoadState").map(|s| s.as_str()).unwrap_or("unknown")),
-        active_state: parse_active_state(props.get("ActiveState").map(|s| s.as_str()).unwrap_or("unknown")),
-        sub_state: parse_sub_state(props.get("SubState").map(|s| s.as_str()).unwrap_or("unknown")),
+        load_state: parse_load_state(
+            props
+                .get("LoadState")
+                .map(|s| s.as_str())
+                .unwrap_or("unknown"),
+        ),
+        active_state: parse_active_state(
+            props
+                .get("ActiveState")
+                .map(|s| s.as_str())
+                .unwrap_or("unknown"),
+        ),
+        sub_state: parse_sub_state(
+            props
+                .get("SubState")
+                .map(|s| s.as_str())
+                .unwrap_or("unknown"),
+        ),
         enable_state: UnitEnableState::Unknown,
         fragment_path: props.get("FragmentPath").cloned(),
         main_pid: props.get("MainPID").and_then(|v| v.parse().ok()),

@@ -5,15 +5,27 @@ use crate::error::SystemdError;
 use crate::types::*;
 
 /// Read a unit file's content.
-pub async fn read_unit_file(host: &SystemdHost, unit: &str) -> Result<UnitFileContent, SystemdError> {
+pub async fn read_unit_file(
+    host: &SystemdHost,
+    unit: &str,
+) -> Result<UnitFileContent, SystemdError> {
     let stdout = client::exec_ok(host, "systemctl", &["cat", unit, "--no-pager"]).await?;
     parse_unit_file(&stdout, unit)
 }
 
 /// Write a new unit file.
-pub async fn write_unit_file(host: &SystemdHost, path: &str, content: &str) -> Result<(), SystemdError> {
+pub async fn write_unit_file(
+    host: &SystemdHost,
+    path: &str,
+    content: &str,
+) -> Result<(), SystemdError> {
     let escaped = content.replace('\'', "'\\''");
-    client::exec_ok(host, "sh", &["-c", &format!("printf '%s' '{escaped}' > {path}")]).await?;
+    client::exec_ok(
+        host,
+        "sh",
+        &["-c", &format!("printf '%s' '{escaped}' > {path}")],
+    )
+    .await?;
     Ok(())
 }
 
@@ -31,7 +43,7 @@ fn parse_unit_file(content: &str, _unit: &str) -> Result<UnitFileContent, System
             if let Some((name, directives)) = current_section.take() {
                 sections.push(UnitFileSection { name, directives });
             }
-            current_section = Some((line[1..line.len()-1].to_string(), Vec::new()));
+            current_section = Some((line[1..line.len() - 1].to_string(), Vec::new()));
         } else if let Some((_, ref mut directives)) = current_section {
             if let Some((key, value)) = line.split_once('=') {
                 directives.push(UnitFileDirective {
@@ -46,7 +58,10 @@ fn parse_unit_file(content: &str, _unit: &str) -> Result<UnitFileContent, System
         sections.push(UnitFileSection { name, directives });
     }
 
-    Ok(UnitFileContent { path: String::new(), sections })
+    Ok(UnitFileContent {
+        path: String::new(),
+        sections,
+    })
 }
 
 #[cfg(test)]

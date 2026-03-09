@@ -6,13 +6,23 @@ use crate::types::*;
 
 /// List active sessions.
 pub async fn list_sessions(host: &SystemdHost) -> Result<Vec<LoginctlSession>, SystemdError> {
-    let stdout = client::exec_ok(host, "loginctl", &["list-sessions", "--no-pager", "--no-legend"]).await?;
+    let stdout = client::exec_ok(
+        host,
+        "loginctl",
+        &["list-sessions", "--no-pager", "--no-legend"],
+    )
+    .await?;
     Ok(parse_sessions(&stdout))
 }
 
 /// List logged-in users.
 pub async fn list_users(host: &SystemdHost) -> Result<Vec<LoginctlUser>, SystemdError> {
-    let stdout = client::exec_ok(host, "loginctl", &["list-users", "--no-pager", "--no-legend"]).await?;
+    let stdout = client::exec_ok(
+        host,
+        "loginctl",
+        &["list-users", "--no-pager", "--no-legend"],
+    )
+    .await?;
     Ok(parse_users(&stdout))
 }
 

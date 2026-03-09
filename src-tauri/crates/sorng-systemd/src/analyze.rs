@@ -17,7 +17,10 @@ pub async fn blame(host: &SystemdHost) -> Result<Vec<BlameEntry>, SystemdError> 
 }
 
 /// Get critical chain.
-pub async fn critical_chain(host: &SystemdHost, unit: Option<&str>) -> Result<Vec<CriticalChainEntry>, SystemdError> {
+pub async fn critical_chain(
+    host: &SystemdHost,
+    unit: Option<&str>,
+) -> Result<Vec<CriticalChainEntry>, SystemdError> {
     let mut args = vec!["critical-chain", "--no-pager"];
     if let Some(u) = unit {
         args.push(u);
@@ -34,7 +37,7 @@ pub async fn verify(host: &SystemdHost, unit: &str) -> Result<Vec<String>, Syste
     Ok(issues.into_iter().filter(|l| !l.is_empty()).collect())
 }
 
-fn parse_boot_timing(output: &str) -> Result<BootTiming, SystemdError> {
+fn parse_boot_timing(_output: &str) -> Result<BootTiming, SystemdError> {
     // Example: "Startup finished in 2.5s (kernel) + 3.2s (userspace) = 5.7s"
     Ok(BootTiming {
         firmware_ms: None,

@@ -6,7 +6,18 @@ use crate::types::*;
 
 /// List all active timers.
 pub async fn list_timers(host: &SystemdHost) -> Result<Vec<SystemdTimer>, SystemdError> {
-    let stdout = client::exec_ok(host, "systemctl", &["list-timers", "--all", "--no-pager", "--plain", "--no-legend"]).await?;
+    let stdout = client::exec_ok(
+        host,
+        "systemctl",
+        &[
+            "list-timers",
+            "--all",
+            "--no-pager",
+            "--plain",
+            "--no-legend",
+        ],
+    )
+    .await?;
     Ok(parse_timers(&stdout))
 }
 

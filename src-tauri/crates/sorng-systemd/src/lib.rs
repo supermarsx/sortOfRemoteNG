@@ -39,19 +39,19 @@
 //! - loginctl — sessions, seats, users
 //! - systemd-resolve — DNS status, flush cache, statistics
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod service;
-pub mod units;
-pub mod journal;
-pub mod targets;
-pub mod timers;
-pub mod sockets;
 pub mod analyze;
 pub mod cgroups;
+pub mod client;
+pub mod error;
 pub mod hostnamectl;
+pub mod journal;
 pub mod localectl;
 pub mod loginctl;
-pub mod unit_files;
 pub mod overrides;
+pub mod service;
+pub mod sockets;
+pub mod targets;
+pub mod timers;
+pub mod types;
+pub mod unit_files;
+pub mod units;

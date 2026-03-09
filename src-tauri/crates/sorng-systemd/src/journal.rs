@@ -5,7 +5,10 @@ use crate::error::SystemdError;
 use crate::types::*;
 
 /// Query journal logs.
-pub async fn query(host: &SystemdHost, opts: &JournalQueryOpts) -> Result<Vec<JournalEntry>, SystemdError> {
+pub async fn query(
+    host: &SystemdHost,
+    opts: &JournalQueryOpts,
+) -> Result<Vec<JournalEntry>, SystemdError> {
     let mut args = vec!["--no-pager".to_string(), "--output=json".to_string()];
     if let Some(ref unit) = opts.unit {
         args.push(format!("--unit={unit}"));

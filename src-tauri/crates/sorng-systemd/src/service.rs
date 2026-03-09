@@ -14,23 +14,32 @@ pub struct SystemdService {
 
 impl SystemdService {
     pub fn new() -> SystemdServiceState {
-        Arc::new(Mutex::new(Self { hosts: HashMap::new() }))
+        Arc::new(Mutex::new(Self {
+            hosts: HashMap::new(),
+        }))
     }
 
     pub fn add_host(&mut self, host: SystemdHost) -> Result<(), SystemdError> {
         if self.hosts.contains_key(&host.id) {
-            return Err(SystemdError::Other(format!("Host {} already exists", host.id)));
+            return Err(SystemdError::Other(format!(
+                "Host {} already exists",
+                host.id
+            )));
         }
         self.hosts.insert(host.id.clone(), host);
         Ok(())
     }
 
     pub fn remove_host(&mut self, host_id: &str) -> Result<SystemdHost, SystemdError> {
-        self.hosts.remove(host_id).ok_or_else(|| SystemdError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .remove(host_id)
+            .ok_or_else(|| SystemdError::HostNotFound(host_id.to_string()))
     }
 
     pub fn get_host(&self, host_id: &str) -> Result<&SystemdHost, SystemdError> {
-        self.hosts.get(host_id).ok_or_else(|| SystemdError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .get(host_id)
+            .ok_or_else(|| SystemdError::HostNotFound(host_id.to_string()))
     }
 
     pub fn list_hosts(&self) -> Vec<&SystemdHost> {
@@ -44,7 +53,14 @@ mod tests {
     use chrono::Utc;
 
     fn test_host(id: &str) -> SystemdHost {
-        SystemdHost { id: id.into(), name: format!("Test {id}"), ssh: None, use_sudo: true, created_at: Utc::now(), updated_at: Utc::now() }
+        SystemdHost {
+            id: id.into(),
+            name: format!("Test {id}"),
+            ssh: None,
+            use_sudo: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
     }
 
     #[test]

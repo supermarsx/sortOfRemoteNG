@@ -6,7 +6,18 @@ use crate::types::*;
 
 /// List all sockets.
 pub async fn list_sockets(host: &SystemdHost) -> Result<Vec<SystemdSocket>, SystemdError> {
-    let stdout = client::exec_ok(host, "systemctl", &["list-sockets", "--all", "--no-pager", "--plain", "--no-legend"]).await?;
+    let stdout = client::exec_ok(
+        host,
+        "systemctl",
+        &[
+            "list-sockets",
+            "--all",
+            "--no-pager",
+            "--plain",
+            "--no-legend",
+        ],
+    )
+    .await?;
     Ok(parse_sockets(&stdout))
 }
 

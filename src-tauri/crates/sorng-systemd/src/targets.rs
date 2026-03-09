@@ -18,8 +18,23 @@ pub async fn set_default(host: &SystemdHost, target: &str) -> Result<(), Systemd
 
 /// List available targets.
 pub async fn list_targets(host: &SystemdHost) -> Result<Vec<String>, SystemdError> {
-    let stdout = client::exec_ok(host, "systemctl", &["list-units", "--type=target", "--all", "--no-pager", "--plain", "--no-legend"]).await?;
-    Ok(stdout.lines().filter_map(|l| l.split_whitespace().next().map(|s| s.to_string())).collect())
+    let stdout = client::exec_ok(
+        host,
+        "systemctl",
+        &[
+            "list-units",
+            "--type=target",
+            "--all",
+            "--no-pager",
+            "--plain",
+            "--no-legend",
+        ],
+    )
+    .await?;
+    Ok(stdout
+        .lines()
+        .filter_map(|l| l.split_whitespace().next().map(|s| s.to_string()))
+        .collect())
 }
 
 /// Isolate a target (switch to it).

@@ -46,28 +46,45 @@ pub async fn exec_ok(
     Ok(stdout)
 }
 
-async fn exec_local(use_sudo: bool, program: &str, args: &[&str]) -> Result<std::process::Output, SystemdError> {
+async fn exec_local(
+    use_sudo: bool,
+    program: &str,
+    args: &[&str],
+) -> Result<std::process::Output, SystemdError> {
     let output = if use_sudo {
-        Command::new("sudo").arg(program).args(args).output().await?
+        Command::new("sudo")
+            .arg(program)
+            .args(args)
+            .output()
+            .await?
     } else {
         Command::new(program).args(args).output().await?
     };
     Ok(output)
 }
 
-async fn exec_remote(ssh: &SshConfig, use_sudo: bool, program: &str, args: &[&str]) -> Result<std::process::Output, SystemdError> {
+async fn exec_remote(
+    ssh: &SshConfig,
+    use_sudo: bool,
+    program: &str,
+    args: &[&str],
+) -> Result<std::process::Output, SystemdError> {
     let remote_cmd = if use_sudo {
         format!("sudo {} {}", program, args.join(" "))
     } else {
         format!("{} {}", program, args.join(" "))
     };
     let mut cmd = Command::new("ssh");
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg(format!("ConnectTimeout={}", ssh.timeout_secs))
-        .arg("-p").arg(ssh.port.to_string());
+    cmd.arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", ssh.timeout_secs))
+        .arg("-p")
+        .arg(ssh.port.to_string());
     if let crate::types::SshAuth::PrivateKey { key_path, .. } = &ssh.auth {
         cmd.arg("-i").arg(key_path);
     }
-    cmd.arg(format!("{}@{}", ssh.username, ssh.host)).arg(&remote_cmd);
+    cmd.arg(format!("{}@{}", ssh.username, ssh.host))
+        .arg(&remote_cmd);
     Ok(cmd.output().await?)
 }

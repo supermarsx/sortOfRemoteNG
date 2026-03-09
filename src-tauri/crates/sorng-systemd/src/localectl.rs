@@ -26,10 +26,19 @@ pub async fn set_keymap(host: &SystemdHost, keymap: &str) -> Result<(), SystemdE
 }
 
 /// Set X11 keyboard layout.
-pub async fn set_x11_keymap(host: &SystemdHost, layout: &str, model: Option<&str>, variant: Option<&str>) -> Result<(), SystemdError> {
+pub async fn set_x11_keymap(
+    host: &SystemdHost,
+    layout: &str,
+    model: Option<&str>,
+    variant: Option<&str>,
+) -> Result<(), SystemdError> {
     let mut args = vec!["set-x11-keymap", layout];
-    if let Some(m) = model { args.push(m); }
-    if let Some(v) = variant { args.push(v); }
+    if let Some(m) = model {
+        args.push(m);
+    }
+    if let Some(v) = variant {
+        args.push(v);
+    }
     client::exec_ok(host, "localectl", &args).await?;
     Ok(())
 }
@@ -37,7 +46,11 @@ pub async fn set_x11_keymap(host: &SystemdHost, layout: &str, model: Option<&str
 /// List available locales.
 pub async fn list_locales(host: &SystemdHost) -> Result<Vec<String>, SystemdError> {
     let stdout = client::exec_ok(host, "localectl", &["list-locales", "--no-pager"]).await?;
-    Ok(stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    Ok(stdout
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 fn parse_localectl(output: &str) -> LocaleInfo {
@@ -74,7 +87,14 @@ fn parse_localectl(output: &str) -> LocaleInfo {
         }
     }
 
-    LocaleInfo { system_locale: locale, vc_keymap, x11_layout, x11_model, x11_variant, x11_options }
+    LocaleInfo {
+        system_locale: locale,
+        vc_keymap,
+        x11_layout,
+        x11_model,
+        x11_variant,
+        x11_options,
+    }
 }
 
 #[cfg(test)]
