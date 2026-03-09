@@ -9,9 +9,7 @@ pub struct BackupManager;
 impl BackupManager {
     /// List available backups for a user.
     pub async fn list_backups(client: &CpanelClient, user: &str) -> CpanelResult<Vec<BackupInfo>> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "Backup", "list_backups", &[])
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "Backup", "list_backups", &[]).await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
@@ -38,7 +36,12 @@ impl BackupManager {
     }
 
     /// Restore a file/directory backup.
-    pub async fn restore_file(client: &CpanelClient, user: &str, backup_id: &str, path: &str) -> CpanelResult<String> {
+    pub async fn restore_file(
+        client: &CpanelClient,
+        user: &str,
+        backup_id: &str,
+        path: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -52,7 +55,11 @@ impl BackupManager {
     }
 
     /// Restore email for a user.
-    pub async fn restore_email(client: &CpanelClient, user: &str, backup_id: &str) -> CpanelResult<String> {
+    pub async fn restore_email(
+        client: &CpanelClient,
+        user: &str,
+        backup_id: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -66,7 +73,12 @@ impl BackupManager {
     }
 
     /// Restore a MySQL database from backup.
-    pub async fn restore_mysql(client: &CpanelClient, user: &str, backup_id: &str, db: &str) -> CpanelResult<String> {
+    pub async fn restore_mysql(
+        client: &CpanelClient,
+        user: &str,
+        backup_id: &str,
+        db: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -87,11 +99,17 @@ impl BackupManager {
     }
 
     /// Set server backup configuration (WHM).
-    pub async fn set_backup_config(client: &CpanelClient, config: &serde_json::Value) -> CpanelResult<String> {
+    pub async fn set_backup_config(
+        client: &CpanelClient,
+        config: &serde_json::Value,
+    ) -> CpanelResult<String> {
         let config_str = config.to_string();
         let raw: serde_json::Value = client
             .post_form(
-                &format!("{}/json-api/backup_config_set?api.version=1", whm_base(client)),
+                &format!(
+                    "{}/json-api/backup_config_set?api.version=1",
+                    whm_base(client)
+                ),
                 &[("config", &config_str)],
             )
             .await?;
@@ -118,7 +136,11 @@ impl BackupManager {
 }
 
 fn whm_base(client: &CpanelClient) -> String {
-    let scheme = if client.config.use_tls.unwrap_or(true) { "https" } else { "http" };
+    let scheme = if client.config.use_tls.unwrap_or(true) {
+        "https"
+    } else {
+        "http"
+    };
     let port = client.config.whm_port.unwrap_or(2087);
     format!("{scheme}://{}:{port}", client.config.host)
 }
@@ -143,7 +165,12 @@ fn check_uapi(raw: &serde_json::Value) -> CpanelResult<()> {
             .get("result")
             .and_then(|r| r.get("errors"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("; "))
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
             .unwrap_or_else(|| "UAPI call failed".into());
         return Err(CpanelError::api(errors));
     }

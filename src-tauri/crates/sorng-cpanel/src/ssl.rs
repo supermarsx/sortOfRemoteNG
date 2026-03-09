@@ -8,25 +8,27 @@ pub struct SslManager;
 
 impl SslManager {
     /// List installed SSL certificates for a user.
-    pub async fn list_certs(client: &CpanelClient, user: &str) -> CpanelResult<Vec<SslCertificate>> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "SSL", "list_certs", &[])
-            .await?;
+    pub async fn list_certs(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<SslCertificate>> {
+        let raw: serde_json::Value = client.whm_uapi(user, "SSL", "list_certs", &[]).await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
 
     /// Get SSL status for all domains of a user.
     pub async fn get_ssl_status(client: &CpanelClient, user: &str) -> CpanelResult<Vec<SslStatus>> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "SSL", "installed_hosts", &[])
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "SSL", "installed_hosts", &[]).await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
 
     /// Install an SSL certificate on a domain (WHM installssl).
-    pub async fn install_cert(client: &CpanelClient, req: &InstallSslRequest) -> CpanelResult<String> {
+    pub async fn install_cert(
+        client: &CpanelClient,
+        req: &InstallSslRequest,
+    ) -> CpanelResult<String> {
         let mut params: Vec<(&str, &str)> = vec![
             ("domain", &req.domain),
             ("crt", &req.cert),
@@ -52,7 +54,11 @@ impl SslManager {
     }
 
     /// Generate a CSR (Certificate Signing Request).
-    pub async fn generate_csr(client: &CpanelClient, user: &str, req: &GenerateCsrRequest) -> CpanelResult<CsrResult> {
+    pub async fn generate_csr(
+        client: &CpanelClient,
+        user: &str,
+        req: &GenerateCsrRequest,
+    ) -> CpanelResult<CsrResult> {
         let mut params: Vec<(&str, &str)> = vec![("domain", &req.domain)];
         let country_str;
         if let Some(ref c) = req.country {
@@ -93,7 +99,11 @@ impl SslManager {
     }
 
     /// Generate a self-signed certificate.
-    pub async fn generate_self_signed(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<String> {
+    pub async fn generate_self_signed(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -108,14 +118,15 @@ impl SslManager {
 
     /// List private keys.
     pub async fn list_keys(client: &CpanelClient, user: &str) -> CpanelResult<serde_json::Value> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "SSL", "list_keys", &[])
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "SSL", "list_keys", &[]).await?;
         extract_data(&raw)
     }
 
     /// Check AutoSSL status.
-    pub async fn autossl_check(client: &CpanelClient, user: &str) -> CpanelResult<serde_json::Value> {
+    pub async fn autossl_check(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<serde_json::Value> {
         client
             .whm_api_raw("start_autossl_check_for_one_user", &[("username", user)])
             .await
@@ -129,7 +140,10 @@ impl SslManager {
     }
 
     /// Fetch SSL certificate details by domain (WHM fetchsslinfo).
-    pub async fn fetch_cert_info(client: &CpanelClient, domain: &str) -> CpanelResult<SslCertificate> {
+    pub async fn fetch_cert_info(
+        client: &CpanelClient,
+        domain: &str,
+    ) -> CpanelResult<SslCertificate> {
         let raw: serde_json::Value = client
             .whm_api_raw("fetchsslinfo", &[("domain", domain)])
             .await?;
@@ -161,7 +175,12 @@ fn check_uapi(raw: &serde_json::Value) -> CpanelResult<()> {
             .get("result")
             .and_then(|r| r.get("errors"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("; "))
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
             .unwrap_or_else(|| "UAPI call failed".into());
         return Err(CpanelError::api(errors));
     }

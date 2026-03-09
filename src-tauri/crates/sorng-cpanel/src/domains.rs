@@ -31,7 +31,11 @@ impl DomainManager {
     }
 
     /// Create an addon domain (UAPI AddonDomain::addaddondomain).
-    pub async fn create_addon(client: &CpanelClient, user: &str, req: &CreateAddonDomainRequest) -> CpanelResult<String> {
+    pub async fn create_addon(
+        client: &CpanelClient,
+        user: &str,
+        req: &CreateAddonDomainRequest,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -49,7 +53,12 @@ impl DomainManager {
     }
 
     /// Remove an addon domain.
-    pub async fn remove_addon(client: &CpanelClient, user: &str, domain: &str, subdomain: &str) -> CpanelResult<String> {
+    pub async fn remove_addon(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+        subdomain: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -63,11 +72,13 @@ impl DomainManager {
     }
 
     /// Create a subdomain.
-    pub async fn create_subdomain(client: &CpanelClient, user: &str, req: &CreateSubdomainRequest) -> CpanelResult<String> {
-        let mut params: Vec<(&str, &str)> = vec![
-            ("domain", &req.subdomain),
-            ("rootdomain", &req.root_domain),
-        ];
+    pub async fn create_subdomain(
+        client: &CpanelClient,
+        user: &str,
+        req: &CreateSubdomainRequest,
+    ) -> CpanelResult<String> {
+        let mut params: Vec<(&str, &str)> =
+            vec![("domain", &req.subdomain), ("rootdomain", &req.root_domain)];
         let docroot;
         if let Some(ref d) = req.document_root {
             docroot = d.clone();
@@ -77,11 +88,18 @@ impl DomainManager {
             .whm_uapi(user, "SubDomain", "addsubdomain", &params)
             .await?;
         check_uapi_result(&raw)?;
-        Ok(format!("Subdomain {}.{} created", req.subdomain, req.root_domain))
+        Ok(format!(
+            "Subdomain {}.{} created",
+            req.subdomain, req.root_domain
+        ))
     }
 
     /// Remove a subdomain.
-    pub async fn remove_subdomain(client: &CpanelClient, user: &str, subdomain: &str) -> CpanelResult<String> {
+    pub async fn remove_subdomain(
+        client: &CpanelClient,
+        user: &str,
+        subdomain: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "SubDomain", "delsubdomain", &[("domain", subdomain)])
             .await?;
@@ -108,7 +126,11 @@ impl DomainManager {
     }
 
     /// Set a redirect for a domain.
-    pub async fn set_redirect(client: &CpanelClient, user: &str, redirect: &DomainRedirect) -> CpanelResult<String> {
+    pub async fn set_redirect(
+        client: &CpanelClient,
+        user: &str,
+        redirect: &DomainRedirect,
+    ) -> CpanelResult<String> {
         let redirect_type = redirect.redirect_type.as_deref().unwrap_or("301");
         let raw: serde_json::Value = client
             .whm_uapi(
@@ -127,7 +149,11 @@ impl DomainManager {
     }
 
     /// Get document root for a domain.
-    pub async fn get_docroot(client: &CpanelClient, _user: &str, domain: &str) -> CpanelResult<String> {
+    pub async fn get_docroot(
+        client: &CpanelClient,
+        _user: &str,
+        domain: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_api_raw("domainuserdata", &[("domain", domain)])
             .await?;

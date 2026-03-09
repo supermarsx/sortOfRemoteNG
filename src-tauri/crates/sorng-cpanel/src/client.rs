@@ -31,7 +31,11 @@ impl CpanelClient {
     // ── URL builders ─────────────────────────────────────────────────
 
     fn scheme(&self) -> &str {
-        if self.config.use_tls.unwrap_or(true) { "https" } else { "http" }
+        if self.config.use_tls.unwrap_or(true) {
+            "https"
+        } else {
+            "http"
+        }
     }
 
     fn whm_base(&self) -> String {
@@ -51,12 +55,7 @@ impl CpanelClient {
 
     /// cPanel UAPI endpoint.
     fn uapi_url(&self, _user: &str, module: &str, function: &str) -> String {
-        format!(
-            "{}/execute/{}/{}",
-            self.cpanel_base(),
-            module,
-            function
-        )
+        format!("{}/execute/{}/{}", self.cpanel_base(), module, function)
     }
 
     /// cPanel UAPI endpoint accessed through WHM (as root impersonating user).
@@ -105,7 +104,8 @@ impl CpanelClient {
     /// Generic GET request returning parsed JSON.
     pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> CpanelResult<T> {
         debug!("CPANEL GET {url}");
-        let resp = self.apply_auth(self.http.get(url))
+        let resp = self
+            .apply_auth(self.http.get(url))
             .send()
             .await
             .map_err(|e| CpanelError::http(format!("GET {url}: {e}")))?;
@@ -131,7 +131,8 @@ impl CpanelClient {
         params: &[(&str, &str)],
     ) -> CpanelResult<T> {
         debug!("CPANEL POST {url}");
-        let resp = self.apply_auth(self.http.post(url).form(params))
+        let resp = self
+            .apply_auth(self.http.post(url).form(params))
             .send()
             .await
             .map_err(|e| CpanelError::http(format!("POST {url}: {e}")))?;
@@ -152,7 +153,8 @@ impl CpanelClient {
         body: &B,
     ) -> CpanelResult<T> {
         debug!("CPANEL POST JSON {url}");
-        let resp = self.apply_auth(self.http.post(url).json(body))
+        let resp = self
+            .apply_auth(self.http.post(url).json(body))
             .send()
             .await
             .map_err(|e| CpanelError::http(format!("POST JSON {url}: {e}")))?;

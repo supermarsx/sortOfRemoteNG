@@ -19,8 +19,7 @@ impl AccountManager {
 
     /// Get a single account by username.
     pub async fn get(client: &CpanelClient, user: &str) -> CpanelResult<CpanelAccount> {
-        let raw: serde_json::Value =
-            client.whm_api("accountsummary", &[("user", user)]).await?;
+        let raw: serde_json::Value = client.whm_api("accountsummary", &[("user", user)]).await?;
         let acct = raw
             .get("acct")
             .and_then(|a| a.as_array())
@@ -72,7 +71,11 @@ impl AccountManager {
     }
 
     /// Suspend an account.
-    pub async fn suspend(client: &CpanelClient, user: &str, reason: Option<&str>) -> CpanelResult<String> {
+    pub async fn suspend(
+        client: &CpanelClient,
+        user: &str,
+        reason: Option<&str>,
+    ) -> CpanelResult<String> {
         let mut params = vec![("user", user)];
         if let Some(r) = reason {
             params.push(("reason", r));
@@ -90,7 +93,11 @@ impl AccountManager {
     }
 
     /// Terminate (remove) an account.
-    pub async fn terminate(client: &CpanelClient, user: &str, keep_dns: bool) -> CpanelResult<String> {
+    pub async fn terminate(
+        client: &CpanelClient,
+        user: &str,
+        keep_dns: bool,
+    ) -> CpanelResult<String> {
         let dns = if keep_dns { "1" } else { "0" };
         let raw: serde_json::Value = client
             .whm_api("removeacct", &[("user", user), ("keepdns", dns)])
@@ -129,7 +136,11 @@ impl AccountManager {
     }
 
     /// Change account password.
-    pub async fn change_password(client: &CpanelClient, user: &str, password: &str) -> CpanelResult<String> {
+    pub async fn change_password(
+        client: &CpanelClient,
+        user: &str,
+        password: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_api("passwd", &[("user", user), ("password", password)])
             .await?;
@@ -170,12 +181,17 @@ impl AccountManager {
     /// List suspended accounts.
     pub async fn list_suspended(client: &CpanelClient) -> CpanelResult<Vec<CpanelAccount>> {
         let all = Self::list(client).await?;
-        Ok(all.into_iter().filter(|a| a.suspended.unwrap_or(false)).collect())
+        Ok(all
+            .into_iter()
+            .filter(|a| a.suspended.unwrap_or(false))
+            .collect())
     }
 
     /// Get the server's load and general status.
     pub async fn get_server_info(client: &CpanelClient) -> CpanelResult<CpanelServerInfo> {
-        let _raw: serde_json::Value = client.whm_api_raw("systemloadavg", &[("api.version", "1")]).await?;
+        let _raw: serde_json::Value = client
+            .whm_api_raw("systemloadavg", &[("api.version", "1")])
+            .await?;
         let ver: serde_json::Value = client.whm_api_raw("version", &[]).await.unwrap_or_default();
 
         let version = ver

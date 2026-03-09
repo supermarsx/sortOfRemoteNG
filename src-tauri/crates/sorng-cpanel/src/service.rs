@@ -31,6 +31,12 @@ pub struct CpanelService {
     connections: HashMap<String, CpanelClient>,
 }
 
+impl Default for CpanelService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CpanelService {
     pub fn new() -> Self {
         Self {
@@ -103,7 +109,12 @@ impl CpanelService {
         AccountManager::unsuspend(self.client(id)?, user).await
     }
 
-    pub async fn terminate_account(&self, id: &str, user: &str, keep_dns: bool) -> CpanelResult<String> {
+    pub async fn terminate_account(
+        &self,
+        id: &str,
+        user: &str,
+        keep_dns: bool,
+    ) -> CpanelResult<String> {
         AccountManager::terminate(self.client(id)?, user, keep_dns).await
     }
 
@@ -128,18 +139,11 @@ impl CpanelService {
         AccountManager::list_packages(self.client(id)?).await
     }
 
-    pub async fn get_account_summary(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<AccountSummary> {
+    pub async fn get_account_summary(&self, id: &str, user: &str) -> CpanelResult<AccountSummary> {
         AccountManager::get_summary(self.client(id)?, user).await
     }
 
-    pub async fn list_suspended_accounts(
-        &self,
-        id: &str,
-    ) -> CpanelResult<Vec<CpanelAccount>> {
+    pub async fn list_suspended_accounts(&self, id: &str) -> CpanelResult<Vec<CpanelAccount>> {
         AccountManager::list_suspended(self.client(id)?).await
     }
 
@@ -194,21 +198,11 @@ impl CpanelService {
         DomainManager::remove_subdomain(self.client(id)?, user, domain).await
     }
 
-    pub async fn park_domain(
-        &self,
-        id: &str,
-        user: &str,
-        domain: &str,
-    ) -> CpanelResult<String> {
+    pub async fn park_domain(&self, id: &str, user: &str, domain: &str) -> CpanelResult<String> {
         DomainManager::park(self.client(id)?, user, domain).await
     }
 
-    pub async fn unpark_domain(
-        &self,
-        id: &str,
-        user: &str,
-        domain: &str,
-    ) -> CpanelResult<String> {
+    pub async fn unpark_domain(&self, id: &str, user: &str, domain: &str) -> CpanelResult<String> {
         DomainManager::unpark(self.client(id)?, user, domain).await
     }
 
@@ -328,29 +322,15 @@ impl CpanelService {
 
     // ── Databases ────────────────────────────────────────────────
 
-    pub async fn list_databases(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<CpanelDatabase>> {
+    pub async fn list_databases(&self, id: &str, user: &str) -> CpanelResult<Vec<CpanelDatabase>> {
         DatabaseManager::list_mysql_dbs(self.client(id)?, user).await
     }
 
-    pub async fn create_database(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> CpanelResult<String> {
+    pub async fn create_database(&self, id: &str, user: &str, name: &str) -> CpanelResult<String> {
         DatabaseManager::create_mysql_db(self.client(id)?, user, name).await
     }
 
-    pub async fn delete_database(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> CpanelResult<String> {
+    pub async fn delete_database(&self, id: &str, user: &str, name: &str) -> CpanelResult<String> {
         DatabaseManager::delete_mysql_db(self.client(id)?, user, name).await
     }
 
@@ -389,7 +369,8 @@ impl CpanelService {
         db: &str,
         privileges: &str,
     ) -> CpanelResult<String> {
-        DatabaseManager::grant_mysql_privileges(self.client(id)?, user, db_user, db, privileges).await
+        DatabaseManager::grant_mysql_privileges(self.client(id)?, user, db_user, db, privileges)
+            .await
     }
 
     // ── DNS ──────────────────────────────────────────────────────
@@ -398,19 +379,11 @@ impl CpanelService {
         DnsManager::list_zones(self.client(id)?).await
     }
 
-    pub async fn get_dns_zone(
-        &self,
-        id: &str,
-        domain: &str,
-    ) -> CpanelResult<DnsZone> {
+    pub async fn get_dns_zone(&self, id: &str, domain: &str) -> CpanelResult<DnsZone> {
         DnsManager::get_zone(self.client(id)?, domain).await
     }
 
-    pub async fn add_dns_record(
-        &self,
-        id: &str,
-        req: AddDnsRecordRequest,
-    ) -> CpanelResult<String> {
+    pub async fn add_dns_record(&self, id: &str, req: AddDnsRecordRequest) -> CpanelResult<String> {
         DnsManager::add_record(self.client(id)?, &req).await
     }
 
@@ -422,12 +395,7 @@ impl CpanelService {
         DnsManager::edit_record(self.client(id)?, &req).await
     }
 
-    pub async fn remove_dns_record(
-        &self,
-        id: &str,
-        zone: &str,
-        line: u32,
-    ) -> CpanelResult<String> {
+    pub async fn remove_dns_record(&self, id: &str, zone: &str, line: u32) -> CpanelResult<String> {
         DnsManager::remove_record(self.client(id)?, zone, line).await
     }
 
@@ -452,46 +420,25 @@ impl CpanelService {
         FileManager::create_directory(self.client(id)?, user, path, name).await
     }
 
-    pub async fn delete_file(
-        &self,
-        id: &str,
-        user: &str,
-        path: &str,
-    ) -> CpanelResult<String> {
+    pub async fn delete_file(&self, id: &str, user: &str, path: &str) -> CpanelResult<String> {
         FileManager::delete(self.client(id)?, user, path).await
     }
 
-    pub async fn get_disk_usage(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<DiskUsageInfo> {
+    pub async fn get_disk_usage(&self, id: &str, user: &str) -> CpanelResult<DiskUsageInfo> {
         FileManager::get_disk_usage(self.client(id)?, user).await
     }
 
     // ── SSL ──────────────────────────────────────────────────────
 
-    pub async fn list_ssl_certs(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<SslCertificate>> {
+    pub async fn list_ssl_certs(&self, id: &str, user: &str) -> CpanelResult<Vec<SslCertificate>> {
         SslManager::list_certs(self.client(id)?, user).await
     }
 
-    pub async fn get_ssl_status(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<SslStatus>> {
+    pub async fn get_ssl_status(&self, id: &str, user: &str) -> CpanelResult<Vec<SslStatus>> {
         SslManager::get_ssl_status(self.client(id)?, user).await
     }
 
-    pub async fn install_ssl(
-        &self,
-        id: &str,
-        req: InstallSslRequest,
-    ) -> CpanelResult<String> {
+    pub async fn install_ssl(&self, id: &str, req: InstallSslRequest) -> CpanelResult<String> {
         SslManager::install_cert(self.client(id)?, &req).await
     }
 
@@ -510,11 +457,7 @@ impl CpanelService {
 
     // ── Backups ──────────────────────────────────────────────────
 
-    pub async fn list_backups(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<BackupInfo>> {
+    pub async fn list_backups(&self, id: &str, user: &str) -> CpanelResult<Vec<BackupInfo>> {
         BackupManager::list_backups(self.client(id)?, user).await
     }
 
@@ -548,11 +491,7 @@ impl CpanelService {
 
     // ── FTP ──────────────────────────────────────────────────────
 
-    pub async fn list_ftp_accounts(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<FtpAccount>> {
+    pub async fn list_ftp_accounts(&self, id: &str, user: &str) -> CpanelResult<Vec<FtpAccount>> {
         FtpManager::list_accounts(self.client(id)?, user).await
     }
 
@@ -575,20 +514,13 @@ impl CpanelService {
         FtpManager::delete_account(self.client(id)?, user, ftp_user, destroy).await
     }
 
-    pub async fn list_ftp_sessions(
-        &self,
-        id: &str,
-    ) -> CpanelResult<Vec<FtpSession>> {
+    pub async fn list_ftp_sessions(&self, id: &str) -> CpanelResult<Vec<FtpSession>> {
         FtpManager::list_sessions(self.client(id)?).await
     }
 
     // ── Cron ─────────────────────────────────────────────────────
 
-    pub async fn list_cron_jobs(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<CronJob>> {
+    pub async fn list_cron_jobs(&self, id: &str, user: &str) -> CpanelResult<Vec<CronJob>> {
         CronManager::list(self.client(id)?, user).await
     }
 
@@ -622,19 +554,11 @@ impl CpanelService {
 
     // ── Stats ────────────────────────────────────────────────────
 
-    pub async fn get_bandwidth(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<BandwidthUsage> {
+    pub async fn get_bandwidth(&self, id: &str, user: &str) -> CpanelResult<BandwidthUsage> {
         StatsManager::get_bandwidth(self.client(id)?, user).await
     }
 
-    pub async fn get_resource_usage(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<ResourceUsage> {
+    pub async fn get_resource_usage(&self, id: &str, user: &str) -> CpanelResult<ResourceUsage> {
         StatsManager::get_resource_usage(self.client(id)?, user).await
     }
 
@@ -696,37 +620,19 @@ impl CpanelService {
 
     // ── Security ─────────────────────────────────────────────────
 
-    pub async fn list_blocked_ips(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<IpBlockRule>> {
+    pub async fn list_blocked_ips(&self, id: &str, user: &str) -> CpanelResult<Vec<IpBlockRule>> {
         SecurityManager::list_blocked_ips(self.client(id)?, user).await
     }
 
-    pub async fn block_ip(
-        &self,
-        id: &str,
-        user: &str,
-        ip: &str,
-    ) -> CpanelResult<String> {
+    pub async fn block_ip(&self, id: &str, user: &str, ip: &str) -> CpanelResult<String> {
         SecurityManager::block_ip(self.client(id)?, user, ip).await
     }
 
-    pub async fn unblock_ip(
-        &self,
-        id: &str,
-        user: &str,
-        ip: &str,
-    ) -> CpanelResult<String> {
+    pub async fn unblock_ip(&self, id: &str, user: &str, ip: &str) -> CpanelResult<String> {
         SecurityManager::unblock_ip(self.client(id)?, user, ip).await
     }
 
-    pub async fn list_ssh_keys(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> CpanelResult<Vec<SshKey>> {
+    pub async fn list_ssh_keys(&self, id: &str, user: &str) -> CpanelResult<Vec<SshKey>> {
         SecurityManager::list_ssh_keys(self.client(id)?, user).await
     }
 
@@ -751,20 +657,11 @@ impl CpanelService {
         SecurityManager::delete_ssh_key(self.client(id)?, user, name, key_type).await
     }
 
-    pub async fn get_modsec_status(
-        &self,
-        id: &str,
-        domain: &str,
-    ) -> CpanelResult<bool> {
+    pub async fn get_modsec_status(&self, id: &str, domain: &str) -> CpanelResult<bool> {
         SecurityManager::get_modsec_status(self.client(id)?, domain).await
     }
 
-    pub async fn set_modsec(
-        &self,
-        id: &str,
-        domain: &str,
-        enabled: bool,
-    ) -> CpanelResult<String> {
+    pub async fn set_modsec(&self, id: &str, domain: &str, enabled: bool) -> CpanelResult<String> {
         SecurityManager::set_modsec(self.client(id)?, domain, enabled).await
     }
 }

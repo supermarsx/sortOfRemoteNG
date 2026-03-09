@@ -10,7 +10,10 @@ impl DatabaseManager {
     // ── MySQL databases ──────────────────────────────────────────────
 
     /// List MySQL databases for a user.
-    pub async fn list_mysql_dbs(client: &CpanelClient, user: &str) -> CpanelResult<Vec<CpanelDatabase>> {
+    pub async fn list_mysql_dbs(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<CpanelDatabase>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Mysql", "list_databases", &[])
             .await?;
@@ -19,7 +22,11 @@ impl DatabaseManager {
     }
 
     /// Create a MySQL database.
-    pub async fn create_mysql_db(client: &CpanelClient, user: &str, name: &str) -> CpanelResult<String> {
+    pub async fn create_mysql_db(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Mysql", "create_database", &[("name", name)])
             .await?;
@@ -28,7 +35,11 @@ impl DatabaseManager {
     }
 
     /// Delete a MySQL database.
-    pub async fn delete_mysql_db(client: &CpanelClient, user: &str, name: &str) -> CpanelResult<String> {
+    pub async fn delete_mysql_db(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Mysql", "delete_database", &[("name", name)])
             .await?;
@@ -37,16 +48,22 @@ impl DatabaseManager {
     }
 
     /// List MySQL users for a cPanel user.
-    pub async fn list_mysql_users(client: &CpanelClient, user: &str) -> CpanelResult<Vec<DatabaseUser>> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "Mysql", "list_users", &[])
-            .await?;
+    pub async fn list_mysql_users(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<DatabaseUser>> {
+        let raw: serde_json::Value = client.whm_uapi(user, "Mysql", "list_users", &[]).await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
 
     /// Create a MySQL user.
-    pub async fn create_mysql_user(client: &CpanelClient, user: &str, db_user: &str, password: &str) -> CpanelResult<String> {
+    pub async fn create_mysql_user(
+        client: &CpanelClient,
+        user: &str,
+        db_user: &str,
+        password: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -60,7 +77,11 @@ impl DatabaseManager {
     }
 
     /// Delete a MySQL user.
-    pub async fn delete_mysql_user(client: &CpanelClient, user: &str, db_user: &str) -> CpanelResult<String> {
+    pub async fn delete_mysql_user(
+        client: &CpanelClient,
+        user: &str,
+        db_user: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Mysql", "delete_user", &[("name", db_user)])
             .await?;
@@ -133,7 +154,10 @@ impl DatabaseManager {
     // ── PostgreSQL databases ─────────────────────────────────────────
 
     /// List PostgreSQL databases for a user.
-    pub async fn list_pgsql_dbs(client: &CpanelClient, user: &str) -> CpanelResult<Vec<CpanelDatabase>> {
+    pub async fn list_pgsql_dbs(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<CpanelDatabase>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Postgresql", "list_databases", &[])
             .await?;
@@ -142,7 +166,11 @@ impl DatabaseManager {
     }
 
     /// Create a PostgreSQL database.
-    pub async fn create_pgsql_db(client: &CpanelClient, user: &str, name: &str) -> CpanelResult<String> {
+    pub async fn create_pgsql_db(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Postgresql", "create_database", &[("name", name)])
             .await?;
@@ -151,7 +179,11 @@ impl DatabaseManager {
     }
 
     /// Delete a PostgreSQL database.
-    pub async fn delete_pgsql_db(client: &CpanelClient, user: &str, name: &str) -> CpanelResult<String> {
+    pub async fn delete_pgsql_db(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Postgresql", "delete_database", &[("name", name)])
             .await?;
@@ -160,7 +192,10 @@ impl DatabaseManager {
     }
 
     /// List PostgreSQL users.
-    pub async fn list_pgsql_users(client: &CpanelClient, user: &str) -> CpanelResult<Vec<DatabaseUser>> {
+    pub async fn list_pgsql_users(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<DatabaseUser>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Postgresql", "list_users", &[])
             .await?;
@@ -169,7 +204,12 @@ impl DatabaseManager {
     }
 
     /// Create a PostgreSQL user.
-    pub async fn create_pgsql_user(client: &CpanelClient, user: &str, db_user: &str, password: &str) -> CpanelResult<String> {
+    pub async fn create_pgsql_user(
+        client: &CpanelClient,
+        user: &str,
+        db_user: &str,
+        password: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -183,7 +223,11 @@ impl DatabaseManager {
     }
 
     /// Delete a PostgreSQL user.
-    pub async fn delete_pgsql_user(client: &CpanelClient, user: &str, db_user: &str) -> CpanelResult<String> {
+    pub async fn delete_pgsql_user(
+        client: &CpanelClient,
+        user: &str,
+        db_user: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Postgresql", "delete_user", &[("name", db_user)])
             .await?;
@@ -194,7 +238,10 @@ impl DatabaseManager {
     // ── Remote MySQL ─────────────────────────────────────────────────
 
     /// List remote MySQL access hosts.
-    pub async fn list_remote_mysql_hosts(client: &CpanelClient, user: &str) -> CpanelResult<Vec<String>> {
+    pub async fn list_remote_mysql_hosts(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<String>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Mysql", "get_host_notes", &[])
             .await?;
@@ -210,7 +257,11 @@ impl DatabaseManager {
     }
 
     /// Add a remote MySQL access host.
-    pub async fn add_remote_mysql_host(client: &CpanelClient, user: &str, host: &str) -> CpanelResult<String> {
+    pub async fn add_remote_mysql_host(
+        client: &CpanelClient,
+        user: &str,
+        host: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Mysql", "add_host", &[("host", host)])
             .await?;
@@ -219,7 +270,11 @@ impl DatabaseManager {
     }
 
     /// Remove a remote MySQL access host.
-    pub async fn remove_remote_mysql_host(client: &CpanelClient, user: &str, host: &str) -> CpanelResult<String> {
+    pub async fn remove_remote_mysql_host(
+        client: &CpanelClient,
+        user: &str,
+        host: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Mysql", "delete_host", &[("host", host)])
             .await?;

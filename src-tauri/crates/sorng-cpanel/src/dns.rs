@@ -44,8 +44,14 @@ impl DnsManager {
         Ok(DnsZone {
             domain: domain.to_string(),
             records,
-            serial: zone_data.get("serial").and_then(|s| s.as_str()).map(String::from),
-            ttl: zone_data.get("ttl").and_then(|t| t.as_u64()).map(|t| t as u32),
+            serial: zone_data
+                .get("serial")
+                .and_then(|s| s.as_str())
+                .map(String::from),
+            ttl: zone_data
+                .get("ttl")
+                .and_then(|t| t.as_u64())
+                .map(|t| t as u32),
             refresh: None,
             retry: None,
             expire: None,
@@ -54,7 +60,10 @@ impl DnsManager {
     }
 
     /// Add a DNS zone record.
-    pub async fn add_record(client: &CpanelClient, req: &AddDnsRecordRequest) -> CpanelResult<String> {
+    pub async fn add_record(
+        client: &CpanelClient,
+        req: &AddDnsRecordRequest,
+    ) -> CpanelResult<String> {
         let mut params: Vec<(&str, &str)> = vec![
             ("domain", &req.domain),
             ("name", &req.name),
@@ -117,12 +126,12 @@ impl DnsManager {
     }
 
     /// Edit a DNS zone record by line number.
-    pub async fn edit_record(client: &CpanelClient, req: &EditDnsRecordRequest) -> CpanelResult<String> {
+    pub async fn edit_record(
+        client: &CpanelClient,
+        req: &EditDnsRecordRequest,
+    ) -> CpanelResult<String> {
         let line_str = req.line.to_string();
-        let mut params: Vec<(&str, &str)> = vec![
-            ("domain", &req.domain),
-            ("Line", &line_str),
-        ];
+        let mut params: Vec<(&str, &str)> = vec![("domain", &req.domain), ("Line", &line_str)];
         let name_str;
         if let Some(ref n) = req.name {
             name_str = n.clone();
@@ -155,17 +164,28 @@ impl DnsManager {
     }
 
     /// Remove a DNS zone record by line number.
-    pub async fn remove_record(client: &CpanelClient, domain: &str, line: u32) -> CpanelResult<String> {
+    pub async fn remove_record(
+        client: &CpanelClient,
+        domain: &str,
+        line: u32,
+    ) -> CpanelResult<String> {
         let line_str = line.to_string();
         let raw: serde_json::Value = client
-            .whm_api_raw("removezonerecord", &[("domain", domain), ("Line", &line_str)])
+            .whm_api_raw(
+                "removezonerecord",
+                &[("domain", domain), ("Line", &line_str)],
+            )
             .await?;
         check_whm(&raw)?;
         Ok(format!("DNS record {line} removed from {domain}"))
     }
 
     /// Reset a DNS zone to defaults.
-    pub async fn reset_zone(client: &CpanelClient, domain: &str, user: &str) -> CpanelResult<String> {
+    pub async fn reset_zone(
+        client: &CpanelClient,
+        domain: &str,
+        user: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_api_raw("resetzone", &[("domain", domain), ("user", user)])
             .await?;

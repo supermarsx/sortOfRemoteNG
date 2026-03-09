@@ -8,7 +8,10 @@ pub struct EmailManager;
 
 impl EmailManager {
     /// List email accounts for a user.
-    pub async fn list_accounts(client: &CpanelClient, user: &str) -> CpanelResult<Vec<EmailAccount>> {
+    pub async fn list_accounts(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<EmailAccount>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "list_pops_with_disk", &[])
             .await?;
@@ -17,7 +20,11 @@ impl EmailManager {
     }
 
     /// Create an email account.
-    pub async fn create_account(client: &CpanelClient, user: &str, req: &CreateEmailRequest) -> CpanelResult<String> {
+    pub async fn create_account(
+        client: &CpanelClient,
+        user: &str,
+        req: &CreateEmailRequest,
+    ) -> CpanelResult<String> {
         let parts: Vec<&str> = req.email.splitn(2, '@').collect();
         if parts.len() != 2 {
             return Err(CpanelError::invalid_request("Invalid email format"));
@@ -41,7 +48,11 @@ impl EmailManager {
     }
 
     /// Delete an email account.
-    pub async fn delete_account(client: &CpanelClient, user: &str, email: &str) -> CpanelResult<String> {
+    pub async fn delete_account(
+        client: &CpanelClient,
+        user: &str,
+        email: &str,
+    ) -> CpanelResult<String> {
         let parts: Vec<&str> = email.splitn(2, '@').collect();
         if parts.len() != 2 {
             return Err(CpanelError::invalid_request("Invalid email format"));
@@ -59,7 +70,12 @@ impl EmailManager {
     }
 
     /// Change email password.
-    pub async fn change_password(client: &CpanelClient, user: &str, email: &str, password: &str) -> CpanelResult<String> {
+    pub async fn change_password(
+        client: &CpanelClient,
+        user: &str,
+        email: &str,
+        password: &str,
+    ) -> CpanelResult<String> {
         let parts: Vec<&str> = email.splitn(2, '@').collect();
         if parts.len() != 2 {
             return Err(CpanelError::invalid_request("Invalid email format"));
@@ -81,7 +97,12 @@ impl EmailManager {
     }
 
     /// Set email quota.
-    pub async fn set_quota(client: &CpanelClient, user: &str, email: &str, quota_mb: u64) -> CpanelResult<String> {
+    pub async fn set_quota(
+        client: &CpanelClient,
+        user: &str,
+        email: &str,
+        quota_mb: u64,
+    ) -> CpanelResult<String> {
         let parts: Vec<&str> = email.splitn(2, '@').collect();
         if parts.len() != 2 {
             return Err(CpanelError::invalid_request("Invalid email format"));
@@ -104,7 +125,11 @@ impl EmailManager {
     }
 
     /// List email forwarders.
-    pub async fn list_forwarders(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<Vec<EmailForwarder>> {
+    pub async fn list_forwarders(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<Vec<EmailForwarder>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "list_forwarders", &[("domain", domain)])
             .await?;
@@ -113,7 +138,14 @@ impl EmailManager {
     }
 
     /// Add an email forwarder.
-    pub async fn add_forwarder(client: &CpanelClient, user: &str, domain: &str, email: &str, fwdopt: &str, fwdemail: &str) -> CpanelResult<String> {
+    pub async fn add_forwarder(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+        email: &str,
+        fwdopt: &str,
+        fwdemail: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -132,7 +164,12 @@ impl EmailManager {
     }
 
     /// Delete a forwarder.
-    pub async fn delete_forwarder(client: &CpanelClient, user: &str, address: &str, dest: &str) -> CpanelResult<String> {
+    pub async fn delete_forwarder(
+        client: &CpanelClient,
+        user: &str,
+        address: &str,
+        dest: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -146,7 +183,11 @@ impl EmailManager {
     }
 
     /// List autoresponders.
-    pub async fn list_autoresponders(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<Vec<EmailAutoresponder>> {
+    pub async fn list_autoresponders(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<Vec<EmailAutoresponder>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "list_auto_responders", &[("domain", domain)])
             .await?;
@@ -155,7 +196,11 @@ impl EmailManager {
     }
 
     /// List mailing lists for a domain.
-    pub async fn list_mailing_lists(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<Vec<MailingList>> {
+    pub async fn list_mailing_lists(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<Vec<MailingList>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "list_lists", &[("domain", domain)])
             .await?;
@@ -164,7 +209,10 @@ impl EmailManager {
     }
 
     /// Get spam filter settings.
-    pub async fn get_spam_settings(client: &CpanelClient, user: &str) -> CpanelResult<SpamFilterSettings> {
+    pub async fn get_spam_settings(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<SpamFilterSettings> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "SpamAssassin", "get_user_preferences", &[])
             .await?;
@@ -191,7 +239,11 @@ impl EmailManager {
     }
 
     /// List MX records for a domain.
-    pub async fn list_mx(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<Vec<MxRecord>> {
+    pub async fn list_mx(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<Vec<MxRecord>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "list_mx_records", &[("domain", domain)])
             .await?;
@@ -200,7 +252,11 @@ impl EmailManager {
     }
 
     /// List email filters for an account.
-    pub async fn list_filters(client: &CpanelClient, user: &str, account: &str) -> CpanelResult<Vec<EmailFilter>> {
+    pub async fn list_filters(
+        client: &CpanelClient,
+        user: &str,
+        account: &str,
+    ) -> CpanelResult<Vec<EmailFilter>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "list_filters", &[("account", account)])
             .await?;
@@ -209,7 +265,11 @@ impl EmailManager {
     }
 
     /// Suspend incoming mail for an account.
-    pub async fn suspend_incoming(client: &CpanelClient, user: &str, email: &str) -> CpanelResult<String> {
+    pub async fn suspend_incoming(
+        client: &CpanelClient,
+        user: &str,
+        email: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "suspend_incoming", &[("email", email)])
             .await?;
@@ -218,7 +278,11 @@ impl EmailManager {
     }
 
     /// Unsuspend incoming mail.
-    pub async fn unsuspend_incoming(client: &CpanelClient, user: &str, email: &str) -> CpanelResult<String> {
+    pub async fn unsuspend_incoming(
+        client: &CpanelClient,
+        user: &str,
+        email: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "unsuspend_incoming", &[("email", email)])
             .await?;
@@ -227,7 +291,11 @@ impl EmailManager {
     }
 
     /// Suspend outgoing mail (hold).
-    pub async fn hold_outgoing(client: &CpanelClient, user: &str, email: &str) -> CpanelResult<String> {
+    pub async fn hold_outgoing(
+        client: &CpanelClient,
+        user: &str,
+        email: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "hold_outgoing", &[("email", email)])
             .await?;
@@ -236,7 +304,11 @@ impl EmailManager {
     }
 
     /// Release outgoing mail hold.
-    pub async fn release_outgoing(client: &CpanelClient, user: &str, email: &str) -> CpanelResult<String> {
+    pub async fn release_outgoing(
+        client: &CpanelClient,
+        user: &str,
+        email: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Email", "release_outgoing", &[("email", email)])
             .await?;

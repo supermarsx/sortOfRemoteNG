@@ -8,7 +8,11 @@ pub struct FileManager;
 
 impl FileManager {
     /// List files/directories in a given path.
-    pub async fn list_files(client: &CpanelClient, user: &str, dir: &str) -> CpanelResult<Vec<FileItem>> {
+    pub async fn list_files(
+        client: &CpanelClient,
+        user: &str,
+        dir: &str,
+    ) -> CpanelResult<Vec<FileItem>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Fileman", "list_files", &[("dir", dir)])
             .await?;
@@ -17,7 +21,11 @@ impl FileManager {
     }
 
     /// Get file/directory info.
-    pub async fn get_file_info(client: &CpanelClient, user: &str, path: &str) -> CpanelResult<FileItem> {
+    pub async fn get_file_info(
+        client: &CpanelClient,
+        user: &str,
+        path: &str,
+    ) -> CpanelResult<FileItem> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "Fileman", "get_file_information", &[("path", path)])
             .await?;
@@ -26,14 +34,14 @@ impl FileManager {
     }
 
     /// Create a directory.
-    pub async fn create_directory(client: &CpanelClient, user: &str, path: &str, name: &str) -> CpanelResult<String> {
+    pub async fn create_directory(
+        client: &CpanelClient,
+        user: &str,
+        path: &str,
+        name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
-            .whm_uapi(
-                user,
-                "Fileman",
-                "mkdir",
-                &[("path", path), ("name", name)],
-            )
+            .whm_uapi(user, "Fileman", "mkdir", &[("path", path), ("name", name)])
             .await?;
         check_uapi(&raw)?;
         Ok(format!("Directory {name} created"))
@@ -49,7 +57,12 @@ impl FileManager {
     }
 
     /// Copy a file.
-    pub async fn copy(client: &CpanelClient, user: &str, source: &str, dest: &str) -> CpanelResult<String> {
+    pub async fn copy(
+        client: &CpanelClient,
+        user: &str,
+        source: &str,
+        dest: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -63,7 +76,12 @@ impl FileManager {
     }
 
     /// Move/rename a file.
-    pub async fn rename(client: &CpanelClient, user: &str, source: &str, dest: &str) -> CpanelResult<String> {
+    pub async fn rename(
+        client: &CpanelClient,
+        user: &str,
+        source: &str,
+        dest: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -77,7 +95,12 @@ impl FileManager {
     }
 
     /// Change file/directory permissions.
-    pub async fn chmod(client: &CpanelClient, user: &str, path: &str, permissions: &str) -> CpanelResult<String> {
+    pub async fn chmod(
+        client: &CpanelClient,
+        user: &str,
+        path: &str,
+        permissions: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -100,7 +123,12 @@ impl FileManager {
     }
 
     /// Compress files/directories.
-    pub async fn compress(client: &CpanelClient, user: &str, path: &str, format: &str) -> CpanelResult<String> {
+    pub async fn compress(
+        client: &CpanelClient,
+        user: &str,
+        path: &str,
+        format: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -114,7 +142,12 @@ impl FileManager {
     }
 
     /// Extract an archive.
-    pub async fn extract(client: &CpanelClient, user: &str, path: &str, dest: &str) -> CpanelResult<String> {
+    pub async fn extract(
+        client: &CpanelClient,
+        user: &str,
+        path: &str,
+        dest: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -129,9 +162,7 @@ impl FileManager {
 
     /// Empty the trash.
     pub async fn empty_trash(client: &CpanelClient, user: &str) -> CpanelResult<String> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "Fileman", "empty_trash", &[])
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "Fileman", "empty_trash", &[]).await?;
         check_uapi(&raw)?;
         Ok("Trash emptied".into())
     }

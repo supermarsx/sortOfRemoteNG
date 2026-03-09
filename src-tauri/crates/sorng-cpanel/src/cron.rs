@@ -9,15 +9,17 @@ pub struct CronManager;
 impl CronManager {
     /// List cron jobs for a user.
     pub async fn list(client: &CpanelClient, user: &str) -> CpanelResult<Vec<CronJob>> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "CronJob", "list_cron", &[])
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "CronJob", "list_cron", &[]).await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
 
     /// Add a cron job.
-    pub async fn add(client: &CpanelClient, user: &str, req: &CreateCronRequest) -> CpanelResult<String> {
+    pub async fn add(
+        client: &CpanelClient,
+        user: &str,
+        req: &CreateCronRequest,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -38,7 +40,12 @@ impl CronManager {
     }
 
     /// Edit a cron job by line key.
-    pub async fn edit(client: &CpanelClient, user: &str, linekey: &str, req: &CreateCronRequest) -> CpanelResult<String> {
+    pub async fn edit(
+        client: &CpanelClient,
+        user: &str,
+        linekey: &str,
+        req: &CreateCronRequest,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -70,9 +77,7 @@ impl CronManager {
 
     /// Get the cron notification email.
     pub async fn get_email(client: &CpanelClient, user: &str) -> CpanelResult<String> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "CronJob", "get_email", &[])
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "CronJob", "get_email", &[]).await?;
         let data = extract_data(&raw)?;
         Ok(data
             .get("email")
@@ -111,7 +116,12 @@ fn check_uapi(raw: &serde_json::Value) -> CpanelResult<()> {
             .get("result")
             .and_then(|r| r.get("errors"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("; "))
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
             .unwrap_or_else(|| "UAPI call failed".into());
         return Err(CpanelError::api(errors));
     }

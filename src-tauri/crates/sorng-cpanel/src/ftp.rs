@@ -17,11 +17,12 @@ impl FtpManager {
     }
 
     /// Create an FTP account.
-    pub async fn create_account(client: &CpanelClient, user: &str, req: &CreateFtpRequest) -> CpanelResult<String> {
-        let mut params: Vec<(&str, &str)> = vec![
-            ("user", &req.user),
-            ("pass", &req.password),
-        ];
+    pub async fn create_account(
+        client: &CpanelClient,
+        user: &str,
+        req: &CreateFtpRequest,
+    ) -> CpanelResult<String> {
+        let mut params: Vec<(&str, &str)> = vec![("user", &req.user), ("pass", &req.password)];
         let quota_str;
         if let Some(q) = req.quota {
             quota_str = q.to_string();
@@ -33,15 +34,18 @@ impl FtpManager {
             params.push(("homedir", &homedir));
         }
 
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "Ftp", "add_ftp", &params)
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "Ftp", "add_ftp", &params).await?;
         check_uapi(&raw)?;
         Ok(format!("FTP account {} created", req.user))
     }
 
     /// Delete an FTP account.
-    pub async fn delete_account(client: &CpanelClient, user: &str, ftp_user: &str, destroy: bool) -> CpanelResult<String> {
+    pub async fn delete_account(
+        client: &CpanelClient,
+        user: &str,
+        ftp_user: &str,
+        destroy: bool,
+    ) -> CpanelResult<String> {
         let destroy_str = if destroy { "1" } else { "0" };
         let raw: serde_json::Value = client
             .whm_uapi(
@@ -56,7 +60,12 @@ impl FtpManager {
     }
 
     /// Change FTP account password.
-    pub async fn change_password(client: &CpanelClient, user: &str, ftp_user: &str, password: &str) -> CpanelResult<String> {
+    pub async fn change_password(
+        client: &CpanelClient,
+        user: &str,
+        ftp_user: &str,
+        password: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -70,7 +79,12 @@ impl FtpManager {
     }
 
     /// Set FTP account quota.
-    pub async fn set_quota(client: &CpanelClient, user: &str, ftp_user: &str, quota_mb: u64) -> CpanelResult<String> {
+    pub async fn set_quota(
+        client: &CpanelClient,
+        user: &str,
+        ftp_user: &str,
+        quota_mb: u64,
+    ) -> CpanelResult<String> {
         let quota_str = quota_mb.to_string();
         let raw: serde_json::Value = client
             .whm_uapi(
@@ -97,9 +111,7 @@ impl FtpManager {
     /// Kill an FTP session (WHM).
     pub async fn kill_session(client: &CpanelClient, pid: u32) -> CpanelResult<String> {
         let pid_str = pid.to_string();
-        let raw: serde_json::Value = client
-            .whm_api_raw("killftp", &[("pid", &pid_str)])
-            .await?;
+        let raw: serde_json::Value = client.whm_api_raw("killftp", &[("pid", &pid_str)]).await?;
         check_whm(&raw)?;
         Ok(format!("FTP session {pid} killed"))
     }
@@ -107,10 +119,7 @@ impl FtpManager {
     /// Get FTP server configuration (WHM).
     pub async fn get_config(client: &CpanelClient) -> CpanelResult<FtpConfig> {
         let raw: serde_json::Value = client.whm_api_raw("get_ftp_config", &[]).await?;
-        let data = raw
-            .get("data")
-            .cloned()
-            .unwrap_or_default();
+        let data = raw.get("data").cloned().unwrap_or_default();
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
 
@@ -121,7 +130,10 @@ impl FtpManager {
             .whm_api_raw("set_ftp_config", &[("anon", val)])
             .await?;
         check_whm(&raw)?;
-        Ok(format!("Anonymous FTP {}", if enabled { "enabled" } else { "disabled" }))
+        Ok(format!(
+            "Anonymous FTP {}",
+            if enabled { "enabled" } else { "disabled" }
+        ))
     }
 }
 
@@ -145,7 +157,12 @@ fn check_uapi(raw: &serde_json::Value) -> CpanelResult<()> {
             .get("result")
             .and_then(|r| r.get("errors"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("; "))
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
             .unwrap_or_else(|| "UAPI call failed".into());
         return Err(CpanelError::api(errors));
     }

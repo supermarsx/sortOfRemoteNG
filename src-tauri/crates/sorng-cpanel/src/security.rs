@@ -10,10 +10,11 @@ impl SecurityManager {
     // ── IP Block ─────────────────────────────────────────────────────
 
     /// List blocked IPs.
-    pub async fn list_blocked_ips(client: &CpanelClient, user: &str) -> CpanelResult<Vec<IpBlockRule>> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "BlockIP", "list_ips", &[])
-            .await?;
+    pub async fn list_blocked_ips(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<IpBlockRule>> {
+        let raw: serde_json::Value = client.whm_uapi(user, "BlockIP", "list_ips", &[]).await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
@@ -39,7 +40,10 @@ impl SecurityManager {
     // ── Hotlink Protection ───────────────────────────────────────────
 
     /// Get hotlink protection settings.
-    pub async fn get_hotlink_protection(client: &CpanelClient, user: &str) -> CpanelResult<HotlinkProtection> {
+    pub async fn get_hotlink_protection(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<HotlinkProtection> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "HotlinkProtection", "get", &[])
             .await?;
@@ -48,7 +52,12 @@ impl SecurityManager {
     }
 
     /// Enable hotlink protection.
-    pub async fn enable_hotlink(client: &CpanelClient, user: &str, urls: &[&str], extensions: &[&str]) -> CpanelResult<String> {
+    pub async fn enable_hotlink(
+        client: &CpanelClient,
+        user: &str,
+        urls: &[&str],
+        extensions: &[&str],
+    ) -> CpanelResult<String> {
         let urls_str = urls.join(",");
         let ext_str = extensions.join(",");
         let raw: serde_json::Value = client
@@ -75,7 +84,10 @@ impl SecurityManager {
     // ── Password-protected directories ───────────────────────────────
 
     /// List password-protected directories.
-    pub async fn list_protected_dirs(client: &CpanelClient, user: &str) -> CpanelResult<Vec<PasswordProtectedDirectory>> {
+    pub async fn list_protected_dirs(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<PasswordProtectedDirectory>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "DirectoryPrivacy", "list_directories", &[])
             .await?;
@@ -84,7 +96,12 @@ impl SecurityManager {
     }
 
     /// Protect a directory with a password.
-    pub async fn protect_directory(client: &CpanelClient, user: &str, dir: &str, auth_name: &str) -> CpanelResult<String> {
+    pub async fn protect_directory(
+        client: &CpanelClient,
+        user: &str,
+        dir: &str,
+        auth_name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -114,11 +131,18 @@ impl SecurityManager {
             )
             .await?;
         check_uapi(&raw)?;
-        Ok(format!("User {dir_user} added to protected directory {dir}"))
+        Ok(format!(
+            "User {dir_user} added to protected directory {dir}"
+        ))
     }
 
     /// Remove a user from a protected directory.
-    pub async fn remove_dir_user(client: &CpanelClient, user: &str, dir: &str, dir_user: &str) -> CpanelResult<String> {
+    pub async fn remove_dir_user(
+        client: &CpanelClient,
+        user: &str,
+        dir: &str,
+        dir_user: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -128,22 +152,28 @@ impl SecurityManager {
             )
             .await?;
         check_uapi(&raw)?;
-        Ok(format!("User {dir_user} removed from protected directory {dir}"))
+        Ok(format!(
+            "User {dir_user} removed from protected directory {dir}"
+        ))
     }
 
     // ── SSH keys ─────────────────────────────────────────────────────
 
     /// List SSH keys for a user.
     pub async fn list_ssh_keys(client: &CpanelClient, user: &str) -> CpanelResult<Vec<SshKey>> {
-        let raw: serde_json::Value = client
-            .whm_uapi(user, "SSH", "list_keys", &[])
-            .await?;
+        let raw: serde_json::Value = client.whm_uapi(user, "SSH", "list_keys", &[]).await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
     }
 
     /// Import an SSH key.
-    pub async fn import_ssh_key(client: &CpanelClient, user: &str, name: &str, key: &str, key_type: &str) -> CpanelResult<String> {
+    pub async fn import_ssh_key(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+        key: &str,
+        key_type: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -157,7 +187,12 @@ impl SecurityManager {
     }
 
     /// Delete an SSH key.
-    pub async fn delete_ssh_key(client: &CpanelClient, user: &str, name: &str, key_type: &str) -> CpanelResult<String> {
+    pub async fn delete_ssh_key(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+        key_type: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -171,18 +206,36 @@ impl SecurityManager {
     }
 
     /// Authorize an SSH key.
-    pub async fn authorize_ssh_key(client: &CpanelClient, user: &str, name: &str) -> CpanelResult<String> {
+    pub async fn authorize_ssh_key(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "SSH", "authkey", &[("name", name), ("authorize", "1")])
+            .whm_uapi(
+                user,
+                "SSH",
+                "authkey",
+                &[("name", name), ("authorize", "1")],
+            )
             .await?;
         check_uapi(&raw)?;
         Ok(format!("SSH key {name} authorized"))
     }
 
     /// Deauthorize an SSH key.
-    pub async fn deauthorize_ssh_key(client: &CpanelClient, user: &str, name: &str) -> CpanelResult<String> {
+    pub async fn deauthorize_ssh_key(
+        client: &CpanelClient,
+        user: &str,
+        name: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "SSH", "authkey", &[("name", name), ("authorize", "0")])
+            .whm_uapi(
+                user,
+                "SSH",
+                "authkey",
+                &[("name", name), ("authorize", "0")],
+            )
             .await?;
         check_uapi(&raw)?;
         Ok(format!("SSH key {name} deauthorized"))
@@ -214,10 +267,17 @@ impl SecurityManager {
     }
 
     /// Enable/disable ModSecurity for a domain (WHM).
-    pub async fn set_modsec(client: &CpanelClient, domain: &str, enabled: bool) -> CpanelResult<String> {
+    pub async fn set_modsec(
+        client: &CpanelClient,
+        domain: &str,
+        enabled: bool,
+    ) -> CpanelResult<String> {
         let val = if enabled { "1" } else { "0" };
         let raw: serde_json::Value = client
-            .whm_api_raw("modsec_set_domain_setting", &[("domain", domain), ("enabled", val)])
+            .whm_api_raw(
+                "modsec_set_domain_setting",
+                &[("domain", domain), ("enabled", val)],
+            )
             .await?;
         check_whm(&raw)?;
         Ok(format!(
@@ -243,7 +303,11 @@ impl SecurityManager {
     // ── Leech protection ─────────────────────────────────────────────
 
     /// Get leech protection settings for a directory.
-    pub async fn get_leech_protection(client: &CpanelClient, user: &str, dir: &str) -> CpanelResult<LeechProtection> {
+    pub async fn get_leech_protection(
+        client: &CpanelClient,
+        user: &str,
+        dir: &str,
+    ) -> CpanelResult<LeechProtection> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "LeechProtect", "get", &[("dir", dir)])
             .await?;
@@ -252,7 +316,12 @@ impl SecurityManager {
     }
 
     /// Enable leech protection.
-    pub async fn enable_leech(client: &CpanelClient, user: &str, dir: &str, max_logins: u32) -> CpanelResult<String> {
+    pub async fn enable_leech(
+        client: &CpanelClient,
+        user: &str,
+        dir: &str,
+        max_logins: u32,
+    ) -> CpanelResult<String> {
         let max_str = max_logins.to_string();
         let raw: serde_json::Value = client
             .whm_uapi(
@@ -267,7 +336,11 @@ impl SecurityManager {
     }
 
     /// Disable leech protection.
-    pub async fn disable_leech(client: &CpanelClient, user: &str, dir: &str) -> CpanelResult<String> {
+    pub async fn disable_leech(
+        client: &CpanelClient,
+        user: &str,
+        dir: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "LeechProtect", "disable", &[("dir", dir)])
             .await?;
@@ -278,27 +351,57 @@ impl SecurityManager {
     // ── SSL Redirect ─────────────────────────────────────────────────
 
     /// Check if HTTPS redirect is enabled for a domain.
-    pub async fn get_ssl_redirect(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<bool> {
+    pub async fn get_ssl_redirect(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<bool> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "SSL", "is_https_redirect_enabled", &[("domain", domain)])
+            .whm_uapi(
+                user,
+                "SSL",
+                "is_https_redirect_enabled",
+                &[("domain", domain)],
+            )
             .await?;
         let data = extract_data(&raw)?;
-        Ok(data.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false))
+        Ok(data
+            .get("enabled")
+            .and_then(|e| e.as_bool())
+            .unwrap_or(false))
     }
 
     /// Enable HTTPS redirect for a domain.
-    pub async fn enable_ssl_redirect(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<String> {
+    pub async fn enable_ssl_redirect(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "SSL", "toggle_ssl_redirect_for_domains", &[("domain", domain), ("state", "1")])
+            .whm_uapi(
+                user,
+                "SSL",
+                "toggle_ssl_redirect_for_domains",
+                &[("domain", domain), ("state", "1")],
+            )
             .await?;
         check_uapi(&raw)?;
         Ok(format!("HTTPS redirect enabled for {domain}"))
     }
 
     /// Disable HTTPS redirect for a domain.
-    pub async fn disable_ssl_redirect(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<String> {
+    pub async fn disable_ssl_redirect(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "SSL", "toggle_ssl_redirect_for_domains", &[("domain", domain), ("state", "0")])
+            .whm_uapi(
+                user,
+                "SSL",
+                "toggle_ssl_redirect_for_domains",
+                &[("domain", domain), ("state", "0")],
+            )
             .await?;
         check_uapi(&raw)?;
         Ok(format!("HTTPS redirect disabled for {domain}"))
@@ -325,7 +428,12 @@ fn check_uapi(raw: &serde_json::Value) -> CpanelResult<()> {
             .get("result")
             .and_then(|r| r.get("errors"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("; "))
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
             .unwrap_or_else(|| "UAPI call failed".into());
         return Err(CpanelError::api(errors));
     }

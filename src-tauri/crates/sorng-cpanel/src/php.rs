@@ -20,9 +20,18 @@ impl PhpManager {
     }
 
     /// Get the PHP version for a domain.
-    pub async fn get_domain_php_version(client: &CpanelClient, user: &str, domain: &str) -> CpanelResult<String> {
+    pub async fn get_domain_php_version(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "LangPHP", "php_get_domain_handler", &[("domain", domain)])
+            .whm_uapi(
+                user,
+                "LangPHP",
+                "php_get_domain_handler",
+                &[("domain", domain)],
+            )
             .await?;
         let data = extract_data(&raw)?;
         Ok(data
@@ -33,7 +42,12 @@ impl PhpManager {
     }
 
     /// Set the PHP version for a domain.
-    pub async fn set_domain_php_version(client: &CpanelClient, user: &str, domain: &str, version: &str) -> CpanelResult<String> {
+    pub async fn set_domain_php_version(
+        client: &CpanelClient,
+        user: &str,
+        domain: &str,
+        version: &str,
+    ) -> CpanelResult<String> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -47,7 +61,11 @@ impl PhpManager {
     }
 
     /// Get PHP configuration directives for a user.
-    pub async fn get_php_config(client: &CpanelClient, user: &str, version: &str) -> CpanelResult<PhpConfig> {
+    pub async fn get_php_config(
+        client: &CpanelClient,
+        user: &str,
+        version: &str,
+    ) -> CpanelResult<PhpConfig> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -79,7 +97,11 @@ impl PhpManager {
                 user,
                 "LangPHP",
                 "php_ini_set_user_content",
-                &[("version", version), ("directive-key", key), ("directive-value", value)],
+                &[
+                    ("version", version),
+                    ("directive-key", key),
+                    ("directive-value", value),
+                ],
             )
             .await?;
         check_uapi(&raw)?;
@@ -87,7 +109,11 @@ impl PhpManager {
     }
 
     /// List installed PHP extensions.
-    pub async fn list_extensions(client: &CpanelClient, user: &str, version: &str) -> CpanelResult<Vec<PhpExtension>> {
+    pub async fn list_extensions(
+        client: &CpanelClient,
+        user: &str,
+        version: &str,
+    ) -> CpanelResult<Vec<PhpExtension>> {
         let raw: serde_json::Value = client
             .whm_uapi(
                 user,
@@ -103,7 +129,10 @@ impl PhpManager {
     // ── Perl modules ─────────────────────────────────────────────────
 
     /// List installed Perl modules.
-    pub async fn list_perl_modules(client: &CpanelClient, user: &str) -> CpanelResult<Vec<PerlModule>> {
+    pub async fn list_perl_modules(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<PerlModule>> {
         let raw: serde_json::Value = client
             .whm_uapi(user, "LangPerl", "list_modules", &[])
             .await?;
@@ -114,25 +143,52 @@ impl PhpManager {
     // ── Node.js / Python / Ruby apps ─────────────────────────────────
 
     /// List Node.js applications.
-    pub async fn list_nodejs_apps(client: &CpanelClient, user: &str) -> CpanelResult<serde_json::Value> {
+    pub async fn list_nodejs_apps(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<serde_json::Value> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "PassengerApps", "list_applications", &[("type", "nodejs")])
+            .whm_uapi(
+                user,
+                "PassengerApps",
+                "list_applications",
+                &[("type", "nodejs")],
+            )
             .await?;
         extract_data(&raw)
     }
 
     /// List Python applications.
-    pub async fn list_python_apps(client: &CpanelClient, user: &str) -> CpanelResult<serde_json::Value> {
+    pub async fn list_python_apps(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<serde_json::Value> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "PassengerApps", "list_applications", &[("type", "python")])
+            .whm_uapi(
+                user,
+                "PassengerApps",
+                "list_applications",
+                &[("type", "python")],
+            )
             .await?;
         extract_data(&raw)
     }
 
     /// List installed software (Softaculous / Installatron).
-    pub async fn list_installed_software(client: &CpanelClient, user: &str) -> CpanelResult<Vec<InstalledSoftware>> {
+    pub async fn list_installed_software(
+        client: &CpanelClient,
+        user: &str,
+    ) -> CpanelResult<Vec<InstalledSoftware>> {
         let raw: serde_json::Value = client
-            .whm_uapi(user, "Integration", "fetch_url", &[("url", "/frontend/jupiter/softaculous/index.live.php?act=installations")])
+            .whm_uapi(
+                user,
+                "Integration",
+                "fetch_url",
+                &[(
+                    "url",
+                    "/frontend/jupiter/softaculous/index.live.php?act=installations",
+                )],
+            )
             .await?;
         let data = extract_data(&raw)?;
         serde_json::from_value(data).map_err(|e| CpanelError::parse(e.to_string()))
@@ -184,7 +240,12 @@ fn check_uapi(raw: &serde_json::Value) -> CpanelResult<()> {
             .get("result")
             .and_then(|r| r.get("errors"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("; "))
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
             .unwrap_or_else(|| "UAPI call failed".into());
         return Err(CpanelError::api(errors));
     }
