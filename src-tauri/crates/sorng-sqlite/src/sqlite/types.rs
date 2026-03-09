@@ -42,13 +42,19 @@ impl std::error::Error for SqliteError {}
 
 impl SqliteError {
     pub fn new(kind: SqliteErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
     pub fn not_connected() -> Self {
         Self::new(SqliteErrorKind::NotConnected, "No active SQLite connection")
     }
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(SqliteErrorKind::SessionNotFound, format!("Session not found: {id}"))
+        Self::new(
+            SqliteErrorKind::SessionNotFound,
+            format!("Session not found: {id}"),
+        )
     }
 }
 
@@ -131,7 +137,12 @@ pub struct QueryResult {
 
 impl QueryResult {
     pub fn empty(ms: u128) -> Self {
-        Self { columns: vec![], rows: vec![], affected_rows: 0, execution_time_ms: ms }
+        Self {
+            columns: vec![],
+            rows: vec![],
+            affected_rows: 0,
+            execution_time_ms: ms,
+        }
     }
 }
 
@@ -202,16 +213,13 @@ pub struct ExplainRow {
 
 // ── Export / Import ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum ExportFormat {
+    #[default]
     Csv,
     Tsv,
     Sql,
     Json,
-}
-
-impl Default for ExportFormat {
-    fn default() -> Self { Self::Csv }
 }
 
 impl ExportFormat {
@@ -328,8 +336,14 @@ mod tests {
 
     #[test]
     fn export_format_parse() {
-        assert!(matches!(ExportFormat::from_str_loose("csv"), ExportFormat::Csv));
-        assert!(matches!(ExportFormat::from_str_loose("JSON"), ExportFormat::Json));
+        assert!(matches!(
+            ExportFormat::from_str_loose("csv"),
+            ExportFormat::Csv
+        ));
+        assert!(matches!(
+            ExportFormat::from_str_loose("JSON"),
+            ExportFormat::Json
+        ));
     }
 
     #[test]

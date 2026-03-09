@@ -6,16 +6,16 @@ description = "SQLite connection management, query execution, schema introspecti
 
 [dependencies]
 sorng-core = { path = "../sorng-core" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1", features = ["full"] }
-tauri = { version = "2.9.5", features = ["devtools"] }
-uuid = { version = "1.0", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
-log = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
 sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"] }
-thiserror = "1"
+thiserror = { workspace = true }
 
 [dev-dependencies]
-serde_json = "1.0"
-tokio = { version = "1", features = ["full", "test-util"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

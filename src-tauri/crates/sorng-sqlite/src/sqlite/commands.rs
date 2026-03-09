@@ -67,7 +67,9 @@ pub async fn sqlite_execute_query(
     sql: String,
 ) -> Result<QueryResult, String> {
     let mut svc = state.lock().await;
-    svc.execute_query(&session_id, &sql).await.map_err(|e| e.message)
+    svc.execute_query(&session_id, &sql)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -77,7 +79,9 @@ pub async fn sqlite_execute_statement(
     sql: String,
 ) -> Result<QueryResult, String> {
     let mut svc = state.lock().await;
-    svc.execute_statement(&session_id, &sql).await.map_err(|e| e.message)
+    svc.execute_statement(&session_id, &sql)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -87,7 +91,9 @@ pub async fn sqlite_explain_query(
     sql: String,
 ) -> Result<Vec<ExplainRow>, String> {
     let mut svc = state.lock().await;
-    svc.explain_query(&session_id, &sql).await.map_err(|e| e.message)
+    svc.explain_query(&session_id, &sql)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Schema ──────────────────────────────────────────────────────────
@@ -108,7 +114,9 @@ pub async fn sqlite_describe_table(
     table: String,
 ) -> Result<Vec<ColumnDef>, String> {
     let mut svc = state.lock().await;
-    svc.describe_table(&session_id, &table).await.map_err(|e| e.message)
+    svc.describe_table(&session_id, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -118,7 +126,9 @@ pub async fn sqlite_list_indexes(
     table: String,
 ) -> Result<Vec<IndexInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_indexes(&session_id, &table).await.map_err(|e| e.message)
+    svc.list_indexes(&session_id, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -128,7 +138,9 @@ pub async fn sqlite_list_foreign_keys(
     table: String,
 ) -> Result<Vec<ForeignKeyInfo>, String> {
     let mut svc = state.lock().await;
-    svc.list_foreign_keys(&session_id, &table).await.map_err(|e| e.message)
+    svc.list_foreign_keys(&session_id, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -146,7 +158,9 @@ pub async fn sqlite_list_attached_databases(
     session_id: String,
 ) -> Result<Vec<AttachedDatabase>, String> {
     let mut svc = state.lock().await;
-    svc.list_attached_databases(&session_id).await.map_err(|e| e.message)
+    svc.list_attached_databases(&session_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── PRAGMA ──────────────────────────────────────────────────────────
@@ -158,7 +172,9 @@ pub async fn sqlite_get_pragma(
     pragma: String,
 ) -> Result<PragmaValue, String> {
     let mut svc = state.lock().await;
-    svc.get_pragma(&session_id, &pragma).await.map_err(|e| e.message)
+    svc.get_pragma(&session_id, &pragma)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -169,7 +185,9 @@ pub async fn sqlite_set_pragma(
     value: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.set_pragma(&session_id, &pragma, &value).await.map_err(|e| e.message)
+    svc.set_pragma(&session_id, &pragma, &value)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── DDL / Maintenance ───────────────────────────────────────────────
@@ -181,7 +199,9 @@ pub async fn sqlite_drop_table(
     table: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.drop_table(&session_id, &table).await.map_err(|e| e.message)
+    svc.drop_table(&session_id, &table)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -199,7 +219,9 @@ pub async fn sqlite_integrity_check(
     session_id: String,
 ) -> Result<Vec<String>, String> {
     let mut svc = state.lock().await;
-    svc.integrity_check(&session_id).await.map_err(|e| e.message)
+    svc.integrity_check(&session_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -210,7 +232,9 @@ pub async fn sqlite_attach_database(
     alias: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.attach_database(&session_id, &path, &alias).await.map_err(|e| e.message)
+    svc.attach_database(&session_id, &path, &alias)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -220,7 +244,9 @@ pub async fn sqlite_detach_database(
     alias: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.detach_database(&session_id, &alias).await.map_err(|e| e.message)
+    svc.detach_database(&session_id, &alias)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Data CRUD ───────────────────────────────────────────────────────
@@ -234,7 +260,9 @@ pub async fn sqlite_get_table_data(
     offset: Option<u32>,
 ) -> Result<QueryResult, String> {
     let mut svc = state.lock().await;
-    svc.get_table_data(&session_id, &table, limit, offset).await.map_err(|e| e.message)
+    svc.get_table_data(&session_id, &table, limit, offset)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -246,7 +274,9 @@ pub async fn sqlite_insert_row(
     values: Vec<String>,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.insert_row(&session_id, &table, &columns, &values).await.map_err(|e| e.message)
+    svc.insert_row(&session_id, &table, &columns, &values)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -259,7 +289,9 @@ pub async fn sqlite_update_rows(
     where_clause: String,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.update_rows(&session_id, &table, &columns, &values, &where_clause).await.map_err(|e| e.message)
+    svc.update_rows(&session_id, &table, &columns, &values, &where_clause)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -270,7 +302,9 @@ pub async fn sqlite_delete_rows(
     where_clause: String,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.delete_rows(&session_id, &table, &where_clause).await.map_err(|e| e.message)
+    svc.delete_rows(&session_id, &table, &where_clause)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Export / Import ─────────────────────────────────────────────────
@@ -283,7 +317,9 @@ pub async fn sqlite_export_table(
     options: ExportOptions,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    svc.export_table(&session_id, &table, &options).await.map_err(|e| e.message)
+    svc.export_table(&session_id, &table, &options)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -293,7 +329,9 @@ pub async fn sqlite_export_database(
     options: ExportOptions,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    svc.export_database(&session_id, &options).await.map_err(|e| e.message)
+    svc.export_database(&session_id, &options)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -303,7 +341,9 @@ pub async fn sqlite_import_sql(
     sql_content: String,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.import_sql(&session_id, &sql_content).await.map_err(|e| e.message)
+    svc.import_sql(&session_id, &sql_content)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -315,7 +355,9 @@ pub async fn sqlite_import_csv(
     has_header: bool,
 ) -> Result<u64, String> {
     let mut svc = state.lock().await;
-    svc.import_csv(&session_id, &table, &csv_content, has_header).await.map_err(|e| e.message)
+    svc.import_csv(&session_id, &table, &csv_content, has_header)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Info ────────────────────────────────────────────────────────────
@@ -336,5 +378,7 @@ pub async fn sqlite_table_count(
     table: String,
 ) -> Result<i64, String> {
     let mut svc = state.lock().await;
-    svc.table_count(&session_id, &table).await.map_err(|e| e.message)
+    svc.table_count(&session_id, &table)
+        .await
+        .map_err(|e| e.message)
 }
