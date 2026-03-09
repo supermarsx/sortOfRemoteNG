@@ -36,21 +36,21 @@
 //!                      └──────────────┘
 //! ```
 
-pub mod types;
-pub mod service;
-pub mod server;
-pub mod config;
-pub mod proxy;
-pub mod tunnel;
-pub mod session;
-pub mod policy;
-pub mod health;
-pub mod metrics;
 pub mod auth;
-pub mod tls;
-pub mod recording_bridge;
 pub mod cli;
+pub mod config;
+pub mod health;
 pub mod letsencrypt_bridge;
+pub mod metrics;
+pub mod policy;
+pub mod proxy;
+pub mod recording_bridge;
+pub mod server;
+pub mod service;
+pub mod session;
+pub mod tls;
+pub mod tunnel;
+pub mod types;
 
 /// Re-export the Let's Encrypt crate for direct access.
 pub use sorng_letsencrypt as letsencrypt;

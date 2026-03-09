@@ -35,6 +35,12 @@ pub struct MetricsCollector {
     connections_by_user: HashMap<String, u64>,
 }
 
+impl Default for MetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsCollector {
     pub fn new() -> Self {
         Self {
@@ -61,18 +67,11 @@ impl MetricsCollector {
             self.peak_concurrent_sessions = self.active_connections;
         }
         let proto_key = format!("{:?}", protocol);
-        *self
-            .connections_by_protocol
-            .entry(proto_key)
-            .or_insert(0) += 1;
+        *self.connections_by_protocol.entry(proto_key).or_insert(0) += 1;
     }
 
     /// Record a connection with user tracking.
-    pub fn record_connection_with_user(
-        &mut self,
-        protocol: GatewayProtocol,
-        user_id: &str,
-    ) {
+    pub fn record_connection_with_user(&mut self, protocol: GatewayProtocol, user_id: &str) {
         self.record_connection(protocol);
         *self
             .connections_by_user

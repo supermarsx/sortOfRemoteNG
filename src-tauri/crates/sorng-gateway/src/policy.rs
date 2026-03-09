@@ -37,9 +37,7 @@ impl PolicyEngine {
 
     /// Remove a policy.
     pub fn remove_policy(&mut self, policy_id: &str) -> Result<(), String> {
-        self.policies
-            .remove(policy_id)
-            .ok_or("Policy not found")?;
+        self.policies.remove(policy_id).ok_or("Policy not found")?;
         self.persist();
         Ok(())
     }
@@ -70,16 +68,15 @@ impl PolicyEngine {
         protocol: GatewayProtocol,
         source_ip: &str,
     ) -> Result<PolicyAction, String> {
-        let mut policies: Vec<&AccessPolicy> = self
-            .policies
-            .values()
-            .filter(|p| p.enabled)
-            .collect();
+        let mut policies: Vec<&AccessPolicy> =
+            self.policies.values().filter(|p| p.enabled).collect();
         policies.sort_by_key(|p| p.priority);
 
         for policy in policies {
-            let user_match = self.match_user_conditions(&policy.user_conditions, user_id, source_ip);
-            let target_match = self.match_target_conditions(&policy.target_conditions, target_addr, protocol);
+            let user_match =
+                self.match_user_conditions(&policy.user_conditions, user_id, source_ip);
+            let target_match =
+                self.match_target_conditions(&policy.target_conditions, target_addr, protocol);
             let time_match = self.match_time_conditions(&policy.time_conditions);
 
             if user_match && target_match && time_match {
@@ -136,9 +133,7 @@ impl PolicyEngine {
         }
         conditions.iter().any(|c| match c {
             TargetCondition::Host(host) => target_addr.starts_with(host),
-            TargetCondition::HostPort(host, port) => {
-                target_addr == format!("{}:{}", host, port)
-            }
+            TargetCondition::HostPort(host, port) => target_addr == format!("{}:{}", host, port),
             TargetCondition::Subnet(cidr) => {
                 let target_ip = target_addr.split(':').next().unwrap_or("");
                 target_ip.starts_with(cidr.split('/').next().unwrap_or(""))

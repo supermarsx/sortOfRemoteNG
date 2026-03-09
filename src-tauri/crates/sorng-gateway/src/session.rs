@@ -13,6 +13,12 @@ pub struct SessionManager {
     sessions: HashMap<String, GatewaySession>,
 }
 
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionManager {
     pub fn new() -> Self {
         Self {
@@ -173,12 +179,7 @@ impl SessionManager {
     }
 
     /// Set session metadata.
-    pub fn set_metadata(
-        &mut self,
-        session_id: &str,
-        key: &str,
-        value: &str,
-    ) -> Result<(), String> {
+    pub fn set_metadata(&mut self, session_id: &str, key: &str, value: &str) -> Result<(), String> {
         let session = self
             .sessions
             .get_mut(session_id)

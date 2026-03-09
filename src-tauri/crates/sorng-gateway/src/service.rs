@@ -115,12 +115,9 @@ impl GatewayService {
         source_addr: &str,
     ) -> Result<GatewaySession, String> {
         // Evaluate access policies
-        let policy_result = self.policy.evaluate(
-            user_id,
-            target_addr,
-            protocol,
-            source_addr,
-        )?;
+        let policy_result = self
+            .policy
+            .evaluate(user_id, target_addr, protocol, source_addr)?;
 
         match policy_result {
             PolicyAction::Deny => {

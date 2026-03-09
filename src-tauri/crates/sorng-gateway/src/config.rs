@@ -3,8 +3,8 @@
 //! Configuration structures for the gateway, supporting TOML and JSON
 //! config files for headless mode operation.
 
-use crate::types::TlsConfig;
 use crate::letsencrypt_bridge::GatewayLetsEncryptConfig;
+use crate::types::TlsConfig;
 use serde::{Deserialize, Serialize};
 
 /// Complete gateway configuration.
@@ -89,20 +89,18 @@ impl GatewayConfig {
     pub fn from_toml(toml_str: &str) -> Result<Self, String> {
         // Parse as JSON fallback since we depend on serde_json
         // In production, add `toml` crate dependency for native TOML support
-        serde_json::from_str(toml_str)
-            .map_err(|e| format!("Failed to parse config: {}", e))
+        serde_json::from_str(toml_str).map_err(|e| format!("Failed to parse config: {}", e))
     }
 
     /// Load configuration from a JSON string.
     pub fn from_json(json_str: &str) -> Result<Self, String> {
-        serde_json::from_str(json_str)
-            .map_err(|e| format!("Failed to parse config: {}", e))
+        serde_json::from_str(json_str).map_err(|e| format!("Failed to parse config: {}", e))
     }
 
     /// Load configuration from a file path (auto-detects JSON).
     pub fn from_file(path: &str) -> Result<Self, String> {
-        let content =
-            std::fs::read_to_string(path).map_err(|e| format!("Failed to read config file: {}", e))?;
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read config file: {}", e))?;
 
         Self::from_json(&content)
     }

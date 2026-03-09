@@ -14,6 +14,12 @@ pub struct ProxyEngine {
     port_map: HashMap<u16, String>,
 }
 
+impl Default for ProxyEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProxyEngine {
     pub fn new() -> Self {
         Self {
@@ -43,10 +49,7 @@ impl ProxyEngine {
 
     /// Remove a proxy route.
     pub fn remove_route(&mut self, route_id: &str) -> Result<(), String> {
-        let route = self
-            .routes
-            .remove(route_id)
-            .ok_or("Route not found")?;
+        let route = self.routes.remove(route_id).ok_or("Route not found")?;
         self.port_map.remove(&route.listen_port);
         Ok(())
     }
@@ -75,10 +78,7 @@ impl ProxyEngine {
 
     /// Enable or disable a route.
     pub fn set_route_enabled(&mut self, route_id: &str, enabled: bool) -> Result<(), String> {
-        let route = self
-            .routes
-            .get_mut(route_id)
-            .ok_or("Route not found")?;
+        let route = self.routes.get_mut(route_id).ok_or("Route not found")?;
         route.enabled = enabled;
         Ok(())
     }
@@ -90,10 +90,7 @@ impl ProxyEngine {
         target_host: String,
         target_port: u16,
     ) -> Result<(), String> {
-        let route = self
-            .routes
-            .get_mut(route_id)
-            .ok_or("Route not found")?;
+        let route = self.routes.get_mut(route_id).ok_or("Route not found")?;
         route.target_host = target_host;
         route.target_port = target_port;
         Ok(())
@@ -122,10 +119,7 @@ impl ProxyEngine {
     /// Resolve a target address for proxying.
     /// Returns (host, port) for the upstream connection.
     pub fn resolve_target(&self, route_id: &str) -> Result<(String, u16), String> {
-        let route = self
-            .routes
-            .get(route_id)
-            .ok_or("Route not found")?;
+        let route = self.routes.get(route_id).ok_or("Route not found")?;
         if !route.enabled {
             return Err("Route is disabled".to_string());
         }

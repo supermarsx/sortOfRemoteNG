@@ -38,10 +38,7 @@ impl GatewayAuthService {
         permissions: Vec<GatewayPermission>,
     ) -> Result<(GatewayApiKey, String), String> {
         // Generate a random API key
-        let plaintext_key = format!(
-            "sgw_{}",
-            uuid::Uuid::new_v4().to_string().replace('-', "")
-        );
+        let plaintext_key = format!("sgw_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
         let key_hash = Self::hash_key(&plaintext_key);
 
         let api_key = GatewayApiKey {
@@ -56,8 +53,7 @@ impl GatewayAuthService {
             last_used: None,
         };
 
-        self.hash_index
-            .insert(key_hash, api_key.id.clone());
+        self.hash_index.insert(key_hash, api_key.id.clone());
         self.keys.insert(api_key.id.clone(), api_key.clone());
         self.persist();
 
@@ -114,8 +110,7 @@ impl GatewayAuthService {
 
     /// Check if a key has a specific permission.
     pub fn has_permission(key: &GatewayApiKey, required: GatewayPermission) -> bool {
-        key.permissions.contains(&GatewayPermission::Admin)
-            || key.permissions.contains(&required)
+        key.permissions.contains(&GatewayPermission::Admin) || key.permissions.contains(&required)
     }
 
     /// Set expiration on a key.

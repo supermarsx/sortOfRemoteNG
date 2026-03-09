@@ -107,10 +107,7 @@ impl CliArgs {
                     std::process::exit(0);
                 }
                 "--version" | "-v" => {
-                    println!(
-                        "sorng-gateway-server {}",
-                        env!("CARGO_PKG_VERSION")
-                    );
+                    println!("sorng-gateway-server {}", env!("CARGO_PKG_VERSION"));
                     std::process::exit(0);
                 }
                 _ => {

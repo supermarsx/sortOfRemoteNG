@@ -14,6 +14,12 @@ pub struct HealthMonitor {
     custom_checks: Vec<(String, HealthStatus, Option<String>)>,
 }
 
+impl Default for HealthMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HealthMonitor {
     pub fn new() -> Self {
         Self {
@@ -142,22 +148,12 @@ impl HealthMonitor {
     }
 
     /// Register a custom health check.
-    pub fn register_check(
-        &mut self,
-        name: String,
-        status: HealthStatus,
-        message: Option<String>,
-    ) {
+    pub fn register_check(&mut self, name: String, status: HealthStatus, message: Option<String>) {
         self.custom_checks.push((name, status, message));
     }
 
     /// Update a custom health check.
-    pub fn update_check(
-        &mut self,
-        name: &str,
-        status: HealthStatus,
-        message: Option<String>,
-    ) {
+    pub fn update_check(&mut self, name: &str, status: HealthStatus, message: Option<String>) {
         if let Some(check) = self.custom_checks.iter_mut().find(|(n, _, _)| n == name) {
             check.1 = status;
             check.2 = message;

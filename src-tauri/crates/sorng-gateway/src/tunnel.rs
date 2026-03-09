@@ -3,7 +3,6 @@
 //! SSH and TCP tunnel management for forwarding connections through
 //! intermediate hosts. Creates, tracks, and tears down dynamic tunnels.
 
-use crate::types::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -56,6 +55,12 @@ pub struct TunnelManager {
     tunnels: HashMap<String, GatewayTunnel>,
 }
 
+impl Default for TunnelManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TunnelManager {
     pub fn new() -> Self {
         Self {
@@ -64,6 +69,7 @@ impl TunnelManager {
     }
 
     /// Create a new tunnel.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_tunnel(
         &mut self,
         tunnel_type: TunnelType,
@@ -75,9 +81,10 @@ impl TunnelManager {
         created_by: &str,
     ) -> Result<GatewayTunnel, String> {
         // Check for port conflicts
-        let port_in_use = self.tunnels.values().any(|t| {
-            t.active && t.local_port == local_port && t.local_addr == local_addr
-        });
+        let port_in_use = self
+            .tunnels
+            .values()
+            .any(|t| t.active && t.local_port == local_port && t.local_addr == local_addr);
         if port_in_use {
             return Err(format!(
                 "Port {}:{} is already in use by another tunnel",
@@ -102,8 +109,8 @@ impl TunnelManager {
 
         self.tunnels.insert(tunnel.id.clone(), tunnel.clone());
         log::info!(
-            "[TUNNEL] Created {} tunnel: {}:{} -> {}:{} (ID: {})",
-            format!("{:?}", tunnel.tunnel_type),
+            "[TUNNEL] Created {:?} tunnel: {}:{} -> {}:{} (ID: {})",
+            tunnel.tunnel_type,
             local_addr,
             local_port,
             remote_addr,
@@ -115,10 +122,7 @@ impl TunnelManager {
 
     /// Close a tunnel.
     pub fn close_tunnel(&mut self, tunnel_id: &str) -> Result<(), String> {
-        let tunnel = self
-            .tunnels
-            .get_mut(tunnel_id)
-            .ok_or("Tunnel not found")?;
+        let tunnel = self.tunnels.get_mut(tunnel_id).ok_or("Tunnel not found")?;
         tunnel.active = false;
         log::info!("[TUNNEL] Closed tunnel {}", tunnel_id);
         Ok(())
@@ -143,25 +147,15 @@ impl TunnelManager {
     }
 
     /// Record traffic through a tunnel.
-    pub fn record_traffic(
-        &mut self,
-        tunnel_id: &str,
-        bytes: u64,
-    ) -> Result<(), String> {
-        let tunnel = self
-            .tunnels
-            .get_mut(tunnel_id)
-            .ok_or("Tunnel not found")?;
+    pub fn record_traffic(&mut self, tunnel_id: &str, bytes: u64) -> Result<(), String> {
+        let tunnel = self.tunnels.get_mut(tunnel_id).ok_or("Tunnel not found")?;
         tunnel.bytes_forwarded += bytes;
         Ok(())
     }
 
     /// Record a new connection through a tunnel.
     pub fn record_connection(&mut self, tunnel_id: &str) -> Result<(), String> {
-        let tunnel = self
-            .tunnels
-            .get_mut(tunnel_id)
-            .ok_or("Tunnel not found")?;
+        let tunnel = self.tunnels.get_mut(tunnel_id).ok_or("Tunnel not found")?;
         tunnel.connection_count += 1;
         Ok(())
     }

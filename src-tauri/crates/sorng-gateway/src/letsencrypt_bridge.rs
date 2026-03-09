@@ -15,13 +15,11 @@
 //! - **Challenge Routing** — Route HTTP-01 challenges through the gateway's
 //!   own HTTP listener
 
-use crate::config::GatewayConfig;
 use crate::tls::{CertificateInfo, TlsManager};
 use crate::types::TlsConfig;
-use sorng_letsencrypt::types::*;
-use sorng_letsencrypt::service::LetsEncryptService;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sorng_letsencrypt::service::LetsEncryptService;
+use sorng_letsencrypt::types::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -134,16 +132,12 @@ impl LetsEncryptBridge {
         // Convert to gateway CertificateInfo
         Ok(CertificateInfo {
             subject_cn: cert.primary_domain.clone(),
-            issuer_cn: cert.issuer_cn.unwrap_or_else(|| "Let's Encrypt".to_string()),
+            issuer_cn: cert
+                .issuer_cn
+                .unwrap_or_else(|| "Let's Encrypt".to_string()),
             serial: cert.serial.unwrap_or_default(),
-            not_before: cert
-                .not_before
-                .map(|d| d.to_rfc3339())
-                .unwrap_or_default(),
-            not_after: cert
-                .not_after
-                .map(|d| d.to_rfc3339())
-                .unwrap_or_default(),
+            not_before: cert.not_before.map(|d| d.to_rfc3339()).unwrap_or_default(),
+            not_after: cert.not_after.map(|d| d.to_rfc3339()).unwrap_or_default(),
             is_valid: matches!(cert.status, CertificateStatus::Active),
             days_until_expiry: cert.days_until_expiry.unwrap_or(0),
             san: cert.domains.clone(),
@@ -250,10 +244,7 @@ impl LetsEncryptBridge {
     /// Handle an incoming HTTP-01 challenge request from the gateway's
     /// HTTP listener.  Returns the challenge response if we have one for
     /// the given token.
-    pub async fn handle_challenge_request(
-        &self,
-        token: &str,
-    ) -> Option<String> {
+    pub async fn handle_challenge_request(&self, token: &str) -> Option<String> {
         // Delegate to the LE service's HTTP solver
         // In production, the service would expose its HTTP solver's token map
         log::debug!(
@@ -281,7 +272,9 @@ mod tests {
 
     #[test]
     fn test_is_acme_challenge_path() {
-        assert!(is_acme_challenge_path("/.well-known/acme-challenge/token123"));
+        assert!(is_acme_challenge_path(
+            "/.well-known/acme-challenge/token123"
+        ));
         assert!(!is_acme_challenge_path("/api/v1/status"));
         assert!(!is_acme_challenge_path("/.well-known/other"));
     }
@@ -296,9 +289,6 @@ mod tests {
             extract_challenge_token("/.well-known/acme-challenge/"),
             None
         );
-        assert_eq!(
-            extract_challenge_token("/other/path"),
-            None
-        );
+        assert_eq!(extract_challenge_token("/other/path"), None);
     }
 }

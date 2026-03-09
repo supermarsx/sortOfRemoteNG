@@ -51,7 +51,10 @@ fn main() {
     println!("║   SortOfRemote NG Gateway — Headless Mode   ║");
     println!("╠══════════════════════════════════════════════╣");
     println!("║  Name:    {:<35}║", config.name);
-    println!("║  Listen:  {:<35}║", format!("{}:{}", config.listen_host, config.listen_port));
+    println!(
+        "║  Listen:  {:<35}║",
+        format!("{}:{}", config.listen_host, config.listen_port)
+    );
     println!("║  Data:    {:<35}║", config.data_dir);
     println!("╚══════════════════════════════════════════════╝");
 

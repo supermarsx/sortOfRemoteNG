@@ -86,10 +86,7 @@ impl RecordingBridge {
 
         self.recordings
             .insert(session_id.to_string(), recording.clone());
-        log::info!(
-            "[RECORDING] Started recording for session {}",
-            session_id
-        );
+        log::info!("[RECORDING] Started recording for session {}", session_id);
         Ok(recording)
     }
 
@@ -171,8 +168,7 @@ impl RecordingBridge {
 
     /// Clean up completed recordings from memory.
     pub fn cleanup_completed(&mut self) {
-        self.recordings.retain(|_, r| {
-            matches!(r.status, RecordingStatus::Active | RecordingStatus::Paused)
-        });
+        self.recordings
+            .retain(|_, r| matches!(r.status, RecordingStatus::Active | RecordingStatus::Paused));
     }
 }
