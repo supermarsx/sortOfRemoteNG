@@ -15,10 +15,16 @@ use crate::types::{DriveInfo, PortableMode};
 pub fn detect_mode(exe_dir: &str) -> PortableMode {
     let marker_path = Path::new(exe_dir).join(".portable");
     if marker_path.exists() {
-        log::info!("Portable marker found at {:?} — running in portable mode", marker_path);
+        log::info!(
+            "Portable marker found at {:?} — running in portable mode",
+            marker_path
+        );
         PortableMode::Portable
     } else {
-        log::debug!("No portable marker at {:?} — running in installed mode", marker_path);
+        log::debug!(
+            "No portable marker at {:?} — running in installed mode",
+            marker_path
+        );
         PortableMode::Installed
     }
 }
@@ -151,7 +157,10 @@ mod tests {
     #[test]
     fn extract_drive_root_windows() {
         if cfg!(windows) {
-            assert_eq!(extract_drive_root("C:\\Users\\test"), Some("C:\\".to_string()));
+            assert_eq!(
+                extract_drive_root("C:\\Users\\test"),
+                Some("C:\\".to_string())
+            );
             assert_eq!(extract_drive_root("D:\\data"), Some("D:\\".to_string()));
         }
     }

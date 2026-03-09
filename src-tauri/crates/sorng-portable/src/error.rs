@@ -16,7 +16,11 @@ pub enum PortableError {
     /// The specified path is invalid.
     InvalidPath(String),
     /// A file copy operation failed.
-    CopyFailed { source: String, dest: String, reason: String },
+    CopyFailed {
+        source: String,
+        dest: String,
+        reason: String,
+    },
     /// Insufficient disk space for the operation.
     InsufficientSpace { required: u64, available: u64 },
     /// An I/O error occurred.
@@ -37,10 +41,17 @@ impl fmt::Display for PortableError {
             Self::DirectoryCreateFailed(msg) => write!(f, "failed to create directory: {msg}"),
             Self::MigrationFailed(msg) => write!(f, "migration failed: {msg}"),
             Self::InvalidPath(msg) => write!(f, "invalid path: {msg}"),
-            Self::CopyFailed { source, dest, reason } => {
+            Self::CopyFailed {
+                source,
+                dest,
+                reason,
+            } => {
                 write!(f, "copy failed from '{source}' to '{dest}': {reason}")
             }
-            Self::InsufficientSpace { required, available } => {
+            Self::InsufficientSpace {
+                required,
+                available,
+            } => {
                 write!(
                     f,
                     "insufficient space: need {} bytes, have {} bytes",

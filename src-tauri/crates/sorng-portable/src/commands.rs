@@ -87,18 +87,14 @@ pub async fn portable_migrate_to_installed(
 
 /// Create the .portable marker file.
 #[tauri::command]
-pub async fn portable_create_marker(
-    state: State<'_, PortableServiceState>,
-) -> Result<(), String> {
+pub async fn portable_create_marker(state: State<'_, PortableServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.create_marker().map_err(err_str)
 }
 
 /// Remove the .portable marker file.
 #[tauri::command]
-pub async fn portable_remove_marker(
-    state: State<'_, PortableServiceState>,
-) -> Result<(), String> {
+pub async fn portable_remove_marker(state: State<'_, PortableServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.remove_marker().map_err(err_str)
 }

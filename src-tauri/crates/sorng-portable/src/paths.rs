@@ -13,9 +13,7 @@ use crate::types::{PortableConfig, PortableMode, PortablePaths, PortableStatus};
 /// or a sensible default if empty.
 pub fn resolve_paths(config: &PortableConfig, exe_dir: &str) -> PortablePaths {
     let base = match config.mode {
-        PortableMode::Portable => {
-            PathBuf::from(exe_dir).join(&config.relative_data_dir)
-        }
+        PortableMode::Portable => PathBuf::from(exe_dir).join(&config.relative_data_dir),
         PortableMode::Installed => {
             if config.data_directory.is_empty() {
                 // Fallback to a "data" subdirectory next to the exe
@@ -60,9 +58,8 @@ pub fn ensure_directories(paths: &PortablePaths) -> Result<(), PortableError> {
     for dir in &dirs {
         let p = Path::new(dir);
         if !p.exists() {
-            std::fs::create_dir_all(p).map_err(|e| {
-                PortableError::DirectoryCreateFailed(format!("{}: {}", dir, e))
-            })?;
+            std::fs::create_dir_all(p)
+                .map_err(|e| PortableError::DirectoryCreateFailed(format!("{}: {}", dir, e)))?;
             log::info!("Created directory: {}", dir);
         }
     }
@@ -133,9 +130,7 @@ pub fn calculate_directory_size(dir: &str) -> u64 {
                 if meta.is_file() {
                     total += meta.len();
                 } else if meta.is_dir() {
-                    total += calculate_directory_size(
-                        &entry.path().to_string_lossy().to_string(),
-                    );
+                    total += calculate_directory_size(entry.path().to_string_lossy().as_ref());
                 }
             }
         }
@@ -158,7 +153,7 @@ fn count_files(dir: &str) -> u64 {
                 if meta.is_file() {
                     count += 1;
                 } else if meta.is_dir() {
-                    count += count_files(&entry.path().to_string_lossy().to_string());
+                    count += count_files(entry.path().to_string_lossy().as_ref());
                 }
             }
         }
@@ -169,10 +164,7 @@ fn count_files(dir: &str) -> u64 {
 
 /// Join a base path with a child component.
 fn join_path(base: &str, child: &str) -> String {
-    Path::new(base)
-        .join(child)
-        .to_string_lossy()
-        .to_string()
+    Path::new(base).join(child).to_string_lossy().to_string()
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -247,7 +239,10 @@ mod tests {
 
     #[test]
     fn get_relative_path_basic() {
-        assert_eq!(get_relative_path("/app/data", "/app/data/settings"), "settings");
+        assert_eq!(
+            get_relative_path("/app/data", "/app/data/settings"),
+            "settings"
+        );
         assert_eq!(
             get_relative_path("/app/data", "/somewhere/else"),
             "/somewhere/else"

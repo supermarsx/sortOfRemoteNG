@@ -14,7 +14,7 @@ use crate::types::{MigrationPlan, PortableMode, PortablePaths};
 /// all files that need to be copied.
 pub fn plan_migration(
     from: &PortablePaths,
-    to: &PortablePaths,
+    _to: &PortablePaths,
 ) -> Result<MigrationPlan, PortableError> {
     let source_mode = if Path::new(&from.base_dir).join(".portable").exists() {
         PortableMode::Portable
@@ -66,11 +66,7 @@ pub fn execute_migration(
         if let Some(parent) = dst.parent() {
             if !parent.exists() {
                 fs::create_dir_all(parent).map_err(|e| {
-                    PortableError::DirectoryCreateFailed(format!(
-                        "{}: {}",
-                        parent.display(),
-                        e
-                    ))
+                    PortableError::DirectoryCreateFailed(format!("{}: {}", parent.display(), e))
                 })?;
             }
         }
@@ -82,11 +78,7 @@ pub fn execute_migration(
             reason: e.to_string(),
         })?;
 
-        log::debug!(
-            "Copied: {} → {}",
-            src.display(),
-            dst.display()
-        );
+        log::debug!("Copied: {} → {}", src.display(), dst.display());
     }
 
     // Handle marker file
@@ -112,9 +104,8 @@ pub fn execute_migration(
 /// Create the `.portable` marker file in the given directory.
 pub fn create_portable_marker(dir: &str) -> Result<(), PortableError> {
     let marker = Path::new(dir).join(".portable");
-    fs::write(&marker, "").map_err(|e| {
-        PortableError::MarkerCreateFailed(format!("{}: {}", marker.display(), e))
-    })?;
+    fs::write(&marker, "")
+        .map_err(|e| PortableError::MarkerCreateFailed(format!("{}: {}", marker.display(), e)))?;
     log::info!("Created portable marker: {}", marker.display());
     Ok(())
 }
@@ -166,10 +157,11 @@ pub fn validate_portable_directory(dir: &str) -> Vec<String> {
     }
 
     // Check for marker file
-    if !base.parent().map_or(false, |p| p.join(".portable").exists()) {
+    if !base.parent().is_some_and(|p| p.join(".portable").exists()) {
         // Also check if marker is in the directory itself (some layouts)
         if !base.join("../.portable").exists() {
-            issues.push("portable marker file (.portable) not found in parent directory".to_string());
+            issues
+                .push("portable marker file (.portable) not found in parent directory".to_string());
         }
     }
 
@@ -258,7 +250,14 @@ mod tests {
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(&temp);
 
-        for subdir in &["settings", "collections", "backups", "recordings", "extensions", "logs"] {
+        for subdir in &[
+            "settings",
+            "collections",
+            "backups",
+            "recordings",
+            "extensions",
+            "logs",
+        ] {
             fs::create_dir_all(temp.join(subdir)).unwrap();
         }
 
@@ -301,11 +300,23 @@ mod tests {
         let from_paths = PortablePaths {
             base_dir: temp_from.to_string_lossy().to_string(),
             data_dir: temp_from.join("data").to_string_lossy().to_string(),
-            settings_dir: temp_from.join("data/settings").to_string_lossy().to_string(),
-            collections_dir: temp_from.join("data/collections").to_string_lossy().to_string(),
+            settings_dir: temp_from
+                .join("data/settings")
+                .to_string_lossy()
+                .to_string(),
+            collections_dir: temp_from
+                .join("data/collections")
+                .to_string_lossy()
+                .to_string(),
             backups_dir: temp_from.join("data/backups").to_string_lossy().to_string(),
-            recordings_dir: temp_from.join("data/recordings").to_string_lossy().to_string(),
-            extensions_dir: temp_from.join("data/extensions").to_string_lossy().to_string(),
+            recordings_dir: temp_from
+                .join("data/recordings")
+                .to_string_lossy()
+                .to_string(),
+            extensions_dir: temp_from
+                .join("data/extensions")
+                .to_string_lossy()
+                .to_string(),
             logs_dir: temp_from.join("data/logs").to_string_lossy().to_string(),
             temp_dir: temp_from.join("data/temp").to_string_lossy().to_string(),
             cache_dir: temp_from.join("data/cache").to_string_lossy().to_string(),
@@ -314,10 +325,19 @@ mod tests {
             base_dir: temp_to.to_string_lossy().to_string(),
             data_dir: temp_to.join("data").to_string_lossy().to_string(),
             settings_dir: temp_to.join("data/settings").to_string_lossy().to_string(),
-            collections_dir: temp_to.join("data/collections").to_string_lossy().to_string(),
+            collections_dir: temp_to
+                .join("data/collections")
+                .to_string_lossy()
+                .to_string(),
             backups_dir: temp_to.join("data/backups").to_string_lossy().to_string(),
-            recordings_dir: temp_to.join("data/recordings").to_string_lossy().to_string(),
-            extensions_dir: temp_to.join("data/extensions").to_string_lossy().to_string(),
+            recordings_dir: temp_to
+                .join("data/recordings")
+                .to_string_lossy()
+                .to_string(),
+            extensions_dir: temp_to
+                .join("data/extensions")
+                .to_string_lossy()
+                .to_string(),
             logs_dir: temp_to.join("data/logs").to_string_lossy().to_string(),
             temp_dir: temp_to.join("data/temp").to_string_lossy().to_string(),
             cache_dir: temp_to.join("data/cache").to_string_lossy().to_string(),

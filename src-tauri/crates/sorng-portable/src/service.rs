@@ -28,8 +28,10 @@ impl PortableService {
     /// given executable directory.
     pub fn new(exe_dir: &str) -> PortableServiceState {
         let mode = detector::detect_mode(exe_dir);
-        let mut config = PortableConfig::default();
-        config.mode = mode;
+        let config = PortableConfig {
+            mode,
+            ..PortableConfig::default()
+        };
 
         let resolved = paths::resolve_paths(&config, exe_dir);
 
