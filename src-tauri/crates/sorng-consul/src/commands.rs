@@ -1,14 +1,16 @@
 // ── sorng-consul/src/commands.rs ─────────────────────────────────────────────
 //! Tauri commands – thin wrappers around `ConsulServiceHolder`.
 
-use std::collections::HashMap;
-use tauri::State;
 use crate::service::ConsulServiceState;
 use crate::types::*;
+use std::collections::HashMap;
+use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 
-fn map_err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
+fn map_err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 // ── Connection ────────────────────────────────────────────────────
 
@@ -18,14 +20,16 @@ pub async fn consul_connect(
     id: String,
     config: ConsulConnectionConfig,
 ) -> CmdResult<ConsulConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn consul_disconnect(
-    state: State<'_, ConsulServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn consul_disconnect(state: State<'_, ConsulServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.disconnect(&id).map_err(map_err)
 }
 
@@ -64,7 +68,12 @@ pub async fn consul_kv_put(
     key: String,
     value: String,
 ) -> CmdResult<bool> {
-    state.lock().await.kv_put(&id, &key, &value).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .kv_put(&id, &key, &value)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -73,7 +82,12 @@ pub async fn consul_kv_delete(
     id: String,
     key: String,
 ) -> CmdResult<bool> {
-    state.lock().await.kv_delete(&id, &key).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .kv_delete(&id, &key)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -82,7 +96,12 @@ pub async fn consul_kv_list(
     id: String,
     prefix: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.kv_list(&id, &prefix).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .kv_list(&id, &prefix)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -91,7 +110,12 @@ pub async fn consul_kv_get_tree(
     id: String,
     prefix: String,
 ) -> CmdResult<Vec<ConsulKeyValue>> {
-    state.lock().await.kv_get_tree(&id, &prefix).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .kv_get_tree(&id, &prefix)
+        .await
+        .map_err(map_err)
 }
 
 // ── Services ──────────────────────────────────────────────────────
@@ -110,7 +134,12 @@ pub async fn consul_get_service(
     id: String,
     name: String,
 ) -> CmdResult<Vec<ConsulServiceEntry>> {
-    state.lock().await.get_service(&id, &name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_service(&id, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -119,7 +148,12 @@ pub async fn consul_register_service(
     id: String,
     registration: ServiceRegistration,
 ) -> CmdResult<()> {
-    state.lock().await.register_service(&id, &registration).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .register_service(&id, &registration)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -128,7 +162,12 @@ pub async fn consul_deregister_service(
     id: String,
     service_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.deregister_service(&id, &service_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .deregister_service(&id, &service_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Catalog ───────────────────────────────────────────────────────
@@ -147,7 +186,12 @@ pub async fn consul_get_node(
     id: String,
     node_name: String,
 ) -> CmdResult<CatalogNode> {
-    state.lock().await.get_node(&id, &node_name).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .get_node(&id, &node_name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -155,7 +199,12 @@ pub async fn consul_list_datacenters(
     state: State<'_, ConsulServiceState>,
     id: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.list_datacenters(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_datacenters(&id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Health ────────────────────────────────────────────────────────
@@ -166,7 +215,12 @@ pub async fn consul_node_health(
     id: String,
     node: String,
 ) -> CmdResult<Vec<ConsulHealthCheck>> {
-    state.lock().await.node_health(&id, &node).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .node_health(&id, &node)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -175,7 +229,12 @@ pub async fn consul_service_health(
     id: String,
     service: String,
 ) -> CmdResult<Vec<ConsulServiceEntry>> {
-    state.lock().await.service_health(&id, &service).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .service_health(&id, &service)
+        .await
+        .map_err(map_err)
 }
 
 // ── Agent ─────────────────────────────────────────────────────────
@@ -202,14 +261,16 @@ pub async fn consul_agent_join(
     id: String,
     address: String,
 ) -> CmdResult<()> {
-    state.lock().await.agent_join(&id, &address).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .agent_join(&id, &address)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn consul_agent_leave(
-    state: State<'_, ConsulServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn consul_agent_leave(state: State<'_, ConsulServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.agent_leave(&id).await.map_err(map_err)
 }
 
@@ -228,7 +289,12 @@ pub async fn consul_acl_list_tokens(
     state: State<'_, ConsulServiceState>,
     id: String,
 ) -> CmdResult<Vec<ConsulAclToken>> {
-    state.lock().await.acl_list_tokens(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .acl_list_tokens(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -237,7 +303,12 @@ pub async fn consul_acl_create_token(
     id: String,
     request: AclTokenCreateRequest,
 ) -> CmdResult<ConsulAclToken> {
-    state.lock().await.acl_create_token(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .acl_create_token(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -245,7 +316,12 @@ pub async fn consul_acl_list_policies(
     state: State<'_, ConsulServiceState>,
     id: String,
 ) -> CmdResult<Vec<ConsulAclPolicy>> {
-    state.lock().await.acl_list_policies(&id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .acl_list_policies(&id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -254,7 +330,12 @@ pub async fn consul_acl_create_policy(
     id: String,
     request: AclPolicyCreateRequest,
 ) -> CmdResult<ConsulAclPolicy> {
-    state.lock().await.acl_create_policy(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .acl_create_policy(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 // ── Sessions ──────────────────────────────────────────────────────
@@ -273,7 +354,12 @@ pub async fn consul_sessions_create(
     id: String,
     request: SessionCreateRequest,
 ) -> CmdResult<String> {
-    state.lock().await.session_create(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .session_create(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -282,7 +368,12 @@ pub async fn consul_sessions_delete(
     id: String,
     session_id: String,
 ) -> CmdResult<()> {
-    state.lock().await.session_delete(&id, &session_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .session_delete(&id, &session_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Events ────────────────────────────────────────────────────────
@@ -293,7 +384,12 @@ pub async fn consul_fire_event(
     id: String,
     request: EventFireRequest,
 ) -> CmdResult<ConsulEvent> {
-    state.lock().await.fire_event(&id, &request).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .fire_event(&id, &request)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]

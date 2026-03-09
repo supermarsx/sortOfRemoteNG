@@ -35,7 +35,10 @@ impl std::error::Error for ConsulError {}
 
 impl ConsulError {
     pub fn new(kind: ConsulErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(ConsulErrorKind::NotConnected, msg)

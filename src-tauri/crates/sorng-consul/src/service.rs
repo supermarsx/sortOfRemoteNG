@@ -27,14 +27,26 @@ pub struct ConsulServiceHolder {
     connections: HashMap<String, ConsulClient>,
 }
 
+impl Default for ConsulServiceHolder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConsulServiceHolder {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: ConsulConnectionConfig) -> ConsulResult<ConsulConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: ConsulConnectionConfig,
+    ) -> ConsulResult<ConsulConnectionSummary> {
         let client = ConsulClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
@@ -42,7 +54,8 @@ impl ConsulServiceHolder {
     }
 
     pub fn disconnect(&mut self, id: &str) -> ConsulResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| ConsulError::not_connected(format!("No connection '{id}'")))
     }
@@ -52,7 +65,8 @@ impl ConsulServiceHolder {
     }
 
     fn client(&self, id: &str) -> ConsulResult<&ConsulClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| ConsulError::not_connected(format!("No connection '{id}'")))
     }
 
@@ -66,19 +80,28 @@ impl ConsulServiceHolder {
         let nodes: Vec<ConsulNode> = CatalogManager::list_nodes(c).await?;
         let leader: String = c.get("/v1/status/leader").await?;
 
-        let all_checks: Vec<ConsulHealthCheck> = HealthManager::list_checks_in_state(c, "any").await
+        let all_checks: Vec<ConsulHealthCheck> = HealthManager::list_checks_in_state(c, "any")
+            .await
             .unwrap_or_default();
         let passing = all_checks.iter().filter(|c| c.status == "passing").count();
         let warning = all_checks.iter().filter(|c| c.status == "warning").count();
         let critical = all_checks.iter().filter(|c| c.status == "critical").count();
 
-        let node_name = info.member.as_ref().map(|m| m.name.clone()).unwrap_or_default();
-        let dc = info.config.as_ref()
+        let node_name = info
+            .member
+            .as_ref()
+            .map(|m| m.name.clone())
+            .unwrap_or_default();
+        let dc = info
+            .config
+            .as_ref()
             .and_then(|c| c.get("Datacenter"))
             .and_then(|v| v.as_str())
             .unwrap_or("dc1")
             .to_string();
-        let version = info.config.as_ref()
+        let version = info
+            .config
+            .as_ref()
             .and_then(|c| c.get("Version"))
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
@@ -124,15 +147,33 @@ impl ConsulServiceHolder {
         ConsulKvManager::get_tree(self.client(id)?, prefix).await
     }
 
-    pub async fn kv_cas(&self, id: &str, key: &str, value: &str, modify_index: u64) -> ConsulResult<bool> {
+    pub async fn kv_cas(
+        &self,
+        id: &str,
+        key: &str,
+        value: &str,
+        modify_index: u64,
+    ) -> ConsulResult<bool> {
         ConsulKvManager::cas_key(self.client(id)?, key, value, modify_index).await
     }
 
-    pub async fn kv_lock(&self, id: &str, key: &str, session: &str, value: &str) -> ConsulResult<bool> {
+    pub async fn kv_lock(
+        &self,
+        id: &str,
+        key: &str,
+        session: &str,
+        value: &str,
+    ) -> ConsulResult<bool> {
         ConsulKvManager::lock_key(self.client(id)?, key, session, value).await
     }
 
-    pub async fn kv_unlock(&self, id: &str, key: &str, session: &str, value: &str) -> ConsulResult<bool> {
+    pub async fn kv_unlock(
+        &self,
+        id: &str,
+        key: &str,
+        session: &str,
+        value: &str,
+    ) -> ConsulResult<bool> {
         ConsulKvManager::unlock_key(self.client(id)?, key, session, value).await
     }
 
@@ -158,7 +199,12 @@ impl ConsulServiceHolder {
         ServiceDiscovery::deregister_service(self.client(id)?, service_id).await
     }
 
-    pub async fn enable_maintenance(&self, id: &str, service_id: &str, reason: &str) -> ConsulResult<()> {
+    pub async fn enable_maintenance(
+        &self,
+        id: &str,
+        service_id: &str,
+        reason: &str,
+    ) -> ConsulResult<()> {
         ServiceDiscovery::enable_maintenance(self.client(id)?, service_id, reason).await
     }
 
@@ -166,11 +212,19 @@ impl ConsulServiceHolder {
         ServiceDiscovery::disable_maintenance(self.client(id)?, service_id).await
     }
 
-    pub async fn list_service_instances(&self, id: &str, name: &str) -> ConsulResult<Vec<ConsulServiceEntry>> {
+    pub async fn list_service_instances(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> ConsulResult<Vec<ConsulServiceEntry>> {
         ServiceDiscovery::list_service_instances(self.client(id)?, name).await
     }
 
-    pub async fn get_service_health(&self, id: &str, name: &str) -> ConsulResult<Vec<ConsulServiceEntry>> {
+    pub async fn get_service_health(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> ConsulResult<Vec<ConsulServiceEntry>> {
         ServiceDiscovery::get_service_health(self.client(id)?, name).await
     }
 
@@ -188,11 +242,18 @@ impl ConsulServiceHolder {
         CatalogManager::get_node(self.client(id)?, node_name).await
     }
 
-    pub async fn list_catalog_services(&self, id: &str) -> ConsulResult<HashMap<String, Vec<String>>> {
+    pub async fn list_catalog_services(
+        &self,
+        id: &str,
+    ) -> ConsulResult<HashMap<String, Vec<String>>> {
         CatalogManager::list_catalog_services(self.client(id)?).await
     }
 
-    pub async fn get_catalog_service(&self, id: &str, name: &str) -> ConsulResult<Vec<ConsulServiceEntry>> {
+    pub async fn get_catalog_service(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> ConsulResult<Vec<ConsulServiceEntry>> {
         CatalogManager::get_catalog_service(self.client(id)?, name).await
     }
 
@@ -200,7 +261,11 @@ impl ConsulServiceHolder {
         CatalogManager::register_entity(self.client(id)?, reg).await
     }
 
-    pub async fn deregister_entity(&self, id: &str, dereg: &CatalogDeregistration) -> ConsulResult<()> {
+    pub async fn deregister_entity(
+        &self,
+        id: &str,
+        dereg: &CatalogDeregistration,
+    ) -> ConsulResult<()> {
         CatalogManager::deregister_entity(self.client(id)?, dereg).await
     }
 
@@ -210,7 +275,11 @@ impl ConsulServiceHolder {
         HealthManager::node_health(self.client(id)?, node).await
     }
 
-    pub async fn service_health(&self, id: &str, service: &str) -> ConsulResult<Vec<ConsulServiceEntry>> {
+    pub async fn service_health(
+        &self,
+        id: &str,
+        service: &str,
+    ) -> ConsulResult<Vec<ConsulServiceEntry>> {
         HealthManager::service_health(self.client(id)?, service).await
     }
 
@@ -218,11 +287,19 @@ impl ConsulServiceHolder {
         HealthManager::check_health(self.client(id)?, check_id).await
     }
 
-    pub async fn list_checks_for_service(&self, id: &str, service: &str) -> ConsulResult<Vec<ConsulHealthCheck>> {
+    pub async fn list_checks_for_service(
+        &self,
+        id: &str,
+        service: &str,
+    ) -> ConsulResult<Vec<ConsulHealthCheck>> {
         HealthManager::list_checks_for_service(self.client(id)?, service).await
     }
 
-    pub async fn list_checks_in_state(&self, id: &str, state: &str) -> ConsulResult<Vec<ConsulHealthCheck>> {
+    pub async fn list_checks_in_state(
+        &self,
+        id: &str,
+        state: &str,
+    ) -> ConsulResult<Vec<ConsulHealthCheck>> {
         HealthManager::list_checks_in_state(self.client(id)?, state).await
     }
 
@@ -240,7 +317,11 @@ impl ConsulServiceHolder {
         AgentManager::list_agent_services(self.client(id)?).await
     }
 
-    pub async fn agent_register_service(&self, id: &str, reg: &ServiceRegistration) -> ConsulResult<()> {
+    pub async fn agent_register_service(
+        &self,
+        id: &str,
+        reg: &ServiceRegistration,
+    ) -> ConsulResult<()> {
         AgentManager::register_agent_service(self.client(id)?, reg).await
     }
 
@@ -252,7 +333,11 @@ impl ConsulServiceHolder {
         AgentManager::list_agent_checks(self.client(id)?).await
     }
 
-    pub async fn agent_register_check(&self, id: &str, reg: &CheckRegistration) -> ConsulResult<()> {
+    pub async fn agent_register_check(
+        &self,
+        id: &str,
+        reg: &CheckRegistration,
+    ) -> ConsulResult<()> {
         AgentManager::register_check(self.client(id)?, reg).await
     }
 
@@ -294,11 +379,20 @@ impl ConsulServiceHolder {
         AclManager::get_token(self.client(id)?, accessor_id).await
     }
 
-    pub async fn acl_create_token(&self, id: &str, req: &AclTokenCreateRequest) -> ConsulResult<ConsulAclToken> {
+    pub async fn acl_create_token(
+        &self,
+        id: &str,
+        req: &AclTokenCreateRequest,
+    ) -> ConsulResult<ConsulAclToken> {
         AclManager::create_token(self.client(id)?, req).await
     }
 
-    pub async fn acl_update_token(&self, id: &str, accessor_id: &str, req: &AclTokenCreateRequest) -> ConsulResult<ConsulAclToken> {
+    pub async fn acl_update_token(
+        &self,
+        id: &str,
+        accessor_id: &str,
+        req: &AclTokenCreateRequest,
+    ) -> ConsulResult<ConsulAclToken> {
         AclManager::update_token(self.client(id)?, accessor_id, req).await
     }
 
@@ -314,11 +408,20 @@ impl ConsulServiceHolder {
         AclManager::get_policy(self.client(id)?, policy_id).await
     }
 
-    pub async fn acl_create_policy(&self, id: &str, req: &AclPolicyCreateRequest) -> ConsulResult<ConsulAclPolicy> {
+    pub async fn acl_create_policy(
+        &self,
+        id: &str,
+        req: &AclPolicyCreateRequest,
+    ) -> ConsulResult<ConsulAclPolicy> {
         AclManager::create_policy(self.client(id)?, req).await
     }
 
-    pub async fn acl_update_policy(&self, id: &str, policy_id: &str, req: &AclPolicyCreateRequest) -> ConsulResult<ConsulAclPolicy> {
+    pub async fn acl_update_policy(
+        &self,
+        id: &str,
+        policy_id: &str,
+        req: &AclPolicyCreateRequest,
+    ) -> ConsulResult<ConsulAclPolicy> {
         AclManager::update_policy(self.client(id)?, policy_id, req).await
     }
 
@@ -334,11 +437,20 @@ impl ConsulServiceHolder {
         AclManager::get_role(self.client(id)?, role_id).await
     }
 
-    pub async fn acl_create_role(&self, id: &str, req: &AclRoleCreateRequest) -> ConsulResult<ConsulAclRole> {
+    pub async fn acl_create_role(
+        &self,
+        id: &str,
+        req: &AclRoleCreateRequest,
+    ) -> ConsulResult<ConsulAclRole> {
         AclManager::create_role(self.client(id)?, req).await
     }
 
-    pub async fn acl_update_role(&self, id: &str, role_id: &str, req: &AclRoleCreateRequest) -> ConsulResult<ConsulAclRole> {
+    pub async fn acl_update_role(
+        &self,
+        id: &str,
+        role_id: &str,
+        req: &AclRoleCreateRequest,
+    ) -> ConsulResult<ConsulAclRole> {
         AclManager::update_role(self.client(id)?, role_id, req).await
     }
 
@@ -348,7 +460,11 @@ impl ConsulServiceHolder {
 
     // ── Sessions ─────────────────────────────────────────────────
 
-    pub async fn session_create(&self, id: &str, req: &SessionCreateRequest) -> ConsulResult<String> {
+    pub async fn session_create(
+        &self,
+        id: &str,
+        req: &SessionCreateRequest,
+    ) -> ConsulResult<String> {
         SessionManager::create_session(self.client(id)?, req).await
     }
 
@@ -368,7 +484,11 @@ impl ConsulServiceHolder {
         SessionManager::renew_session(self.client(id)?, session_id).await
     }
 
-    pub async fn session_list_node(&self, id: &str, node: &str) -> ConsulResult<Vec<ConsulSession>> {
+    pub async fn session_list_node(
+        &self,
+        id: &str,
+        node: &str,
+    ) -> ConsulResult<Vec<ConsulSession>> {
         SessionManager::list_node_sessions(self.client(id)?, node).await
     }
 

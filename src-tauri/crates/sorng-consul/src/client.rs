@@ -72,17 +72,25 @@ impl ConsulClient {
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> ConsulResult<T> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL GET {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("GET {url}: {e}")))?;
         self.handle_response(resp).await
     }
 
-    pub async fn get_with_params<T: DeserializeOwned>(&self, path: &str, params: &[(&str, &str)]) -> ConsulResult<T> {
+    pub async fn get_with_params<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+    ) -> ConsulResult<T> {
         let url = self.url_with_params(path, params);
         debug!("CONSUL GET {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("GET {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -90,8 +98,10 @@ impl ConsulClient {
     pub async fn get_optional<T: DeserializeOwned>(&self, path: &str) -> ConsulResult<Option<T>> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL GET (optional) {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("GET {url}: {e}")))?;
         if resp.status().as_u16() == 404 {
             return Ok(None);
@@ -103,22 +113,32 @@ impl ConsulClient {
     pub async fn get_raw(&self, path: &str) -> ConsulResult<String> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL GET (raw) {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(self.map_status_error(status.as_u16(), &body));
         }
-        resp.text().await.map_err(|e| ConsulError::parse(format!("body: {e}")))
+        resp.text()
+            .await
+            .map_err(|e| ConsulError::parse(format!("body: {e}")))
     }
 
-    pub async fn put_body<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> ConsulResult<T> {
+    pub async fn put_body<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> ConsulResult<T> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL PUT {url}");
-        let resp = self.apply_auth(self.http.put(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.put(&url).json(body))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("PUT {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -126,10 +146,15 @@ impl ConsulClient {
     pub async fn put_raw(&self, path: &str, body: &str) -> ConsulResult<bool> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL PUT (raw) {url}");
-        let resp = self.apply_auth(self.http.put(&url)
-            .header("Content-Type", "application/octet-stream")
-            .body(body.to_string()))
-            .send().await
+        let resp = self
+            .apply_auth(
+                self.http
+                    .put(&url)
+                    .header("Content-Type", "application/octet-stream")
+                    .body(body.to_string()),
+            )
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -140,13 +165,23 @@ impl ConsulClient {
         Ok(text.trim() == "true")
     }
 
-    pub async fn put_raw_with_params(&self, path: &str, body: &str, params: &[(&str, &str)]) -> ConsulResult<bool> {
+    pub async fn put_raw_with_params(
+        &self,
+        path: &str,
+        body: &str,
+        params: &[(&str, &str)],
+    ) -> ConsulResult<bool> {
         let url = self.url_with_params(path, params);
         debug!("CONSUL PUT (raw+params) {url}");
-        let resp = self.apply_auth(self.http.put(&url)
-            .header("Content-Type", "application/octet-stream")
-            .body(body.to_string()))
-            .send().await
+        let resp = self
+            .apply_auth(
+                self.http
+                    .put(&url)
+                    .header("Content-Type", "application/octet-stream")
+                    .body(body.to_string()),
+            )
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -160,8 +195,10 @@ impl ConsulClient {
     pub async fn put_no_body(&self, path: &str) -> ConsulResult<()> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL PUT (no body) {url}");
-        let resp = self.apply_auth(self.http.put(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.put(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -171,11 +208,17 @@ impl ConsulClient {
         Ok(())
     }
 
-    pub async fn put_json_no_response<B: Serialize>(&self, path: &str, body: &B) -> ConsulResult<()> {
+    pub async fn put_json_no_response<B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> ConsulResult<()> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL PUT (json, no resp) {url}");
-        let resp = self.apply_auth(self.http.put(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.put(&url).json(body))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -185,11 +228,17 @@ impl ConsulClient {
         Ok(())
     }
 
-    pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> ConsulResult<T> {
+    pub async fn post<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> ConsulResult<T> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL POST {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -197,19 +246,26 @@ impl ConsulClient {
     pub async fn post_no_body<T: DeserializeOwned>(&self, path: &str) -> ConsulResult<T> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL POST (no body) {url}");
-        let resp = self.apply_auth(self.http.post(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
 
     pub async fn post_with_params<B: Serialize, T: DeserializeOwned>(
-        &self, path: &str, body: &B, params: &[(&str, &str)],
+        &self,
+        path: &str,
+        body: &B,
+        params: &[(&str, &str)],
     ) -> ConsulResult<T> {
         let url = self.url_with_params(path, params);
         debug!("CONSUL POST {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -217,8 +273,10 @@ impl ConsulClient {
     pub async fn delete(&self, path: &str) -> ConsulResult<()> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL DELETE {url}");
-        let resp = self.apply_auth(self.http.delete(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.delete(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -231,8 +289,10 @@ impl ConsulClient {
     pub async fn delete_bool(&self, path: &str) -> ConsulResult<bool> {
         let url = self.url_with_params(path, &[]);
         debug!("CONSUL DELETE {url}");
-        let resp = self.apply_auth(self.http.delete(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.delete(&url))
+            .send()
+            .await
             .map_err(|e| ConsulError::connection(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -245,16 +305,22 @@ impl ConsulClient {
 
     // ── Response handling ────────────────────────────────────────────
 
-    async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> ConsulResult<T> {
+    async fn handle_response<T: DeserializeOwned>(
+        &self,
+        resp: reqwest::Response,
+    ) -> ConsulResult<T> {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(self.map_status_error(status.as_u16(), &body));
         }
-        let text = resp.text().await
+        let text = resp
+            .text()
+            .await
             .map_err(|e| ConsulError::parse(format!("reading body: {e}")))?;
-        serde_json::from_str(&text)
-            .map_err(|e| ConsulError::parse(format!("JSON parse: {e} — body: {}", truncate(&text, 200))))
+        serde_json::from_str(&text).map_err(|e| {
+            ConsulError::parse(format!("JSON parse: {e} — body: {}", truncate(&text, 200)))
+        })
     }
 
     fn map_status_error(&self, status: u16, body: &str) -> ConsulError {
@@ -262,8 +328,14 @@ impl ConsulClient {
             401 => ConsulError::auth(format!("Unauthorized (401): {}", truncate(body, 200))),
             403 => ConsulError::forbidden(format!("Forbidden (403): {}", truncate(body, 200))),
             404 => ConsulError::not_found(format!("Not found (404): {}", truncate(body, 200))),
-            409 => ConsulError::new(ConsulErrorKind::ApiError, format!("Conflict (409): {}", truncate(body, 200))),
-            500 => ConsulError::new(ConsulErrorKind::InternalError, format!("Server error (500): {}", truncate(body, 200))),
+            409 => ConsulError::new(
+                ConsulErrorKind::ApiError,
+                format!("Conflict (409): {}", truncate(body, 200)),
+            ),
+            500 => ConsulError::new(
+                ConsulErrorKind::InternalError,
+                format!("Server error (500): {}", truncate(body, 200)),
+            ),
             _ => ConsulError::api(format!("HTTP {status}: {}", truncate(body, 200))),
         }
     }
@@ -276,15 +348,21 @@ impl ConsulClient {
         let members: Vec<AgentMember> = self.get("/v1/agent/members").await?;
         let leader: String = self.get("/v1/status/leader").await?;
 
-        let node_name = info.member.as_ref()
+        let node_name = info
+            .member
+            .as_ref()
             .map(|m| m.name.clone())
             .unwrap_or_else(|| "unknown".into());
-        let dc = info.config.as_ref()
+        let dc = info
+            .config
+            .as_ref()
             .and_then(|c| c.get("Datacenter"))
             .and_then(|v| v.as_str())
             .unwrap_or("dc1")
             .to_string();
-        let version = info.config.as_ref()
+        let version = info
+            .config
+            .as_ref()
             .and_then(|c| c.get("Version"))
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
@@ -309,7 +387,11 @@ impl ConsulClient {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
+    if s.len() <= max {
+        s
+    } else {
+        &s[..max]
+    }
 }
 
 fn urlencoding(s: &str) -> String {

@@ -15,7 +15,9 @@ impl AclManager {
     /// PUT /v1/acl/bootstrap — bootstrap the ACL system, returns the initial management token.
     pub async fn bootstrap_acl(client: &ConsulClient) -> ConsulResult<ConsulAclToken> {
         debug!("CONSUL ACL bootstrap");
-        client.put_body("/v1/acl/bootstrap", &serde_json::json!({})).await
+        client
+            .put_body("/v1/acl/bootstrap", &serde_json::json!({}))
+            .await
     }
 
     // ── Tokens ──────────────────────────────────────────────────────
@@ -27,21 +29,31 @@ impl AclManager {
     }
 
     /// GET /v1/acl/token/:id — read a specific token by AccessorID.
-    pub async fn get_token(client: &ConsulClient, accessor_id: &str) -> ConsulResult<ConsulAclToken> {
+    pub async fn get_token(
+        client: &ConsulClient,
+        accessor_id: &str,
+    ) -> ConsulResult<ConsulAclToken> {
         let path = format!("/v1/acl/token/{}", accessor_id);
         debug!("CONSUL ACL get token: {accessor_id}");
         client.get(&path).await
     }
 
     /// PUT /v1/acl/token — create a new ACL token.
-    pub async fn create_token(client: &ConsulClient, req: &AclTokenCreateRequest) -> ConsulResult<ConsulAclToken> {
+    pub async fn create_token(
+        client: &ConsulClient,
+        req: &AclTokenCreateRequest,
+    ) -> ConsulResult<ConsulAclToken> {
         debug!("CONSUL ACL create token");
         let body = build_token_create_body(req);
         client.put_body("/v1/acl/token", &body).await
     }
 
     /// PUT /v1/acl/token/:id — update an existing ACL token.
-    pub async fn update_token(client: &ConsulClient, accessor_id: &str, req: &AclTokenCreateRequest) -> ConsulResult<ConsulAclToken> {
+    pub async fn update_token(
+        client: &ConsulClient,
+        accessor_id: &str,
+        req: &AclTokenCreateRequest,
+    ) -> ConsulResult<ConsulAclToken> {
         let path = format!("/v1/acl/token/{}", accessor_id);
         debug!("CONSUL ACL update token: {accessor_id}");
         let body = build_token_create_body(req);
@@ -64,21 +76,31 @@ impl AclManager {
     }
 
     /// GET /v1/acl/policy/:id — read a specific policy.
-    pub async fn get_policy(client: &ConsulClient, policy_id: &str) -> ConsulResult<ConsulAclPolicy> {
+    pub async fn get_policy(
+        client: &ConsulClient,
+        policy_id: &str,
+    ) -> ConsulResult<ConsulAclPolicy> {
         let path = format!("/v1/acl/policy/{}", policy_id);
         debug!("CONSUL ACL get policy: {policy_id}");
         client.get(&path).await
     }
 
     /// PUT /v1/acl/policy — create a new ACL policy.
-    pub async fn create_policy(client: &ConsulClient, req: &AclPolicyCreateRequest) -> ConsulResult<ConsulAclPolicy> {
+    pub async fn create_policy(
+        client: &ConsulClient,
+        req: &AclPolicyCreateRequest,
+    ) -> ConsulResult<ConsulAclPolicy> {
         debug!("CONSUL ACL create policy: {}", req.name);
         let body = build_policy_create_body(req);
         client.put_body("/v1/acl/policy", &body).await
     }
 
     /// PUT /v1/acl/policy/:id — update an existing ACL policy.
-    pub async fn update_policy(client: &ConsulClient, policy_id: &str, req: &AclPolicyCreateRequest) -> ConsulResult<ConsulAclPolicy> {
+    pub async fn update_policy(
+        client: &ConsulClient,
+        policy_id: &str,
+        req: &AclPolicyCreateRequest,
+    ) -> ConsulResult<ConsulAclPolicy> {
         let path = format!("/v1/acl/policy/{}", policy_id);
         debug!("CONSUL ACL update policy: {policy_id}");
         let body = build_policy_create_body(req);
@@ -108,14 +130,21 @@ impl AclManager {
     }
 
     /// PUT /v1/acl/role — create a new ACL role.
-    pub async fn create_role(client: &ConsulClient, req: &AclRoleCreateRequest) -> ConsulResult<ConsulAclRole> {
+    pub async fn create_role(
+        client: &ConsulClient,
+        req: &AclRoleCreateRequest,
+    ) -> ConsulResult<ConsulAclRole> {
         debug!("CONSUL ACL create role: {}", req.name);
         let body = build_role_create_body(req);
         client.put_body("/v1/acl/role", &body).await
     }
 
     /// PUT /v1/acl/role/:id — update an existing ACL role.
-    pub async fn update_role(client: &ConsulClient, role_id: &str, req: &AclRoleCreateRequest) -> ConsulResult<ConsulAclRole> {
+    pub async fn update_role(
+        client: &ConsulClient,
+        role_id: &str,
+        req: &AclRoleCreateRequest,
+    ) -> ConsulResult<ConsulAclRole> {
         let path = format!("/v1/acl/role/{}", role_id);
         debug!("CONSUL ACL update role: {role_id}");
         let body = build_role_create_body(req);
@@ -135,43 +164,71 @@ impl AclManager {
 fn build_token_create_body(req: &AclTokenCreateRequest) -> serde_json::Value {
     let mut body = serde_json::json!({});
     let obj = body.as_object_mut().unwrap();
-    if let Some(ref d) = req.description { obj.insert("Description".into(), serde_json::json!(d)); }
+    if let Some(ref d) = req.description {
+        obj.insert("Description".into(), serde_json::json!(d));
+    }
     if let Some(ref pols) = req.policies {
-        let arr: Vec<serde_json::Value> = pols.iter().map(|p| {
-            let mut m = serde_json::Map::new();
-            if let Some(ref id) = p.id { m.insert("ID".into(), serde_json::json!(id)); }
-            if let Some(ref name) = p.name { m.insert("Name".into(), serde_json::json!(name)); }
-            serde_json::Value::Object(m)
-        }).collect();
+        let arr: Vec<serde_json::Value> = pols
+            .iter()
+            .map(|p| {
+                let mut m = serde_json::Map::new();
+                if let Some(ref id) = p.id {
+                    m.insert("ID".into(), serde_json::json!(id));
+                }
+                if let Some(ref name) = p.name {
+                    m.insert("Name".into(), serde_json::json!(name));
+                }
+                serde_json::Value::Object(m)
+            })
+            .collect();
         obj.insert("Policies".into(), serde_json::json!(arr));
     }
     if let Some(ref roles) = req.roles {
-        let arr: Vec<serde_json::Value> = roles.iter().map(|r| {
-            let mut m = serde_json::Map::new();
-            if let Some(ref id) = r.id { m.insert("ID".into(), serde_json::json!(id)); }
-            if let Some(ref name) = r.name { m.insert("Name".into(), serde_json::json!(name)); }
-            serde_json::Value::Object(m)
-        }).collect();
+        let arr: Vec<serde_json::Value> = roles
+            .iter()
+            .map(|r| {
+                let mut m = serde_json::Map::new();
+                if let Some(ref id) = r.id {
+                    m.insert("ID".into(), serde_json::json!(id));
+                }
+                if let Some(ref name) = r.name {
+                    m.insert("Name".into(), serde_json::json!(name));
+                }
+                serde_json::Value::Object(m)
+            })
+            .collect();
         obj.insert("Roles".into(), serde_json::json!(arr));
     }
     if let Some(ref si) = req.service_identities {
-        let arr: Vec<serde_json::Value> = si.iter().map(|s| {
-            let mut m = serde_json::Map::new();
-            m.insert("ServiceName".into(), serde_json::json!(s.service_name));
-            if let Some(ref dcs) = s.datacenters { m.insert("Datacenters".into(), serde_json::json!(dcs)); }
-            serde_json::Value::Object(m)
-        }).collect();
+        let arr: Vec<serde_json::Value> = si
+            .iter()
+            .map(|s| {
+                let mut m = serde_json::Map::new();
+                m.insert("ServiceName".into(), serde_json::json!(s.service_name));
+                if let Some(ref dcs) = s.datacenters {
+                    m.insert("Datacenters".into(), serde_json::json!(dcs));
+                }
+                serde_json::Value::Object(m)
+            })
+            .collect();
         obj.insert("ServiceIdentities".into(), serde_json::json!(arr));
     }
     if let Some(ref ni) = req.node_identities {
-        let arr: Vec<serde_json::Value> = ni.iter().map(|n| {
-            serde_json::json!({"NodeName": n.node_name, "Datacenter": n.datacenter})
-        }).collect();
+        let arr: Vec<serde_json::Value> = ni
+            .iter()
+            .map(|n| serde_json::json!({"NodeName": n.node_name, "Datacenter": n.datacenter}))
+            .collect();
         obj.insert("NodeIdentities".into(), serde_json::json!(arr));
     }
-    if let Some(local) = req.local { obj.insert("Local".into(), serde_json::json!(local)); }
-    if let Some(ref et) = req.expiration_time { obj.insert("ExpirationTime".into(), serde_json::json!(et)); }
-    if let Some(ref ettl) = req.expiration_ttl { obj.insert("ExpirationTTL".into(), serde_json::json!(ettl)); }
+    if let Some(local) = req.local {
+        obj.insert("Local".into(), serde_json::json!(local));
+    }
+    if let Some(ref et) = req.expiration_time {
+        obj.insert("ExpirationTime".into(), serde_json::json!(et));
+    }
+    if let Some(ref ettl) = req.expiration_ttl {
+        obj.insert("ExpirationTTL".into(), serde_json::json!(ettl));
+    }
     body
 }
 
@@ -181,37 +238,56 @@ fn build_policy_create_body(req: &AclPolicyCreateRequest) -> serde_json::Value {
         "Rules": req.rules,
     });
     let obj = body.as_object_mut().unwrap();
-    if let Some(ref d) = req.description { obj.insert("Description".into(), serde_json::json!(d)); }
-    if let Some(ref dcs) = req.datacenters { obj.insert("Datacenters".into(), serde_json::json!(dcs)); }
+    if let Some(ref d) = req.description {
+        obj.insert("Description".into(), serde_json::json!(d));
+    }
+    if let Some(ref dcs) = req.datacenters {
+        obj.insert("Datacenters".into(), serde_json::json!(dcs));
+    }
     body
 }
 
 fn build_role_create_body(req: &AclRoleCreateRequest) -> serde_json::Value {
     let mut body = serde_json::json!({ "Name": req.name });
     let obj = body.as_object_mut().unwrap();
-    if let Some(ref d) = req.description { obj.insert("Description".into(), serde_json::json!(d)); }
+    if let Some(ref d) = req.description {
+        obj.insert("Description".into(), serde_json::json!(d));
+    }
     if let Some(ref pols) = req.policies {
-        let arr: Vec<serde_json::Value> = pols.iter().map(|p| {
-            let mut m = serde_json::Map::new();
-            if let Some(ref id) = p.id { m.insert("ID".into(), serde_json::json!(id)); }
-            if let Some(ref name) = p.name { m.insert("Name".into(), serde_json::json!(name)); }
-            serde_json::Value::Object(m)
-        }).collect();
+        let arr: Vec<serde_json::Value> = pols
+            .iter()
+            .map(|p| {
+                let mut m = serde_json::Map::new();
+                if let Some(ref id) = p.id {
+                    m.insert("ID".into(), serde_json::json!(id));
+                }
+                if let Some(ref name) = p.name {
+                    m.insert("Name".into(), serde_json::json!(name));
+                }
+                serde_json::Value::Object(m)
+            })
+            .collect();
         obj.insert("Policies".into(), serde_json::json!(arr));
     }
     if let Some(ref si) = req.service_identities {
-        let arr: Vec<serde_json::Value> = si.iter().map(|s| {
-            let mut m = serde_json::Map::new();
-            m.insert("ServiceName".into(), serde_json::json!(s.service_name));
-            if let Some(ref dcs) = s.datacenters { m.insert("Datacenters".into(), serde_json::json!(dcs)); }
-            serde_json::Value::Object(m)
-        }).collect();
+        let arr: Vec<serde_json::Value> = si
+            .iter()
+            .map(|s| {
+                let mut m = serde_json::Map::new();
+                m.insert("ServiceName".into(), serde_json::json!(s.service_name));
+                if let Some(ref dcs) = s.datacenters {
+                    m.insert("Datacenters".into(), serde_json::json!(dcs));
+                }
+                serde_json::Value::Object(m)
+            })
+            .collect();
         obj.insert("ServiceIdentities".into(), serde_json::json!(arr));
     }
     if let Some(ref ni) = req.node_identities {
-        let arr: Vec<serde_json::Value> = ni.iter().map(|n| {
-            serde_json::json!({"NodeName": n.node_name, "Datacenter": n.datacenter})
-        }).collect();
+        let arr: Vec<serde_json::Value> = ni
+            .iter()
+            .map(|n| serde_json::json!({"NodeName": n.node_name, "Datacenter": n.datacenter}))
+            .collect();
         obj.insert("NodeIdentities".into(), serde_json::json!(arr));
     }
     body

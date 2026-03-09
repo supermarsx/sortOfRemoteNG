@@ -11,7 +11,10 @@ pub struct EventManager;
 
 impl EventManager {
     /// PUT /v1/event/fire/:name — fires a new user event.
-    pub async fn fire_event(client: &ConsulClient, req: &EventFireRequest) -> ConsulResult<ConsulEvent> {
+    pub async fn fire_event(
+        client: &ConsulClient,
+        req: &EventFireRequest,
+    ) -> ConsulResult<ConsulEvent> {
         let path = format!("/v1/event/fire/{}", req.name);
         debug!("CONSUL fire event: {}", req.name);
 
@@ -41,7 +44,9 @@ impl EventManager {
     /// GET /v1/event/list?name=:name — returns events filtered by name.
     pub async fn get_event(client: &ConsulClient, name: &str) -> ConsulResult<Vec<ConsulEvent>> {
         debug!("CONSUL get event: {name}");
-        let raw: Vec<serde_json::Value> = client.get_with_params("/v1/event/list", &[("name", name)]).await?;
+        let raw: Vec<serde_json::Value> = client
+            .get_with_params("/v1/event/list", &[("name", name)])
+            .await?;
         Ok(raw.iter().filter_map(parse_event).collect())
     }
 }
@@ -52,7 +57,8 @@ fn parse_event(v: &serde_json::Value) -> Option<ConsulEvent> {
     let id = v.get("ID").and_then(|v| v.as_str())?.to_string();
     let name = v.get("Name").and_then(|v| v.as_str())?.to_string();
 
-    let payload = v.get("Payload")
+    let payload = v
+        .get("Payload")
         .and_then(|v| v.as_str())
         .and_then(|encoded| base64_decode(encoded).ok());
 
@@ -60,9 +66,18 @@ fn parse_event(v: &serde_json::Value) -> Option<ConsulEvent> {
         id,
         name,
         payload,
-        node_filter: v.get("NodeFilter").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        service_filter: v.get("ServiceFilter").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        tag_filter: v.get("TagFilter").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        node_filter: v
+            .get("NodeFilter")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        service_filter: v
+            .get("ServiceFilter")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        tag_filter: v
+            .get("TagFilter")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
         version: v.get("Version").and_then(|v| v.as_u64()),
         l_time: v.get("LTime").and_then(|v| v.as_u64()),
     })
@@ -70,9 +85,7 @@ fn parse_event(v: &serde_json::Value) -> Option<ConsulEvent> {
 
 /// Decode a base64 string to UTF-8 text.
 fn base64_decode(input: &str) -> Result<String, String> {
-    let chars: Vec<u8> = input.bytes()
-        .filter(|b| !b.is_ascii_whitespace())
-        .collect();
+    let chars: Vec<u8> = input.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
     let mut bytes = Vec::with_capacity(chars.len() * 3 / 4);
     let mut buf: u32 = 0;
     let mut bits: u32 = 0;
