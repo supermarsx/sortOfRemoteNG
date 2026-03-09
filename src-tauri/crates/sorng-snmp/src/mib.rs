@@ -16,6 +16,12 @@ pub struct MibDatabase {
     name_to_oid: HashMap<String, String>,
 }
 
+impl Default for MibDatabase {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MibDatabase {
     pub fn new() -> Self {
         let mut db = Self {
@@ -75,7 +81,11 @@ impl MibDatabase {
             ("1.3.6.1.2.1.25", "host", "HOST-RESOURCES-MIB"),
             ("1.3.6.1.2.1.25.1.1", "hrSystemUptime", "HOST-RESOURCES-MIB"),
             ("1.3.6.1.2.1.25.2.3", "hrStorageTable", "HOST-RESOURCES-MIB"),
-            ("1.3.6.1.2.1.25.3.3", "hrProcessorTable", "HOST-RESOURCES-MIB"),
+            (
+                "1.3.6.1.2.1.25.3.3",
+                "hrProcessorTable",
+                "HOST-RESOURCES-MIB",
+            ),
             ("1.3.6.1.2.1.47", "entityMIB", "ENTITY-MIB"),
             ("1.3.6.1.6.3.1.1.4.1", "snmpTrapOID", "SNMPv2-MIB"),
             ("1.3.6.1.6.3.1.1.5.1", "coldStart", "SNMPv2-MIB"),
@@ -116,7 +126,9 @@ impl MibDatabase {
         for (prefix_oid, mapping) in &self.oid_to_name {
             if oid.starts_with(prefix_oid) && prefix_oid.len() > best_prefix.len() {
                 // Verify it's a proper prefix (followed by '.' or end)
-                if oid.len() == prefix_oid.len() || oid.as_bytes().get(prefix_oid.len()) == Some(&b'.') {
+                if oid.len() == prefix_oid.len()
+                    || oid.as_bytes().get(prefix_oid.len()) == Some(&b'.')
+                {
                     best_prefix = prefix_oid;
                     best_name = &mapping.name;
                 }
@@ -174,7 +186,11 @@ impl MibDatabase {
             if trimmed.contains("OBJECT IDENTIFIER") && trimmed.contains("::=") {
                 // Parse the assignment
                 if let Some(parsed) = parse_oid_assignment(trimmed, &self.name_to_oid) {
-                    let mod_name = if module_name.is_empty() { "UNKNOWN" } else { &module_name };
+                    let mod_name = if module_name.is_empty() {
+                        "UNKNOWN"
+                    } else {
+                        &module_name
+                    };
                     self.add_mapping(&parsed.1, &parsed.0, mod_name);
                     objects.push(MibObject {
                         name: parsed.0,
@@ -195,13 +211,16 @@ impl MibDatabase {
         }
 
         let result_name = module_name.clone();
-        self.modules.insert(module_name.clone(), MibModule {
-            name: module_name,
-            last_updated: None,
-            organization: None,
-            description: None,
-            objects,
-        });
+        self.modules.insert(
+            module_name.clone(),
+            MibModule {
+                name: module_name,
+                last_updated: None,
+                organization: None,
+                description: None,
+                objects,
+            },
+        );
 
         Ok(result_name)
     }
@@ -224,21 +243,26 @@ impl MibDatabase {
     /// Search OID mappings by name pattern (case-insensitive substring).
     pub fn search(&self, pattern: &str) -> Vec<&OidMapping> {
         let pattern_lower = pattern.to_lowercase();
-        self.oid_to_name.values()
+        self.oid_to_name
+            .values()
             .filter(|m| m.name.to_lowercase().contains(&pattern_lower) || m.oid.contains(pattern))
             .collect()
     }
 
     /// Get the tree of OIDs under a prefix.
     pub fn get_subtree(&self, prefix: &str) -> Vec<&OidMapping> {
-        self.oid_to_name.values()
+        self.oid_to_name
+            .values()
             .filter(|m| m.oid.starts_with(prefix))
             .collect()
     }
 }
 
 /// Parse a simple OID assignment line.
-fn parse_oid_assignment(line: &str, name_to_oid: &HashMap<String, String>) -> Option<(String, String)> {
+fn parse_oid_assignment(
+    line: &str,
+    name_to_oid: &HashMap<String, String>,
+) -> Option<(String, String)> {
     // Format: "name OBJECT IDENTIFIER ::= { parent sub-id }"
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 6 {

@@ -25,38 +25,32 @@ pub async fn get_map(
 }
 
 /// GET a single OID and return as an i64 integer.
-pub async fn get_integer(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-    oid: &str,
-) -> SnmpResult<i64> {
+pub async fn get_integer(client: &SnmpClient, target: &SnmpTarget, oid: &str) -> SnmpResult<i64> {
     let value = client.get_value(target, oid).await?;
-    value.as_integer()
-        .ok_or_else(|| crate::error::SnmpError::protocol_error(
-            format!("Expected integer for OID {}, got {}", oid, value.type_name())
+    value.as_integer().ok_or_else(|| {
+        crate::error::SnmpError::protocol_error(format!(
+            "Expected integer for OID {}, got {}",
+            oid,
+            value.type_name()
         ))
+    })
 }
 
 /// GET a single OID and return as a string.
-pub async fn get_string(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-    oid: &str,
-) -> SnmpResult<String> {
+pub async fn get_string(client: &SnmpClient, target: &SnmpTarget, oid: &str) -> SnmpResult<String> {
     client.get_string(target, oid).await
 }
 
 /// GET a single OID and return as u64 counter.
-pub async fn get_counter(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-    oid: &str,
-) -> SnmpResult<u64> {
+pub async fn get_counter(client: &SnmpClient, target: &SnmpTarget, oid: &str) -> SnmpResult<u64> {
     let value = client.get_value(target, oid).await?;
-    value.as_u64()
-        .ok_or_else(|| crate::error::SnmpError::protocol_error(
-            format!("Expected counter for OID {}, got {}", oid, value.type_name())
+    value.as_u64().ok_or_else(|| {
+        crate::error::SnmpError::protocol_error(format!(
+            "Expected counter for OID {}, got {}",
+            oid,
+            value.type_name()
         ))
+    })
 }
 
 /// Batch GET: query the same OIDs from multiple targets concurrently.
@@ -66,8 +60,8 @@ pub async fn batch_get(
     oids: &[String],
     concurrency: usize,
 ) -> Vec<BulkTargetResult> {
-    use tokio::sync::Semaphore;
     use std::sync::Arc;
+    use tokio::sync::Semaphore;
 
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut handles = vec![];

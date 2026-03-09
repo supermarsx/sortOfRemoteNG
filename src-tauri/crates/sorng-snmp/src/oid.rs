@@ -19,20 +19,33 @@ impl Oid {
         if s.is_empty() {
             return Err(SnmpError::invalid_oid("Empty OID string"));
         }
-        let components: Result<Vec<u32>, _> = s.split('.').map(|part| {
-            part.parse::<u32>().map_err(|_| SnmpError::invalid_oid(format!("Invalid OID component: '{}'", part)))
-        }).collect();
-        Ok(Self { components: components? })
+        let components: Result<Vec<u32>, _> = s
+            .split('.')
+            .map(|part| {
+                part.parse::<u32>().map_err(|_| {
+                    SnmpError::invalid_oid(format!("Invalid OID component: '{}'", part))
+                })
+            })
+            .collect();
+        Ok(Self {
+            components: components?,
+        })
     }
 
     /// Create from raw component slice.
     pub fn from_components(components: &[u32]) -> Self {
-        Self { components: components.to_vec() }
+        Self {
+            components: components.to_vec(),
+        }
     }
 
     /// Dot-separated string representation.
     pub fn to_dotted(&self) -> String {
-        self.components.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(".")
+        self.components
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     /// Returns true if `self` is a prefix of `other`.
@@ -53,7 +66,9 @@ impl Oid {
         if self.components.len() <= 1 {
             return None;
         }
-        Some(Self { components: self.components[..self.components.len() - 1].to_vec() })
+        Some(Self {
+            components: self.components[..self.components.len() - 1].to_vec(),
+        })
     }
 
     /// Append a sub-identifier.
@@ -83,7 +98,13 @@ impl Oid {
             return None;
         }
         let suffix = &self.components[base.components.len()..];
-        Some(suffix.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("."))
+        Some(
+            suffix
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join("."),
+        )
     }
 
     /// BER-encode the OID value bytes (without the tag/length wrapper).
@@ -166,7 +187,8 @@ fn decode_sub_id(bytes: &[u8]) -> SnmpResult<(u32, usize)> {
     let mut consumed = 0;
     for &b in bytes {
         consumed += 1;
-        value = value.checked_shl(7)
+        value = value
+            .checked_shl(7)
             .ok_or_else(|| SnmpError::encoding("OID sub-identifier overflow"))?
             | (b & 0x7F) as u32;
         if b & 0x80 == 0 {

@@ -10,11 +10,12 @@ use std::collections::HashMap;
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// SNMP protocol version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum SnmpVersion {
     /// SNMPv1 — community-based, limited error reporting.
     V1,
     /// SNMPv2c — community-based, supports GET-BULK and 64-bit counters.
+    #[default]
     V2c,
     /// SNMPv3 — User-based Security Model (USM) with auth + priv.
     V3,
@@ -36,12 +37,6 @@ impl SnmpVersion {
             Self::V2c => "v2c",
             Self::V3 => "v3",
         }
-    }
-}
-
-impl Default for SnmpVersion {
-    fn default() -> Self {
-        Self::V2c
     }
 }
 
@@ -202,7 +197,10 @@ impl SnmpValue {
 
     /// Returns true if this value represents an SNMP exception.
     pub fn is_exception(&self) -> bool {
-        matches!(self, Self::NoSuchObject | Self::NoSuchInstance | Self::EndOfMibView)
+        matches!(
+            self,
+            Self::NoSuchObject | Self::NoSuchInstance | Self::EndOfMibView
+        )
     }
 
     /// Try to extract an integer value.
@@ -247,7 +245,10 @@ pub fn format_timeticks(ticks: u32) -> String {
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
     let hundredths = ticks % 100;
-    format!("{}d {}h {}m {}s.{:02}", days, hours, minutes, seconds, hundredths)
+    format!(
+        "{}d {}h {}m {}s.{:02}",
+        days, hours, minutes, seconds, hundredths
+    )
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

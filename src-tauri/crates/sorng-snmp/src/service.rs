@@ -39,6 +39,12 @@ pub struct SnmpService {
     total_requests: u64,
 }
 
+impl Default for SnmpService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SnmpService {
     /// Create a new SNMP service with defaults.
     pub fn new() -> Self {
@@ -75,7 +81,10 @@ impl SnmpService {
     }
 
     pub fn list_targets(&self) -> Vec<(String, SnmpTarget)> {
-        self.targets.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.targets
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     // ------- USM user management -------
@@ -120,7 +129,9 @@ impl SnmpService {
         max_repetitions: i32,
     ) -> SnmpResult<SnmpResponse> {
         self.total_requests += 1;
-        self.client.get_bulk(target, oids, non_repeaters, max_repetitions).await
+        self.client
+            .get_bulk(target, oids, non_repeaters, max_repetitions)
+            .await
     }
 
     pub async fn snmp_set(
@@ -152,30 +163,21 @@ impl SnmpService {
         crate::table::get_table(&self.client, target, table_oid, &[]).await
     }
 
-    pub async fn snmp_get_if_table(
-        &mut self,
-        target: &SnmpTarget,
-    ) -> SnmpResult<SnmpTable> {
+    pub async fn snmp_get_if_table(&mut self, target: &SnmpTarget) -> SnmpResult<SnmpTable> {
         self.total_requests += 1;
         crate::table::get_if_table(&self.client, target).await
     }
 
     // ------- System info -------
 
-    pub async fn get_system_info(
-        &mut self,
-        target: &SnmpTarget,
-    ) -> SnmpResult<SnmpDevice> {
+    pub async fn get_system_info(&mut self, target: &SnmpTarget) -> SnmpResult<SnmpDevice> {
         self.total_requests += 1;
         system_info::get_system_info(&self.client, target).await
     }
 
     // ------- IF-MIB -------
 
-    pub async fn get_interfaces(
-        &mut self,
-        target: &SnmpTarget,
-    ) -> SnmpResult<Vec<InterfaceInfo>> {
+    pub async fn get_interfaces(&mut self, target: &SnmpTarget) -> SnmpResult<Vec<InterfaceInfo>> {
         self.total_requests += 1;
         ifmib::get_interfaces(&self.client, target).await
     }
@@ -236,10 +238,7 @@ impl SnmpService {
 
     // ------- Discovery -------
 
-    pub async fn discover_subnet(
-        &self,
-        config: DiscoveryConfig,
-    ) -> SnmpResult<DiscoveryResult> {
+    pub async fn discover_subnet(&self, config: DiscoveryConfig) -> SnmpResult<DiscoveryResult> {
         discovery::discover(&config).await
     }
 

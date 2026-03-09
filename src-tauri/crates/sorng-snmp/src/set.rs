@@ -13,7 +13,9 @@ pub async fn set_integer(
     oid: &str,
     value: i64,
 ) -> SnmpResult<SnmpResponse> {
-    client.set(target, &[(oid.to_string(), SnmpValue::Integer(value))]).await
+    client
+        .set(target, &[(oid.to_string(), SnmpValue::Integer(value))])
+        .await
 }
 
 /// Set a single OID to a string value.
@@ -23,7 +25,12 @@ pub async fn set_string(
     oid: &str,
     value: &str,
 ) -> SnmpResult<SnmpResponse> {
-    client.set(target, &[(oid.to_string(), SnmpValue::OctetString(value.to_string()))]).await
+    client
+        .set(
+            target,
+            &[(oid.to_string(), SnmpValue::OctetString(value.to_string()))],
+        )
+        .await
 }
 
 /// Set a single OID to an OID value.
@@ -33,7 +40,15 @@ pub async fn set_oid(
     oid: &str,
     value: &str,
 ) -> SnmpResult<SnmpResponse> {
-    client.set(target, &[(oid.to_string(), SnmpValue::ObjectIdentifier(value.to_string()))]).await
+    client
+        .set(
+            target,
+            &[(
+                oid.to_string(),
+                SnmpValue::ObjectIdentifier(value.to_string()),
+            )],
+        )
+        .await
 }
 
 /// Set a single OID to an IP address value.
@@ -43,7 +58,12 @@ pub async fn set_ip_address(
     oid: &str,
     ip: &str,
 ) -> SnmpResult<SnmpResponse> {
-    client.set(target, &[(oid.to_string(), SnmpValue::IpAddress(ip.to_string()))]).await
+    client
+        .set(
+            target,
+            &[(oid.to_string(), SnmpValue::IpAddress(ip.to_string()))],
+        )
+        .await
 }
 
 /// Set a single OID to a Gauge32/Unsigned32 value.
@@ -53,7 +73,9 @@ pub async fn set_gauge(
     oid: &str,
     value: u32,
 ) -> SnmpResult<SnmpResponse> {
-    client.set(target, &[(oid.to_string(), SnmpValue::Gauge32(value))]).await
+    client
+        .set(target, &[(oid.to_string(), SnmpValue::Gauge32(value))])
+        .await
 }
 
 /// Set a single OID to a TimeTicks value.
@@ -63,7 +85,9 @@ pub async fn set_timeticks(
     oid: &str,
     value: u32,
 ) -> SnmpResult<SnmpResponse> {
-    client.set(target, &[(oid.to_string(), SnmpValue::TimeTicks(value))]).await
+    client
+        .set(target, &[(oid.to_string(), SnmpValue::TimeTicks(value))])
+        .await
 }
 
 /// Set multiple OID-value pairs in a single SET request.
@@ -96,5 +120,10 @@ pub async fn destroy_row(
     row_status_oid: &str,
 ) -> SnmpResult<SnmpResponse> {
     // RowStatus destroy = 6
-    client.set(target, &[(row_status_oid.to_string(), SnmpValue::Integer(6))]).await
+    client
+        .set(
+            target,
+            &[(row_status_oid.to_string(), SnmpValue::Integer(6))],
+        )
+        .await
 }

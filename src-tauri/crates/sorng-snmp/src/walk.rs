@@ -32,7 +32,9 @@ pub async fn walk(
             client.get_next(target, &[current_oid.clone()]).await?
         } else {
             // Use GET-BULK for efficiency
-            client.get_bulk(target, &[current_oid.clone()], 0, 25).await?
+            client
+                .get_bulk(target, &[current_oid.clone()], 0, 25)
+                .await?
         };
         request_count += 1;
 
@@ -114,7 +116,9 @@ pub async fn walk_strings(
     root_oid: &str,
 ) -> SnmpResult<Vec<(String, String)>> {
     let result = walk(client, target, root_oid).await?;
-    Ok(result.varbinds.iter().map(|vb| {
-        (vb.oid.clone(), vb.value.display_value())
-    }).collect())
+    Ok(result
+        .varbinds
+        .iter()
+        .map(|vb| (vb.oid.clone(), vb.value.display_value()))
+        .collect())
 }

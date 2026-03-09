@@ -108,7 +108,12 @@ pub fn parse_v1v2c_message(data: &[u8]) -> SnmpResult<(SnmpVersion, String, Snmp
     let version = match version_num {
         0 => SnmpVersion::V1,
         1 => SnmpVersion::V2c,
-        _ => return Err(SnmpError::encoding(format!("Unsupported SNMP version: {}", version_num))),
+        _ => {
+            return Err(SnmpError::encoding(format!(
+                "Unsupported SNMP version: {}",
+                version_num
+            )))
+        }
     };
     offset += vconsumed;
 
@@ -164,7 +169,9 @@ pub fn parse_pdu(data: &[u8]) -> SnmpResult<SnmpResponse> {
 
 /// Build a list of null-valued varbinds for GET / GET-NEXT requests.
 pub fn null_varbinds(oids: &[String]) -> Vec<(String, SnmpValue)> {
-    oids.iter().map(|oid| (oid.clone(), SnmpValue::Null)).collect()
+    oids.iter()
+        .map(|oid| (oid.clone(), SnmpValue::Null))
+        .collect()
 }
 
 /// Generate a random request ID.

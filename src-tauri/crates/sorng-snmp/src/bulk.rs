@@ -13,7 +13,8 @@ pub async fn bulk_get(config: &BulkOperationConfig) -> BulkOperationResult {
         &config.targets,
         &config.oids,
         config.concurrency as usize,
-    ).await;
+    )
+    .await;
 
     let success_count = results.iter().filter(|r| r.success).count() as u32;
     let failure_count = results.iter().filter(|r| !r.success).count() as u32;
@@ -32,8 +33,8 @@ pub async fn bulk_walk(
     root_oid: &str,
     concurrency: usize,
 ) -> Vec<(String, Result<WalkResult, String>)> {
-    use tokio::sync::Semaphore;
     use std::sync::Arc;
+    use tokio::sync::Semaphore;
 
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut handles = vec![];
@@ -67,8 +68,8 @@ pub async fn bulk_set(
     varbinds: &[(String, SnmpValue)],
     concurrency: usize,
 ) -> Vec<BulkTargetResult> {
-    use tokio::sync::Semaphore;
     use std::sync::Arc;
+    use tokio::sync::Semaphore;
 
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut handles = vec![];

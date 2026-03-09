@@ -9,6 +9,9 @@ use crate::types::*;
 use std::sync::Arc;
 use tauri::State;
 
+/// Result type for bulk walk operations to reduce type complexity.
+type BulkWalkResult = Vec<(String, Result<WalkResult, String>)>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -47,6 +50,7 @@ fn build_target(
 // GET / SET / WALK
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_get(
     state: State<'_, SnmpServiceState>,
@@ -59,11 +63,14 @@ pub async fn snmp_get(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<SnmpResponse, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.snmp_get(&target, &oids).await.map_err(to_err)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_get_next(
     state: State<'_, SnmpServiceState>,
@@ -76,11 +83,14 @@ pub async fn snmp_get_next(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<SnmpResponse, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.snmp_get_next(&target, &oids).await.map_err(to_err)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_get_bulk(
     state: State<'_, SnmpServiceState>,
@@ -95,7 +105,9 @@ pub async fn snmp_get_bulk(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<SnmpResponse, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.snmp_get_bulk(
         &target,
@@ -107,6 +119,7 @@ pub async fn snmp_get_bulk(
     .map_err(to_err)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_set_value(
     state: State<'_, SnmpServiceState>,
@@ -121,13 +134,16 @@ pub async fn snmp_set_value(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<SnmpResponse, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let snmp_value = parse_typed_value(&value_type, &value).map_err(|e| e.to_string())?;
     let varbinds = vec![(oid, snmp_value)];
     let mut svc = state.lock().await;
     svc.snmp_set(&target, &varbinds).await.map_err(to_err)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_walk(
     state: State<'_, SnmpServiceState>,
@@ -140,7 +156,9 @@ pub async fn snmp_walk(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<WalkResult, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.snmp_walk(&target, &root_oid).await.map_err(to_err)
 }
@@ -149,6 +167,7 @@ pub async fn snmp_walk(
 // Tables
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_get_table(
     state: State<'_, SnmpServiceState>,
@@ -161,11 +180,16 @@ pub async fn snmp_get_table(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<SnmpTable, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
-    svc.snmp_get_table(&target, &table_oid).await.map_err(to_err)
+    svc.snmp_get_table(&target, &table_oid)
+        .await
+        .map_err(to_err)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_get_if_table(
     state: State<'_, SnmpServiceState>,
@@ -177,7 +201,9 @@ pub async fn snmp_get_if_table(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<SnmpTable, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.snmp_get_if_table(&target).await.map_err(to_err)
 }
@@ -186,6 +212,7 @@ pub async fn snmp_get_if_table(
 // System info
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_get_system_info(
     state: State<'_, SnmpServiceState>,
@@ -197,7 +224,9 @@ pub async fn snmp_get_system_info(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<SnmpDevice, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.get_system_info(&target).await.map_err(to_err)
 }
@@ -206,6 +235,7 @@ pub async fn snmp_get_system_info(
 // Interfaces
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_get_interfaces(
     state: State<'_, SnmpServiceState>,
@@ -217,7 +247,9 @@ pub async fn snmp_get_interfaces(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<Vec<InterfaceInfo>, String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.get_interfaces(&target).await.map_err(to_err)
 }
@@ -240,17 +272,13 @@ pub async fn snmp_discover(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn snmp_start_trap_receiver(
-    state: State<'_, SnmpServiceState>,
-) -> Result<(), String> {
+pub async fn snmp_start_trap_receiver(state: State<'_, SnmpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.start_trap_receiver().await.map_err(to_err)
 }
 
 #[tauri::command]
-pub async fn snmp_stop_trap_receiver(
-    state: State<'_, SnmpServiceState>,
-) -> Result<(), String> {
+pub async fn snmp_stop_trap_receiver(state: State<'_, SnmpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.stop_trap_receiver();
     Ok(())
@@ -274,9 +302,7 @@ pub async fn snmp_get_traps(
 }
 
 #[tauri::command]
-pub async fn snmp_clear_traps(
-    state: State<'_, SnmpServiceState>,
-) -> Result<(), String> {
+pub async fn snmp_clear_traps(state: State<'_, SnmpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.clear_traps();
     Ok(())
@@ -365,7 +391,9 @@ pub async fn snmp_start_monitor(
     let svc = state.lock().await;
     let engine_ref = svc.monitor_engine();
     let mut engine = engine_ref.lock().await;
-    engine.start_monitor(&id, Arc::clone(&engine_ref)).map_err(to_err)
+    engine
+        .start_monitor(&id, Arc::clone(&engine_ref))
+        .map_err(to_err)
 }
 
 #[tauri::command]
@@ -402,9 +430,7 @@ pub async fn snmp_acknowledge_alert(
 }
 
 #[tauri::command]
-pub async fn snmp_clear_alerts(
-    state: State<'_, SnmpServiceState>,
-) -> Result<(), String> {
+pub async fn snmp_clear_alerts(state: State<'_, SnmpServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     let engine_ref = svc.monitor_engine();
     let mut engine = engine_ref.lock().await;
@@ -416,6 +442,7 @@ pub async fn snmp_clear_alerts(
 // Target management
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn snmp_add_target(
     state: State<'_, SnmpServiceState>,
@@ -428,7 +455,9 @@ pub async fn snmp_add_target(
     timeout_ms: Option<u64>,
     retries: Option<u32>,
 ) -> Result<(), String> {
-    let target = build_target(host, port, version, community, v3_creds, timeout_ms, retries);
+    let target = build_target(
+        host, port, version, community, v3_creds, timeout_ms, retries,
+    );
     let mut svc = state.lock().await;
     svc.add_target(name, target);
     Ok(())
@@ -544,7 +573,7 @@ pub async fn snmp_bulk_walk(
     targets: Vec<SnmpTarget>,
     root_oid: String,
     concurrency: Option<usize>,
-) -> Result<Vec<(String, Result<WalkResult, String>)>, String> {
+) -> Result<BulkWalkResult, String> {
     Ok(crate::bulk::bulk_walk(&targets, &root_oid, concurrency.unwrap_or(10)).await)
 }
 
@@ -555,40 +584,41 @@ pub async fn snmp_bulk_walk(
 fn parse_typed_value(value_type: &str, value: &str) -> SnmpResult<SnmpValue> {
     match value_type.to_lowercase().as_str() {
         "integer" | "int" | "i" => {
-            let v: i64 = value.parse().map_err(|_| {
-                crate::error::SnmpError::config("Invalid integer value")
-            })?;
+            let v: i64 = value
+                .parse()
+                .map_err(|_| crate::error::SnmpError::config("Invalid integer value"))?;
             Ok(SnmpValue::Integer(v))
         }
         "string" | "str" | "s" => Ok(SnmpValue::OctetString(value.to_string())),
         "oid" | "o" => Ok(SnmpValue::ObjectIdentifier(value.to_string())),
         "ipaddress" | "ip" | "a" => Ok(SnmpValue::IpAddress(value.to_string())),
         "counter32" | "c" => {
-            let v: u32 = value.parse().map_err(|_| {
-                crate::error::SnmpError::config("Invalid counter32 value")
-            })?;
+            let v: u32 = value
+                .parse()
+                .map_err(|_| crate::error::SnmpError::config("Invalid counter32 value"))?;
             Ok(SnmpValue::Counter32(v))
         }
         "gauge32" | "gauge" | "g" | "unsigned" | "u" => {
-            let v: u32 = value.parse().map_err(|_| {
-                crate::error::SnmpError::config("Invalid gauge32 value")
-            })?;
+            let v: u32 = value
+                .parse()
+                .map_err(|_| crate::error::SnmpError::config("Invalid gauge32 value"))?;
             Ok(SnmpValue::Gauge32(v))
         }
         "timeticks" | "t" => {
-            let v: u32 = value.parse().map_err(|_| {
-                crate::error::SnmpError::config("Invalid timeticks value")
-            })?;
+            let v: u32 = value
+                .parse()
+                .map_err(|_| crate::error::SnmpError::config("Invalid timeticks value"))?;
             Ok(SnmpValue::TimeTicks(v))
         }
         "counter64" => {
-            let v: u64 = value.parse().map_err(|_| {
-                crate::error::SnmpError::config("Invalid counter64 value")
-            })?;
+            let v: u64 = value
+                .parse()
+                .map_err(|_| crate::error::SnmpError::config("Invalid counter64 value"))?;
             Ok(SnmpValue::Counter64(v))
         }
         "hex" | "x" => {
-            let hex_string = value.split(':')
+            let hex_string = value
+                .split(':')
                 .filter(|s| !s.is_empty())
                 .map(|s| {
                     let byte = u8::from_str_radix(s, 16).unwrap_or(0);
@@ -598,6 +628,9 @@ fn parse_typed_value(value_type: &str, value: &str) -> SnmpResult<SnmpValue> {
                 .join("");
             Ok(SnmpValue::OctetString(hex_string))
         }
-        _ => Err(crate::error::SnmpError::config(format!("Unknown value type: {}", value_type))),
+        _ => Err(crate::error::SnmpError::config(format!(
+            "Unknown value type: {}",
+            value_type
+        ))),
     }
 }

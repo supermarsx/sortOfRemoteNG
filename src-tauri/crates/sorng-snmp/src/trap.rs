@@ -48,7 +48,8 @@ impl TrapReceiver {
         }
 
         let bind_addr = format!("{}:{}", self.config.bind_addr, self.config.port);
-        let socket = UdpSocket::bind(&bind_addr).await
+        let socket = UdpSocket::bind(&bind_addr)
+            .await
             .map_err(|e| SnmpError::trap_error(format!("Failed to bind {}: {}", bind_addr, e)))?;
 
         let (tx, rx) = tokio::sync::watch::channel(false);
@@ -132,7 +133,10 @@ impl TrapReceiver {
 
     /// Get buffered traps since a given timestamp.
     pub fn get_traps_since(&self, since: &str) -> Vec<&SnmpTrap> {
-        self.buffer.iter().filter(|t| t.received_at.as_str() > since).collect()
+        self.buffer
+            .iter()
+            .filter(|t| t.received_at.as_str() > since)
+            .collect()
     }
 
     /// Clear the trap buffer.
@@ -156,7 +160,9 @@ fn parse_trap_message(data: &[u8], src: &std::net::SocketAddr) -> SnmpResult<Snm
     let (version, community, response) = pdu::parse_v1v2c_message(data)?;
 
     // Extract snmpTrapOID from varbinds (v2c/v3)
-    let trap_oid = response.varbinds.iter()
+    let trap_oid = response
+        .varbinds
+        .iter()
         .find(|vb| vb.oid == crate::oid::well_known::SNMP_TRAP_OID)
         .and_then(|vb| match &vb.value {
             SnmpValue::ObjectIdentifier(oid) => Some(oid.clone()),
@@ -165,7 +171,9 @@ fn parse_trap_message(data: &[u8], src: &std::net::SocketAddr) -> SnmpResult<Snm
         .unwrap_or_default();
 
     // Extract sysUpTime
-    let uptime = response.varbinds.iter()
+    let uptime = response
+        .varbinds
+        .iter()
         .find(|vb| vb.oid == crate::oid::well_known::SYS_UPTIME)
         .and_then(|vb| vb.value.as_u32());
 

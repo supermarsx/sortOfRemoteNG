@@ -8,10 +8,7 @@ use crate::oid::well_known;
 use crate::types::*;
 
 /// Retrieve the full system info group from a device.
-pub async fn get_system_info(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<SnmpDevice> {
+pub async fn get_system_info(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<SnmpDevice> {
     let oids = vec![
         well_known::SYS_DESCR.to_string(),
         well_known::SYS_OBJECT_ID.to_string(),
@@ -95,7 +92,9 @@ pub async fn get_sys_uptime(client: &SnmpClient, target: &SnmpTarget) -> SnmpRes
 /// Get sysUpTime.0 as raw ticks (hundredths of a second).
 pub async fn get_sys_uptime_ticks(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<u32> {
     let value = client.get_value(target, well_known::SYS_UPTIME).await?;
-    value.as_u32().ok_or_else(|| crate::error::SnmpError::protocol_error("Expected TimeTicks for sysUpTime"))
+    value
+        .as_u32()
+        .ok_or_else(|| crate::error::SnmpError::protocol_error("Expected TimeTicks for sysUpTime"))
 }
 
 /// Get sysContact.0.
@@ -115,7 +114,10 @@ pub async fn get_sys_location(client: &SnmpClient, target: &SnmpTarget) -> SnmpR
 
 /// Check if a target is reachable via SNMP (probes sysUpTime).
 pub async fn is_reachable(client: &SnmpClient, target: &SnmpTarget) -> bool {
-    client.get_value(target, well_known::SYS_UPTIME).await.is_ok()
+    client
+        .get_value(target, well_known::SYS_UPTIME)
+        .await
+        .is_ok()
 }
 
 /// Set sysContact.0.

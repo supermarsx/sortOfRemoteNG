@@ -20,6 +20,12 @@ pub struct SnmpClient {
     next_request_id: std::sync::atomic::AtomicI32,
 }
 
+impl Default for SnmpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SnmpClient {
     pub fn new() -> Self {
         Self {
@@ -42,33 +48,41 @@ impl SnmpClient {
 
     /// Generate the next request ID.
     fn next_id(&self) -> i32 {
-        self.next_request_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        self.next_request_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Send a raw SNMP message and receive the response.
-    async fn send_recv(
-        &self,
-        target: &SnmpTarget,
-        message: &[u8],
-    ) -> SnmpResult<Vec<u8>> {
-        let socket = UdpSocket::bind("0.0.0.0:0").await
+    async fn send_recv(&self, target: &SnmpTarget, message: &[u8]) -> SnmpResult<Vec<u8>> {
+        let socket = UdpSocket::bind("0.0.0.0:0")
+            .await
             .map_err(|e| SnmpError::connection(format!("Failed to bind UDP socket: {}", e)))?;
 
         let addr = target.addr();
-        socket.send_to(message, &addr).await
+        socket
+            .send_to(message, &addr)
+            .await
             .map_err(|e| SnmpError::connection(format!("Failed to send to {}: {}", addr, e)))?;
 
         let mut buf = vec![0u8; 65535];
         let mut last_err = None;
 
         for _attempt in 0..=target.retries {
-            match timeout(Duration::from_millis(target.timeout_ms), socket.recv_from(&mut buf)).await {
+            match timeout(
+                Duration::from_millis(target.timeout_ms),
+                socket.recv_from(&mut buf),
+            )
+            .await
+            {
                 Ok(Ok((len, _src))) => return Ok(buf[..len].to_vec()),
                 Ok(Err(e)) => {
                     last_err = Some(SnmpError::connection(format!("UDP recv error: {}", e)));
                 }
                 Err(_) => {
-                    last_err = Some(SnmpError::timeout(format!("Timeout after {}ms to {}", target.timeout_ms, addr)));
+                    last_err = Some(SnmpError::timeout(format!(
+                        "Timeout after {}ms to {}",
+                        target.timeout_ms, addr
+                    )));
                 }
             }
         }
@@ -86,10 +100,18 @@ impl SnmpClient {
         let message = match target.version {
             SnmpVersion::V1 | SnmpVersion::V2c => {
                 let community = target.community.as_deref().unwrap_or("public");
-                pdu::build_v1v2c_message(target.version, community, PduType::GetRequest, request_id, &varbinds)?
+                pdu::build_v1v2c_message(
+                    target.version,
+                    community,
+                    PduType::GetRequest,
+                    request_id,
+                    &varbinds,
+                )?
             }
             SnmpVersion::V3 => {
-                let creds = target.v3_credentials.as_ref()
+                let creds = target
+                    .v3_credentials
+                    .as_ref()
                     .ok_or_else(|| SnmpError::auth("V3 credentials required"))?;
                 let usm = self.usm.lock().await;
                 usm.build_v3_message(
@@ -128,10 +150,18 @@ impl SnmpClient {
         let message = match target.version {
             SnmpVersion::V1 | SnmpVersion::V2c => {
                 let community = target.community.as_deref().unwrap_or("public");
-                pdu::build_v1v2c_message(target.version, community, PduType::GetNextRequest, request_id, &varbinds)?
+                pdu::build_v1v2c_message(
+                    target.version,
+                    community,
+                    PduType::GetNextRequest,
+                    request_id,
+                    &varbinds,
+                )?
             }
             SnmpVersion::V3 => {
-                let creds = target.v3_credentials.as_ref()
+                let creds = target
+                    .v3_credentials
+                    .as_ref()
                     .ok_or_else(|| SnmpError::auth("V3 credentials required"))?;
                 let usm = self.usm.lock().await;
                 usm.build_v3_message(
@@ -194,10 +224,18 @@ impl SnmpClient {
         let message = match target.version {
             SnmpVersion::V1 | SnmpVersion::V2c => {
                 let community = target.community.as_deref().unwrap_or("private");
-                pdu::build_v1v2c_message(target.version, community, PduType::SetRequest, request_id, varbinds)?
+                pdu::build_v1v2c_message(
+                    target.version,
+                    community,
+                    PduType::SetRequest,
+                    request_id,
+                    varbinds,
+                )?
             }
             SnmpVersion::V3 => {
-                let creds = target.v3_credentials.as_ref()
+                let creds = target
+                    .v3_credentials
+                    .as_ref()
                     .ok_or_else(|| SnmpError::auth("V3 credentials required"))?;
                 let usm = self.usm.lock().await;
                 usm.build_v3_message(
@@ -229,7 +267,8 @@ impl SnmpClient {
     /// Simple GET of a single OID, returning just the value.
     pub async fn get_value(&self, target: &SnmpTarget, oid: &str) -> SnmpResult<SnmpValue> {
         let response = self.get(target, &[oid.to_string()]).await?;
-        response.first_value()
+        response
+            .first_value()
             .cloned()
             .ok_or_else(|| SnmpError::no_such_object(format!("No value for OID {}", oid)))
     }

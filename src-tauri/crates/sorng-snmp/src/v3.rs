@@ -5,7 +5,7 @@
 
 use crate::error::{SnmpError, SnmpResult};
 use crate::types::*;
-use sha2::{Sha256, Sha512, Digest};
+use sha2::{Digest, Sha256, Sha512};
 use std::collections::HashMap;
 
 /// Cached engine parameters for a remote agent.
@@ -27,6 +27,12 @@ pub struct UsmProcessor {
     users: HashMap<String, V3Credentials>,
     /// Engine cache: host:port → engine info.
     engine_cache: HashMap<String, EngineCache>,
+}
+
+impl Default for UsmProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UsmProcessor {
@@ -59,12 +65,15 @@ impl UsmProcessor {
 
     /// Cache engine parameters for a remote agent.
     pub fn cache_engine(&mut self, addr: &str, engine_id: Vec<u8>, boots: u32, time: u32) {
-        self.engine_cache.insert(addr.to_string(), EngineCache {
-            engine_id,
-            engine_boots: boots,
-            engine_time: time,
-            last_updated: std::time::Instant::now(),
-        });
+        self.engine_cache.insert(
+            addr.to_string(),
+            EngineCache {
+                engine_id,
+                engine_boots: boots,
+                engine_time: time,
+                last_updated: std::time::Instant::now(),
+            },
+        );
     }
 
     /// Get cached engine info for a remote agent.
@@ -100,9 +109,9 @@ impl UsmProcessor {
 
         // Step 2: Localise Ku with engine ID to get Kul
         let mut hasher2 = Sha256::new();
-        hasher2.update(&ku);
+        hasher2.update(ku);
         hasher2.update(engine_id);
-        hasher2.update(&ku);
+        hasher2.update(ku);
         hasher2.finalize().to_vec()
     }
 
@@ -122,9 +131,9 @@ impl UsmProcessor {
         let ku = hasher.finalize();
 
         let mut hasher2 = Sha512::new();
-        hasher2.update(&ku);
+        hasher2.update(ku);
         hasher2.update(engine_id);
-        hasher2.update(&ku);
+        hasher2.update(ku);
         hasher2.finalize().to_vec()
     }
 
@@ -178,13 +187,7 @@ impl UsmProcessor {
         let usm_params_octet = ber::encode_octet_string(&usm_params);
 
         // Scoped PDU: contextEngineID + contextName + PDU
-        let empty_pdu = crate::pdu::build_pdu(
-            PduType::GetRequest,
-            msg_id,
-            0,
-            0,
-            &[],
-        )?;
+        let empty_pdu = crate::pdu::build_pdu(PduType::GetRequest, msg_id, 0, 0, &[])?;
 
         let mut scoped_pdu = vec![];
         scoped_pdu.extend_from_slice(&ber::encode_octet_string(&[])); // contextEngineID
@@ -214,24 +217,23 @@ impl UsmProcessor {
     ) -> SnmpResult<Vec<u8>> {
         use crate::ber;
 
-        let creds = self.get_user(username)
+        let creds = self
+            .get_user(username)
             .ok_or_else(|| SnmpError::auth(format!("USM user '{}' not found", username)))?;
-        let engine = self.get_engine(addr)
+        let engine = self
+            .get_engine(addr)
             .ok_or_else(|| SnmpError::usm_error(format!("No engine info cached for '{}'", addr)))?;
 
-        let header_data = Self::build_header_data(
-            msg_id,
-            65507,
-            creds.security_level,
-            false,
-        );
+        let header_data = Self::build_header_data(msg_id, 65507, creds.security_level, false);
 
         // Build scoped PDU
         let pdu = crate::pdu::build_pdu(pdu_type, request_id, 0, 0, varbinds)?;
-        let context_engine_id = creds.context_engine_id.as_ref()
+        let context_engine_id = creds
+            .context_engine_id
+            .as_ref()
             .map(|hex| hex_decode(hex))
             .transpose()
-            .map_err(|e| SnmpError::encoding(e))?
+            .map_err(SnmpError::encoding)?
             .unwrap_or_else(|| engine.engine_id.clone());
         let context_name = creds.context_name.as_deref().unwrap_or("");
 
@@ -265,7 +267,7 @@ impl UsmProcessor {
 
 fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
     let hex = hex.trim_start_matches("0x").trim_start_matches("0X");
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err("Hex string must have even length".to_string());
     }
     (0..hex.len())

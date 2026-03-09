@@ -64,12 +64,12 @@ pub async fn get_table(
         .collect();
 
     // Sort rows by index (numeric if possible)
-    rows.sort_by(|a, b| {
-        match (a.index.parse::<u64>(), b.index.parse::<u64>()) {
+    rows.sort_by(
+        |a, b| match (a.index.parse::<u64>(), b.index.parse::<u64>()) {
             (Ok(ai), Ok(bi)) => ai.cmp(&bi),
             _ => a.index.cmp(&b.index),
-        }
-    });
+        },
+    );
 
     Ok(SnmpTable {
         base_oid: entry_oid.to_string(),
@@ -81,52 +81,33 @@ pub async fn get_table(
 }
 
 /// Retrieve the ifTable (interface table) from a device.
-pub async fn get_if_table(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<SnmpTable> {
+pub async fn get_if_table(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<SnmpTable> {
     get_table(
         client,
         target,
         crate::oid::well_known::IF_ENTRY,
         &[], // All columns
-    ).await
+    )
+    .await
 }
 
 /// Retrieve the ifXTable (extended interface table) from a device.
-pub async fn get_if_x_table(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<SnmpTable> {
-    get_table(
-        client,
-        target,
-        crate::oid::well_known::IF_X_TABLE,
-        &[],
-    ).await
+pub async fn get_if_x_table(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<SnmpTable> {
+    get_table(client, target, crate::oid::well_known::IF_X_TABLE, &[]).await
 }
 
 /// Retrieve the IP address table.
-pub async fn get_ip_addr_table(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<SnmpTable> {
+pub async fn get_ip_addr_table(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<SnmpTable> {
     get_table(client, target, "1.3.6.1.2.1.4.20.1", &[]).await
 }
 
 /// Retrieve the IP routing table.
-pub async fn get_ip_route_table(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<SnmpTable> {
+pub async fn get_ip_route_table(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<SnmpTable> {
     get_table(client, target, "1.3.6.1.2.1.4.21.1", &[]).await
 }
 
 /// Retrieve the TCP connection table.
-pub async fn get_tcp_conn_table(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<SnmpTable> {
+pub async fn get_tcp_conn_table(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<SnmpTable> {
     get_table(client, target, "1.3.6.1.2.1.6.13.1", &[]).await
 }
 
@@ -147,9 +128,6 @@ pub async fn get_hr_processor_table(
 }
 
 /// Retrieve the ARP / IP-to-physical-address table (ipNetToMediaTable).
-pub async fn get_arp_table(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<SnmpTable> {
+pub async fn get_arp_table(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<SnmpTable> {
     get_table(client, target, "1.3.6.1.2.1.4.22.1", &[]).await
 }

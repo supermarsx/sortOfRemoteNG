@@ -24,6 +24,12 @@ pub struct MonitorEngine {
     running_tasks: HashMap<String, tokio::sync::watch::Sender<bool>>,
 }
 
+impl Default for MonitorEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MonitorEngine {
     pub fn new() -> Self {
         Self {
@@ -37,7 +43,10 @@ impl MonitorEngine {
     /// Add a new monitor target.
     pub fn add_monitor(&mut self, monitor: MonitorTarget) -> SnmpResult<()> {
         if self.monitors.contains_key(&monitor.id) {
-            return Err(SnmpError::config(format!("Monitor '{}' already exists", monitor.id)));
+            return Err(SnmpError::config(format!(
+                "Monitor '{}' already exists",
+                monitor.id
+            )));
         }
         let id = monitor.id.clone();
         self.monitors.insert(id.clone(), monitor);
@@ -74,12 +83,17 @@ impl MonitorEngine {
 
     /// Start polling a monitor.
     pub fn start_monitor(&mut self, id: &str, engine: Arc<Mutex<MonitorEngine>>) -> SnmpResult<()> {
-        let monitor = self.monitors.get(id)
+        let monitor = self
+            .monitors
+            .get(id)
             .ok_or_else(|| SnmpError::config(format!("Monitor '{}' not found", id)))?
             .clone();
 
         if self.running_tasks.contains_key(id) {
-            return Err(SnmpError::config(format!("Monitor '{}' already running", id)));
+            return Err(SnmpError::config(format!(
+                "Monitor '{}' already running",
+                id
+            )));
         }
 
         let (tx, rx) = tokio::sync::watch::channel(false);
@@ -169,7 +183,8 @@ impl MonitorEngine {
 
     /// Get history for a specific OID on a monitor.
     pub fn get_oid_history(&self, monitor_id: &str, oid: &str) -> Vec<&PollDataPoint> {
-        self.history.get(monitor_id)
+        self.history
+            .get(monitor_id)
             .and_then(|h| h.get(oid))
             .map(|v| v.iter().collect())
             .unwrap_or_default()
@@ -227,7 +242,9 @@ async fn poll_loop(
 fn extract_numeric(value: &SnmpValue) -> Option<f64> {
     match value {
         SnmpValue::Integer(v) => Some(*v as f64),
-        SnmpValue::Counter32(v) | SnmpValue::Gauge32(v) | SnmpValue::TimeTicks(v) => Some(*v as f64),
+        SnmpValue::Counter32(v) | SnmpValue::Gauge32(v) | SnmpValue::TimeTicks(v) => {
+            Some(*v as f64)
+        }
         SnmpValue::Counter64(v) => Some(*v as f64),
         _ => None,
     }

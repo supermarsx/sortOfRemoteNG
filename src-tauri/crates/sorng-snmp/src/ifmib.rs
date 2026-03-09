@@ -5,8 +5,8 @@
 use crate::client::SnmpClient;
 use crate::error::SnmpResult;
 use crate::oid::well_known;
-use crate::types::*;
 use crate::table;
+use crate::types::*;
 
 /// Retrieve all interfaces from a device using IF-MIB.
 pub async fn get_interfaces(
@@ -21,15 +21,21 @@ pub async fn get_interfaces(
     let mut interfaces = vec![];
 
     for row in &if_table.rows {
-        let index = row.values.get("1")
+        let index = row
+            .values
+            .get("1")
             .and_then(|v| v.as_integer())
             .unwrap_or(0);
 
-        let descr = row.values.get("2")
+        let descr = row
+            .values
+            .get("2")
             .map(|v| v.display_value())
             .unwrap_or_default();
 
-        let if_type = row.values.get("3")
+        let if_type = row
+            .values
+            .get("3")
             .and_then(|v| v.as_integer())
             .unwrap_or(0);
 
@@ -37,12 +43,16 @@ pub async fn get_interfaces(
         let speed = row.values.get("5").and_then(|v| v.as_u64());
         let phys_address = row.values.get("6").map(|v| v.display_value());
 
-        let admin_status = row.values.get("7")
+        let admin_status = row
+            .values
+            .get("7")
             .and_then(|v| v.as_integer())
             .map(InterfaceStatus::from_code)
             .unwrap_or(InterfaceStatus::Unknown);
 
-        let oper_status = row.values.get("8")
+        let oper_status = row
+            .values
+            .get("8")
             .and_then(|v| v.as_integer())
             .map(InterfaceStatus::from_code)
             .unwrap_or(InterfaceStatus::Unknown);
@@ -61,10 +71,18 @@ pub async fn get_interfaces(
         let (hc_in_octets, hc_out_octets, high_speed, alias) = if let Some(ref ifx) = ifx_table {
             let ifx_row = ifx.rows.iter().find(|r| r.index == row.index);
             (
-                ifx_row.and_then(|r| r.values.get("6")).and_then(|v| v.as_u64()),
-                ifx_row.and_then(|r| r.values.get("10")).and_then(|v| v.as_u64()),
-                ifx_row.and_then(|r| r.values.get("15")).and_then(|v| v.as_u64()),
-                ifx_row.and_then(|r| r.values.get("18")).map(|v| v.display_value()),
+                ifx_row
+                    .and_then(|r| r.values.get("6"))
+                    .and_then(|v| v.as_u64()),
+                ifx_row
+                    .and_then(|r| r.values.get("10"))
+                    .and_then(|v| v.as_u64()),
+                ifx_row
+                    .and_then(|r| r.values.get("15"))
+                    .and_then(|v| v.as_u64()),
+                ifx_row
+                    .and_then(|r| r.values.get("18"))
+                    .map(|v| v.display_value()),
             )
         } else {
             (None, None, None, None)
@@ -107,9 +125,13 @@ pub fn calculate_bandwidth(
 
     for curr_if in curr {
         if let Some(prev_if) = prev.iter().find(|p| p.index == curr_if.index) {
-            let in_octets_diff = curr_if.in_octets.unwrap_or(0)
+            let in_octets_diff = curr_if
+                .in_octets
+                .unwrap_or(0)
                 .saturating_sub(prev_if.in_octets.unwrap_or(0));
-            let out_octets_diff = curr_if.out_octets.unwrap_or(0)
+            let out_octets_diff = curr_if
+                .out_octets
+                .unwrap_or(0)
                 .saturating_sub(prev_if.out_octets.unwrap_or(0));
 
             let in_bps = (in_octets_diff as f64 * 8.0) / interval_secs;
@@ -148,9 +170,6 @@ pub fn calculate_bandwidth(
 }
 
 /// Get the number of interfaces on a device.
-pub async fn get_interface_count(
-    client: &SnmpClient,
-    target: &SnmpTarget,
-) -> SnmpResult<i64> {
+pub async fn get_interface_count(client: &SnmpClient, target: &SnmpTarget) -> SnmpResult<i64> {
     crate::get::get_integer(client, target, well_known::IF_NUMBER).await
 }

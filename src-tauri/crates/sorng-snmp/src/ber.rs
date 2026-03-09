@@ -37,7 +37,13 @@ pub fn encode_length(len: usize) -> Vec<u8> {
     } else if len <= 0xFF_FFFF {
         vec![0x83, (len >> 16) as u8, (len >> 8) as u8, len as u8]
     } else {
-        vec![0x84, (len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]
+        vec![
+            0x84,
+            (len >> 24) as u8,
+            (len >> 16) as u8,
+            (len >> 8) as u8,
+            len as u8,
+        ]
     }
 }
 
@@ -52,7 +58,10 @@ pub fn decode_length(data: &[u8]) -> SnmpResult<(usize, usize)> {
     } else {
         let num_bytes = (first & 0x7F) as usize;
         if num_bytes == 0 || num_bytes > 4 {
-            return Err(SnmpError::encoding(format!("Invalid length byte count: {}", num_bytes)));
+            return Err(SnmpError::encoding(format!(
+                "Invalid length byte count: {}",
+                num_bytes
+            )));
         }
         if data.len() < 1 + num_bytes {
             return Err(SnmpError::encoding("Truncated length field"));
@@ -146,7 +155,8 @@ pub fn decode_unsigned32(value_bytes: &[u8]) -> SnmpResult<u32> {
     }
     let mut result: u32 = 0;
     for &b in value_bytes {
-        result = result.checked_shl(8)
+        result = result
+            .checked_shl(8)
             .ok_or_else(|| SnmpError::encoding("Unsigned32 overflow"))?
             | b as u32;
     }
@@ -173,7 +183,8 @@ pub fn decode_counter64(value_bytes: &[u8]) -> SnmpResult<u64> {
     }
     let mut result: u64 = 0;
     for &b in value_bytes {
-        result = result.checked_shl(8)
+        result = result
+            .checked_shl(8)
             .ok_or_else(|| SnmpError::encoding("Counter64 overflow"))?
             | b as u64;
     }
@@ -197,11 +208,18 @@ pub fn encode_oid(oid: &Oid) -> Vec<u8> {
 
 /// Encode an IpAddress (4 bytes).
 pub fn encode_ip_address(ip: &str) -> SnmpResult<Vec<u8>> {
-    let parts: Vec<u8> = ip.split('.')
-        .map(|p| p.parse::<u8>().map_err(|_| SnmpError::encoding(format!("Invalid IP octet: {}", p))))
+    let parts: Vec<u8> = ip
+        .split('.')
+        .map(|p| {
+            p.parse::<u8>()
+                .map_err(|_| SnmpError::encoding(format!("Invalid IP octet: {}", p)))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if parts.len() != 4 {
-        return Err(SnmpError::encoding(format!("IpAddress must have 4 octets, got {}", parts.len())));
+        return Err(SnmpError::encoding(format!(
+            "IpAddress must have 4 octets, got {}",
+            parts.len()
+        )));
     }
     Ok(encode_tlv(TAG_IP_ADDRESS, &parts))
 }
@@ -272,7 +290,10 @@ pub fn decode_value(tag: u8, value_bytes: &[u8]) -> SnmpResult<SnmpValue> {
         TAG_NO_SUCH_OBJECT => Ok(SnmpValue::NoSuchObject),
         TAG_NO_SUCH_INSTANCE => Ok(SnmpValue::NoSuchInstance),
         TAG_END_OF_MIB_VIEW => Ok(SnmpValue::EndOfMibView),
-        _ => Err(SnmpError::encoding(format!("Unknown BER tag: 0x{:02x}", tag))),
+        _ => Err(SnmpError::encoding(format!(
+            "Unknown BER tag: 0x{:02x}",
+            tag
+        ))),
     }
 }
 
@@ -297,7 +318,10 @@ pub fn encode_varbind_list(varbinds: &[(String, SnmpValue)]) -> SnmpResult<Vec<u
 pub fn decode_varbind_list(data: &[u8]) -> SnmpResult<Vec<VarBind>> {
     let (tag, seq_bytes, _) = decode_tlv(data)?;
     if tag != TAG_SEQUENCE {
-        return Err(SnmpError::encoding(format!("Expected SEQUENCE tag 0x30, got 0x{:02x}", tag)));
+        return Err(SnmpError::encoding(format!(
+            "Expected SEQUENCE tag 0x30, got 0x{:02x}",
+            tag
+        )));
     }
 
     let mut varbinds = vec![];

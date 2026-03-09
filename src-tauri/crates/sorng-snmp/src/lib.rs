@@ -18,27 +18,27 @@
 //!
 //! Used by the sortOfRemoteNG front-end for network device management and monitoring.
 
-pub mod types;
-pub mod error;
-pub mod oid;
 pub mod ber;
-pub mod pdu;
-pub mod v3;
-pub mod client;
-pub mod get;
-pub mod walk;
-pub mod set;
-pub mod table;
 pub mod bulk;
-pub mod trap;
-pub mod mib;
-pub mod discovery;
-pub mod monitor;
-pub mod ifmib;
-pub mod system_info;
-pub mod service;
+pub mod client;
 pub mod commands;
+pub mod discovery;
+pub mod error;
+pub mod get;
+pub mod ifmib;
+pub mod mib;
+pub mod monitor;
+pub mod oid;
+pub mod pdu;
+pub mod service;
+pub mod set;
+pub mod system_info;
+pub mod table;
+pub mod trap;
+pub mod types;
+pub mod v3;
+pub mod walk;
 
-pub use types::*;
 pub use error::{SnmpError, SnmpErrorKind, SnmpResult};
 pub use service::{SnmpService, SnmpServiceState};
+pub use types::*;

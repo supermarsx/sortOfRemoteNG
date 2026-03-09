@@ -7,8 +7,8 @@ use crate::error::SnmpResult;
 use crate::oid::well_known;
 use crate::types::*;
 use std::net::Ipv4Addr;
-use tokio::sync::Semaphore;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 /// Run a discovery scan based on the provided configuration.
 pub async fn discover(config: &DiscoveryConfig) -> SnmpResult<DiscoveryResult> {
@@ -77,7 +77,11 @@ async fn probe_host(ip: &str, config: &DiscoveryConfig) -> Option<SnmpDevice> {
                 host: ip.to_string(),
                 port: config.port,
                 version: *version,
-                community: if community.is_empty() { None } else { Some(community.clone()) },
+                community: if community.is_empty() {
+                    None
+                } else {
+                    Some(community.clone())
+                },
                 v3_credentials: None,
                 timeout_ms: config.timeout_ms,
                 retries: 0,
@@ -171,9 +175,9 @@ fn expand_cidr(cidr: &str) -> Result<Vec<String>, String> {
         return Ok(vec![cidr.to_string()]);
     }
 
-    let base_ip: Ipv4Addr = parts[0].parse()
-        .map_err(|e| format!("Invalid IP: {}", e))?;
-    let prefix_len: u32 = parts[1].parse()
+    let base_ip: Ipv4Addr = parts[0].parse().map_err(|e| format!("Invalid IP: {}", e))?;
+    let prefix_len: u32 = parts[1]
+        .parse()
         .map_err(|e| format!("Invalid prefix length: {}", e))?;
 
     if prefix_len > 32 {
@@ -181,7 +185,11 @@ fn expand_cidr(cidr: &str) -> Result<Vec<String>, String> {
     }
 
     let base_u32 = u32::from(base_ip);
-    let mask = if prefix_len == 0 { 0 } else { !((1u32 << (32 - prefix_len)) - 1) };
+    let mask = if prefix_len == 0 {
+        0
+    } else {
+        !((1u32 << (32 - prefix_len)) - 1)
+    };
     let network = base_u32 & mask;
     let broadcast = network | !mask;
 

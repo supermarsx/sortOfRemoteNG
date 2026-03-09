@@ -79,7 +79,10 @@ pub struct SnmpError {
 
 impl SnmpError {
     pub fn new(kind: SnmpErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
 
     pub fn connection(msg: impl Into<String>) -> Self {
