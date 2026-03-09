@@ -1,17 +1,15 @@
+use chrono::{Duration, Utc};
+use log::{error, info, warn};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use chrono::{DateTime, Utc, Duration};
-use log::{info, warn, error};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::error::{BackupVerifyError, Result};
-use crate::types::{
-    BackupJob, BackupJobState, BackupMethod, BackupPolicy, CatalogEntry,
-};
 use crate::catalog::BackupCatalog;
-use crate::policies::{PolicyManager, calculate_next_run, is_in_blackout};
+use crate::error::{BackupVerifyError, Result};
+use crate::policies::{calculate_next_run, is_in_blackout, PolicyManager};
+use crate::types::{BackupJob, BackupJobState, BackupPolicy};
 
 /// Backup job scheduler managing job queues, execution, and lifecycle.
 pub struct BackupScheduler {
@@ -21,6 +19,12 @@ pub struct BackupScheduler {
     running: Arc<AtomicBool>,
     scheduler_handle: Option<tokio::task::JoinHandle<()>>,
     max_concurrent: u32,
+}
+
+impl Default for BackupScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BackupScheduler {
@@ -40,7 +44,7 @@ impl BackupScheduler {
         running: Arc<AtomicBool>,
         policies: Arc<Mutex<PolicyManager>>,
         scheduler: Arc<Mutex<BackupScheduler>>,
-        catalog: Arc<Mutex<BackupCatalog>>,
+        _catalog: Arc<Mutex<BackupCatalog>>,
     ) -> tokio::task::JoinHandle<()> {
         running.store(true, Ordering::SeqCst);
         info!("Starting backup scheduler");
@@ -61,9 +65,13 @@ impl BackupScheduler {
                         }
 
                         // Check if a job is already running or queued for this policy
-                        let already_active = scheduler_lock.running_jobs.values()
+                        let already_active = scheduler_lock
+                            .running_jobs
+                            .values()
                             .any(|j| j.policy_id == policy.id)
-                            || scheduler_lock.queued_jobs.iter()
+                            || scheduler_lock
+                                .queued_jobs
+                                .iter()
                                 .any(|j| j.policy_id == policy.id);
 
                         if already_active {
@@ -73,9 +81,12 @@ impl BackupScheduler {
                         // Check if it's time to run
                         if let Ok(next_run) = calculate_next_run(&policy.schedule) {
                             let now = Utc::now();
-                            let window = Duration::minutes(policy.schedule.start_window_minutes as i64);
+                            let window =
+                                Duration::minutes(policy.schedule.start_window_minutes as i64);
                             if next_run <= now + window && next_run >= now - Duration::minutes(1) {
-                                if let Err(e) = scheduler_lock.queue_job_internal(&policy.id, &policy.name) {
+                                if let Err(e) =
+                                    scheduler_lock.queue_job_internal(&policy.id, &policy.name)
+                                {
                                     warn!("Failed to queue job for policy {}: {}", policy.id, e);
                                 }
                             }
@@ -112,7 +123,10 @@ impl BackupScheduler {
         let job_id = Uuid::new_v4().to_string();
         let location = format!("/backups/{}/{}", policy_id, job_id);
         let job = BackupJob::new(job_id.clone(), policy_id.to_string(), location);
-        info!("Queuing backup job {} for policy {} ({})", job_id, policy_name, policy_id);
+        info!(
+            "Queuing backup job {} for policy {} ({})",
+            job_id, policy_name, policy_id
+        );
         self.queued_jobs.push(job);
         // Sort by priority (we'd need priority on the job, use insertion order for now)
         Ok(job_id)
@@ -126,10 +140,13 @@ impl BackupScheduler {
     /// Execute a backup job — transitions from Queued to Running.
     pub fn run_job(&mut self, job_id: &str) -> Result<()> {
         // Find and remove from queue
-        let pos = self.queued_jobs.iter().position(|j| j.id == job_id)
-            .ok_or_else(|| BackupVerifyError::scheduler_error(
-                format!("Job '{}' not found in queue", job_id),
-            ))?;
+        let pos = self
+            .queued_jobs
+            .iter()
+            .position(|j| j.id == job_id)
+            .ok_or_else(|| {
+                BackupVerifyError::scheduler_error(format!("Job '{}' not found in queue", job_id))
+            })?;
 
         let mut job = self.queued_jobs.remove(pos);
         job.state = BackupJobState::Running;
@@ -155,9 +172,10 @@ impl BackupScheduler {
                 return Ok(job);
             }
         }
-        Err(BackupVerifyError::scheduler_error(
-            format!("Job '{}' not found", job_id),
-        ))
+        Err(BackupVerifyError::scheduler_error(format!(
+            "Job '{}' not found",
+            job_id
+        )))
     }
 
     /// List all currently running jobs.
@@ -194,9 +212,10 @@ impl BackupScheduler {
             return Ok(());
         }
 
-        Err(BackupVerifyError::scheduler_error(
-            format!("Job '{}' not found in queue or running", job_id),
-        ))
+        Err(BackupVerifyError::scheduler_error(format!(
+            "Job '{}' not found in queue or running",
+            job_id
+        )))
     }
 
     /// Get job history for a specific policy.
@@ -211,7 +230,14 @@ impl BackupScheduler {
     }
 
     /// Handle job completion — move to history and update stats.
-    pub fn handle_job_completion(&mut self, job_id: &str, success: bool, size_bytes: u64, files_count: u64, error_msg: Option<String>) -> Result<BackupJob> {
+    pub fn handle_job_completion(
+        &mut self,
+        job_id: &str,
+        success: bool,
+        size_bytes: u64,
+        files_count: u64,
+        error_msg: Option<String>,
+    ) -> Result<BackupJob> {
         let mut job = self.running_jobs.remove(job_id).ok_or_else(|| {
             BackupVerifyError::scheduler_error(format!("Running job '{}' not found", job_id))
         })?;
@@ -230,7 +256,10 @@ impl BackupScheduler {
 
         if success {
             job.state = BackupJobState::Completed;
-            info!("Job {} completed successfully: {} bytes, {} files", job_id, size_bytes, files_count);
+            info!(
+                "Job {} completed successfully: {} bytes, {} files",
+                job_id, size_bytes, files_count
+            );
         } else {
             job.state = BackupJobState::Failed;
             job.error_message = error_msg;
@@ -243,9 +272,15 @@ impl BackupScheduler {
     }
 
     /// Apply retry logic for a failed job.
-    pub fn apply_retry_logic(&mut self, failed_job: &BackupJob, max_retries: u32, delay_secs: u64) -> Option<String> {
+    pub fn apply_retry_logic(
+        &mut self,
+        failed_job: &BackupJob,
+        max_retries: u32,
+        delay_secs: u64,
+    ) -> Option<String> {
         // Count existing retries for this policy in history
-        let retry_count = self.job_history
+        let retry_count = self
+            .job_history
             .get(&failed_job.policy_id)
             .map(|jobs| {
                 jobs.iter()
@@ -284,7 +319,9 @@ impl BackupScheduler {
     /// Check if bandwidth limit allows a new job to proceed.
     pub fn bandwidth_throttle_check(&self, policy: &BackupPolicy) -> bool {
         if let Some(limit) = policy.bandwidth_limit {
-            let current_bps: u64 = self.running_jobs.values()
+            let current_bps: u64 = self
+                .running_jobs
+                .values()
                 .filter(|j| j.policy_id == policy.id)
                 .map(|j| j.transfer_speed_bps)
                 .sum();
@@ -301,7 +338,8 @@ impl BackupScheduler {
 
     /// Promote queued jobs to running if under concurrency limit.
     fn promote_queued_jobs(&mut self) {
-        while (self.running_jobs.len() as u32) < self.max_concurrent && !self.queued_jobs.is_empty() {
+        while (self.running_jobs.len() as u32) < self.max_concurrent && !self.queued_jobs.is_empty()
+        {
             let mut job = self.queued_jobs.remove(0);
             job.state = BackupJobState::Running;
             job.started_at = Some(Utc::now());
@@ -325,7 +363,8 @@ impl BackupScheduler {
     /// Count failed jobs in the last N hours.
     pub fn failed_in_last_hours(&self, hours: i64) -> u32 {
         let cutoff = Utc::now() - Duration::hours(hours);
-        self.job_history.values()
+        self.job_history
+            .values()
             .flat_map(|v| v.iter())
             .filter(|j| {
                 j.state == BackupJobState::Failed
@@ -375,7 +414,9 @@ mod tests {
         let mut scheduler = BackupScheduler::new();
         let job_id = scheduler.queue_job("p1").unwrap();
         scheduler.run_job(&job_id).unwrap();
-        let job = scheduler.handle_job_completion(&job_id, true, 1024, 10, None).unwrap();
+        let job = scheduler
+            .handle_job_completion(&job_id, true, 1024, 10, None)
+            .unwrap();
         assert_eq!(job.state, BackupJobState::Completed);
         assert_eq!(job.size_bytes, 1024);
         assert!(scheduler.running_jobs.is_empty());

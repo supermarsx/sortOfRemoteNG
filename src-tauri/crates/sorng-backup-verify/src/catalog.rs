@@ -1,13 +1,10 @@
+use crate::error::{BackupVerifyError, Result};
+use crate::types::{BackupMethod, CatalogEntry, CatalogFilter, VerificationResult};
+use chrono::{DateTime, Utc};
+use log::{info, warn};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use chrono::{DateTime, Utc, Duration};
-use log::{info, warn, error};
-use uuid::Uuid;
-
-use crate::error::{BackupVerifyError, Result};
-use crate::types::{
-    BackupMethod, CatalogEntry, CatalogFilter, VerificationResult,
-};
 
 /// Persistent backup catalog managing all backup entries.
 pub struct BackupCatalog {
@@ -29,13 +26,20 @@ impl BackupCatalog {
         if persistence_path.exists() {
             let data = std::fs::read_to_string(&persistence_path)?;
             let entries: HashMap<String, CatalogEntry> = serde_json::from_str(&data)?;
-            info!("Loaded {} catalog entries from {:?}", entries.len(), persistence_path);
+            info!(
+                "Loaded {} catalog entries from {:?}",
+                entries.len(),
+                persistence_path
+            );
             Ok(Self {
                 entries,
                 persistence_path,
             })
         } else {
-            info!("No existing catalog at {:?}, creating new", persistence_path);
+            info!(
+                "No existing catalog at {:?}, creating new",
+                persistence_path
+            );
             Ok(Self::new(persistence_path))
         }
     }
@@ -47,7 +51,11 @@ impl BackupCatalog {
         }
         let data = serde_json::to_string_pretty(&self.entries)?;
         std::fs::write(&self.persistence_path, data)?;
-        info!("Saved {} catalog entries to {:?}", self.entries.len(), self.persistence_path);
+        info!(
+            "Saved {} catalog entries to {:?}",
+            self.entries.len(),
+            self.persistence_path
+        );
         Ok(())
     }
 
@@ -55,11 +63,15 @@ impl BackupCatalog {
     pub fn add_entry(&mut self, entry: CatalogEntry) -> Result<String> {
         let id = entry.id.clone();
         if self.entries.contains_key(&id) {
-            return Err(BackupVerifyError::catalog_error(
-                format!("Catalog entry '{}' already exists", id),
-            ));
+            return Err(BackupVerifyError::catalog_error(format!(
+                "Catalog entry '{}' already exists",
+                id
+            )));
         }
-        info!("Adding catalog entry: {} (policy={}, target={})", id, entry.policy_id, entry.target_id);
+        info!(
+            "Adding catalog entry: {} (policy={}, target={})",
+            id, entry.policy_id, entry.target_id
+        );
         self.entries.insert(id.clone(), entry);
         self.save()?;
         Ok(id)
@@ -69,9 +81,10 @@ impl BackupCatalog {
     pub fn update_entry(&mut self, entry: CatalogEntry) -> Result<()> {
         let id = entry.id.clone();
         if !self.entries.contains_key(&id) {
-            return Err(BackupVerifyError::catalog_error(
-                format!("Catalog entry '{}' not found", id),
-            ));
+            return Err(BackupVerifyError::catalog_error(format!(
+                "Catalog entry '{}' not found",
+                id
+            )));
         }
         self.entries.insert(id.clone(), entry);
         self.save()?;
@@ -183,7 +196,9 @@ impl BackupCatalog {
         }
 
         // Collect all entries for this policy/target sorted by timestamp descending
-        let mut candidates: Vec<&CatalogEntry> = self.entries.values()
+        let mut candidates: Vec<&CatalogEntry> = self
+            .entries
+            .values()
             .filter(|e| e.policy_id == entry.policy_id && e.target_id == entry.target_id)
             .filter(|e| e.timestamp < entry.timestamp)
             .collect();
@@ -214,17 +229,26 @@ impl BackupCatalog {
                 for e in entries {
                     csv.push_str(&format!(
                         "{},{},{},{},{:?},{},{},{},{},{},{},{}\n",
-                        e.id, e.job_id, e.policy_id, e.target_id,
-                        e.backup_type, e.timestamp.to_rfc3339(),
-                        e.size_bytes, e.file_count, e.location,
-                        e.checksum, e.retention_until.to_rfc3339(), e.verified
+                        e.id,
+                        e.job_id,
+                        e.policy_id,
+                        e.target_id,
+                        e.backup_type,
+                        e.timestamp.to_rfc3339(),
+                        e.size_bytes,
+                        e.file_count,
+                        e.location,
+                        e.checksum,
+                        e.retention_until.to_rfc3339(),
+                        e.verified
                     ));
                 }
                 Ok(csv)
             }
-            _ => Err(BackupVerifyError::catalog_error(
-                format!("Unsupported export format: {}", format),
-            )),
+            _ => Err(BackupVerifyError::catalog_error(format!(
+                "Unsupported export format: {}",
+                format
+            ))),
         }
     }
 
@@ -233,8 +257,8 @@ impl BackupCatalog {
         let imported: HashMap<String, CatalogEntry> = serde_json::from_str(data)?;
         let count = imported.len() as u64;
         for (id, entry) in imported {
-            if !self.entries.contains_key(&id) {
-                self.entries.insert(id, entry);
+            if let Entry::Vacant(e) = self.entries.entry(id.clone()) {
+                e.insert(entry);
             } else {
                 warn!("Skipping duplicate catalog entry: {}", id);
             }
@@ -267,7 +291,8 @@ impl BackupCatalog {
     /// Remove entries whose retention_until has passed.
     pub fn prune_expired_entries(&mut self) -> Result<Vec<CatalogEntry>> {
         let now = Utc::now();
-        let expired_ids: Vec<String> = self.entries
+        let expired_ids: Vec<String> = self
+            .entries
             .iter()
             .filter(|(_, e)| e.retention_until < now)
             .map(|(id, _)| id.clone())
@@ -276,7 +301,10 @@ impl BackupCatalog {
         let mut pruned = Vec::new();
         for id in &expired_ids {
             if let Some(entry) = self.entries.remove(id) {
-                info!("Pruning expired catalog entry: {} (expired at {})", id, entry.retention_until);
+                info!(
+                    "Pruning expired catalog entry: {} (expired at {})",
+                    id, entry.retention_until
+                );
                 pruned.push(entry);
             }
         }
@@ -291,9 +319,10 @@ impl BackupCatalog {
     /// Rebuild catalog from a storage directory by scanning for backup metadata files.
     pub fn rebuild_catalog_from_storage(&mut self, storage_path: &Path) -> Result<u64> {
         if !storage_path.exists() {
-            return Err(BackupVerifyError::storage_error(
-                format!("Storage path does not exist: {:?}", storage_path),
-            ));
+            return Err(BackupVerifyError::storage_error(format!(
+                "Storage path does not exist: {:?}",
+                storage_path
+            )));
         }
 
         let mut count: u64 = 0;
@@ -305,8 +334,10 @@ impl BackupCatalog {
                     Ok(data) => match serde_json::from_str::<CatalogEntry>(&data) {
                         Ok(entry) => {
                             let id = entry.id.clone();
-                            if !self.entries.contains_key(&id) {
-                                self.entries.insert(id, entry);
+                            if let std::collections::hash_map::Entry::Vacant(e) =
+                                self.entries.entry(id)
+                            {
+                                e.insert(entry);
                                 count += 1;
                             }
                         }
@@ -324,7 +355,10 @@ impl BackupCatalog {
         if count > 0 {
             self.save()?;
         }
-        info!("Rebuilt catalog: found {} new entries from {:?}", count, storage_path);
+        info!(
+            "Rebuilt catalog: found {} new entries from {:?}",
+            count, storage_path
+        );
         Ok(count)
     }
 
@@ -393,7 +427,12 @@ mod tests {
     use crate::types::BackupMethod;
     use chrono::Duration;
 
-    fn make_entry(id: &str, policy_id: &str, target_id: &str, method: BackupMethod) -> CatalogEntry {
+    fn make_entry(
+        id: &str,
+        policy_id: &str,
+        target_id: &str,
+        method: BackupMethod,
+    ) -> CatalogEntry {
         CatalogEntry {
             id: id.to_string(),
             job_id: format!("job-{}", id),
@@ -429,9 +468,15 @@ mod tests {
     fn test_search_entries() {
         let tmp = std::env::temp_dir().join(format!("catalog_test_{}.json", Uuid::new_v4()));
         let mut catalog = BackupCatalog::new(tmp.clone());
-        catalog.add_entry(make_entry("e1", "p1", "t1", BackupMethod::Full)).unwrap();
-        catalog.add_entry(make_entry("e2", "p1", "t2", BackupMethod::Incremental)).unwrap();
-        catalog.add_entry(make_entry("e3", "p2", "t1", BackupMethod::Full)).unwrap();
+        catalog
+            .add_entry(make_entry("e1", "p1", "t1", BackupMethod::Full))
+            .unwrap();
+        catalog
+            .add_entry(make_entry("e2", "p1", "t2", BackupMethod::Incremental))
+            .unwrap();
+        catalog
+            .add_entry(make_entry("e3", "p2", "t1", BackupMethod::Full))
+            .unwrap();
 
         let filter = CatalogFilter {
             policy_id: Some("p1".to_string()),
@@ -446,7 +491,9 @@ mod tests {
     fn test_export_csv() {
         let tmp = std::env::temp_dir().join(format!("catalog_test_{}.json", Uuid::new_v4()));
         let mut catalog = BackupCatalog::new(tmp.clone());
-        catalog.add_entry(make_entry("e1", "p1", "t1", BackupMethod::Full)).unwrap();
+        catalog
+            .add_entry(make_entry("e1", "p1", "t1", BackupMethod::Full))
+            .unwrap();
         let csv = catalog.export_catalog("csv").unwrap();
         assert!(csv.contains("e1"));
         assert!(csv.contains("p1"));

@@ -1,18 +1,19 @@
-use std::collections::HashMap;
-use chrono::{DateTime, Utc, Duration, Datelike, Timelike};
-use log::{info, warn};
-use uuid::Uuid;
-use regex::Regex;
-
 use crate::error::{BackupVerifyError, Result};
-use crate::types::{
-    BackupPolicy, BackupMethod, BackupSchedule, BackupTarget, RetentionPolicy,
-    CompressionConfig, EncryptionConfig, PolicyStatus, PolicyHealth, BackupJobState,
-};
+use crate::types::{BackupJobState, BackupPolicy, BackupSchedule, PolicyHealth, PolicyStatus};
+use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
+use log::info;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 /// Manages backup policies — create, update, validate, and query.
 pub struct PolicyManager {
     policies: HashMap<String, BackupPolicy>,
+}
+
+impl Default for PolicyManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PolicyManager {
@@ -26,9 +27,10 @@ impl PolicyManager {
     pub fn create_policy(&mut self, policy: BackupPolicy) -> Result<String> {
         let id = policy.id.clone();
         if self.policies.contains_key(&id) {
-            return Err(BackupVerifyError::catalog_error(
-                format!("Policy '{}' already exists", id),
-            ));
+            return Err(BackupVerifyError::catalog_error(format!(
+                "Policy '{}' already exists",
+                id
+            )));
         }
         self.validate_policy(&policy)?;
         info!("Creating backup policy: {} ({})", policy.name, id);
@@ -50,23 +52,23 @@ impl PolicyManager {
 
     /// Delete a policy by ID.
     pub fn delete_policy(&mut self, policy_id: &str) -> Result<BackupPolicy> {
-        self.policies.remove(policy_id).ok_or_else(|| {
-            BackupVerifyError::policy_not_found(policy_id)
-        })
+        self.policies
+            .remove(policy_id)
+            .ok_or_else(|| BackupVerifyError::policy_not_found(policy_id))
     }
 
     /// Get a policy by ID.
     pub fn get_policy(&self, policy_id: &str) -> Result<&BackupPolicy> {
-        self.policies.get(policy_id).ok_or_else(|| {
-            BackupVerifyError::policy_not_found(policy_id)
-        })
+        self.policies
+            .get(policy_id)
+            .ok_or_else(|| BackupVerifyError::policy_not_found(policy_id))
     }
 
     /// Get a mutable reference to a policy.
     pub fn get_policy_mut(&mut self, policy_id: &str) -> Result<&mut BackupPolicy> {
-        self.policies.get_mut(policy_id).ok_or_else(|| {
-            BackupVerifyError::policy_not_found(policy_id)
-        })
+        self.policies
+            .get_mut(policy_id)
+            .ok_or_else(|| BackupVerifyError::policy_not_found(policy_id))
     }
 
     /// List all policies.
@@ -95,18 +97,23 @@ impl PolicyManager {
     /// Validate a backup policy for consistency.
     pub fn validate_policy(&self, policy: &BackupPolicy) -> Result<()> {
         if policy.name.trim().is_empty() {
-            return Err(BackupVerifyError::catalog_error("Policy name cannot be empty"));
+            return Err(BackupVerifyError::catalog_error(
+                "Policy name cannot be empty",
+            ));
         }
         if policy.targets.is_empty() {
-            return Err(BackupVerifyError::catalog_error("Policy must have at least one target"));
+            return Err(BackupVerifyError::catalog_error(
+                "Policy must have at least one target",
+            ));
         }
 
         // Validate the cron expression has 5 fields
         let cron_parts: Vec<&str> = policy.schedule.cron_expression.split_whitespace().collect();
         if cron_parts.len() != 5 {
-            return Err(BackupVerifyError::catalog_error(
-                format!("Invalid cron expression '{}': expected 5 fields", policy.schedule.cron_expression),
-            ));
+            return Err(BackupVerifyError::catalog_error(format!(
+                "Invalid cron expression '{}': expected 5 fields",
+                policy.schedule.cron_expression
+            )));
         }
 
         // Validate retention makes sense
@@ -141,9 +148,10 @@ impl PolicyManager {
         for bp in &policy.schedule.blackout_periods {
             for d in &bp.days_of_week {
                 if *d > 6 {
-                    return Err(BackupVerifyError::catalog_error(
-                        format!("Invalid day_of_week {} in blackout period", d),
-                    ));
+                    return Err(BackupVerifyError::catalog_error(format!(
+                        "Invalid day_of_week {} in blackout period",
+                        d
+                    )));
                 }
             }
         }
@@ -161,7 +169,10 @@ impl PolicyManager {
         cloned.name = new_name.to_string();
         cloned.created_at = now;
         cloned.updated_at = now;
-        info!("Cloning policy '{}' as '{}' ({})", source_id, new_name, new_id);
+        info!(
+            "Cloning policy '{}' as '{}' ({})",
+            source_id, new_name, new_id
+        );
         self.policies.insert(new_id.clone(), cloned);
         Ok(new_id)
     }
@@ -175,10 +186,12 @@ impl PolicyManager {
         let policy = self.get_policy(policy_id)?;
 
         let total_jobs = job_history.len() as u64;
-        let successful_jobs = job_history.iter()
+        let successful_jobs = job_history
+            .iter()
             .filter(|(s, _, _)| *s == BackupJobState::Completed)
             .count() as u64;
-        let failed_jobs = job_history.iter()
+        let failed_jobs = job_history
+            .iter()
             .filter(|(s, _, _)| *s == BackupJobState::Failed)
             .count() as u64;
         let total_size: u64 = job_history.iter().map(|(_, _, sz)| sz).sum();
@@ -195,10 +208,12 @@ impl PolicyManager {
         let health = if total_jobs == 0 {
             PolicyHealth::Unknown
         } else {
-            let recent: Vec<_> = job_history.iter()
+            let recent: Vec<_> = job_history
+                .iter()
                 .filter(|(_, t, _)| *t > Utc::now() - Duration::days(7))
                 .collect();
-            let recent_failures = recent.iter()
+            let recent_failures = recent
+                .iter()
                 .filter(|(s, _, _)| *s == BackupJobState::Failed)
                 .count();
             if recent_failures == 0 {
@@ -267,9 +282,10 @@ impl PolicyManager {
 pub fn calculate_next_run(schedule: &BackupSchedule) -> Result<DateTime<Utc>> {
     let parts: Vec<&str> = schedule.cron_expression.split_whitespace().collect();
     if parts.len() != 5 {
-        return Err(BackupVerifyError::scheduler_error(
-            format!("Invalid cron: '{}'", schedule.cron_expression),
-        ));
+        return Err(BackupVerifyError::scheduler_error(format!(
+            "Invalid cron: '{}'",
+            schedule.cron_expression
+        )));
     }
 
     let now = Utc::now();
@@ -292,7 +308,7 @@ pub fn calculate_next_run(schedule: &BackupSchedule) -> Result<DateTime<Utc>> {
                 return Ok(candidate);
             }
         }
-        candidate = candidate + Duration::minutes(1);
+        candidate += Duration::minutes(1);
     }
 
     Err(BackupVerifyError::scheduler_error(
@@ -443,6 +459,9 @@ mod tests {
         assert_eq!(parse_cron_field("*", 0, 59).unwrap().len(), 60);
         assert_eq!(parse_cron_field("0", 0, 59).unwrap(), vec![0]);
         assert_eq!(parse_cron_field("1-5", 0, 59).unwrap(), vec![1, 2, 3, 4, 5]);
-        assert_eq!(parse_cron_field("*/15", 0, 59).unwrap(), vec![0, 15, 30, 45]);
+        assert_eq!(
+            parse_cron_field("*/15", 0, 59).unwrap(),
+            vec![0, 15, 30, 45]
+        );
     }
 }

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // ─── Target Types ───────────────────────────────────────────────────────────
@@ -697,7 +697,12 @@ pub struct ComplianceReport {
 }
 
 impl ComplianceReport {
-    pub fn new(id: String, framework: ComplianceFramework, period_start: DateTime<Utc>, period_end: DateTime<Utc>) -> Self {
+    pub fn new(
+        id: String,
+        framework: ComplianceFramework,
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
+    ) -> Self {
         Self {
             id,
             generated_at: Utc::now(),
@@ -815,7 +820,7 @@ impl BackupNotification {
 
 // ─── Overview ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BackupOverview {
     pub total_policies: u32,
     pub active_policies: u32,
@@ -828,24 +833,6 @@ pub struct BackupOverview {
     pub storage_used_bytes: u64,
     pub storage_available_bytes: u64,
     pub compliance_score: Option<f64>,
-}
-
-impl Default for BackupOverview {
-    fn default() -> Self {
-        Self {
-            total_policies: 0,
-            active_policies: 0,
-            total_catalog_entries: 0,
-            total_size_bytes: 0,
-            last_backup_at: None,
-            next_backup_at: None,
-            failed_last_24h: 0,
-            verified_last_24h: 0,
-            storage_used_bytes: 0,
-            storage_available_bytes: 0,
-            compliance_score: None,
-        }
-    }
 }
 
 // ─── SMTP Config ────────────────────────────────────────────────────────────

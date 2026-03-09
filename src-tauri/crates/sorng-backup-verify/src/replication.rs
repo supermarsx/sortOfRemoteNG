@@ -1,14 +1,13 @@
+use chrono::{DateTime, Utc};
+use log::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
-use chrono::{DateTime, Utc};
-use log::{info, warn, error};
 use uuid::Uuid;
 
 use crate::error::{BackupVerifyError, Result};
 use crate::integrity::IntegrityChecker;
 use crate::types::{
-    CatalogEntry, ReplicationState, ReplicationStatus, ReplicationTarget,
-    VerificationStatus,
+    CatalogEntry, ReplicationState, ReplicationStatus, ReplicationTarget, VerificationStatus,
 };
 
 // ─── Replication events ─────────────────────────────────────────────────────
@@ -65,16 +64,18 @@ impl ReplicationManager {
     pub fn add_replica(&mut self, target: ReplicationTarget) -> Result<String> {
         let id = target.id.clone();
         if self.targets.contains_key(&id) {
-            return Err(BackupVerifyError::replication_error(
-                format!("Replication target '{}' already exists", id),
-            ));
+            return Err(BackupVerifyError::replication_error(format!(
+                "Replication target '{}' already exists",
+                id
+            )));
         }
 
         info!(
             "Adding replication target '{}' at {}://{}{}",
             target.name, target.protocol, target.host, target.path
         );
-        self.status.insert(id.clone(), ReplicationStatus::new(id.clone()));
+        self.status
+            .insert(id.clone(), ReplicationStatus::new(id.clone()));
         self.targets.insert(id.clone(), target);
         Ok(id)
     }
@@ -83,9 +84,10 @@ impl ReplicationManager {
     pub fn remove_replica(&mut self, target_id: &str) -> Result<ReplicationTarget> {
         self.status.remove(target_id);
         self.targets.remove(target_id).ok_or_else(|| {
-            BackupVerifyError::replication_error(
-                format!("Replication target '{}' not found", target_id),
-            )
+            BackupVerifyError::replication_error(format!(
+                "Replication target '{}' not found",
+                target_id
+            ))
         })
     }
 
@@ -97,31 +99,30 @@ impl ReplicationManager {
     /// Get a target by ID.
     pub fn get_replica(&self, target_id: &str) -> Result<&ReplicationTarget> {
         self.targets.get(target_id).ok_or_else(|| {
-            BackupVerifyError::replication_error(
-                format!("Replication target '{}' not found", target_id),
-            )
+            BackupVerifyError::replication_error(format!(
+                "Replication target '{}' not found",
+                target_id
+            ))
         })
     }
 
     // ── Replication operations ─────────────────────────────────────────────
 
     /// Start replication of a catalog entry to a specific target.
-    pub fn start_replication(
-        &mut self,
-        entry: &CatalogEntry,
-        target_id: &str,
-    ) -> Result<String> {
+    pub fn start_replication(&mut self, entry: &CatalogEntry, target_id: &str) -> Result<String> {
         let target = self.targets.get(target_id).ok_or_else(|| {
-            BackupVerifyError::replication_error(
-                format!("Replication target '{}' not found", target_id),
-            )
+            BackupVerifyError::replication_error(format!(
+                "Replication target '{}' not found",
+                target_id
+            ))
         })?;
 
         let backup_path = Path::new(&entry.location);
         if !backup_path.exists() {
-            return Err(BackupVerifyError::replication_error(
-                format!("Source backup does not exist: {}", entry.location),
-            ));
+            return Err(BackupVerifyError::replication_error(format!(
+                "Source backup does not exist: {}",
+                entry.location
+            )));
         }
 
         let event_id = Uuid::new_v4().to_string();
@@ -138,7 +139,7 @@ impl ReplicationManager {
 
         // Simulate the replication transfer
         let bytes = entry.size_bytes;
-        let dest_path = format!("{}/{}", target.path, entry.id);
+        let _dest_path = format!("{}/{}", target.path, entry.id);
 
         // For local-path targets we can actually copy; for remote targets we
         // simulate.  Here we always record the event.
@@ -169,9 +170,7 @@ impl ReplicationManager {
     /// Check the replication status for a target.
     pub fn check_replication_status(&self, target_id: &str) -> Result<&ReplicationStatus> {
         self.status.get(target_id).ok_or_else(|| {
-            BackupVerifyError::replication_error(
-                format!("No status for target '{}'", target_id),
-            )
+            BackupVerifyError::replication_error(format!("No status for target '{}'", target_id))
         })
     }
 
@@ -188,7 +187,10 @@ impl ReplicationManager {
         };
 
         if lag > 3600 {
-            warn!("Replication lag for target {} is {} seconds", target_id, lag);
+            warn!(
+                "Replication lag for target {} is {} seconds",
+                target_id, lag
+            );
         }
         Ok(lag)
     }
@@ -198,9 +200,10 @@ impl ReplicationManager {
     /// authoritative.
     pub fn promote_replica(&mut self, target_id: &str) -> Result<()> {
         let target = self.targets.get(target_id).ok_or_else(|| {
-            BackupVerifyError::replication_error(
-                format!("Cannot promote: target '{}' not found", target_id),
-            )
+            BackupVerifyError::replication_error(format!(
+                "Cannot promote: target '{}' not found",
+                target_id
+            ))
         })?;
 
         // Ensure the replica is in sync before promotion
@@ -209,15 +212,16 @@ impl ReplicationManager {
         })?;
 
         if status.state != ReplicationState::InSync {
-            return Err(BackupVerifyError::replication_error(
-                format!(
-                    "Cannot promote target '{}': state is {:?}, expected InSync",
-                    target_id, status.state
-                ),
-            ));
+            return Err(BackupVerifyError::replication_error(format!(
+                "Cannot promote target '{}': state is {:?}, expected InSync",
+                target_id, status.state
+            )));
         }
 
-        info!("Promoting replica '{}' ({}) as primary", target.name, target_id);
+        info!(
+            "Promoting replica '{}' ({}) as primary",
+            target.name, target_id
+        );
 
         // Mark all other targets as needing re-sync
         for (id, s) in &mut self.status {
@@ -243,9 +247,10 @@ impl ReplicationManager {
         let source_path = Path::new(&entry.location);
 
         if !source_path.exists() {
-            return Err(BackupVerifyError::replication_error(
-                format!("Source backup not found: {}", entry.location),
-            ));
+            return Err(BackupVerifyError::replication_error(format!(
+                "Source backup not found: {}",
+                entry.location
+            )));
         }
 
         let mut result = ReplicaIntegrityResult {
@@ -260,8 +265,9 @@ impl ReplicationManager {
 
         // Build a manifest for the source
         if source_path.is_dir() {
-            let source_manifest =
-                self.integrity_checker.compute_manifest_path(source_path, "sha256")?;
+            let source_manifest = self
+                .integrity_checker
+                .compute_manifest_path(source_path, "sha256")?;
             result.files_checked = source_manifest.entries.len() as u64;
 
             // For remote targets we simulate a pass; for local paths we can
@@ -270,8 +276,9 @@ impl ReplicationManager {
             let replica_path = Path::new(&replica_path_str);
 
             if replica_path.exists() && replica_path.is_dir() {
-                let replica_manifest =
-                    self.integrity_checker.compute_manifest_path(replica_path, "sha256")?;
+                let replica_manifest = self
+                    .integrity_checker
+                    .compute_manifest_path(replica_path, "sha256")?;
                 let diff = IntegrityChecker::compare_manifests(&source_manifest, &replica_manifest);
 
                 result.mismatches = diff.modified.len() as u64 + diff.removed.len() as u64;
@@ -295,7 +302,9 @@ impl ReplicationManager {
                 let status = self.check_replication_status(target_id)?;
                 if status.state == ReplicationState::InSync {
                     result.status = VerificationStatus::Passed;
-                    result.details.push("Replica reports InSync (remote verification unavailable)".into());
+                    result
+                        .details
+                        .push("Replica reports InSync (remote verification unavailable)".into());
                 } else {
                     result.status = VerificationStatus::Warning;
                     result.details.push(format!(
@@ -327,7 +336,9 @@ impl ReplicationManager {
                 } else {
                     VerificationStatus::Warning
                 };
-                result.details.push("Replica file not locally accessible".into());
+                result
+                    .details
+                    .push("Replica file not locally accessible".into());
             }
         }
 
@@ -347,7 +358,10 @@ impl ReplicationManager {
 
     /// Get events for a specific target.
     pub fn get_events_for_target(&self, target_id: &str) -> Vec<&ReplicationEvent> {
-        self.events.iter().filter(|e| e.target_id == target_id).collect()
+        self.events
+            .iter()
+            .filter(|e| e.target_id == target_id)
+            .collect()
     }
 
     /// Pause replication for a target.
@@ -382,7 +396,9 @@ impl ReplicationManager {
                     target_id: t.id.clone(),
                     target_name: t.name.clone(),
                     site_name: t.site_name.clone(),
-                    state: status.map(|s| s.state.clone()).unwrap_or(ReplicationState::Initial),
+                    state: status
+                        .map(|s| s.state.clone())
+                        .unwrap_or(ReplicationState::Initial),
                     last_sync: status.and_then(|s| s.last_sync),
                     lag_secs: status.map(|s| s.lag_secs).unwrap_or(0),
                     lag_bytes: status.map(|s| s.lag_bytes).unwrap_or(0),

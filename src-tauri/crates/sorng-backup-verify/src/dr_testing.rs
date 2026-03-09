@@ -1,15 +1,11 @@
-use std::collections::HashMap;
+use chrono::{DateTime, Utc};
+use log::info;
 use std::path::{Path, PathBuf};
-use chrono::{DateTime, Utc, Duration};
-use log::{info, warn, error};
 use uuid::Uuid;
 
-use crate::error::{BackupVerifyError, Result};
-use crate::types::{
-    BackupPolicy, CatalogEntry, DrTest, DrTestResult, DrTestType,
-    VerificationMethod, VerificationStatus,
-};
+use crate::error::Result;
 use crate::integrity::IntegrityChecker;
+use crate::types::{BackupPolicy, CatalogEntry, VerificationStatus};
 
 // ─── DR drill plan ──────────────────────────────────────────────────────────
 
@@ -147,47 +143,38 @@ impl DrTestEngine {
         policy: &BackupPolicy,
         target_description: &str,
     ) -> DrDrillPlan {
-        let mut steps = Vec::new();
-
-        // Every drill starts with validating the backup exists
-        steps.push(DrDrillStep {
-            name: "Validate backup".into(),
-            description: "Confirm backup artifact exists and is accessible".into(),
-            step_type: DrStepType::ValidateBackupExists,
-            timeout_secs: 60,
-        });
-
-        // Restore to staging
-        steps.push(DrDrillStep {
-            name: "Restore to staging".into(),
-            description: "Copy / extract backup to staging area".into(),
-            step_type: DrStepType::RestoreToStaging,
-            timeout_secs: 1800,
-        });
-
-        // Integrity check
-        steps.push(DrDrillStep {
-            name: "Verify integrity".into(),
-            description: "Checksum comparison between source and restored data".into(),
-            step_type: DrStepType::VerifyIntegrity,
-            timeout_secs: 600,
-        });
-
-        // Application test (if the policy has app targets)
-        steps.push(DrDrillStep {
-            name: "Application healthcheck".into(),
-            description: "Verify restored application components respond correctly".into(),
-            step_type: DrStepType::ApplicationTest,
-            timeout_secs: 300,
-        });
-
-        // Cleanup
-        steps.push(DrDrillStep {
-            name: "Cleanup staging".into(),
-            description: "Remove temporary staging data".into(),
-            step_type: DrStepType::Cleanup,
-            timeout_secs: 120,
-        });
+        let steps = vec![
+            DrDrillStep {
+                name: "Validate backup".into(),
+                description: "Confirm backup artifact exists and is accessible".into(),
+                step_type: DrStepType::ValidateBackupExists,
+                timeout_secs: 60,
+            },
+            DrDrillStep {
+                name: "Restore to staging".into(),
+                description: "Copy / extract backup to staging area".into(),
+                step_type: DrStepType::RestoreToStaging,
+                timeout_secs: 1800,
+            },
+            DrDrillStep {
+                name: "Verify integrity".into(),
+                description: "Checksum comparison between source and restored data".into(),
+                step_type: DrStepType::VerifyIntegrity,
+                timeout_secs: 600,
+            },
+            DrDrillStep {
+                name: "Application healthcheck".into(),
+                description: "Verify restored application components respond correctly".into(),
+                step_type: DrStepType::ApplicationTest,
+                timeout_secs: 300,
+            },
+            DrDrillStep {
+                name: "Cleanup staging".into(),
+                description: "Remove temporary staging data".into(),
+                step_type: DrStepType::Cleanup,
+                timeout_secs: 120,
+            },
+        ];
 
         let plan = DrDrillPlan {
             id: Uuid::new_v4().to_string(),
@@ -310,10 +297,14 @@ impl DrTestEngine {
                 let backup_path = Path::new(&entry.location);
                 if backup_path.exists() {
                     result.status = VerificationStatus::Passed;
-                    result.details.push(format!("Backup found at {}", entry.location));
+                    result
+                        .details
+                        .push(format!("Backup found at {}", entry.location));
                 } else {
                     result.status = VerificationStatus::Failed;
-                    result.details.push(format!("Backup not found at {}", entry.location));
+                    result
+                        .details
+                        .push(format!("Backup not found at {}", entry.location));
                 }
             }
             DrStepType::RestoreToStaging => {
@@ -324,7 +315,9 @@ impl DrTestEngine {
                     match copy_dir_recursive(backup_path, staging_dir) {
                         Ok(count) => {
                             result.status = VerificationStatus::Passed;
-                            result.details.push(format!("Restored {} files to staging", count));
+                            result
+                                .details
+                                .push(format!("Restored {} files to staging", count));
                         }
                         Err(e) => {
                             result.status = VerificationStatus::Failed;
@@ -332,9 +325,7 @@ impl DrTestEngine {
                         }
                     }
                 } else if backup_path.is_file() {
-                    let dest = staging_dir.join(
-                        backup_path.file_name().unwrap_or_default(),
-                    );
+                    let dest = staging_dir.join(backup_path.file_name().unwrap_or_default());
                     match std::fs::copy(backup_path, &dest) {
                         Ok(_) => {
                             result.status = VerificationStatus::Passed;
@@ -347,27 +338,33 @@ impl DrTestEngine {
                     }
                 } else {
                     result.status = VerificationStatus::Failed;
-                    result.details.push("Backup path is neither file nor directory".into());
+                    result
+                        .details
+                        .push("Backup path is neither file nor directory".into());
                 }
             }
             DrStepType::VerifyIntegrity => {
                 let backup_path = Path::new(&entry.location);
                 if !backup_path.exists() || !staging_dir.exists() {
                     result.status = VerificationStatus::Skipped;
-                    result.details.push("Source or staging missing, skipping integrity".into());
+                    result
+                        .details
+                        .push("Source or staging missing, skipping integrity".into());
                 } else if backup_path.is_dir() {
-                    let source_manifest =
-                        self.integrity_checker.compute_manifest_path(backup_path, "sha256")?;
-                    let staging_manifest =
-                        self.integrity_checker.compute_manifest_path(staging_dir, "sha256")?;
-                    let diff = IntegrityChecker::compare_manifests(&source_manifest, &staging_manifest);
+                    let source_manifest = self
+                        .integrity_checker
+                        .compute_manifest_path(backup_path, "sha256")?;
+                    let staging_manifest = self
+                        .integrity_checker
+                        .compute_manifest_path(staging_dir, "sha256")?;
+                    let diff =
+                        IntegrityChecker::compare_manifests(&source_manifest, &staging_manifest);
 
                     if diff.modified.is_empty() && diff.removed.is_empty() {
                         result.status = VerificationStatus::Passed;
-                        result.details.push(format!(
-                            "All {} files match",
-                            diff.unchanged_count
-                        ));
+                        result
+                            .details
+                            .push(format!("All {} files match", diff.unchanged_count));
                     } else {
                         result.status = VerificationStatus::Failed;
                         for f in &diff.modified {
@@ -380,16 +377,17 @@ impl DrTestEngine {
                 } else {
                     // Single file — compare checksums
                     let src_hash = self.integrity_checker.compute_sha256(backup_path)?;
-                    let staging_file = staging_dir.join(
-                        backup_path.file_name().unwrap_or_default(),
-                    );
+                    let staging_file =
+                        staging_dir.join(backup_path.file_name().unwrap_or_default());
                     if staging_file.exists() {
                         let dst_hash = self.integrity_checker.compute_sha256(&staging_file)?;
                         if src_hash == dst_hash {
                             result.status = VerificationStatus::Passed;
                         } else {
                             result.status = VerificationStatus::Failed;
-                            result.details.push("Checksum mismatch after restore".into());
+                            result
+                                .details
+                                .push("Checksum mismatch after restore".into());
                         }
                     } else {
                         result.status = VerificationStatus::Failed;
@@ -400,7 +398,9 @@ impl DrTestEngine {
             DrStepType::BootTest => {
                 // Simulated boot test — verify entry metadata is consistent
                 result.status = VerificationStatus::Passed;
-                result.details.push("Boot test simulated (entry metadata consistent)".into());
+                result
+                    .details
+                    .push("Boot test simulated (entry metadata consistent)".into());
             }
             DrStepType::ApplicationTest => {
                 // Simulated application test — check that restored files look reasonable
@@ -423,7 +423,9 @@ impl DrTestEngine {
             }
             DrStepType::NetworkTest => {
                 result.status = VerificationStatus::Passed;
-                result.details.push("Network test simulated (local-only mode)".into());
+                result
+                    .details
+                    .push("Network test simulated (local-only mode)".into());
             }
             DrStepType::Cleanup => {
                 if staging_dir.exists() {
@@ -472,7 +474,9 @@ impl DrTestEngine {
         // Check existence
         report.backup_exists = backup_path.exists();
         if !report.backup_exists {
-            report.issues.push(format!("Backup not found: {}", entry.location));
+            report
+                .issues
+                .push(format!("Backup not found: {}", entry.location));
             return Ok(report);
         }
 
@@ -486,13 +490,17 @@ impl DrTestEngine {
                     }
                 }
                 Err(e) => {
-                    report.issues.push(format!("Cannot compute checksum: {}", e));
+                    report
+                        .issues
+                        .push(format!("Cannot compute checksum: {}", e));
                 }
             }
         } else {
             // No stored checksum; treat as valid but note it
             report.checksum_valid = true;
-            report.issues.push("No stored checksum to verify against".into());
+            report
+                .issues
+                .push("No stored checksum to verify against".into());
         }
 
         // Estimate restore time based on size (arbitrary 100 MB/s throughput)
@@ -542,7 +550,10 @@ impl DrTestEngine {
             enabled: true,
         });
 
-        info!("Scheduled DR drill for plan {} (cron: {})", plan_id, cron_expression);
+        info!(
+            "Scheduled DR drill for plan {} (cron: {})",
+            plan_id, cron_expression
+        );
     }
 
     /// List all scheduled drills.
@@ -562,15 +573,13 @@ impl DrTestEngine {
 
     /// Get a summary of recent drill results.
     pub fn get_drill_summary(&self, last_n: usize) -> DrDrillSummary {
-        let recent: Vec<&DrDrillResult> = self
-            .drill_history
-            .iter()
-            .rev()
-            .take(last_n)
-            .collect();
+        let recent: Vec<&DrDrillResult> = self.drill_history.iter().rev().take(last_n).collect();
 
         let total = recent.len() as u32;
-        let passed = recent.iter().filter(|r| r.status == VerificationStatus::Passed).count() as u32;
+        let passed = recent
+            .iter()
+            .filter(|r| r.status == VerificationStatus::Passed)
+            .count() as u32;
         let rto_met = recent.iter().filter(|r| r.rto_met).count() as u32;
         let rpo_met = recent.iter().filter(|r| r.rpo_met).count() as u32;
         let avg_duration = if total > 0 {
@@ -583,8 +592,16 @@ impl DrTestEngine {
             total_drills: total,
             passed,
             failed: total - passed,
-            rto_met_pct: if total > 0 { (rto_met as f64 / total as f64) * 100.0 } else { 0.0 },
-            rpo_met_pct: if total > 0 { (rpo_met as f64 / total as f64) * 100.0 } else { 0.0 },
+            rto_met_pct: if total > 0 {
+                (rto_met as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            },
+            rpo_met_pct: if total > 0 {
+                (rpo_met as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            },
             avg_duration_secs: avg_duration,
         }
     }

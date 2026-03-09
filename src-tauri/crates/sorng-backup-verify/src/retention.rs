@@ -1,12 +1,9 @@
+use chrono::{DateTime, Datelike, Duration, Utc};
+use log::info;
 use std::collections::HashMap;
-use chrono::{DateTime, Utc, Duration, Datelike};
-use log::{info, warn};
-use uuid::Uuid;
 
 use crate::error::{BackupVerifyError, Result};
-use crate::types::{
-    BackupMethod, BackupPolicy, CatalogEntry, PruneList, RetentionPolicy,
-};
+use crate::types::{BackupPolicy, CatalogEntry, PruneList};
 
 // ─── Retention action types ─────────────────────────────────────────────────
 
@@ -158,7 +155,9 @@ impl RetentionEngine {
             // Exceed max → always prune
             if age_days > retention.max_retention_days as i64 {
                 actions.entries_pruned += 1;
-                actions.details.push(format!("Prune {}: exceeds max retention", entry.id));
+                actions
+                    .details
+                    .push(format!("Prune {}: exceeds max retention", entry.id));
                 continue;
             }
 
@@ -205,10 +204,7 @@ impl RetentionEngine {
             }
 
             // Yearly tier
-            if !keep
-                && yearly_slots < retention.yearly_count
-                && !claimed_years.contains(&year)
-            {
+            if !keep && yearly_slots < retention.yearly_count && !claimed_years.contains(&year) {
                 yearly_slots += 1;
                 actions.yearly_kept += 1;
                 claimed_years.push(year);
@@ -219,10 +215,14 @@ impl RetentionEngine {
             if keep {
                 kept_ids.push(entry.id.clone());
                 actions.entries_kept += 1;
-                actions.details.push(format!("Keep {} (tier={})", entry.id, tier));
+                actions
+                    .details
+                    .push(format!("Keep {} (tier={})", entry.id, tier));
             } else {
                 actions.entries_pruned += 1;
-                actions.details.push(format!("Prune {}: no GFS slot", entry.id));
+                actions
+                    .details
+                    .push(format!("Prune {}: no GFS slot", entry.id));
             }
         }
 
@@ -308,7 +308,10 @@ impl RetentionEngine {
                 let reclaimable: u64 = entries
                     .iter()
                     .filter(|e| {
-                        !actions.details.iter().any(|d| d.contains(&e.id) && d.starts_with("Keep"))
+                        !actions
+                            .details
+                            .iter()
+                            .any(|d| d.contains(&e.id) && d.starts_with("Keep"))
                     })
                     .map(|e| e.size_bytes)
                     .sum();
@@ -345,7 +348,8 @@ impl RetentionEngine {
             "Immutability lock on '{}' until {} (reason: {})",
             entry_id, lock.expires_at, reason
         );
-        self.immutability_locks.insert(entry_id.to_string(), lock.clone());
+        self.immutability_locks
+            .insert(entry_id.to_string(), lock.clone());
         lock
     }
 
@@ -369,9 +373,10 @@ impl RetentionEngine {
     /// Remove an expired or manually released lock.
     pub fn remove_immutability_lock(&mut self, entry_id: &str) -> Result<()> {
         if self.is_immutable(entry_id) {
-            return Err(BackupVerifyError::storage_error(
-                format!("Cannot remove active immutability lock for '{}'", entry_id),
-            ));
+            return Err(BackupVerifyError::storage_error(format!(
+                "Cannot remove active immutability lock for '{}'",
+                entry_id
+            )));
         }
         self.immutability_locks.remove(entry_id);
         Ok(())
@@ -380,10 +385,7 @@ impl RetentionEngine {
     // ── Forecasting ────────────────────────────────────────────────────────
 
     /// Produce a forecast of when each entry will expire.
-    pub fn get_retention_forecast(
-        &self,
-        entries: &[&CatalogEntry],
-    ) -> Vec<RetentionForecastEntry> {
+    pub fn get_retention_forecast(&self, entries: &[&CatalogEntry]) -> Vec<RetentionForecastEntry> {
         entries
             .iter()
             .map(|e| {
@@ -420,17 +422,17 @@ impl RetentionEngine {
     }
 
     /// Build a `PruneList` from rotation actions for a policy.
-    pub fn build_prune_list(
-        &self,
-        policy: &BackupPolicy,
-        entries: &[&CatalogEntry],
-    ) -> PruneList {
+    pub fn build_prune_list(&self, policy: &BackupPolicy, entries: &[&CatalogEntry]) -> PruneList {
         let actions = self.apply_gfs_rotation(policy, entries);
         let mut prune = PruneList::new();
 
         for detail in &actions.details {
             if detail.starts_with("Prune") {
-                if let Some(id) = detail.split_whitespace().nth(1).map(|s| s.trim_end_matches(':')) {
+                if let Some(id) = detail
+                    .split_whitespace()
+                    .nth(1)
+                    .map(|s| s.trim_end_matches(':'))
+                {
                     prune.entries_to_remove.push(id.to_string());
                     if let Some(entry) = entries.iter().find(|e| e.id == id) {
                         prune.storage_savings_bytes += entry.size_bytes;

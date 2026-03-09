@@ -1,13 +1,8 @@
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
-use log::{info, warn, error};
-use uuid::Uuid;
+use log::{info, warn};
+use std::collections::HashMap;
 
-use crate::error::{BackupVerifyError, Result};
-use crate::types::{
-    BackupNotification, ChannelConfig, FindingSeverity, NotifyChannel, NotifyEvent,
-    SmtpConfig,
-};
+use crate::types::{BackupNotification, ChannelConfig, FindingSeverity, NotifyChannel, SmtpConfig};
 
 // ─── Dispatch result ────────────────────────────────────────────────────────
 
@@ -69,7 +64,8 @@ impl NotificationDispatcher {
             "Configured notification channels for policy {}: {:?}",
             config.policy_id, config.channels
         );
-        self.channel_configs.insert(config.policy_id.clone(), config);
+        self.channel_configs
+            .insert(config.policy_id.clone(), config);
     }
 
     /// Set SMTP configuration for email notifications.
@@ -170,7 +166,7 @@ impl NotificationDispatcher {
             "[Backup] {} — {}",
             notification.event, notification.severity
         );
-        let body = format!(
+        let _body = format!(
             "Event: {}\nSeverity: {}\nMessage: {}\nTime: {}\nPolicy: {}\nJob: {}",
             notification.event,
             notification.severity,
@@ -192,7 +188,11 @@ impl NotificationDispatcher {
         DispatchResult {
             channel: NotifyChannel::Email,
             success: true,
-            message: format!("Email queued to {} recipients: {}", recipients.len(), subject),
+            message: format!(
+                "Email queued to {} recipients: {}",
+                recipients.len(),
+                subject
+            ),
             sent_at: Utc::now(),
         }
     }
@@ -216,7 +216,7 @@ impl NotificationDispatcher {
             };
         }
 
-        let payload = serde_json::json!({
+        let _payload = serde_json::json!({
             "event": notification.event.to_string(),
             "severity": notification.severity.to_string(),
             "message": notification.message,
@@ -374,7 +374,11 @@ impl NotificationDispatcher {
                     channel: NotifyChannel::Email,
                     reachable,
                     latency_ms: 0,
-                    error: if reachable { None } else { Some("SMTP not configured".into()) },
+                    error: if reachable {
+                        None
+                    } else {
+                        Some("SMTP not configured".into())
+                    },
                     tested_at: now,
                 }
             }
@@ -388,7 +392,11 @@ impl NotificationDispatcher {
                     channel: NotifyChannel::Webhook,
                     reachable: has_urls,
                     latency_ms: 0,
-                    error: if has_urls { None } else { Some("No webhook URLs".into()) },
+                    error: if has_urls {
+                        None
+                    } else {
+                        Some("No webhook URLs".into())
+                    },
                     tested_at: now,
                 }
             }
@@ -402,7 +410,11 @@ impl NotificationDispatcher {
                     channel: NotifyChannel::Syslog,
                     reachable: has_target,
                     latency_ms: 0,
-                    error: if has_target { None } else { Some("No syslog target".into()) },
+                    error: if has_target {
+                        None
+                    } else {
+                        Some("No syslog target".into())
+                    },
                     tested_at: now,
                 }
             }
@@ -416,19 +428,21 @@ impl NotificationDispatcher {
                     channel: NotifyChannel::Snmp,
                     reachable: has_target,
                     latency_ms: 0,
-                    error: if has_target { None } else { Some("No SNMP target".into()) },
+                    error: if has_target {
+                        None
+                    } else {
+                        Some("No SNMP target".into())
+                    },
                     tested_at: now,
                 }
             }
-            NotifyChannel::Tauri => {
-                ChannelTestResult {
-                    channel: NotifyChannel::Tauri,
-                    reachable: true,
-                    latency_ms: 0,
-                    error: None,
-                    tested_at: now,
-                }
-            }
+            NotifyChannel::Tauri => ChannelTestResult {
+                channel: NotifyChannel::Tauri,
+                reachable: true,
+                latency_ms: 0,
+                error: None,
+                tested_at: now,
+            },
         }
     }
 

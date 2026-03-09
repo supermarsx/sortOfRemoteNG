@@ -1,9 +1,9 @@
+use chrono::Utc;
+use log::{info, warn};
+use sha2::{Digest, Sha256, Sha512};
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::{Path, PathBuf};
-use chrono::Utc;
-use log::{info, warn, error};
-use sha2::{Sha256, Sha512, Digest};
+use std::path::Path;
 
 use crate::error::{BackupVerifyError, Result};
 use crate::types::{FileEntry, FileManifest, ManifestDiff};
@@ -43,9 +43,10 @@ impl IntegrityChecker {
     /// Walk `root` with a specific hash algorithm and build a manifest.
     pub fn compute_manifest_path(&self, root: &Path, algorithm: &str) -> Result<FileManifest> {
         if !root.exists() {
-            return Err(BackupVerifyError::integrity_error(
-                format!("Path does not exist: {:?}", root),
-            ));
+            return Err(BackupVerifyError::integrity_error(format!(
+                "Path does not exist: {:?}",
+                root
+            )));
         }
 
         let mut manifest = FileManifest::new(algorithm);
@@ -154,9 +155,10 @@ impl IntegrityChecker {
             "sha256" => self.compute_sha256(path),
             "sha512" => self.compute_sha512(path),
             "crc32" => Ok(format!("{:08x}", self.compute_crc32(path)?)),
-            _ => Err(BackupVerifyError::integrity_error(
-                format!("Unsupported algorithm: {}", algorithm),
-            )),
+            _ => Err(BackupVerifyError::integrity_error(format!(
+                "Unsupported algorithm: {}",
+                algorithm
+            ))),
         }
     }
 
@@ -220,9 +222,10 @@ impl IntegrityChecker {
     /// Verify a single file's integrity against an expected hex hash (SHA-256).
     pub fn verify_file_integrity(&self, path: &Path, expected_hash: &str) -> Result<bool> {
         if !path.exists() {
-            return Err(BackupVerifyError::integrity_error(
-                format!("File does not exist: {:?}", path),
-            ));
+            return Err(BackupVerifyError::integrity_error(format!(
+                "File does not exist: {:?}",
+                path
+            )));
         }
 
         // Detect algorithm from hash length
@@ -340,21 +343,37 @@ mod tests {
         let mut old = FileManifest::new("sha256");
         old.entries.insert(
             "a.txt".into(),
-            FileEntry { checksum: "aaa".into(), size: 10, mtime: Utc::now() },
+            FileEntry {
+                checksum: "aaa".into(),
+                size: 10,
+                mtime: Utc::now(),
+            },
         );
         old.entries.insert(
             "b.txt".into(),
-            FileEntry { checksum: "bbb".into(), size: 20, mtime: Utc::now() },
+            FileEntry {
+                checksum: "bbb".into(),
+                size: 20,
+                mtime: Utc::now(),
+            },
         );
 
         let mut new = FileManifest::new("sha256");
         new.entries.insert(
             "a.txt".into(),
-            FileEntry { checksum: "aaa_changed".into(), size: 10, mtime: Utc::now() },
+            FileEntry {
+                checksum: "aaa_changed".into(),
+                size: 10,
+                mtime: Utc::now(),
+            },
         );
         new.entries.insert(
             "c.txt".into(),
-            FileEntry { checksum: "ccc".into(), size: 30, mtime: Utc::now() },
+            FileEntry {
+                checksum: "ccc".into(),
+                size: 30,
+                mtime: Utc::now(),
+            },
         );
 
         let diff = IntegrityChecker::compare_manifests(&old, &new);

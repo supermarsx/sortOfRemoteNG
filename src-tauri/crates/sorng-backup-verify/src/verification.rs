@@ -1,15 +1,14 @@
+use chrono::{DateTime, Duration, Utc};
+use log::info;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use chrono::{DateTime, Utc, Duration};
-use log::{info, warn, error};
 use uuid::Uuid;
 
-use crate::error::{BackupVerifyError, Result};
-use crate::types::{
-    CatalogEntry, VerificationMethod, VerificationResult, VerificationStatus,
-    FileManifest, ManifestDiff,
-};
+use crate::error::Result;
 use crate::integrity::IntegrityChecker;
+use crate::types::{
+    CatalogEntry, FileManifest, VerificationMethod, VerificationResult, VerificationStatus,
+};
 
 /// Engine for verifying backup integrity through multiple methods.
 pub struct VerificationEngine {
@@ -19,11 +18,17 @@ pub struct VerificationEngine {
 }
 
 #[derive(Debug, Clone)]
-struct ScheduledVerification {
+pub struct ScheduledVerification {
     policy_id: String,
     method: VerificationMethod,
     interval_hours: u64,
     last_run: Option<DateTime<Utc>>,
+}
+
+impl Default for VerificationEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VerificationEngine {
@@ -41,10 +46,7 @@ impl VerificationEngine {
         entry: &CatalogEntry,
         method: VerificationMethod,
     ) -> Result<VerificationResult> {
-        info!(
-            "Verifying backup {} with method {:?}",
-            entry.id, method
-        );
+        info!("Verifying backup {} with method {:?}", entry.id, method);
 
         let result = match method {
             VerificationMethod::ChecksumFull => self.verify_checksum_full(entry)?,
@@ -71,12 +73,17 @@ impl VerificationEngine {
 
         if !backup_path.exists() {
             result.status = VerificationStatus::Failed;
-            result.details.push(format!("Backup location does not exist: {}", entry.location));
+            result.details.push(format!(
+                "Backup location does not exist: {}",
+                entry.location
+            ));
             return Ok(result);
         }
 
         // Generate current manifest of the backup
-        let current_manifest = self.integrity_checker.compute_manifest_path(backup_path, "sha256")?;
+        let current_manifest = self
+            .integrity_checker
+            .compute_manifest_path(backup_path, "sha256")?;
 
         // Check if there's a stored manifest to compare against
         let manifest_path = backup_path.join(".manifest.json");
@@ -93,7 +100,9 @@ impl VerificationEngine {
 
             if diff.modified.is_empty() && diff.removed.is_empty() {
                 result.status = VerificationStatus::Passed;
-                result.details.push("All checksums match stored manifest".to_string());
+                result
+                    .details
+                    .push("All checksums match stored manifest".to_string());
             } else {
                 result.status = VerificationStatus::Failed;
                 for f in &diff.modified {
@@ -106,7 +115,9 @@ impl VerificationEngine {
         } else {
             // No stored manifest; verify the entry-level checksum
             if !entry.checksum.is_empty() {
-                let computed = self.integrity_checker.compute_checksum(backup_path, "sha256")?;
+                let computed = self
+                    .integrity_checker
+                    .compute_checksum(backup_path, "sha256")?;
                 result.files_checked = 1;
                 if computed == entry.checksum {
                     result.files_ok = 1;
@@ -126,7 +137,9 @@ impl VerificationEngine {
                 result.files_checked = current_manifest.entries.len() as u64;
                 result.files_ok = result.files_checked;
                 result.status = VerificationStatus::Warning;
-                result.details.push("No stored manifest found; generated new baseline".to_string());
+                result
+                    .details
+                    .push("No stored manifest found; generated new baseline".to_string());
 
                 // Save the manifest for future comparisons
                 let manifest_data = serde_json::to_string_pretty(&current_manifest)?;
@@ -152,14 +165,19 @@ impl VerificationEngine {
 
         if !backup_path.exists() {
             result.status = VerificationStatus::Failed;
-            result.details.push(format!("Backup location does not exist: {}", entry.location));
+            result.details.push(format!(
+                "Backup location does not exist: {}",
+                entry.location
+            ));
             return Ok(result);
         }
 
         let manifest_path = backup_path.join(".manifest.json");
         if !manifest_path.exists() {
             result.status = VerificationStatus::Warning;
-            result.details.push("No stored manifest for sampling; run full verification first".to_string());
+            result
+                .details
+                .push("No stored manifest for sampling; run full verification first".to_string());
             return Ok(result);
         }
 
@@ -180,7 +198,8 @@ impl VerificationEngine {
             1
         };
 
-        let sampled_keys: Vec<&String> = keys.iter()
+        let sampled_keys: Vec<&String> = keys
+            .iter()
             .step_by(step)
             .take(sample_size)
             .copied()
@@ -197,7 +216,10 @@ impl VerificationEngine {
             }
 
             if let Some(stored_entry) = stored_manifest.entries.get(*key) {
-                match self.integrity_checker.compute_checksum(&file_path, &stored_manifest.algorithm) {
+                match self
+                    .integrity_checker
+                    .compute_checksum(&file_path, &stored_manifest.algorithm)
+                {
                     Ok(computed) => {
                         if computed == stored_entry.checksum {
                             result.files_ok += 1;
@@ -209,7 +231,9 @@ impl VerificationEngine {
                     }
                     Err(e) => {
                         result.files_corrupted += 1;
-                        result.details.push(format!("Error checking {}: {}", key, e));
+                        result
+                            .details
+                            .push(format!("Error checking {}: {}", key, e));
                     }
                 }
             }
@@ -242,7 +266,10 @@ impl VerificationEngine {
 
         if !backup_path.exists() {
             result.status = VerificationStatus::Failed;
-            result.details.push(format!("Backup location does not exist: {}", entry.location));
+            result.details.push(format!(
+                "Backup location does not exist: {}",
+                entry.location
+            ));
             return Ok(result);
         }
 
@@ -251,11 +278,7 @@ impl VerificationEngine {
         result.files_checked = 1;
 
         if entry.size_bytes > 0 {
-            let size_diff = if actual_size > entry.size_bytes {
-                actual_size - entry.size_bytes
-            } else {
-                entry.size_bytes - actual_size
-            };
+            let size_diff = actual_size.abs_diff(entry.size_bytes);
 
             // Allow 1% tolerance for filesystem overhead
             let tolerance = entry.size_bytes / 100;
@@ -270,7 +293,9 @@ impl VerificationEngine {
             }
         } else {
             result.files_ok += 1;
-            result.details.push(format!("Backup size: {} bytes", actual_size));
+            result
+                .details
+                .push(format!("Backup size: {} bytes", actual_size));
         }
 
         // Check file count
@@ -305,7 +330,10 @@ impl VerificationEngine {
             VerificationStatus::Warning
         };
 
-        info!("Metadata verification for {}: {:?}", entry.id, result.status);
+        info!(
+            "Metadata verification for {}: {:?}",
+            entry.id, result.status
+        );
         Ok(result)
     }
 
@@ -320,7 +348,10 @@ impl VerificationEngine {
 
         if !backup_path.exists() {
             result.status = VerificationStatus::Failed;
-            result.details.push(format!("Backup location does not exist: {}", entry.location));
+            result.details.push(format!(
+                "Backup location does not exist: {}",
+                entry.location
+            ));
             return Ok(result);
         }
 
@@ -343,9 +374,14 @@ impl VerificationEngine {
                 ));
 
                 // Compare manifests between source and restore
-                let source_manifest = self.integrity_checker.compute_manifest_path(backup_path, "sha256")?;
-                let restored_manifest = self.integrity_checker.compute_manifest_path(&temp_base, "sha256")?;
-                let diff = IntegrityChecker::compare_manifests(&source_manifest, &restored_manifest);
+                let source_manifest = self
+                    .integrity_checker
+                    .compute_manifest_path(backup_path, "sha256")?;
+                let restored_manifest = self
+                    .integrity_checker
+                    .compute_manifest_path(&temp_base, "sha256")?;
+                let diff =
+                    IntegrityChecker::compare_manifests(&source_manifest, &restored_manifest);
 
                 if !diff.modified.is_empty() || !diff.removed.is_empty() {
                     result.status = VerificationStatus::Failed;
@@ -382,7 +418,10 @@ impl VerificationEngine {
 
         if !backup_path.exists() {
             result.status = VerificationStatus::Failed;
-            result.details.push(format!("Backup location does not exist: {}", entry.location));
+            result.details.push(format!(
+                "Backup location does not exist: {}",
+                entry.location
+            ));
             return Ok(result);
         }
 
@@ -395,22 +434,31 @@ impl VerificationEngine {
             Some(s) => s,
             None => {
                 result.status = VerificationStatus::Skipped;
-                result.details.push("No source path available for content diff".to_string());
+                result
+                    .details
+                    .push("No source path available for content diff".to_string());
                 return Ok(result);
             }
         };
 
         if !source.exists() {
             result.status = VerificationStatus::Warning;
-            result.details.push(format!("Source path does not exist: {:?}", source));
+            result
+                .details
+                .push(format!("Source path does not exist: {:?}", source));
             return Ok(result);
         }
 
-        let source_manifest = self.integrity_checker.compute_manifest_path(&source, "sha256")?;
-        let backup_manifest = self.integrity_checker.compute_manifest_path(backup_path, "sha256")?;
+        let source_manifest = self
+            .integrity_checker
+            .compute_manifest_path(&source, "sha256")?;
+        let backup_manifest = self
+            .integrity_checker
+            .compute_manifest_path(backup_path, "sha256")?;
         let diff = IntegrityChecker::compare_manifests(&source_manifest, &backup_manifest);
 
-        result.files_checked = (source_manifest.entries.len() + backup_manifest.entries.len()) as u64 / 2;
+        result.files_checked =
+            (source_manifest.entries.len() + backup_manifest.entries.len()) as u64 / 2;
         result.files_ok = diff.unchanged_count;
         result.files_corrupted = diff.modified.len() as u64;
         result.files_missing = diff.removed.len() as u64;
@@ -445,7 +493,10 @@ impl VerificationEngine {
 
         if !backup_path.exists() {
             result.status = VerificationStatus::Failed;
-            result.details.push(format!("Backup location does not exist: {}", entry.location));
+            result.details.push(format!(
+                "Backup location does not exist: {}",
+                entry.location
+            ));
             return Ok(result);
         }
 
@@ -479,7 +530,9 @@ impl VerificationEngine {
                     if meta.len() > 0 {
                         result.files_ok = 1;
                         result.status = VerificationStatus::Passed;
-                        result.details.push(format!("Archive file size: {} bytes", meta.len()));
+                        result
+                            .details
+                            .push(format!("Archive file size: {} bytes", meta.len()));
                     } else {
                         result.files_corrupted = 1;
                         result.status = VerificationStatus::Failed;
@@ -505,9 +558,8 @@ impl VerificationEngine {
         interval_hours: u64,
     ) {
         // Remove existing schedule for this policy+method
-        self.scheduled_verifications.retain(|s| {
-            !(s.policy_id == policy_id && s.method == method)
-        });
+        self.scheduled_verifications
+            .retain(|s| !(s.policy_id == policy_id && s.method == method));
 
         self.scheduled_verifications.push(ScheduledVerification {
             policy_id: policy_id.to_string(),
@@ -533,10 +585,7 @@ impl VerificationEngine {
     }
 
     /// Automatically verify the latest backup for a policy.
-    pub fn auto_verify_latest(
-        &mut self,
-        entry: &CatalogEntry,
-    ) -> Result<VerificationResult> {
+    pub fn auto_verify_latest(&mut self, entry: &CatalogEntry) -> Result<VerificationResult> {
         // Start with metadata, then do sampled checksums
         let meta_result = self.verify_metadata(entry)?;
         if meta_result.status == VerificationStatus::Failed {
@@ -552,12 +601,22 @@ impl VerificationEngine {
         let history = self.get_verification_history(entry_id);
 
         let total_verifications = history.len() as u32;
-        let passed = history.iter().filter(|r| r.status == VerificationStatus::Passed).count() as u32;
-        let failed = history.iter().filter(|r| r.status == VerificationStatus::Failed).count() as u32;
-        let warnings = history.iter().filter(|r| r.status == VerificationStatus::Warning).count() as u32;
+        let passed = history
+            .iter()
+            .filter(|r| r.status == VerificationStatus::Passed)
+            .count() as u32;
+        let failed = history
+            .iter()
+            .filter(|r| r.status == VerificationStatus::Failed)
+            .count() as u32;
+        let warnings = history
+            .iter()
+            .filter(|r| r.status == VerificationStatus::Warning)
+            .count() as u32;
 
         let last_verification = history.last().cloned().cloned();
-        let methods_used: Vec<String> = history.iter()
+        let methods_used: Vec<String> = history
+            .iter()
             .map(|r| r.method.to_string())
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
@@ -578,12 +637,11 @@ impl VerificationEngine {
     /// Get scheduled verifications that are due.
     pub fn get_due_verifications(&self) -> Vec<&ScheduledVerification> {
         let now = Utc::now();
-        self.scheduled_verifications.iter()
-            .filter(|s| {
-                match s.last_run {
-                    Some(last) => now - last > Duration::hours(s.interval_hours as i64),
-                    None => true,
-                }
+        self.scheduled_verifications
+            .iter()
+            .filter(|s| match s.last_run {
+                Some(last) => now - last > Duration::hours(s.interval_hours as i64),
+                None => true,
             })
             .collect()
     }

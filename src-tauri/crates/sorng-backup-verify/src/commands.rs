@@ -38,7 +38,9 @@ pub async fn backup_verify_get_policy(
     policy_id: String,
 ) -> Result<BackupPolicy, String> {
     let svc = state.lock().await;
-    svc.get_policy(&policy_id).cloned().map_err(|e| e.to_string())
+    svc.get_policy(&policy_id)
+        .cloned()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -95,7 +97,9 @@ pub async fn backup_verify_get_catalog_entry(
     entry_id: String,
 ) -> Result<CatalogEntry, String> {
     let svc = state.lock().await;
-    svc.get_catalog_entry(&entry_id).cloned().map_err(|e| e.to_string())
+    svc.get_catalog_entry(&entry_id)
+        .cloned()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -113,7 +117,8 @@ pub async fn backup_verify_delete_catalog_entry(
     entry_id: String,
 ) -> Result<CatalogEntry, String> {
     let mut svc = state.lock().await;
-    svc.delete_catalog_entry(&entry_id).map_err(|e| e.to_string())
+    svc.delete_catalog_entry(&entry_id)
+        .map_err(|e| e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -127,7 +132,8 @@ pub async fn backup_verify_verify_backup(
     method: VerificationMethod,
 ) -> Result<VerificationResult, String> {
     let mut svc = state.lock().await;
-    svc.verify_backup(&entry_id, method).map_err(|e| e.to_string())
+    svc.verify_backup(&entry_id, method)
+        .map_err(|e| e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -215,7 +221,8 @@ pub async fn backup_verify_run_dr_drill(
     entry_id: String,
 ) -> Result<crate::dr_testing::DrDrillResult, String> {
     let mut svc = state.lock().await;
-    svc.run_dr_drill(&policy_id, &entry_id).map_err(|e| e.to_string())
+    svc.run_dr_drill(&policy_id, &entry_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -265,7 +272,11 @@ pub async fn backup_verify_list_replicas(
     state: tauri::State<'_, BackupVerifyServiceState>,
 ) -> Result<Vec<ReplicationTarget>, String> {
     let svc = state.lock().await;
-    Ok(svc.list_replication_targets().into_iter().cloned().collect())
+    Ok(svc
+        .list_replication_targets()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 #[tauri::command]
@@ -274,7 +285,8 @@ pub async fn backup_verify_add_replica(
     target: ReplicationTarget,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    svc.add_replication_target(target).map_err(|e| e.to_string())
+    svc.add_replication_target(target)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -283,7 +295,8 @@ pub async fn backup_verify_remove_replica(
     target_id: String,
 ) -> Result<ReplicationTarget, String> {
     let mut svc = state.lock().await;
-    svc.remove_replication_target(&target_id).map_err(|e| e.to_string())
+    svc.remove_replication_target(&target_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -345,7 +358,9 @@ pub async fn backup_verify_set_immutability_lock(
     reason: String,
 ) -> Result<crate::retention::ImmutabilityLock, String> {
     let mut svc = state.lock().await;
-    Ok(svc.retention.set_immutability_lock(&entry_id, duration_days, &reason))
+    Ok(svc
+        .retention
+        .set_immutability_lock(&entry_id, duration_days, &reason))
 }
 
 #[tauri::command]
@@ -353,7 +368,12 @@ pub async fn backup_verify_check_immutability(
     state: tauri::State<'_, BackupVerifyServiceState>,
 ) -> Result<Vec<crate::retention::ImmutabilityLock>, String> {
     let svc = state.lock().await;
-    Ok(svc.retention.check_immutability_locks().into_iter().cloned().collect())
+    Ok(svc
+        .retention
+        .check_immutability_locks()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -373,7 +393,7 @@ pub async fn backup_verify_configure_notifications(
 #[tauri::command]
 pub async fn backup_verify_send_test_notification(
     state: tauri::State<'_, BackupVerifyServiceState>,
-    policy_id: String,
+    _policy_id: String,
 ) -> Result<Vec<crate::notifications::DispatchResult>, String> {
     let mut svc = state.lock().await;
     let notification = BackupNotification::new(

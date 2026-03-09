@@ -1,23 +1,21 @@
+use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use chrono::{DateTime, Utc, Duration};
-use log::{info, warn, error};
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 use crate::catalog::BackupCatalog;
 use crate::compliance::ComplianceReporter;
 use crate::dr_testing::DrTestEngine;
-use crate::error::{BackupVerifyError, Result};
+use crate::error::Result;
 use crate::integrity::IntegrityChecker;
 use crate::notifications::NotificationDispatcher;
 use crate::policies::PolicyManager;
 use crate::replication::ReplicationManager;
 use crate::retention::RetentionEngine;
 use crate::scheduler::BackupScheduler;
-use crate::verification::VerificationEngine;
 use crate::types::*;
+use crate::verification::VerificationEngine;
 
 // ─── State alias ────────────────────────────────────────────────────────────
 
@@ -171,7 +169,8 @@ impl BackupVerifyService {
 
     pub fn trigger_backup(&mut self, policy_id: &str) -> Result<String> {
         let policy = self.policies.get_policy(policy_id)?;
-        self.scheduler.trigger_manual_backup(policy_id, &policy.name)
+        self.scheduler
+            .trigger_manual_backup(policy_id, &policy.name)
     }
 
     pub fn cancel_job(&mut self, job_id: &str) -> Result<()> {
@@ -276,7 +275,10 @@ impl BackupVerifyService {
         self.notifications.configure_channels(config)
     }
 
-    pub fn send_notification(&mut self, notification: &BackupNotification) -> Vec<crate::notifications::DispatchResult> {
+    pub fn send_notification(
+        &mut self,
+        notification: &BackupNotification,
+    ) -> Vec<crate::notifications::DispatchResult> {
         self.notifications.send_notification(notification)
     }
 

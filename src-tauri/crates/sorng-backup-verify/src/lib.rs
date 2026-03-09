@@ -15,17 +15,17 @@
 //! - **Retention Engine** — GFS rotation, immutability enforcement, and storage reclamation
 //! - **Notifications** — Email, webhook, syslog, SNMP, and Tauri event dispatch
 
-pub mod types;
-pub mod error;
 pub mod catalog;
-pub mod policies;
-pub mod scheduler;
-pub mod verification;
-pub mod integrity;
-pub mod dr_testing;
+pub mod commands;
 pub mod compliance;
+pub mod dr_testing;
+pub mod error;
+pub mod integrity;
+pub mod notifications;
+pub mod policies;
 pub mod replication;
 pub mod retention;
-pub mod notifications;
+pub mod scheduler;
 pub mod service;
-pub mod commands;
+pub mod types;
+pub mod verification;

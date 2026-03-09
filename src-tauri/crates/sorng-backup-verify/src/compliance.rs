@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use log::{info, warn};
+use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::error::{BackupVerifyError, Result};
+use crate::error::Result;
 use crate::types::{
-    BackupPolicy, CatalogEntry, ComplianceFinding, ComplianceFramework,
-    ComplianceReport, CustomComplianceRule, FindingSeverity, RetentionPolicy,
-    VerificationResult, VerificationStatus,
+    BackupPolicy, CatalogEntry, ComplianceFinding, ComplianceFramework, ComplianceReport,
+    CustomComplianceRule, FindingSeverity, VerificationResult, VerificationStatus,
 };
 
 // ─── Audit trail ────────────────────────────────────────────────────────────
@@ -81,11 +80,21 @@ impl ComplianceReporter {
 
         let findings = match framework {
             ComplianceFramework::SOX => self.check_sox_compliance(policies, entries, verifications),
-            ComplianceFramework::HIPAA => self.check_hipaa_compliance(policies, entries, verifications),
-            ComplianceFramework::GDPR => self.check_gdpr_compliance(policies, entries, verifications),
-            ComplianceFramework::PciDss => self.check_pci_compliance(policies, entries, verifications),
-            ComplianceFramework::ISO27001 => self.check_iso27001_compliance(policies, entries, verifications),
-            ComplianceFramework::NIST => self.check_nist_compliance(policies, entries, verifications),
+            ComplianceFramework::HIPAA => {
+                self.check_hipaa_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::GDPR => {
+                self.check_gdpr_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::PciDss => {
+                self.check_pci_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::ISO27001 => {
+                self.check_iso27001_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::NIST => {
+                self.check_nist_compliance(policies, entries, verifications)
+            }
             ComplianceFramework::Custom => self.check_custom_compliance(policies, entries),
         };
 
@@ -98,7 +107,10 @@ impl ComplianceReporter {
             "system",
             "generate_compliance_report",
             &format!("report:{}", report.id),
-            &format!("{} report generated, score: {:.1}%", framework, report.score_percent),
+            &format!(
+                "{} report generated, score: {:.1}%",
+                framework, report.score_percent
+            ),
             Some(framework),
         );
 
@@ -113,7 +125,7 @@ impl ComplianceReporter {
         &self,
         policies: &[&BackupPolicy],
         entries: &[&CatalogEntry],
-        verifications: &HashMap<String, Vec<VerificationResult>>,
+        _verifications: &HashMap<String, Vec<VerificationResult>>,
     ) -> Vec<ComplianceFinding> {
         let mut findings = Vec::new();
 
@@ -139,10 +151,7 @@ impl ComplianceReporter {
             findings.push(ComplianceFinding {
                 severity: FindingSeverity::Medium,
                 category: "Verification".into(),
-                description: format!(
-                    "{} backup entries have not been verified",
-                    unverified.len()
-                ),
+                description: format!("{} backup entries have not been verified", unverified.len()),
                 policy_id: None,
                 remediation: "Run verification on all unverified backups".into(),
             });
@@ -223,8 +232,8 @@ impl ComplianceReporter {
     pub fn check_gdpr_compliance(
         &self,
         policies: &[&BackupPolicy],
-        entries: &[&CatalogEntry],
-        verifications: &HashMap<String, Vec<VerificationResult>>,
+        _entries: &[&CatalogEntry],
+        _verifications: &HashMap<String, Vec<VerificationResult>>,
     ) -> Vec<ComplianceFinding> {
         let mut findings = Vec::new();
 
@@ -233,7 +242,9 @@ impl ComplianceReporter {
 
         // GDPR: retention must not be indefinite
         for policy in policies {
-            if policy.retention.max_retention_days == 0 || policy.retention.max_retention_days > 3650 {
+            if policy.retention.max_retention_days == 0
+                || policy.retention.max_retention_days > 3650
+            {
                 findings.push(ComplianceFinding {
                     severity: FindingSeverity::Medium,
                     category: "Retention".into(),
@@ -352,10 +363,7 @@ impl ComplianceReporter {
                 findings.push(ComplianceFinding {
                     severity: FindingSeverity::Low,
                     category: "A.12.3.1 Retention Strategy".into(),
-                    description: format!(
-                        "Policy '{}' does not use GFS rotation",
-                        policy.name
-                    ),
+                    description: format!("Policy '{}' does not use GFS rotation", policy.name),
                     policy_id: Some(policy.id.clone()),
                     remediation: "Enable GFS rotation for better retention coverage".into(),
                 });
@@ -433,8 +441,10 @@ impl ComplianceReporter {
                                     category: "Custom".into(),
                                     description: format!(
                                         "{}: Policy '{}' retention {} < {} required",
-                                        rule.name, policy.name,
-                                        policy.retention.max_retention_days, min
+                                        rule.name,
+                                        policy.name,
+                                        policy.retention.max_retention_days,
+                                        min
                                     ),
                                     policy_id: Some(policy.id.clone()),
                                     remediation: rule.description.clone(),
@@ -482,14 +492,24 @@ impl ComplianceReporter {
         entries: &[&CatalogEntry],
         verifications: &HashMap<String, Vec<VerificationResult>>,
     ) -> Vec<PolicyViolation> {
-        let empty_verifications: HashMap<String, Vec<VerificationResult>> = HashMap::new();
+        let _empty_verifications: HashMap<String, Vec<VerificationResult>> = HashMap::new();
         let findings = match framework {
             ComplianceFramework::SOX => self.check_sox_compliance(policies, entries, verifications),
-            ComplianceFramework::HIPAA => self.check_hipaa_compliance(policies, entries, verifications),
-            ComplianceFramework::GDPR => self.check_gdpr_compliance(policies, entries, verifications),
-            ComplianceFramework::PciDss => self.check_pci_compliance(policies, entries, verifications),
-            ComplianceFramework::ISO27001 => self.check_iso27001_compliance(policies, entries, verifications),
-            ComplianceFramework::NIST => self.check_nist_compliance(policies, entries, verifications),
+            ComplianceFramework::HIPAA => {
+                self.check_hipaa_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::GDPR => {
+                self.check_gdpr_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::PciDss => {
+                self.check_pci_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::ISO27001 => {
+                self.check_iso27001_compliance(policies, entries, verifications)
+            }
+            ComplianceFramework::NIST => {
+                self.check_nist_compliance(policies, entries, verifications)
+            }
             ComplianceFramework::Custom => self.check_custom_compliance(policies, entries),
         };
 
@@ -498,7 +518,9 @@ impl ComplianceReporter {
             .filter(|f| f.severity <= FindingSeverity::Medium)
             .map(|f| PolicyViolation {
                 policy_id: f.policy_id.clone().unwrap_or_default(),
-                policy_name: f.policy_id.as_deref()
+                policy_name: f
+                    .policy_id
+                    .as_deref()
                     .and_then(|pid| policies.iter().find(|p| p.id == pid))
                     .map(|p| p.name.clone())
                     .unwrap_or_default(),
@@ -533,11 +555,7 @@ impl ComplianceReporter {
     }
 
     /// Generate the audit trail for a given time range.
-    pub fn generate_audit_trail(
-        &self,
-        from: DateTime<Utc>,
-        to: DateTime<Utc>,
-    ) -> Vec<&AuditEvent> {
+    pub fn generate_audit_trail(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<&AuditEvent> {
         self.audit_log
             .iter()
             .filter(|e| e.timestamp >= from && e.timestamp <= to)
@@ -577,7 +595,10 @@ impl ComplianceReporter {
     }
 
     /// Get reports filtered by framework.
-    pub fn get_reports_for_framework(&self, framework: &ComplianceFramework) -> Vec<&ComplianceReport> {
+    pub fn get_reports_for_framework(
+        &self,
+        framework: &ComplianceFramework,
+    ) -> Vec<&ComplianceReport> {
         self.report_history
             .iter()
             .filter(|r| r.framework == *framework)
@@ -623,9 +644,9 @@ impl ComplianceReporter {
             let recent_ok = verifications
                 .get(&entry.id)
                 .map(|results| {
-                    results.iter().any(|r| {
-                        r.verified_at > cutoff && r.status == VerificationStatus::Passed
-                    })
+                    results
+                        .iter()
+                        .any(|r| r.verified_at > cutoff && r.status == VerificationStatus::Passed)
                 })
                 .unwrap_or(false);
 
@@ -660,7 +681,8 @@ impl ComplianceReporter {
         for policy in policies {
             let has_critical = findings.iter().any(|f| {
                 f.policy_id.as_deref() == Some(&policy.id)
-                    && (f.severity == FindingSeverity::Critical || f.severity == FindingSeverity::High)
+                    && (f.severity == FindingSeverity::Critical
+                        || f.severity == FindingSeverity::High)
             });
             if !has_critical {
                 compliant += 1;
@@ -677,12 +699,24 @@ impl ComplianceReporter {
         let base = (report.policies_compliant as f64 / report.policies_evaluated as f64) * 100.0;
 
         // Deductions for findings
-        let critical = report.findings.iter().filter(|f| f.severity == FindingSeverity::Critical).count() as f64;
-        let high = report.findings.iter().filter(|f| f.severity == FindingSeverity::High).count() as f64;
-        let medium = report.findings.iter().filter(|f| f.severity == FindingSeverity::Medium).count() as f64;
+        let critical = report
+            .findings
+            .iter()
+            .filter(|f| f.severity == FindingSeverity::Critical)
+            .count() as f64;
+        let high = report
+            .findings
+            .iter()
+            .filter(|f| f.severity == FindingSeverity::High)
+            .count() as f64;
+        let medium = report
+            .findings
+            .iter()
+            .filter(|f| f.severity == FindingSeverity::Medium)
+            .count() as f64;
 
         let deductions = critical * 15.0 + high * 8.0 + medium * 3.0;
-        (base - deductions).max(0.0).min(100.0)
+        (base - deductions).clamp(0.0, 100.0)
     }
 
     fn generate_recommendations(&self, report: &ComplianceReport) -> Vec<String> {
@@ -690,9 +724,10 @@ impl ComplianceReporter {
 
         let has_encryption_issue = report.findings.iter().any(|f| f.category == "Encryption");
         let has_retention_issue = report.findings.iter().any(|f| f.category == "Retention");
-        let has_verification_issue = report.findings.iter().any(|f| {
-            f.category.contains("Verification") || f.category.contains("Integrity")
-        });
+        let has_verification_issue = report
+            .findings
+            .iter()
+            .any(|f| f.category.contains("Verification") || f.category.contains("Integrity"));
 
         if has_encryption_issue {
             recs.push("Enable encryption on all backup policies to protect data at rest".into());
@@ -704,7 +739,9 @@ impl ComplianceReporter {
             recs.push("Implement regular backup verification schedules (at least monthly)".into());
         }
         if report.score_percent < 70.0 {
-            recs.push("Overall compliance score is low — prioritise critical and high findings".into());
+            recs.push(
+                "Overall compliance score is low — prioritise critical and high findings".into(),
+            );
         }
         if report.findings.is_empty() {
             recs.push("All checks passed — continue monitoring and periodic review".into());
@@ -744,11 +781,7 @@ mod tests {
     fn test_sox_missing_encryption() {
         let reporter = ComplianceReporter::new();
         let policy = make_policy("p1", "TestPolicy");
-        let findings = reporter.check_sox_compliance(
-            &[&policy],
-            &[],
-            &HashMap::new(),
-        );
+        let findings = reporter.check_sox_compliance(&[&policy], &[], &HashMap::new());
         assert!(findings.iter().any(|f| f.category == "Encryption"));
     }
 
