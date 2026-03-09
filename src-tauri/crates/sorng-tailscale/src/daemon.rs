@@ -3,9 +3,7 @@
 //! Start/stop the tailscaled daemon, check version, detect installation,
 //! manage the system service.
 
-use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 /// Daemon installation info.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,17 +41,21 @@ pub fn detect_installation() -> DaemonInfo {
             "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
         ]
     } else {
-        vec!["/usr/bin/tailscale", "/usr/sbin/tailscale", "/usr/local/bin/tailscale"]
+        vec![
+            "/usr/bin/tailscale",
+            "/usr/sbin/tailscale",
+            "/usr/local/bin/tailscale",
+        ]
     };
 
     let binary_path = paths.iter().find(|p| std::path::Path::new(p).exists());
 
     DaemonInfo {
         installed: binary_path.is_some(),
-        version: None,       // filled by get_version()
+        version: None, // filled by get_version()
         binary_path: binary_path.map(|p| p.to_string()),
-        daemon_path: None,   // filled by detect_daemon_binary()
-        running: false,       // filled by is_running()
+        daemon_path: None, // filled by detect_daemon_binary()
+        running: false,    // filled by is_running()
         pid: None,
         uptime_secs: None,
         install_method: None, // detected from path/registry
@@ -82,9 +84,17 @@ pub fn start_daemon_command(state_dir: Option<&str>, socket: Option<&str>) -> Ve
 /// Build command to stop tailscaled.
 pub fn stop_daemon_command() -> Vec<String> {
     if cfg!(target_os = "windows") {
-        vec!["net".to_string(), "stop".to_string(), "Tailscale".to_string()]
+        vec![
+            "net".to_string(),
+            "stop".to_string(),
+            "Tailscale".to_string(),
+        ]
     } else {
-        vec!["systemctl".to_string(), "stop".to_string(), "tailscaled".to_string()]
+        vec![
+            "systemctl".to_string(),
+            "stop".to_string(),
+            "tailscaled".to_string(),
+        ]
     }
 }
 

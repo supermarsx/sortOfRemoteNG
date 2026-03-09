@@ -4,7 +4,6 @@
 //! log collection, configuration analysis.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Overall health report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,7 +167,11 @@ pub fn build_health_report(
     if let Some(nc) = netcheck {
         checks.push(HealthCheckResult {
             name: "UDP Connectivity".to_string(),
-            status: if nc.udp { CheckStatus::Pass } else { CheckStatus::Fail },
+            status: if nc.udp {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail
+            },
             message: format!("UDP: {}", if nc.udp { "available" } else { "blocked" }),
             details: None,
             severity: CheckSeverity::High,
@@ -176,22 +179,38 @@ pub fn build_health_report(
 
         checks.push(HealthCheckResult {
             name: "IPv4".to_string(),
-            status: if nc.ipv4 { CheckStatus::Pass } else { CheckStatus::Warn },
-            message: format!("IPv4: {}", if nc.ipv4 { "available" } else { "unavailable" }),
+            status: if nc.ipv4 {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Warn
+            },
+            message: format!(
+                "IPv4: {}",
+                if nc.ipv4 { "available" } else { "unavailable" }
+            ),
             details: nc.global_v4.clone(),
             severity: CheckSeverity::Medium,
         });
 
         checks.push(HealthCheckResult {
             name: "IPv6".to_string(),
-            status: if nc.ipv6 { CheckStatus::Pass } else { CheckStatus::Warn },
-            message: format!("IPv6: {}", if nc.ipv6 { "available" } else { "unavailable" }),
+            status: if nc.ipv6 {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Warn
+            },
+            message: format!(
+                "IPv6: {}",
+                if nc.ipv6 { "available" } else { "unavailable" }
+            ),
             details: nc.global_v6.clone(),
             severity: CheckSeverity::Low,
         });
 
         if nc.mapping_varies_by_dest_ip == Some(true) {
-            warnings.push("NAT mapping varies by destination — may cause connectivity issues".to_string());
+            warnings.push(
+                "NAT mapping varies by destination — may cause connectivity issues".to_string(),
+            );
             checks.push(HealthCheckResult {
                 name: "NAT Type".to_string(),
                 status: CheckStatus::Warn,
@@ -232,9 +251,7 @@ pub fn build_health_report(
 
     let overall_status = if has_critical_fail {
         OverallHealth::Unhealthy
-    } else if has_any_fail {
-        OverallHealth::Degraded
-    } else if has_warnings {
+    } else if has_any_fail || has_warnings {
         OverallHealth::Degraded
     } else {
         OverallHealth::Healthy
@@ -311,11 +328,16 @@ pub fn build_connectivity_tests(
     let mut targets = Vec::new();
 
     // Always test a direct peer if available
-    if let Some(direct) = peers
-        .iter()
-        .find(|p| p.connection.connection_type == super::peer::PeerConnectionType::Direct && !p.is_self)
-    {
-        targets.push(direct.tailscale_ips.first().cloned().unwrap_or(direct.hostname.clone()));
+    if let Some(direct) = peers.iter().find(|p| {
+        p.connection.connection_type == super::peer::PeerConnectionType::Direct && !p.is_self
+    }) {
+        targets.push(
+            direct
+                .tailscale_ips
+                .first()
+                .cloned()
+                .unwrap_or(direct.hostname.clone()),
+        );
     }
 
     // Test a relay peer
@@ -323,7 +345,13 @@ pub fn build_connectivity_tests(
         .iter()
         .find(|p| p.connection.connection_type == super::peer::PeerConnectionType::Relay)
     {
-        targets.push(relay.tailscale_ips.first().cloned().unwrap_or(relay.hostname.clone()));
+        targets.push(
+            relay
+                .tailscale_ips
+                .first()
+                .cloned()
+                .unwrap_or(relay.hostname.clone()),
+        );
     }
 
     // Add more online peers up to limit
@@ -370,10 +398,16 @@ pub fn analyze_configuration(
         });
     }
 
-    if status.cert_domains.as_ref().map(|d| d.is_empty()).unwrap_or(true) {
+    if status
+        .cert_domains
+        .as_ref()
+        .map(|d| d.is_empty())
+        .unwrap_or(true)
+    {
         recommendations.push(ConfigRecommendation {
             category: "HTTPS".to_string(),
-            message: "No HTTPS cert domains — enable MagicDNS and HTTPS to use Funnel/Serve".to_string(),
+            message: "No HTTPS cert domains — enable MagicDNS and HTTPS to use Funnel/Serve"
+                .to_string(),
             severity: CheckSeverity::Info,
         });
     }

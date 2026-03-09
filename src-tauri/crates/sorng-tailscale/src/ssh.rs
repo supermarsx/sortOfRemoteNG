@@ -111,11 +111,7 @@ pub fn disable_ssh_command() -> Vec<String> {
 }
 
 /// Build an SSH connection command via Tailscale.
-pub fn ssh_connect_command(
-    target: &str,
-    user: Option<&str>,
-    port: Option<u16>,
-) -> Vec<String> {
+pub fn ssh_connect_command(target: &str, user: Option<&str>, port: Option<u16>) -> Vec<String> {
     let mut cmd = vec!["tailscale".to_string(), "ssh".to_string()];
     if let Some(u) = user {
         cmd.push(format!("{}@{}", u, target));
@@ -130,9 +126,7 @@ pub fn ssh_connect_command(
 }
 
 /// Check if SSH is available for a specific peer.
-pub fn check_ssh_availability(
-    peer: &super::daemon::PeerJson,
-) -> SshAvailability {
+pub fn check_ssh_availability(peer: &super::daemon::PeerJson) -> SshAvailability {
     let has_ssh_keys = peer
         .ssh_host_keys
         .as_ref()

@@ -4,7 +4,6 @@
 //! web handlers, HTTPS proxy endpoints, and file servers.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Local serve configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,10 +39,7 @@ pub enum ServeBackend {
         insecure_skip_verify: bool,
     },
     /// Serve static files from a directory.
-    FileServer {
-        path: String,
-        browse: bool,
-    },
+    FileServer { path: String, browse: bool },
     /// Respond with static text.
     Text {
         content: String,
@@ -70,7 +66,10 @@ pub fn serve_command(config: &ServeEntry) -> Vec<String> {
     }
 
     match &config.backend {
-        ServeBackend::Proxy { target, insecure_skip_verify } => {
+        ServeBackend::Proxy {
+            target,
+            insecure_skip_verify,
+        } => {
             if *insecure_skip_verify {
                 cmd.push("--insecure".to_string());
             }
@@ -91,7 +90,11 @@ pub fn serve_command(config: &ServeEntry) -> Vec<String> {
 
 /// Build serve off command.
 pub fn serve_off_command(protocol: ServeProtocol, port: u16) -> Vec<String> {
-    let mut cmd = vec!["tailscale".to_string(), "serve".to_string(), "off".to_string()];
+    let mut cmd = vec![
+        "tailscale".to_string(),
+        "serve".to_string(),
+        "off".to_string(),
+    ];
     match protocol {
         ServeProtocol::Https => cmd.push("--https".to_string()),
         ServeProtocol::Http => cmd.push("--http".to_string()),
@@ -104,7 +107,11 @@ pub fn serve_off_command(protocol: ServeProtocol, port: u16) -> Vec<String> {
 
 /// Build serve status command.
 pub fn serve_status_command(json: bool) -> Vec<String> {
-    let mut cmd = vec!["tailscale".to_string(), "serve".to_string(), "status".to_string()];
+    let mut cmd = vec![
+        "tailscale".to_string(),
+        "serve".to_string(),
+        "status".to_string(),
+    ];
     if json {
         cmd.push("--json".to_string());
     }
@@ -113,7 +120,11 @@ pub fn serve_status_command(json: bool) -> Vec<String> {
 
 /// Build serve reset command (removes all serve config).
 pub fn serve_reset_command() -> Vec<String> {
-    vec!["tailscale".to_string(), "serve".to_string(), "reset".to_string()]
+    vec![
+        "tailscale".to_string(),
+        "serve".to_string(),
+        "reset".to_string(),
+    ]
 }
 
 /// Parse serve entries from the JSON status.

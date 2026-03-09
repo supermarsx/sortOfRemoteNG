@@ -64,7 +64,7 @@ pub struct PeerCapabilities {
 pub fn parse_peer_detail(key: &str, peer: &super::daemon::PeerJson, is_self: bool) -> PeerDetail {
     let has_direct_addr = peer.cur_addr.is_some()
         && peer.cur_addr.as_deref() != Some("")
-        && peer.cur_addr.as_deref() != None;
+        && peer.cur_addr.as_deref().is_some();
     let is_online = peer.online.unwrap_or(false);
 
     let connection_type = if !is_online {
@@ -108,8 +108,8 @@ pub fn parse_peer_detail(key: &str, peer: &super::daemon::PeerJson, is_self: boo
             is_exit_node: peer.exit_node == Some(true),
             offers_exit_node: peer.exit_node_option == Some(true),
             has_ssh,
-            has_taildrop: is_online, // generally available if online
-            supports_funnel: false,  // requires ACL check
+            has_taildrop: is_online,       // generally available if online
+            supports_funnel: false,        // requires ACL check
             advertised_routes: Vec::new(), // not in basic status
         },
         tags: peer.tags.clone().unwrap_or_default(),
@@ -121,9 +121,7 @@ pub fn parse_peer_detail(key: &str, peer: &super::daemon::PeerJson, is_self: boo
 }
 
 /// Parse all peers from status JSON.
-pub fn parse_all_peers(
-    status: &super::daemon::TailscaleStatusJson,
-) -> Vec<PeerDetail> {
+pub fn parse_all_peers(status: &super::daemon::TailscaleStatusJson) -> Vec<PeerDetail> {
     let mut peers = Vec::new();
 
     // Add self
@@ -203,10 +201,7 @@ pub fn filter_online(peers: &[PeerDetail]) -> Vec<&PeerDetail> {
 pub fn group_by_os(peers: &[PeerDetail]) -> HashMap<String, Vec<&PeerDetail>> {
     let mut groups: HashMap<String, Vec<&PeerDetail>> = HashMap::new();
     for peer in peers {
-        groups
-            .entry(peer.os.clone())
-            .or_default()
-            .push(peer);
+        groups.entry(peer.os.clone()).or_default().push(peer);
     }
     groups
 }
@@ -266,7 +261,10 @@ pub fn compute_network_summary(peers: &[PeerDetail]) -> NetworkSummary {
         .iter()
         .filter(|p| p.connection.connection_type == PeerConnectionType::Relay)
         .count();
-    let exit_nodes = peers.iter().filter(|p| p.capabilities.offers_exit_node).count();
+    let exit_nodes = peers
+        .iter()
+        .filter(|p| p.capabilities.offers_exit_node)
+        .count();
     let ssh_hosts = peers.iter().filter(|p| p.capabilities.has_ssh).count();
 
     NetworkSummary {

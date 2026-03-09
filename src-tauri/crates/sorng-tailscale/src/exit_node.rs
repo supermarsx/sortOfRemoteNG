@@ -134,9 +134,10 @@ pub fn extract_exit_nodes(
         .filter(|(_, p)| p.exit_node_option == Some(true))
         .map(|(key, p)| {
             let name = p.host_name.clone().unwrap_or_default();
-            let is_mullvad = name.contains("mullvad") || p.tags.as_ref().map_or(false, |t| {
-                t.iter().any(|tag| tag.contains("mullvad"))
-            });
+            let is_mullvad = name.contains("mullvad")
+                || p.tags
+                    .as_ref()
+                    .is_some_and(|t| t.iter().any(|tag| tag.contains("mullvad")));
 
             AvailableExitNode {
                 id: key.clone(),
@@ -153,7 +154,7 @@ pub fn extract_exit_nodes(
 }
 
 /// Sort exit nodes by relevance (online first, then by name).
-pub fn sort_exit_nodes(nodes: &mut Vec<AvailableExitNode>) {
+pub fn sort_exit_nodes(nodes: &mut [AvailableExitNode]) {
     nodes.sort_by(|a, b| {
         // Current exit node first
         b.is_current
@@ -191,15 +192,11 @@ pub fn validate_exit_node_config(config: &ExitNodeConfig) -> Vec<String> {
     let mut issues = Vec::new();
 
     if config.advertise_as_exit_node && config.using_exit_node.is_some() {
-        issues.push(
-            "Cannot advertise as exit node while using another exit node".to_string(),
-        );
+        issues.push("Cannot advertise as exit node while using another exit node".to_string());
     }
 
     if config.auto_exit_node && config.using_exit_node.is_some() {
-        issues.push(
-            "Cannot use auto exit node when a specific exit node is selected".to_string(),
-        );
+        issues.push("Cannot use auto exit node when a specific exit node is selected".to_string());
     }
 
     issues

@@ -4,7 +4,7 @@
 
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::info;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -49,7 +49,11 @@ impl TailscaleService {
 
     // ── Connection Management ──────────────────────────────────
 
-    pub fn create_connection(&mut self, name: &str, config: TailscaleConfig) -> Result<String, String> {
+    pub fn create_connection(
+        &mut self,
+        name: &str,
+        config: TailscaleConfig,
+    ) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let connection = TailscaleConnection {
             id: id.clone(),
@@ -207,7 +211,8 @@ impl TailscaleService {
     // ── Taildrop ───────────────────────────────────────────────
 
     pub fn add_transfer(&mut self, transfer: TaildropTransfer) {
-        self.taildrop_transfers.insert(transfer.id.clone(), transfer);
+        self.taildrop_transfers
+            .insert(transfer.id.clone(), transfer);
     }
 
     pub fn get_transfer(&self, id: &str) -> Option<&TaildropTransfer> {

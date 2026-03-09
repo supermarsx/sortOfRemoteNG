@@ -81,7 +81,11 @@ pub fn funnel_command(port: u16, backend: &FunnelBackend, bg: bool) -> Vec<Strin
 
 /// Build funnel off command.
 pub fn funnel_off_command(port: Option<u16>) -> Vec<String> {
-    let mut cmd = vec!["tailscale".to_string(), "funnel".to_string(), "off".to_string()];
+    let mut cmd = vec![
+        "tailscale".to_string(),
+        "funnel".to_string(),
+        "off".to_string(),
+    ];
     if let Some(p) = port {
         cmd.push(format!("{}", p));
     }
@@ -90,7 +94,12 @@ pub fn funnel_off_command(port: Option<u16>) -> Vec<String> {
 
 /// Build funnel status command.
 pub fn funnel_status_command() -> Vec<String> {
-    vec!["tailscale".to_string(), "funnel".to_string(), "status".to_string(), "--json".to_string()]
+    vec![
+        "tailscale".to_string(),
+        "funnel".to_string(),
+        "status".to_string(),
+        "--json".to_string(),
+    ]
 }
 
 /// Parse funnel/serve configuration from `tailscale serve status --json`.
@@ -174,10 +183,8 @@ pub fn validate_funnel_backend(backend: &FunnelBackend) -> Result<(), String> {
                 return Err("Proxy address cannot be empty".to_string());
             }
             // Check format: host:port or just port
-            if !addr.contains(':') {
-                if addr.parse::<u16>().is_err() {
-                    return Err(format!("Invalid proxy address: {}", addr));
-                }
+            if !addr.contains(':') && addr.parse::<u16>().is_err() {
+                return Err(format!("Invalid proxy address: {}", addr));
             }
             Ok(())
         }

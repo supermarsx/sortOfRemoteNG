@@ -21,19 +21,19 @@
 //! - **peer** — Peer management (direct vs relay, latency, OS, version)
 //! - **diagnostics** — Health checks, netcheck, bugreport, connectivity tests
 
-pub mod types;
-pub mod service;
-pub mod daemon;
-pub mod network;
 pub mod acl;
-pub mod dns;
-pub mod funnel;
-pub mod serve;
-pub mod ssh;
-pub mod exit_node;
-pub mod taildrop;
-pub mod peer;
+pub mod daemon;
 pub mod diagnostics;
+pub mod dns;
+pub mod exit_node;
+pub mod funnel;
+pub mod network;
+pub mod peer;
+pub mod serve;
+pub mod service;
+pub mod ssh;
+pub mod taildrop;
+pub mod types;
 
-pub use types::*;
 pub use service::{TailscaleService, TailscaleServiceState};
+pub use types::*;

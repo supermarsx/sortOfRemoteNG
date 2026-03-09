@@ -80,9 +80,7 @@ pub fn set_search_domains_args(domains: &[String]) -> Vec<(String, String)> {
 }
 
 /// Build split DNS configuration for API.
-pub fn build_split_dns_config(
-    routes: &HashMap<String, Vec<String>>,
-) -> SplitDnsPayload {
+pub fn build_split_dns_config(routes: &HashMap<String, Vec<String>>) -> SplitDnsPayload {
     SplitDnsPayload {
         routes: routes
             .iter()

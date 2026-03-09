@@ -139,7 +139,7 @@ pub fn validate_acl(doc: &AclDocument) -> Vec<AclValidationError> {
 
     // Check ACL entries reference valid groups/hosts
     if let Some(groups) = &doc.groups {
-        for (name, _members) in groups {
+        for name in groups.keys() {
             if !name.starts_with("group:") {
                 errors.push(AclValidationError {
                     severity: Severity::Error,
@@ -170,7 +170,7 @@ pub fn validate_acl(doc: &AclDocument) -> Vec<AclValidationError> {
 
     // Validate tag owners reference valid tags
     if let Some(tag_owners) = &doc.tag_owners {
-        for (tag, _) in tag_owners {
+        for tag in tag_owners.keys() {
             if !tag.starts_with("tag:") {
                 errors.push(AclValidationError {
                     severity: Severity::Warning,
@@ -232,9 +232,10 @@ pub fn test_acl_access(doc: &AclDocument, src: &str, dst: &str) -> AclTestResult
 
     for (i, acl) in doc.acls.iter().enumerate() {
         let src_match = acl.src.iter().any(|s| s == "*" || s == src);
-        let dst_match = acl.dst.iter().any(|d| {
-            d == "*" || d.starts_with(&format!("{}:", dst)) || d == dst
-        });
+        let dst_match = acl
+            .dst
+            .iter()
+            .any(|d| d == "*" || d.starts_with(&format!("{}:", dst)) || d == dst);
 
         if src_match && dst_match {
             matched_rules.push(i);
@@ -284,12 +285,18 @@ pub fn default_acl() -> AclDocument {
 pub fn restrictive_acl_template() -> AclDocument {
     AclDocument {
         groups: Some(HashMap::from([
-            ("group:admin".to_string(), vec!["admin@example.com".to_string()]),
+            (
+                "group:admin".to_string(),
+                vec!["admin@example.com".to_string()],
+            ),
             ("group:dev".to_string(), vec!["dev@example.com".to_string()]),
         ])),
         tag_owners: Some(HashMap::from([
             ("tag:server".to_string(), vec!["group:admin".to_string()]),
-            ("tag:monitoring".to_string(), vec!["group:admin".to_string()]),
+            (
+                "tag:monitoring".to_string(),
+                vec!["group:admin".to_string()],
+            ),
         ])),
         hosts: None,
         acls: vec![
@@ -302,7 +309,11 @@ pub fn restrictive_acl_template() -> AclDocument {
             AclEntry {
                 action: AclAction::Accept,
                 src: vec!["group:dev".to_string()],
-                dst: vec!["tag:server:22".to_string(), "tag:server:80".to_string(), "tag:server:443".to_string()],
+                dst: vec![
+                    "tag:server:22".to_string(),
+                    "tag:server:80".to_string(),
+                    "tag:server:443".to_string(),
+                ],
                 proto: None,
             },
         ],
@@ -315,13 +326,11 @@ pub fn restrictive_acl_template() -> AclDocument {
         }]),
         node_attrs: None,
         auto_approvers: None,
-        tests: Some(vec![
-            AclTestCase {
-                src: "group:admin".to_string(),
-                accept: Some(vec!["tag:server:22".to_string()]),
-                deny: None,
-            },
-        ]),
+        tests: Some(vec![AclTestCase {
+            src: "group:admin".to_string(),
+            accept: Some(vec!["tag:server:22".to_string()]),
+            deny: None,
+        }]),
         derp_map: None,
     }
 }

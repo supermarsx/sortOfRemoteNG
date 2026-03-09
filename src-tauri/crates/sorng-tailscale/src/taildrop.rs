@@ -30,13 +30,7 @@ impl Default for TaildropConfig {
 }
 
 fn default_receive_dir() -> String {
-    if cfg!(target_os = "windows") {
-        dirs_str("Downloads")
-    } else if cfg!(target_os = "macos") {
-        dirs_str("Downloads")
-    } else {
-        dirs_str("Downloads")
-    }
+    dirs_str("Downloads")
 }
 
 fn dirs_str(subdir: &str) -> String {
@@ -81,6 +75,12 @@ pub enum TransferState {
 #[derive(Debug, Clone)]
 pub struct TransferTracker {
     pub transfers: Arc<Mutex<HashMap<String, FileTransfer>>>,
+}
+
+impl Default for TransferTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TransferTracker {
@@ -150,7 +150,14 @@ impl TransferTracker {
             .lock()
             .map(|map| {
                 map.values()
-                    .filter(|t| matches!(t.state, TransferState::InProgress | TransferState::Pending | TransferState::WaitingForAccept))
+                    .filter(|t| {
+                        matches!(
+                            t.state,
+                            TransferState::InProgress
+                                | TransferState::Pending
+                                | TransferState::WaitingForAccept
+                        )
+                    })
                     .cloned()
                     .collect()
             })
@@ -174,7 +181,9 @@ impl TransferTracker {
             map.retain(|_, t| {
                 matches!(
                     t.state,
-                    TransferState::InProgress | TransferState::Pending | TransferState::WaitingForAccept
+                    TransferState::InProgress
+                        | TransferState::Pending
+                        | TransferState::WaitingForAccept
                 )
             });
         }
@@ -183,7 +192,11 @@ impl TransferTracker {
 
 /// Build send file command.
 pub fn send_command(target: &str, files: &[String]) -> Vec<String> {
-    let mut cmd = vec!["tailscale".to_string(), "file".to_string(), "cp".to_string()];
+    let mut cmd = vec![
+        "tailscale".to_string(),
+        "file".to_string(),
+        "cp".to_string(),
+    ];
     for f in files {
         cmd.push(f.clone());
     }

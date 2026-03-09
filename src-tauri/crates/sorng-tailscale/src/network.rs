@@ -86,7 +86,11 @@ pub struct MagicSockStats {
 
 /// Build the netcheck command.
 pub fn netcheck_command(verbose: bool) -> Vec<String> {
-    let mut cmd = vec!["tailscale".to_string(), "netcheck".to_string(), "--format=json".to_string()];
+    let mut cmd = vec![
+        "tailscale".to_string(),
+        "netcheck".to_string(),
+        "--format=json".to_string(),
+    ];
     if verbose {
         cmd.push("--verbose".to_string());
     }
@@ -112,9 +116,7 @@ pub fn ping_command(target: &str, count: u32, via_derp: bool) -> Vec<String> {
 }
 
 /// Extract peer paths from status JSON.
-pub fn extract_peer_paths(
-    peers: &HashMap<String, super::daemon::PeerJson>,
-) -> Vec<PeerPath> {
+pub fn extract_peer_paths(peers: &HashMap<String, super::daemon::PeerJson>) -> Vec<PeerPath> {
     peers
         .iter()
         .map(|(key, p)| {
@@ -181,7 +183,11 @@ pub enum ConnectionQuality {
     Offline,
 }
 
-pub fn classify_connection_quality(latency_ms: Option<f64>, is_direct: bool, is_online: bool) -> ConnectionQuality {
+pub fn classify_connection_quality(
+    latency_ms: Option<f64>,
+    is_direct: bool,
+    is_online: bool,
+) -> ConnectionQuality {
     if !is_online {
         return ConnectionQuality::Offline;
     }
