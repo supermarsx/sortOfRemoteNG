@@ -9,10 +9,7 @@ use uuid::Uuid;
 
 impl SftpService {
     /// Start watching a remote directory for changes.
-    pub async fn watch_start(
-        &mut self,
-        config: WatchConfig,
-    ) -> Result<String, String> {
+    pub async fn watch_start(&mut self, config: WatchConfig) -> Result<String, String> {
         let watch_id = Uuid::new_v4().to_string();
         let interval = if config.interval_secs > 0 {
             config.interval_secs
@@ -90,7 +87,9 @@ impl SftpService {
             max_depth: Some(10),
         };
 
-        let remote_entries = self.list_directory(session_id, remote_path, options).await?;
+        let remote_entries = self
+            .list_directory(session_id, remote_path, options)
+            .await?;
 
         let mut downloaded = 0u64;
         let mut skipped = 0u64;

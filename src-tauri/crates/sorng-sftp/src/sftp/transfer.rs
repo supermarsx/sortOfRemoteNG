@@ -13,10 +13,7 @@ use uuid::Uuid;
 impl SftpService {
     // ── Single-file upload (chunked) ─────────────────────────────────────────
 
-    pub async fn upload(
-        &mut self,
-        request: SftpTransferRequest,
-    ) -> Result<TransferResult, String> {
+    pub async fn upload(&mut self, request: SftpTransferRequest) -> Result<TransferResult, String> {
         let transfer_id = Uuid::new_v4().to_string();
         let started = Utc::now();
 
@@ -83,7 +80,10 @@ impl SftpService {
                     // Optional checksum verification
                     let checksum = if request.verify_checksum {
                         self.update_progress_status(&transfer_id, TransferStatus::Verifying);
-                        match self.checksum(&request.session_id, &request.remote_path).await {
+                        match self
+                            .checksum(&request.session_id, &request.remote_path)
+                            .await
+                        {
                             Ok(c) => Some(c),
                             Err(e) => {
                                 warn!("Checksum verification failed: {}", e);
@@ -165,7 +165,12 @@ impl SftpService {
 
         let open_type = ssh2::OpenType::File;
         let mut remote_file = sftp
-            .open_mode(Path::new(&request.remote_path), open_flags, 0o644, open_type)
+            .open_mode(
+                Path::new(&request.remote_path),
+                open_flags,
+                0o644,
+                open_type,
+            )
             .map_err(|e| format!("Failed to open remote '{}': {}", request.remote_path, e))?;
 
         let mut transferred: u64 = start_offset;
@@ -237,16 +242,16 @@ impl SftpService {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs())
                         .unwrap_or(0);
-                    let mut stat = sftp
-                        .stat(Path::new(&request.remote_path))
-                        .unwrap_or(ssh2::FileStat {
-                            size: None,
-                            uid: None,
-                            gid: None,
-                            perm: None,
-                            atime: None,
-                            mtime: None,
-                        });
+                    let mut stat =
+                        sftp.stat(Path::new(&request.remote_path))
+                            .unwrap_or(ssh2::FileStat {
+                                size: None,
+                                uid: None,
+                                gid: None,
+                                perm: None,
+                                atime: None,
+                                mtime: None,
+                            });
                     stat.mtime = Some(ts);
                     let _ = sftp.setstat(Path::new(&request.remote_path), stat);
                 }
@@ -399,7 +404,6 @@ impl SftpService {
         // Open local file
         let mut local_file = if start_offset > 0 {
             std::fs::OpenOptions::new()
-                .write(true)
                 .append(true)
                 .open(&request.local_path)
                 .map_err(|e| format!("Failed to open local '{}': {}", request.local_path, e))?
@@ -465,14 +469,14 @@ impl SftpService {
             if let Some(limit) = bw_limit {
                 let expected_time = (transferred - start_offset) as f64 / limit as f64;
                 if elapsed < expected_time {
-                    std::thread::sleep(std::time::Duration::from_secs_f64(
-                        expected_time - elapsed,
-                    ));
+                    std::thread::sleep(std::time::Duration::from_secs_f64(expected_time - elapsed));
                 }
             }
         }
 
-        local_file.flush().map_err(|e| format!("Flush error: {}", e))?;
+        local_file
+            .flush()
+            .map_err(|e| format!("Flush error: {}", e))?;
 
         // Preserve timestamps
         if request.preserve_timestamps {
@@ -586,7 +590,9 @@ impl SftpService {
                     .filter(|p| {
                         matches!(
                             p.status,
-                            TransferStatus::InProgress | TransferStatus::Queued | TransferStatus::Paused
+                            TransferStatus::InProgress
+                                | TransferStatus::Queued
+                                | TransferStatus::Paused
                         )
                     })
                     .cloned()

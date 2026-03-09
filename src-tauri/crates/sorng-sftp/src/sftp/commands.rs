@@ -180,8 +180,13 @@ pub async fn sftp_rename(
     overwrite: Option<bool>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.rename(&session_id, &old_path, &new_path, overwrite.unwrap_or(false))
-        .await
+    svc.rename(
+        &session_id,
+        &old_path,
+        &new_path,
+        overwrite.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -418,17 +423,13 @@ pub async fn sftp_queue_status(
 }
 
 #[tauri::command]
-pub async fn sftp_queue_start(
-    state: tauri::State<'_, SftpServiceState>,
-) -> Result<usize, String> {
+pub async fn sftp_queue_start(state: tauri::State<'_, SftpServiceState>) -> Result<usize, String> {
     let mut svc = state.lock().await;
     svc.queue_start().await
 }
 
 #[tauri::command]
-pub async fn sftp_queue_stop(
-    state: tauri::State<'_, SftpServiceState>,
-) -> Result<(), String> {
+pub async fn sftp_queue_stop(state: tauri::State<'_, SftpServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.queue_stop().await;
     Ok(())

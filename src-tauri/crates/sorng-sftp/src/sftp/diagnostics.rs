@@ -6,10 +6,7 @@ use std::time::Instant;
 
 impl SftpService {
     /// Run a comprehensive diagnostic against an existing session.
-    pub async fn diagnose(
-        &mut self,
-        session_id: &str,
-    ) -> Result<SftpDiagnosticReport, String> {
+    pub async fn diagnose(&mut self, session_id: &str) -> Result<SftpDiagnosticReport, String> {
         let mut steps: Vec<SftpDiagnosticStep> = Vec::new();
 
         // 1. Session liveness
@@ -122,9 +119,7 @@ impl SftpService {
 
         if write_ok {
             let t = Instant::now();
-            let read_result = self
-                .read_text_file(session_id, test_path, Some(1024))
-                .await;
+            let read_result = self.read_text_file(session_id, test_path, Some(1024)).await;
             let read_ok = read_result
                 .as_ref()
                 .map(|s| s == test_data)

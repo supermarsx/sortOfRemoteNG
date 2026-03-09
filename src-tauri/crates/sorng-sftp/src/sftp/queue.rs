@@ -76,7 +76,12 @@ impl SftpService {
         let total_remaining: u64 = self
             .queue
             .iter()
-            .filter(|e| matches!(e.status, TransferStatus::Queued | TransferStatus::InProgress))
+            .filter(|e| {
+                matches!(
+                    e.status,
+                    TransferStatus::Queued | TransferStatus::InProgress
+                )
+            })
             .filter_map(|e| {
                 e.progress
                     .as_ref()
@@ -145,8 +150,7 @@ impl SftpService {
                     } else {
                         TransferStatus::Failed
                     };
-                    self.queue[idx].progress =
-                        self.get_transfer_progress(&r.transfer_id);
+                    self.queue[idx].progress = self.get_transfer_progress(&r.transfer_id);
                 }
                 Err(_e) => {
                     self.queue[idx].status = TransferStatus::Failed;

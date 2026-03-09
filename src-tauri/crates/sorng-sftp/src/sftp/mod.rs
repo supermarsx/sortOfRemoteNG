@@ -10,21 +10,21 @@
 //   • Bookmark / favourite-path management
 //   • Tauri command bindings for the frontend
 
-pub mod types;
-pub mod service;
-pub mod commands;
-pub mod file_ops;
-pub mod dir_ops;
-pub mod transfer;
-pub mod queue;
-pub mod watch;
 pub mod bookmarks;
+pub mod commands;
 pub mod diagnostics;
+pub mod dir_ops;
+pub mod file_ops;
+pub mod queue;
+pub mod service;
+pub mod transfer;
+pub mod types;
+pub mod watch;
 
-pub use types::*;
-pub use service::SftpService;
 pub use commands::*;
 pub use dir_ops::*;
+pub use service::SftpService;
+pub use types::*;
 pub use watch::*;
 
 use lazy_static::lazy_static;

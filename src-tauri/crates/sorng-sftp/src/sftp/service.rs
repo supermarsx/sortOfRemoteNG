@@ -43,7 +43,10 @@ impl SftpService {
 
     // ── Connect ──────────────────────────────────────────────────────────────
 
-    pub async fn connect(&mut self, config: SftpConnectionConfig) -> Result<SftpSessionInfo, String> {
+    pub async fn connect(
+        &mut self,
+        config: SftpConnectionConfig,
+    ) -> Result<SftpSessionInfo, String> {
         let addr = format!("{}:{}", config.host, config.port);
         info!("SFTP connecting to {}", addr);
 
@@ -60,8 +63,8 @@ impl SftpService {
             .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
 
         // SSH handshake
-        let mut session = Session::new()
-            .map_err(|e| format!("Failed to create SSH session: {}", e))?;
+        let mut session =
+            Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
 
         if config.compress {
             session.set_compress(true);
@@ -98,8 +101,7 @@ impl SftpService {
 
         // Keep-alive
         let keepalive_interval = config.keepalive_interval_secs;
-        session
-            .set_keepalive(keepalive_interval > 0, keepalive_interval as u32);
+        session.set_keepalive(keepalive_interval > 0, keepalive_interval as u32);
 
         let session_id = Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -165,7 +167,8 @@ impl SftpService {
             let tmp_dir = std::env::temp_dir();
             let tmp_key = tmp_dir.join(format!("sorng_sftp_key_{}", uuid::Uuid::new_v4()));
             if std::fs::write(&tmp_key, key_data.as_bytes()).is_ok() {
-                let result = session.userauth_pubkey_file(&config.username, None, &tmp_key, passphrase);
+                let result =
+                    session.userauth_pubkey_file(&config.username, None, &tmp_key, passphrase);
                 let _ = std::fs::remove_file(&tmp_key);
                 result.map_err(|e| format!("Public-key (memory) auth failed: {}", e))?;
                 if session.authenticated() {
@@ -318,11 +321,7 @@ impl SftpService {
         Ok(resolved_str)
     }
 
-    pub async fn realpath(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<String, String> {
+    pub async fn realpath(&mut self, session_id: &str, path: &str) -> Result<String, String> {
         let handle = self
             .sessions
             .get_mut(session_id)

@@ -17,7 +17,9 @@ impl SftpService {
         options: SftpListOptions,
     ) -> Result<Vec<SftpDirEntry>, String> {
         if options.recursive {
-            return self.list_directory_recursive(session_id, path, &options, 0).await;
+            return self
+                .list_directory_recursive(session_id, path, &options, 0)
+                .await;
         }
         self.list_directory_flat(session_id, path, &options)
     }
@@ -92,8 +94,8 @@ impl SftpService {
                     permissions_string: format_permissions(perm),
                     owner_uid: stat.uid.unwrap_or(0),
                     group_gid: stat.gid.unwrap_or(0),
-                    accessed: stat.atime.map(|v| v as u64),
-                    modified: stat.mtime.map(|v| v as u64),
+                    accessed: stat.atime,
+                    modified: stat.mtime,
                     is_hidden,
                     link_target,
                 })
@@ -127,13 +129,9 @@ impl SftpService {
             .collect();
 
         for subdir in subdirs {
-            let sub_entries = Box::pin(self.list_directory_recursive(
-                session_id,
-                &subdir,
-                options,
-                depth + 1,
-            ))
-            .await?;
+            let sub_entries =
+                Box::pin(self.list_directory_recursive(session_id, &subdir, options, depth + 1))
+                    .await?;
             flat.extend(sub_entries);
         }
 
@@ -189,11 +187,7 @@ impl SftpService {
 
     // ── rmdir ────────────────────────────────────────────────────────────────
 
-    pub async fn rmdir(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<(), String> {
+    pub async fn rmdir(&mut self, session_id: &str, path: &str) -> Result<(), String> {
         let (sftp, _handle) = self.sftp_channel(session_id)?;
         sftp.rmdir(Path::new(path))
             .map_err(|e| format!("rmdir '{}' failed: {}", path, e))?;
@@ -275,7 +269,7 @@ impl SftpService {
 
 // ── Sorting helper ───────────────────────────────────────────────────────────
 
-fn sort_entries(entries: &mut Vec<SftpDirEntry>, field: &SftpSortField, ascending: bool) {
+fn sort_entries(entries: &mut [SftpDirEntry], field: &SftpSortField, ascending: bool) {
     entries.sort_by(|a, b| {
         // Directories first, always
         let dir_cmp = b
@@ -290,7 +284,9 @@ fn sort_entries(entries: &mut Vec<SftpDirEntry>, field: &SftpSortField, ascendin
             SftpSortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             SftpSortField::Size => a.size.cmp(&b.size),
             SftpSortField::Modified => a.modified.cmp(&b.modified),
-            SftpSortField::Type => format!("{:?}", a.entry_type).cmp(&format!("{:?}", b.entry_type)),
+            SftpSortField::Type => {
+                format!("{:?}", a.entry_type).cmp(&format!("{:?}", b.entry_type))
+            }
             SftpSortField::Permissions => a.permissions.cmp(&b.permissions),
         };
 

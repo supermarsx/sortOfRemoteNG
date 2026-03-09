@@ -7,7 +7,11 @@ use log::info;
 use std::path::Path;
 
 /// Convert an ssh2 `FileStat` + path into our richer `SftpFileStat`.
-pub(crate) fn stat_to_file_stat(path: &str, stat: &ssh2::FileStat, link_target: Option<String>) -> SftpFileStat {
+pub(crate) fn stat_to_file_stat(
+    path: &str,
+    stat: &ssh2::FileStat,
+    link_target: Option<String>,
+) -> SftpFileStat {
     let perm = stat.perm.unwrap_or(0);
     SftpFileStat {
         path: path.to_string(),
@@ -16,8 +20,8 @@ pub(crate) fn stat_to_file_stat(path: &str, stat: &ssh2::FileStat, link_target: 
         permissions_string: format_permissions(perm),
         owner_uid: stat.uid.unwrap_or(0),
         group_gid: stat.gid.unwrap_or(0),
-        accessed: stat.atime.map(|v| v as u64),
-        modified: stat.mtime.map(|v| v as u64),
+        accessed: stat.atime,
+        modified: stat.mtime,
         entry_type: entry_type_from_stat(stat),
         link_target,
         is_readonly: perm & 0o200 == 0,
@@ -43,7 +47,11 @@ pub(crate) fn format_permissions(mode: u32) -> String {
     s.push(if mode & 0o400 != 0 { 'r' } else { '-' });
     s.push(if mode & 0o200 != 0 { 'w' } else { '-' });
     s.push(if mode & 0o4000 != 0 {
-        if mode & 0o100 != 0 { 's' } else { 'S' }
+        if mode & 0o100 != 0 {
+            's'
+        } else {
+            'S'
+        }
     } else if mode & 0o100 != 0 {
         'x'
     } else {
@@ -54,7 +62,11 @@ pub(crate) fn format_permissions(mode: u32) -> String {
     s.push(if mode & 0o040 != 0 { 'r' } else { '-' });
     s.push(if mode & 0o020 != 0 { 'w' } else { '-' });
     s.push(if mode & 0o2000 != 0 {
-        if mode & 0o010 != 0 { 's' } else { 'S' }
+        if mode & 0o010 != 0 {
+            's'
+        } else {
+            'S'
+        }
     } else if mode & 0o010 != 0 {
         'x'
     } else {
@@ -65,7 +77,11 @@ pub(crate) fn format_permissions(mode: u32) -> String {
     s.push(if mode & 0o004 != 0 { 'r' } else { '-' });
     s.push(if mode & 0o002 != 0 { 'w' } else { '-' });
     s.push(if mode & 0o1000 != 0 {
-        if mode & 0o001 != 0 { 't' } else { 'T' }
+        if mode & 0o001 != 0 {
+            't'
+        } else {
+            'T'
+        }
     } else if mode & 0o001 != 0 {
         'x'
     } else {
@@ -147,7 +163,11 @@ impl SftpService {
         sftp.rename(
             Path::new(old_path),
             Path::new(new_path),
-            Some(ssh2::RenameFlags::OVERWRITE | ssh2::RenameFlags::ATOMIC | ssh2::RenameFlags::NATIVE),
+            Some(
+                ssh2::RenameFlags::OVERWRITE
+                    | ssh2::RenameFlags::ATOMIC
+                    | ssh2::RenameFlags::NATIVE,
+            ),
         )
         .map_err(|e| format!("rename '{}' → '{}' failed: {}", old_path, new_path, e))?;
 
@@ -157,11 +177,7 @@ impl SftpService {
 
     // ── unlink (delete file) ─────────────────────────────────────────────────
 
-    pub async fn delete_file(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<(), String> {
+    pub async fn delete_file(&mut self, session_id: &str, path: &str) -> Result<(), String> {
         let (sftp, _handle) = self.sftp_channel(session_id)?;
         sftp.unlink(Path::new(path))
             .map_err(|e| format!("delete '{}' failed: {}", path, e))?;
@@ -171,11 +187,7 @@ impl SftpService {
 
     // ── Delete directory tree recursively ────────────────────────────────────
 
-    pub async fn delete_recursive(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<u64, String> {
+    pub async fn delete_recursive(&mut self, session_id: &str, path: &str) -> Result<u64, String> {
         // We need to collect all entries first, then delete bottom-up
         let entries = self.collect_tree(session_id, path)?;
         let mut count: u64 = 0;
@@ -204,11 +216,7 @@ impl SftpService {
     }
 
     /// Internal helper to collect a directory tree for recursive operations.
-    fn collect_tree(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<Vec<SftpDirEntry>, String> {
+    fn collect_tree(&mut self, session_id: &str, path: &str) -> Result<Vec<SftpDirEntry>, String> {
         let (sftp, _handle) = self.sftp_channel(session_id)?;
         let mut result = Vec::new();
         let mut stack: Vec<String> = vec![path.to_string()];
@@ -244,8 +252,8 @@ impl SftpService {
                     permissions_string: format_permissions(stat.perm.unwrap_or(0)),
                     owner_uid: stat.uid.unwrap_or(0),
                     group_gid: stat.gid.unwrap_or(0),
-                    accessed: stat.atime.map(|v| v as u64),
-                    modified: stat.mtime.map(|v| v as u64),
+                    accessed: stat.atime,
+                    modified: stat.mtime,
                     is_hidden: name.starts_with('.'),
                     link_target: None,
                 });
@@ -263,7 +271,9 @@ impl SftpService {
         request: SftpChmodRequest,
     ) -> Result<u64, String> {
         if request.recursive {
-            return self.chmod_recursive(session_id, &request.path, request.mode).await;
+            return self
+                .chmod_recursive(session_id, &request.path, request.mode)
+                .await;
         }
 
         let (sftp, _handle) = self.sftp_channel(session_id)?;
@@ -307,7 +317,10 @@ impl SftpService {
             count += 1;
         }
 
-        info!("SFTP recursive chmod {} → {:o} ({} items)", path, mode, count);
+        info!(
+            "SFTP recursive chmod {} → {:o} ({} items)",
+            path, mode, count
+        );
         Ok(count)
     }
 
@@ -336,7 +349,10 @@ impl SftpService {
         sftp.setstat(Path::new(&request.path), stat)
             .map_err(|e| format!("chown '{}' failed: {}", request.path, e))?;
 
-        info!("SFTP chown {}: uid={:?} gid={:?}", request.path, request.uid, request.gid);
+        info!(
+            "SFTP chown {}: uid={:?} gid={:?}",
+            request.path, request.uid, request.gid
+        );
         Ok(1)
     }
 
@@ -396,11 +412,7 @@ impl SftpService {
         Ok(())
     }
 
-    pub async fn read_link(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<String, String> {
+    pub async fn read_link(&mut self, session_id: &str, path: &str) -> Result<String, String> {
         let (sftp, _handle) = self.sftp_channel(session_id)?;
         let target = sftp
             .readlink(Path::new(path))
@@ -410,11 +422,7 @@ impl SftpService {
 
     // ── Touch (update mtime) ─────────────────────────────────────────────────
 
-    pub async fn touch(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<(), String> {
+    pub async fn touch(&mut self, session_id: &str, path: &str) -> Result<(), String> {
         let (sftp, _handle) = self.sftp_channel(session_id)?;
         let now = Utc::now().timestamp() as u64;
 
@@ -517,11 +525,7 @@ impl SftpService {
 
     // ── Checksum (SHA-256) ───────────────────────────────────────────────────
 
-    pub async fn checksum(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<String, String> {
+    pub async fn checksum(&mut self, session_id: &str, path: &str) -> Result<String, String> {
         use sha2::{Digest, Sha256};
 
         let (sftp, handle) = self.sftp_channel(session_id)?;
@@ -550,11 +554,7 @@ impl SftpService {
 
     // ── Exists ───────────────────────────────────────────────────────────────
 
-    pub async fn exists(
-        &mut self,
-        session_id: &str,
-        path: &str,
-    ) -> Result<bool, String> {
+    pub async fn exists(&mut self, session_id: &str, path: &str) -> Result<bool, String> {
         let (sftp, _handle) = self.sftp_channel(session_id)?;
         Ok(sftp.stat(Path::new(path)).is_ok())
     }
