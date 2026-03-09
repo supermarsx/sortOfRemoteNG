@@ -91,7 +91,9 @@ fn parse_hwclock_output(output: &str) -> Result<DateTime<Utc>, TimeNtpError> {
         }
     }
 
-    Err(TimeNtpError::ParseError(format!("Cannot parse hwclock output: {line}")))
+    Err(TimeNtpError::ParseError(format!(
+        "Cannot parse hwclock output: {line}"
+    )))
 }
 
 fn try_parse_iso_hwclock(s: &str) -> Option<DateTime<Utc>> {
@@ -113,9 +115,9 @@ fn parse_adjtime_drift(content: &str) -> Result<f64, TimeNtpError> {
         return Err(TimeNtpError::ParseError("Empty /etc/adjtime".into()));
     }
     let drift_str = first_line.split_whitespace().next().unwrap_or("0");
-    drift_str
-        .parse::<f64>()
-        .map_err(|e| TimeNtpError::ParseError(format!("Cannot parse drift factor '{drift_str}': {e}")))
+    drift_str.parse::<f64>().map_err(|e| {
+        TimeNtpError::ParseError(format!("Cannot parse drift factor '{drift_str}': {e}"))
+    })
 }
 
 #[cfg(test)]
@@ -126,7 +128,10 @@ mod tests {
     fn test_parse_hwclock_iso() {
         let out = "2024-01-19 14:30:00.123456+00:00\n";
         let dt = parse_hwclock_output(out).unwrap();
-        assert_eq!(dt.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-19 14:30:00");
+        assert_eq!(
+            dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2024-01-19 14:30:00"
+        );
     }
 
     #[test]

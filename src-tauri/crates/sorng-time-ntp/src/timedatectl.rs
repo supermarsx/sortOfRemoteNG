@@ -166,7 +166,10 @@ System clock synchronized: yes
         let dt = parse_timedatectl_datetime("Fri 2024-01-19 14:30:00 UTC");
         assert!(dt.is_some());
         let dt = dt.unwrap();
-        assert_eq!(dt.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-19 14:30:00");
+        assert_eq!(
+            dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2024-01-19 14:30:00"
+        );
     }
 
     #[test]

@@ -46,7 +46,9 @@ pub async fn get_peers(host: &TimeHost) -> Result<Vec<NtpPeer>, TimeNtpError> {
 }
 
 /// Get association list from `ntpq -c associations`.
-pub async fn get_associations(host: &TimeHost) -> Result<Vec<HashMap<String, String>>, TimeNtpError> {
+pub async fn get_associations(
+    host: &TimeHost,
+) -> Result<Vec<HashMap<String, String>>, TimeNtpError> {
     let out = client::exec_ok(host, "ntpq", &["-c", "associations"]).await?;
     parse_ntpq_associations(&out)
 }
@@ -63,7 +65,9 @@ pub async fn get_kerninfo(host: &TimeHost) -> Result<HashMap<String, String>, Ti
     let mut map = HashMap::new();
     for line in out.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if let Some((k, v)) = line.split_once(':') {
             map.insert(k.trim().to_string(), v.trim().to_string());
         }
@@ -83,9 +87,13 @@ pub fn parse_ntp_conf(content: &str) -> Result<NtpdConfig, TimeNtpError> {
 
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() { continue; }
+        if parts.is_empty() {
+            continue;
+        }
 
         match parts[0] {
             "server" | "pool" | "peer" if parts.len() >= 2 => {
@@ -101,7 +109,14 @@ pub fn parse_ntp_conf(content: &str) -> Result<NtpdConfig, TimeNtpError> {
         }
     }
 
-    Ok(NtpdConfig { servers, restrict_rules, driftfile, statsdir, keys_file, extra_lines })
+    Ok(NtpdConfig {
+        servers,
+        restrict_rules,
+        driftfile,
+        statsdir,
+        keys_file,
+        extra_lines,
+    })
 }
 
 fn parse_ntpd_server_directive(parts: &[&str]) -> NtpServerConfig {
@@ -114,20 +129,31 @@ fn parse_ntpd_server_directive(parts: &[&str]) -> NtpServerConfig {
     let rest = &parts[2..];
     let iburst = rest.contains(&"iburst");
     let prefer = rest.contains(&"prefer");
-    let minpoll = rest.iter()
+    let minpoll = rest
+        .iter()
         .position(|&x| x == "minpoll")
         .and_then(|i| rest.get(i + 1))
         .and_then(|v| v.parse().ok());
-    let maxpoll = rest.iter()
+    let maxpoll = rest
+        .iter()
         .position(|&x| x == "maxpoll")
         .and_then(|i| rest.get(i + 1))
         .and_then(|v| v.parse().ok());
-    let key = rest.iter()
+    let key = rest
+        .iter()
         .position(|&x| x == "key")
         .and_then(|i| rest.get(i + 1))
         .map(|v| v.to_string());
 
-    NtpServerConfig { address, server_type, iburst, prefer, minpoll, maxpoll, key }
+    NtpServerConfig {
+        address,
+        server_type,
+        iburst,
+        prefer,
+        minpoll,
+        maxpoll,
+        key,
+    }
 }
 
 fn serialize_ntp_conf(cfg: &NtpdConfig) -> String {
@@ -168,11 +194,21 @@ fn serialize_ntpd_server_line(s: &NtpServerConfig) -> String {
         NtpServerType::Server => "server",
     };
     let mut line = format!("{keyword} {}", s.address);
-    if s.iburst { line.push_str(" iburst"); }
-    if s.prefer { line.push_str(" prefer"); }
-    if let Some(min) = s.minpoll { line.push_str(&format!(" minpoll {min}")); }
-    if let Some(max) = s.maxpoll { line.push_str(&format!(" maxpoll {max}")); }
-    if let Some(ref k) = s.key { line.push_str(&format!(" key {k}")); }
+    if s.iburst {
+        line.push_str(" iburst");
+    }
+    if s.prefer {
+        line.push_str(" prefer");
+    }
+    if let Some(min) = s.minpoll {
+        line.push_str(&format!(" minpoll {min}"));
+    }
+    if let Some(max) = s.maxpoll {
+        line.push_str(&format!(" maxpoll {max}"));
+    }
+    if let Some(ref k) = s.key {
+        line.push_str(&format!(" key {k}"));
+    }
     line
 }
 
@@ -196,11 +232,15 @@ fn parse_ntpq_peers(output: &str) -> Result<Vec<NtpPeer>, TimeNtpError> {
             continue;
         }
         // First char is the tally code: * # o + - x .
-        if line.len() < 2 { continue; }
+        if line.len() < 2 {
+            continue;
+        }
         let tally = &line[..1];
         let rest = line[1..].trim();
         let cols: Vec<&str> = rest.split_whitespace().collect();
-        if cols.len() < 9 { continue; }
+        if cols.len() < 9 {
+            continue;
+        }
 
         let state = match tally {
             "*" => NtpPeerState::Sync,
@@ -234,7 +274,9 @@ fn parse_ntpq_peers(output: &str) -> Result<Vec<NtpPeer>, TimeNtpError> {
 fn parse_ntpq_associations(output: &str) -> Result<Vec<HashMap<String, String>>, TimeNtpError> {
     let mut result = Vec::new();
     let lines: Vec<&str> = output.lines().collect();
-    if lines.len() < 2 { return Ok(result); }
+    if lines.len() < 2 {
+        return Ok(result);
+    }
 
     // First non-empty line is the header
     let header_line = lines.iter().find(|l| !l.trim().is_empty());
@@ -245,7 +287,9 @@ fn parse_ntpq_associations(output: &str) -> Result<Vec<HashMap<String, String>>,
 
     for line in &lines[1..] {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('=') || line.starts_with('-') { continue; }
+        if line.is_empty() || line.starts_with('=') || line.starts_with('-') {
+            continue;
+        }
         let cols: Vec<&str> = line.split_whitespace().collect();
         let mut row = HashMap::new();
         for (i, key) in header.iter().enumerate() {
@@ -265,7 +309,11 @@ fn parse_ntpq_associations(output: &str) -> Result<Vec<HashMap<String, String>>,
 fn parse_ntpq_rv(output: &str) -> Result<NtpStatus, TimeNtpError> {
     let mut vars = HashMap::new();
     // Flatten multiline output into one string, then split on commas
-    let flat: String = output.lines().map(|l| l.trim()).collect::<Vec<_>>().join(" ");
+    let flat: String = output
+        .lines()
+        .map(|l| l.trim())
+        .collect::<Vec<_>>()
+        .join(" ");
     for pair in flat.split(',') {
         let pair = pair.trim();
         if let Some((k, v)) = pair.split_once('=') {
@@ -273,11 +321,26 @@ fn parse_ntpq_rv(output: &str) -> Result<NtpStatus, TimeNtpError> {
         }
     }
 
-    let stratum: u32 = vars.get("stratum").and_then(|v| v.parse().ok()).unwrap_or(16);
-    let offset: f64 = vars.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-    let frequency: f64 = vars.get("frequency").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-    let rootdelay: f64 = vars.get("rootdelay").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-    let rootdisp: f64 = vars.get("rootdisp").and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let stratum: u32 = vars
+        .get("stratum")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(16);
+    let offset: f64 = vars
+        .get("offset")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+    let frequency: f64 = vars
+        .get("frequency")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+    let rootdelay: f64 = vars
+        .get("rootdelay")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+    let rootdisp: f64 = vars
+        .get("rootdisp")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let reference = vars.get("refid").cloned().unwrap_or_default();
     let leap = vars.get("leap").map(|v| v.as_str()).unwrap_or("3");
     let synced = leap != "3"; // leap=3 means unsynchronised
@@ -339,7 +402,11 @@ filegen loopstats file loopstats type day enable
             servers: vec![NtpServerConfig {
                 address: "ntp.example.com".into(),
                 server_type: NtpServerType::Server,
-                iburst: true, prefer: false, minpoll: None, maxpoll: None, key: None,
+                iburst: true,
+                prefer: false,
+                minpoll: None,
+                maxpoll: None,
+                key: None,
             }],
             restrict_rules: vec!["default kod nomodify".into(), "127.0.0.1".into()],
             driftfile: "/var/lib/ntp/drift".into(),

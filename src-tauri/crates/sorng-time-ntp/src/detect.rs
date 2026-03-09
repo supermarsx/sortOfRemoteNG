@@ -35,11 +35,14 @@ pub async fn detect_ntp_implementation(host: &TimeHost) -> Result<NtpImplementat
 /// Discover which time-related services are available and/or running.
 pub async fn detect_time_services(host: &TimeHost) -> Result<Vec<String>, TimeNtpError> {
     let services_to_check = [
-        "chronyd", "chrony",
-        "ntpd", "ntp",
+        "chronyd",
+        "chrony",
+        "ntpd",
+        "ntp",
         "systemd-timesyncd",
         "openntpd",
-        "ptp4l", "phc2sys",
+        "ptp4l",
+        "phc2sys",
     ];
 
     let mut found = Vec::new();
@@ -53,7 +56,15 @@ pub async fn detect_time_services(host: &TimeHost) -> Result<Vec<String>, TimeNt
     }
 
     // Also check for binaries that might exist but not be systemd services
-    for bin in &["chronyc", "ntpq", "ntpctl", "timedatectl", "hwclock", "pmc", "w32tm"] {
+    for bin in &[
+        "chronyc",
+        "ntpq",
+        "ntpctl",
+        "timedatectl",
+        "hwclock",
+        "pmc",
+        "w32tm",
+    ] {
         if command_exists(host, bin).await {
             let entry = format!("{bin} (available)");
             if !found.iter().any(|f| f.starts_with(bin)) {
@@ -72,7 +83,8 @@ pub async fn is_ntp_synced(host: &TimeHost) -> Result<bool, TimeNtpError> {
     if code == 0 {
         for line in stdout.lines() {
             let line = line.trim();
-            if (line.starts_with("System clock synchronized") || line.starts_with("NTP synchronized"))
+            if (line.starts_with("System clock synchronized")
+                || line.starts_with("NTP synchronized"))
                 && line.contains("yes")
             {
                 return Ok(true);
@@ -110,10 +122,7 @@ async fn is_service_active(host: &TimeHost, service: &str) -> bool {
 }
 
 async fn command_exists(host: &TimeHost, cmd: &str) -> bool {
-    matches!(
-        client::exec(host, "which", &[cmd]).await,
-        Ok((_, _, 0))
-    )
+    matches!(client::exec(host, "which", &[cmd]).await, Ok((_, _, 0)))
 }
 
 #[cfg(test)]

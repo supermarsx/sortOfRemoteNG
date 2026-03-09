@@ -4,7 +4,11 @@ use std::fmt;
 #[derive(Debug)]
 pub enum TimeNtpError {
     CommandNotFound(String),
-    CommandFailed { command: String, exit_code: i32, stderr: String },
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
     SshError(String),
     HostNotFound(String),
     PermissionDenied(String),
@@ -21,7 +25,11 @@ impl fmt::Display for TimeNtpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommandNotFound(c) => write!(f, "Command not found: {c}"),
-            Self::CommandFailed { command, exit_code, stderr } => write!(f, "`{command}` failed (exit {exit_code}): {stderr}"),
+            Self::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+            } => write!(f, "`{command}` failed (exit {exit_code}): {stderr}"),
             Self::SshError(e) => write!(f, "SSH: {e}"),
             Self::HostNotFound(h) => write!(f, "Host not found: {h}"),
             Self::PermissionDenied(e) => write!(f, "Permission denied: {e}"),
@@ -39,9 +47,13 @@ impl fmt::Display for TimeNtpError {
 impl std::error::Error for TimeNtpError {}
 
 impl From<std::io::Error> for TimeNtpError {
-    fn from(e: std::io::Error) -> Self { Self::IoError(e.to_string()) }
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e.to_string())
+    }
 }
 
 impl From<serde_json::Error> for TimeNtpError {
-    fn from(e: serde_json::Error) -> Self { Self::JsonError(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        Self::JsonError(e.to_string())
+    }
 }

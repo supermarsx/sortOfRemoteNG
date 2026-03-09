@@ -17,8 +17,13 @@ pub struct SshConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SshAuth {
-    Password { password: String },
-    PrivateKey { key_path: String, passphrase: Option<String> },
+    Password {
+        password: String,
+    },
+    PrivateKey {
+        key_path: String,
+        passphrase: Option<String>,
+    },
     Agent,
 }
 

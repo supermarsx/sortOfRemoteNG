@@ -13,7 +13,9 @@ pub struct TimeNtpService {
 
 impl TimeNtpService {
     pub fn new() -> TimeNtpServiceState {
-        Arc::new(Mutex::new(Self { hosts: HashMap::new() }))
+        Arc::new(Mutex::new(Self {
+            hosts: HashMap::new(),
+        }))
     }
 
     pub fn add_host(&mut self, h: TimeHost) -> Result<(), TimeNtpError> {
@@ -33,11 +35,15 @@ impl TimeNtpService {
     }
 
     pub fn remove_host(&mut self, id: &str) -> Result<TimeHost, TimeNtpError> {
-        self.hosts.remove(id).ok_or_else(|| TimeNtpError::HostNotFound(id.into()))
+        self.hosts
+            .remove(id)
+            .ok_or_else(|| TimeNtpError::HostNotFound(id.into()))
     }
 
     pub fn get_host(&self, id: &str) -> Result<&TimeHost, TimeNtpError> {
-        self.hosts.get(id).ok_or_else(|| TimeNtpError::HostNotFound(id.into()))
+        self.hosts
+            .get(id)
+            .ok_or_else(|| TimeNtpError::HostNotFound(id.into()))
     }
 
     pub fn list_hosts(&self) -> Vec<&TimeHost> {

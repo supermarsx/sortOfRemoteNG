@@ -77,7 +77,9 @@ pub async fn get_activity(host: &TimeHost) -> Result<HashMap<String, String>, Ti
     let mut map = HashMap::new();
     for line in out.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         // Lines like "200 OK" or "6 sources online"
         if let Some((count, desc)) = line.split_once(' ') {
             map.insert(desc.trim().to_string(), count.trim().to_string());
@@ -123,7 +125,9 @@ pub async fn get_rtc_info(host: &TimeHost) -> Result<HashMap<String, String>, Ti
     let mut map = HashMap::new();
     for line in out.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with("RTC") && line.contains("not") { continue; }
+        if line.is_empty() || line.starts_with("RTC") && line.contains("not") {
+            continue;
+        }
         if let Some((k, v)) = line.split_once(':') {
             map.insert(k.trim().to_string(), v.trim().to_string());
         }
@@ -151,7 +155,9 @@ pub fn parse_chrony_conf(content: &str) -> Result<ChronyConfig, TimeNtpError> {
             continue;
         }
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() { continue; }
+        if parts.is_empty() {
+            continue;
+        }
 
         match parts[0] {
             "server" | "peer" if parts.len() >= 2 => {
@@ -197,20 +203,31 @@ fn parse_ntp_server_directive(parts: &[&str]) -> NtpServerConfig {
     let rest: Vec<&str> = parts[2..].to_vec();
     let iburst = rest.contains(&"iburst");
     let prefer = rest.contains(&"prefer");
-    let minpoll = rest.iter()
+    let minpoll = rest
+        .iter()
         .position(|&x| x == "minpoll")
         .and_then(|i| rest.get(i + 1))
         .and_then(|v| v.parse().ok());
-    let maxpoll = rest.iter()
+    let maxpoll = rest
+        .iter()
         .position(|&x| x == "maxpoll")
         .and_then(|i| rest.get(i + 1))
         .and_then(|v| v.parse().ok());
-    let key = rest.iter()
+    let key = rest
+        .iter()
         .position(|&x| x == "key")
         .and_then(|i| rest.get(i + 1))
         .map(|v| v.to_string());
 
-    NtpServerConfig { address, server_type, iburst, prefer, minpoll, maxpoll, key }
+    NtpServerConfig {
+        address,
+        server_type,
+        iburst,
+        prefer,
+        minpoll,
+        maxpoll,
+        key,
+    }
 }
 
 fn serialize_chrony_conf(cfg: &ChronyConfig) -> String {
@@ -225,8 +242,13 @@ fn serialize_chrony_conf(cfg: &ChronyConfig) -> String {
         lines.push(serialize_server_line(p));
     }
     lines.push(String::new());
-    lines.push(format!("makestep {} {}", cfg.makestep_threshold, cfg.makestep_limit));
-    if cfg.rtcsync { lines.push("rtcsync".to_string()); }
+    lines.push(format!(
+        "makestep {} {}",
+        cfg.makestep_threshold, cfg.makestep_limit
+    ));
+    if cfg.rtcsync {
+        lines.push("rtcsync".to_string());
+    }
     lines.push(format!("driftfile {}", cfg.driftfile));
     lines.push(format!("logdir {}", cfg.logdir));
     for a in &cfg.allow {
@@ -249,11 +271,21 @@ fn serialize_server_line(s: &NtpServerConfig) -> String {
         NtpServerType::Server => "server",
     };
     let mut line = format!("{keyword} {}", s.address);
-    if s.iburst { line.push_str(" iburst"); }
-    if s.prefer { line.push_str(" prefer"); }
-    if let Some(min) = s.minpoll { line.push_str(&format!(" minpoll {min}")); }
-    if let Some(max) = s.maxpoll { line.push_str(&format!(" maxpoll {max}")); }
-    if let Some(ref k) = s.key { line.push_str(&format!(" key {k}")); }
+    if s.iburst {
+        line.push_str(" iburst");
+    }
+    if s.prefer {
+        line.push_str(" prefer");
+    }
+    if let Some(min) = s.minpoll {
+        line.push_str(&format!(" minpoll {min}"));
+    }
+    if let Some(max) = s.maxpoll {
+        line.push_str(&format!(" maxpoll {max}"));
+    }
+    if let Some(ref k) = s.key {
+        line.push_str(&format!(" key {k}"));
+    }
     line
 }
 
@@ -263,9 +295,13 @@ fn parse_chronyc_sources(output: &str) -> Result<Vec<NtpSource>, TimeNtpError> {
     let mut sources = Vec::new();
     for line in output.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let cols: Vec<&str> = line.split(',').collect();
-        if cols.len() < 10 { continue; }
+        if cols.len() < 10 {
+            continue;
+        }
         // CSV columns: Mode, State, Name, Stratum, Poll, Reach, LastRx, Offset, Error, (...)
         sources.push(NtpSource {
             name: cols[2].to_string(),
@@ -287,9 +323,13 @@ fn parse_chronyc_sourcestats(output: &str) -> Result<Vec<TimeSyncStats>, TimeNtp
     let mut stats = Vec::new();
     for line in output.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let cols: Vec<&str> = line.split(',').collect();
-        if cols.len() < 8 { continue; }
+        if cols.len() < 8 {
+            continue;
+        }
         stats.push(TimeSyncStats {
             offset_seconds: parse_chrony_value(cols[6]),
             frequency_ppm: parse_chrony_value(cols[4]),
@@ -308,12 +348,15 @@ fn parse_chronyc_sourcestats(output: &str) -> Result<Vec<TimeSyncStats>, TimeNtp
 /// Fields: RefID,RefIDName,Stratum,RefTime,SysTime,LastOffset,RMSOffset,
 ///         Frequency,ResidFreq,Skew,RootDelay,RootDispersion,UpdateInterval,LeapStatus
 fn parse_chronyc_tracking(output: &str) -> Result<NtpStatus, TimeNtpError> {
-    let line = output.lines().find(|l| !l.trim().is_empty())
+    let line = output
+        .lines()
+        .find(|l| !l.trim().is_empty())
         .ok_or_else(|| TimeNtpError::ParseError("Empty chronyc tracking output".into()))?;
     let cols: Vec<&str> = line.split(',').collect();
     if cols.len() < 14 {
         return Err(TimeNtpError::ParseError(format!(
-            "chronyc tracking: expected >=14 CSV fields, got {}", cols.len()
+            "chronyc tracking: expected >=14 CSV fields, got {}",
+            cols.len()
         )));
     }
 
@@ -343,17 +386,23 @@ fn parse_chronyc_ntpdata(output: &str, address: &str) -> Result<NtpPeer, TimeNtp
     }
 
     let stratum = map.get("stratum").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let poll = map.get("poll interval").and_then(|v| {
-        // "1024 (2^10)" -> extract the number
-        v.split_whitespace().next().and_then(|n| n.parse().ok())
-    }).unwrap_or(0);
-    let offset = map.get("offset")
+    let poll = map
+        .get("poll interval")
+        .and_then(|v| {
+            // "1024 (2^10)" -> extract the number
+            v.split_whitespace().next().and_then(|n| n.parse().ok())
+        })
+        .unwrap_or(0);
+    let offset = map
+        .get("offset")
         .map(|v| parse_value_with_unit(v))
         .unwrap_or(0.0);
-    let delay = map.get("peer delay")
+    let delay = map
+        .get("peer delay")
         .map(|v| parse_value_with_unit(v))
         .unwrap_or(0.0);
-    let jitter = map.get("peer dispersion")
+    let jitter = map
+        .get("peer dispersion")
         .map(|v| parse_value_with_unit(v))
         .unwrap_or(0.0);
 
@@ -435,7 +484,9 @@ bindcmdaddress 127.0.0.1
         assert!(cfg.rtcsync);
         assert_eq!(cfg.allow, vec!["192.168.0.0/16"]);
         assert_eq!(cfg.deny, vec!["10.0.0.0/8"]);
-        assert!(cfg.extra_directives.contains(&"bindcmdaddress 127.0.0.1".to_string()));
+        assert!(cfg
+            .extra_directives
+            .contains(&"bindcmdaddress 127.0.0.1".to_string()));
     }
 
     #[test]
@@ -444,12 +495,20 @@ bindcmdaddress 127.0.0.1
             servers: vec![NtpServerConfig {
                 address: "0.pool.ntp.org".into(),
                 server_type: NtpServerType::Server,
-                iburst: true, prefer: false, minpoll: None, maxpoll: None, key: None,
+                iburst: true,
+                prefer: false,
+                minpoll: None,
+                maxpoll: None,
+                key: None,
             }],
             pools: vec![NtpServerConfig {
                 address: "pool.ntp.org".into(),
                 server_type: NtpServerType::Pool,
-                iburst: true, prefer: false, minpoll: Some(4), maxpoll: Some(10), key: None,
+                iburst: true,
+                prefer: false,
+                minpoll: Some(4),
+                maxpoll: Some(10),
+                key: None,
             }],
             makestep_threshold: 0.5,
             makestep_limit: 5,

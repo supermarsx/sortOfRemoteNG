@@ -5,7 +5,11 @@ use log::debug;
 use tokio::process::Command;
 
 /// Execute a command on a host, returning (stdout, stderr, exit_code).
-pub async fn exec(host: &TimeHost, program: &str, args: &[&str]) -> Result<(String, String, i32), TimeNtpError> {
+pub async fn exec(
+    host: &TimeHost,
+    program: &str,
+    args: &[&str],
+) -> Result<(String, String, i32), TimeNtpError> {
     debug!("time-ntp exec: {} {}", program, args.join(" "));
     let output = if let Some(ssh) = &host.ssh {
         exec_remote(ssh, host.use_sudo, program, args).await?
@@ -18,7 +22,11 @@ pub async fn exec(host: &TimeHost, program: &str, args: &[&str]) -> Result<(Stri
 }
 
 /// Execute a command and return stdout on success, or error on non-zero exit.
-pub async fn exec_ok(host: &TimeHost, program: &str, args: &[&str]) -> Result<String, TimeNtpError> {
+pub async fn exec_ok(
+    host: &TimeHost,
+    program: &str,
+    args: &[&str],
+) -> Result<String, TimeNtpError> {
     let (stdout, stderr, code) = exec(host, program, args).await?;
     if code != 0 {
         return Err(TimeNtpError::CommandFailed {
@@ -51,7 +59,11 @@ pub async fn write_file(host: &TimeHost, path: &str, content: &str) -> Result<()
     Ok(())
 }
 
-async fn exec_local(sudo: bool, prog: &str, args: &[&str]) -> Result<std::process::Output, TimeNtpError> {
+async fn exec_local(
+    sudo: bool,
+    prog: &str,
+    args: &[&str],
+) -> Result<std::process::Output, TimeNtpError> {
     Ok(if sudo {
         Command::new("sudo").arg(prog).args(args).output().await?
     } else {
@@ -59,16 +71,24 @@ async fn exec_local(sudo: bool, prog: &str, args: &[&str]) -> Result<std::proces
     })
 }
 
-async fn exec_remote(ssh: &SshConfig, sudo: bool, prog: &str, args: &[&str]) -> Result<std::process::Output, TimeNtpError> {
+async fn exec_remote(
+    ssh: &SshConfig,
+    sudo: bool,
+    prog: &str,
+    args: &[&str],
+) -> Result<std::process::Output, TimeNtpError> {
     let rc = if sudo {
         format!("sudo {} {}", prog, args.join(" "))
     } else {
         format!("{} {}", prog, args.join(" "))
     };
     let mut cmd = Command::new("ssh");
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg(format!("ConnectTimeout={}", ssh.timeout_secs))
-        .arg("-p").arg(ssh.port.to_string());
+    cmd.arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", ssh.timeout_secs))
+        .arg("-p")
+        .arg(ssh.port.to_string());
     if let SshAuth::PrivateKey { key_path, .. } = &ssh.auth {
         cmd.arg("-i").arg(key_path);
     }

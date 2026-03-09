@@ -8,12 +8,7 @@ use std::collections::HashMap;
 /// Returns empty/default status if PTP is not available.
 pub async fn get_ptp_status(host: &TimeHost) -> Result<PtpStatus, TimeNtpError> {
     // Try pmc (PTP management client) first
-    let result = client::exec(
-        host,
-        "pmc",
-        &["-u", "-b", "0", "GET", "CURRENT_DATA_SET"],
-    )
-    .await;
+    let result = client::exec(host, "pmc", &["-u", "-b", "0", "GET", "CURRENT_DATA_SET"]).await;
 
     match result {
         Ok((stdout, _, 0)) => parse_pmc_current_dataset(&stdout),
@@ -40,12 +35,8 @@ pub async fn get_ptp_status(host: &TimeHost) -> Result<PtpStatus, TimeNtpError> 
 
 /// List PTP ports from `pmc GET PORT_DATA_SET`.
 pub async fn list_ptp_ports(host: &TimeHost) -> Result<Vec<PtpPort>, TimeNtpError> {
-    let (stdout, _, code) = client::exec(
-        host,
-        "pmc",
-        &["-u", "-b", "0", "GET", "PORT_DATA_SET"],
-    )
-    .await?;
+    let (stdout, _, code) =
+        client::exec(host, "pmc", &["-u", "-b", "0", "GET", "PORT_DATA_SET"]).await?;
 
     if code != 0 {
         return Ok(Vec::new());
@@ -77,7 +68,9 @@ fn parse_pmc_current_dataset(output: &str) -> Result<PtpStatus, TimeNtpError> {
 
     for line in output.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         if let Some((key, val)) = split_pmc_kv(line) {
             match key {
@@ -90,7 +83,12 @@ fn parse_pmc_current_dataset(output: &str) -> Result<PtpStatus, TimeNtpError> {
         }
     }
 
-    Ok(PtpStatus { clock_id, port_state, master_offset_ns, path_delay_ns })
+    Ok(PtpStatus {
+        clock_id,
+        port_state,
+        master_offset_ns,
+        path_delay_ns,
+    })
 }
 
 /// Parse recent ptp4l journal lines for offset/delay.
@@ -227,7 +225,11 @@ fn split_pmc_kv(line: &str) -> Option<(&str, &str)> {
     let mut iter = line.splitn(2, char::is_whitespace);
     let key = iter.next()?.trim();
     let val = iter.next().map(|v| v.trim()).unwrap_or("");
-    if key.is_empty() { None } else { Some((key, val)) }
+    if key.is_empty() {
+        None
+    } else {
+        Some((key, val))
+    }
 }
 
 #[cfg(test)]
