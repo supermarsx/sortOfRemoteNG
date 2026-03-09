@@ -2,6 +2,7 @@
 const nextConfig = {
   output: 'export',
   trailingSlash: true,
+  optimizePackageImports: ['lucide-react'],
   images: {
     unoptimized: true,
   },
