@@ -41,7 +41,11 @@ impl fmt::Display for PamError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommandNotFound(p) => write!(f, "command not found: {p}"),
-            Self::CommandFailed { command, exit_code, stderr } => {
+            Self::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+            } => {
                 write!(f, "command `{command}` failed (exit {exit_code}): {stderr}")
             }
             Self::SshError(e) => write!(f, "SSH error: {e}"),

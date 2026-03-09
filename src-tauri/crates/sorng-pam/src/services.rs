@@ -114,10 +114,7 @@ fn parse_includes(content: &str) -> Vec<String> {
 
 /// Parse a full PAM service file into a PamService.
 pub fn parse_service(name: &str, content: &str, file_path: &str) -> PamService {
-    let lines: Vec<PamModuleLine> = content
-        .lines()
-        .filter_map(parse_pam_line)
-        .collect();
+    let lines: Vec<PamModuleLine> = content.lines().filter_map(parse_pam_line).collect();
     let includes = parse_includes(content);
 
     PamService {
@@ -169,9 +166,9 @@ pub async fn list_services(host: &PamHost) -> Result<Vec<PamService>, PamError> 
 /// Get a single PAM service by name.
 pub async fn get_service(host: &PamHost, name: &str) -> Result<PamService, PamError> {
     let path = format!("/etc/pam.d/{}", name);
-    let content = client::read_file(host, &path).await.map_err(|_| {
-        PamError::ServiceNotFound(name.to_string())
-    })?;
+    let content = client::read_file(host, &path)
+        .await
+        .map_err(|_| PamError::ServiceNotFound(name.to_string()))?;
     Ok(parse_service(name, &content, &path))
 }
 
@@ -252,7 +249,10 @@ pub async fn add_module_line(
     }
     let content = serialize_service(&svc);
     client::write_file(host, &svc.file_path, &content).await?;
-    debug!("Added module line to {} at position {}", service_name, position);
+    debug!(
+        "Added module line to {} at position {}",
+        service_name, position
+    );
     Ok(svc)
 }
 
@@ -338,19 +338,15 @@ pub async fn reorder_module_lines(
 /// Backup a PAM service and return its raw content.
 pub async fn backup_service(host: &PamHost, name: &str) -> Result<String, PamError> {
     let path = format!("/etc/pam.d/{}", name);
-    let content = client::read_file(host, &path).await.map_err(|_| {
-        PamError::ServiceNotFound(name.to_string())
-    })?;
+    let content = client::read_file(host, &path)
+        .await
+        .map_err(|_| PamError::ServiceNotFound(name.to_string()))?;
     debug!("Backed up PAM service: {}", name);
     Ok(content)
 }
 
 /// Restore a PAM service from raw content.
-pub async fn restore_service(
-    host: &PamHost,
-    name: &str,
-    content: &str,
-) -> Result<(), PamError> {
+pub async fn restore_service(host: &PamHost, name: &str, content: &str) -> Result<(), PamError> {
     let path = format!("/etc/pam.d/{}", name);
     client::write_file(host, &path, content).await?;
     info!("Restored PAM service: {}", name);
@@ -358,10 +354,7 @@ pub async fn restore_service(
 }
 
 /// Validate a PAM service and return any warnings.
-pub async fn validate_service(
-    host: &PamHost,
-    name: &str,
-) -> Result<Vec<String>, PamError> {
+pub async fn validate_service(host: &PamHost, name: &str) -> Result<Vec<String>, PamError> {
     let svc = get_service(host, name).await?;
     let mut warnings = Vec::new();
 
@@ -397,7 +390,10 @@ pub async fn validate_service(
     }
 
     // Check for auth stack completeness
-    let has_auth = svc.lines.iter().any(|l| l.module_type == PamModuleType::Auth);
+    let has_auth = svc
+        .lines
+        .iter()
+        .any(|l| l.module_type == PamModuleType::Auth);
     let has_account = svc
         .lines
         .iter()

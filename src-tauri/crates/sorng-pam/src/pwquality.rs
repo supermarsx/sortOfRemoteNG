@@ -22,10 +22,7 @@ fn parse_pwquality_line(line: &str) -> Option<(String, String)> {
         return None;
     }
 
-    Some((
-        parts[0].trim().to_string(),
-        parts[1].trim().to_string(),
-    ))
+    Some((parts[0].trim().to_string(), parts[1].trim().to_string()))
 }
 
 /// Parse pwquality.conf content into a PwQualityConfig.
@@ -76,26 +73,65 @@ pub fn serialize_pwquality(config: &PwQualityConfig) -> String {
         out.push_str(&format!("{} = {}\n", key, val));
     };
 
-    if let Some(v) = config.difok { emit("difok", &v.to_string()); }
-    if let Some(v) = config.minlen { emit("minlen", &v.to_string()); }
-    if let Some(v) = config.dcredit { emit("dcredit", &v.to_string()); }
-    if let Some(v) = config.ucredit { emit("ucredit", &v.to_string()); }
-    if let Some(v) = config.lcredit { emit("lcredit", &v.to_string()); }
-    if let Some(v) = config.ocredit { emit("ocredit", &v.to_string()); }
-    if let Some(v) = config.minclass { emit("minclass", &v.to_string()); }
-    if let Some(v) = config.maxrepeat { emit("maxrepeat", &v.to_string()); }
-    if let Some(v) = config.maxsequence { emit("maxsequence", &v.to_string()); }
-    if let Some(v) = config.maxclassrepeat { emit("maxclassrepeat", &v.to_string()); }
-    if let Some(v) = config.gecoscheck { emit("gecoscheck", if v { "1" } else { "0" }); }
-    if let Some(v) = config.dictcheck { emit("dictcheck", if v { "1" } else { "0" }); }
-    if let Some(v) = config.usercheck { emit("usercheck", if v { "1" } else { "0" }); }
-    if let Some(v) = config.enforcing { emit("enforcing", if v { "1" } else { "0" }); }
+    if let Some(v) = config.difok {
+        emit("difok", &v.to_string());
+    }
+    if let Some(v) = config.minlen {
+        emit("minlen", &v.to_string());
+    }
+    if let Some(v) = config.dcredit {
+        emit("dcredit", &v.to_string());
+    }
+    if let Some(v) = config.ucredit {
+        emit("ucredit", &v.to_string());
+    }
+    if let Some(v) = config.lcredit {
+        emit("lcredit", &v.to_string());
+    }
+    if let Some(v) = config.ocredit {
+        emit("ocredit", &v.to_string());
+    }
+    if let Some(v) = config.minclass {
+        emit("minclass", &v.to_string());
+    }
+    if let Some(v) = config.maxrepeat {
+        emit("maxrepeat", &v.to_string());
+    }
+    if let Some(v) = config.maxsequence {
+        emit("maxsequence", &v.to_string());
+    }
+    if let Some(v) = config.maxclassrepeat {
+        emit("maxclassrepeat", &v.to_string());
+    }
+    if let Some(v) = config.gecoscheck {
+        emit("gecoscheck", if v { "1" } else { "0" });
+    }
+    if let Some(v) = config.dictcheck {
+        emit("dictcheck", if v { "1" } else { "0" });
+    }
+    if let Some(v) = config.usercheck {
+        emit("usercheck", if v { "1" } else { "0" });
+    }
+    if let Some(v) = config.enforcing {
+        emit("enforcing", if v { "1" } else { "0" });
+    }
 
     // Emit any extra settings not covered by typed fields
     let known: std::collections::HashSet<&str> = [
-        "difok", "minlen", "dcredit", "ucredit", "lcredit", "ocredit", "minclass",
-        "maxrepeat", "maxsequence", "maxclassrepeat", "gecoscheck", "dictcheck",
-        "usercheck", "enforcing",
+        "difok",
+        "minlen",
+        "dcredit",
+        "ucredit",
+        "lcredit",
+        "ocredit",
+        "minclass",
+        "maxrepeat",
+        "maxsequence",
+        "maxclassrepeat",
+        "gecoscheck",
+        "dictcheck",
+        "usercheck",
+        "enforcing",
     ]
     .iter()
     .copied()
@@ -127,22 +163,17 @@ pub async fn set_pwquality(host: &PamHost, config: &PwQualityConfig) -> Result<(
 }
 
 /// Get a single pwquality parameter value.
-pub async fn get_pwquality_param(
-    host: &PamHost,
-    key: &str,
-) -> Result<Option<String>, PamError> {
+pub async fn get_pwquality_param(host: &PamHost, key: &str) -> Result<Option<String>, PamError> {
     let config = get_pwquality(host).await?;
     Ok(config.all_settings.get(key).cloned())
 }
 
 /// Set a single pwquality parameter.
-pub async fn set_pwquality_param(
-    host: &PamHost,
-    key: &str,
-    value: &str,
-) -> Result<(), PamError> {
+pub async fn set_pwquality_param(host: &PamHost, key: &str, value: &str) -> Result<(), PamError> {
     let mut config = get_pwquality(host).await?;
-    config.all_settings.insert(key.to_string(), value.to_string());
+    config
+        .all_settings
+        .insert(key.to_string(), value.to_string());
 
     // Update typed fields if applicable
     match key {
@@ -176,8 +207,7 @@ pub async fn test_password(host: &PamHost, password: &str) -> Result<Vec<String>
 
     // Try pwscore first
     let pwscore_cmd = format!("echo '{}' | pwscore 2>&1", escaped);
-    let (stdout, stderr, exit_code) =
-        client::exec(host, "sh", &["-c", &pwscore_cmd]).await?;
+    let (stdout, stderr, exit_code) = client::exec(host, "sh", &["-c", &pwscore_cmd]).await?;
 
     if exit_code == 0 {
         // pwscore outputs a numeric score; anything non-error means pass
@@ -197,8 +227,7 @@ pub async fn test_password(host: &PamHost, password: &str) -> Result<Vec<String>
 
     // Fallback to cracklib-check
     let cracklib_cmd = format!("echo '{}' | cracklib-check 2>&1", escaped);
-    let (stdout, _, exit_code) =
-        client::exec(host, "sh", &["-c", &cracklib_cmd]).await?;
+    let (stdout, _, exit_code) = client::exec(host, "sh", &["-c", &cracklib_cmd]).await?;
 
     if exit_code != 0 || stdout.is_empty() {
         // Neither tool available

@@ -62,10 +62,7 @@ pub async fn get_namespace_rules(host: &PamHost) -> Result<Vec<PamNamespaceRule>
 }
 
 /// Add a namespace rule (appended to the end).
-pub async fn add_namespace_rule(
-    host: &PamHost,
-    rule: &PamNamespaceRule,
-) -> Result<(), PamError> {
+pub async fn add_namespace_rule(host: &PamHost, rule: &PamNamespaceRule) -> Result<(), PamError> {
     validate_namespace_rule(rule)?;
     let content = client::read_file(host, NAMESPACE_CONF).await?;
     let mut rules = parse_namespace_rules(&content);

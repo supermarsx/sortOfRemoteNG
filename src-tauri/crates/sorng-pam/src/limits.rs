@@ -120,9 +120,7 @@ pub async fn remove_limit(
 }
 
 /// Get limits from all files in /etc/security/limits.d/.
-pub async fn get_limits_d(
-    host: &PamHost,
-) -> Result<HashMap<String, Vec<PamLimit>>, PamError> {
+pub async fn get_limits_d(host: &PamHost) -> Result<HashMap<String, Vec<PamLimit>>, PamError> {
     let mut result = HashMap::new();
 
     if !client::dir_exists(host, LIMITS_D).await.unwrap_or(false) {

@@ -95,20 +95,13 @@ pub async fn get_login_defs(host: &PamHost) -> Result<LoginDefs, PamError> {
 }
 
 /// Get a single login.defs value.
-pub async fn get_login_def(
-    host: &PamHost,
-    key: &str,
-) -> Result<Option<String>, PamError> {
+pub async fn get_login_def(host: &PamHost, key: &str) -> Result<Option<String>, PamError> {
     let defs = get_login_defs(host).await?;
     Ok(defs.settings.get(key).cloned())
 }
 
 /// Set a single login.defs value (preserving the rest of the file).
-pub async fn set_login_def(
-    host: &PamHost,
-    key: &str,
-    value: &str,
-) -> Result<(), PamError> {
+pub async fn set_login_def(host: &PamHost, key: &str, value: &str) -> Result<(), PamError> {
     let original = client::read_file(host, LOGIN_DEFS).await?;
     let mut defs = parse_login_defs(&original);
     defs.settings.insert(key.to_string(), value.to_string());
@@ -208,8 +201,10 @@ PASS_MIN_DAYS   0
 UMASK           077
 ";
         let mut defs = parse_login_defs(original);
-        defs.settings.insert("PASS_MAX_DAYS".to_string(), "365".to_string());
-        defs.settings.insert("NEW_KEY".to_string(), "new_value".to_string());
+        defs.settings
+            .insert("PASS_MAX_DAYS".to_string(), "365".to_string());
+        defs.settings
+            .insert("NEW_KEY".to_string(), "new_value".to_string());
 
         let serialized = serialize_login_defs(original, &defs);
         assert!(serialized.contains("# /etc/login.defs"));

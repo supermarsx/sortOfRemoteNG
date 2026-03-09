@@ -81,10 +81,7 @@ pub async fn host_list_services(host: &PamHost) -> Result<Vec<PamService>, PamEr
 }
 
 /// Get a PAM service by name on a host.
-pub async fn host_get_service(
-    host: &PamHost,
-    name: &str,
-) -> Result<PamService, PamError> {
+pub async fn host_get_service(host: &PamHost, name: &str) -> Result<PamService, PamError> {
     crate::services::get_service(host, name).await
 }
 
@@ -126,10 +123,7 @@ pub async fn host_restore_service(
 }
 
 /// Validate a PAM service.
-pub async fn host_validate_service(
-    host: &PamHost,
-    name: &str,
-) -> Result<Vec<String>, PamError> {
+pub async fn host_validate_service(host: &PamHost, name: &str) -> Result<Vec<String>, PamError> {
     crate::services::validate_service(host, name).await
 }
 
@@ -149,10 +143,7 @@ pub async fn host_get_module_info(
 }
 
 /// Check if a module exists on a host.
-pub async fn host_check_module(
-    host: &PamHost,
-    module_path: &str,
-) -> Result<bool, PamError> {
+pub async fn host_check_module(host: &PamHost, module_path: &str) -> Result<bool, PamError> {
     crate::modules::check_module_exists(host, module_path).await
 }
 
@@ -186,34 +177,24 @@ pub async fn host_remove_limit(
 }
 
 /// Get limits.d entries.
-pub async fn host_get_limits_d(
-    host: &PamHost,
-) -> Result<HashMap<String, Vec<PamLimit>>, PamError> {
+pub async fn host_get_limits_d(host: &PamHost) -> Result<HashMap<String, Vec<PamLimit>>, PamError> {
     crate::limits::get_limits_d(host).await
 }
 
 // ─── Access Control ─────────────────────────────────────────────────
 
 /// Get access.conf rules.
-pub async fn host_get_access_rules(
-    host: &PamHost,
-) -> Result<Vec<PamAccessRule>, PamError> {
+pub async fn host_get_access_rules(host: &PamHost) -> Result<Vec<PamAccessRule>, PamError> {
     crate::access::get_access_rules(host).await
 }
 
 /// Add an access rule.
-pub async fn host_add_access_rule(
-    host: &PamHost,
-    rule: &PamAccessRule,
-) -> Result<(), PamError> {
+pub async fn host_add_access_rule(host: &PamHost, rule: &PamAccessRule) -> Result<(), PamError> {
     crate::access::add_access_rule(host, rule).await
 }
 
 /// Remove an access rule.
-pub async fn host_remove_access_rule(
-    host: &PamHost,
-    index: usize,
-) -> Result<(), PamError> {
+pub async fn host_remove_access_rule(host: &PamHost, index: usize) -> Result<(), PamError> {
     crate::access::remove_access_rule(host, index).await
 }
 
@@ -234,18 +215,12 @@ pub async fn host_get_time_rules(host: &PamHost) -> Result<Vec<PamTimeRule>, Pam
 }
 
 /// Add a time rule.
-pub async fn host_add_time_rule(
-    host: &PamHost,
-    rule: &PamTimeRule,
-) -> Result<(), PamError> {
+pub async fn host_add_time_rule(host: &PamHost, rule: &PamTimeRule) -> Result<(), PamError> {
     crate::time_conf::add_time_rule(host, rule).await
 }
 
 /// Remove a time rule.
-pub async fn host_remove_time_rule(
-    host: &PamHost,
-    index: usize,
-) -> Result<(), PamError> {
+pub async fn host_remove_time_rule(host: &PamHost, index: usize) -> Result<(), PamError> {
     crate::time_conf::remove_time_rule(host, index).await
 }
 
@@ -266,27 +241,19 @@ pub async fn host_get_pwquality(host: &PamHost) -> Result<PwQualityConfig, PamEr
 }
 
 /// Set password quality config.
-pub async fn host_set_pwquality(
-    host: &PamHost,
-    config: &PwQualityConfig,
-) -> Result<(), PamError> {
+pub async fn host_set_pwquality(host: &PamHost, config: &PwQualityConfig) -> Result<(), PamError> {
     crate::pwquality::set_pwquality(host, config).await
 }
 
 /// Test a password against quality rules.
-pub async fn host_test_password(
-    host: &PamHost,
-    password: &str,
-) -> Result<Vec<String>, PamError> {
+pub async fn host_test_password(host: &PamHost, password: &str) -> Result<Vec<String>, PamError> {
     crate::pwquality::test_password(host, password).await
 }
 
 // ─── Namespace ──────────────────────────────────────────────────────
 
 /// Get namespace rules.
-pub async fn host_get_namespace_rules(
-    host: &PamHost,
-) -> Result<Vec<PamNamespaceRule>, PamError> {
+pub async fn host_get_namespace_rules(host: &PamHost) -> Result<Vec<PamNamespaceRule>, PamError> {
     crate::namespace::get_namespace_rules(host).await
 }
 
@@ -299,10 +266,7 @@ pub async fn host_add_namespace_rule(
 }
 
 /// Remove a namespace rule.
-pub async fn host_remove_namespace_rule(
-    host: &PamHost,
-    index: usize,
-) -> Result<(), PamError> {
+pub async fn host_remove_namespace_rule(host: &PamHost, index: usize) -> Result<(), PamError> {
     crate::namespace::remove_namespace_rule(host, index).await
 }
 
@@ -314,25 +278,16 @@ pub async fn host_get_login_defs(host: &PamHost) -> Result<LoginDefs, PamError> 
 }
 
 /// Get a single login.defs value.
-pub async fn host_get_login_def(
-    host: &PamHost,
-    key: &str,
-) -> Result<Option<String>, PamError> {
+pub async fn host_get_login_def(host: &PamHost, key: &str) -> Result<Option<String>, PamError> {
     crate::login_defs::get_login_def(host, key).await
 }
 
 /// Set a login.defs value.
-pub async fn host_set_login_def(
-    host: &PamHost,
-    key: &str,
-    value: &str,
-) -> Result<(), PamError> {
+pub async fn host_set_login_def(host: &PamHost, key: &str, value: &str) -> Result<(), PamError> {
     crate::login_defs::set_login_def(host, key, value).await
 }
 
 /// Get password policy from login.defs.
-pub async fn host_get_password_policy(
-    host: &PamHost,
-) -> Result<HashMap<String, String>, PamError> {
+pub async fn host_get_password_policy(host: &PamHost) -> Result<HashMap<String, String>, PamError> {
     crate::login_defs::get_password_policy(host).await
 }

@@ -20,8 +20,13 @@ pub struct SshConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SshAuth {
-    Password { password: String },
-    PrivateKey { key_path: String, passphrase: Option<String> },
+    Password {
+        password: String,
+    },
+    PrivateKey {
+        key_path: String,
+        passphrase: Option<String>,
+    },
     Agent,
 }
 
@@ -107,13 +112,7 @@ impl PamControlFlag {
             "optional" => Self::Optional,
             "include" => Self::Include,
             "substack" => Self::Substack,
-            other => {
-                if other.starts_with('[') && other.ends_with(']') {
-                    Self::Complex(other.to_string())
-                } else {
-                    Self::Complex(other.to_string())
-                }
-            }
+            other => Self::Complex(other.to_string()),
         }
     }
 }
@@ -356,7 +355,7 @@ impl PamTimeRule {
 // ─── Password Quality ───────────────────────────────────────────────
 
 /// Password quality settings from /etc/security/pwquality.conf.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PwQualityConfig {
     /// Minimum number of characters that must differ from the old password
     pub difok: Option<i32>,
@@ -389,28 +388,6 @@ pub struct PwQualityConfig {
     /// All raw key=value pairs (superset of above)
     #[serde(default)]
     pub all_settings: HashMap<String, String>,
-}
-
-impl Default for PwQualityConfig {
-    fn default() -> Self {
-        Self {
-            difok: None,
-            minlen: None,
-            dcredit: None,
-            ucredit: None,
-            lcredit: None,
-            ocredit: None,
-            minclass: None,
-            maxrepeat: None,
-            maxsequence: None,
-            maxclassrepeat: None,
-            gecoscheck: None,
-            dictcheck: None,
-            usercheck: None,
-            enforcing: None,
-            all_settings: HashMap::new(),
-        }
-    }
 }
 
 // ─── Namespace ──────────────────────────────────────────────────────
@@ -461,8 +438,8 @@ impl LoginDefs {
     }
 
     pub fn get_bool(&self, key: &str) -> Option<bool> {
-        self.settings.get(key).map(|v| {
-            matches!(v.to_lowercase().as_str(), "yes" | "true" | "1")
-        })
+        self.settings
+            .get(key)
+            .map(|v| matches!(v.to_lowercase().as_str(), "yes" | "true" | "1"))
     }
 }

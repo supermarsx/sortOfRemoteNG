@@ -36,11 +36,7 @@ pub async fn exec(
 }
 
 /// Execute and expect success, returning stdout.
-pub async fn exec_ok(
-    host: &PamHost,
-    program: &str,
-    args: &[&str],
-) -> Result<String, PamError> {
+pub async fn exec_ok(host: &PamHost, program: &str, args: &[&str]) -> Result<String, PamError> {
     let (stdout, stderr, exit_code) = exec(host, program, args).await?;
     if exit_code != 0 {
         return Err(PamError::CommandFailed {
@@ -155,11 +151,8 @@ async fn exec_remote(
         .arg("-p")
         .arg(ssh.port.to_string());
 
-    match &ssh.auth {
-        SshAuth::PrivateKey { key_path, .. } => {
-            cmd.arg("-i").arg(key_path);
-        }
-        _ => {}
+    if let SshAuth::PrivateKey { key_path, .. } = &ssh.auth {
+        cmd.arg("-i").arg(key_path);
     }
 
     cmd.arg(format!("{}@{}", ssh.username, ssh.host))

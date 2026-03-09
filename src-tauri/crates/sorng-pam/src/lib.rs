@@ -10,16 +10,16 @@
 //! - Namespace/polyinstantiation (`/etc/security/namespace.conf`)
 //! - Login defaults (`/etc/login.defs`)
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod services;
-pub mod modules;
-pub mod limits;
 pub mod access;
-pub mod time_conf;
-pub mod pwquality;
-pub mod namespace;
-pub mod login_defs;
-pub mod service;
+pub mod client;
 pub mod commands;
+pub mod error;
+pub mod limits;
+pub mod login_defs;
+pub mod modules;
+pub mod namespace;
+pub mod pwquality;
+pub mod service;
+pub mod services;
+pub mod time_conf;
+pub mod types;

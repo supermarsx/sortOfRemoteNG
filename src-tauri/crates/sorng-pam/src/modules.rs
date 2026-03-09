@@ -74,9 +74,7 @@ const MODULE_SEARCH_PATHS: &[&str] = &[
 ];
 
 /// List all available PAM modules on the host.
-pub async fn list_available_modules(
-    host: &PamHost,
-) -> Result<Vec<PamModuleInfo>, PamError> {
+pub async fn list_available_modules(host: &PamHost) -> Result<Vec<PamModuleInfo>, PamError> {
     let mut modules = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -114,10 +112,7 @@ pub async fn list_available_modules(
 }
 
 /// Get information about a specific PAM module.
-pub async fn get_module_info(
-    host: &PamHost,
-    module_name: &str,
-) -> Result<PamModuleInfo, PamError> {
+pub async fn get_module_info(host: &PamHost, module_name: &str) -> Result<PamModuleInfo, PamError> {
     let name = if module_name.ends_with(".so") {
         module_name.to_string()
     } else {
@@ -163,10 +158,7 @@ pub async fn check_module_exists(host: &PamHost, module_path: &str) -> Result<bo
 }
 
 /// Find which PAM services reference a given module name.
-pub async fn find_module_users(
-    host: &PamHost,
-    module_name: &str,
-) -> Result<Vec<String>, PamError> {
+pub async fn find_module_users(host: &PamHost, module_name: &str) -> Result<Vec<String>, PamError> {
     let name = if module_name.ends_with(".so") {
         module_name.to_string()
     } else {

@@ -28,16 +28,8 @@ fn parse_access_line(line: &str) -> Option<PamAccessRule> {
         return None;
     }
 
-    let users: Vec<String> = parts[1]
-        .trim()
-        .split_whitespace()
-        .map(String::from)
-        .collect();
-    let origins: Vec<String> = parts[2]
-        .trim()
-        .split_whitespace()
-        .map(String::from)
-        .collect();
+    let users: Vec<String> = parts[1].split_whitespace().map(String::from).collect();
+    let origins: Vec<String> = parts[2].split_whitespace().map(String::from).collect();
 
     Some(PamAccessRule {
         permission,
@@ -76,10 +68,7 @@ pub async fn get_access_rules(host: &PamHost) -> Result<Vec<PamAccessRule>, PamE
 }
 
 /// Add an access rule (appended to the end of the file).
-pub async fn add_access_rule(
-    host: &PamHost,
-    rule: &PamAccessRule,
-) -> Result<(), PamError> {
+pub async fn add_access_rule(host: &PamHost, rule: &PamAccessRule) -> Result<(), PamError> {
     validate_access_rule(rule)?;
     let content = client::read_file(host, ACCESS_CONF).await?;
     let mut rules = parse_access_rules(&content);

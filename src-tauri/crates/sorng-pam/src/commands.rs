@@ -16,10 +16,7 @@ fn map_err<E: std::fmt::Display>(e: E) -> String {
 // ── Host CRUD ─────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn pam_add_host(
-    state: State<'_, PamServiceState>,
-    host: PamHost,
-) -> CmdResult<()> {
+pub async fn pam_add_host(state: State<'_, PamServiceState>, host: PamHost) -> CmdResult<()> {
     state.lock().await.add_host(host).map_err(map_err)
 }
 
@@ -32,10 +29,7 @@ pub async fn pam_remove_host(
 }
 
 #[tauri::command]
-pub async fn pam_update_host(
-    state: State<'_, PamServiceState>,
-    host: PamHost,
-) -> CmdResult<()> {
+pub async fn pam_update_host(state: State<'_, PamServiceState>, host: PamHost) -> CmdResult<()> {
     state.lock().await.update_host(host).map_err(map_err)
 }
 
@@ -48,9 +42,7 @@ pub async fn pam_get_host(
 }
 
 #[tauri::command]
-pub async fn pam_list_hosts(
-    state: State<'_, PamServiceState>,
-) -> CmdResult<Vec<PamHost>> {
+pub async fn pam_list_hosts(state: State<'_, PamServiceState>) -> CmdResult<Vec<PamHost>> {
     Ok(state.lock().await.list_hosts())
 }
 
@@ -72,7 +64,9 @@ pub async fn pam_get_service(
     name: String,
 ) -> CmdResult<PamService> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    service::host_get_service(&host, &name).await.map_err(map_err)
+    service::host_get_service(&host, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -83,8 +77,7 @@ pub async fn pam_create_service(
     lines_json: String,
 ) -> CmdResult<()> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    let lines: Vec<PamModuleLine> =
-        serde_json::from_str(&lines_json).map_err(map_err)?;
+    let lines: Vec<PamModuleLine> = serde_json::from_str(&lines_json).map_err(map_err)?;
     service::host_create_service(&host, &name, &lines)
         .await
         .map_err(map_err)
@@ -98,8 +91,7 @@ pub async fn pam_update_service(
     lines_json: String,
 ) -> CmdResult<()> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    let lines: Vec<PamModuleLine> =
-        serde_json::from_str(&lines_json).map_err(map_err)?;
+    let lines: Vec<PamModuleLine> = serde_json::from_str(&lines_json).map_err(map_err)?;
     service::host_update_service(&host, &name, &lines)
         .await
         .map_err(map_err)
@@ -112,7 +104,9 @@ pub async fn pam_delete_service(
     name: String,
 ) -> CmdResult<()> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    service::host_delete_service(&host, &name).await.map_err(map_err)
+    service::host_delete_service(&host, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -122,7 +116,9 @@ pub async fn pam_backup_service(
     name: String,
 ) -> CmdResult<String> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    service::host_backup_service(&host, &name).await.map_err(map_err)
+    service::host_backup_service(&host, &name)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -145,7 +141,9 @@ pub async fn pam_validate_service(
     name: String,
 ) -> CmdResult<Vec<String>> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    service::host_validate_service(&host, &name).await.map_err(map_err)
+    service::host_validate_service(&host, &name)
+        .await
+        .map_err(map_err)
 }
 
 // ── Modules (modules.rs) ─────────────────────────────────────────
@@ -204,19 +202,18 @@ pub async fn pam_set_limit(
     value: String,
 ) -> CmdResult<()> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    let lt = LimitType::parse(&limit_type).ok_or_else(|| {
-        format!("invalid limit type: '{limit_type}'")
-    })?;
-    let it = PamLimitItem::parse(&item).ok_or_else(|| {
-        format!("invalid limit item: '{item}'")
-    })?;
+    let lt = LimitType::parse(&limit_type)
+        .ok_or_else(|| format!("invalid limit type: '{limit_type}'"))?;
+    let it = PamLimitItem::parse(&item).ok_or_else(|| format!("invalid limit item: '{item}'"))?;
     let limit = PamLimit {
         domain,
         limit_type: lt,
         item: it,
         value,
     };
-    service::host_set_limit(&host, &limit).await.map_err(map_err)
+    service::host_set_limit(&host, &limit)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -227,9 +224,7 @@ pub async fn pam_remove_limit(
     item: String,
 ) -> CmdResult<()> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    let it = PamLimitItem::parse(&item).ok_or_else(|| {
-        format!("invalid limit item: '{item}'")
-    })?;
+    let it = PamLimitItem::parse(&item).ok_or_else(|| format!("invalid limit item: '{item}'"))?;
     service::host_remove_limit(&host, &domain, it)
         .await
         .map_err(map_err)
@@ -339,8 +334,7 @@ pub async fn pam_set_pwquality(
     config_json: String,
 ) -> CmdResult<()> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    let config: PwQualityConfig =
-        serde_json::from_str(&config_json).map_err(map_err)?;
+    let config: PwQualityConfig = serde_json::from_str(&config_json).map_err(map_err)?;
     service::host_set_pwquality(&host, &config)
         .await
         .map_err(map_err)
@@ -366,7 +360,9 @@ pub async fn pam_get_namespace_rules(
     host_id: String,
 ) -> CmdResult<Vec<PamNamespaceRule>> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    service::host_get_namespace_rules(&host).await.map_err(map_err)
+    service::host_get_namespace_rules(&host)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -430,5 +426,7 @@ pub async fn pam_get_password_policy(
     host_id: String,
 ) -> CmdResult<HashMap<String, String>> {
     let host = state.lock().await.clone_host(&host_id).map_err(map_err)?;
-    service::host_get_password_policy(&host).await.map_err(map_err)
+    service::host_get_password_policy(&host)
+        .await
+        .map_err(map_err)
 }
