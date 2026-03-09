@@ -108,18 +108,18 @@
 //! - Retention policy management
 //! - Audit trail for compliance
 
-pub mod types;
-pub mod error;
+pub mod base64_util;
 pub mod client;
-pub mod sequence;
+pub mod commands;
 pub mod crypto;
-pub mod spa;
+pub mod error;
 pub mod firewall;
-pub mod knockd;
 pub mod fwknop;
+pub mod history;
+pub mod knockd;
 pub mod profiles;
 pub mod scanner;
-pub mod history;
+pub mod sequence;
 pub mod service;
-pub mod base64_util;
-pub mod commands;
+pub mod spa;
+pub mod types;

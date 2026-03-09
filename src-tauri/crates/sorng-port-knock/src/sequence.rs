@@ -19,7 +19,9 @@ pub fn generate_sequence(params: &SequenceGenParams) -> KnockSequence {
     let seed_bytes = seed_uuid.as_bytes();
     let mut state: u64 = Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64;
     for &b in seed_bytes {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(b as u64);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(b as u64);
     }
 
     let protocols = match (params.allow_tcp, params.allow_udp) {
@@ -35,11 +37,13 @@ pub fn generate_sequence(params: &SequenceGenParams) -> KnockSequence {
     } else {
         params.min_port.max(1)
     };
-    let max_port = params.max_port.min(65535);
+    let max_port = params.max_port;
 
     for i in 0..params.length {
         // Advance PRNG state
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
 
         let mut port = min_port + ((state >> 16) as u16) % (max_port - min_port + 1);
 
@@ -51,14 +55,18 @@ pub fn generate_sequence(params: &SequenceGenParams) -> KnockSequence {
         // Ensure no duplicates
         let mut attempts = 0;
         while used_ports.contains(&port) && attempts < 1000 {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(i as u64);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(i as u64);
             port = min_port + ((state >> 16) as u16) % (max_port - min_port + 1);
             attempts += 1;
         }
         used_ports.insert(port);
 
         // Select protocol
-        state = state.wrapping_mul(2862933555777941757).wrapping_add(3037000493);
+        state = state
+            .wrapping_mul(2862933555777941757)
+            .wrapping_add(3037000493);
         let proto = protocols[(state as usize) % protocols.len()];
 
         steps.push(KnockStep {
@@ -98,7 +106,7 @@ pub fn validate_sequence(sequence: &KnockSequence) -> Result<(), PortKnockError>
         ));
     }
 
-    for (_i, step) in sequence.steps.iter().enumerate() {
+    for step in sequence.steps.iter() {
         if step.port == 0 {
             return Err(PortKnockError::InvalidPort(step.port));
         }
@@ -138,9 +146,8 @@ pub fn encode_sequence_base64(sequence: &KnockSequence) -> Result<String, PortKn
 
 /// Decode a knock sequence from a base64 JSON string.
 pub fn decode_sequence_base64(encoded: &str) -> Result<KnockSequence, PortKnockError> {
-    let bytes = base64_decode(encoded).map_err(|e| {
-        PortKnockError::InvalidSequence(format!("Invalid base64: {}", e))
-    })?;
+    let bytes = base64_decode(encoded)
+        .map_err(|e| PortKnockError::InvalidSequence(format!("Invalid base64: {}", e)))?;
     let json = String::from_utf8(bytes).map_err(|e| {
         PortKnockError::InvalidSequence(format!("Invalid UTF-8 in decoded base64: {}", e))
     })?;
@@ -158,9 +165,8 @@ pub fn encode_sequence_hex(sequence: &KnockSequence) -> Result<String, PortKnock
 
 /// Decode a knock sequence from a hex-encoded JSON string.
 pub fn decode_sequence_hex(encoded: &str) -> Result<KnockSequence, PortKnockError> {
-    let bytes = hex_decode(encoded).map_err(|e| {
-        PortKnockError::InvalidSequence(format!("Invalid hex: {}", e))
-    })?;
+    let bytes = hex_decode(encoded)
+        .map_err(|e| PortKnockError::InvalidSequence(format!("Invalid hex: {}", e)))?;
     let json = String::from_utf8(bytes).map_err(|e| {
         PortKnockError::InvalidSequence(format!("Invalid UTF-8 in decoded hex: {}", e))
     })?;
@@ -188,10 +194,7 @@ pub fn sequence_to_knockd_format(sequence: &KnockSequence) -> String {
 }
 
 /// Parse a knockd-format string like `"7000:tcp,8000:udp,9000:tcp"` into a KnockSequence.
-pub fn sequence_from_knockd_format(
-    s: &str,
-    name: &str,
-) -> Result<KnockSequence, PortKnockError> {
+pub fn sequence_from_knockd_format(s: &str, name: &str) -> Result<KnockSequence, PortKnockError> {
     let mut steps = Vec::new();
 
     for (i, part) in s.split(',').enumerate() {
@@ -208,9 +211,9 @@ pub fn sequence_from_knockd_format(
             )));
         }
 
-        let port: u16 = segments[0].parse().map_err(|_| {
-            PortKnockError::InvalidPort(0)
-        })?;
+        let port: u16 = segments[0]
+            .parse()
+            .map_err(|_| PortKnockError::InvalidPort(0))?;
 
         let protocol = match segments[1].to_lowercase().as_str() {
             "tcp" => KnockProtocol::Tcp,
@@ -272,20 +275,22 @@ pub fn calculate_complexity_score(sequence: &KnockSequence) -> f64 {
     let diversity_score = diversity_ratio * 20.0;
 
     // Protocol mix: using both TCP and UDP is better (max 15 points)
-    let has_tcp = sequence.steps.iter().any(|s| s.protocol == KnockProtocol::Tcp);
-    let has_udp = sequence.steps.iter().any(|s| s.protocol == KnockProtocol::Udp);
+    let has_tcp = sequence
+        .steps
+        .iter()
+        .any(|s| s.protocol == KnockProtocol::Tcp);
+    let has_udp = sequence
+        .steps
+        .iter()
+        .any(|s| s.protocol == KnockProtocol::Udp);
     let protocol_score = match (has_tcp, has_udp) {
         (true, true) => 15.0,
         _ => 7.0,
     };
 
     // High port usage: ports > 10000 are less guessable (max 15 points)
-    let high_port_ratio = sequence
-        .steps
-        .iter()
-        .filter(|s| s.port > 10000)
-        .count() as f64
-        / step_count;
+    let high_port_ratio =
+        sequence.steps.iter().filter(|s| s.port > 10000).count() as f64 / step_count;
     let high_port_score = high_port_ratio * 15.0;
 
     // Payload presence: using custom payloads adds complexity (max 10 points)
@@ -306,8 +311,9 @@ pub fn calculate_complexity_score(sequence: &KnockSequence) -> f64 {
         0.0
     };
 
-    let total = length_score + diversity_score + protocol_score + high_port_score + payload_score + spread;
-    total.min(100.0).max(0.0)
+    let total =
+        length_score + diversity_score + protocol_score + high_port_score + payload_score + spread;
+    total.clamp(0.0, 100.0)
 }
 
 // ─── Merge & Reverse ───────────────────────────────────────────────
@@ -360,10 +366,7 @@ pub fn reverse_sequence(sequence: &KnockSequence) -> KnockSequence {
 /// Uses an HMAC-like derivation of the current time window combined with a secret
 /// to produce deterministic-but-rotating port numbers. Both client and server
 /// using the same secret and time window will derive the same sequence.
-pub fn generate_time_based_sequence(
-    params: &SequenceGenParams,
-    secret: &str,
-) -> KnockSequence {
+pub fn generate_time_based_sequence(params: &SequenceGenParams, secret: &str) -> KnockSequence {
     // 30-second time window (similar to TOTP)
     let window = Utc::now().timestamp() / 30;
 
@@ -382,24 +385,30 @@ pub fn generate_time_based_sequence(
     } else {
         params.min_port.max(1)
     };
-    let max_port = params.max_port.min(65535);
+    let max_port = params.max_port;
 
     let mut steps = Vec::with_capacity(params.length as usize);
     let mut used_ports: HashSet<u16> = HashSet::new();
 
     for i in 0..params.length {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(i as u64 + 1);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(i as u64 + 1);
         let mut port = min_port + ((state >> 16) as u16) % (max_port - min_port + 1);
 
         let mut attempts = 0;
         while used_ports.contains(&port) && attempts < 1000 {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(attempts);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(attempts);
             port = min_port + ((state >> 16) as u16) % (max_port - min_port + 1);
             attempts += 1;
         }
         used_ports.insert(port);
 
-        state = state.wrapping_mul(2862933555777941757).wrapping_add(3037000493);
+        state = state
+            .wrapping_mul(2862933555777941757)
+            .wrapping_add(3037000493);
         let proto = protocols[(state as usize) % protocols.len()];
 
         steps.push(KnockStep {
@@ -434,7 +443,7 @@ pub fn generate_time_based_sequence(
 /// Simple base64 encoder (no external dependency).
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };

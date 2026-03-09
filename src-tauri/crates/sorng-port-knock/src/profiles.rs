@@ -3,13 +3,19 @@ use uuid::Uuid;
 
 use crate::error::PortKnockError;
 use crate::types::{
-    FwknopClientConfig, FirewallRuleOptions, KnockMethod, KnockOptions, KnockProfile,
+    FirewallRuleOptions, FwknopClientConfig, KnockMethod, KnockOptions, KnockProfile,
     KnockSequence, ProfileFormat, SpaOptions,
 };
 
 /// Manages saved knock profiles.
 pub struct ProfileManager {
     profiles: Vec<KnockProfile>,
+}
+
+impl Default for ProfileManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProfileManager {
@@ -173,7 +179,9 @@ impl ProfileManager {
         }
 
         match &profile.method {
-            KnockMethod::SimpleSequence | KnockMethod::EncryptedSequence | KnockMethod::KnockdCompat => {
+            KnockMethod::SimpleSequence
+            | KnockMethod::EncryptedSequence
+            | KnockMethod::KnockdCompat => {
                 if profile.sequence.is_none() {
                     return Err(PortKnockError::ProfileValidationError(format!(
                         "Sequence is required for {:?} method",
@@ -224,12 +232,9 @@ impl ProfileManager {
                 // Produce a minimal TOML-like representation via JSON round-trip
                 Ok(format!("# Exported profiles (TOML)\n{}", wrapper))
             }
-            ProfileFormat::KnockdConf | ProfileFormat::FwknopRc => {
-                Err(PortKnockError::ExportError(format!(
-                    "{:?} export not yet implemented",
-                    format
-                )))
-            }
+            ProfileFormat::KnockdConf | ProfileFormat::FwknopRc => Err(
+                PortKnockError::ExportError(format!("{:?} export not yet implemented", format)),
+            ),
         }
     }
 

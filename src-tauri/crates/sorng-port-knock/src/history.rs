@@ -286,8 +286,10 @@ impl KnockHistory {
     // ── helpers ──────────────────────────────────────────────────
 
     fn compute_method_stats(&self) -> Vec<MethodStats> {
-        let mut buckets: std::collections::HashMap<std::mem::Discriminant<KnockMethod>, (KnockMethod, u64, u64)> =
-            std::collections::HashMap::new();
+        let mut buckets: std::collections::HashMap<
+            std::mem::Discriminant<KnockMethod>,
+            (KnockMethod, u64, u64),
+        > = std::collections::HashMap::new();
 
         for e in &self.entries {
             let disc = std::mem::discriminant(&e.method);

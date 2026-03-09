@@ -14,6 +14,12 @@ static NONCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// OpenSSL command strings on the remote host.
 pub struct KnockCrypto;
 
+impl Default for KnockCrypto {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KnockCrypto {
     pub fn new() -> Self {
         Self
@@ -57,7 +63,11 @@ impl KnockCrypto {
 
         let nonce = Self::generate_nonce(nonce_size);
         let stretched = stretch_key(key, &nonce, data.len());
-        let ciphertext: Vec<u8> = data.iter().zip(stretched.iter()).map(|(d, k)| d ^ k).collect();
+        let ciphertext: Vec<u8> = data
+            .iter()
+            .zip(stretched.iter())
+            .map(|(d, k)| d ^ k)
+            .collect();
 
         Ok(EncryptedKnockPayload {
             algorithm,
@@ -137,12 +147,7 @@ impl KnockCrypto {
     }
 
     /// Constant-time HMAC verification.
-    pub fn verify_hmac(
-        data: &[u8],
-        key: &[u8],
-        expected: &[u8],
-        algorithm: HmacAlgorithm,
-    ) -> bool {
+    pub fn verify_hmac(data: &[u8], key: &[u8], expected: &[u8], algorithm: HmacAlgorithm) -> bool {
         let computed = Self::compute_hmac(data, key, algorithm);
         Self::constant_time_compare(&computed, expected)
     }
@@ -287,11 +292,7 @@ impl KnockCrypto {
     }
 
     /// Build an `openssl dgst` command for remote HMAC computation.
-    pub fn build_hmac_command(
-        data_hex: &str,
-        key_hex: &str,
-        algorithm: HmacAlgorithm,
-    ) -> String {
+    pub fn build_hmac_command(data_hex: &str, key_hex: &str, algorithm: HmacAlgorithm) -> String {
         let dgst = openssl_digest_name(algorithm);
         format!(
             "echo -n '{data_hex}' | xxd -r -p | openssl dgst -{dgst} -mac HMAC -macopt hexkey:{key_hex} | awk '{{print $2}}'"
@@ -432,7 +433,12 @@ mod tests {
         let key = b"hmac-key";
         let data = b"message";
         let mac = KnockCrypto::compute_hmac(data, key, HmacAlgorithm::Sha256);
-        assert!(KnockCrypto::verify_hmac(data, key, &mac, HmacAlgorithm::Sha256));
+        assert!(KnockCrypto::verify_hmac(
+            data,
+            key,
+            &mac,
+            HmacAlgorithm::Sha256
+        ));
     }
 
     #[test]
@@ -441,7 +447,12 @@ mod tests {
         let data = b"message";
         let mut mac = KnockCrypto::compute_hmac(data, key, HmacAlgorithm::Sha256);
         mac[0] ^= 0xff;
-        assert!(!KnockCrypto::verify_hmac(data, key, &mac, HmacAlgorithm::Sha256));
+        assert!(!KnockCrypto::verify_hmac(
+            data,
+            key,
+            &mac,
+            HmacAlgorithm::Sha256
+        ));
     }
 
     #[test]

@@ -14,6 +14,12 @@ pub struct KnockdLogEntry {
 /// knockd (knock daemon) configuration management.
 pub struct KnockdManager;
 
+impl Default for KnockdManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KnockdManager {
     pub fn new() -> Self {
         Self
@@ -28,8 +34,10 @@ impl KnockdManager {
         let mut sections: Vec<KnockdSection> = Vec::new();
 
         let mut current_section: Option<String> = None;
-        let mut section_map: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
-            std::collections::HashMap::new();
+        let mut section_map: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = std::collections::HashMap::new();
 
         for (line_idx, raw_line) in content.lines().enumerate() {
             let line = raw_line.trim();
@@ -79,7 +87,9 @@ impl KnockdManager {
         // Process [options] section
         if let Some(opts) = section_map.remove("options") {
             if let Some(v) = opts.get("usesyslog") {
-                use_syslog = v.trim() == "1" || v.eq_ignore_ascii_case("yes") || v.eq_ignore_ascii_case("true");
+                use_syslog = v.trim() == "1"
+                    || v.eq_ignore_ascii_case("yes")
+                    || v.eq_ignore_ascii_case("true");
             }
             if let Some(v) = opts.get("logfile") {
                 log_file = Some(v.clone());
@@ -400,11 +410,7 @@ impl KnockdManager {
                 (String::new(), after_ip.to_string())
             };
 
-            let stage = if message.to_lowercase().contains("stage") {
-                message.clone()
-            } else {
-                message.clone()
-            };
+            let stage = message.clone();
 
             return Some(KnockdLogEntry {
                 timestamp,
@@ -421,24 +427,14 @@ impl KnockdManager {
     /// Returns the package install command for knockd on a given distro.
     pub fn install_command(distro: &str) -> String {
         match distro.to_lowercase().as_str() {
-            "debian" | "ubuntu" | "mint" | "pop" => {
-                "apt-get install -y knockd".to_string()
-            }
+            "debian" | "ubuntu" | "mint" | "pop" => "apt-get install -y knockd".to_string(),
             "rhel" | "centos" | "rocky" | "alma" | "fedora" => {
                 "dnf install -y knock-server 2>/dev/null || yum install -y knock-server".to_string()
             }
-            "arch" | "manjaro" => {
-                "pacman -S --noconfirm knock".to_string()
-            }
-            "suse" | "opensuse" => {
-                "zypper install -y knockd".to_string()
-            }
-            "alpine" => {
-                "apk add knock".to_string()
-            }
-            "gentoo" => {
-                "emerge net-misc/knock".to_string()
-            }
+            "arch" | "manjaro" => "pacman -S --noconfirm knock".to_string(),
+            "suse" | "opensuse" => "zypper install -y knockd".to_string(),
+            "alpine" => "apk add knock".to_string(),
+            "gentoo" => "emerge net-misc/knock".to_string(),
             _ => {
                 format!(
                     "echo 'Unknown distro: {}. Try: apt-get install knockd / dnf install knock-server / pacman -S knock'",

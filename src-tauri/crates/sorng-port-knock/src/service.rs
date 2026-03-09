@@ -5,12 +5,12 @@ use crate::crypto::KnockCrypto;
 use crate::error::PortKnockError;
 use crate::firewall::FirewallManager;
 use crate::fwknop::FwknopManager;
+use crate::history::KnockHistory;
 use crate::knockd::KnockdManager;
 use crate::profiles::ProfileManager;
 use crate::scanner::KnockScanner;
-use crate::spa::SpaClient;
-use crate::history::KnockHistory;
 use crate::sequence;
+use crate::spa::SpaClient;
 use crate::types::*;
 
 pub type PortKnockServiceState = Arc<Mutex<PortKnockService>>;
@@ -19,15 +19,15 @@ pub struct PortKnockService {
     hosts: Vec<KnockHost>,
     sequences: Vec<KnockSequence>,
     client: KnockClient,
-    crypto: KnockCrypto,
-    spa_client: SpaClient,
-    firewall: FirewallManager,
-    knockd: KnockdManager,
-    fwknop: FwknopManager,
+    _crypto: KnockCrypto,
+    _spa_client: SpaClient,
+    _firewall: FirewallManager,
+    _knockd: KnockdManager,
+    _fwknop: FwknopManager,
     profiles: ProfileManager,
-    scanner: KnockScanner,
+    _scanner: KnockScanner,
     history: KnockHistory,
-    keys: Vec<KnockKey>,
+    _keys: Vec<KnockKey>,
 }
 
 impl PortKnockService {
@@ -36,15 +36,15 @@ impl PortKnockService {
             hosts: Vec::new(),
             sequences: Vec::new(),
             client: KnockClient::new(),
-            crypto: KnockCrypto::new(),
-            spa_client: SpaClient::new(),
-            firewall: FirewallManager::new(),
-            knockd: KnockdManager::new(),
-            fwknop: FwknopManager::new(),
+            _crypto: KnockCrypto::new(),
+            _spa_client: SpaClient::new(),
+            _firewall: FirewallManager::new(),
+            _knockd: KnockdManager::new(),
+            _fwknop: FwknopManager::new(),
             profiles: ProfileManager::new(),
-            scanner: KnockScanner::new(),
+            _scanner: KnockScanner::new(),
             history: KnockHistory::new(10000),
-            keys: Vec::new(),
+            _keys: Vec::new(),
         }))
     }
 
@@ -148,10 +148,7 @@ impl PortKnockService {
 
     // ─── Sequence Management ───────────────────────────────────────
 
-    pub fn add_sequence(
-        &mut self,
-        seq: KnockSequence,
-    ) -> Result<KnockSequence, PortKnockError> {
+    pub fn add_sequence(&mut self, seq: KnockSequence) -> Result<KnockSequence, PortKnockError> {
         sequence::validate_sequence(&seq)?;
         self.sequences.push(seq.clone());
         Ok(seq)
@@ -200,10 +197,7 @@ impl PortKnockService {
             .iter()
             .find(|s| s.id == sequence_id)
             .ok_or_else(|| {
-                PortKnockError::InvalidSequence(format!(
-                    "Sequence not found: {}",
-                    sequence_id
-                ))
+                PortKnockError::InvalidSequence(format!("Sequence not found: {}", sequence_id))
             })?
             .clone();
 
@@ -357,10 +351,7 @@ impl PortKnockService {
 
     // ─── knockd Operations ─────────────────────────────────────────
 
-    pub fn parse_knockd_config(
-        &self,
-        content: &str,
-    ) -> Result<KnockdConfig, PortKnockError> {
+    pub fn parse_knockd_config(&self, content: &str) -> Result<KnockdConfig, PortKnockError> {
         KnockdManager::parse_config(content)
     }
 
@@ -389,10 +380,7 @@ impl PortKnockService {
         FwknopManager::parse_access_conf(content)
     }
 
-    pub fn generate_fwknop_access_conf(
-        &self,
-        stanzas: &[FwknopAccessStanza],
-    ) -> String {
+    pub fn generate_fwknop_access_conf(&self, stanzas: &[FwknopAccessStanza]) -> String {
         FwknopManager::generate_access_conf(stanzas)
     }
 
@@ -540,17 +528,11 @@ impl PortKnockService {
 
     // ─── Sequence helpers ──────────────────────────────────────────
 
-    pub fn encode_sequence_base64(
-        &self,
-        seq: &KnockSequence,
-    ) -> Result<String, PortKnockError> {
+    pub fn encode_sequence_base64(&self, seq: &KnockSequence) -> Result<String, PortKnockError> {
         sequence::encode_sequence_base64(seq)
     }
 
-    pub fn decode_sequence_base64(
-        &self,
-        encoded: &str,
-    ) -> Result<KnockSequence, PortKnockError> {
+    pub fn decode_sequence_base64(&self, encoded: &str) -> Result<KnockSequence, PortKnockError> {
         sequence::decode_sequence_base64(encoded)
     }
 

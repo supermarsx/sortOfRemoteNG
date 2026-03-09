@@ -90,13 +90,12 @@ impl KnockClient {
                     std::thread::sleep(std::time::Duration::from_millis(500));
                 }
 
-                opened = self
-                    .verify_port(
-                        host,
-                        sequence.target_port,
-                        sequence.target_protocol,
-                        options.verify_timeout_ms,
-                    );
+                opened = self.verify_port(
+                    host,
+                    sequence.target_port,
+                    sequence.target_protocol,
+                    options.verify_timeout_ms,
+                );
 
                 if opened {
                     break;
@@ -156,7 +155,9 @@ impl KnockClient {
             .arg("-c")
             .arg(&cmd)
             .output()
-            .map_err(|e| PortKnockError::SshCommandFailed(format!("Failed to spawn knock command: {}", e)))?;
+            .map_err(|e| {
+                PortKnockError::SshCommandFailed(format!("Failed to spawn knock command: {}", e))
+            })?;
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
@@ -287,7 +288,11 @@ impl KnockClient {
 
             banner_output.and_then(|o| {
                 let b = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if b.is_empty() { None } else { Some(b) }
+                if b.is_empty() {
+                    None
+                } else {
+                    Some(b)
+                }
             })
         } else {
             None
@@ -465,7 +470,10 @@ impl KnockClient {
             }
         }
 
-        let successful = results.iter().filter(|r| r.status == KnockStatus::Success).count() as u32;
+        let successful = results
+            .iter()
+            .filter(|r| r.status == KnockStatus::Success)
+            .count() as u32;
         let failed = total_hosts - successful;
         let total_elapsed_ms = start.elapsed().as_millis() as u64;
 

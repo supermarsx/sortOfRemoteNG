@@ -45,8 +45,17 @@ pub async fn port_knock_update_host(
     tags: Option<Vec<String>>,
 ) -> Result<KnockHost, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
-    svc.update_host(&id, name, hostname, port, description, ssh_user, ssh_port, tags)
-        .map_err(|e| e.to_string())
+    svc.update_host(
+        &id,
+        name,
+        hostname,
+        port,
+        description,
+        ssh_user,
+        ssh_port,
+        tags,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -88,9 +97,7 @@ pub async fn port_knock_get_sequence(
 }
 
 #[command]
-pub async fn port_knock_list_sequences(
-    state: State<'_>,
-) -> Result<Vec<KnockSequence>, String> {
+pub async fn port_knock_list_sequences(state: State<'_>) -> Result<Vec<KnockSequence>, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.list_sequences().to_vec())
 }
@@ -161,8 +168,15 @@ pub async fn port_knock_send_spa(
     let key = crate::base64_util::decode(&key_base64)
         .map_err(|e| format!("Invalid base64 key: {}", e))?;
     let mut svc = state.lock().map_err(|e| e.to_string())?;
-    svc.send_spa(&host_id, &username, &access_request, message_type, &key, options)
-        .map_err(|e| e.to_string())
+    svc.send_spa(
+        &host_id,
+        &username,
+        &access_request,
+        message_type,
+        &key,
+        options,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[command]
@@ -208,10 +222,7 @@ pub async fn port_knock_decrypt_payload(
 }
 
 #[command]
-pub async fn port_knock_generate_key(
-    state: State<'_>,
-    length: usize,
-) -> Result<String, String> {
+pub async fn port_knock_generate_key(state: State<'_>, length: usize) -> Result<String, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     let key = svc.generate_key(length);
     Ok(crate::base64_util::encode(&key))
@@ -290,8 +301,7 @@ pub async fn port_knock_parse_knockd_config(
     content: String,
 ) -> Result<KnockdConfig, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
-    svc.parse_knockd_config(&content)
-        .map_err(|e| e.to_string())
+    svc.parse_knockd_config(&content).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -319,10 +329,7 @@ pub async fn port_knock_knockd_install_command(
 }
 
 #[command]
-pub async fn port_knock_knockd_log_command(
-    state: State<'_>,
-    lines: u32,
-) -> Result<String, String> {
+pub async fn port_knock_knockd_log_command(state: State<'_>, lines: u32) -> Result<String, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.knockd_log_command(lines))
 }
@@ -367,9 +374,7 @@ pub async fn port_knock_fwknop_install_command(
 }
 
 #[command]
-pub async fn port_knock_generate_fwknop_keys(
-    state: State<'_>,
-) -> Result<(String, String), String> {
+pub async fn port_knock_generate_fwknop_keys(state: State<'_>) -> Result<(String, String), String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.generate_fwknop_keys())
 }
@@ -422,8 +427,7 @@ pub async fn port_knock_update_profile(
     profile: KnockProfile,
 ) -> Result<KnockProfile, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
-    svc.update_profile(&id, profile)
-        .map_err(|e| e.to_string())
+    svc.update_profile(&id, profile).map_err(|e| e.to_string())
 }
 
 #[command]
@@ -433,18 +437,13 @@ pub async fn port_knock_delete_profile(state: State<'_>, id: String) -> Result<(
 }
 
 #[command]
-pub async fn port_knock_get_profile(
-    state: State<'_>,
-    id: String,
-) -> Result<KnockProfile, String> {
+pub async fn port_knock_get_profile(state: State<'_>, id: String) -> Result<KnockProfile, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     svc.get_profile(&id).cloned().map_err(|e| e.to_string())
 }
 
 #[command]
-pub async fn port_knock_list_profiles(
-    state: State<'_>,
-) -> Result<Vec<KnockProfile>, String> {
+pub async fn port_knock_list_profiles(state: State<'_>) -> Result<Vec<KnockProfile>, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.list_profiles().to_vec())
 }
@@ -529,9 +528,7 @@ pub async fn port_knock_rtt_command(
 // ─── History (7) ───────────────────────────────────────────────────
 
 #[command]
-pub async fn port_knock_get_history(
-    state: State<'_>,
-) -> Result<Vec<KnockHistoryEntry>, String> {
+pub async fn port_knock_get_history(state: State<'_>) -> Result<Vec<KnockHistoryEntry>, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.get_history().to_vec())
 }
@@ -542,17 +539,11 @@ pub async fn port_knock_filter_history(
     filter: HistoryFilter,
 ) -> Result<Vec<KnockHistoryEntry>, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
-    Ok(svc
-        .filter_history(&filter)
-        .into_iter()
-        .cloned()
-        .collect())
+    Ok(svc.filter_history(&filter).into_iter().cloned().collect())
 }
 
 #[command]
-pub async fn port_knock_get_statistics(
-    state: State<'_>,
-) -> Result<KnockStatistics, String> {
+pub async fn port_knock_get_statistics(state: State<'_>) -> Result<KnockStatistics, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.get_statistics())
 }
@@ -581,9 +572,5 @@ pub async fn port_knock_get_recent_history(
     count: usize,
 ) -> Result<Vec<KnockHistoryEntry>, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
-    Ok(svc
-        .get_recent_history(count)
-        .into_iter()
-        .cloned()
-        .collect())
+    Ok(svc.get_recent_history(count).into_iter().cloned().collect())
 }

@@ -7,6 +7,12 @@ use crate::types::{
 /// Builds command strings for various firewall backends.
 pub struct FirewallManager;
 
+impl Default for FirewallManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FirewallManager {
     pub fn new() -> Self {
         Self
@@ -272,15 +278,9 @@ impl FirewallManager {
         options: &FirewallRuleOptions,
     ) -> String {
         let proto = protocol_str(protocol);
-        let chain = options
-            .chain
-            .as_deref()
-            .unwrap_or("INPUT");
+        let chain = options.chain.as_deref().unwrap_or("INPUT");
         let table = options.table.as_deref().unwrap_or("filter");
-        let comment = options
-            .log_prefix
-            .as_deref()
-            .unwrap_or("sorng-knock");
+        let comment = options.log_prefix.as_deref().unwrap_or("sorng-knock");
 
         match backend {
             FirewallBackend::Iptables => {
@@ -292,7 +292,12 @@ impl FirewallManager {
             FirewallBackend::Nftables => {
                 format!(
                     "nft add rule inet {} {} ip saddr {} {} dport {} accept comment \"{}\"",
-                    table, chain.to_lowercase(), source_ip, proto, port, comment
+                    table,
+                    chain.to_lowercase(),
+                    source_ip,
+                    proto,
+                    port,
+                    comment
                 )
             }
             FirewallBackend::Pf => {
@@ -308,7 +313,10 @@ impl FirewallManager {
                 )
             }
             FirewallBackend::Ufw => {
-                format!("ufw allow from {} to any port {} proto {}", source_ip, port, proto)
+                format!(
+                    "ufw allow from {} to any port {} proto {}",
+                    source_ip, port, proto
+                )
             }
             FirewallBackend::Firewalld => {
                 let zone = options.chain.as_deref().unwrap_or("public");
@@ -342,7 +350,11 @@ impl FirewallManager {
             FirewallBackend::Nftables => {
                 format!(
                     "nft add rule inet {} {} {} dport {} drop comment \"{}\"",
-                    table, chain.to_lowercase(), proto, port, comment
+                    table,
+                    chain.to_lowercase(),
+                    proto,
+                    port,
+                    comment
                 )
             }
             FirewallBackend::Pf => {
@@ -397,9 +409,7 @@ impl FirewallManager {
                     table, chain.to_lowercase(), port, source_ip, table, chain.to_lowercase()
                 )
             }
-            FirewallBackend::Pf => {
-                format!("pfctl -a sorng-knock -F rules")
-            }
+            FirewallBackend::Pf => "pfctl -a sorng-knock -F rules".to_string(),
             FirewallBackend::WindowsFirewall => {
                 format!(
                     "netsh advfirewall firewall delete rule name=\"{}\" protocol={} localport={} remoteip={}",
@@ -407,7 +417,10 @@ impl FirewallManager {
                 )
             }
             FirewallBackend::Ufw => {
-                format!("ufw delete allow from {} to any port {} proto {}", source_ip, port, proto)
+                format!(
+                    "ufw delete allow from {} to any port {} proto {}",
+                    source_ip, port, proto
+                )
             }
             FirewallBackend::Firewalld => {
                 let zone = options.chain.as_deref().unwrap_or("public");
@@ -468,29 +481,25 @@ impl FirewallManager {
                         // Subsequent stages: check previous stage was seen, then mark current
                         let prev_name = format!("KNOCK_{}_{}", base_name, i);
                         cmds.push(format!(
-                            "iptables -A {} -m recent --name {} --rcheck --seconds {} -p {} --dport {} -m recent --name {} --set -j {}",
+                            "iptables -A {} -m recent --name KNOCK_{}_{} --rcheck --seconds {} -p {} --dport {} -m recent --name KNOCK_{}_{} --set -j {}",
                             prev_name,
-                            format!("KNOCK_{}_{}", base_name, i),
+                            base_name, i,
                             sequence.timeout_ms / 1000,
                             proto,
                             step.port,
-                            format!("KNOCK_{}_{}", base_name, i + 1),
+                            base_name, i + 1,
                             chain_name
                         ));
                     }
                 }
 
                 // Final rule: if all stages completed, ACCEPT on target port
-                let final_chain = format!(
-                    "KNOCK_{}_{}",
-                    base_name,
-                    sequence.steps.len()
-                );
+                let final_chain = format!("KNOCK_{}_{}", base_name, sequence.steps.len());
                 let target_proto = protocol_str(sequence.target_protocol);
                 cmds.push(format!(
-                    "iptables -A {} -m recent --name {} --rcheck --seconds {} -p {} --dport {} -j ACCEPT",
+                    "iptables -A {} -m recent --name KNOCK_{}_{} --rcheck --seconds {} -p {} --dport {} -j ACCEPT",
                     final_chain,
-                    format!("KNOCK_{}_{}", base_name, sequence.steps.len()),
+                    base_name, sequence.steps.len(),
                     sequence.timeout_ms / 1000,
                     target_proto,
                     sequence.target_port
@@ -498,10 +507,7 @@ impl FirewallManager {
             }
             FirewallBackend::Nftables => {
                 // Create a named set and chain for the knock sequence
-                cmds.push(format!(
-                    "nft add chain inet {} knock_{}",
-                    table, base_name
-                ));
+                cmds.push(format!("nft add chain inet {} knock_{}", table, base_name));
 
                 for (i, step) in sequence.steps.iter().enumerate() {
                     let proto = protocol_str(step.protocol);
@@ -529,17 +535,19 @@ impl FirewallManager {
                 let target_proto = protocol_str(sequence.target_protocol);
                 cmds.push(format!(
                     "nft add rule inet {} knock_{} ip saddr @knock_{}_stage{} {} dport {} accept",
-                    table, base_name, base_name, sequence.steps.len(), target_proto, sequence.target_port
+                    table,
+                    base_name,
+                    base_name,
+                    sequence.steps.len(),
+                    target_proto,
+                    sequence.target_port
                 ));
             }
             _ => {
                 // For other backends, generate sequential accept rules as a simpler approach
                 for step in &sequence.steps {
                     let proto = protocol_str(step.protocol);
-                    cmds.push(format!(
-                        "# knock stage: port {}/{}",
-                        step.port, proto
-                    ));
+                    cmds.push(format!("# knock stage: port {}/{}", step.port, proto));
                 }
                 let target_proto = protocol_str(sequence.target_protocol);
                 cmds.push(format!(
@@ -607,7 +615,9 @@ impl FirewallManager {
                 "netsh advfirewall export \"firewall-backup.wfw\"".to_string()
             }
             FirewallBackend::Ufw => "ufw status verbose".to_string(),
-            FirewallBackend::Firewalld => "firewall-cmd --runtime-to-permanent && firewall-cmd --list-all-zones".to_string(),
+            FirewallBackend::Firewalld => {
+                "firewall-cmd --runtime-to-permanent && firewall-cmd --list-all-zones".to_string()
+            }
         }
     }
 
@@ -652,12 +662,10 @@ impl FirewallManager {
                 "netsh advfirewall firewall delete rule name=all dir=in remoteip=any | findstr \"sorng-knock\"".to_string()
             }
             FirewallBackend::Ufw => {
-                format!("ufw status numbered | grep 'sorng-knock' | awk -F'[][]' '{{print $2}}' | sort -rn | xargs -I{{}} ufw --force delete {{}}")
+                "ufw status numbered | grep 'sorng-knock' | awk -F'[][]' '{print $2}' | sort -rn | xargs -I{} ufw --force delete {}".to_string()
             }
             FirewallBackend::Firewalld => {
-                format!(
-                    "firewall-cmd --list-rich-rules | grep 'sorng-knock' | while read rule; do firewall-cmd --remove-rich-rule=\"$rule\"; done"
-                )
+                "firewall-cmd --list-rich-rules | grep 'sorng-knock' | while read rule; do firewall-cmd --remove-rich-rule=\"$rule\"; done".to_string()
             }
         }
     }
@@ -671,7 +679,10 @@ impl FirewallManager {
     ) -> String {
         let proto = protocol_str(protocol);
         match source_ip {
-            Some(ip) => format!("ufw {} from {} to any port {} proto {}", action, ip, port, proto),
+            Some(ip) => format!(
+                "ufw {} from {} to any port {} proto {}",
+                action, ip, port, proto
+            ),
             None => format!("ufw {} proto {} to any port {}", action, proto, port),
         }
     }
@@ -686,10 +697,7 @@ impl FirewallManager {
         let proto = protocol_str(protocol);
         match action {
             "accept" | "allow" => {
-                format!(
-                    "firewall-cmd --zone={} --add-port={}/{}",
-                    zone, port, proto
-                )
+                format!("firewall-cmd --zone={} --add-port={}/{}", zone, port, proto)
             }
             "drop" | "deny" | "reject" => {
                 format!(
@@ -756,14 +764,8 @@ impl FirewallManager {
                 FirewallDirection::Forward => "in",
             };
 
-            let from = rule
-                .source_ip
-                .as_deref()
-                .unwrap_or("any");
-            let to_ip = rule
-                .destination_ip
-                .as_deref()
-                .unwrap_or("any");
+            let from = rule.source_ip.as_deref().unwrap_or("any");
+            let to_ip = rule.destination_ip.as_deref().unwrap_or("any");
 
             let port_clause = if rule.port > 0 {
                 format!(" port {}", rule.port)

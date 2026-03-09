@@ -18,7 +18,10 @@ pub enum PortKnockError {
     RuleInsertionFailed(String),
     RuleRemovalFailed(String),
     KnockdConfigError(String),
-    KnockdParseError { line: usize, message: String },
+    KnockdParseError {
+        line: usize,
+        message: String,
+    },
     FwknopError(String),
     FwknopProtocolError(String),
     SpaConstructionError(String),
@@ -30,8 +33,15 @@ pub enum PortKnockError {
     HostAlreadyExists(String),
     DnsResolutionFailed(String),
     Ipv6NotSupported,
-    PortNotOpen { host: String, port: u16 },
-    VerificationTimeout { host: String, port: u16, timeout_ms: u64 },
+    PortNotOpen {
+        host: String,
+        port: u16,
+    },
+    VerificationTimeout {
+        host: String,
+        port: u16,
+        timeout_ms: u64,
+    },
     SequenceGenerationFailed(String),
     ImportError(String),
     ExportError(String),
@@ -62,7 +72,9 @@ impl fmt::Display for PortKnockError {
             Self::RuleInsertionFailed(msg) => write!(f, "Rule insertion failed: {}", msg),
             Self::RuleRemovalFailed(msg) => write!(f, "Rule removal failed: {}", msg),
             Self::KnockdConfigError(msg) => write!(f, "knockd config error: {}", msg),
-            Self::KnockdParseError { line, message } => write!(f, "knockd parse error at line {}: {}", line, message),
+            Self::KnockdParseError { line, message } => {
+                write!(f, "knockd parse error at line {}: {}", line, message)
+            }
             Self::FwknopError(msg) => write!(f, "fwknop error: {}", msg),
             Self::FwknopProtocolError(msg) => write!(f, "fwknop protocol error: {}", msg),
             Self::SpaConstructionError(msg) => write!(f, "SPA construction error: {}", msg),
@@ -74,8 +86,18 @@ impl fmt::Display for PortKnockError {
             Self::HostAlreadyExists(host) => write!(f, "Host already exists: {}", host),
             Self::DnsResolutionFailed(host) => write!(f, "DNS resolution failed: {}", host),
             Self::Ipv6NotSupported => write!(f, "IPv6 not supported"),
-            Self::PortNotOpen { host, port } => write!(f, "Port {}:{} not open after knock", host, port),
-            Self::VerificationTimeout { host, port, timeout_ms } => write!(f, "Verification timeout for {}:{} after {}ms", host, port, timeout_ms),
+            Self::PortNotOpen { host, port } => {
+                write!(f, "Port {}:{} not open after knock", host, port)
+            }
+            Self::VerificationTimeout {
+                host,
+                port,
+                timeout_ms,
+            } => write!(
+                f,
+                "Verification timeout for {}:{} after {}ms",
+                host, port, timeout_ms
+            ),
             Self::SequenceGenerationFailed(msg) => write!(f, "Sequence generation failed: {}", msg),
             Self::ImportError(msg) => write!(f, "Import error: {}", msg),
             Self::ExportError(msg) => write!(f, "Export error: {}", msg),

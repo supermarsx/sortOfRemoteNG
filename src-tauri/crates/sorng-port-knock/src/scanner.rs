@@ -6,6 +6,12 @@ use chrono::Utc;
 /// Builds shell commands for remote execution and parses their results.
 pub struct KnockScanner;
 
+impl Default for KnockScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KnockScanner {
     pub fn new() -> Self {
         Self

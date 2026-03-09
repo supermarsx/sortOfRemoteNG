@@ -10,6 +10,12 @@ use crate::types::*;
 /// the fwknop protocol.
 pub struct SpaClient;
 
+impl Default for SpaClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpaClient {
     pub fn new() -> Self {
         Self
@@ -78,10 +84,7 @@ impl SpaClient {
     }
 
     /// Encode an SPA packet: serialise to JSON, encrypt, optionally HMAC.
-    pub fn encode_spa_packet(
-        packet: &SpaPacket,
-        key: &[u8],
-    ) -> Result<Vec<u8>, PortKnockError> {
+    pub fn encode_spa_packet(packet: &SpaPacket, key: &[u8]) -> Result<Vec<u8>, PortKnockError> {
         let json = serde_json::to_vec(packet)
             .map_err(|e| PortKnockError::SpaConstructionError(e.to_string()))?;
 
@@ -110,10 +113,7 @@ impl SpaClient {
     }
 
     /// Decode and verify an SPA packet.
-    pub fn decode_spa_packet(
-        data: &[u8],
-        key: &[u8],
-    ) -> Result<SpaPacket, PortKnockError> {
+    pub fn decode_spa_packet(data: &[u8], key: &[u8]) -> Result<SpaPacket, PortKnockError> {
         if data.len() < 4 {
             return Err(PortKnockError::SpaVerificationFailed(
                 "data too short".into(),
@@ -121,8 +121,7 @@ impl SpaClient {
         }
 
         // Try to read HMAC-prefixed format first
-        let hmac_len =
-            u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+        let hmac_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
 
         let payload = if hmac_len > 0 && hmac_len <= 64 && data.len() > 4 + hmac_len {
             let hmac_bytes = &data[4..4 + hmac_len];
@@ -149,12 +148,7 @@ impl SpaClient {
     }
 
     /// Construct a command to send the SPA packet via UDP.
-    pub fn send_spa(
-        host: &str,
-        packet: &SpaPacket,
-        key: &[u8],
-        options: &SpaOptions,
-    ) -> SpaResult {
+    pub fn send_spa(host: &str, packet: &SpaPacket, key: &[u8], options: &SpaOptions) -> SpaResult {
         let start = Utc::now();
 
         let encoded = match Self::encode_spa_packet(packet, key) {
@@ -255,11 +249,7 @@ impl SpaClient {
     }
 
     /// Build an `fwknop` CLI command string.
-    pub fn build_fwknop_spa_command(
-        host: &str,
-        options: &SpaOptions,
-        key: &str,
-    ) -> String {
+    pub fn build_fwknop_spa_command(host: &str, options: &SpaOptions, key: &str) -> String {
         let mut parts = vec![
             "fwknop".to_string(),
             "-A".to_string(),
@@ -412,7 +402,7 @@ fn fnv_digest(data: &[u8], out_len: usize) -> Vec<u8> {
 /// Minimal base64 encoder (no padding variant).
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
@@ -537,8 +527,7 @@ mod tests {
 
     #[test]
     fn fwknop_command_contains_host() {
-        let cmd =
-            SpaClient::build_fwknop_spa_command("10.0.0.1", &default_options(), "c2VjcmV0");
+        let cmd = SpaClient::build_fwknop_spa_command("10.0.0.1", &default_options(), "c2VjcmV0");
         assert!(cmd.starts_with("fwknop"));
         assert!(cmd.contains("10.0.0.1"));
         assert!(cmd.contains("c2VjcmV0"));

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 // ─── Core Protocol Types ───────────────────────────────────────────
 
@@ -133,7 +133,14 @@ pub struct TcpFlags {
 
 impl Default for TcpFlags {
     fn default() -> Self {
-        Self { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false }
+        Self {
+            syn: true,
+            ack: false,
+            fin: false,
+            rst: false,
+            psh: false,
+            urg: false,
+        }
     }
 }
 
@@ -160,8 +167,15 @@ pub enum HmacAlgorithm {
 /// Key derivation function parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KeyDerivation {
-    Pbkdf2 { iterations: u32, salt_len: usize },
-    Argon2 { memory_kb: u32, iterations: u32, parallelism: u32 },
+    Pbkdf2 {
+        iterations: u32,
+        salt_len: usize,
+    },
+    Argon2 {
+        memory_kb: u32,
+        iterations: u32,
+        parallelism: u32,
+    },
     Raw,
 }
 
