@@ -62,11 +62,7 @@ impl WaPhoneNumbers {
 
         let numbers: Vec<WaPhoneNumberDetails> = resp["data"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|n| parse_phone_number_details(n))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(parse_phone_number_details).collect())
             .unwrap_or_default();
 
         debug!("Listed {} phone numbers", numbers.len());
@@ -91,10 +87,7 @@ impl WaPhoneNumbers {
             .await?;
 
         parse_phone_number_details(&resp).ok_or_else(|| {
-            WhatsAppError::internal(format!(
-                "Failed to parse phone number {}",
-                phone_number_id
-            ))
+            WhatsAppError::internal(format!("Failed to parse phone number {}", phone_number_id))
         })
     }
 
@@ -126,11 +119,7 @@ impl WaPhoneNumbers {
     }
 
     /// Verify a phone number with the received code.
-    pub async fn verify_code(
-        &self,
-        phone_number_id: &str,
-        code: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn verify_code(&self, phone_number_id: &str, code: &str) -> WhatsAppResult<()> {
         let url = format!("{}/verify_code", self.client.url(phone_number_id));
 
         let body = json!({ "code": code });
@@ -162,11 +151,7 @@ impl WaPhoneNumbers {
     ///
     /// This is the initial step to start using a phone number with
     /// the Cloud API after porting from the On-Premises API.
-    pub async fn register(
-        &self,
-        phone_number_id: &str,
-        pin: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn register(&self, phone_number_id: &str, pin: &str) -> WhatsAppResult<()> {
         let url = format!("{}/register", self.client.url(phone_number_id));
 
         let body = json!({
@@ -180,10 +165,7 @@ impl WaPhoneNumbers {
     }
 
     /// Deregister a phone number from the Cloud API.
-    pub async fn deregister(
-        &self,
-        phone_number_id: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn deregister(&self, phone_number_id: &str) -> WhatsAppResult<()> {
         let url = format!("{}/deregister", self.client.url(phone_number_id));
         self.client.post_json(&url, &json!({})).await?;
         info!("Deregistered phone {}", phone_number_id);
@@ -204,35 +186,26 @@ fn parse_phone_number_details(v: &serde_json::Value) -> Option<WaPhoneNumberDeta
         .as_str()
         .unwrap_or_default()
         .to_string();
-    let verified_name = v["verified_name"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
+    let verified_name = v["verified_name"].as_str().unwrap_or_default().to_string();
 
-    let throughput = v["throughput"]["level"].as_str().map(|l| {
-        WaPhoneNumberThroughput {
+    let throughput = v["throughput"]["level"]
+        .as_str()
+        .map(|l| WaPhoneNumberThroughput {
             level: l.to_string(),
-        }
-    });
+        });
 
     Some(WaPhoneNumberDetails {
         id,
         display_phone_number: display,
         verified_name,
         quality_rating: v["quality_rating"].as_str().map(String::from),
-        messaging_limit_tier: v["messaging_limit_tier"]
-            .as_str()
-            .map(String::from),
+        messaging_limit_tier: v["messaging_limit_tier"].as_str().map(String::from),
         status: v["status"].as_str().map(String::from),
         name_status: v["name_status"].as_str().map(String::from),
-        code_verification_status: v["code_verification_status"]
-            .as_str()
-            .map(String::from),
+        code_verification_status: v["code_verification_status"].as_str().map(String::from),
         platform_type: v["platform_type"].as_str().map(String::from),
         throughput,
-        is_official_business_account: v["is_official_business_account"]
-            .as_bool()
-            .unwrap_or(false),
+        is_official_business_account: v["is_official_business_account"].as_bool().unwrap_or(false),
         is_pin_enabled: v["is_pin_enabled"].as_bool().unwrap_or(false),
     })
 }

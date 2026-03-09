@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Parsed webhook event — either an incoming message or a status update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum WaWebhookEvent {
     IncomingMessage(WaIncomingMessageEvent),
     StatusUpdate(WaStatusUpdateEvent),
@@ -121,11 +122,7 @@ impl WaWebhooks {
     // ─── Signature validation ────────────────────────────────────────
 
     /// Validate the `x-hub-signature-256` header.
-    pub fn validate_signature(
-        &self,
-        signature_header: &str,
-        raw_body: &[u8],
-    ) -> bool {
+    pub fn validate_signature(&self, signature_header: &str, raw_body: &[u8]) -> bool {
         match &self.app_secret {
             Some(secret) => {
                 WaAuthManager::verify_webhook_signature(secret, signature_header, raw_body)
@@ -143,10 +140,7 @@ impl WaWebhooks {
     ///
     /// A single webhook payload can contain multiple entries/changes
     /// (though Meta usually sends one at a time).
-    pub fn parse_payload(
-        &self,
-        raw_body: &str,
-    ) -> WhatsAppResult<Vec<WaWebhookEvent>> {
+    pub fn parse_payload(&self, raw_body: &str) -> WhatsAppResult<Vec<WaWebhookEvent>> {
         let payload: serde_json::Value = serde_json::from_str(raw_body)
             .map_err(|e| WhatsAppError::internal(format!("Webhook JSON parse: {}", e)))?;
 
@@ -161,16 +155,10 @@ impl WaWebhooks {
 
         let mut events = Vec::new();
 
-        let entries = payload["entry"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
+        let entries = payload["entry"].as_array().cloned().unwrap_or_default();
 
         for entry in entries {
-            let changes = entry["changes"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
+            let changes = entry["changes"].as_array().cloned().unwrap_or_default();
 
             for change in changes {
                 let field = change["field"].as_str().unwrap_or("");
@@ -195,10 +183,7 @@ impl WaWebhooks {
                         events.push(WaWebhookEvent::Error(WaWebhookErrorEvent {
                             code: err["code"].as_u64().unwrap_or(0) as u32,
                             title: err["title"].as_str().unwrap_or("").to_string(),
-                            message: err["message"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string(),
+                            message: err["message"].as_str().unwrap_or("").to_string(),
                             phone_number_id: phone_number_id.clone(),
                         }));
                     }
@@ -225,15 +210,9 @@ impl WaWebhooks {
                             .unwrap_or_default();
 
                         events.push(WaWebhookEvent::StatusUpdate(WaStatusUpdateEvent {
-                            message_id: status["id"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
+                            message_id: status["id"].as_str().unwrap_or_default().to_string(),
                             status: s,
-                            timestamp: status["timestamp"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
+                            timestamp: status["timestamp"].as_str().unwrap_or_default().to_string(),
                             recipient_id: status["recipient_id"]
                                 .as_str()
                                 .unwrap_or_default()
@@ -246,15 +225,11 @@ impl WaWebhooks {
 
                 // Parse incoming messages
                 if let Some(messages) = value["messages"].as_array() {
-                    let contacts_arr = value["contacts"]
-                        .as_array()
-                        .cloned()
-                        .unwrap_or_default();
+                    let contacts_arr = value["contacts"].as_array().cloned().unwrap_or_default();
 
                     for msg in messages {
                         let from = msg["from"].as_str().unwrap_or_default().to_string();
-                        let msg_type =
-                            msg["type"].as_str().unwrap_or("unknown").to_string();
+                        let msg_type = msg["type"].as_str().unwrap_or("unknown").to_string();
 
                         // Find matching contact profile name
                         let profile_name = contacts_arr.iter().find_map(|c| {
@@ -267,34 +242,18 @@ impl WaWebhooks {
 
                         let evt = WaIncomingMessageEvent {
                             from: from.clone(),
-                            message_id: msg["id"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
-                            timestamp: msg["timestamp"]
-                                .as_str()
-                                .unwrap_or_default()
-                                .to_string(),
+                            message_id: msg["id"].as_str().unwrap_or_default().to_string(),
+                            timestamp: msg["timestamp"].as_str().unwrap_or_default().to_string(),
                             message_type: msg_type.clone(),
                             text: msg["text"]["body"].as_str().map(String::from),
                             media_id: msg[&msg_type]["id"].as_str().map(String::from),
-                            media_mime: msg[&msg_type]["mime_type"]
-                                .as_str()
-                                .map(String::from),
-                            caption: msg[&msg_type]["caption"]
-                                .as_str()
-                                .map(String::from),
+                            media_mime: msg[&msg_type]["mime_type"].as_str().map(String::from),
+                            caption: msg[&msg_type]["caption"].as_str().map(String::from),
                             latitude: msg["location"]["latitude"].as_f64(),
                             longitude: msg["location"]["longitude"].as_f64(),
-                            location_name: msg["location"]["name"]
-                                .as_str()
-                                .map(String::from),
-                            contact_cards: msg["contacts"]
-                                .as_array()
-                                .cloned(),
-                            interactive_type: msg["interactive"]["type"]
-                                .as_str()
-                                .map(String::from),
+                            location_name: msg["location"]["name"].as_str().map(String::from),
+                            contact_cards: msg["contacts"].as_array().cloned(),
+                            interactive_type: msg["interactive"]["type"].as_str().map(String::from),
                             interactive_reply_id: msg["interactive"]["button_reply"]["id"]
                                 .as_str()
                                 .or_else(|| msg["interactive"]["list_reply"]["id"].as_str())
@@ -303,27 +262,15 @@ impl WaWebhooks {
                                 .as_str()
                                 .or_else(|| msg["interactive"]["list_reply"]["title"].as_str())
                                 .map(String::from),
-                            button_text: msg["button"]["text"]
-                                .as_str()
-                                .map(String::from),
-                            button_payload: msg["button"]["payload"]
-                                .as_str()
-                                .map(String::from),
-                            reaction_emoji: msg["reaction"]["emoji"]
-                                .as_str()
-                                .map(String::from),
+                            button_text: msg["button"]["text"].as_str().map(String::from),
+                            button_payload: msg["button"]["payload"].as_str().map(String::from),
+                            reaction_emoji: msg["reaction"]["emoji"].as_str().map(String::from),
                             reaction_message_id: msg["reaction"]["message_id"]
                                 .as_str()
                                 .map(String::from),
-                            context_message_id: msg["context"]["id"]
-                                .as_str()
-                                .map(String::from),
-                            context_from: msg["context"]["from"]
-                                .as_str()
-                                .map(String::from),
-                            forwarded: msg["context"]["forwarded"]
-                                .as_bool()
-                                .unwrap_or(false),
+                            context_message_id: msg["context"]["id"].as_str().map(String::from),
+                            context_from: msg["context"]["from"].as_str().map(String::from),
+                            forwarded: msg["context"]["forwarded"].as_bool().unwrap_or(false),
                             frequently_forwarded: msg["context"]["frequently_forwarded"]
                                 .as_bool()
                                 .unwrap_or(false),

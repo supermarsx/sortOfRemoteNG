@@ -23,24 +23,24 @@
 //! - **Groups** – create, update, get info, add/remove participants, leave.
 //! - **Interactive Flows** – WhatsApp Flows for structured interactions.
 
-pub mod types;
-pub mod error;
+pub mod analytics;
 pub mod api_client;
 pub mod auth;
-pub mod messaging;
-pub mod media;
-pub mod templates;
-pub mod contacts;
-pub mod webhooks;
-pub mod groups;
-pub mod flows;
 pub mod business_profile;
-pub mod phone_numbers;
-pub mod analytics;
-pub mod unofficial;
-pub mod pairing;
-pub mod service;
 pub mod commands;
+pub mod contacts;
+pub mod error;
+pub mod flows;
+pub mod groups;
+pub mod media;
+pub mod messaging;
+pub mod pairing;
+pub mod phone_numbers;
+pub mod service;
+pub mod templates;
+pub mod types;
+pub mod unofficial;
+pub mod webhooks;
 
 // Re-exports
 pub use commands::*;

@@ -58,7 +58,10 @@ impl WaBusinessProfileManager {
             .client
             .get_with_params(
                 &url,
-                &[("fields", "about,address,description,email,profile_picture_url,websites,vertical")],
+                &[(
+                    "fields",
+                    "about,address,description,email,profile_picture_url,websites,vertical",
+                )],
             )
             .await?;
 
@@ -84,9 +87,7 @@ impl WaBusinessProfileManager {
                         .collect()
                 })
                 .unwrap_or_default(),
-            profile_picture_url: data["profile_picture_url"]
-                .as_str()
-                .map(String::from),
+            profile_picture_url: data["profile_picture_url"].as_str().map(String::from),
             about: data["about"].as_str().map(String::from),
         })
     }
@@ -95,10 +96,7 @@ impl WaBusinessProfileManager {
     ///
     /// Only provided fields will be updated; omitted fields remain
     /// unchanged.
-    pub async fn update(
-        &self,
-        request: &WaUpdateBusinessProfileRequest,
-    ) -> WhatsAppResult<()> {
+    pub async fn update(&self, request: &WaUpdateBusinessProfileRequest) -> WhatsAppResult<()> {
         let url = self.client.phone_url("whatsapp_business_profile");
 
         let mut body = json!({
@@ -142,10 +140,7 @@ impl WaBusinessProfileManager {
     }
 
     /// Set only the business profile description.
-    pub async fn set_description(
-        &self,
-        description: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn set_description(&self, description: &str) -> WhatsAppResult<()> {
         self.update(&WaUpdateBusinessProfileRequest {
             description: Some(description.to_string()),
             ..Default::default()
@@ -154,10 +149,7 @@ impl WaBusinessProfileManager {
     }
 
     /// Set the profile picture by uploading a media handle.
-    pub async fn set_profile_picture(
-        &self,
-        media_handle: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn set_profile_picture(&self, media_handle: &str) -> WhatsAppResult<()> {
         self.update(&WaUpdateBusinessProfileRequest {
             profile_picture_handle: Some(media_handle.to_string()),
             ..Default::default()
@@ -166,10 +158,7 @@ impl WaBusinessProfileManager {
     }
 
     /// Set business websites (max 2).
-    pub async fn set_websites(
-        &self,
-        websites: Vec<String>,
-    ) -> WhatsAppResult<()> {
+    pub async fn set_websites(&self, websites: Vec<String>) -> WhatsAppResult<()> {
         if websites.len() > 2 {
             return Err(WhatsAppError::internal(
                 "WhatsApp Business API allows max 2 websites",

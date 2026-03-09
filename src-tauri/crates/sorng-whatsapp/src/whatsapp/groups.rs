@@ -49,10 +49,7 @@ impl WaGroups {
     }
 
     /// Get information about a group.
-    pub async fn get_group_info(
-        &self,
-        group_id: &str,
-    ) -> WhatsAppResult<WaGroupInfo> {
+    pub async fn get_group_info(&self, group_id: &str) -> WhatsAppResult<WaGroupInfo> {
         let url = self.client.url(group_id);
         let resp = self.client.get(&url).await?;
 
@@ -62,7 +59,10 @@ impl WaGroups {
                 arr.iter()
                     .filter_map(|p| {
                         Some(WaGroupParticipant {
-                            id: p["id"].as_str().or_else(|| p["wa_id"].as_str())?.to_string(),
+                            id: p["id"]
+                                .as_str()
+                                .or_else(|| p["wa_id"].as_str())?
+                                .to_string(),
                             admin: p["admin"].as_str().map(String::from),
                         })
                     })
@@ -75,18 +75,17 @@ impl WaGroups {
             subject: resp["subject"].as_str().unwrap_or_default().to_string(),
             description: resp["description"].as_str().map(String::from),
             owner: resp["owner"].as_str().map(String::from),
-            creation: resp["creation"].as_u64().or_else(|| resp["creation_timestamp"].as_u64()).unwrap_or(0),
+            creation: resp["creation"]
+                .as_u64()
+                .or_else(|| resp["creation_timestamp"].as_u64())
+                .unwrap_or(0),
             participants,
             invite_link: resp["invite_link"].as_str().map(String::from),
         })
     }
 
     /// Update group subject (name).
-    pub async fn update_subject(
-        &self,
-        group_id: &str,
-        subject: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn update_subject(&self, group_id: &str, subject: &str) -> WhatsAppResult<()> {
         let url = self.client.url(group_id);
         let body = json!({ "subject": subject });
         self.client.post_json(&url, &body).await?;
@@ -198,10 +197,7 @@ impl WaGroups {
     }
 
     /// Get the group invite link.
-    pub async fn get_invite_link(
-        &self,
-        group_id: &str,
-    ) -> WhatsAppResult<String> {
+    pub async fn get_invite_link(&self, group_id: &str) -> WhatsAppResult<String> {
         let url = format!("{}/invite_link", self.client.url(group_id));
         let resp = self.client.get(&url).await?;
 
@@ -212,10 +208,7 @@ impl WaGroups {
     }
 
     /// Revoke the current group invite link (generates a new one).
-    pub async fn revoke_invite_link(
-        &self,
-        group_id: &str,
-    ) -> WhatsAppResult<String> {
+    pub async fn revoke_invite_link(&self, group_id: &str) -> WhatsAppResult<String> {
         let url = format!("{}/invite_link", self.client.url(group_id));
         let resp = self.client.delete(&url).await?;
 
@@ -226,11 +219,7 @@ impl WaGroups {
     }
 
     /// Set group icon/photo.
-    pub async fn set_group_icon(
-        &self,
-        group_id: &str,
-        media_id: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn set_group_icon(&self, group_id: &str, media_id: &str) -> WhatsAppResult<()> {
         let url = self.client.url(group_id);
         let body = json!({
             "messaging_product": "whatsapp",

@@ -18,9 +18,7 @@ use crate::whatsapp::pairing::PairingManager;
 use crate::whatsapp::phone_numbers::WaPhoneNumbers;
 use crate::whatsapp::templates::WaTemplates;
 use crate::whatsapp::types::*;
-use crate::whatsapp::unofficial::{
-    UnofficialClient, UnofficialConfig,
-};
+use crate::whatsapp::unofficial::{UnofficialClient, UnofficialConfig};
 use crate::whatsapp::webhooks::WaWebhooks;
 use log::info;
 use std::collections::HashMap;
@@ -115,10 +113,7 @@ impl WhatsAppService {
     }
 
     /// Initialize the unofficial WA Web client.
-    pub fn configure_unofficial(
-        &mut self,
-        config: Option<UnofficialConfig>,
-    ) {
+    pub fn configure_unofficial(&mut self, config: Option<UnofficialConfig>) {
         let cfg = config.unwrap_or_default();
         self.unofficial = Some(Arc::new(UnofficialClient::new(cfg)));
         self.pairing_mgr = Some(Arc::new(PairingManager::default_manager()));
@@ -144,102 +139,100 @@ impl WhatsAppService {
 
     fn require_cloud(&self) -> WhatsAppResult<()> {
         if self.config.is_none() {
-            return Err(WhatsAppError::not_configured(
-                "Cloud API not configured",
-            ));
+            return Err(WhatsAppError::not_configured("Cloud API not configured"));
         }
         Ok(())
     }
 
     pub fn messaging(&self) -> WhatsAppResult<&WaMessaging> {
         self.require_cloud()?;
-        self.messaging.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Messaging not initialized")
-        })
+        self.messaging
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Messaging not initialized"))
     }
 
     pub fn media(&self) -> WhatsAppResult<&WaMedia> {
         self.require_cloud()?;
-        self.media.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Media not initialized")
-        })
+        self.media
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Media not initialized"))
     }
 
     pub fn templates(&self) -> WhatsAppResult<&WaTemplates> {
         self.require_cloud()?;
-        self.templates.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Templates not initialized")
-        })
+        self.templates
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Templates not initialized"))
     }
 
     pub fn contacts(&self) -> WhatsAppResult<&WaContacts> {
         self.require_cloud()?;
-        self.contacts.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Contacts not initialized")
-        })
+        self.contacts
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Contacts not initialized"))
     }
 
     pub fn groups(&self) -> WhatsAppResult<&WaGroups> {
         self.require_cloud()?;
-        self.groups.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Groups not initialized")
-        })
+        self.groups
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Groups not initialized"))
     }
 
     pub fn flows(&self) -> WhatsAppResult<&WaFlows> {
         self.require_cloud()?;
-        self.flows.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Flows not initialized")
-        })
+        self.flows
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Flows not initialized"))
     }
 
     pub fn business_profile(&self) -> WhatsAppResult<&WaBusinessProfileManager> {
         self.require_cloud()?;
-        self.business_profile.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Business profile not initialized")
-        })
+        self.business_profile
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Business profile not initialized"))
     }
 
     pub fn phone_numbers(&self) -> WhatsAppResult<&WaPhoneNumbers> {
         self.require_cloud()?;
-        self.phone_numbers.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Phone numbers not initialized")
-        })
+        self.phone_numbers
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Phone numbers not initialized"))
     }
 
     pub fn analytics(&self) -> WhatsAppResult<&WaAnalytics> {
         self.require_cloud()?;
-        self.analytics.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Analytics not initialized")
-        })
+        self.analytics
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Analytics not initialized"))
     }
 
     pub fn webhooks(&self) -> WhatsAppResult<&WaWebhooks> {
         self.require_cloud()?;
-        self.webhooks.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Webhooks not initialized")
-        })
+        self.webhooks
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Webhooks not initialized"))
     }
 
     pub fn auth(&self) -> WhatsAppResult<&WaAuthManager> {
         self.require_cloud()?;
-        self.auth.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Auth not initialized")
-        })
+        self.auth
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Auth not initialized"))
     }
 
     // ─── Unofficial accessors ────────────────────────────────────────
 
     pub fn unofficial(&self) -> WhatsAppResult<&Arc<UnofficialClient>> {
-        self.unofficial.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Unofficial client not configured")
-        })
+        self.unofficial
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Unofficial client not configured"))
     }
 
     pub fn pairing(&self) -> WhatsAppResult<&Arc<PairingManager>> {
-        self.pairing_mgr.as_ref().ok_or_else(|| {
-            WhatsAppError::not_configured("Pairing manager not configured")
-        })
+        self.pairing_mgr
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::not_configured("Pairing manager not configured"))
     }
 
     // ─── Session management ──────────────────────────────────────────
@@ -251,9 +244,9 @@ impl WhatsAppService {
 
     /// Get a session by ID.
     pub fn get_session(&self, id: &str) -> WhatsAppResult<&WaSession> {
-        self.sessions.get(id).ok_or_else(|| {
-            WhatsAppError::session_not_found(id)
-        })
+        self.sessions
+            .get(id)
+            .ok_or_else(|| WhatsAppError::session_not_found(id))
     }
 
     /// Remove a session.
@@ -279,18 +272,12 @@ impl WhatsAppService {
     // ─── Conversation cache ──────────────────────────────────────────
 
     /// Get the conversations map (read-only).
-    pub fn conversations(
-        &self,
-    ) -> &Arc<RwLock<HashMap<String, WaConversationThread>>> {
+    pub fn conversations(&self) -> &Arc<RwLock<HashMap<String, WaConversationThread>>> {
         &self.conversations
     }
 
     /// Store a chat message into the local cache.
-    pub async fn store_message(
-        &self,
-        thread_id: &str,
-        message: WaChatMessage,
-    ) {
+    pub async fn store_message(&self, thread_id: &str, message: WaChatMessage) {
         let mut convs = self.conversations.write().await;
         let thread = convs
             .entry(thread_id.to_string())
@@ -312,10 +299,7 @@ impl WhatsAppService {
     /// Note: With the current in-memory model, we store last_message per
     /// thread. For full history, an external store would be needed. This
     /// returns the last message (if any) as a convenience.
-    pub async fn get_messages(
-        &self,
-        thread_id: &str,
-    ) -> Vec<WaChatMessage> {
+    pub async fn get_messages(&self, thread_id: &str) -> Vec<WaChatMessage> {
         let convs = self.conversations.read().await;
         convs
             .get(thread_id)
@@ -327,15 +311,15 @@ impl WhatsAppService {
     // ─── Unified send (auto-select official vs unofficial) ───────────
 
     /// Send text via the best available channel.
-    pub async fn send_text_auto(
-        &self,
-        to: &str,
-        text: &str,
-    ) -> WhatsAppResult<String> {
+    pub async fn send_text_auto(&self, to: &str, text: &str) -> WhatsAppResult<String> {
         // Prefer official API if configured
         if self.is_cloud_configured() {
             let resp = self.messaging()?.send_text(to, text, false, None).await?;
-            return Ok(resp.messages.first().map(|m| m.id.clone()).unwrap_or_default());
+            return Ok(resp
+                .messages
+                .first()
+                .map(|m| m.id.clone())
+                .unwrap_or_default());
         }
 
         // Fall back to unofficial

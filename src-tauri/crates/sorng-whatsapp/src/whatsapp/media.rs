@@ -104,14 +104,9 @@ impl WaMedia {
             id: resp["id"].as_str().unwrap_or(media_id).to_string(),
             url: resp["url"]
                 .as_str()
-                .ok_or_else(|| {
-                    WhatsAppError::internal("No url in media response")
-                })?
+                .ok_or_else(|| WhatsAppError::internal("No url in media response"))?
                 .to_string(),
-            mime_type: resp["mime_type"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string(),
+            mime_type: resp["mime_type"].as_str().unwrap_or_default().to_string(),
             sha256: resp["sha256"].as_str().unwrap_or_default().to_string(),
             file_size: resp["file_size"].as_u64().unwrap_or(0),
             messaging_product: resp["messaging_product"]
@@ -191,8 +186,7 @@ impl WaMedia {
         if !supported.contains(&mime) {
             return Err(WhatsAppError::internal(format!(
                 "Unsupported MIME type: {}. Supported: {:?}",
-                mime,
-                supported
+                mime, supported
             )));
         }
         Ok(())

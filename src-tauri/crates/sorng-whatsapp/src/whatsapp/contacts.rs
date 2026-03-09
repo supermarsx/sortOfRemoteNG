@@ -75,10 +75,7 @@ impl WaContacts {
     }
 
     /// Check a single phone number.
-    pub async fn is_on_whatsapp(
-        &self,
-        phone_number: &str,
-    ) -> WhatsAppResult<bool> {
+    pub async fn is_on_whatsapp(&self, phone_number: &str) -> WhatsAppResult<bool> {
         let results = self.check_contacts(&[phone_number]).await?;
         Ok(results
             .first()
@@ -87,10 +84,7 @@ impl WaContacts {
     }
 
     /// Get the WhatsApp ID for a phone number (if registered).
-    pub async fn get_wa_id(
-        &self,
-        phone_number: &str,
-    ) -> WhatsAppResult<Option<String>> {
+    pub async fn get_wa_id(&self, phone_number: &str) -> WhatsAppResult<Option<String>> {
         let results = self.check_contacts(&[phone_number]).await?;
         Ok(results.first().and_then(|r| r.wa_id.clone()))
     }
@@ -124,10 +118,7 @@ impl WaContacts {
     }
 
     /// Generate a WhatsApp click-to-chat link with pre-filled message.
-    pub fn click_to_chat_link(
-        phone_number: &str,
-        message: &str,
-    ) -> String {
+    pub fn click_to_chat_link(phone_number: &str, message: &str) -> String {
         Self::wa_me_link(phone_number, Some(message))
     }
 }

@@ -78,10 +78,7 @@ impl WaTemplates {
             params.push(("after", after_owned));
         }
 
-        let param_refs: Vec<(&str, &str)> = params
-            .iter()
-            .map(|(k, v)| (*k, v.as_str()))
-            .collect();
+        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
         let resp = if param_refs.is_empty() {
             self.client.get(&url).await?
@@ -91,22 +88,14 @@ impl WaTemplates {
 
         let data: Vec<WaTemplateInfo> = resp["data"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| parse_template_from_json(v))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(parse_template_from_json).collect())
             .unwrap_or_default();
 
         let next_cursor = resp["paging"]["cursors"]["after"]
             .as_str()
             .map(String::from);
-        let next_url = resp["paging"]["next"]
-            .as_str()
-            .map(String::from);
-        let prev_url = resp["paging"]["previous"]
-            .as_str()
-            .map(String::from);
+        let next_url = resp["paging"]["next"].as_str().map(String::from);
+        let prev_url = resp["paging"]["previous"].as_str().map(String::from);
 
         debug!("Listed {} templates", data.len());
 
@@ -136,9 +125,7 @@ impl WaTemplates {
         let mut cursor: Option<String> = None;
 
         loop {
-            let page = self
-                .list(Some(100), cursor.as_deref())
-                .await?;
+            let page = self.list(Some(100), cursor.as_deref()).await?;
             all.extend(page.data);
 
             match page.paging {
@@ -177,11 +164,7 @@ impl WaTemplates {
     }
 
     /// Delete a specific template by name and HSM ID.
-    pub async fn delete_specific(
-        &self,
-        template_name: &str,
-        hsm_id: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn delete_specific(&self, template_name: &str, hsm_id: &str) -> WhatsAppResult<()> {
         let url = self.client.waba_url("message_templates");
         let full = format!("{}?name={}&hsm_id={}", url, template_name, hsm_id);
         self.client.delete(&full).await?;
@@ -195,10 +178,7 @@ impl WaTemplates {
         status: WaTemplateStatus,
     ) -> WhatsAppResult<Vec<WaTemplateInfo>> {
         let all = self.list_all().await?;
-        Ok(all
-            .into_iter()
-            .filter(|t| t.status == status)
-            .collect())
+        Ok(all.into_iter().filter(|t| t.status == status).collect())
     }
 
     /// List templates filtered by category.
@@ -207,10 +187,7 @@ impl WaTemplates {
         category: WaTemplateCategory,
     ) -> WhatsAppResult<Vec<WaTemplateInfo>> {
         let all = self.list_all().await?;
-        Ok(all
-            .into_iter()
-            .filter(|t| t.category == category)
-            .collect())
+        Ok(all.into_iter().filter(|t| t.category == category).collect())
     }
 }
 
@@ -258,7 +235,10 @@ fn parse_template_from_json(v: &serde_json::Value) -> Option<WaTemplateInfo> {
         components,
         rejected_reason: v["rejected_reason"].as_str().map(String::from),
         quality_score: v["quality_score"].as_object().map(|_| WaQualityScore {
-            score: v["quality_score"]["score"].as_str().unwrap_or_default().to_string(),
+            score: v["quality_score"]["score"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
             date: v["quality_score"]["date"].as_i64(),
         }),
     })
@@ -270,8 +250,14 @@ mod tests {
 
     #[test]
     fn test_parse_template_status() {
-        assert_eq!(parse_template_status("APPROVED"), WaTemplateStatus::Approved);
-        assert_eq!(parse_template_status("rejected"), WaTemplateStatus::Rejected);
+        assert_eq!(
+            parse_template_status("APPROVED"),
+            WaTemplateStatus::Approved
+        );
+        assert_eq!(
+            parse_template_status("rejected"),
+            WaTemplateStatus::Rejected
+        );
         assert_eq!(parse_template_status("unknown"), WaTemplateStatus::Pending);
     }
 

@@ -56,10 +56,7 @@ impl CloudApiClient {
     pub fn phone_url(&self, endpoint: &str) -> String {
         format!(
             "{}/{}/{}/{}",
-            self.config.base_url,
-            self.config.api_version,
-            self.config.phone_number_id,
-            endpoint
+            self.config.base_url, self.config.api_version, self.config.phone_number_id, endpoint
         )
     }
 
@@ -142,10 +139,9 @@ impl CloudApiClient {
                 let status = r.status().as_u16();
                 let body = r.text().await.unwrap_or_default();
 
-                if status >= 200 && status < 300 {
-                    return serde_json::from_str(&body).map_err(|e| {
-                        WhatsAppError::internal(format!("JSON parse error: {}", e))
-                    });
+                if (200..300).contains(&status) {
+                    return serde_json::from_str(&body)
+                        .map_err(|e| WhatsAppError::internal(format!("JSON parse error: {}", e)));
                 }
 
                 Err(WhatsAppError::from_api_response(status, &body))
@@ -165,7 +161,7 @@ impl CloudApiClient {
             .map_err(|e| WhatsAppError::network(e.to_string()))?;
 
         let status = resp.status().as_u16();
-        if status >= 200 && status < 300 {
+        if (200..300).contains(&status) {
             resp.bytes()
                 .await
                 .map(|b| b.to_vec())
@@ -195,9 +191,7 @@ impl CloudApiClient {
                 .headers(self.auth_headers());
 
             if let Some(ref b) = body {
-                req = req
-                    .header(CONTENT_TYPE, "application/json")
-                    .json(b);
+                req = req.header(CONTENT_TYPE, "application/json").json(b);
             }
 
             let resp = req.send().await;
@@ -207,7 +201,7 @@ impl CloudApiClient {
                     let status = r.status().as_u16();
                     let resp_body = r.text().await.unwrap_or_default();
 
-                    if status >= 200 && status < 300 {
+                    if (200..300).contains(&status) {
                         if resp_body.is_empty() {
                             return Ok(serde_json::json!({"success": true}));
                         }

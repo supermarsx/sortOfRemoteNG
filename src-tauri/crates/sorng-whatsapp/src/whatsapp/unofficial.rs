@@ -179,6 +179,7 @@ pub struct UnofficialOutgoingMessage {
 
 /// Event emitted by the unofficial client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum UnofficialEvent {
     ConnectionStateChanged(UnofficialConnectionState),
     QrCode(String),
@@ -247,11 +248,7 @@ impl Default for UnofficialConfig {
             reconnect_delay_ms: 3000,
             sync_history: true,
             platform: "Windows".into(),
-            browser: (
-                "SortOfRemoteNG".into(),
-                "Desktop".into(),
-                "1.0.0".into(),
-            ),
+            browser: ("SortOfRemoteNG".into(), "Desktop".into(), "1.0.0".into()),
         }
     }
 }
@@ -321,10 +318,7 @@ impl UnofficialClient {
         let spk_public = PublicKey::from(&spk_private);
 
         // Sign the pre-key with identity key (simplified)
-        let signature = Self::sign_pre_key(
-            identity_private.as_bytes(),
-            spk_public.as_bytes(),
-        );
+        let signature = Self::sign_pre_key(identity_private.as_bytes(), spk_public.as_bytes());
 
         let mut reg_id_bytes = [0u8; 4];
         rng.fill_bytes(&mut reg_id_bytes);
@@ -362,8 +356,7 @@ impl UnofficialClient {
         use hmac::{Hmac, Mac};
         type HmacSha = Hmac<Sha256>;
 
-        let mut mac = <HmacSha as hmac::Mac>::new_from_slice(identity_private)
-            .expect("HMAC key");
+        let mut mac = <HmacSha as hmac::Mac>::new_from_slice(identity_private).expect("HMAC key");
         mac.update(pre_key_public);
         mac.finalize().into_bytes().to_vec()
     }
@@ -427,15 +420,12 @@ impl UnofficialClient {
         let server_hello = Self::read_ws_binary(&mut read).await?;
         handshake
             .process_server_hello(&server_hello)
-            .map_err(|e| {
-                WhatsAppError::internal(format!("Noise handshake failed: {}", e))
-            })?;
+            .map_err(|e| WhatsAppError::internal(format!("Noise handshake failed: {}", e)))?;
 
         debug!("Processed server hello, handshake progressing");
 
         // Step 3: send client finish (includes device identity)
-        let client_finish =
-            handshake.build_client_finish(&identity)?;
+        let client_finish = handshake.build_client_finish(&identity)?;
         write
             .send(WsMessage::Binary(client_finish))
             .await
@@ -479,7 +469,8 @@ impl UnofficialClient {
 
     /// Disconnect from WhatsApp Web.
     pub async fn disconnect(&self) -> WhatsAppResult<()> {
-        self.set_state(UnofficialConnectionState::Disconnected).await;
+        self.set_state(UnofficialConnectionState::Disconnected)
+            .await;
         *self.session.lock().await = None;
         info!("Disconnected from WhatsApp Web");
         Ok(())
@@ -516,14 +507,11 @@ impl UnofficialClient {
     }
 
     /// Send a message via the unofficial protocol.
-    pub async fn send_message(
-        &self,
-        msg: UnofficialOutgoingMessage,
-    ) -> WhatsAppResult<String> {
+    pub async fn send_message(&self, msg: UnofficialOutgoingMessage) -> WhatsAppResult<String> {
         let session = self.session.lock().await;
-        let _session = session.as_ref().ok_or_else(|| {
-            WhatsAppError::internal("Not connected – no active session")
-        })?;
+        let _session = session
+            .as_ref()
+            .ok_or_else(|| WhatsAppError::internal("Not connected – no active session"))?;
 
         let message_id = Self::generate_message_id();
 
@@ -561,21 +549,17 @@ impl UnofficialClient {
     }
 
     /// Mark a message as read via unofficial protocol.
-    pub async fn mark_read(
-        &self,
-        chat_jid: &str,
-        message_ids: &[&str],
-    ) -> WhatsAppResult<()> {
-        debug!("Marking {} messages read in {}", message_ids.len(), chat_jid);
+    pub async fn mark_read(&self, chat_jid: &str, message_ids: &[&str]) -> WhatsAppResult<()> {
+        debug!(
+            "Marking {} messages read in {}",
+            message_ids.len(),
+            chat_jid
+        );
         Ok(())
     }
 
     /// Send typing presence (composing / paused).
-    pub async fn send_presence(
-        &self,
-        to_jid: &str,
-        composing: bool,
-    ) -> WhatsAppResult<()> {
+    pub async fn send_presence(&self, to_jid: &str, composing: bool) -> WhatsAppResult<()> {
         debug!(
             "Sending presence {} to {}",
             if composing { "composing" } else { "paused" },
@@ -588,7 +572,11 @@ impl UnofficialClient {
     pub async fn set_availability(&self, available: bool) -> WhatsAppResult<()> {
         debug!(
             "Setting availability: {}",
-            if available { "available" } else { "unavailable" }
+            if available {
+                "available"
+            } else {
+                "unavailable"
+            }
         );
         Ok(())
     }
@@ -596,10 +584,7 @@ impl UnofficialClient {
     // ─── Group operations (unofficial) ───────────────────────────────
 
     /// Get group metadata via unofficial protocol.
-    pub async fn get_group_metadata(
-        &self,
-        group_jid: &str,
-    ) -> WhatsAppResult<serde_json::Value> {
+    pub async fn get_group_metadata(&self, group_jid: &str) -> WhatsAppResult<serde_json::Value> {
         debug!("Fetching group metadata for {}", group_jid);
         Ok(serde_json::json!({
             "id": group_jid,
@@ -609,10 +594,7 @@ impl UnofficialClient {
     }
 
     /// Get participant list for a group.
-    pub async fn get_group_participants(
-        &self,
-        group_jid: &str,
-    ) -> WhatsAppResult<Vec<String>> {
+    pub async fn get_group_participants(&self, group_jid: &str) -> WhatsAppResult<Vec<String>> {
         debug!("Fetching participants for {}", group_jid);
         Ok(Vec::new())
     }
@@ -620,19 +602,13 @@ impl UnofficialClient {
     // ─── Profile ─────────────────────────────────────────────────────
 
     /// Get profile picture URL for a JID.
-    pub async fn get_profile_picture(
-        &self,
-        jid: &str,
-    ) -> WhatsAppResult<Option<String>> {
+    pub async fn get_profile_picture(&self, jid: &str) -> WhatsAppResult<Option<String>> {
         debug!("Fetching profile picture for {}", jid);
         Ok(None)
     }
 
     /// Get status/about for a JID.
-    pub async fn get_status(
-        &self,
-        jid: &str,
-    ) -> WhatsAppResult<Option<String>> {
+    pub async fn get_status(&self, jid: &str) -> WhatsAppResult<Option<String>> {
         debug!("Fetching status for {}", jid);
         Ok(None)
     }
@@ -649,15 +625,13 @@ impl UnofficialClient {
 
     async fn read_ws_binary(
         read: &mut (impl StreamExt<Item = Result<WsMessage, tokio_tungstenite::tungstenite::Error>>
-              + Unpin),
+                  + Unpin),
     ) -> WhatsAppResult<Vec<u8>> {
         while let Some(msg_result) = read.next().await {
             match msg_result {
                 Ok(WsMessage::Binary(data)) => return Ok(data),
                 Ok(WsMessage::Close(_)) => {
-                    return Err(WhatsAppError::network(
-                        "WebSocket closed by server",
-                    ));
+                    return Err(WhatsAppError::network("WebSocket closed by server"));
                 }
                 Ok(_) => continue, // skip text/ping/pong
                 Err(e) => {
@@ -709,8 +683,7 @@ impl UnofficialClient {
                 }
                 Ok(WsMessage::Close(_)) => {
                     info!("WebSocket closed by server");
-                    *state.write().await =
-                        UnofficialConnectionState::Disconnected;
+                    *state.write().await = UnofficialConnectionState::Disconnected;
                     let _ = event_tx.send(UnofficialEvent::ConnectionStateChanged(
                         UnofficialConnectionState::Disconnected,
                     ));
@@ -723,8 +696,7 @@ impl UnofficialClient {
                 Ok(_) => {}
                 Err(e) => {
                     error!("WebSocket error: {}", e);
-                    *state.write().await =
-                        UnofficialConnectionState::Failed(e.to_string());
+                    *state.write().await = UnofficialConnectionState::Failed(e.to_string());
                     let _ = event_tx.send(UnofficialEvent::Error(e.to_string()));
                     break;
                 }
@@ -786,10 +758,7 @@ impl UnofficialClient {
         Ok(frame)
     }
 
-    fn decrypt_frame(
-        session: &mut NoiseSession,
-        ciphertext: &[u8],
-    ) -> WhatsAppResult<Vec<u8>> {
+    fn decrypt_frame(session: &mut NoiseSession, ciphertext: &[u8]) -> WhatsAppResult<Vec<u8>> {
         if ciphertext.len() < 32 {
             return Ok(ciphertext.to_vec()); // unencrypted frame
         }
@@ -811,10 +780,7 @@ impl UnofficialClient {
     }
 
     #[allow(dead_code)]
-    fn encrypt_frame(
-        session: &mut NoiseSession,
-        plaintext: &[u8],
-    ) -> WhatsAppResult<Vec<u8>> {
+    fn encrypt_frame(session: &mut NoiseSession, plaintext: &[u8]) -> WhatsAppResult<Vec<u8>> {
         let nonce_bytes = session.encrypt_counter.to_be_bytes();
         let mut nonce_arr = [0u8; 12];
         nonce_arr[4..12].copy_from_slice(&nonce_bytes);
@@ -944,10 +910,7 @@ impl NoiseHandshake {
         frame
     }
 
-    fn process_server_hello(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), String> {
+    fn process_server_hello(&mut self, data: &[u8]) -> Result<(), String> {
         if data.len() < 32 {
             return Err("Server hello too short".into());
         }
@@ -966,10 +929,7 @@ impl NoiseHandshake {
         Ok(())
     }
 
-    fn build_client_finish(
-        &mut self,
-        identity: &DeviceIdentity,
-    ) -> WhatsAppResult<Vec<u8>> {
+    fn build_client_finish(&mut self, identity: &DeviceIdentity) -> WhatsAppResult<Vec<u8>> {
         // Encrypt the client's static public key + identity payload
         // under the derived Noise key.
         let mut payload = Vec::new();
@@ -986,9 +946,7 @@ impl NoiseHandshake {
         Ok(payload)
     }
 
-    fn split_transport_keys(
-        &self,
-    ) -> WhatsAppResult<([u8; 32], [u8; 32])> {
+    fn split_transport_keys(&self) -> WhatsAppResult<([u8; 32], [u8; 32])> {
         // Derive encrypt/decrypt keys from handshake state via HKDF
         let hk = Hkdf::<Sha256>::new(Some(&self.salt), &self.hash);
 
@@ -1116,10 +1074,7 @@ mod tests {
             UnofficialClient::group_to_jid("123456789"),
             "123456789@g.us"
         );
-        assert_eq!(
-            UnofficialClient::group_to_jid("123@g.us"),
-            "123@g.us"
-        );
+        assert_eq!(UnofficialClient::group_to_jid("123@g.us"), "123@g.us");
     }
 
     #[test]
@@ -1177,8 +1132,7 @@ mod tests {
     #[test]
     fn test_media_encrypt_decrypt_roundtrip() {
         let plaintext = b"Hello WhatsApp media content test data here";
-        let (ciphertext, key, sha) =
-            encrypt_media(plaintext, "image").unwrap();
+        let (ciphertext, key, sha) = encrypt_media(plaintext, "image").unwrap();
 
         assert_ne!(&ciphertext[..], plaintext);
         assert!(!sha.is_empty());

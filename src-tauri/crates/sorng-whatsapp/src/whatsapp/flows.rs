@@ -48,10 +48,7 @@ impl WaFlows {
     }
 
     /// Create a new flow.
-    pub async fn create(
-        &self,
-        request: &WaCreateFlowRequest,
-    ) -> WhatsAppResult<WaFlow> {
+    pub async fn create(&self, request: &WaCreateFlowRequest) -> WhatsAppResult<WaFlow> {
         let url = self.client.waba_url("flows");
 
         let mut body = json!({
@@ -95,11 +92,7 @@ impl WaFlows {
 
         let flows: Vec<WaFlowDetails> = resp["data"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|f| parse_flow_details(f))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(parse_flow_details).collect())
             .unwrap_or_default();
 
         debug!("Listed {} flows", flows.len());
@@ -111,17 +104,12 @@ impl WaFlows {
         let url = self.client.url(flow_id);
         let resp = self.client.get(&url).await?;
 
-        parse_flow_details(&resp).ok_or_else(|| {
-            WhatsAppError::internal(format!("Failed to parse flow {}", flow_id))
-        })
+        parse_flow_details(&resp)
+            .ok_or_else(|| WhatsAppError::internal(format!("Failed to parse flow {}", flow_id)))
     }
 
     /// Update a flow's name.
-    pub async fn update_name(
-        &self,
-        flow_id: &str,
-        name: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn update_name(&self, flow_id: &str, name: &str) -> WhatsAppResult<()> {
         let url = self.client.url(flow_id);
         let body = json!({ "name": name });
         self.client.post_json(&url, &body).await?;
@@ -147,11 +135,7 @@ impl WaFlows {
 
         let errors: Vec<WaFlowValidationError> = resp["validation_errors"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|e| parse_validation_error(e))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(parse_validation_error).collect())
             .unwrap_or_default();
 
         if errors.is_empty() {
@@ -168,11 +152,7 @@ impl WaFlows {
     }
 
     /// Update a flow's endpoint URI (for data API).
-    pub async fn update_endpoint(
-        &self,
-        flow_id: &str,
-        endpoint_uri: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn update_endpoint(&self, flow_id: &str, endpoint_uri: &str) -> WhatsAppResult<()> {
         let url = self.client.url(flow_id);
         let body = json!({ "endpoint_uri": endpoint_uri });
         self.client.post_json(&url, &body).await?;
@@ -210,19 +190,13 @@ impl WaFlows {
     }
 
     /// Get the preview URL for a flow.
-    pub async fn get_preview_url(
-        &self,
-        flow_id: &str,
-    ) -> WhatsAppResult<Option<String>> {
+    pub async fn get_preview_url(&self, flow_id: &str) -> WhatsAppResult<Option<String>> {
         let details = self.get(flow_id).await?;
         Ok(details.preview_url)
     }
 
     /// Get flow assets (JSON definition) for a flow.
-    pub async fn get_assets(
-        &self,
-        flow_id: &str,
-    ) -> WhatsAppResult<serde_json::Value> {
+    pub async fn get_assets(&self, flow_id: &str) -> WhatsAppResult<serde_json::Value> {
         let url = format!("{}/assets", self.client.url(flow_id));
         self.client.get(&url).await
     }
@@ -232,7 +206,12 @@ fn parse_flow_details(v: &serde_json::Value) -> Option<WaFlowDetails> {
     let id = v["id"].as_str()?.to_string();
     let name = v["name"].as_str()?.to_string();
 
-    let status = match v["status"].as_str().unwrap_or("DRAFT").to_uppercase().as_str() {
+    let status = match v["status"]
+        .as_str()
+        .unwrap_or("DRAFT")
+        .to_uppercase()
+        .as_str()
+    {
         "DRAFT" => WaFlowStatus::Draft,
         "PUBLISHED" => WaFlowStatus::Published,
         "DEPRECATED" => WaFlowStatus::Deprecated,
@@ -252,11 +231,7 @@ fn parse_flow_details(v: &serde_json::Value) -> Option<WaFlowDetails> {
 
     let validation_errors = v["validation_errors"]
         .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|e| parse_validation_error(e))
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(parse_validation_error).collect())
         .unwrap_or_default();
 
     Some(WaFlowDetails {

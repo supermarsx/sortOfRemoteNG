@@ -14,9 +14,7 @@
 //! persisted and reused for future connections.
 
 use crate::whatsapp::error::{WhatsAppError, WhatsAppResult};
-use crate::whatsapp::unofficial::{
-    DeviceIdentity, UnofficialClient,
-};
+use crate::whatsapp::unofficial::{DeviceIdentity, UnofficialClient};
 use chrono::Utc;
 use log::{debug, info, warn};
 use rand::RngCore;
@@ -195,9 +193,7 @@ impl PairingManager {
                     .read()
                     .await
                     .clone()
-                    .ok_or_else(|| {
-                        WhatsAppError::internal("No identity during QR refresh")
-                    })?;
+                    .ok_or_else(|| WhatsAppError::internal("No identity during QR refresh"))?;
 
                 let new_count = refresh_count + 1;
                 let qr = self.generate_qr(&identity, new_count)?;
@@ -207,14 +203,15 @@ impl PairingManager {
                     refresh_count: new_count,
                 };
 
-                debug!("QR refreshed (#{}/{})", new_count, self.config.max_qr_refreshes);
+                debug!(
+                    "QR refreshed (#{}/{})",
+                    new_count, self.config.max_qr_refreshes
+                );
                 Ok(Some(qr))
             }
-            _ => {
-                Err(WhatsAppError::internal(
-                    "Cannot refresh QR - not in QR scan state",
-                ))
-            }
+            _ => Err(WhatsAppError::internal(
+                "Cannot refresh QR - not in QR scan state",
+            )),
         }
     }
 
@@ -228,10 +225,7 @@ impl PairingManager {
         let mut rng = rand::thread_rng();
         let mut ref_bytes = [0u8; 16];
         rng.fill_bytes(&mut ref_bytes);
-        let ref_str = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &ref_bytes,
-        );
+        let ref_str = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, ref_bytes);
 
         let pub_key_b64 = base64::Engine::encode(
             &base64::engine::general_purpose::STANDARD,
@@ -245,10 +239,8 @@ impl PairingManager {
 
         let mut adv_secret = [0u8; 32];
         rng.fill_bytes(&mut adv_secret);
-        let adv_b64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &adv_secret,
-        );
+        let adv_b64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, adv_secret);
 
         let content = format!("{},{},{},{}", ref_str, pub_key_b64, id_key_b64, adv_b64);
 
@@ -256,10 +248,8 @@ impl PairingManager {
         let (png_bytes, png_base64) = if self.config.generate_qr_image {
             match self.render_qr_png(&content) {
                 Ok(bytes) => {
-                    let b64 = base64::Engine::encode(
-                        &base64::engine::general_purpose::STANDARD,
-                        &bytes,
-                    );
+                    let b64 =
+                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
                     (Some(bytes), Some(b64))
                 }
                 Err(e) => {
@@ -282,12 +272,11 @@ impl PairingManager {
 
     /// Render QR code content to a PNG byte vector.
     fn render_qr_png(&self, content: &str) -> WhatsAppResult<Vec<u8>> {
-        use image::{Luma, ImageBuffer};
+        use image::{ImageBuffer, Luma};
         use qrcode::QrCode;
 
-        let code = QrCode::new(content.as_bytes()).map_err(|e| {
-            WhatsAppError::internal(format!("QR code generation failed: {}", e))
-        })?;
+        let code = QrCode::new(content.as_bytes())
+            .map_err(|e| WhatsAppError::internal(format!("QR code generation failed: {}", e)))?;
 
         let size = self.config.qr_image_size;
         let module_count = code.width() as u32;
@@ -338,10 +327,7 @@ impl PairingManager {
     ///
     /// Requests a pairing code that the user must enter on their phone
     /// in WhatsApp → Linked Devices → Link with Phone Number.
-    pub async fn start_phone_pairing(
-        &self,
-        phone_number: &str,
-    ) -> WhatsAppResult<String> {
+    pub async fn start_phone_pairing(&self, phone_number: &str) -> WhatsAppResult<String> {
         *self.state.write().await = PairingState::Initializing;
 
         // Generate identity if not already present
@@ -357,9 +343,7 @@ impl PairingManager {
         // Generate an 8-digit pairing code
         let code = Self::generate_pairing_code();
 
-        *self.state.write().await = PairingState::WaitingForPairingCode {
-            code: code.clone(),
-        };
+        *self.state.write().await = PairingState::WaitingForPairingCode { code: code.clone() };
 
         Ok(code)
     }
@@ -395,9 +379,7 @@ impl PairingManager {
             .read()
             .await
             .clone()
-            .ok_or_else(|| {
-                WhatsAppError::internal("No identity at pairing confirmation")
-            })?;
+            .ok_or_else(|| WhatsAppError::internal("No identity at pairing confirmation"))?;
 
         *self.state.write().await = PairingState::Paired {
             phone_jid: phone_jid.to_string(),
@@ -498,14 +480,8 @@ mod tests {
 
     #[test]
     fn test_format_pairing_code() {
-        assert_eq!(
-            PairingManager::format_pairing_code("12345678"),
-            "1234-5678"
-        );
-        assert_eq!(
-            PairingManager::format_pairing_code("123"),
-            "123"
-        );
+        assert_eq!(PairingManager::format_pairing_code("12345678"), "1234-5678");
+        assert_eq!(PairingManager::format_pairing_code("123"), "123");
     }
 
     #[test]

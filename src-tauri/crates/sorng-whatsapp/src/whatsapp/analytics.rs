@@ -106,18 +106,22 @@ impl WaAnalytics {
         }]);
 
         if let Some(ref phones) = query.phone_numbers {
-            analytics_filter[0]["filter_params"]["phone_numbers"] =
-                serde_json::json!(phones);
+            analytics_filter[0]["filter_params"]["phone_numbers"] = serde_json::json!(phones);
         }
         if let Some(ref countries) = query.country_codes {
-            analytics_filter[0]["filter_params"]["country_codes"] =
-                serde_json::json!(countries);
+            analytics_filter[0]["filter_params"]["country_codes"] = serde_json::json!(countries);
         }
 
         let filter_str = analytics_filter.to_string();
         let resp = self
             .client
-            .get_with_params(&url, &[("fields", "analytics.filter_params"), ("analytics", &filter_str)])
+            .get_with_params(
+                &url,
+                &[
+                    ("fields", "analytics.filter_params"),
+                    ("analytics", &filter_str),
+                ],
+            )
             .await?;
 
         let data = &resp["analytics"]["data_points"];
@@ -125,7 +129,7 @@ impl WaAnalytics {
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|dp| parse_conversation_data_point(dp))
+                    .filter_map(parse_conversation_data_point)
                     .collect()
             })
             .unwrap_or_default();
@@ -172,7 +176,13 @@ impl WaAnalytics {
         let filter_str = filter.to_string();
         let resp = self
             .client
-            .get_with_params(&url, &[("fields", "template_analytics"), ("template_analytics", &filter_str)])
+            .get_with_params(
+                &url,
+                &[
+                    ("fields", "template_analytics"),
+                    ("template_analytics", &filter_str),
+                ],
+            )
             .await?;
 
         let analytics: Vec<WaTemplateAnalytics> = resp["template_analytics"]["data"]
@@ -181,9 +191,7 @@ impl WaAnalytics {
                 arr.iter()
                     .filter_map(|t| {
                         Some(WaTemplateAnalytics {
-                            template_id: t["template_id"]
-                                .as_str()?
-                                .to_string(),
+                            template_id: t["template_id"].as_str()?.to_string(),
                             template_name: t["template_name"]
                                 .as_str()
                                 .unwrap_or_default()
@@ -248,9 +256,7 @@ impl WaAnalytics {
             end: end.to_string(),
             granularity: WaAnalyticsGranularity::Daily,
             phone_numbers: None,
-            country_codes: Some(
-                country_codes.iter().map(|c| c.to_string()).collect(),
-            ),
+            country_codes: Some(country_codes.iter().map(|c| c.to_string()).collect()),
             template_ids: None,
         };
 
@@ -258,18 +264,14 @@ impl WaAnalytics {
     }
 }
 
-fn parse_conversation_data_point(
-    v: &serde_json::Value,
-) -> Option<WaConversationDataPoint> {
+fn parse_conversation_data_point(v: &serde_json::Value) -> Option<WaConversationDataPoint> {
     Some(WaConversationDataPoint {
         start: v["start"].as_str().unwrap_or_default().to_string(),
         end: v["end"].as_str().unwrap_or_default().to_string(),
         conversation: v["conversation"].as_u64().unwrap_or(0),
         cost: v["cost"].as_f64().unwrap_or(0.0),
         conversation_type: v["conversation_type"].as_str().map(String::from),
-        conversation_direction: v["conversation_direction"]
-            .as_str()
-            .map(String::from),
+        conversation_direction: v["conversation_direction"].as_str().map(String::from),
         country: v["country"].as_str().map(String::from),
     })
 }

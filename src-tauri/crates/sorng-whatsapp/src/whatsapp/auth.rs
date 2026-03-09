@@ -32,11 +32,7 @@ pub struct WaAuthManager {
 
 impl WaAuthManager {
     /// Create a new auth manager.
-    pub fn new(
-        client: CloudApiClient,
-        app_id: Option<String>,
-        app_secret: Option<String>,
-    ) -> Self {
+    pub fn new(client: CloudApiClient, app_id: Option<String>, app_secret: Option<String>) -> Self {
         Self {
             client,
             app_id,
@@ -58,10 +54,7 @@ impl WaAuthManager {
             WhatsAppError::internal("app_secret required for token exchange".to_string())
         })?;
 
-        let url = format!(
-            "{}/oauth/access_token",
-            self.client.config().base_url
-        );
+        let url = format!("{}/oauth/access_token", self.client.config().base_url);
 
         let resp = self
             .client
@@ -122,16 +115,11 @@ impl WaAuthManager {
         let token = resp["access_token"]
             .as_str()
             .ok_or_else(|| {
-                WhatsAppError::internal(
-                    "No access_token in system user token response".to_string(),
-                )
+                WhatsAppError::internal("No access_token in system user token response".to_string())
             })?
             .to_string();
 
-        info!(
-            "Generated system user token for user {}",
-            system_user_id
-        );
+        info!("Generated system user token for user {}", system_user_id);
         Ok(token)
     }
 
@@ -142,10 +130,7 @@ impl WaAuthManager {
 
         let input_token_param = token;
 
-        let url = format!(
-            "{}/debug_token",
-            self.client.config().base_url
-        );
+        let url = format!("{}/debug_token", self.client.config().base_url);
 
         let access_token = if let (Some(id), Some(secret)) = (app_id, app_secret) {
             format!("{}|{}", id, secret)
@@ -166,15 +151,13 @@ impl WaAuthManager {
 
         let data = &resp["data"];
 
-        let expires_at = data["expires_at"]
-            .as_i64()
-            .and_then(|ts| {
-                if ts == 0 {
-                    None // never expires
-                } else {
-                    DateTime::from_timestamp(ts, 0)
-                }
-            });
+        let expires_at = data["expires_at"].as_i64().and_then(|ts| {
+            if ts == 0 {
+                None // never expires
+            } else {
+                DateTime::from_timestamp(ts, 0)
+            }
+        });
 
         let scopes = data["scopes"]
             .as_array()
@@ -233,10 +216,7 @@ impl WaAuthManager {
     }
 
     /// Set up two-step verification PIN for the phone number.
-    pub async fn set_two_step_verification_pin(
-        &self,
-        pin: &str,
-    ) -> WhatsAppResult<()> {
+    pub async fn set_two_step_verification_pin(&self, pin: &str) -> WhatsAppResult<()> {
         if pin.len() != 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
             return Err(WhatsAppError::internal(
                 "Two-step verification PIN must be exactly 6 digits".to_string(),
@@ -256,8 +236,7 @@ impl WaAuthManager {
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
 
-        let mut mac =
-            HmacSha256::new_from_slice(app_secret.as_bytes()).expect("HMAC init");
+        let mut mac = HmacSha256::new_from_slice(app_secret.as_bytes()).expect("HMAC init");
         mac.update(access_token.as_bytes());
         hex::encode(mac.finalize().into_bytes())
     }
@@ -266,11 +245,7 @@ impl WaAuthManager {
     ///
     /// The `x-hub-signature-256` header value and the raw body are
     /// compared via HMAC-SHA256 using the app secret.
-    pub fn verify_webhook_signature(
-        app_secret: &str,
-        signature_header: &str,
-        body: &[u8],
-    ) -> bool {
+    pub fn verify_webhook_signature(app_secret: &str, signature_header: &str, body: &[u8]) -> bool {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
@@ -316,7 +291,9 @@ mod tests {
 
         assert!(WaAuthManager::verify_webhook_signature(secret, &sig, body));
         assert!(!WaAuthManager::verify_webhook_signature(
-            secret, "sha256=bad", body
+            secret,
+            "sha256=bad",
+            body
         ));
     }
 

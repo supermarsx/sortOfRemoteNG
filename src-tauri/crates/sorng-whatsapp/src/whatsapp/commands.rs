@@ -33,9 +33,7 @@ pub async fn wa_configure(
 
 /// Configure the unofficial WA Web client.
 #[tauri::command]
-pub async fn wa_configure_unofficial(
-    state: State<'_, WhatsAppServiceState>,
-) -> Result<(), String> {
+pub async fn wa_configure_unofficial(state: State<'_, WhatsAppServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.configure_unofficial(None);
     Ok(())
@@ -43,9 +41,7 @@ pub async fn wa_configure_unofficial(
 
 /// Check if Cloud API is configured.
 #[tauri::command]
-pub async fn wa_is_configured(
-    state: State<'_, WhatsAppServiceState>,
-) -> Result<bool, String> {
+pub async fn wa_is_configured(state: State<'_, WhatsAppServiceState>) -> Result<bool, String> {
     let svc = state.lock().await;
     Ok(svc.is_cloud_configured())
 }
@@ -67,7 +63,12 @@ pub async fn wa_send_text(
     let messaging = map_err!(svc.messaging())?;
     map_err!(
         messaging
-            .send_text(&to, &body, preview_url.unwrap_or(false), reply_to.as_deref())
+            .send_text(
+                &to,
+                &body,
+                preview_url.unwrap_or(false),
+                reply_to.as_deref()
+            )
             .await
     )
 }
@@ -162,7 +163,12 @@ pub async fn wa_send_audio(
     let messaging = map_err!(svc.messaging())?;
     map_err!(
         messaging
-            .send_audio(&to, media_id.as_deref(), link.as_deref(), reply_to.as_deref())
+            .send_audio(
+                &to,
+                media_id.as_deref(),
+                link.as_deref(),
+                reply_to.as_deref()
+            )
             .await
     )
 }
@@ -181,7 +187,14 @@ pub async fn wa_send_location(
     let messaging = map_err!(svc.messaging())?;
     map_err!(
         messaging
-            .send_location(&to, latitude, longitude, name.as_deref(), address.as_deref(), None)
+            .send_location(
+                &to,
+                latitude,
+                longitude,
+                name.as_deref(),
+                address.as_deref(),
+                None
+            )
             .await
     )
 }
@@ -209,7 +222,11 @@ pub async fn wa_send_template(
 ) -> Result<WaSendMessageResponse, String> {
     let svc = state.lock().await;
     let messaging = map_err!(svc.messaging())?;
-    map_err!(messaging.send_template(&to, &template, reply_to.as_deref()).await)
+    map_err!(
+        messaging
+            .send_template(&to, &template, reply_to.as_deref())
+            .await
+    )
 }
 
 /// Mark a message as read.
@@ -238,11 +255,8 @@ pub async fn wa_upload_media(
     let svc = state.lock().await;
     let media = map_err!(svc.media())?;
 
-    let data = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        &data_base64,
-    )
-    .map_err(|e| format!("Base64 decode error: {}", e))?;
+    let data = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &data_base64)
+        .map_err(|e| format!("Base64 decode error: {}", e))?;
 
     let result = map_err!(media.upload(data, &mime_type, filename.as_deref()).await)?;
     Ok(result.id)
@@ -282,10 +296,7 @@ pub async fn wa_download_media(
     let svc = state.lock().await;
     let media = map_err!(svc.media())?;
     let (bytes, mime) = map_err!(media.download(&media_id).await)?;
-    let b64 = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        &bytes,
-    );
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
     Ok((b64, mime))
 }
 
@@ -355,10 +366,7 @@ pub async fn wa_check_contact(
 
 /// Generate a wa.me link.
 #[tauri::command]
-pub async fn wa_me_link(
-    phone_number: String,
-    message: Option<String>,
-) -> Result<String, String> {
+pub async fn wa_me_link(phone_number: String, message: Option<String>) -> Result<String, String> {
     Ok(crate::whatsapp::contacts::WaContacts::wa_me_link(
         &phone_number,
         message.as_deref(),
@@ -454,8 +462,7 @@ pub async fn wa_webhook_process(
 ) -> Result<serde_json::Value, String> {
     let svc = state.lock().await;
     let webhooks = map_err!(svc.webhooks())?;
-    let events =
-        map_err!(webhooks.process_webhook(signature.as_deref(), &raw_body))?;
+    let events = map_err!(webhooks.process_webhook(signature.as_deref(), &raw_body))?;
     serde_json::to_value(events).map_err(|e| e.to_string())
 }
 
@@ -478,9 +485,7 @@ pub async fn wa_list_sessions(
 
 /// Connect to WhatsApp Web (unofficial).
 #[tauri::command]
-pub async fn wa_unofficial_connect(
-    state: State<'_, WhatsAppServiceState>,
-) -> Result<(), String> {
+pub async fn wa_unofficial_connect(state: State<'_, WhatsAppServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     let client = map_err!(svc.unofficial())?;
     map_err!(client.connect().await)
@@ -567,9 +572,7 @@ pub async fn wa_pairing_state(
 
 /// Cancel pairing.
 #[tauri::command]
-pub async fn wa_pairing_cancel(
-    state: State<'_, WhatsAppServiceState>,
-) -> Result<(), String> {
+pub async fn wa_pairing_cancel(state: State<'_, WhatsAppServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     let pairing = map_err!(svc.pairing())?;
     pairing.cancel().await;

@@ -709,11 +709,17 @@ impl WaSupportedMediaType {
             Self::AudioOgg => "audio/ogg",
             Self::DocumentPdf => "application/pdf",
             Self::DocumentDoc => "application/msword",
-            Self::DocumentDocx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            Self::DocumentDocx => {
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            }
             Self::DocumentXls => "application/vnd.ms-excel",
-            Self::DocumentXlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Self::DocumentXlsx => {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
             Self::DocumentPpt => "application/vnd.ms-powerpoint",
-            Self::DocumentPptx => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            Self::DocumentPptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
             Self::DocumentTxt => "text/plain",
             Self::StickerWebp => "image/webp",
         }
@@ -724,11 +730,17 @@ impl WaSupportedMediaType {
         match self {
             Self::ImageJpeg | Self::ImagePng | Self::ImageWebp => 5 * 1024 * 1024,
             Self::VideoMp4 | Self::Video3gpp => 16 * 1024 * 1024,
-            Self::AudioAac | Self::AudioMp4 | Self::AudioMpeg
-            | Self::AudioAmr | Self::AudioOgg => 16 * 1024 * 1024,
-            Self::DocumentPdf | Self::DocumentDoc | Self::DocumentDocx
-            | Self::DocumentXls | Self::DocumentXlsx | Self::DocumentPpt
-            | Self::DocumentPptx | Self::DocumentTxt => 100 * 1024 * 1024,
+            Self::AudioAac | Self::AudioMp4 | Self::AudioMpeg | Self::AudioAmr | Self::AudioOgg => {
+                16 * 1024 * 1024
+            }
+            Self::DocumentPdf
+            | Self::DocumentDoc
+            | Self::DocumentDocx
+            | Self::DocumentXls
+            | Self::DocumentXlsx
+            | Self::DocumentPpt
+            | Self::DocumentPptx
+            | Self::DocumentTxt => 100 * 1024 * 1024,
             Self::StickerWebp => 500 * 1024,
         }
     }
@@ -1349,6 +1361,7 @@ pub struct WaCursors {
 /// Events emitted to the Tauri frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[allow(clippy::large_enum_variant)]
 pub enum WaEvent {
     MessageReceived {
         session_id: String,
@@ -1406,7 +1419,12 @@ impl WaSendMessageRequest {
     }
 
     /// Build a document message by media ID.
-    pub fn document(to: &str, media_id: &str, filename: Option<&str>, caption: Option<&str>) -> Self {
+    pub fn document(
+        to: &str,
+        media_id: &str,
+        filename: Option<&str>,
+        caption: Option<&str>,
+    ) -> Self {
         Self {
             to: to.to_string(),
             msg_type: WaMessageType::Document,
@@ -1421,7 +1439,13 @@ impl WaSendMessageRequest {
     }
 
     /// Build a location message.
-    pub fn location(to: &str, lat: f64, lon: f64, name: Option<&str>, address: Option<&str>) -> Self {
+    pub fn location(
+        to: &str,
+        lat: f64,
+        lon: f64,
+        name: Option<&str>,
+        address: Option<&str>,
+    ) -> Self {
         Self {
             to: to.to_string(),
             msg_type: WaMessageType::Location,
@@ -1532,10 +1556,22 @@ mod tests {
     #[test]
     fn test_media_type_constraints() {
         assert_eq!(WaSupportedMediaType::ImageJpeg.mime_type(), "image/jpeg");
-        assert_eq!(WaSupportedMediaType::ImageJpeg.max_size_bytes(), 5 * 1024 * 1024);
-        assert_eq!(WaSupportedMediaType::VideoMp4.max_size_bytes(), 16 * 1024 * 1024);
-        assert_eq!(WaSupportedMediaType::DocumentPdf.max_size_bytes(), 100 * 1024 * 1024);
-        assert_eq!(WaSupportedMediaType::StickerWebp.max_size_bytes(), 500 * 1024);
+        assert_eq!(
+            WaSupportedMediaType::ImageJpeg.max_size_bytes(),
+            5 * 1024 * 1024
+        );
+        assert_eq!(
+            WaSupportedMediaType::VideoMp4.max_size_bytes(),
+            16 * 1024 * 1024
+        );
+        assert_eq!(
+            WaSupportedMediaType::DocumentPdf.max_size_bytes(),
+            100 * 1024 * 1024
+        );
+        assert_eq!(
+            WaSupportedMediaType::StickerWebp.max_size_bytes(),
+            500 * 1024
+        );
     }
 
     #[test]

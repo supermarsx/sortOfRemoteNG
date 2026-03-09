@@ -24,10 +24,7 @@ impl WaMessaging {
 
     /// Build the JSON envelope common to every outbound message and POST
     /// it to `/{phone_number_id}/messages`.
-    async fn send_raw(
-        &self,
-        payload: serde_json::Value,
-    ) -> WhatsAppResult<WaSendMessageResponse> {
+    async fn send_raw(&self, payload: serde_json::Value) -> WhatsAppResult<WaSendMessageResponse> {
         let url = self.client.phone_url("messages");
         let resp = self.client.post_json(&url, &payload).await?;
 
@@ -51,7 +48,10 @@ impl WaMessaging {
                         .collect()
                 })
                 .unwrap_or_default(),
-            messages: vec![WaResponseMessage { id: message_id, message_status: None }],
+            messages: vec![WaResponseMessage {
+                id: message_id,
+                message_status: None,
+            }],
         })
     }
 
@@ -149,6 +149,7 @@ impl WaMessaging {
     }
 
     /// Generic media sender.
+    #[allow(clippy::too_many_arguments)]
     async fn send_media(
         &self,
         kind: &str,
@@ -173,7 +174,7 @@ impl WaMessaging {
             media_obj["filename"] = json!(f);
         }
 
-        if media_obj.as_object().map_or(true, |o| o.is_empty()) {
+        if media_obj.as_object().is_none_or(|o| o.is_empty()) {
             return Err(WhatsAppError::internal(
                 "Either media_id or link is required".to_string(),
             ));
@@ -287,9 +288,8 @@ impl WaMessaging {
         interactive: &WaInteractivePayload,
         reply_to: Option<&str>,
     ) -> WhatsAppResult<WaSendMessageResponse> {
-        let interactive_json = serde_json::to_value(interactive).map_err(|e| {
-            WhatsAppError::internal(format!("Serialize interactive: {}", e))
-        })?;
+        let interactive_json = serde_json::to_value(interactive)
+            .map_err(|e| WhatsAppError::internal(format!("Serialize interactive: {}", e)))?;
 
         let mut payload = json!({
             "messaging_product": "whatsapp",
@@ -354,6 +354,7 @@ impl WaMessaging {
     }
 
     /// Convenience: send a list message (up to 10 sections).
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_list(
         &self,
         to: &str,
@@ -406,9 +407,8 @@ impl WaMessaging {
         template: &WaTemplatePayload,
         reply_to: Option<&str>,
     ) -> WhatsAppResult<WaSendMessageResponse> {
-        let tmpl_json = serde_json::to_value(template).map_err(|e| {
-            WhatsAppError::internal(format!("Serialize template: {}", e))
-        })?;
+        let tmpl_json = serde_json::to_value(template)
+            .map_err(|e| WhatsAppError::internal(format!("Serialize template: {}", e)))?;
 
         let mut payload = json!({
             "messaging_product": "whatsapp",
@@ -441,11 +441,7 @@ impl WaMessaging {
     // ─── Typing indicator ────────────────────────────────────────────
 
     /// Send a typing indicator (available since v21.0 beta).
-    pub async fn send_typing(
-        &self,
-        to: &str,
-        duration_seconds: Option<u32>,
-    ) -> WhatsAppResult<()> {
+    pub async fn send_typing(&self, to: &str, duration_seconds: Option<u32>) -> WhatsAppResult<()> {
         let url = self.client.phone_url("messages");
         let mut body = json!({
             "messaging_product": "whatsapp",
@@ -465,10 +461,7 @@ impl WaMessaging {
     /// Send a message to multiple recipients (sequential fan-out).
     ///
     /// Returns aggregated results; failures do not stop the batch.
-    pub async fn send_bulk(
-        &self,
-        request: &WaBulkMessageRequest,
-    ) -> WaBulkMessageResult {
+    pub async fn send_bulk(&self, request: &WaBulkMessageRequest) -> WaBulkMessageResult {
         let mut entries = Vec::with_capacity(request.recipients.len());
         let mut succeeded = 0u32;
         let mut failed = 0u32;
@@ -488,9 +481,10 @@ impl WaMessaging {
                     entries.push(WaBulkSendEntry {
                         recipient: recipient.clone(),
                         success,
-                        message_id: res.as_ref().ok().and_then(|r| {
-                            r.messages.first().map(|m| m.id.clone())
-                        }),
+                        message_id: res
+                            .as_ref()
+                            .ok()
+                            .and_then(|r| r.messages.first().map(|m| m.id.clone())),
                         error: res.err().map(|e| e.message.clone()),
                     });
                 }
@@ -533,16 +527,18 @@ impl WaMessaging {
 
         match &msg.msg_type {
             WaMessageType::Text => {
-                let text = msg.text.as_ref().ok_or_else(|| {
-                    WhatsAppError::internal("text payload required".to_string())
-                })?;
+                let text = msg
+                    .text
+                    .as_ref()
+                    .ok_or_else(|| WhatsAppError::internal("text payload required".to_string()))?;
                 payload["type"] = json!("text");
                 payload["text"] = serde_json::to_value(text).unwrap_or_default();
             }
             WaMessageType::Image => {
-                let image = msg.image.as_ref().ok_or_else(|| {
-                    WhatsAppError::internal("image payload required".to_string())
-                })?;
+                let image = msg
+                    .image
+                    .as_ref()
+                    .ok_or_else(|| WhatsAppError::internal("image payload required".to_string()))?;
                 payload["type"] = json!("image");
                 payload["image"] = serde_json::to_value(image).unwrap_or_default();
             }
@@ -586,30 +582,34 @@ impl WaMessaging {
 
         match &msg.msg_type {
             WaMessageType::Text => {
-                let text = msg.text.as_ref().ok_or_else(|| {
-                    WhatsAppError::internal("text payload required".to_string())
-                })?;
+                let text = msg
+                    .text
+                    .as_ref()
+                    .ok_or_else(|| WhatsAppError::internal("text payload required".to_string()))?;
                 payload["type"] = json!("text");
                 payload["text"] = serde_json::to_value(text).unwrap_or_default();
             }
             WaMessageType::Image => {
-                let media = msg.image.as_ref().ok_or_else(|| {
-                    WhatsAppError::internal("image payload required".to_string())
-                })?;
+                let media = msg
+                    .image
+                    .as_ref()
+                    .ok_or_else(|| WhatsAppError::internal("image payload required".to_string()))?;
                 payload["type"] = json!("image");
                 payload["image"] = serde_json::to_value(media).unwrap_or_default();
             }
             WaMessageType::Video => {
-                let media = msg.video.as_ref().ok_or_else(|| {
-                    WhatsAppError::internal("video payload required".to_string())
-                })?;
+                let media = msg
+                    .video
+                    .as_ref()
+                    .ok_or_else(|| WhatsAppError::internal("video payload required".to_string()))?;
                 payload["type"] = json!("video");
                 payload["video"] = serde_json::to_value(media).unwrap_or_default();
             }
             WaMessageType::Audio => {
-                let media = msg.audio.as_ref().ok_or_else(|| {
-                    WhatsAppError::internal("audio payload required".to_string())
-                })?;
+                let media = msg
+                    .audio
+                    .as_ref()
+                    .ok_or_else(|| WhatsAppError::internal("audio payload required".to_string()))?;
                 payload["type"] = json!("audio");
                 payload["audio"] = serde_json::to_value(media).unwrap_or_default();
             }
@@ -693,9 +693,7 @@ mod tests {
         let m = WaMessaging::new(client);
 
         let msg = WaSendMessageRequest::text("1234567890", "Hello!");
-        let payload = m
-            .build_send_payload(&msg, "1234567890")
-            .unwrap();
+        let payload = m.build_send_payload(&msg, "1234567890").unwrap();
 
         assert_eq!(payload["type"], "text");
         assert_eq!(payload["to"], "1234567890");
