@@ -5,12 +5,34 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SshConfig { pub host: String, pub port: u16, pub username: String, pub auth: SshAuth, pub timeout_secs: u64 }
+pub struct SshConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: SshAuth,
+    pub timeout_secs: u64,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum SshAuth { Password { password: String }, PrivateKey { key_path: String, passphrase: Option<String> }, Agent }
+pub enum SshAuth {
+    Password {
+        password: String,
+    },
+    PrivateKey {
+        key_path: String,
+        passphrase: Option<String>,
+    },
+    Agent,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileSharingHost { pub id: String, pub name: String, pub ssh: Option<SshConfig>, pub use_sudo: bool, pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc> }
+pub struct FileSharingHost {
+    pub id: String,
+    pub name: String,
+    pub ssh: Option<SshConfig>,
+    pub use_sudo: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
 // ─── NFS ────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,9 +46,17 @@ pub struct NfsClient {
     pub options: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NfsServerConfig { pub nfs_version: Option<String>, pub threads: Option<u32>, pub exports: Vec<NfsExport> }
+pub struct NfsServerConfig {
+    pub nfs_version: Option<String>,
+    pub threads: Option<u32>,
+    pub exports: Vec<NfsExport>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NfsActiveClient { pub client_ip: String, pub export_path: String, pub nfs_version: String }
+pub struct NfsActiveClient {
+    pub client_ip: String,
+    pub export_path: String,
+    pub nfs_version: String,
+}
 
 // ─── Samba ──────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,17 +88,34 @@ pub struct SambaShare {
     pub settings: HashMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SambaUser { pub username: String, pub sid: Option<String>, pub flags: Vec<String> }
+pub struct SambaUser {
+    pub username: String,
+    pub sid: Option<String>,
+    pub flags: Vec<String>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SambaConnection { pub pid: u32, pub username: String, pub group: String, pub machine: String, pub share: Option<String> }
+pub struct SambaConnection {
+    pub pid: u32,
+    pub username: String,
+    pub group: String,
+    pub machine: String,
+    pub share: Option<String>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SambaFullConfig { pub global: SambaGlobalConfig, pub shares: Vec<SambaShare> }
+pub struct SambaFullConfig {
+    pub global: SambaGlobalConfig,
+    pub shares: Vec<SambaShare>,
+}
 
 // ─── Health ─────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSharingHealthCheck {
-    pub nfs_running: bool, pub samba_running: bool,
-    pub nfs_exports_count: u32, pub samba_shares_count: u32,
-    pub active_nfs_clients: u32, pub active_samba_connections: u32,
-    pub warnings: Vec<String>, pub checked_at: DateTime<Utc>,
+    pub nfs_running: bool,
+    pub samba_running: bool,
+    pub nfs_exports_count: u32,
+    pub samba_shares_count: u32,
+    pub active_nfs_clients: u32,
+    pub active_samba_connections: u32,
+    pub warnings: Vec<String>,
+    pub checked_at: DateTime<Utc>,
 }
