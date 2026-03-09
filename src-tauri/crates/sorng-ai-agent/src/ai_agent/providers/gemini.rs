@@ -6,8 +6,8 @@ use log::{info, warn};
 use reqwest::Client;
 use uuid::Uuid;
 
-use crate::ai_agent::types::*;
 use super::LlmProvider;
+use crate::ai_agent::types::*;
 
 const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -21,9 +21,13 @@ pub struct GeminiProvider {
 
 impl GeminiProvider {
     pub fn new(config: &ProviderConfig) -> Result<Self, String> {
-        let api_key = config.api_key.clone()
+        let api_key = config
+            .api_key
+            .clone()
             .ok_or("Google Gemini requires an API key")?;
-        let base_url = config.base_url.clone()
+        let base_url = config
+            .base_url
+            .clone()
             .unwrap_or_else(|| GEMINI_API_BASE.to_string());
 
         let client = Client::builder()
@@ -40,7 +44,10 @@ impl GeminiProvider {
         })
     }
 
-    fn build_contents(&self, messages: &[ChatMessage]) -> (Option<serde_json::Value>, Vec<serde_json::Value>) {
+    fn build_contents(
+        &self,
+        messages: &[ChatMessage],
+    ) -> (Option<serde_json::Value>, Vec<serde_json::Value>) {
         let mut system_instruction = None;
         let mut contents = Vec::new();
 
@@ -60,18 +67,22 @@ impl GeminiProvider {
                 _ => "user",
             };
 
-            let parts: Vec<serde_json::Value> = msg.content.iter().map(|b| match b {
-                ContentBlock::Text { text } => serde_json::json!({ "text": text }),
-                ContentBlock::Image { data, media_type } => {
-                    let mt = media_type.as_deref().unwrap_or("image/png");
-                    serde_json::json!({
-                        "inline_data": {
-                            "mime_type": mt,
-                            "data": data,
-                        }
-                    })
-                }
-            }).collect();
+            let parts: Vec<serde_json::Value> = msg
+                .content
+                .iter()
+                .map(|b| match b {
+                    ContentBlock::Text { text } => serde_json::json!({ "text": text }),
+                    ContentBlock::Image { data, media_type } => {
+                        let mt = media_type.as_deref().unwrap_or("image/png");
+                        serde_json::json!({
+                            "inline_data": {
+                                "mime_type": mt,
+                                "data": data,
+                            }
+                        })
+                    }
+                })
+                .collect();
 
             contents.push(serde_json::json!({
                 "role": role,
@@ -83,16 +94,26 @@ impl GeminiProvider {
     }
 
     fn build_tools_payload(&self, tools: &[ToolDefinition]) -> serde_json::Value {
-        let fns: Vec<serde_json::Value> = tools.iter().map(|t| serde_json::json!({
-            "name": t.name,
-            "description": t.description,
-            "parameters": t.parameters,
-        })).collect();
+        let fns: Vec<serde_json::Value> = tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                })
+            })
+            .collect();
         serde_json::json!([{ "function_declarations": fns }])
     }
 
-    fn parse_response(&self, body: &serde_json::Value, model: &str) -> Result<ChatResponse, String> {
-        let candidate = body["candidates"].get(0)
+    fn parse_response(
+        &self,
+        body: &serde_json::Value,
+        model: &str,
+    ) -> Result<ChatResponse, String> {
+        let candidate = body["candidates"]
+            .get(0)
             .ok_or("No candidates in Gemini response")?;
         let content = &candidate["content"];
 
@@ -102,7 +123,9 @@ impl GeminiProvider {
         if let Some(parts) = content["parts"].as_array() {
             for part in parts {
                 if let Some(text) = part["text"].as_str() {
-                    text_parts.push(ContentBlock::Text { text: text.to_string() });
+                    text_parts.push(ContentBlock::Text {
+                        text: text.to_string(),
+                    });
                 }
                 if let Some(fc) = part.get("functionCall") {
                     tool_calls.push(ToolCall {
@@ -209,7 +232,10 @@ impl LlmProvider for GeminiProvider {
         params: &InferenceParams,
         tools: &[ToolDefinition],
     ) -> Result<ChatResponse, String> {
-        let url = format!("{}/models/{}:generateContent?key={}", self.base_url, model, self.api_key);
+        let url = format!(
+            "{}/models/{}:generateContent?key={}",
+            self.base_url, model, self.api_key
+        );
         let start = std::time::Instant::now();
 
         let (system_instruction, contents) = self.build_contents(messages);
@@ -239,13 +265,16 @@ impl LlmProvider for GeminiProvider {
                 info!("Gemini retry attempt {}/{}", attempt, self.max_retries);
                 tokio::time::sleep(std::time::Duration::from_millis(
                     self.retry_delay_ms * (attempt as u64),
-                )).await;
+                ))
+                .await;
             }
 
             match self.client.post(&url).json(&body).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        let resp_body: serde_json::Value = resp.json().await
+                        let resp_body: serde_json::Value = resp
+                            .json()
+                            .await
                             .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
                         let mut result = self.parse_response(&resp_body, model)?;
                         result.latency_ms = start.elapsed().as_millis() as u64;
@@ -278,7 +307,10 @@ impl LlmProvider for GeminiProvider {
         tools: &[ToolDefinition],
         request_id: &str,
     ) -> Result<tokio::sync::mpsc::Receiver<StreamEvent>, String> {
-        let url = format!("{}/models/{}:streamGenerateContent?key={}&alt=sse", self.base_url, model, self.api_key);
+        let url = format!(
+            "{}/models/{}:streamGenerateContent?key={}&alt=sse",
+            self.base_url, model, self.api_key
+        );
         let (tx, rx) = tokio::sync::mpsc::channel(256);
         let request_id = request_id.to_string();
         let model_str = model.to_string();
@@ -304,28 +336,34 @@ impl LlmProvider for GeminiProvider {
         let client = self.client.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
-            let _ = tx.send(StreamEvent::Start {
-                request_id: request_id.clone(),
-                model: model_str,
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Start {
+                    request_id: request_id.clone(),
+                    model: model_str,
+                })
+                .await;
 
             let resp = match client.post(&url).json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    let _ = tx.send(StreamEvent::Error {
-                        request_id,
-                        error: format!("Request failed: {}", e),
-                    }).await;
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            request_id,
+                            error: format!("Request failed: {}", e),
+                        })
+                        .await;
                     return;
                 }
             };
 
             if !resp.status().is_success() {
                 let err = resp.text().await.unwrap_or_default();
-                let _ = tx.send(StreamEvent::Error {
-                    request_id,
-                    error: format!("API error: {}", err),
-                }).await;
+                let _ = tx
+                    .send(StreamEvent::Error {
+                        request_id,
+                        error: format!("API error: {}", err),
+                    })
+                    .await;
                 return;
             }
 
@@ -339,10 +377,12 @@ impl LlmProvider for GeminiProvider {
                 let chunk = match chunk_result {
                     Ok(c) => c,
                     Err(e) => {
-                        let _ = tx.send(StreamEvent::Error {
-                            request_id: request_id.clone(),
-                            error: format!("Stream error: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(StreamEvent::Error {
+                                request_id: request_id.clone(),
+                                error: format!("Stream error: {}", e),
+                            })
+                            .await;
                         return;
                     }
                 };
@@ -361,11 +401,13 @@ impl LlmProvider for GeminiProvider {
                                         for part in parts {
                                             if let Some(text) = part["text"].as_str() {
                                                 accumulated.push_str(text);
-                                                let _ = tx.send(StreamEvent::Delta {
-                                                    request_id: request_id.clone(),
-                                                    content: text.to_string(),
-                                                    accumulated: accumulated.clone(),
-                                                }).await;
+                                                let _ = tx
+                                                    .send(StreamEvent::Delta {
+                                                        request_id: request_id.clone(),
+                                                        content: text.to_string(),
+                                                        accumulated: accumulated.clone(),
+                                                    })
+                                                    .await;
                                             }
                                         }
                                     }
@@ -373,21 +415,26 @@ impl LlmProvider for GeminiProvider {
                             }
 
                             if let Some(u) = parsed.get("usageMetadata") {
-                                usage.prompt_tokens = u["promptTokenCount"].as_u64().unwrap_or(0) as u32;
-                                usage.completion_tokens = u["candidatesTokenCount"].as_u64().unwrap_or(0) as u32;
-                                usage.total_tokens = u["totalTokenCount"].as_u64().unwrap_or(0) as u32;
+                                usage.prompt_tokens =
+                                    u["promptTokenCount"].as_u64().unwrap_or(0) as u32;
+                                usage.completion_tokens =
+                                    u["candidatesTokenCount"].as_u64().unwrap_or(0) as u32;
+                                usage.total_tokens =
+                                    u["totalTokenCount"].as_u64().unwrap_or(0) as u32;
                             }
                         }
                     }
                 }
             }
 
-            let _ = tx.send(StreamEvent::Done {
-                request_id,
-                finish_reason: FinishReason::Stop,
-                usage,
-                latency_ms: start.elapsed().as_millis() as u64,
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Done {
+                    request_id,
+                    finish_reason: FinishReason::Stop,
+                    usage,
+                    latency_ms: start.elapsed().as_millis() as u64,
+                })
+                .await;
         });
 
         Ok(rx)
@@ -400,16 +447,29 @@ impl LlmProvider for GeminiProvider {
         _dimensions: Option<usize>,
     ) -> Result<EmbeddingResponse, String> {
         let model = model.unwrap_or("text-embedding-004");
-        let url = format!("{}/models/{}:batchEmbedContents?key={}", self.base_url, model, self.api_key);
+        let url = format!(
+            "{}/models/{}:batchEmbedContents?key={}",
+            self.base_url, model, self.api_key
+        );
 
-        let requests: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::json!({
-            "model": format!("models/{}", model),
-            "content": { "parts": [{ "text": t }] }
-        })).collect();
+        let requests: Vec<serde_json::Value> = texts
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "model": format!("models/{}", model),
+                    "content": { "parts": [{ "text": t }] }
+                })
+            })
+            .collect();
 
         let body = serde_json::json!({ "requests": requests });
 
-        let resp = self.client.post(&url).json(&body).send().await
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
             .map_err(|e| format!("Gemini embedding request failed: {}", e))?;
 
         if !resp.status().is_success() {
@@ -417,14 +477,17 @@ impl LlmProvider for GeminiProvider {
             return Err(format!("Gemini embedding API error: {}", err));
         }
 
-        let resp_body: serde_json::Value = resp.json().await
+        let resp_body: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse Gemini embedding response: {}", e))?;
 
         let mut embeddings = Vec::new();
         if let Some(emb_list) = resp_body["embeddings"].as_array() {
             for emb in emb_list {
                 if let Some(values) = emb["values"].as_array() {
-                    let vec: Vec<f32> = values.iter()
+                    let vec: Vec<f32> = values
+                        .iter()
                         .filter_map(|v| v.as_f64().map(|f| f as f32))
                         .collect();
                     embeddings.push(vec);
@@ -445,7 +508,10 @@ impl LlmProvider for GeminiProvider {
     async fn health_check(&self) -> Result<u64, String> {
         let url = format!("{}/models?key={}", self.base_url, self.api_key);
         let start = std::time::Instant::now();
-        self.client.get(&url).send().await
+        self.client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| format!("Health check failed: {}", e))?;
         Ok(start.elapsed().as_millis() as u64)
     }

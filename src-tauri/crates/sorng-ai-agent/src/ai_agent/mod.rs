@@ -3,28 +3,28 @@
 //! Sub-modules provide the individual capabilities which are composed by the
 //! [`service::AiAgentService`] and exposed as Tauri commands.
 
-pub mod types;
-pub mod service;
-pub mod commands;
-pub mod providers;
-pub mod engine;
-pub mod tools;
-pub mod conversation;
-pub mod memory;
-pub mod streaming;
-pub mod tokens;
-pub mod templates;
-pub mod rag;
-pub mod embeddings;
-pub mod workflows;
 pub mod code_assist;
+pub mod commands;
+pub mod conversation;
+pub mod embeddings;
+pub mod engine;
+pub mod memory;
+pub mod providers;
+pub mod rag;
+pub mod service;
+pub mod streaming;
+pub mod templates;
+pub mod tokens;
+pub mod tools;
+pub mod types;
+pub mod workflows;
 
 // ── Re-exports ───────────────────────────────────────────────────────────────
 
-pub use types::*;
+pub use commands::*;
 pub use service::AiAgentService;
 pub use types::AiAgentServiceState;
-pub use commands::*;
+pub use types::*;
 
 // ── Global state ─────────────────────────────────────────────────────────────
 

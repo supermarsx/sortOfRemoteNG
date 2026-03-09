@@ -1,7 +1,7 @@
 // ── Memory Management ─────────────────────────────────────────────────────────
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::types::*;
@@ -15,7 +15,10 @@ pub struct MemoryStore {
 
 impl MemoryStore {
     pub fn new(config: MemoryConfig) -> Self {
-        Self { entries: Vec::new(), config }
+        Self {
+            entries: Vec::new(),
+            config,
+        }
     }
 
     pub fn default_config() -> MemoryConfig {
@@ -28,17 +31,26 @@ impl MemoryStore {
         }
     }
 
-    pub fn config(&self) -> &MemoryConfig { &self.config }
-    pub fn update_config(&mut self, config: MemoryConfig) { self.config = config; }
+    pub fn config(&self) -> &MemoryConfig {
+        &self.config
+    }
+    pub fn update_config(&mut self, config: MemoryConfig) {
+        self.config = config;
+    }
 
     // ── Entry CRUD ───────────────────────────────────────────────────────────
 
-    pub fn add_entry(&mut self, content: &str, namespace: Option<&str>, metadata: HashMap<String, serde_json::Value>) -> String {
+    pub fn add_entry(
+        &mut self,
+        content: &str,
+        namespace: Option<&str>,
+        metadata: HashMap<String, serde_json::Value>,
+    ) -> String {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
-        let ns = namespace.unwrap_or_else(|| {
-            self.config.namespace.as_deref().unwrap_or("default")
-        }).to_string();
+        let ns = namespace
+            .unwrap_or_else(|| self.config.namespace.as_deref().unwrap_or("default"))
+            .to_string();
 
         let entry = MemoryEntry {
             id: id.clone(),
@@ -91,9 +103,13 @@ impl MemoryStore {
         }
     }
 
-    pub fn count(&self) -> usize { self.entries.len() }
+    pub fn count(&self) -> usize {
+        self.entries.len()
+    }
 
-    pub fn clear(&mut self) { self.entries.clear(); }
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
 
     pub fn clear_namespace(&mut self, namespace: &str) {
         self.entries.retain(|e| e.namespace != namespace);
@@ -112,7 +128,9 @@ impl MemoryStore {
         let mut result = Vec::new();
         for entry in self.entries.iter().rev() {
             let approx_tokens = entry.content.len() / 4;
-            if approx_tokens > budget { break; }
+            if approx_tokens > budget {
+                break;
+            }
             budget -= approx_tokens;
             result.push(entry);
         }
@@ -124,7 +142,9 @@ impl MemoryStore {
 
     pub fn search_entries(&self, query: &str, limit: usize) -> Vec<&MemoryEntry> {
         let q = query.to_lowercase();
-        let mut matches: Vec<_> = self.entries.iter()
+        let mut matches: Vec<_> = self
+            .entries
+            .iter()
             .filter(|e| e.content.to_lowercase().contains(&q))
             .collect();
         matches.truncate(limit);
@@ -134,14 +154,24 @@ impl MemoryStore {
     // ── Embedding support ────────────────────────────────────────────────────
 
     pub fn set_entry_embedding(&mut self, id: &str, embedding: Vec<f32>) -> Result<(), String> {
-        let entry = self.entries.iter_mut().find(|e| e.id == id)
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|e| e.id == id)
             .ok_or_else(|| format!("Memory entry {} not found", id))?;
         entry.embedding = Some(embedding);
         Ok(())
     }
 
-    pub fn similarity_search(&self, query_embedding: &[f32], limit: usize, threshold: f32) -> Vec<(&MemoryEntry, f32)> {
-        let mut scored: Vec<_> = self.entries.iter()
+    pub fn similarity_search(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        threshold: f32,
+    ) -> Vec<(&MemoryEntry, f32)> {
+        let mut scored: Vec<_> = self
+            .entries
+            .iter()
             .filter_map(|e| {
                 e.embedding.as_ref().map(|emb| {
                     let score = cosine_similarity(query_embedding, emb);
@@ -159,17 +189,27 @@ impl MemoryStore {
 
     pub fn build_summary(&self) -> String {
         let count = self.entries.len();
-        if count == 0 { return "No memory entries.".to_string(); }
+        if count == 0 {
+            return "No memory entries.".to_string();
+        }
 
-        let namespaces: std::collections::HashSet<_> = self.entries.iter().map(|e| e.namespace.as_str()).collect();
+        let namespaces: std::collections::HashSet<_> =
+            self.entries.iter().map(|e| e.namespace.as_str()).collect();
         format!(
             "Memory: {} entries across {} namespace(s) [{}]. Latest: \"{}\"",
             count,
             namespaces.len(),
             namespaces.into_iter().collect::<Vec<_>>().join(", "),
-            self.entries.last().map(|e| {
-                if e.content.len() > 80 { format!("{}…", &e.content[..80]) } else { e.content.clone() }
-            }).unwrap_or_default()
+            self.entries
+                .last()
+                .map(|e| {
+                    if e.content.len() > 80 {
+                        format!("{}…", &e.content[..80])
+                    } else {
+                        e.content.clone()
+                    }
+                })
+                .unwrap_or_default()
         )
     }
 }
@@ -177,10 +217,14 @@ impl MemoryStore {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() { return 0.0; }
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let mag_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mag_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if mag_a == 0.0 || mag_b == 0.0 { return 0.0; }
+    if mag_a == 0.0 || mag_b == 0.0 {
+        return 0.0;
+    }
     dot / (mag_a * mag_b)
 }

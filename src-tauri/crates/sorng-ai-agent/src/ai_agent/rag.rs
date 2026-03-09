@@ -28,8 +28,18 @@ pub struct RagStore {
     documents: HashMap<String, StoredDocument>,
 }
 
+impl Default for RagStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RagStore {
-    pub fn new() -> Self { Self { documents: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            documents: HashMap::new(),
+        }
+    }
 
     // ── Ingestion ────────────────────────────────────────────────────────────
 
@@ -37,9 +47,15 @@ impl RagStore {
         let chunking = req.chunking.unwrap_or_default();
         let raw_chunks = chunk_text(&req.content, &chunking);
 
-        let chunks: Vec<DocumentChunk> = raw_chunks.into_iter().enumerate().map(|(i, text)| {
-            DocumentChunk { chunk_index: i, content: text, embedding: None }
-        }).collect();
+        let chunks: Vec<DocumentChunk> = raw_chunks
+            .into_iter()
+            .enumerate()
+            .map(|(i, text)| DocumentChunk {
+                chunk_index: i,
+                content: text,
+                embedding: None,
+            })
+            .collect();
 
         let doc_id = if req.document_id.is_empty() {
             Uuid::new_v4().to_string()
@@ -68,16 +84,24 @@ impl RagStore {
     }
 
     pub fn list_documents(&self, collection: &str) -> Vec<&StoredDocument> {
-        self.documents.values().filter(|d| d.collection == collection).collect()
+        self.documents
+            .values()
+            .filter(|d| d.collection == collection)
+            .collect()
     }
 
-    pub fn document_count(&self) -> usize { self.documents.len() }
+    pub fn document_count(&self) -> usize {
+        self.documents.len()
+    }
 
     pub fn collection_names(&self) -> Vec<String> {
-        let mut names: Vec<_> = self.documents.values()
+        let mut names: Vec<_> = self
+            .documents
+            .values()
             .map(|d| d.collection.clone())
             .collect::<std::collections::HashSet<_>>()
-            .into_iter().collect();
+            .into_iter()
+            .collect();
         names.sort();
         names
     }
@@ -88,10 +112,19 @@ impl RagStore {
 
     // ── Embedding assignment ─────────────────────────────────────────────────
 
-    pub fn set_chunk_embedding(&mut self, doc_id: &str, chunk_index: usize, embedding: Vec<f32>) -> Result<(), String> {
-        let doc = self.documents.get_mut(doc_id)
+    pub fn set_chunk_embedding(
+        &mut self,
+        doc_id: &str,
+        chunk_index: usize,
+        embedding: Vec<f32>,
+    ) -> Result<(), String> {
+        let doc = self
+            .documents
+            .get_mut(doc_id)
             .ok_or_else(|| format!("Document {} not found", doc_id))?;
-        let chunk = doc.chunks.get_mut(chunk_index)
+        let chunk = doc
+            .chunks
+            .get_mut(chunk_index)
             .ok_or_else(|| format!("Chunk {} not found in document {}", chunk_index, doc_id))?;
         chunk.embedding = Some(embedding);
         Ok(())
@@ -99,14 +132,22 @@ impl RagStore {
 
     // ── Search ───────────────────────────────────────────────────────────────
 
-    pub fn search(&self, req: &RagSearchRequest, query_embedding: Option<&[f32]>) -> Vec<RagSearchResult> {
+    pub fn search(
+        &self,
+        req: &RagSearchRequest,
+        query_embedding: Option<&[f32]>,
+    ) -> Vec<RagSearchResult> {
         let mut results = Vec::new();
 
         for doc in self.documents.values() {
-            if doc.collection != req.collection { continue; }
+            if doc.collection != req.collection {
+                continue;
+            }
 
             // Apply metadata filter
-            if !metadata_matches(&doc.metadata, &req.filter) { continue; }
+            if !metadata_matches(&doc.metadata, &req.filter) {
+                continue;
+            }
 
             for chunk in &doc.chunks {
                 let score = match query_embedding {
@@ -136,7 +177,11 @@ impl RagStore {
             }
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(req.top_k);
         results
     }
@@ -157,13 +202,29 @@ impl RagStore {
 // ── Chunking ─────────────────────────────────────────────────────────────────
 
 pub fn chunk_text(text: &str, config: &ChunkingConfig) -> Vec<String> {
-    if text.is_empty() { return Vec::new(); }
+    if text.is_empty() {
+        return Vec::new();
+    }
 
     match config.strategy {
-        ChunkingStrategy::FixedSize => chunk_fixed_size(text, config.chunk_size, config.chunk_overlap),
-        ChunkingStrategy::RecursiveCharacter => chunk_recursive(text, config.chunk_size, config.chunk_overlap),
-        ChunkingStrategy::Sentence => chunk_by_pattern(text, &[". ", "! ", "? ", ".\n"], config.chunk_size, config.chunk_overlap),
-        ChunkingStrategy::Paragraph => chunk_by_pattern(text, &["\n\n", "\r\n\r\n"], config.chunk_size, config.chunk_overlap),
+        ChunkingStrategy::FixedSize => {
+            chunk_fixed_size(text, config.chunk_size, config.chunk_overlap)
+        }
+        ChunkingStrategy::RecursiveCharacter => {
+            chunk_recursive(text, config.chunk_size, config.chunk_overlap)
+        }
+        ChunkingStrategy::Sentence => chunk_by_pattern(
+            text,
+            &[". ", "! ", "? ", ".\n"],
+            config.chunk_size,
+            config.chunk_overlap,
+        ),
+        ChunkingStrategy::Paragraph => chunk_by_pattern(
+            text,
+            &["\n\n", "\r\n\r\n"],
+            config.chunk_size,
+            config.chunk_overlap,
+        ),
         ChunkingStrategy::Markdown => chunk_markdown(text, config.chunk_size, config.chunk_overlap),
         ChunkingStrategy::Semantic => {
             // Semantic chunking requires embeddings; fall back to recursive
@@ -181,7 +242,9 @@ fn chunk_fixed_size(text: &str, size: usize, overlap: usize) -> Vec<String> {
         let end = (start + size).min(chars.len());
         chunks.push(chars[start..end].iter().collect());
         start += step;
-        if end == chars.len() { break; }
+        if end == chars.len() {
+            break;
+        }
     }
     chunks
 }
@@ -192,11 +255,15 @@ fn chunk_recursive(text: &str, size: usize, overlap: usize) -> Vec<String> {
 }
 
 fn recursive_split(text: &str, separators: &[&str], size: usize, overlap: usize) -> Vec<String> {
-    if text.len() <= size { return vec![text.to_string()]; }
+    if text.len() <= size {
+        return vec![text.to_string()];
+    }
 
     for &sep in separators {
         let parts: Vec<&str> = text.split(sep).collect();
-        if parts.len() <= 1 { continue; }
+        if parts.len() <= 1 {
+            continue;
+        }
 
         let mut chunks = Vec::new();
         let mut current = String::new();
@@ -217,9 +284,13 @@ fn recursive_split(text: &str, separators: &[&str], size: usize, overlap: usize)
                 current = candidate;
             }
         }
-        if !current.is_empty() { chunks.push(current); }
+        if !current.is_empty() {
+            chunks.push(current);
+        }
 
-        if chunks.len() > 1 { return chunks; }
+        if chunks.len() > 1 {
+            return chunks;
+        }
     }
 
     // Fallback to fixed-size
@@ -258,8 +329,12 @@ fn chunk_by_pattern(text: &str, patterns: &[&str], max_size: usize, overlap: usi
         }
         prev_end = point;
     }
-    if !current.is_empty() { chunks.push(current); }
-    if chunks.is_empty() { chunks.push(text.to_string()); }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    if chunks.is_empty() {
+        chunks.push(text.to_string());
+    }
     chunks
 }
 
@@ -273,10 +348,14 @@ fn chunk_markdown(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
             sections.push(current_section.clone());
             current_section.clear();
         }
-        if !current_section.is_empty() { current_section.push('\n'); }
+        if !current_section.is_empty() {
+            current_section.push('\n');
+        }
         current_section.push_str(line);
     }
-    if !current_section.is_empty() { sections.push(current_section); }
+    if !current_section.is_empty() {
+        sections.push(current_section);
+    }
 
     // If sections are too large, split them further
     let mut chunks = Vec::new();
@@ -287,33 +366,46 @@ fn chunk_markdown(text: &str, max_size: usize, overlap: usize) -> Vec<String> {
             chunks.extend(chunk_recursive(&section, max_size, overlap));
         }
     }
-    if chunks.is_empty() { chunks.push(text.to_string()); }
+    if chunks.is_empty() {
+        chunks.push(text.to_string());
+    }
     chunks
 }
 
 // ── Similarity helpers ───────────────────────────────────────────────────────
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() { return 0.0; }
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let ma: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if ma == 0.0 || mb == 0.0 { 0.0 } else { dot / (ma * mb) }
+    if ma == 0.0 || mb == 0.0 {
+        0.0
+    } else {
+        dot / (ma * mb)
+    }
 }
 
 fn text_similarity(query: &str, text: &str) -> f32 {
     let q = query.to_lowercase();
     let t = text.to_lowercase();
     let words: Vec<&str> = q.split_whitespace().collect();
-    if words.is_empty() { return 0.0; }
+    if words.is_empty() {
+        return 0.0;
+    }
     let hits = words.iter().filter(|w| t.contains(**w)).count();
     hits as f32 / words.len() as f32
 }
 
-fn metadata_matches(meta: &HashMap<String, serde_json::Value>, filter: &HashMap<String, serde_json::Value>) -> bool {
+fn metadata_matches(
+    meta: &HashMap<String, serde_json::Value>,
+    filter: &HashMap<String, serde_json::Value>,
+) -> bool {
     for (k, v) in filter {
         match meta.get(k) {
-            Some(mv) if mv == v => {},
+            Some(mv) if mv == v => {}
             _ => return false,
         }
     }

@@ -6,16 +6,18 @@ use log::{info, warn};
 use reqwest::Client;
 use uuid::Uuid;
 
-use crate::ai_agent::types::*;
 use super::LlmProvider;
+use crate::ai_agent::types::*;
 
 const ANTHROPIC_API_BASE: &str = "https://api.anthropic.com/v1";
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 
 pub struct AnthropicProvider {
     client: Client,
+    #[allow(dead_code)]
     api_key: String,
     base_url: String,
+    #[allow(dead_code)]
     timeout_secs: u64,
     max_retries: u32,
     retry_delay_ms: u64,
@@ -23,9 +25,13 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     pub fn new(config: &ProviderConfig) -> Result<Self, String> {
-        let api_key = config.api_key.clone()
+        let api_key = config
+            .api_key
+            .clone()
             .ok_or("Anthropic requires an API key")?;
-        let base_url = config.base_url.clone()
+        let base_url = config
+            .base_url
+            .clone()
             .unwrap_or_else(|| ANTHROPIC_API_BASE.to_string());
 
         let mut headers = reqwest::header::HeaderMap::new();
@@ -34,7 +40,8 @@ impl AnthropicProvider {
         headers.insert("content-type", "application/json".parse().unwrap());
         for (k, v) in &config.extra_headers {
             headers.insert(
-                reqwest::header::HeaderName::from_bytes(k.as_bytes()).map_err(|e| format!("{}", e))?,
+                reqwest::header::HeaderName::from_bytes(k.as_bytes())
+                    .map_err(|e| format!("{}", e))?,
                 v.parse().map_err(|e| format!("{}", e))?,
             );
         }
@@ -55,7 +62,10 @@ impl AnthropicProvider {
         })
     }
 
-    fn build_messages_payload(&self, messages: &[ChatMessage]) -> (Option<String>, Vec<serde_json::Value>) {
+    fn build_messages_payload(
+        &self,
+        messages: &[ChatMessage],
+    ) -> (Option<String>, Vec<serde_json::Value>) {
         let mut system_prompt = None;
         let mut msgs = Vec::new();
 
@@ -85,13 +95,21 @@ impl AnthropicProvider {
         (system_prompt, msgs)
     }
 
-    fn build_content_blocks(&self, blocks: &[ContentBlock], tool_call_id: &Option<String>) -> serde_json::Value {
+    fn build_content_blocks(
+        &self,
+        blocks: &[ContentBlock],
+        tool_call_id: &Option<String>,
+    ) -> serde_json::Value {
         if let Some(ref tc_id) = tool_call_id {
             // This is a tool result message
-            let text = blocks.iter().filter_map(|b| match b {
-                ContentBlock::Text { text } => Some(text.clone()),
-                _ => None,
-            }).collect::<Vec<_>>().join("\n");
+            let text = blocks
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
             return serde_json::json!([{
                 "type": "tool_result",
                 "tool_use_id": tc_id,
@@ -99,39 +117,47 @@ impl AnthropicProvider {
             }]);
         }
 
-        let arr: Vec<serde_json::Value> = blocks.iter().map(|b| match b {
-            ContentBlock::Text { text } => serde_json::json!({
-                "type": "text",
-                "text": text,
-            }),
-            ContentBlock::Image { data, media_type } => {
-                let mt = media_type.as_deref().unwrap_or("image/png");
-                if data.starts_with("http") {
-                    serde_json::json!({
-                        "type": "image",
-                        "source": { "type": "url", "url": data }
-                    })
-                } else {
-                    serde_json::json!({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": mt,
-                            "data": data,
-                        }
-                    })
+        let arr: Vec<serde_json::Value> = blocks
+            .iter()
+            .map(|b| match b {
+                ContentBlock::Text { text } => serde_json::json!({
+                    "type": "text",
+                    "text": text,
+                }),
+                ContentBlock::Image { data, media_type } => {
+                    let mt = media_type.as_deref().unwrap_or("image/png");
+                    if data.starts_with("http") {
+                        serde_json::json!({
+                            "type": "image",
+                            "source": { "type": "url", "url": data }
+                        })
+                    } else {
+                        serde_json::json!({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": mt,
+                                "data": data,
+                            }
+                        })
+                    }
                 }
-            }
-        }).collect();
+            })
+            .collect();
         serde_json::Value::Array(arr)
     }
 
     fn build_tools_payload(&self, tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
-        tools.iter().map(|t| serde_json::json!({
-            "name": t.name,
-            "description": t.description,
-            "input_schema": t.parameters,
-        })).collect()
+        tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.parameters,
+                })
+            })
+            .collect()
     }
 
     fn parse_response(&self, body: &serde_json::Value) -> Result<ChatResponse, String> {
@@ -143,7 +169,9 @@ impl AnthropicProvider {
                 match block["type"].as_str() {
                     Some("text") => {
                         if let Some(t) = block["text"].as_str() {
-                            text_parts.push(ContentBlock::Text { text: t.to_string() });
+                            text_parts.push(ContentBlock::Text {
+                                text: t.to_string(),
+                            });
                         }
                     }
                     Some("tool_use") => {
@@ -153,7 +181,10 @@ impl AnthropicProvider {
                         tool_calls.push(ToolCall {
                             id,
                             call_type: "function".to_string(),
-                            function: FunctionCall { name, arguments: args },
+                            function: FunctionCall {
+                                name,
+                                arguments: args,
+                            },
                         });
                     }
                     _ => {}
@@ -174,7 +205,8 @@ impl AnthropicProvider {
             prompt_tokens: usage_obj["input_tokens"].as_u64().unwrap_or(0) as u32,
             completion_tokens: usage_obj["output_tokens"].as_u64().unwrap_or(0) as u32,
             total_tokens: (usage_obj["input_tokens"].as_u64().unwrap_or(0)
-                + usage_obj["output_tokens"].as_u64().unwrap_or(0)) as u32,
+                + usage_obj["output_tokens"].as_u64().unwrap_or(0))
+                as u32,
             estimated_cost: 0.0,
         };
 
@@ -284,13 +316,16 @@ impl LlmProvider for AnthropicProvider {
                 info!("Anthropic retry attempt {}/{}", attempt, self.max_retries);
                 tokio::time::sleep(std::time::Duration::from_millis(
                     self.retry_delay_ms * (attempt as u64),
-                )).await;
+                ))
+                .await;
             }
 
             match self.client.post(&url).json(&body).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        let resp_body: serde_json::Value = resp.json().await
+                        let resp_body: serde_json::Value = resp
+                            .json()
+                            .await
                             .map_err(|e| format!("Failed to parse Anthropic response: {}", e))?;
                         let mut result = self.parse_response(&resp_body)?;
                         result.latency_ms = start.elapsed().as_millis() as u64;
@@ -299,7 +334,10 @@ impl LlmProvider for AnthropicProvider {
                         let status = resp.status();
                         let err_body = resp.text().await.unwrap_or_default();
                         last_err = format!("Anthropic API error {}: {}", status, err_body);
-                        if status.as_u16() == 429 || status.as_u16() == 529 || status.is_server_error() {
+                        if status.as_u16() == 429
+                            || status.as_u16() == 529
+                            || status.is_server_error()
+                        {
                             warn!("{}", last_err);
                             continue;
                         }
@@ -349,28 +387,34 @@ impl LlmProvider for AnthropicProvider {
         let client = self.client.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
-            let _ = tx.send(StreamEvent::Start {
-                request_id: request_id.clone(),
-                model: model_str,
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Start {
+                    request_id: request_id.clone(),
+                    model: model_str,
+                })
+                .await;
 
             let resp = match client.post(&url).json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    let _ = tx.send(StreamEvent::Error {
-                        request_id,
-                        error: format!("Request failed: {}", e),
-                    }).await;
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            request_id,
+                            error: format!("Request failed: {}", e),
+                        })
+                        .await;
                     return;
                 }
             };
 
             if !resp.status().is_success() {
                 let err = resp.text().await.unwrap_or_default();
-                let _ = tx.send(StreamEvent::Error {
-                    request_id,
-                    error: format!("API error: {}", err),
-                }).await;
+                let _ = tx
+                    .send(StreamEvent::Error {
+                        request_id,
+                        error: format!("API error: {}", err),
+                    })
+                    .await;
                 return;
             }
 
@@ -385,10 +429,12 @@ impl LlmProvider for AnthropicProvider {
                 let chunk = match chunk_result {
                     Ok(c) => c,
                     Err(e) => {
-                        let _ = tx.send(StreamEvent::Error {
-                            request_id: request_id.clone(),
-                            error: format!("Stream error: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(StreamEvent::Error {
+                                request_id: request_id.clone(),
+                                error: format!("Stream error: {}", e),
+                            })
+                            .await;
                         return;
                     }
                 };
@@ -413,20 +459,26 @@ impl LlmProvider for AnthropicProvider {
                                         if delta["type"].as_str() == Some("text_delta") {
                                             if let Some(text) = delta["text"].as_str() {
                                                 accumulated.push_str(text);
-                                                let _ = tx.send(StreamEvent::Delta {
-                                                    request_id: request_id.clone(),
-                                                    content: text.to_string(),
-                                                    accumulated: accumulated.clone(),
-                                                }).await;
+                                                let _ = tx
+                                                    .send(StreamEvent::Delta {
+                                                        request_id: request_id.clone(),
+                                                        content: text.to_string(),
+                                                        accumulated: accumulated.clone(),
+                                                    })
+                                                    .await;
                                             }
-                                        } else if delta["type"].as_str() == Some("input_json_delta") {
-                                            if let Some(json_delta) = delta["partial_json"].as_str() {
-                                                let _ = tx.send(StreamEvent::ToolCallDelta {
-                                                    request_id: request_id.clone(),
-                                                    tool_call_index: 0,
-                                                    name: None,
-                                                    arguments_delta: json_delta.to_string(),
-                                                }).await;
+                                        } else if delta["type"].as_str() == Some("input_json_delta")
+                                        {
+                                            if let Some(json_delta) = delta["partial_json"].as_str()
+                                            {
+                                                let _ = tx
+                                                    .send(StreamEvent::ToolCallDelta {
+                                                        request_id: request_id.clone(),
+                                                        tool_call_index: 0,
+                                                        name: None,
+                                                        arguments_delta: json_delta.to_string(),
+                                                    })
+                                                    .await;
                                             }
                                         }
                                     }
@@ -443,24 +495,29 @@ impl LlmProvider for AnthropicProvider {
                                         }
                                     }
                                     if let Some(u) = parsed.get("usage") {
-                                        usage.completion_tokens = u["output_tokens"].as_u64().unwrap_or(0) as u32;
+                                        usage.completion_tokens =
+                                            u["output_tokens"].as_u64().unwrap_or(0) as u32;
                                     }
                                 }
                                 "message_start" => {
                                     if let Some(msg) = parsed.get("message") {
                                         if let Some(u) = msg.get("usage") {
-                                            usage.prompt_tokens = u["input_tokens"].as_u64().unwrap_or(0) as u32;
+                                            usage.prompt_tokens =
+                                                u["input_tokens"].as_u64().unwrap_or(0) as u32;
                                         }
                                     }
                                 }
                                 "message_stop" => {
-                                    usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
-                                    let _ = tx.send(StreamEvent::Done {
-                                        request_id: request_id.clone(),
-                                        finish_reason: finish_reason.clone(),
-                                        usage: usage.clone(),
-                                        latency_ms: start.elapsed().as_millis() as u64,
-                                    }).await;
+                                    usage.total_tokens =
+                                        usage.prompt_tokens + usage.completion_tokens;
+                                    let _ = tx
+                                        .send(StreamEvent::Done {
+                                            request_id: request_id.clone(),
+                                            finish_reason: finish_reason.clone(),
+                                            usage: usage.clone(),
+                                            latency_ms: start.elapsed().as_millis() as u64,
+                                        })
+                                        .await;
                                     return;
                                 }
                                 _ => {}
@@ -471,12 +528,14 @@ impl LlmProvider for AnthropicProvider {
             }
 
             usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
-            let _ = tx.send(StreamEvent::Done {
-                request_id,
-                finish_reason,
-                usage,
-                latency_ms: start.elapsed().as_millis() as u64,
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Done {
+                    request_id,
+                    finish_reason,
+                    usage,
+                    latency_ms: start.elapsed().as_millis() as u64,
+                })
+                .await;
         });
 
         Ok(rx)
@@ -488,7 +547,10 @@ impl LlmProvider for AnthropicProvider {
         _model: Option<&str>,
         _dimensions: Option<usize>,
     ) -> Result<EmbeddingResponse, String> {
-        Err("Anthropic does not provide an embeddings API. Use OpenAI or Cohere for embeddings.".into())
+        Err(
+            "Anthropic does not provide an embeddings API. Use OpenAI or Cohere for embeddings."
+                .into(),
+        )
     }
 
     async fn health_check(&self) -> Result<u64, String> {
@@ -500,7 +562,12 @@ impl LlmProvider for AnthropicProvider {
             "max_tokens": 1,
             "messages": [{"role": "user", "content": "hi"}]
         });
-        let resp = self.client.post(&url).json(&body).send().await
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
             .map_err(|e| format!("Health check failed: {}", e))?;
         if resp.status().is_success() || resp.status().as_u16() == 400 {
             // 400 = valid connection but bad request is still "healthy"

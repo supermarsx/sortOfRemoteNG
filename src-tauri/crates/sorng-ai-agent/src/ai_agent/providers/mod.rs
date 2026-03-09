@@ -4,17 +4,17 @@
 // The trait provides a unified interface for chat completions, embeddings,
 // streaming, and model listing.
 
-pub mod openai;
 pub mod anthropic;
-pub mod gemini;
-pub mod ollama;
 pub mod azure_openai;
+pub mod cohere;
+pub mod gemini;
 pub mod groq;
 pub mod mistral;
-pub mod cohere;
+pub mod ollama;
+pub mod openai;
 
-use async_trait::async_trait;
 use crate::ai_agent::types::*;
+use async_trait::async_trait;
 
 // ── Provider trait ───────────────────────────────────────────────────────────
 

@@ -10,26 +10,66 @@ use tokio::sync::Mutex;
 
 // ── Serde default helpers ────────────────────────────────────────────────────
 
-fn default_true() -> bool { true }
-fn default_false() -> bool { false }
-fn default_temperature() -> f32 { 0.7 }
-fn default_max_tokens() -> u32 { 4096 }
-fn default_top_p() -> f32 { 1.0 }
-fn default_frequency_penalty() -> f32 { 0.0 }
-fn default_presence_penalty() -> f32 { 0.0 }
-fn default_timeout_secs() -> u64 { 120 }
-fn default_max_retries() -> u32 { 3 }
-fn default_retry_delay_ms() -> u64 { 1000 }
-fn default_max_history() -> usize { 200 }
-fn default_max_tool_iterations() -> u32 { 10 }
-fn default_chunk_size() -> usize { 512 }
-fn default_chunk_overlap() -> usize { 64 }
-fn default_top_k() -> usize { 5 }
-fn default_similarity_threshold() -> f32 { 0.7 }
-fn default_embedding_dim() -> usize { 1536 }
-fn default_max_context_tokens() -> u32 { 128_000 }
-fn default_budget_limit() -> f64 { 10.0 }
-fn default_port() -> u16 { 11434 }
+fn default_true() -> bool {
+    true
+}
+fn default_false() -> bool {
+    false
+}
+fn default_temperature() -> f32 {
+    0.7
+}
+fn default_max_tokens() -> u32 {
+    4096
+}
+fn default_top_p() -> f32 {
+    1.0
+}
+fn default_frequency_penalty() -> f32 {
+    0.0
+}
+fn default_presence_penalty() -> f32 {
+    0.0
+}
+fn default_timeout_secs() -> u64 {
+    120
+}
+fn default_max_retries() -> u32 {
+    3
+}
+fn default_retry_delay_ms() -> u64 {
+    1000
+}
+fn default_max_history() -> usize {
+    200
+}
+fn default_max_tool_iterations() -> u32 {
+    10
+}
+fn default_chunk_size() -> usize {
+    512
+}
+fn default_chunk_overlap() -> usize {
+    64
+}
+fn default_top_k() -> usize {
+    5
+}
+fn default_similarity_threshold() -> f32 {
+    0.7
+}
+fn default_embedding_dim() -> usize {
+    1536
+}
+fn default_max_context_tokens() -> u32 {
+    128_000
+}
+fn default_budget_limit() -> f64 {
+    10.0
+}
+fn default_port() -> u16 {
+    11434
+}
 
 // ── Managed state type alias ─────────────────────────────────────────────────
 
@@ -578,10 +618,7 @@ pub enum AgentRunStatus {
 #[serde(tag = "type")]
 pub enum StreamEvent {
     #[serde(rename = "start")]
-    Start {
-        request_id: String,
-        model: String,
-    },
+    Start { request_id: String, model: String },
     #[serde(rename = "delta")]
     Delta {
         request_id: String,
@@ -604,10 +641,7 @@ pub enum StreamEvent {
         latency_ms: u64,
     },
     #[serde(rename = "error")]
-    Error {
-        request_id: String,
-        error: String,
-    },
+    Error { request_id: String, error: String },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

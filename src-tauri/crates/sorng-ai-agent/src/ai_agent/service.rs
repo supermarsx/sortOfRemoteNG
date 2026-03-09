@@ -3,18 +3,18 @@
 // Central orchestrator that owns all sub-stores and exposes high-level APIs.
 // Wrapped in `Arc<tokio::sync::Mutex<AiAgentService>>` as Tauri managed state.
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::types::*;
 use super::conversation::ConversationStore;
-use super::memory::MemoryStore;
-use super::templates::TemplateRegistry;
 use super::embeddings::VectorStore;
+use super::memory::MemoryStore;
 use super::rag::RagStore;
-use super::workflows::{WorkflowRegistry, WorkflowExecutor};
+use super::templates::TemplateRegistry;
 use super::tokens;
+use super::types::*;
+use super::workflows::{WorkflowExecutor, WorkflowRegistry};
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
@@ -33,6 +33,12 @@ pub struct AiAgentService {
     total_tokens_used: u64,
     total_cost_usd: f64,
     started_at: chrono::DateTime<Utc>,
+}
+
+impl Default for AiAgentService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AiAgentService {
@@ -70,7 +76,9 @@ impl AiAgentService {
     // Settings
     // ═══════════════════════════════════════════════════════════════════════════
 
-    pub fn get_settings(&self) -> AiAgentSettings { self.settings.clone() }
+    pub fn get_settings(&self) -> AiAgentSettings {
+        self.settings.clone()
+    }
 
     pub fn update_settings(&mut self, settings: AiAgentSettings) {
         self.settings = settings;
@@ -109,7 +117,8 @@ impl AiAgentService {
     }
 
     pub fn resolve_provider_type(&self, provider_id: &str) -> AiProvider {
-        self.providers.get(provider_id)
+        self.providers
+            .get(provider_id)
             .map(|c| c.provider.clone())
             .unwrap_or(AiProvider::Custom)
     }
@@ -119,11 +128,17 @@ impl AiAgentService {
         let info = self.provider_info.get(id);
 
         ProviderHealthInfo {
-            provider: config.map(|c| c.provider.clone()).unwrap_or(AiProvider::Custom),
+            provider: config
+                .map(|c| c.provider.clone())
+                .unwrap_or(AiProvider::Custom),
             provider_id: id.to_string(),
             connected: info.map(|i| i.connected).unwrap_or(false),
             latency_ms: None, // Would do a real ping in production
-            error: if config.is_none() { Some("Provider not configured".into()) } else { None },
+            error: if config.is_none() {
+                Some("Provider not configured".into())
+            } else {
+                None
+            },
             models_available: info.map(|i| i.available_models.len()).unwrap_or(0),
             requests_made: 0,
             tokens_used: 0,
@@ -148,7 +163,8 @@ impl AiAgentService {
     }
 
     pub fn list_conversations(&self) -> Vec<ConversationSummary> {
-        self.conversations.list_summaries(&|pid: &str| self.resolve_provider_type(pid))
+        self.conversations
+            .list_summaries(&|pid: &str| self.resolve_provider_type(pid))
     }
 
     pub fn rename_conversation(&mut self, id: &str, title: &str) -> Result<(), String> {
@@ -167,22 +183,37 @@ impl AiAgentService {
         self.conversations.set_tags(id, tags)
     }
 
-    pub fn fork_conversation(&mut self, req: ForkConversationRequest) -> Result<Conversation, String> {
+    pub fn fork_conversation(
+        &mut self,
+        req: ForkConversationRequest,
+    ) -> Result<Conversation, String> {
         self.conversations.fork(req)
     }
 
-    pub fn add_message(&mut self, conversation_id: &str, message: ChatMessage) -> Result<(), String> {
+    pub fn add_message(
+        &mut self,
+        conversation_id: &str,
+        message: ChatMessage,
+    ) -> Result<(), String> {
         self.conversations.add_message(conversation_id, message)
     }
 
-    pub fn add_user_message(&mut self, conversation_id: &str, text: &str) -> Result<ChatMessage, String> {
+    pub fn add_user_message(
+        &mut self,
+        conversation_id: &str,
+        text: &str,
+    ) -> Result<ChatMessage, String> {
         self.conversations.add_user_message(conversation_id, text)
     }
 
     pub fn add_assistant_message(
-        &mut self, conversation_id: &str, text: &str, usage: Option<&TokenUsage>,
+        &mut self,
+        conversation_id: &str,
+        text: &str,
+        usage: Option<&TokenUsage>,
     ) -> Result<ChatMessage, String> {
-        self.conversations.add_assistant_message(conversation_id, text, usage)
+        self.conversations
+            .add_assistant_message(conversation_id, text, usage)
     }
 
     pub fn get_messages(&self, conversation_id: &str) -> Result<Vec<ChatMessage>, String> {
@@ -194,29 +225,33 @@ impl AiAgentService {
     }
 
     pub fn search_conversations(&self, query: &str) -> Vec<ConversationSummary> {
-        self.conversations.search(query).into_iter().map(|c| {
-            let last_preview = c.messages.last().and_then(|m| {
-                m.content.first().and_then(|b| match b {
-                    ContentBlock::Text { text } => Some(text.chars().take(120).collect()),
-                    _ => None,
-                })
-            });
-            ConversationSummary {
-                id: c.id.clone(),
-                title: c.title.clone(),
-                provider: self.resolve_provider_type(&c.provider_id),
-                model: c.model.clone(),
-                message_count: c.messages.len(),
-                total_tokens: c.total_tokens,
-                total_cost: c.total_cost,
-                created_at: c.created_at,
-                updated_at: c.updated_at,
-                tags: c.tags.clone(),
-                pinned: c.pinned,
-                archived: c.archived,
-                last_message_preview: last_preview,
-            }
-        }).collect()
+        self.conversations
+            .search(query)
+            .into_iter()
+            .map(|c| {
+                let last_preview = c.messages.last().and_then(|m| {
+                    m.content.first().and_then(|b| match b {
+                        ContentBlock::Text { text } => Some(text.chars().take(120).collect()),
+                        _ => None,
+                    })
+                });
+                ConversationSummary {
+                    id: c.id.clone(),
+                    title: c.title.clone(),
+                    provider: self.resolve_provider_type(&c.provider_id),
+                    model: c.model.clone(),
+                    message_count: c.messages.len(),
+                    total_tokens: c.total_tokens,
+                    total_cost: c.total_cost,
+                    created_at: c.created_at,
+                    updated_at: c.updated_at,
+                    tags: c.tags.clone(),
+                    pinned: c.pinned,
+                    archived: c.archived,
+                    last_message_preview: last_preview,
+                }
+            })
+            .collect()
     }
 
     pub fn export_conversation(&self, id: &str) -> Result<serde_json::Value, String> {
@@ -227,7 +262,9 @@ impl AiAgentService {
         self.conversations.import_conversation(data)
     }
 
-    pub fn conversation_count(&self) -> usize { self.conversations.count() }
+    pub fn conversation_count(&self) -> usize {
+        self.conversations.count()
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Chat Completion (simplified – real impl would call LlmProvider)
@@ -254,13 +291,17 @@ impl AiAgentService {
 
         // If conversation_id is set, add the response
         if let Some(ref conv_id) = req.conversation_id {
-            let _ = self.conversations.add_assistant_message(conv_id, &response_text, Some(&usage));
+            let _ = self
+                .conversations
+                .add_assistant_message(conv_id, &response_text, Some(&usage));
         }
 
         let msg = ChatMessage {
             id: Uuid::new_v4().to_string(),
             role: MessageRole::Assistant,
-            content: vec![ContentBlock::Text { text: response_text }],
+            content: vec![ContentBlock::Text {
+                text: response_text,
+            }],
             tool_call_id: None,
             tool_calls: Vec::new(),
             name: None,
@@ -286,15 +327,25 @@ impl AiAgentService {
     // Agent Engine
     // ═══════════════════════════════════════════════════════════════════════════
 
-    pub async fn run_agent(&mut self, config: AgentConfig, prompt: &str) -> Result<AgentRunResult, String> {
+    pub async fn run_agent(
+        &mut self,
+        config: AgentConfig,
+        prompt: &str,
+    ) -> Result<AgentRunResult, String> {
         self.request_count += 1;
         // Build initial messages from prompt
         let messages = vec![ChatMessage {
             id: Uuid::new_v4().to_string(),
             role: MessageRole::User,
-            content: vec![ContentBlock::Text { text: prompt.to_string() }],
-            tool_call_id: None, tool_calls: Vec::new(), name: None,
-            created_at: Utc::now(), token_count: None, metadata: HashMap::new(),
+            content: vec![ContentBlock::Text {
+                text: prompt.to_string(),
+            }],
+            tool_call_id: None,
+            tool_calls: Vec::new(),
+            name: None,
+            created_at: Utc::now(),
+            token_count: None,
+            metadata: HashMap::new(),
         }];
         // Create a placeholder result — real impl would resolve an LlmProvider
         // from config.provider_id and call engine::run_agent()
@@ -302,7 +353,10 @@ impl AiAgentService {
         let result = AgentRunResult {
             run_id: Uuid::new_v4().to_string(),
             strategy: config.strategy.clone(),
-            final_answer: Some(format!("[Agent placeholder for {:?} strategy]", config.strategy)),
+            final_answer: Some(format!(
+                "[Agent placeholder for {:?} strategy]",
+                config.strategy
+            )),
             steps: Vec::new(),
             total_iterations: 0,
             total_tokens: TokenUsage::default(),
@@ -321,7 +375,10 @@ impl AiAgentService {
     // Code Assist
     // ═══════════════════════════════════════════════════════════════════════════
 
-    pub async fn run_code_assist(&mut self, req: CodeAssistRequest) -> Result<CodeAssistResult, String> {
+    pub async fn run_code_assist(
+        &mut self,
+        req: CodeAssistRequest,
+    ) -> Result<CodeAssistResult, String> {
         self.request_count += 1;
         // Real implementation would resolve an LlmProvider from req.provider_id
         // and call code_assist::run_code_assist(&req, &provider)
@@ -343,32 +400,49 @@ impl AiAgentService {
     // Templates
     // ═══════════════════════════════════════════════════════════════════════════
 
-    pub fn list_templates(&self) -> Vec<&PromptTemplate> { self.templates.list() }
-    pub fn get_template(&self, id: &str) -> Option<&PromptTemplate> { self.templates.get(id) }
-
-    pub fn create_template(
-        &mut self, name: &str, template: &str, description: &str,
-        variables: Vec<TemplateVariable>, tags: Vec<String>,
-    ) -> String {
-        self.templates.create(name, template, description, variables, tags)
+    pub fn list_templates(&self) -> Vec<&PromptTemplate> {
+        self.templates.list()
+    }
+    pub fn get_template(&self, id: &str) -> Option<&PromptTemplate> {
+        self.templates.get(id)
     }
 
-    pub fn delete_template(&mut self, id: &str) -> bool { self.templates.remove(id) }
+    pub fn create_template(
+        &mut self,
+        name: &str,
+        template: &str,
+        description: &str,
+        variables: Vec<TemplateVariable>,
+        tags: Vec<String>,
+    ) -> String {
+        self.templates
+            .create(name, template, description, variables, tags)
+    }
+
+    pub fn delete_template(&mut self, id: &str) -> bool {
+        self.templates.remove(id)
+    }
 
     pub fn render_template(&self, req: RenderTemplateRequest) -> Result<String, String> {
-        let tmpl = self.templates.get(&req.template_id)
+        let tmpl = self
+            .templates
+            .get(&req.template_id)
             .ok_or_else(|| format!("Template {} not found", req.template_id))?;
         super::templates::render_prompt_template(tmpl, &req.variables)
     }
 
-    pub fn template_count(&self) -> usize { self.templates.list().len() }
+    pub fn template_count(&self) -> usize {
+        self.templates.list().len()
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Memory
     // ═══════════════════════════════════════════════════════════════════════════
 
     pub fn add_memory_entry(
-        &mut self, content: &str, namespace: Option<&str>,
+        &mut self,
+        content: &str,
+        namespace: Option<&str>,
         metadata: HashMap<String, serde_json::Value>,
     ) -> String {
         self.memory.add_entry(content, namespace, metadata)
@@ -390,11 +464,17 @@ impl AiAgentService {
         self.memory.search_entries(query, limit)
     }
 
-    pub fn clear_memory(&mut self) { self.memory.clear(); }
+    pub fn clear_memory(&mut self) {
+        self.memory.clear();
+    }
 
-    pub fn memory_count(&self) -> usize { self.memory.count() }
+    pub fn memory_count(&self) -> usize {
+        self.memory.count()
+    }
 
-    pub fn get_memory_config(&self) -> &MemoryConfig { self.memory.config() }
+    pub fn get_memory_config(&self) -> &MemoryConfig {
+        self.memory.config()
+    }
 
     pub fn update_memory_config(&mut self, config: MemoryConfig) {
         self.memory.update_config(config);
@@ -404,7 +484,12 @@ impl AiAgentService {
     // Embeddings / Vectors
     // ═══════════════════════════════════════════════════════════════════════════
 
-    pub fn add_vector(&mut self, text: &str, embedding: Vec<f32>, metadata: HashMap<String, serde_json::Value>) -> String {
+    pub fn add_vector(
+        &mut self,
+        text: &str,
+        embedding: Vec<f32>,
+        metadata: HashMap<String, serde_json::Value>,
+    ) -> String {
         use super::embeddings::VectorEntry;
         let id = Uuid::new_v4().to_string();
         self.vectors.upsert(VectorEntry {
@@ -418,11 +503,19 @@ impl AiAgentService {
         id
     }
 
-    pub fn search_vectors(&self, query_embedding: &[f32], top_k: usize, threshold: f32) -> Vec<SimilarityResult> {
-        self.vectors.search("default", query_embedding, top_k, Some(threshold))
+    pub fn search_vectors(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+        threshold: f32,
+    ) -> Vec<SimilarityResult> {
+        self.vectors
+            .search("default", query_embedding, top_k, Some(threshold))
     }
 
-    pub fn vector_count(&self) -> usize { self.vectors.total_entries() }
+    pub fn vector_count(&self) -> usize {
+        self.vectors.total_entries()
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // RAG
@@ -440,31 +533,55 @@ impl AiAgentService {
         self.rag.search(req, None)
     }
 
-    pub fn list_rag_collections(&self) -> Vec<String> { self.rag.collection_names() }
-    pub fn rag_document_count(&self) -> usize { self.rag.document_count() }
-    pub fn rag_collection_count(&self) -> usize { self.rag.collection_count() }
+    pub fn list_rag_collections(&self) -> Vec<String> {
+        self.rag.collection_names()
+    }
+    pub fn rag_document_count(&self) -> usize {
+        self.rag.document_count()
+    }
+    pub fn rag_collection_count(&self) -> usize {
+        self.rag.collection_count()
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Workflows
     // ═══════════════════════════════════════════════════════════════════════════
 
     pub fn create_workflow(
-        &mut self, name: &str, description: &str, steps: Vec<WorkflowStep>, tags: Vec<String>,
+        &mut self,
+        name: &str,
+        description: &str,
+        steps: Vec<WorkflowStep>,
+        tags: Vec<String>,
     ) -> String {
         self.workflows.create(name, description, steps, tags)
     }
 
-    pub fn get_workflow(&self, id: &str) -> Option<&WorkflowDefinition> { self.workflows.get(id) }
-    pub fn delete_workflow(&mut self, id: &str) -> bool { self.workflows.remove(id) }
-    pub fn list_workflows(&self) -> Vec<&WorkflowDefinition> { self.workflows.list() }
-    pub fn workflow_count(&self) -> usize { self.workflows.count() }
+    pub fn get_workflow(&self, id: &str) -> Option<&WorkflowDefinition> {
+        self.workflows.get(id)
+    }
+    pub fn delete_workflow(&mut self, id: &str) -> bool {
+        self.workflows.remove(id)
+    }
+    pub fn list_workflows(&self) -> Vec<&WorkflowDefinition> {
+        self.workflows.list()
+    }
+    pub fn workflow_count(&self) -> usize {
+        self.workflows.count()
+    }
 
-    pub async fn run_workflow(&mut self, req: RunWorkflowRequest) -> Result<WorkflowRunResult, String> {
+    pub async fn run_workflow(
+        &mut self,
+        req: RunWorkflowRequest,
+    ) -> Result<WorkflowRunResult, String> {
         self.request_count += 1;
-        let wf = self.workflows.get(&req.workflow_id)
+        let wf = self
+            .workflows
+            .get(&req.workflow_id)
             .ok_or_else(|| format!("Workflow {} not found", req.workflow_id))?
             .clone();
-        let result = WorkflowExecutor::run(&wf, req.variables, &req.provider_id, &req.model).await?;
+        let result =
+            WorkflowExecutor::run(&wf, req.variables, &req.provider_id, &req.model).await?;
         self.total_tokens_used += result.total_tokens.total_tokens as u64;
         self.total_cost_usd += result.total_tokens.estimated_cost;
         Ok(result)
@@ -476,7 +593,10 @@ impl AiAgentService {
 
     pub fn count_tokens(&self, text: &str, model: &str) -> TokenCountResult {
         // Resolve provider from settings or default to OpenAI for tokenization
-        let provider = self.settings.default_provider_id.as_deref()
+        let provider = self
+            .settings
+            .default_provider_id
+            .as_deref()
             .and_then(|pid| self.providers.get(pid))
             .map(|c| c.provider.clone())
             .unwrap_or(AiProvider::OpenAi);
@@ -486,21 +606,41 @@ impl AiAgentService {
     pub fn get_budget_status(&self) -> BudgetStatus {
         let budget = &self.settings.budget;
         let remaining_usd = budget.as_ref().map(|b| {
-            if b.max_cost_usd > 0.0 { b.max_cost_usd - self.total_cost_usd } else { f64::INFINITY }
+            if b.max_cost_usd > 0.0 {
+                b.max_cost_usd - self.total_cost_usd
+            } else {
+                f64::INFINITY
+            }
         });
         let remaining_tokens = budget.as_ref().and_then(|b| {
-            if b.max_total_tokens > 0 { Some(b.max_total_tokens.saturating_sub(self.total_tokens_used)) } else { None }
+            if b.max_total_tokens > 0 {
+                Some(b.max_total_tokens.saturating_sub(self.total_tokens_used))
+            } else {
+                None
+            }
         });
-        let utilization = budget.as_ref().map(|b| {
-            if b.max_cost_usd > 0.0 {
-                (self.total_cost_usd / b.max_cost_usd * 100.0).min(100.0)
-            } else { 0.0 }
-        }).unwrap_or(0.0);
+        let utilization = budget
+            .as_ref()
+            .map(|b| {
+                if b.max_cost_usd > 0.0 {
+                    (self.total_cost_usd / b.max_cost_usd * 100.0).min(100.0)
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0);
         let warning_threshold = budget.as_ref().and_then(|b| b.warning_threshold);
-        let is_over = budget.as_ref().map(|b| {
-            b.enforce_hard_limit && b.max_cost_usd > 0.0 && self.total_cost_usd >= b.max_cost_usd
-        }).unwrap_or(false);
-        let is_warning = warning_threshold.map(|wt| utilization >= wt * 100.0).unwrap_or(false);
+        let is_over = budget
+            .as_ref()
+            .map(|b| {
+                b.enforce_hard_limit
+                    && b.max_cost_usd > 0.0
+                    && self.total_cost_usd >= b.max_cost_usd
+            })
+            .unwrap_or(false);
+        let is_warning = warning_threshold
+            .map(|wt| utilization >= wt * 100.0)
+            .unwrap_or(false);
 
         BudgetStatus {
             total_cost_usd: self.total_cost_usd,
@@ -532,7 +672,7 @@ impl AiAgentService {
 
     pub async fn diagnostics(&self) -> AiDiagnosticsReport {
         let mut providers = Vec::new();
-        for (id, _cfg) in &self.providers {
+        for id in self.providers.keys() {
             providers.push(self.check_provider_health(id).await);
         }
 

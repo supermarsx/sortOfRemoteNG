@@ -1,7 +1,7 @@
 // ── Token Counting & Budget Management ───────────────────────────────────────
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 
 use super::types::*;
 use super::AI_TOKEN_USAGE;
@@ -39,7 +39,9 @@ pub fn count_message_tokens(messages: &[ChatMessage]) -> u32 {
 
 pub fn count_tokens_for_provider(text: &str, provider: &AiProvider) -> u32 {
     match provider {
-        AiProvider::OpenAi | AiProvider::AzureOpenAi | AiProvider::Groq => count_tokens_tiktoken(text),
+        AiProvider::OpenAi | AiProvider::AzureOpenAi | AiProvider::Groq => {
+            count_tokens_tiktoken(text)
+        }
         AiProvider::Anthropic => count_tokens_tiktoken(text),
         _ => estimate_tokens_heuristic(text),
     }
@@ -52,7 +54,10 @@ pub fn count_tokens(text: &str, provider: &AiProvider, model: &str) -> TokenCoun
         token_count,
         model: model.to_string(),
         encoding: match provider {
-            AiProvider::OpenAi | AiProvider::AzureOpenAi | AiProvider::Groq | AiProvider::Anthropic => "cl100k_base".into(),
+            AiProvider::OpenAi
+            | AiProvider::AzureOpenAi
+            | AiProvider::Groq
+            | AiProvider::Anthropic => "cl100k_base".into(),
             _ => "heuristic".into(),
         },
     }
@@ -60,8 +65,14 @@ pub fn count_tokens(text: &str, provider: &AiProvider, model: &str) -> TokenCoun
 
 // ── Cost Estimation ──────────────────────────────────────────────────────────
 
-pub fn estimate_cost(prompt_tokens: u32, completion_tokens: u32, input_cost_per_1k: f64, output_cost_per_1k: f64) -> f64 {
-    (prompt_tokens as f64 / 1000.0) * input_cost_per_1k + (completion_tokens as f64 / 1000.0) * output_cost_per_1k
+pub fn estimate_cost(
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    input_cost_per_1k: f64,
+    output_cost_per_1k: f64,
+) -> f64 {
+    (prompt_tokens as f64 / 1000.0) * input_cost_per_1k
+        + (completion_tokens as f64 / 1000.0) * output_cost_per_1k
 }
 
 pub fn estimate_cost_for_model(usage: &TokenUsage, model: &str, provider: &AiProvider) -> f64 {
@@ -120,9 +131,18 @@ pub struct BudgetUsageEntry {
     pub period_start: chrono::DateTime<chrono::Utc>,
 }
 
+impl Default for BudgetTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BudgetTracker {
     pub fn new() -> Self {
-        Self { configs: HashMap::new(), usage: HashMap::new() }
+        Self {
+            configs: HashMap::new(),
+            usage: HashMap::new(),
+        }
     }
 
     pub fn set_budget(&mut self, key: &str, config: BudgetConfig) {
@@ -130,9 +150,15 @@ impl BudgetTracker {
     }
 
     pub fn record_usage(&mut self, key: &str, tokens: u32, cost: f64) -> Result<(), String> {
-        let entry = self.usage.entry(key.to_string()).or_insert_with(|| BudgetUsageEntry {
-            total_tokens: 0, total_cost: 0.0, request_count: 0, period_start: Utc::now(),
-        });
+        let entry = self
+            .usage
+            .entry(key.to_string())
+            .or_insert_with(|| BudgetUsageEntry {
+                total_tokens: 0,
+                total_cost: 0.0,
+                request_count: 0,
+                period_start: Utc::now(),
+            });
 
         if let Some(config) = self.configs.get(key) {
             let elapsed = Utc::now().signed_duration_since(entry.period_start);
@@ -150,7 +176,9 @@ impl BudgetTracker {
             }
 
             if config.enforce_hard_limit {
-                if config.max_total_tokens > 0 && entry.total_tokens + tokens as u64 > config.max_total_tokens {
+                if config.max_total_tokens > 0
+                    && entry.total_tokens + tokens as u64 > config.max_total_tokens
+                {
                     return Err(format!("Token budget exceeded for '{}'", key));
                 }
                 if config.max_cost_usd > 0.0 && entry.total_cost + cost > config.max_cost_usd {
@@ -173,9 +201,21 @@ impl BudgetTracker {
         let max_cost = config.map(|c| c.max_cost_usd).unwrap_or(0.0);
         let max_tokens = config.map(|c| c.max_total_tokens).unwrap_or(0);
 
-        let budget_remaining = if max_cost > 0.0 { Some(max_cost - total_cost) } else { None };
-        let tokens_remaining = if max_tokens > 0 { Some(max_tokens.saturating_sub(total_tokens)) } else { None };
-        let utilization = if max_cost > 0.0 { (total_cost / max_cost * 100.0).min(100.0) } else { 0.0 };
+        let budget_remaining = if max_cost > 0.0 {
+            Some(max_cost - total_cost)
+        } else {
+            None
+        };
+        let tokens_remaining = if max_tokens > 0 {
+            Some(max_tokens.saturating_sub(total_tokens))
+        } else {
+            None
+        };
+        let utilization = if max_cost > 0.0 {
+            (total_cost / max_cost * 100.0).min(100.0)
+        } else {
+            0.0
+        };
         let warning_threshold = config.and_then(|c| c.warning_threshold).unwrap_or(0.8);
 
         BudgetStatus {
@@ -187,7 +227,8 @@ impl BudgetTracker {
             budget_utilization_pct: utilization,
             period_start: usage.map(|u| u.period_start),
             period_end: None,
-            is_over_budget: (max_cost > 0.0 && total_cost >= max_cost) || (max_tokens > 0 && total_tokens >= max_tokens),
+            is_over_budget: (max_cost > 0.0 && total_cost >= max_cost)
+                || (max_tokens > 0 && total_tokens >= max_tokens),
             is_warning: max_cost > 0.0 && total_cost >= max_cost * warning_threshold,
         }
     }
@@ -216,7 +257,9 @@ pub fn get_global_usage() -> HashMap<String, TokenUsage> {
 pub fn reset_global_usage(provider: Option<&AiProvider>) {
     if let Ok(mut map) = AI_TOKEN_USAGE.lock() {
         match provider {
-            Some(p) => { map.remove(&format!("{:?}", p)); }
+            Some(p) => {
+                map.remove(&format!("{:?}", p));
+            }
             None => map.clear(),
         }
     }

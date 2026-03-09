@@ -1,7 +1,7 @@
 // ── Workflow Engine ───────────────────────────────────────────────────────────
 
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::types::*;
@@ -12,20 +12,42 @@ pub struct WorkflowRegistry {
     workflows: HashMap<String, WorkflowDefinition>,
 }
 
+impl Default for WorkflowRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WorkflowRegistry {
-    pub fn new() -> Self { Self { workflows: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            workflows: HashMap::new(),
+        }
+    }
 
     pub fn register(&mut self, workflow: WorkflowDefinition) {
         self.workflows.insert(workflow.id.clone(), workflow);
     }
 
-    pub fn get(&self, id: &str) -> Option<&WorkflowDefinition> { self.workflows.get(id) }
-    pub fn remove(&mut self, id: &str) -> bool { self.workflows.remove(id).is_some() }
-    pub fn list(&self) -> Vec<&WorkflowDefinition> { self.workflows.values().collect() }
-    pub fn count(&self) -> usize { self.workflows.len() }
+    pub fn get(&self, id: &str) -> Option<&WorkflowDefinition> {
+        self.workflows.get(id)
+    }
+    pub fn remove(&mut self, id: &str) -> bool {
+        self.workflows.remove(id).is_some()
+    }
+    pub fn list(&self) -> Vec<&WorkflowDefinition> {
+        self.workflows.values().collect()
+    }
+    pub fn count(&self) -> usize {
+        self.workflows.len()
+    }
 
     pub fn create(
-        &mut self, name: &str, description: &str, steps: Vec<WorkflowStep>, tags: Vec<String>,
+        &mut self,
+        name: &str,
+        description: &str,
+        steps: Vec<WorkflowStep>,
+        tags: Vec<String>,
     ) -> String {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -45,7 +67,9 @@ impl WorkflowRegistry {
     }
 
     pub fn update_steps(&mut self, id: &str, steps: Vec<WorkflowStep>) -> Result<(), String> {
-        let wf = self.workflows.get_mut(id)
+        let wf = self
+            .workflows
+            .get_mut(id)
             .ok_or_else(|| format!("Workflow {} not found", id))?;
         wf.steps = steps;
         wf.updated_at = Utc::now();
@@ -200,15 +224,19 @@ async fn execute_step(
         WorkflowStepType::Parallel => execute_parallel(step, variables).await,
         WorkflowStepType::HumanInTheLoop => {
             // In a real implementation this would pause and wait for human input
-            Ok((Some(serde_json::json!({"status": "awaiting_human_input", "step": step.name})), TokenUsage::default()))
+            Ok((
+                Some(serde_json::json!({"status": "awaiting_human_input", "step": step.name})),
+                TokenUsage::default(),
+            ))
         }
         WorkflowStepType::Transform => execute_transform(step, variables).await,
         WorkflowStepType::Delay => execute_delay(step).await,
         WorkflowStepType::RagSearch => execute_rag_search(step, variables).await,
         WorkflowStepType::Embedding => execute_embedding(step, variables).await,
-        WorkflowStepType::SubWorkflow => {
-            Ok((Some(serde_json::json!({"status": "sub_workflow_placeholder"})), TokenUsage::default()))
-        }
+        WorkflowStepType::SubWorkflow => Ok((
+            Some(serde_json::json!({"status": "sub_workflow_placeholder"})),
+            TokenUsage::default(),
+        )),
     }
 }
 
@@ -217,7 +245,9 @@ async fn execute_llm_prompt(
     variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
     // Extract prompt template from config, substitute variables
-    let prompt_template = step.config.get("prompt")
+    let prompt_template = step
+        .config
+        .get("prompt")
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
@@ -235,10 +265,16 @@ async fn execute_tool(
     step: &WorkflowStep,
     _variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let tool_name = step.config.get("tool")
+    let tool_name = step
+        .config
+        .get("tool")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-    let args = step.config.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+    let args = step
+        .config
+        .get("arguments")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
 
     let output = serde_json::json!({
         "tool": tool_name,
@@ -252,7 +288,9 @@ async fn execute_condition(
     step: &WorkflowStep,
     variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let cond_expr = step.config.get("condition")
+    let cond_expr = step
+        .config
+        .get("condition")
         .and_then(|v| v.as_str())
         .unwrap_or("false");
 
@@ -266,10 +304,13 @@ async fn execute_loop(
     step: &WorkflowStep,
     variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let items_key = step.config.get("items_variable")
+    let items_key = step
+        .config
+        .get("items_variable")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let items = variables.get(items_key)
+    let items = variables
+        .get(items_key)
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -286,7 +327,9 @@ async fn execute_parallel(
     step: &WorkflowStep,
     _variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let sub_steps = step.config.get("steps")
+    let sub_steps = step
+        .config
+        .get("steps")
         .and_then(|v| v.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
@@ -302,36 +345,50 @@ async fn execute_transform(
     step: &WorkflowStep,
     variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let template = step.config.get("template")
+    let template = step
+        .config
+        .get("template")
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
     let rendered = substitute_variables(template, variables);
-    Ok((Some(serde_json::Value::String(rendered)), TokenUsage::default()))
+    Ok((
+        Some(serde_json::Value::String(rendered)),
+        TokenUsage::default(),
+    ))
 }
 
 async fn execute_delay(
     step: &WorkflowStep,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let ms = step.config.get("delay_ms")
+    let ms = step
+        .config
+        .get("delay_ms")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
     if ms > 0 && ms <= 60_000 {
         tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
     }
-    Ok((Some(serde_json::json!({"delayed_ms": ms})), TokenUsage::default()))
+    Ok((
+        Some(serde_json::json!({"delayed_ms": ms})),
+        TokenUsage::default(),
+    ))
 }
 
 async fn execute_rag_search(
     step: &WorkflowStep,
     variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let query_template = step.config.get("query")
+    let query_template = step
+        .config
+        .get("query")
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let query = substitute_variables(query_template, variables);
-    let collection = step.config.get("collection")
+    let collection = step
+        .config
+        .get("collection")
         .and_then(|v| v.as_str())
         .unwrap_or("default");
 
@@ -347,10 +404,13 @@ async fn execute_embedding(
     step: &WorkflowStep,
     variables: &HashMap<String, serde_json::Value>,
 ) -> Result<(Option<serde_json::Value>, TokenUsage), String> {
-    let text_key = step.config.get("text_variable")
+    let text_key = step
+        .config
+        .get("text_variable")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let text = variables.get(text_key)
+    let text = variables
+        .get(text_key)
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
@@ -377,9 +437,7 @@ fn handle_step_error(
     match &step.on_error {
         Some(handler) => match handler.strategy {
             ErrorStrategy::Skip => StepErrorAction::Skip,
-            ErrorStrategy::Fallback => {
-                StepErrorAction::Continue(handler.fallback_value.clone())
-            }
+            ErrorStrategy::Fallback => StepErrorAction::Continue(handler.fallback_value.clone()),
             ErrorStrategy::Retry => {
                 // In a real implementation, we'd retry with the policy
                 // For now, fall through to Fail after "retry"
@@ -398,14 +456,14 @@ fn evaluate_condition(expr: &str, variables: &HashMap<String, serde_json::Value>
     // Supports: "varname", "varname == value", "!varname"
     let expr = expr.trim();
 
-    if expr.starts_with('!') {
-        let var = expr[1..].trim();
+    if let Some(stripped) = expr.strip_prefix('!') {
+        let var = stripped.trim();
         return !is_truthy(variables.get(var));
     }
 
     if let Some(pos) = expr.find("==") {
         let var = expr[..pos].trim();
-        let val = expr[pos+2..].trim().trim_matches('"');
+        let val = expr[pos + 2..].trim().trim_matches('"');
         return match variables.get(var) {
             Some(serde_json::Value::String(s)) => s == val,
             Some(v) => v.to_string().trim_matches('"') == val,
@@ -415,7 +473,7 @@ fn evaluate_condition(expr: &str, variables: &HashMap<String, serde_json::Value>
 
     if let Some(pos) = expr.find("!=") {
         let var = expr[..pos].trim();
-        let val = expr[pos+2..].trim().trim_matches('"');
+        let val = expr[pos + 2..].trim().trim_matches('"');
         return match variables.get(var) {
             Some(serde_json::Value::String(s)) => s != val,
             Some(v) => v.to_string().trim_matches('"') != val,

@@ -1,8 +1,8 @@
 // ── Prompt Template Engine ────────────────────────────────────────────────────
 
-use std::collections::HashMap;
 use chrono::Utc;
 use regex::Regex;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::types::*;
@@ -13,45 +13,90 @@ pub struct TemplateRegistry {
     templates: HashMap<String, PromptTemplate>,
 }
 
+impl Default for TemplateRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TemplateRegistry {
-    pub fn new() -> Self { Self { templates: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            templates: HashMap::new(),
+        }
+    }
 
     pub fn register(&mut self, template: PromptTemplate) {
         self.templates.insert(template.id.clone(), template);
     }
 
-    pub fn get(&self, id: &str) -> Option<&PromptTemplate> { self.templates.get(id) }
-    pub fn remove(&mut self, id: &str) -> bool { self.templates.remove(id).is_some() }
-    pub fn list(&self) -> Vec<&PromptTemplate> { self.templates.values().collect() }
+    pub fn get(&self, id: &str) -> Option<&PromptTemplate> {
+        self.templates.get(id)
+    }
+    pub fn remove(&mut self, id: &str) -> bool {
+        self.templates.remove(id).is_some()
+    }
+    pub fn list(&self) -> Vec<&PromptTemplate> {
+        self.templates.values().collect()
+    }
 
     pub fn find_by_name(&self, name: &str) -> Option<&PromptTemplate> {
         self.templates.values().find(|t| t.name == name)
     }
 
     pub fn find_by_tag(&self, tag: &str) -> Vec<&PromptTemplate> {
-        self.templates.values().filter(|t| t.tags.contains(&tag.to_string())).collect()
+        self.templates
+            .values()
+            .filter(|t| t.tags.contains(&tag.to_string()))
+            .collect()
     }
 
     pub fn create(
-        &mut self, name: &str, template: &str, description: &str,
-        variables: Vec<TemplateVariable>, tags: Vec<String>,
+        &mut self,
+        name: &str,
+        template: &str,
+        description: &str,
+        variables: Vec<TemplateVariable>,
+        tags: Vec<String>,
     ) -> String {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let pt = PromptTemplate {
-            id: id.clone(), name: name.into(), description: description.into(),
-            template: template.into(), variables, category: None, tags,
-            version: 1, created_at: now, updated_at: now,
+            id: id.clone(),
+            name: name.into(),
+            description: description.into(),
+            template: template.into(),
+            variables,
+            category: None,
+            tags,
+            version: 1,
+            created_at: now,
+            updated_at: now,
         };
         self.templates.insert(id.clone(), pt);
         id
     }
 
-    pub fn update(&mut self, id: &str, template_text: Option<&str>, description: Option<&str>, variables: Option<Vec<TemplateVariable>>) -> Result<(), String> {
-        let pt = self.templates.get_mut(id).ok_or_else(|| format!("Template {} not found", id))?;
-        if let Some(t) = template_text { pt.template = t.to_string(); }
-        if let Some(d) = description { pt.description = d.to_string(); }
-        if let Some(v) = variables { pt.variables = v; }
+    pub fn update(
+        &mut self,
+        id: &str,
+        template_text: Option<&str>,
+        description: Option<&str>,
+        variables: Option<Vec<TemplateVariable>>,
+    ) -> Result<(), String> {
+        let pt = self
+            .templates
+            .get_mut(id)
+            .ok_or_else(|| format!("Template {} not found", id))?;
+        if let Some(t) = template_text {
+            pt.template = t.to_string();
+        }
+        if let Some(d) = description {
+            pt.description = d.to_string();
+        }
+        if let Some(v) = variables {
+            pt.variables = v;
+        }
         pt.version += 1;
         pt.updated_at = Utc::now();
         Ok(())
@@ -60,55 +105,86 @@ impl TemplateRegistry {
 
 // ── Template Rendering ───────────────────────────────────────────────────────
 
-pub fn render_template(template: &str, variables: &HashMap<String, String>) -> Result<String, String> {
+pub fn render_template(
+    template: &str,
+    variables: &HashMap<String, String>,
+) -> Result<String, String> {
     let re = Regex::new(r"\{\{(\w+)\}\}").map_err(|e| format!("Regex error: {}", e))?;
     let mut result = template.to_string();
 
-    result = re.replace_all(&result, |caps: &regex::Captures| {
-        let var_name = &caps[1];
-        variables.get(var_name).cloned().unwrap_or_else(|| format!("{{{{{}}}}}", var_name))
-    }).to_string();
+    result = re
+        .replace_all(&result, |caps: &regex::Captures| {
+            let var_name = &caps[1];
+            variables
+                .get(var_name)
+                .cloned()
+                .unwrap_or_else(|| format!("{{{{{}}}}}", var_name))
+        })
+        .to_string();
 
     // Handle conditional blocks: {{#if var}}...{{/if}}
-    let cond_re = Regex::new(r"\{\{#if (\w+)\}\}([\s\S]*?)\{\{/if\}\}").map_err(|e| format!("{}", e))?;
-    result = cond_re.replace_all(&result, |caps: &regex::Captures| {
-        let var = &caps[1];
-        let body = &caps[2];
-        match variables.get(var) {
-            Some(v) if !v.is_empty() && v != "false" && v != "0" => body.to_string(),
-            _ => String::new(),
-        }
-    }).to_string();
+    let cond_re =
+        Regex::new(r"\{\{#if (\w+)\}\}([\s\S]*?)\{\{/if\}\}").map_err(|e| format!("{}", e))?;
+    result = cond_re
+        .replace_all(&result, |caps: &regex::Captures| {
+            let var = &caps[1];
+            let body = &caps[2];
+            match variables.get(var) {
+                Some(v) if !v.is_empty() && v != "false" && v != "0" => body.to_string(),
+                _ => String::new(),
+            }
+        })
+        .to_string();
 
     // Handle {{#each items}}...{{/each}}
-    let each_re = Regex::new(r"\{\{#each (\w+)\}\}([\s\S]*?)\{\{/each\}\}").map_err(|e| format!("{}", e))?;
-    result = each_re.replace_all(&result, |caps: &regex::Captures| {
-        let var = &caps[1];
-        let body_template = &caps[2];
-        match variables.get(var) {
-            Some(list_str) => list_str.split(',').enumerate().map(|(i, item)| {
-                body_template.replace("{{this}}", item.trim()).replace("{{@index}}", &i.to_string())
-            }).collect::<Vec<_>>().join(""),
-            None => String::new(),
-        }
-    }).to_string();
+    let each_re =
+        Regex::new(r"\{\{#each (\w+)\}\}([\s\S]*?)\{\{/each\}\}").map_err(|e| format!("{}", e))?;
+    result = each_re
+        .replace_all(&result, |caps: &regex::Captures| {
+            let var = &caps[1];
+            let body_template = &caps[2];
+            match variables.get(var) {
+                Some(list_str) => list_str
+                    .split(',')
+                    .enumerate()
+                    .map(|(i, item)| {
+                        body_template
+                            .replace("{{this}}", item.trim())
+                            .replace("{{@index}}", &i.to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(""),
+                None => String::new(),
+            }
+        })
+        .to_string();
 
     Ok(result)
 }
 
 pub fn validate_template_variables(
-    template: &PromptTemplate, variables: &HashMap<String, String>,
+    template: &PromptTemplate,
+    variables: &HashMap<String, String>,
 ) -> Result<(), String> {
-    let missing: Vec<_> = template.variables.iter()
+    let missing: Vec<_> = template
+        .variables
+        .iter()
         .filter(|v| v.required && !variables.contains_key(&v.name))
         .map(|v| v.name.clone())
         .collect();
-    if missing.is_empty() { Ok(()) }
-    else { Err(format!("Missing required variables: {}", missing.join(", "))) }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Missing required variables: {}",
+            missing.join(", ")
+        ))
+    }
 }
 
 pub fn render_prompt_template(
-    template: &PromptTemplate, variables: &HashMap<String, String>,
+    template: &PromptTemplate,
+    variables: &HashMap<String, String>,
 ) -> Result<String, String> {
     let mut vars = HashMap::new();
     for v in &template.variables {
@@ -127,8 +203,11 @@ pub fn render_prompt_template(
 
 fn tvar(name: &str, desc: &str, required: bool, default: Option<&str>) -> TemplateVariable {
     TemplateVariable {
-        name: name.into(), description: desc.into(), required,
-        default_value: default.map(String::from), pattern: None,
+        name: name.into(),
+        description: desc.into(),
+        required,
+        default_value: default.map(String::from),
+        pattern: None,
     }
 }
 

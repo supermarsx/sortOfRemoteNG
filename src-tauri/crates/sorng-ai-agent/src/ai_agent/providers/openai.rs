@@ -6,16 +6,19 @@ use log::{info, warn};
 use reqwest::Client;
 use uuid::Uuid;
 
-use crate::ai_agent::types::*;
 use super::LlmProvider;
+use crate::ai_agent::types::*;
 
 const OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 
 pub struct OpenAiProvider {
     client: Client,
+    #[allow(dead_code)]
     api_key: String,
     base_url: String,
+    #[allow(dead_code)]
     organization: Option<String>,
+    #[allow(dead_code)]
     timeout_secs: u64,
     max_retries: u32,
     retry_delay_ms: u64,
@@ -23,19 +26,29 @@ pub struct OpenAiProvider {
 
 impl OpenAiProvider {
     pub fn new(config: &ProviderConfig) -> Result<Self, String> {
-        let api_key = config.api_key.clone()
-            .ok_or("OpenAI requires an API key")?;
-        let base_url = config.base_url.clone()
+        let api_key = config.api_key.clone().ok_or("OpenAI requires an API key")?;
+        let base_url = config
+            .base_url
+            .clone()
             .unwrap_or_else(|| OPENAI_API_BASE.to_string());
 
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("Authorization", format!("Bearer {}", api_key).parse().map_err(|e| format!("{}", e))?);
+        headers.insert(
+            "Authorization",
+            format!("Bearer {}", api_key)
+                .parse()
+                .map_err(|e| format!("{}", e))?,
+        );
         if let Some(ref org) = config.organization {
-            headers.insert("OpenAI-Organization", org.parse().map_err(|e| format!("{}", e))?);
+            headers.insert(
+                "OpenAI-Organization",
+                org.parse().map_err(|e| format!("{}", e))?,
+            );
         }
         for (k, v) in &config.extra_headers {
             headers.insert(
-                reqwest::header::HeaderName::from_bytes(k.as_bytes()).map_err(|e| format!("{}", e))?,
+                reqwest::header::HeaderName::from_bytes(k.as_bytes())
+                    .map_err(|e| format!("{}", e))?,
                 v.parse().map_err(|e| format!("{}", e))?,
             );
         }
@@ -58,96 +71,112 @@ impl OpenAiProvider {
     }
 
     fn build_messages_payload(&self, messages: &[ChatMessage]) -> Vec<serde_json::Value> {
-        messages.iter().map(|msg| {
-            let role = match msg.role {
-                MessageRole::System => "system",
-                MessageRole::User => "user",
-                MessageRole::Assistant => "assistant",
-                MessageRole::Tool => "tool",
-                MessageRole::Function => "function",
-            };
+        messages
+            .iter()
+            .map(|msg| {
+                let role = match msg.role {
+                    MessageRole::System => "system",
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::Tool => "tool",
+                    MessageRole::Function => "function",
+                };
 
-            let content = if msg.content.len() == 1 {
-                if let ContentBlock::Text { ref text } = msg.content[0] {
-                    serde_json::Value::String(text.clone())
+                let content = if msg.content.len() == 1 {
+                    if let ContentBlock::Text { ref text } = msg.content[0] {
+                        serde_json::Value::String(text.clone())
+                    } else {
+                        self.build_content_array(&msg.content)
+                    }
+                } else if msg.content.is_empty() {
+                    serde_json::Value::Null
                 } else {
                     self.build_content_array(&msg.content)
+                };
+
+                let mut obj = serde_json::json!({
+                    "role": role,
+                    "content": content,
+                });
+
+                if !msg.tool_calls.is_empty() {
+                    obj["tool_calls"] = serde_json::json!(msg
+                        .tool_calls
+                        .iter()
+                        .map(|tc| {
+                            serde_json::json!({
+                                "id": tc.id,
+                                "type": tc.call_type,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments,
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>());
                 }
-            } else if msg.content.is_empty() {
-                serde_json::Value::Null
-            } else {
-                self.build_content_array(&msg.content)
-            };
 
-            let mut obj = serde_json::json!({
-                "role": role,
-                "content": content,
-            });
+                if let Some(ref tool_call_id) = msg.tool_call_id {
+                    obj["tool_call_id"] = serde_json::Value::String(tool_call_id.clone());
+                }
+                if let Some(ref name) = msg.name {
+                    obj["name"] = serde_json::Value::String(name.clone());
+                }
 
-            if !msg.tool_calls.is_empty() {
-                obj["tool_calls"] = serde_json::json!(msg.tool_calls.iter().map(|tc| {
-                    serde_json::json!({
-                        "id": tc.id,
-                        "type": tc.call_type,
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        }
-                    })
-                }).collect::<Vec<_>>());
-            }
-
-            if let Some(ref tool_call_id) = msg.tool_call_id {
-                obj["tool_call_id"] = serde_json::Value::String(tool_call_id.clone());
-            }
-            if let Some(ref name) = msg.name {
-                obj["name"] = serde_json::Value::String(name.clone());
-            }
-
-            obj
-        }).collect()
+                obj
+            })
+            .collect()
     }
 
     fn build_content_array(&self, blocks: &[ContentBlock]) -> serde_json::Value {
-        serde_json::Value::Array(blocks.iter().map(|b| match b {
-            ContentBlock::Text { text } => serde_json::json!({
-                "type": "text",
-                "text": text,
-            }),
-            ContentBlock::Image { data, media_type } => {
-                if data.starts_with("http") {
-                    serde_json::json!({
-                        "type": "image_url",
-                        "image_url": { "url": data }
-                    })
-                } else {
-                    let mt = media_type.as_deref().unwrap_or("image/png");
-                    serde_json::json!({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": format!("data:{};base64,{}", mt, data)
+        serde_json::Value::Array(
+            blocks
+                .iter()
+                .map(|b| match b {
+                    ContentBlock::Text { text } => serde_json::json!({
+                        "type": "text",
+                        "text": text,
+                    }),
+                    ContentBlock::Image { data, media_type } => {
+                        if data.starts_with("http") {
+                            serde_json::json!({
+                                "type": "image_url",
+                                "image_url": { "url": data }
+                            })
+                        } else {
+                            let mt = media_type.as_deref().unwrap_or("image/png");
+                            serde_json::json!({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": format!("data:{};base64,{}", mt, data)
+                                }
+                            })
                         }
-                    })
-                }
-            }
-        }).collect())
+                    }
+                })
+                .collect(),
+        )
     }
 
     fn build_tools_payload(&self, tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
-        tools.iter().map(|t| {
-            serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                }
+        tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    }
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn parse_response(&self, body: &serde_json::Value) -> Result<ChatResponse, String> {
-        let choice = body["choices"].get(0)
+        let choice = body["choices"]
+            .get(0)
             .ok_or("No choices in OpenAI response")?;
 
         let message = &choice["message"];
@@ -175,7 +204,10 @@ impl OpenAiProvider {
                     call_type: tc["type"].as_str().unwrap_or("function").to_string(),
                     function: FunctionCall {
                         name: tc["function"]["name"].as_str().unwrap_or("").to_string(),
-                        arguments: tc["function"]["arguments"].as_str().unwrap_or("{}").to_string(),
+                        arguments: tc["function"]["arguments"]
+                            .as_str()
+                            .unwrap_or("{}")
+                            .to_string(),
                     },
                 });
             }
@@ -232,10 +264,15 @@ impl LlmProvider for OpenAiProvider {
 
     async fn list_models(&self) -> Result<Vec<ModelSpec>, String> {
         let url = format!("{}/models", self.base_url);
-        let resp = self.client.get(&url)
-            .send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| format!("Failed to list OpenAI models: {}", e))?;
-        let body: serde_json::Value = resp.json().await
+        let body: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse OpenAI models response: {}", e))?;
 
         let mut models = Vec::new();
@@ -243,14 +280,20 @@ impl LlmProvider for OpenAiProvider {
             for m in data {
                 let id = m["id"].as_str().unwrap_or("").to_string();
                 // Only include GPT and o-series models
-                if id.starts_with("gpt") || id.starts_with("o1") || id.starts_with("o3") || id.starts_with("o4") {
+                if id.starts_with("gpt")
+                    || id.starts_with("o1")
+                    || id.starts_with("o3")
+                    || id.starts_with("o4")
+                {
                     models.push(ModelSpec {
                         provider: AiProvider::OpenAi,
                         model_id: id.clone(),
                         display_name: Some(id.clone()),
                         context_window: Self::estimate_context_window(&id),
                         supports_tools: true,
-                        supports_vision: id.contains("vision") || id.contains("gpt-4o") || id.contains("gpt-4-turbo"),
+                        supports_vision: id.contains("vision")
+                            || id.contains("gpt-4o")
+                            || id.contains("gpt-4-turbo"),
                         supports_streaming: true,
                         input_cost_per_1k: Self::estimate_input_cost(&id),
                         output_cost_per_1k: Self::estimate_output_cost(&id),
@@ -300,13 +343,16 @@ impl LlmProvider for OpenAiProvider {
                 info!("OpenAI retry attempt {}/{}", attempt, self.max_retries);
                 tokio::time::sleep(std::time::Duration::from_millis(
                     self.retry_delay_ms * (attempt as u64),
-                )).await;
+                ))
+                .await;
             }
 
             match self.client.post(&url).json(&body).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        let resp_body: serde_json::Value = resp.json().await
+                        let resp_body: serde_json::Value = resp
+                            .json()
+                            .await
                             .map_err(|e| format!("Failed to parse OpenAI response: {}", e))?;
                         let mut result = self.parse_response(&resp_body)?;
                         result.latency_ms = start.elapsed().as_millis() as u64;
@@ -366,28 +412,34 @@ impl LlmProvider for OpenAiProvider {
         let client = self.client.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
-            let _ = tx.send(StreamEvent::Start {
-                request_id: request_id.clone(),
-                model: model_str.clone(),
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Start {
+                    request_id: request_id.clone(),
+                    model: model_str.clone(),
+                })
+                .await;
 
             let resp = match client.post(&url).json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    let _ = tx.send(StreamEvent::Error {
-                        request_id,
-                        error: format!("Request failed: {}", e),
-                    }).await;
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            request_id,
+                            error: format!("Request failed: {}", e),
+                        })
+                        .await;
                     return;
                 }
             };
 
             if !resp.status().is_success() {
                 let err = resp.text().await.unwrap_or_default();
-                let _ = tx.send(StreamEvent::Error {
-                    request_id,
-                    error: format!("API error: {}", err),
-                }).await;
+                let _ = tx
+                    .send(StreamEvent::Error {
+                        request_id,
+                        error: format!("API error: {}", err),
+                    })
+                    .await;
                 return;
             }
 
@@ -402,10 +454,12 @@ impl LlmProvider for OpenAiProvider {
                 let chunk = match chunk_result {
                     Ok(c) => c,
                     Err(e) => {
-                        let _ = tx.send(StreamEvent::Error {
-                            request_id: request_id.clone(),
-                            error: format!("Stream error: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(StreamEvent::Error {
+                                request_id: request_id.clone(),
+                                error: format!("Stream error: {}", e),
+                            })
+                            .await;
                         return;
                     }
                 };
@@ -423,12 +477,14 @@ impl LlmProvider for OpenAiProvider {
 
                     if let Some(data) = line.strip_prefix("data: ") {
                         if data.trim() == "[DONE]" {
-                            let _ = tx.send(StreamEvent::Done {
-                                request_id: request_id.clone(),
-                                finish_reason: finish_reason.clone(),
-                                usage: usage.clone(),
-                                latency_ms: start.elapsed().as_millis() as u64,
-                            }).await;
+                            let _ = tx
+                                .send(StreamEvent::Done {
+                                    request_id: request_id.clone(),
+                                    finish_reason: finish_reason.clone(),
+                                    usage: usage.clone(),
+                                    latency_ms: start.elapsed().as_millis() as u64,
+                                })
+                                .await;
                             return;
                         }
 
@@ -438,25 +494,34 @@ impl LlmProvider for OpenAiProvider {
                                     if let Some(delta) = choice.get("delta") {
                                         if let Some(content) = delta["content"].as_str() {
                                             accumulated.push_str(content);
-                                            let _ = tx.send(StreamEvent::Delta {
-                                                request_id: request_id.clone(),
-                                                content: content.to_string(),
-                                                accumulated: accumulated.clone(),
-                                            }).await;
+                                            let _ = tx
+                                                .send(StreamEvent::Delta {
+                                                    request_id: request_id.clone(),
+                                                    content: content.to_string(),
+                                                    accumulated: accumulated.clone(),
+                                                })
+                                                .await;
                                         }
 
                                         // Tool call deltas
                                         if let Some(tcs) = delta["tool_calls"].as_array() {
                                             for tc in tcs {
-                                                let idx = tc["index"].as_u64().unwrap_or(0) as usize;
-                                                let name = tc["function"]["name"].as_str().map(|s| s.to_string());
-                                                let args = tc["function"]["arguments"].as_str().unwrap_or("");
-                                                let _ = tx.send(StreamEvent::ToolCallDelta {
-                                                    request_id: request_id.clone(),
-                                                    tool_call_index: idx,
-                                                    name,
-                                                    arguments_delta: args.to_string(),
-                                                }).await;
+                                                let idx =
+                                                    tc["index"].as_u64().unwrap_or(0) as usize;
+                                                let name = tc["function"]["name"]
+                                                    .as_str()
+                                                    .map(|s| s.to_string());
+                                                let args = tc["function"]["arguments"]
+                                                    .as_str()
+                                                    .unwrap_or("");
+                                                let _ = tx
+                                                    .send(StreamEvent::ToolCallDelta {
+                                                        request_id: request_id.clone(),
+                                                        tool_call_index: idx,
+                                                        name,
+                                                        arguments_delta: args.to_string(),
+                                                    })
+                                                    .await;
                                             }
                                         }
                                     }
@@ -474,8 +539,10 @@ impl LlmProvider for OpenAiProvider {
                             }
 
                             if let Some(u) = parsed.get("usage") {
-                                usage.prompt_tokens = u["prompt_tokens"].as_u64().unwrap_or(0) as u32;
-                                usage.completion_tokens = u["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                                usage.prompt_tokens =
+                                    u["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                                usage.completion_tokens =
+                                    u["completion_tokens"].as_u64().unwrap_or(0) as u32;
                                 usage.total_tokens = u["total_tokens"].as_u64().unwrap_or(0) as u32;
                             }
                         }
@@ -484,12 +551,14 @@ impl LlmProvider for OpenAiProvider {
             }
 
             // Stream ended without [DONE]
-            let _ = tx.send(StreamEvent::Done {
-                request_id,
-                finish_reason,
-                usage,
-                latency_ms: start.elapsed().as_millis() as u64,
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Done {
+                    request_id,
+                    finish_reason,
+                    usage,
+                    latency_ms: start.elapsed().as_millis() as u64,
+                })
+                .await;
         });
 
         Ok(rx)
@@ -513,7 +582,12 @@ impl LlmProvider for OpenAiProvider {
             body["dimensions"] = serde_json::json!(dim);
         }
 
-        let resp = self.client.post(&url).json(&body).send().await
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
             .map_err(|e| format!("Embedding request failed: {}", e))?;
 
         if !resp.status().is_success() {
@@ -521,7 +595,9 @@ impl LlmProvider for OpenAiProvider {
             return Err(format!("Embedding API error: {}", err));
         }
 
-        let resp_body: serde_json::Value = resp.json().await
+        let resp_body: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
 
         let mut embeddings = Vec::new();
@@ -529,7 +605,8 @@ impl LlmProvider for OpenAiProvider {
         if let Some(data) = resp_body["data"].as_array() {
             for item in data {
                 if let Some(emb) = item["embedding"].as_array() {
-                    let vec: Vec<f32> = emb.iter()
+                    let vec: Vec<f32> = emb
+                        .iter()
                         .filter_map(|v| v.as_f64().map(|f| f as f32))
                         .collect();
                     embeddings.push(vec);
@@ -559,8 +636,10 @@ impl LlmProvider for OpenAiProvider {
     async fn health_check(&self) -> Result<u64, String> {
         let url = format!("{}/models", self.base_url);
         let start = std::time::Instant::now();
-        self.client.get(&url)
-            .send().await
+        self.client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| format!("Health check failed: {}", e))?;
         Ok(start.elapsed().as_millis() as u64)
     }
@@ -568,9 +647,13 @@ impl LlmProvider for OpenAiProvider {
 
 impl OpenAiProvider {
     fn estimate_context_window(model_id: &str) -> u32 {
-        if model_id.contains("gpt-4o") || model_id.contains("o1") || model_id.contains("o3") || model_id.contains("o4") {
-            128_000
-        } else if model_id.contains("gpt-4-turbo") || model_id.contains("gpt-4-1106") {
+        if model_id.contains("gpt-4o")
+            || model_id.contains("o1")
+            || model_id.contains("o3")
+            || model_id.contains("o4")
+            || model_id.contains("gpt-4-turbo")
+            || model_id.contains("gpt-4-1106")
+        {
             128_000
         } else if model_id.contains("gpt-4-32k") {
             32_768
@@ -578,28 +661,40 @@ impl OpenAiProvider {
             8_192
         } else if model_id.contains("gpt-3.5-turbo-16k") {
             16_384
-        } else if model_id.contains("gpt-3.5") {
-            4_096
         } else {
             4_096
         }
     }
 
     fn estimate_input_cost(model_id: &str) -> f64 {
-        if model_id.contains("gpt-4o-mini") { 0.00015 }
-        else if model_id.contains("gpt-4o") { 0.0025 }
-        else if model_id.contains("gpt-4-turbo") { 0.01 }
-        else if model_id.contains("gpt-4") { 0.03 }
-        else if model_id.contains("gpt-3.5") { 0.0005 }
-        else { 0.001 }
+        if model_id.contains("gpt-4o-mini") {
+            0.00015
+        } else if model_id.contains("gpt-4o") {
+            0.0025
+        } else if model_id.contains("gpt-4-turbo") {
+            0.01
+        } else if model_id.contains("gpt-4") {
+            0.03
+        } else if model_id.contains("gpt-3.5") {
+            0.0005
+        } else {
+            0.001
+        }
     }
 
     fn estimate_output_cost(model_id: &str) -> f64 {
-        if model_id.contains("gpt-4o-mini") { 0.0006 }
-        else if model_id.contains("gpt-4o") { 0.01 }
-        else if model_id.contains("gpt-4-turbo") { 0.03 }
-        else if model_id.contains("gpt-4") { 0.06 }
-        else if model_id.contains("gpt-3.5") { 0.0015 }
-        else { 0.002 }
+        if model_id.contains("gpt-4o-mini") {
+            0.0006
+        } else if model_id.contains("gpt-4o") {
+            0.01
+        } else if model_id.contains("gpt-4-turbo") {
+            0.03
+        } else if model_id.contains("gpt-4") {
+            0.06
+        } else if model_id.contains("gpt-3.5") {
+            0.0015
+        } else {
+            0.002
+        }
     }
 }

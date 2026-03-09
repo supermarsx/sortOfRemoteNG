@@ -3,8 +3,8 @@
 // Helpers for managing SSE streaming state, buffering partial chunks,
 // accumulating content, and forwarding events to the front-end.
 
-use std::collections::HashMap;
 use log::warn;
+use std::collections::HashMap;
 
 use super::types::*;
 use super::AI_STREAM_CHUNKS;
@@ -50,20 +50,40 @@ impl StreamSession {
             StreamEvent::Start { model, .. } => {
                 self.model = model.clone();
             }
-            StreamEvent::Delta { content, accumulated, .. } => {
+            StreamEvent::Delta {
+                content,
+                accumulated,
+                ..
+            } => {
                 self.accumulated_content = accumulated.clone();
                 if let Ok(mut map) = AI_STREAM_CHUNKS.lock() {
                     let chunks = map.entry(self.request_id.clone()).or_insert_with(Vec::new);
                     chunks.push(content.clone());
                 }
             }
-            StreamEvent::ToolCallDelta { tool_call_index, name, arguments_delta, .. } => {
-                let entry = self.tool_call_buffer.entry(*tool_call_index)
-                    .or_insert_with(|| PartialToolCall { index: *tool_call_index, ..Default::default() });
-                if let Some(n) = name { entry.name = n.clone(); }
+            StreamEvent::ToolCallDelta {
+                tool_call_index,
+                name,
+                arguments_delta,
+                ..
+            } => {
+                let entry = self
+                    .tool_call_buffer
+                    .entry(*tool_call_index)
+                    .or_insert_with(|| PartialToolCall {
+                        index: *tool_call_index,
+                        ..Default::default()
+                    });
+                if let Some(n) = name {
+                    entry.name = n.clone();
+                }
                 entry.arguments_buffer.push_str(arguments_delta);
             }
-            StreamEvent::Done { finish_reason, usage, .. } => {
+            StreamEvent::Done {
+                finish_reason,
+                usage,
+                ..
+            } => {
                 self.finish_reason = Some(finish_reason.clone());
                 self.usage = usage.clone();
                 self.completed = true;
@@ -77,11 +97,17 @@ impl StreamSession {
     }
 
     pub fn finalise_tool_calls(&self) -> Vec<ToolCall> {
-        self.tool_call_buffer.values().map(|ptc| ToolCall {
-            id: format!("call_{}", ptc.index),
-            call_type: "function".into(),
-            function: FunctionCall { name: ptc.name.clone(), arguments: ptc.arguments_buffer.clone() },
-        }).collect()
+        self.tool_call_buffer
+            .values()
+            .map(|ptc| ToolCall {
+                id: format!("call_{}", ptc.index),
+                call_type: "function".into(),
+                function: FunctionCall {
+                    name: ptc.name.clone(),
+                    arguments: ptc.arguments_buffer.clone(),
+                },
+            })
+            .collect()
     }
 
     pub fn elapsed_ms(&self) -> u64 {
@@ -119,7 +145,9 @@ pub fn parse_sse_lines(buffer: &str) -> (Vec<String>, String) {
 
     for line in buffer.split('\n') {
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
         if trimmed == "data: [DONE]" {
             payloads.push("[DONE]".into());
             continue;
@@ -141,7 +169,11 @@ pub async fn consume_stream(
 ) {
     while let Some(event) = rx.recv().await {
         session.apply_event(&event);
-        if let Some(cb) = on_event { cb(&event); }
-        if session.completed { break; }
+        if let Some(cb) = on_event {
+            cb(&event);
+        }
+        if session.completed {
+            break;
+        }
     }
 }

@@ -6,8 +6,8 @@ use log::{info, warn};
 use reqwest::Client;
 use uuid::Uuid;
 
-use crate::ai_agent::types::*;
 use super::LlmProvider;
+use crate::ai_agent::types::*;
 
 pub struct OllamaProvider {
     client: Client,
@@ -18,7 +18,9 @@ pub struct OllamaProvider {
 
 impl OllamaProvider {
     pub fn new(config: &ProviderConfig) -> Result<Self, String> {
-        let base_url = config.base_url.clone()
+        let base_url = config
+            .base_url
+            .clone()
             .unwrap_or_else(|| format!("http://localhost:{}", config.ollama_port));
 
         let client = Client::builder()
@@ -35,46 +37,63 @@ impl OllamaProvider {
     }
 
     fn build_messages(&self, messages: &[ChatMessage]) -> Vec<serde_json::Value> {
-        messages.iter().map(|msg| {
-            let role = match msg.role {
-                MessageRole::System => "system",
-                MessageRole::User => "user",
-                MessageRole::Assistant => "assistant",
-                MessageRole::Tool => "tool",
-                MessageRole::Function => "tool",
-            };
-            let text = msg.content.iter().filter_map(|b| match b {
-                ContentBlock::Text { text } => Some(text.clone()),
-                _ => None,
-            }).collect::<Vec<_>>().join("\n");
+        messages
+            .iter()
+            .map(|msg| {
+                let role = match msg.role {
+                    MessageRole::System => "system",
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::Tool => "tool",
+                    MessageRole::Function => "tool",
+                };
+                let text = msg
+                    .content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::Text { text } => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
-            let mut obj = serde_json::json!({
-                "role": role,
-                "content": text,
-            });
+                let mut obj = serde_json::json!({
+                    "role": role,
+                    "content": text,
+                });
 
-            // Image support (Ollama supports base64 images)
-            let images: Vec<String> = msg.content.iter().filter_map(|b| match b {
-                ContentBlock::Image { data, .. } => Some(data.clone()),
-                _ => None,
-            }).collect();
-            if !images.is_empty() {
-                obj["images"] = serde_json::json!(images);
-            }
+                // Image support (Ollama supports base64 images)
+                let images: Vec<String> = msg
+                    .content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::Image { data, .. } => Some(data.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                if !images.is_empty() {
+                    obj["images"] = serde_json::json!(images);
+                }
 
-            obj
-        }).collect()
+                obj
+            })
+            .collect()
     }
 
     fn build_tools_payload(&self, tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
-        tools.iter().map(|t| serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": t.name,
-                "description": t.description,
-                "parameters": t.parameters,
-            }
-        })).collect()
+        tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    }
+                })
+            })
+            .collect()
     }
 }
 
@@ -86,9 +105,15 @@ impl LlmProvider for OllamaProvider {
 
     async fn list_models(&self) -> Result<Vec<ModelSpec>, String> {
         let url = format!("{}/api/tags", self.base_url);
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| format!("Failed to list Ollama models: {}", e))?;
-        let body: serde_json::Value = resp.json().await
+        let body: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse Ollama models response: {}", e))?;
 
         let mut models = Vec::new();
@@ -102,7 +127,9 @@ impl LlmProvider for OllamaProvider {
                     display_name: Some(name.clone()),
                     context_window: 32_768, // Default for most Ollama models
                     supports_tools: true,
-                    supports_vision: name.contains("llava") || name.contains("vision") || name.contains("bakllava"),
+                    supports_vision: name.contains("llava")
+                        || name.contains("vision")
+                        || name.contains("bakllava"),
                     supports_streaming: true,
                     input_cost_per_1k: 0.0, // Local = free
                     output_cost_per_1k: 0.0,
@@ -151,16 +178,22 @@ impl LlmProvider for OllamaProvider {
                 info!("Ollama retry attempt {}/{}", attempt, self.max_retries);
                 tokio::time::sleep(std::time::Duration::from_millis(
                     self.retry_delay_ms * (attempt as u64),
-                )).await;
+                ))
+                .await;
             }
 
             match self.client.post(&url).json(&body).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        let resp_body: serde_json::Value = resp.json().await
+                        let resp_body: serde_json::Value = resp
+                            .json()
+                            .await
                             .map_err(|e| format!("Failed to parse Ollama response: {}", e))?;
 
-                        let content_text = resp_body["message"]["content"].as_str().unwrap_or("").to_string();
+                        let content_text = resp_body["message"]["content"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_string();
                         let content = if content_text.is_empty() {
                             Vec::new()
                         } else {
@@ -174,7 +207,10 @@ impl LlmProvider for OllamaProvider {
                                     id: Uuid::new_v4().to_string(),
                                     call_type: "function".to_string(),
                                     function: FunctionCall {
-                                        name: tc["function"]["name"].as_str().unwrap_or("").to_string(),
+                                        name: tc["function"]["name"]
+                                            .as_str()
+                                            .unwrap_or("")
+                                            .to_string(),
                                         arguments: tc["function"]["arguments"].to_string(),
                                     },
                                 });
@@ -189,8 +225,10 @@ impl LlmProvider for OllamaProvider {
                             FinishReason::Length
                         };
 
-                        let prompt_tokens = resp_body["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
-                        let completion_tokens = resp_body["eval_count"].as_u64().unwrap_or(0) as u32;
+                        let prompt_tokens =
+                            resp_body["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
+                        let completion_tokens =
+                            resp_body["eval_count"].as_u64().unwrap_or(0) as u32;
 
                         return Ok(ChatResponse {
                             id: Uuid::new_v4().to_string(),
@@ -269,28 +307,34 @@ impl LlmProvider for OllamaProvider {
         let client = self.client.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
-            let _ = tx.send(StreamEvent::Start {
-                request_id: request_id.clone(),
-                model: model_str,
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Start {
+                    request_id: request_id.clone(),
+                    model: model_str,
+                })
+                .await;
 
             let resp = match client.post(&url).json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    let _ = tx.send(StreamEvent::Error {
-                        request_id,
-                        error: format!("Request failed: {}", e),
-                    }).await;
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            request_id,
+                            error: format!("Request failed: {}", e),
+                        })
+                        .await;
                     return;
                 }
             };
 
             if !resp.status().is_success() {
                 let err = resp.text().await.unwrap_or_default();
-                let _ = tx.send(StreamEvent::Error {
-                    request_id,
-                    error: format!("API error: {}", err),
-                }).await;
+                let _ = tx
+                    .send(StreamEvent::Error {
+                        request_id,
+                        error: format!("API error: {}", err),
+                    })
+                    .await;
                 return;
             }
 
@@ -304,10 +348,12 @@ impl LlmProvider for OllamaProvider {
                 let chunk = match chunk_result {
                     Ok(c) => c,
                     Err(e) => {
-                        let _ = tx.send(StreamEvent::Error {
-                            request_id: request_id.clone(),
-                            error: format!("Stream error: {}", e),
-                        }).await;
+                        let _ = tx
+                            .send(StreamEvent::Error {
+                                request_id: request_id.clone(),
+                                error: format!("Stream error: {}", e),
+                            })
+                            .await;
                         return;
                     }
                 };
@@ -318,7 +364,9 @@ impl LlmProvider for OllamaProvider {
                     let line = buffer[..line_end].trim().to_string();
                     buffer = buffer[line_end + 1..].to_string();
 
-                    if line.is_empty() { continue; }
+                    if line.is_empty() {
+                        continue;
+                    }
 
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
                         let done = parsed["done"].as_bool().unwrap_or(false);
@@ -326,37 +374,45 @@ impl LlmProvider for OllamaProvider {
                         if let Some(content) = parsed["message"]["content"].as_str() {
                             if !content.is_empty() {
                                 accumulated.push_str(content);
-                                let _ = tx.send(StreamEvent::Delta {
-                                    request_id: request_id.clone(),
-                                    content: content.to_string(),
-                                    accumulated: accumulated.clone(),
-                                }).await;
+                                let _ = tx
+                                    .send(StreamEvent::Delta {
+                                        request_id: request_id.clone(),
+                                        content: content.to_string(),
+                                        accumulated: accumulated.clone(),
+                                    })
+                                    .await;
                             }
                         }
 
                         if done {
-                            usage.prompt_tokens = parsed["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
-                            usage.completion_tokens = parsed["eval_count"].as_u64().unwrap_or(0) as u32;
+                            usage.prompt_tokens =
+                                parsed["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
+                            usage.completion_tokens =
+                                parsed["eval_count"].as_u64().unwrap_or(0) as u32;
                             usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
 
-                            let _ = tx.send(StreamEvent::Done {
-                                request_id: request_id.clone(),
-                                finish_reason: FinishReason::Stop,
-                                usage: usage.clone(),
-                                latency_ms: start.elapsed().as_millis() as u64,
-                            }).await;
+                            let _ = tx
+                                .send(StreamEvent::Done {
+                                    request_id: request_id.clone(),
+                                    finish_reason: FinishReason::Stop,
+                                    usage: usage.clone(),
+                                    latency_ms: start.elapsed().as_millis() as u64,
+                                })
+                                .await;
                             return;
                         }
                     }
                 }
             }
 
-            let _ = tx.send(StreamEvent::Done {
-                request_id,
-                finish_reason: FinishReason::Stop,
-                usage,
-                latency_ms: start.elapsed().as_millis() as u64,
-            }).await;
+            let _ = tx
+                .send(StreamEvent::Done {
+                    request_id,
+                    finish_reason: FinishReason::Stop,
+                    usage,
+                    latency_ms: start.elapsed().as_millis() as u64,
+                })
+                .await;
         });
 
         Ok(rx)
@@ -376,7 +432,12 @@ impl LlmProvider for OllamaProvider {
             "input": texts,
         });
 
-        let resp = self.client.post(&url).json(&body).send().await
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
             .map_err(|e| format!("Ollama embedding request failed: {}", e))?;
 
         if !resp.status().is_success() {
@@ -384,14 +445,17 @@ impl LlmProvider for OllamaProvider {
             return Err(format!("Ollama embedding API error: {}", err));
         }
 
-        let resp_body: serde_json::Value = resp.json().await
+        let resp_body: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse Ollama embedding response: {}", e))?;
 
         let mut embeddings = Vec::new();
         if let Some(emb_list) = resp_body["embeddings"].as_array() {
             for emb in emb_list {
                 if let Some(arr) = emb.as_array() {
-                    let vec: Vec<f32> = arr.iter()
+                    let vec: Vec<f32> = arr
+                        .iter()
                         .filter_map(|v| v.as_f64().map(|f| f as f32))
                         .collect();
                     embeddings.push(vec);
@@ -412,7 +476,10 @@ impl LlmProvider for OllamaProvider {
     async fn health_check(&self) -> Result<u64, String> {
         let url = format!("{}/api/tags", self.base_url);
         let start = std::time::Instant::now();
-        self.client.get(&url).send().await
+        self.client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| format!("Ollama health check failed: {}. Is Ollama running?", e))?;
         Ok(start.elapsed().as_millis() as u64)
     }
