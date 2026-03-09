@@ -10,11 +10,11 @@ use crate::client::CicdClient;
 use crate::error::{CicdError, CicdResult};
 use crate::types::*;
 
-use crate::drone::DroneManager;
-use crate::jenkins::JenkinsManager;
-use crate::github_actions::GhaManager;
-use crate::pipelines;
 use crate::artifacts;
+use crate::drone::DroneManager;
+use crate::github_actions::GhaManager;
+use crate::jenkins::JenkinsManager;
+use crate::pipelines;
 
 /// Shared Tauri state handle.
 pub type CicdServiceState = Arc<Mutex<CicdService>>;
@@ -24,14 +24,26 @@ pub struct CicdService {
     connections: HashMap<String, CicdClient>,
 }
 
+impl Default for CicdService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CicdService {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     // ── Connection lifecycle ──────────────────────────────────────
 
-    pub async fn connect(&mut self, id: String, config: CicdConnectionConfig) -> CicdResult<CicdConnectionSummary> {
+    pub async fn connect(
+        &mut self,
+        id: String,
+        config: CicdConnectionConfig,
+    ) -> CicdResult<CicdConnectionSummary> {
         let client = CicdClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
@@ -39,7 +51,8 @@ impl CicdService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> CicdResult<()> {
-        self.connections.remove(id)
+        self.connections
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| CicdError::not_connected(format!("No connection '{id}'")))
     }
@@ -49,7 +62,8 @@ impl CicdService {
     }
 
     fn client(&self, id: &str) -> CicdResult<&CicdClient> {
-        self.connections.get(id)
+        self.connections
+            .get(id)
             .ok_or_else(|| CicdError::not_connected(format!("No connection '{id}'")))
     }
 
@@ -62,9 +76,18 @@ impl CicdService {
     pub async fn get_dashboard(&self, id: &str) -> CicdResult<CicdDashboard> {
         let client = self.client(id)?;
         let builds = self.list_builds(id).await.unwrap_or_default();
-        let successful = builds.iter().filter(|b| b.status == BuildStatus::Success).count() as u64;
-        let failed = builds.iter().filter(|b| b.status == BuildStatus::Failure).count() as u64;
-        let running = builds.iter().filter(|b| b.status == BuildStatus::Running).count() as u64;
+        let successful = builds
+            .iter()
+            .filter(|b| b.status == BuildStatus::Success)
+            .count() as u64;
+        let failed = builds
+            .iter()
+            .filter(|b| b.status == BuildStatus::Failure)
+            .count() as u64;
+        let running = builds
+            .iter()
+            .filter(|b| b.status == BuildStatus::Running)
+            .count() as u64;
         let pipelines = self.list_pipelines(id).await.unwrap_or_default();
         let recent: Vec<CicdBuild> = builds.into_iter().take(10).collect();
         Ok(CicdDashboard {
@@ -85,15 +108,18 @@ impl CicdService {
         match client.config.provider {
             CicdProvider::Drone => {
                 let repos = DroneManager::list_repos(client).await?;
-                Ok(repos.iter().map(|r| pipelines::normalize_drone_repo(r)).collect())
+                Ok(repos.iter().map(pipelines::normalize_drone_repo).collect())
             }
             CicdProvider::Jenkins => {
                 let jobs = JenkinsManager::list_jobs(client).await?;
-                Ok(jobs.iter().map(|j| pipelines::normalize_jenkins_job(j)).collect())
+                Ok(jobs.iter().map(pipelines::normalize_jenkins_job).collect())
             }
             CicdProvider::GitHubActions => {
                 let workflows = GhaManager::list_workflows(client).await?;
-                Ok(workflows.iter().map(|w| pipelines::normalize_gha_workflow(w)).collect())
+                Ok(workflows
+                    .iter()
+                    .map(pipelines::normalize_gha_workflow)
+                    .collect())
             }
         }
     }
@@ -104,7 +130,10 @@ impl CicdService {
             CicdProvider::Drone => {
                 let parts: Vec<&str> = pipeline_id.splitn(2, '/').collect();
                 if parts.len() != 2 {
-                    return Err(CicdError::new(crate::error::CicdErrorKind::PipelineNotFound, "Expected owner/name"));
+                    return Err(CicdError::new(
+                        crate::error::CicdErrorKind::PipelineNotFound,
+                        "Expected owner/name",
+                    ));
                 }
                 let repo = DroneManager::get_repo(client, parts[0], parts[1]).await?;
                 Ok(pipelines::normalize_drone_repo(&repo))
@@ -114,8 +143,12 @@ impl CicdService {
                 Ok(pipelines::normalize_jenkins_job(&job))
             }
             CicdProvider::GitHubActions => {
-                let wid: u64 = pipeline_id.parse()
-                    .map_err(|_| CicdError::new(crate::error::CicdErrorKind::PipelineNotFound, "Invalid workflow ID"))?;
+                let wid: u64 = pipeline_id.parse().map_err(|_| {
+                    CicdError::new(
+                        crate::error::CicdErrorKind::PipelineNotFound,
+                        "Invalid workflow ID",
+                    )
+                })?;
                 let w = GhaManager::get_workflow(client, wid).await?;
                 Ok(pipelines::normalize_gha_workflow(&w))
             }
@@ -130,7 +163,10 @@ impl CicdService {
             CicdProvider::Drone => {
                 let (owner, name) = self.drone_owner_repo(id)?;
                 let builds = DroneManager::list_builds(client, &owner, &name).await?;
-                Ok(builds.iter().map(|b| pipelines::normalize_drone_build(b, &owner, &name)).collect())
+                Ok(builds
+                    .iter()
+                    .map(|b| pipelines::normalize_drone_build(b, &owner, &name))
+                    .collect())
             }
             CicdProvider::Jenkins => {
                 // Jenkins doesn't have a global builds endpoint; return empty
@@ -138,7 +174,7 @@ impl CicdService {
             }
             CicdProvider::GitHubActions => {
                 let runs = GhaManager::list_workflow_runs(client, None).await?;
-                Ok(runs.iter().map(|r| pipelines::normalize_gha_run(r)).collect())
+                Ok(runs.iter().map(pipelines::normalize_gha_run).collect())
             }
         }
     }
@@ -148,8 +184,12 @@ impl CicdService {
         match client.config.provider {
             CicdProvider::Drone => {
                 let (owner, name) = self.drone_owner_repo(id)?;
-                let number: u64 = build_id.parse()
-                    .map_err(|_| CicdError::new(crate::error::CicdErrorKind::BuildNotFound, "Invalid build number"))?;
+                let number: u64 = build_id.parse().map_err(|_| {
+                    CicdError::new(
+                        crate::error::CicdErrorKind::BuildNotFound,
+                        "Invalid build number",
+                    )
+                })?;
                 let b = DroneManager::get_build(client, &owner, &name, number).await?;
                 Ok(pipelines::normalize_drone_build(&b, &owner, &name))
             }
@@ -157,23 +197,36 @@ impl CicdService {
                 // build_id = "job_name/number"
                 let parts: Vec<&str> = build_id.rsplitn(2, '/').collect();
                 if parts.len() != 2 {
-                    return Err(CicdError::new(crate::error::CicdErrorKind::BuildNotFound, "Expected job_name/number"));
+                    return Err(CicdError::new(
+                        crate::error::CicdErrorKind::BuildNotFound,
+                        "Expected job_name/number",
+                    ));
                 }
-                let number: u64 = parts[0].parse()
-                    .map_err(|_| CicdError::new(crate::error::CicdErrorKind::BuildNotFound, "Invalid build number"))?;
+                let number: u64 = parts[0].parse().map_err(|_| {
+                    CicdError::new(
+                        crate::error::CicdErrorKind::BuildNotFound,
+                        "Invalid build number",
+                    )
+                })?;
                 let b = JenkinsManager::get_build(client, parts[1], number).await?;
                 Ok(pipelines::normalize_jenkins_build(&b, parts[1]))
             }
             CicdProvider::GitHubActions => {
-                let run_id: u64 = build_id.parse()
-                    .map_err(|_| CicdError::new(crate::error::CicdErrorKind::BuildNotFound, "Invalid run ID"))?;
+                let run_id: u64 = build_id.parse().map_err(|_| {
+                    CicdError::new(crate::error::CicdErrorKind::BuildNotFound, "Invalid run ID")
+                })?;
                 let r = GhaManager::get_workflow_run(client, run_id).await?;
                 Ok(pipelines::normalize_gha_run(&r))
             }
         }
     }
 
-    pub async fn trigger_build(&self, id: &str, pipeline_id: &str, branch: Option<String>) -> CicdResult<CicdBuild> {
+    pub async fn trigger_build(
+        &self,
+        id: &str,
+        pipeline_id: &str,
+        branch: Option<String>,
+    ) -> CicdResult<CicdBuild> {
         let client = self.client(id)?;
         match client.config.provider {
             CicdProvider::Drone => {
@@ -181,7 +234,13 @@ impl CicdService {
                 if parts.len() != 2 {
                     return Err(CicdError::provider("Expected owner/name"));
                 }
-                let b = DroneManager::trigger_build(client, parts[0], parts[1], &branch.unwrap_or_else(|| "main".into())).await?;
+                let b = DroneManager::trigger_build(
+                    client,
+                    parts[0],
+                    parts[1],
+                    &branch.unwrap_or_else(|| "main".into()),
+                )
+                .await?;
                 Ok(pipelines::normalize_drone_build(&b, parts[0], parts[1]))
             }
             CicdProvider::Jenkins => {
@@ -205,7 +264,8 @@ impl CicdService {
                 })
             }
             CicdProvider::GitHubActions => {
-                let wid: u64 = pipeline_id.parse()
+                let wid: u64 = pipeline_id
+                    .parse()
                     .map_err(|_| CicdError::provider("Invalid workflow ID"))?;
                 let payload = GhaDispatchPayload {
                     ref_field: branch.unwrap_or_else(|| "main".into()),
@@ -237,17 +297,25 @@ impl CicdService {
         match client.config.provider {
             CicdProvider::Drone => {
                 let (owner, name) = self.drone_owner_repo(id)?;
-                let number: u64 = build_id.parse().map_err(|_| CicdError::provider("Invalid build number"))?;
+                let number: u64 = build_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid build number"))?;
                 DroneManager::cancel_build(client, &owner, &name, number).await
             }
             CicdProvider::Jenkins => {
                 let parts: Vec<&str> = build_id.rsplitn(2, '/').collect();
-                if parts.len() != 2 { return Err(CicdError::provider("Expected job_name/number")); }
-                let number: u64 = parts[0].parse().map_err(|_| CicdError::provider("Invalid build number"))?;
+                if parts.len() != 2 {
+                    return Err(CicdError::provider("Expected job_name/number"));
+                }
+                let number: u64 = parts[0]
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid build number"))?;
                 JenkinsManager::stop_build(client, parts[1], number).await
             }
             CicdProvider::GitHubActions => {
-                let run_id: u64 = build_id.parse().map_err(|_| CicdError::provider("Invalid run ID"))?;
+                let run_id: u64 = build_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid run ID"))?;
                 GhaManager::cancel_run(client, run_id).await
             }
         }
@@ -258,15 +326,19 @@ impl CicdService {
         match client.config.provider {
             CicdProvider::Drone => {
                 let (owner, name) = self.drone_owner_repo(id)?;
-                let number: u64 = build_id.parse().map_err(|_| CicdError::provider("Invalid build number"))?;
+                let number: u64 = build_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid build number"))?;
                 let b = DroneManager::restart_build(client, &owner, &name, number).await?;
                 Ok(pipelines::normalize_drone_build(&b, &owner, &name))
             }
-            CicdProvider::Jenkins => {
-                Err(CicdError::provider("Jenkins does not support restart; trigger a new build instead"))
-            }
+            CicdProvider::Jenkins => Err(CicdError::provider(
+                "Jenkins does not support restart; trigger a new build instead",
+            )),
             CicdProvider::GitHubActions => {
-                let run_id: u64 = build_id.parse().map_err(|_| CicdError::provider("Invalid run ID"))?;
+                let run_id: u64 = build_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid run ID"))?;
                 GhaManager::rerun_run(client, run_id).await?;
                 let r = GhaManager::get_workflow_run(client, run_id).await?;
                 Ok(pipelines::normalize_gha_run(&r))
@@ -276,23 +348,49 @@ impl CicdService {
 
     // ── Build logs ───────────────────────────────────────────────
 
-    pub async fn get_build_logs(&self, id: &str, build_id: &str, stage: Option<u32>, step: Option<u32>) -> CicdResult<String> {
+    pub async fn get_build_logs(
+        &self,
+        id: &str,
+        build_id: &str,
+        stage: Option<u32>,
+        step: Option<u32>,
+    ) -> CicdResult<String> {
         let client = self.client(id)?;
         match client.config.provider {
             CicdProvider::Drone => {
                 let (owner, name) = self.drone_owner_repo(id)?;
-                let number: u64 = build_id.parse().map_err(|_| CicdError::provider("Invalid build number"))?;
-                let logs = DroneManager::get_build_logs(client, &owner, &name, number, stage.unwrap_or(1), step.unwrap_or(1)).await?;
-                Ok(logs.iter().map(|l| l.out.clone()).collect::<Vec<_>>().join("\n"))
+                let number: u64 = build_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid build number"))?;
+                let logs = DroneManager::get_build_logs(
+                    client,
+                    &owner,
+                    &name,
+                    number,
+                    stage.unwrap_or(1),
+                    step.unwrap_or(1),
+                )
+                .await?;
+                Ok(logs
+                    .iter()
+                    .map(|l| l.out.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n"))
             }
             CicdProvider::Jenkins => {
                 let parts: Vec<&str> = build_id.rsplitn(2, '/').collect();
-                if parts.len() != 2 { return Err(CicdError::provider("Expected job_name/number")); }
-                let number: u64 = parts[0].parse().map_err(|_| CicdError::provider("Invalid build number"))?;
+                if parts.len() != 2 {
+                    return Err(CicdError::provider("Expected job_name/number"));
+                }
+                let number: u64 = parts[0]
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid build number"))?;
                 JenkinsManager::get_build_log(client, parts[1], number).await
             }
             CicdProvider::GitHubActions => {
-                let job_id: u64 = build_id.parse().map_err(|_| CicdError::provider("Invalid job ID"))?;
+                let job_id: u64 = build_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid job ID"))?;
                 GhaManager::get_job_logs(client, job_id).await
             }
         }
@@ -306,17 +404,35 @@ impl CicdService {
             CicdProvider::Drone => Ok(vec![]),
             CicdProvider::Jenkins => {
                 let parts: Vec<&str> = build_id.rsplitn(2, '/').collect();
-                if parts.len() != 2 { return Err(CicdError::provider("Expected job_name/number")); }
-                let number: u64 = parts[0].parse().map_err(|_| CicdError::provider("Invalid build number"))?;
+                if parts.len() != 2 {
+                    return Err(CicdError::provider("Expected job_name/number"));
+                }
+                let number: u64 = parts[0]
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid build number"))?;
                 let build = JenkinsManager::get_build(client, parts[1], number).await?;
-                Ok(build.artifacts.iter().map(|a| {
-                    artifacts::normalize_jenkins_artifact(a, parts[1], number, &client.config.base_url)
-                }).collect())
+                Ok(build
+                    .artifacts
+                    .iter()
+                    .map(|a| {
+                        artifacts::normalize_jenkins_artifact(
+                            a,
+                            parts[1],
+                            number,
+                            &client.config.base_url,
+                        )
+                    })
+                    .collect())
             }
             CicdProvider::GitHubActions => {
-                let run_id: u64 = build_id.parse().map_err(|_| CicdError::provider("Invalid run ID"))?;
+                let run_id: u64 = build_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid run ID"))?;
                 let arts = GhaManager::list_artifacts(client, Some(run_id)).await?;
-                Ok(arts.iter().map(|a| artifacts::normalize_gha_artifact(a, run_id)).collect())
+                Ok(arts
+                    .iter()
+                    .map(|a| artifacts::normalize_gha_artifact(a, run_id))
+                    .collect())
             }
         }
     }
@@ -324,10 +440,16 @@ impl CicdService {
     pub async fn get_artifact(&self, id: &str, artifact_id: &str) -> CicdResult<CicdArtifact> {
         let client = self.client(id)?;
         match client.config.provider {
-            CicdProvider::Drone => Err(CicdError::provider("Drone CE does not have a first-class artifact API")),
-            CicdProvider::Jenkins => Err(CicdError::provider("Use list_artifacts to find Jenkins artifacts")),
+            CicdProvider::Drone => Err(CicdError::provider(
+                "Drone CE does not have a first-class artifact API",
+            )),
+            CicdProvider::Jenkins => Err(CicdError::provider(
+                "Use list_artifacts to find Jenkins artifacts",
+            )),
             CicdProvider::GitHubActions => {
-                let aid: u64 = artifact_id.parse().map_err(|_| CicdError::provider("Invalid artifact ID"))?;
+                let aid: u64 = artifact_id
+                    .parse()
+                    .map_err(|_| CicdError::provider("Invalid artifact ID"))?;
                 let a = GhaManager::get_artifact(client, aid).await?;
                 Ok(artifacts::normalize_gha_artifact(&a, 0))
             }
@@ -342,20 +464,26 @@ impl CicdService {
             CicdProvider::Drone => {
                 let (owner, name) = self.drone_owner_repo(id)?;
                 let secrets = DroneManager::list_secrets(client, &owner, &name).await?;
-                Ok(secrets.iter().map(|s| CicdSecret {
-                    name: s.name.clone(),
-                    created_at: None,
-                    updated_at: None,
-                }).collect())
+                Ok(secrets
+                    .iter()
+                    .map(|s| CicdSecret {
+                        name: s.name.clone(),
+                        created_at: None,
+                        updated_at: None,
+                    })
+                    .collect())
             }
             CicdProvider::Jenkins => Ok(vec![]),
             CicdProvider::GitHubActions => {
                 let secrets = GhaManager::list_secrets(client).await?;
-                Ok(secrets.iter().map(|s| CicdSecret {
-                    name: s.name.clone(),
-                    created_at: Some(s.created_at.clone()),
-                    updated_at: Some(s.updated_at.clone()),
-                }).collect())
+                Ok(secrets
+                    .iter()
+                    .map(|s| CicdSecret {
+                        name: s.name.clone(),
+                        created_at: Some(s.created_at.clone()),
+                        updated_at: Some(s.updated_at.clone()),
+                    })
+                    .collect())
             }
         }
     }
@@ -368,8 +496,12 @@ impl CicdService {
                 DroneManager::create_secret(client, &owner, &name, &payload).await?;
                 Ok(())
             }
-            CicdProvider::Jenkins => Err(CicdError::provider("Use Jenkins credentials API directly")),
-            CicdProvider::GitHubActions => Err(CicdError::provider("Use gha_create_or_update_secret for GitHub Actions")),
+            CicdProvider::Jenkins => {
+                Err(CicdError::provider("Use Jenkins credentials API directly"))
+            }
+            CicdProvider::GitHubActions => Err(CicdError::provider(
+                "Use gha_create_or_update_secret for GitHub Actions",
+            )),
         }
     }
 
@@ -380,10 +512,10 @@ impl CicdService {
                 let (owner, name) = self.drone_owner_repo(id)?;
                 DroneManager::delete_secret(client, &owner, &name, secret_name).await
             }
-            CicdProvider::Jenkins => Err(CicdError::provider("Use Jenkins credentials API directly")),
-            CicdProvider::GitHubActions => {
-                GhaManager::delete_secret(client, secret_name).await
+            CicdProvider::Jenkins => {
+                Err(CicdError::provider("Use Jenkins credentials API directly"))
             }
+            CicdProvider::GitHubActions => GhaManager::delete_secret(client, secret_name).await,
         }
     }
 
@@ -391,9 +523,15 @@ impl CicdService {
 
     fn drone_owner_repo(&self, id: &str) -> CicdResult<(String, String)> {
         let client = self.client(id)?;
-        let org = client.config.org.clone()
+        let org = client
+            .config
+            .org
+            .clone()
             .ok_or_else(|| CicdError::provider("org required for Drone"))?;
-        let repo = client.config.repo.clone()
+        let repo = client
+            .config
+            .repo
+            .clone()
             .ok_or_else(|| CicdError::provider("repo required for Drone"))?;
         Ok((org, repo))
     }
@@ -406,7 +544,12 @@ impl CicdService {
         DroneManager::get_repo(self.client(id)?, owner, name).await
     }
 
-    pub async fn drone_activate_repo(&self, id: &str, owner: &str, name: &str) -> CicdResult<DroneRepo> {
+    pub async fn drone_activate_repo(
+        &self,
+        id: &str,
+        owner: &str,
+        name: &str,
+    ) -> CicdResult<DroneRepo> {
         DroneManager::activate_repo(self.client(id)?, owner, name).await
     }
 
@@ -414,15 +557,32 @@ impl CicdService {
         DroneManager::deactivate_repo(self.client(id)?, owner, name).await
     }
 
-    pub async fn drone_list_cron_jobs(&self, id: &str, owner: &str, name: &str) -> CicdResult<Vec<DroneCron>> {
+    pub async fn drone_list_cron_jobs(
+        &self,
+        id: &str,
+        owner: &str,
+        name: &str,
+    ) -> CicdResult<Vec<DroneCron>> {
         DroneManager::list_cron_jobs(self.client(id)?, owner, name).await
     }
 
-    pub async fn drone_create_cron_job(&self, id: &str, owner: &str, name: &str, cron: CreateDroneCronPayload) -> CicdResult<DroneCron> {
+    pub async fn drone_create_cron_job(
+        &self,
+        id: &str,
+        owner: &str,
+        name: &str,
+        cron: CreateDroneCronPayload,
+    ) -> CicdResult<DroneCron> {
         DroneManager::create_cron_job(self.client(id)?, owner, name, &cron).await
     }
 
-    pub async fn drone_delete_cron_job(&self, id: &str, owner: &str, name: &str, cron_name: &str) -> CicdResult<()> {
+    pub async fn drone_delete_cron_job(
+        &self,
+        id: &str,
+        owner: &str,
+        name: &str,
+        cron_name: &str,
+    ) -> CicdResult<()> {
         DroneManager::delete_cron_job(self.client(id)?, owner, name, cron_name).await
     }
 
@@ -436,7 +596,12 @@ impl CicdService {
         JenkinsManager::get_job(self.client(id)?, name).await
     }
 
-    pub async fn jenkins_create_job(&self, id: &str, name: &str, config_xml: &str) -> CicdResult<()> {
+    pub async fn jenkins_create_job(
+        &self,
+        id: &str,
+        name: &str,
+        config_xml: &str,
+    ) -> CicdResult<()> {
         JenkinsManager::create_job(self.client(id)?, name, config_xml).await
     }
 
@@ -448,7 +613,12 @@ impl CicdService {
         JenkinsManager::trigger_build(self.client(id)?, job_name).await
     }
 
-    pub async fn jenkins_get_console_output(&self, id: &str, job_name: &str, number: u64) -> CicdResult<String> {
+    pub async fn jenkins_get_console_output(
+        &self,
+        id: &str,
+        job_name: &str,
+        number: u64,
+    ) -> CicdResult<String> {
         JenkinsManager::get_console_output(self.client(id)?, job_name, number).await
     }
 
@@ -486,7 +656,12 @@ impl CicdService {
         GhaManager::get_workflow(self.client(id)?, workflow_id).await
     }
 
-    pub async fn gha_dispatch_workflow(&self, id: &str, workflow_id: u64, payload: GhaDispatchPayload) -> CicdResult<()> {
+    pub async fn gha_dispatch_workflow(
+        &self,
+        id: &str,
+        workflow_id: u64,
+        payload: GhaDispatchPayload,
+    ) -> CicdResult<()> {
         GhaManager::dispatch_workflow(self.client(id)?, workflow_id, &payload).await
     }
 
@@ -498,7 +673,11 @@ impl CicdService {
         GhaManager::disable_workflow(self.client(id)?, workflow_id).await
     }
 
-    pub async fn gha_list_workflow_runs(&self, id: &str, workflow_id: Option<u64>) -> CicdResult<Vec<GhaWorkflowRun>> {
+    pub async fn gha_list_workflow_runs(
+        &self,
+        id: &str,
+        workflow_id: Option<u64>,
+    ) -> CicdResult<Vec<GhaWorkflowRun>> {
         GhaManager::list_workflow_runs(self.client(id)?, workflow_id).await
     }
 
@@ -530,7 +709,11 @@ impl CicdService {
         GhaManager::get_job_logs(self.client(id)?, job_id).await
     }
 
-    pub async fn gha_list_artifacts(&self, id: &str, run_id: Option<u64>) -> CicdResult<Vec<GhaArtifact>> {
+    pub async fn gha_list_artifacts(
+        &self,
+        id: &str,
+        run_id: Option<u64>,
+    ) -> CicdResult<Vec<GhaArtifact>> {
         GhaManager::list_artifacts(self.client(id)?, run_id).await
     }
 
@@ -542,7 +725,12 @@ impl CicdService {
         GhaManager::list_secrets(self.client(id)?).await
     }
 
-    pub async fn gha_create_or_update_secret(&self, id: &str, secret_name: &str, payload: GhaSecretPayload) -> CicdResult<()> {
+    pub async fn gha_create_or_update_secret(
+        &self,
+        id: &str,
+        secret_name: &str,
+        payload: GhaSecretPayload,
+    ) -> CicdResult<()> {
         GhaManager::create_or_update_secret(self.client(id)?, secret_name, &payload).await
     }
 

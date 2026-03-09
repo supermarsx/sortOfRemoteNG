@@ -55,9 +55,12 @@ impl CicdClient {
                 }
             }
             CicdProvider::Jenkins => {
-                if let (Some(ref u), Some(ref t)) = (&self.config.username, &self.config.api_token) {
+                if let (Some(ref u), Some(ref t)) = (&self.config.username, &self.config.api_token)
+                {
                     req.basic_auth(u, Some(t))
-                } else if let (Some(ref u), Some(ref p)) = (&self.config.username, &self.config.password) {
+                } else if let (Some(ref u), Some(ref p)) =
+                    (&self.config.username, &self.config.password)
+                {
                     req.basic_auth(u, Some(p))
                 } else {
                     req
@@ -71,8 +74,10 @@ impl CicdClient {
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> CicdResult<T> {
         let url = self.url(path);
         debug!("CICD GET {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| CicdError::connection(format!("GET {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -80,22 +85,32 @@ impl CicdClient {
     pub async fn get_raw(&self, path: &str) -> CicdResult<String> {
         let url = self.url(path);
         debug!("CICD GET (raw) {url}");
-        let resp = self.apply_auth(self.http.get(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.get(&url))
+            .send()
+            .await
             .map_err(|e| CicdError::connection(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(self.map_status_error(status.as_u16(), &body));
         }
-        resp.text().await.map_err(|e| CicdError::parse(format!("body: {e}")))
+        resp.text()
+            .await
+            .map_err(|e| CicdError::parse(format!("body: {e}")))
     }
 
-    pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> CicdResult<T> {
+    pub async fn post<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> CicdResult<T> {
         let url = self.url(path);
         debug!("CICD POST {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
             .map_err(|e| CicdError::connection(format!("POST {url}: {e}")))?;
         self.handle_response(resp).await
     }
@@ -103,8 +118,10 @@ impl CicdClient {
     pub async fn post_empty(&self, path: &str) -> CicdResult<()> {
         let url = self.url(path);
         debug!("CICD POST (empty) {url}");
-        let resp = self.apply_auth(self.http.post(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url))
+            .send()
+            .await
             .map_err(|e| CicdError::connection(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -117,8 +134,10 @@ impl CicdClient {
     pub async fn post_empty_with_body<B: Serialize>(&self, path: &str, body: &B) -> CicdResult<()> {
         let url = self.url(path);
         debug!("CICD POST (no response) {url}");
-        let resp = self.apply_auth(self.http.post(&url).json(body))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
             .map_err(|e| CicdError::connection(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -131,10 +150,15 @@ impl CicdClient {
     pub async fn put<B: Serialize>(&self, path: &str, body: &B) -> CicdResult<()> {
         let url = self.url(path);
         debug!("CICD PUT {url}");
-        let resp = self.apply_auth(self.http.put(&url)
-            .header("Content-Type", "application/json")
-            .json(body))
-            .send().await
+        let resp = self
+            .apply_auth(
+                self.http
+                    .put(&url)
+                    .header("Content-Type", "application/json")
+                    .json(body),
+            )
+            .send()
+            .await
             .map_err(|e| CicdError::connection(format!("PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -147,8 +171,10 @@ impl CicdClient {
     pub async fn delete(&self, path: &str) -> CicdResult<()> {
         let url = self.url(path);
         debug!("CICD DELETE {url}");
-        let resp = self.apply_auth(self.http.delete(&url))
-            .send().await
+        let resp = self
+            .apply_auth(self.http.delete(&url))
+            .send()
+            .await
             .map_err(|e| CicdError::connection(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
@@ -163,7 +189,8 @@ impl CicdClient {
     pub async fn ping(&self) -> CicdResult<CicdConnectionSummary> {
         match self.config.provider {
             CicdProvider::Drone => {
-                let _repos: Vec<DroneRepo> = self.get("/api/user/repos?latest=true&per_page=1").await?;
+                let _repos: Vec<DroneRepo> =
+                    self.get("/api/user/repos?latest=true&per_page=1").await?;
                 Ok(CicdConnectionSummary {
                     provider: CicdProvider::Drone,
                     base_url: self.config.base_url.clone(),
@@ -176,7 +203,10 @@ impl CicdClient {
                 Ok(CicdConnectionSummary {
                     provider: CicdProvider::Jenkins,
                     base_url: self.config.base_url.clone(),
-                    version: info.get("hudson").and_then(|v| v.as_str()).map(String::from),
+                    version: info
+                        .get("hudson")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     user: None,
                 })
             }
@@ -196,7 +226,9 @@ impl CicdClient {
 
     async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> CicdResult<T> {
         let status = resp.status();
-        let body_text = resp.text().await
+        let body_text = resp
+            .text()
+            .await
             .map_err(|e| CicdError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
@@ -215,6 +247,9 @@ impl CicdClient {
             400 => CicdErrorKind::ProviderError,
             _ => CicdErrorKind::HttpError,
         };
-        CicdError { kind, message: format!("HTTP {status}: {body}") }
+        CicdError {
+            kind,
+            message: format!("HTTP {status}: {body}"),
+        }
     }
 }

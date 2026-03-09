@@ -17,9 +17,21 @@ pub fn normalize_drone_build(b: &DroneBuild, owner: &str, name: &str) -> CicdBui
         commit: Some(b.after.clone()),
         commit_message: Some(b.message.clone()),
         author: Some(b.author_login.clone()),
-        started_at: if b.started > 0 { Some(format_epoch(b.started)) } else { None },
-        finished_at: if b.finished > 0 { Some(format_epoch(b.finished)) } else { None },
-        duration_secs: if b.finished > b.started { Some(b.finished - b.started) } else { None },
+        started_at: if b.started > 0 {
+            Some(format_epoch(b.started))
+        } else {
+            None
+        },
+        finished_at: if b.finished > 0 {
+            Some(format_epoch(b.finished))
+        } else {
+            None
+        },
+        duration_secs: if b.finished > b.started {
+            Some(b.finished - b.started)
+        } else {
+            None
+        },
         trigger: map_drone_event(&b.event),
         stages: vec![],
         url: Some(b.link.clone()),
@@ -34,7 +46,11 @@ pub fn normalize_drone_repo(repo: &DroneRepo) -> CicdPipeline {
         repo: Some(format!("{}/{}", repo.namespace, repo.name)),
         default_branch: Some(repo.default_branch.clone()),
         last_build: None,
-        status: if repo.active { PipelineStatus::Active } else { PipelineStatus::Inactive },
+        status: if repo.active {
+            PipelineStatus::Active
+        } else {
+            PipelineStatus::Inactive
+        },
         url: None,
         created_at: None,
         updated_at: None,
@@ -75,13 +91,19 @@ pub fn normalize_jenkins_build(b: &JenkinsBuildInfo, job_name: &str) -> CicdBuil
         number: b.number,
         status: map_jenkins_result(b.result.as_deref(), b.building),
         branch: None,
-        commit: b.change_sets.first()
+        commit: b
+            .change_sets
+            .first()
             .and_then(|cs| cs.items.first())
             .map(|c| c.commit_id.clone()),
-        commit_message: b.change_sets.first()
+        commit_message: b
+            .change_sets
+            .first()
             .and_then(|cs| cs.items.first())
             .map(|c| c.msg.clone()),
-        author: b.change_sets.first()
+        author: b
+            .change_sets
+            .first()
             .and_then(|cs| cs.items.first())
             .map(|c| c.author_email.clone()),
         started_at: Some(format_epoch_ms(b.timestamp)),
@@ -90,7 +112,11 @@ pub fn normalize_jenkins_build(b: &JenkinsBuildInfo, job_name: &str) -> CicdBuil
         } else {
             None
         },
-        duration_secs: if b.duration > 0 { Some(b.duration / 1000) } else { None },
+        duration_secs: if b.duration > 0 {
+            Some(b.duration / 1000)
+        } else {
+            None
+        },
         trigger: BuildTrigger::Manual,
         stages: vec![],
         url: Some(b.url.clone()),
@@ -149,7 +175,11 @@ pub fn normalize_gha_run(run: &GhaWorkflowRun) -> CicdBuild {
         commit_message: None,
         author: Some(run.actor.login.clone()),
         started_at: Some(run.created_at.clone()),
-        finished_at: if run.conclusion.is_some() { Some(run.updated_at.clone()) } else { None },
+        finished_at: if run.conclusion.is_some() {
+            Some(run.updated_at.clone())
+        } else {
+            None
+        },
         duration_secs: None,
         trigger: map_gha_event(&run.event),
         stages: vec![],

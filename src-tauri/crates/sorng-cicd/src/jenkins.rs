@@ -33,13 +33,23 @@ impl JenkinsManager {
     }
 
     pub async fn copy_job(client: &CicdClient, from: &str, new_name: &str) -> CicdResult<()> {
-        client.post_empty(&format!("/createItem?name={new_name}&mode=copy&from={from}")).await
+        client
+            .post_empty(&format!(
+                "/createItem?name={new_name}&mode=copy&from={from}"
+            ))
+            .await
     }
 
     // ── Builds ───────────────────────────────────────────────────────
 
-    pub async fn get_build(client: &CicdClient, job_name: &str, number: u64) -> CicdResult<JenkinsBuildInfo> {
-        client.get(&format!("/job/{job_name}/{number}/api/json")).await
+    pub async fn get_build(
+        client: &CicdClient,
+        job_name: &str,
+        number: u64,
+    ) -> CicdResult<JenkinsBuildInfo> {
+        client
+            .get(&format!("/job/{job_name}/{number}/api/json"))
+            .await
     }
 
     pub async fn trigger_build(client: &CicdClient, job_name: &str) -> CicdResult<()> {
@@ -47,17 +57,31 @@ impl JenkinsManager {
     }
 
     pub async fn stop_build(client: &CicdClient, job_name: &str, number: u64) -> CicdResult<()> {
-        client.post_empty(&format!("/job/{job_name}/{number}/stop")).await
+        client
+            .post_empty(&format!("/job/{job_name}/{number}/stop"))
+            .await
     }
 
-    pub async fn get_build_log(client: &CicdClient, job_name: &str, number: u64) -> CicdResult<String> {
-        client.get_raw(&format!("/job/{job_name}/{number}/consoleText")).await
+    pub async fn get_build_log(
+        client: &CicdClient,
+        job_name: &str,
+        number: u64,
+    ) -> CicdResult<String> {
+        client
+            .get_raw(&format!("/job/{job_name}/{number}/consoleText"))
+            .await
     }
 
     // ── Console ──────────────────────────────────────────────────────
 
-    pub async fn get_console_output(client: &CicdClient, job_name: &str, number: u64) -> CicdResult<String> {
-        client.get_raw(&format!("/job/{job_name}/{number}/consoleText")).await
+    pub async fn get_console_output(
+        client: &CicdClient,
+        job_name: &str,
+        number: u64,
+    ) -> CicdResult<String> {
+        client
+            .get_raw(&format!("/job/{job_name}/{number}/consoleText"))
+            .await
     }
 
     // ── Queue ────────────────────────────────────────────────────────
@@ -68,7 +92,9 @@ impl JenkinsManager {
     }
 
     pub async fn cancel_queue_item(client: &CicdClient, queue_id: u64) -> CicdResult<()> {
-        client.post_empty(&format!("/queue/cancelItem?id={queue_id}")).await
+        client
+            .post_empty(&format!("/queue/cancelItem?id={queue_id}"))
+            .await
     }
 
     // ── Nodes ────────────────────────────────────────────────────────
@@ -83,7 +109,9 @@ impl JenkinsManager {
     }
 
     pub async fn get_node_config(client: &CicdClient, name: &str) -> CicdResult<String> {
-        client.get_raw(&format!("/computer/{name}/config.xml")).await
+        client
+            .get_raw(&format!("/computer/{name}/config.xml"))
+            .await
     }
 
     // ── System ───────────────────────────────────────────────────────

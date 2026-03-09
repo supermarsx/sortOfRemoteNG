@@ -3,7 +3,12 @@
 
 use crate::types::*;
 
-pub fn normalize_jenkins_artifact(a: &JenkinsArtifact, job_name: &str, build_number: u64, base_url: &str) -> CicdArtifact {
+pub fn normalize_jenkins_artifact(
+    a: &JenkinsArtifact,
+    job_name: &str,
+    build_number: u64,
+    base_url: &str,
+) -> CicdArtifact {
     CicdArtifact {
         id: format!("{job_name}/{build_number}/{}", a.relative_path),
         build_id: format!("{job_name}/{build_number}"),
