@@ -123,11 +123,7 @@ impl DashboardService {
     }
 
     pub fn get_unhealthy(&self) -> Vec<ConnectionHealthEntry> {
-        self.monitor
-            .get_unhealthy()
-            .into_iter()
-            .cloned()
-            .collect()
+        self.monitor.get_unhealthy().into_iter().cloned().collect()
     }
 
     // ── Sparkline ───────────────────────────────────────────────

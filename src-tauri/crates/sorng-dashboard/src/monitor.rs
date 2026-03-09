@@ -166,11 +166,7 @@ impl HealthMonitor {
     }
 
     /// Record a latency sample for an existing entry.
-    pub fn record_latency(
-        &mut self,
-        id: &str,
-        latency_ms: f64,
-    ) -> Result<(), DashboardError> {
+    pub fn record_latency(&mut self, id: &str, latency_ms: f64) -> Result<(), DashboardError> {
         let max = self.config.max_latency_history;
         let entry = self
             .entries

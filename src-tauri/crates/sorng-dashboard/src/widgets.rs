@@ -174,12 +174,14 @@ pub fn build_widget_data(
 ) -> WidgetData {
     let (title, data) = match widget_type {
         WidgetType::StatusHeatMap => ("Status Heat Map".into(), build_status_heatmap(entries)),
-        WidgetType::RecentConnections => {
-            ("Recent Connections".into(), build_recent_connections(entries, 10))
-        }
-        WidgetType::LatencySparklines => {
-            ("Latency Sparklines".into(), build_latency_sparklines(entries, 10))
-        }
+        WidgetType::RecentConnections => (
+            "Recent Connections".into(),
+            build_recent_connections(entries, 10),
+        ),
+        WidgetType::LatencySparklines => (
+            "Latency Sparklines".into(),
+            build_latency_sparklines(entries, 10),
+        ),
         WidgetType::AlertFeed => ("Alert Feed".into(), build_alert_feed(alerts, 20)),
         WidgetType::QuickStats => {
             let qs = aggregator::compute_quick_stats(entries, 0, None, None);
@@ -188,9 +190,10 @@ pub fn build_widget_data(
                 serde_json::to_value(&qs).unwrap_or_default(),
             )
         }
-        WidgetType::ProtocolBreakdown => {
-            ("Protocol Breakdown".into(), build_protocol_breakdown(summary))
-        }
+        WidgetType::ProtocolBreakdown => (
+            "Protocol Breakdown".into(),
+            build_protocol_breakdown(summary),
+        ),
         WidgetType::ConnectionList => {
             let items: Vec<Value> = entries
                 .iter()
@@ -242,9 +245,7 @@ pub fn build_widget_data(
                 .collect();
             ("Group Overview".into(), json!({ "groups": groups }))
         }
-        WidgetType::Custom(name) => {
-            (format!("Custom: {name}"), json!({ "custom": name }))
-        }
+        WidgetType::Custom(name) => (format!("Custom: {name}"), json!({ "custom": name })),
     };
 
     WidgetData {

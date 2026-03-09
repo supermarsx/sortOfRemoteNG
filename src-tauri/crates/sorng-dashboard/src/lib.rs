@@ -19,8 +19,8 @@
 //! | `service`    | Service façade (`DashboardServiceState`)           |
 //! | `commands`   | Tauri `#[command]` handlers                        |
 
-pub mod alerts;
 pub mod aggregator;
+pub mod alerts;
 pub mod commands;
 pub mod error;
 pub mod monitor;

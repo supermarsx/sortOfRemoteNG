@@ -26,9 +26,7 @@ impl DashboardAlertManager {
     /// Auto-generate alerts from the current set of health entries.
     ///
     /// Produces alerts for down, degraded, and high-latency connections.
-    pub fn generate_alerts_from_health(
-        entries: &[&ConnectionHealthEntry],
-    ) -> Vec<DashboardAlert> {
+    pub fn generate_alerts_from_health(entries: &[&ConnectionHealthEntry]) -> Vec<DashboardAlert> {
         let mut alerts = Vec::new();
         let now = Utc::now();
 

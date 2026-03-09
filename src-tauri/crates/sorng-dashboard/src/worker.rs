@@ -88,7 +88,10 @@ impl DashboardWorker {
             *r = true;
         }
 
-        info!("Dashboard worker starting (poll every {}s)", config.poll_interval_seconds);
+        info!(
+            "Dashboard worker starting (poll every {}s)",
+            config.poll_interval_seconds
+        );
 
         tokio::spawn(async move {
             let mut tick = interval(Duration::from_secs(config.poll_interval_seconds));
@@ -122,9 +125,7 @@ impl DashboardWorker {
                 }
 
                 // 2. Poll health with concurrency limit.
-                let semaphore = Arc::new(tokio::sync::Semaphore::new(
-                    config.max_concurrent_checks,
-                ));
+                let semaphore = Arc::new(tokio::sync::Semaphore::new(config.max_concurrent_checks));
 
                 let monitor_ref = Arc::new(Mutex::new(&mut monitor));
 
@@ -157,12 +158,10 @@ impl DashboardWorker {
                 };
                 let entry_refs: Vec<&ConnectionHealthEntry> = all_entries.iter().collect();
                 let summary = aggregator::aggregate_health_summary(&entry_refs);
-                let quick_stats =
-                    aggregator::compute_quick_stats(&entry_refs, 0, None, None);
+                let quick_stats = aggregator::compute_quick_stats(&entry_refs, 0, None, None);
 
                 // 4. Generate alerts.
-                let new_alerts =
-                    DashboardAlertManager::generate_alerts_from_health(&entry_refs);
+                let new_alerts = DashboardAlertManager::generate_alerts_from_health(&entry_refs);
                 alert_mgr.add_alerts(new_alerts);
                 alert_mgr.cleanup_old();
 
@@ -178,8 +177,7 @@ impl DashboardWorker {
                     WidgetType::TopLatency,
                     WidgetType::GroupOverview,
                 ];
-                let alerts_snapshot: Vec<DashboardAlert> =
-                    alert_mgr.get_all_alerts().to_vec();
+                let alerts_snapshot: Vec<DashboardAlert> = alert_mgr.get_all_alerts().to_vec();
                 let widget_data: Vec<WidgetData> = widget_types
                     .iter()
                     .map(|wt| {
@@ -197,7 +195,10 @@ impl DashboardWorker {
                     st.quick_stats = quick_stats;
                 }
 
-                debug!("Dashboard worker: cycle complete ({} connections)", conns.len());
+                debug!(
+                    "Dashboard worker: cycle complete ({} connections)",
+                    conns.len()
+                );
             }
 
             // Mark as stopped.

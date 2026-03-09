@@ -64,9 +64,7 @@ pub fn aggregate_protocol_summary(
 ) -> HashMap<String, ProtocolSummary> {
     let mut map: HashMap<String, Vec<&ConnectionHealthEntry>> = HashMap::new();
     for entry in entries {
-        map.entry(entry.protocol.clone())
-            .or_default()
-            .push(entry);
+        map.entry(entry.protocol.clone()).or_default().push(entry);
     }
 
     let mut result = HashMap::new();
@@ -227,7 +225,12 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
-    fn make_entry(id: &str, protocol: &str, status: HealthStatus, latency: Option<f64>) -> ConnectionHealthEntry {
+    fn make_entry(
+        id: &str,
+        protocol: &str,
+        status: HealthStatus,
+        latency: Option<f64>,
+    ) -> ConnectionHealthEntry {
         ConnectionHealthEntry {
             connection_id: id.into(),
             name: id.into(),

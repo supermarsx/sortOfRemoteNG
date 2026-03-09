@@ -111,25 +111,19 @@ pub async fn dash_get_widget_data(
 // ─── Monitoring Lifecycle ───────────────────────────────────────────
 
 #[tauri::command]
-pub async fn dash_start_monitoring(
-    state: State<'_, DashboardServiceState>,
-) -> Result<(), String> {
+pub async fn dash_start_monitoring(state: State<'_, DashboardServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.start_monitoring().await.map_err(err_str)
 }
 
 #[tauri::command]
-pub async fn dash_stop_monitoring(
-    state: State<'_, DashboardServiceState>,
-) -> Result<(), String> {
+pub async fn dash_stop_monitoring(state: State<'_, DashboardServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.stop_monitoring().await.map_err(err_str)
 }
 
 #[tauri::command]
-pub async fn dash_force_refresh(
-    state: State<'_, DashboardServiceState>,
-) -> Result<(), String> {
+pub async fn dash_force_refresh(state: State<'_, DashboardServiceState>) -> Result<(), String> {
     let svc = state.lock().await;
     svc.force_refresh();
     Ok(())
