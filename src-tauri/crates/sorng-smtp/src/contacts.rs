@@ -24,11 +24,7 @@ impl ContactStore {
     /// Add a new contact.
     pub fn add_contact(&mut self, contact: Contact) -> SmtpResult<String> {
         // Check for duplicate email
-        if self
-            .contacts
-            .iter()
-            .any(|c| c.email == contact.email)
-        {
+        if self.contacts.iter().any(|c| c.email == contact.email) {
             return Err(SmtpError::contact(format!(
                 "Contact with email {} already exists",
                 contact.email
@@ -350,7 +346,11 @@ impl ContactStore {
             .map_err(|e| SmtpError::contact(format!("JSON import failed: {}", e)))?;
         let mut imported = 0;
         for c in contacts {
-            if !self.contacts.iter().any(|existing| existing.email == c.email) {
+            if !self
+                .contacts
+                .iter()
+                .any(|existing| existing.email == c.email)
+            {
                 self.contacts.push(c);
                 imported += 1;
             }
@@ -416,7 +416,9 @@ mod tests {
         store
             .add_contact(Contact::new("alice@example.com"))
             .unwrap();
-        assert!(store.add_contact(Contact::new("alice@example.com")).is_err());
+        assert!(store
+            .add_contact(Contact::new("alice@example.com"))
+            .is_err());
     }
 
     #[test]
@@ -459,9 +461,7 @@ mod tests {
     #[test]
     fn groups_crud() {
         let mut store = ContactStore::new();
-        let gid = store
-            .create_group(ContactGroup::new("Team"))
-            .unwrap();
+        let gid = store.create_group(ContactGroup::new("Team")).unwrap();
         assert_eq!(store.group_count(), 1);
         assert!(store.get_group(&gid).is_some());
         assert!(store.find_group_by_name("Team").is_some());
@@ -557,7 +557,9 @@ mod tests {
     #[test]
     fn export_import_json() {
         let mut store = ContactStore::new();
-        store.add_contact(Contact::new("alice@example.com")).unwrap();
+        store
+            .add_contact(Contact::new("alice@example.com"))
+            .unwrap();
         store.add_contact(Contact::new("bob@example.com")).unwrap();
 
         let json = store.export_json().unwrap();
@@ -571,7 +573,9 @@ mod tests {
     #[test]
     fn import_csv_skips_duplicates() {
         let mut store = ContactStore::new();
-        store.add_contact(Contact::new("alice@example.com")).unwrap();
+        store
+            .add_contact(Contact::new("alice@example.com"))
+            .unwrap();
         let csv = "email,name\nalice@example.com,Alice\nbob@example.com,Bob\n";
         let imported = store.import_csv(csv).unwrap();
         assert_eq!(imported, 1); // Only bob

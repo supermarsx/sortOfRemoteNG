@@ -50,12 +50,14 @@ pub fn render_template(
         ));
     }
 
-    let mut msg = EmailMessage::default();
-    msg.from = from.clone();
-    msg.to = to.to_vec();
-    msg.subject = subject;
-    msg.text_body = text_body;
-    msg.html_body = html_body;
+    let msg = EmailMessage {
+        from: from.clone(),
+        to: to.to_vec(),
+        subject,
+        text_body,
+        html_body,
+        ..Default::default()
+    };
 
     Ok(msg)
 }
@@ -250,21 +252,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(msg.subject, "Welcome Bob!");
-        assert_eq!(
-            msg.text_body.unwrap(),
-            "Hello Bob, welcome to Acme."
-        );
+        assert_eq!(msg.text_body.unwrap(), "Hello Bob, welcome to Acme.");
         assert!(msg.html_body.unwrap().contains("<h1>Hello Bob</h1>"));
     }
 
     #[test]
     fn render_template_missing_required() {
-        let template = create_simple_template(
-            "Test",
-            "Hi {{name}}",
-            "<p>{{name}}</p>",
-            None,
-        );
+        let template = create_simple_template("Test", "Hi {{name}}", "<p>{{name}}</p>", None);
 
         let vars = HashMap::new();
         let result = render_template(
@@ -278,12 +272,8 @@ mod tests {
 
     #[test]
     fn render_template_with_default() {
-        let mut template = create_simple_template(
-            "Test",
-            "Hi {{name}}",
-            "<p>From {{company}}</p>",
-            None,
-        );
+        let mut template =
+            create_simple_template("Test", "Hi {{name}}", "<p>From {{company}}</p>", None);
         // Set defaults
         for v in &mut template.variables {
             if v.name == "company" {
@@ -308,12 +298,7 @@ mod tests {
 
     #[test]
     fn validate_template_ok() {
-        let template = create_simple_template(
-            "Test",
-            "Hi {{name}}",
-            "<p>{{name}}</p>",
-            None,
-        );
+        let template = create_simple_template("Test", "Hi {{name}}", "<p>{{name}}</p>", None);
         let vars = validate_template(&template).unwrap();
         assert_eq!(vars, vec!["name"]);
     }

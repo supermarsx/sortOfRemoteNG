@@ -11,10 +11,7 @@ use crate::types::*;
 /// Authenticate with the SMTP server using the given credentials.
 /// Automatically selects the best mechanism based on server capabilities
 /// unless `creds.method` is explicitly set.
-pub async fn authenticate(
-    client: &mut SmtpClient,
-    creds: &SmtpCredentials,
-) -> SmtpResult<()> {
+pub async fn authenticate(client: &mut SmtpClient, creds: &SmtpCredentials) -> SmtpResult<()> {
     let method = select_auth_method(client, creds)?;
     debug!("Authenticating with {}", method);
 
@@ -27,10 +24,7 @@ pub async fn authenticate(
 }
 
 /// Select the authentication mechanism to use.
-fn select_auth_method(
-    client: &SmtpClient,
-    creds: &SmtpCredentials,
-) -> SmtpResult<SmtpAuthMethod> {
+fn select_auth_method(client: &SmtpClient, creds: &SmtpCredentials) -> SmtpResult<SmtpAuthMethod> {
     // If explicitly set, honour it
     if let Some(m) = creds.method {
         return Ok(m);
@@ -248,7 +242,10 @@ mod tests {
             method: Some(SmtpAuthMethod::Login),
             ..Default::default()
         };
-        assert_eq!(select_auth_method(&client, &creds).unwrap(), SmtpAuthMethod::Login);
+        assert_eq!(
+            select_auth_method(&client, &creds).unwrap(),
+            SmtpAuthMethod::Login
+        );
     }
 
     #[test]

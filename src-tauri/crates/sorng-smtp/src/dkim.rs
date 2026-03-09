@@ -76,11 +76,8 @@ pub fn sign_message(raw_message: &str, config: &DkimConfig) -> SmtpResult<String
 
     // Canonicalize the signed headers
     let parsed_headers = parse_headers(&headers_raw);
-    let canon_headers = canonicalize_signed_headers(
-        &parsed_headers,
-        &config.signed_headers,
-        config.header_canon,
-    );
+    let canon_headers =
+        canonicalize_signed_headers(&parsed_headers, &config.signed_headers, config.header_canon);
 
     // Canonicalize the DKIM-Signature header itself (with empty b=)
     let canon_dkim = canonicalize_header(&dkim_header, config.header_canon);
@@ -103,13 +100,19 @@ pub fn sign_message(raw_message: &str, config: &DkimConfig) -> SmtpResult<String
 /// Verify that a DKIM configuration is valid (key can parse, fields are set).
 pub fn validate_config(config: &DkimConfig) -> SmtpResult<()> {
     if config.private_key_pem.is_empty() {
-        return Err(SmtpError::new(SmtpErrorKind::DkimError, "Private key is empty"));
+        return Err(SmtpError::new(
+            SmtpErrorKind::DkimError,
+            "Private key is empty",
+        ));
     }
     if config.domain.is_empty() {
         return Err(SmtpError::new(SmtpErrorKind::DkimError, "Domain is empty"));
     }
     if config.selector.is_empty() {
-        return Err(SmtpError::new(SmtpErrorKind::DkimError, "Selector is empty"));
+        return Err(SmtpError::new(
+            SmtpErrorKind::DkimError,
+            "Selector is empty",
+        ));
     }
     if config.signed_headers.is_empty() {
         return Err(SmtpError::new(
@@ -162,9 +165,7 @@ fn canonicalize_header(header: &str, method: DkimCanonicalization) -> String {
             // Relaxed: lowercase name, unfold, collapse whitespace
             if let Some(colon) = header.find(':') {
                 let name = header[..colon].trim().to_lowercase();
-                let value = header[colon + 1..]
-                    .replace("\r\n", "")
-                    .replace('\n', "");
+                let value = header[colon + 1..].replace("\r\n", "").replace('\n', "");
                 let value = collapse_whitespace(value.trim());
                 format!("{}:{}", name, value)
             } else {
@@ -383,7 +384,11 @@ mod tests {
 
     #[test]
     fn generate_dns_record_format() {
-        let rec = generate_dns_record("s1", "example.com", "-----BEGIN PUBLIC KEY-----\nMIIB\nIjAN\n-----END PUBLIC KEY-----");
+        let rec = generate_dns_record(
+            "s1",
+            "example.com",
+            "-----BEGIN PUBLIC KEY-----\nMIIB\nIjAN\n-----END PUBLIC KEY-----",
+        );
         assert!(rec.contains("s1._domainkey.example.com"));
         assert!(rec.contains("v=DKIM1"));
         assert!(rec.contains("p=MIIBIjAN"));
@@ -417,7 +422,8 @@ mod tests {
     #[test]
     fn validate_config_empty_domain() {
         let mut config = DkimConfig::default();
-        config.private_key_pem = "-----BEGIN PRIVATE KEY-----\nfoo\n-----END PRIVATE KEY-----".into();
+        config.private_key_pem =
+            "-----BEGIN PRIVATE KEY-----\nfoo\n-----END PRIVATE KEY-----".into();
         assert!(validate_config(&config).is_err());
     }
 

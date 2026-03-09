@@ -221,7 +221,8 @@ impl SmtpService {
         let tpl = self
             .get_template(template_id)
             .ok_or_else(|| SmtpError::template(format!("Template not found: {}", template_id)))?;
-        let profile = self.default_profile()
+        let profile = self
+            .default_profile()
             .ok_or_else(|| SmtpError::config("No default profile for from address"))?;
         let from = &profile.from_address;
         templates::render_template(tpl, variables, from, &[])
@@ -235,12 +236,16 @@ impl SmtpService {
         let mut vars = templates::extract_variables(&tpl.subject_template);
         if let Some(ref text) = tpl.text_template {
             for v in templates::extract_variables(text) {
-                if !vars.contains(&v) { vars.push(v); }
+                if !vars.contains(&v) {
+                    vars.push(v);
+                }
             }
         }
         if let Some(ref html) = tpl.html_template {
             for v in templates::extract_variables(html) {
-                if !vars.contains(&v) { vars.push(v); }
+                if !vars.contains(&v) {
+                    vars.push(v);
+                }
             }
         }
         Ok(vars)
@@ -331,15 +336,18 @@ impl SmtpService {
     ) -> SmtpResult<SendResult> {
         let profile = self.resolve_profile(profile_name)?.clone();
         self.touch();
-        send_with_profile(msg, &profile).await.map(|r| {
+        send_with_profile(msg, &profile).await.inspect(|_r| {
             self.messages_sent += 1;
             self.last_activity = Some(Utc::now().to_rfc3339());
-            r
         })
     }
 
     /// Enqueue a message for later sending.
-    pub fn enqueue(&mut self, msg: EmailMessage, profile_name: Option<String>) -> SmtpResult<String> {
+    pub fn enqueue(
+        &mut self,
+        msg: EmailMessage,
+        profile_name: Option<String>,
+    ) -> SmtpResult<String> {
         let id = if let Some(ref pn) = profile_name {
             self.queue.enqueue_with_profile(msg, pn)?
         } else {
@@ -359,7 +367,7 @@ impl SmtpService {
         let id = self.queue.enqueue_scheduled(msg, schedule)?;
         // If a profile was provided, update the item
         if let Some(pn) = profile_name {
-            if let Some(item) = self.queue.items_mut().iter_mut().rev().next() {
+            if let Some(item) = self.queue.items_mut().iter_mut().next_back() {
                 item.profile_name = Some(pn);
             }
         }
@@ -407,10 +415,7 @@ impl SmtpService {
             match send_with_profile(&item.message, &profile).await {
                 Ok(mut result) => {
                     result.queue_item_id = Some(item_id.clone());
-                    let _ = self.queue.mark_sent(
-                        &item_id,
-                        result.recipients.clone(),
-                    );
+                    let _ = self.queue.mark_sent(&item_id, result.recipients.clone());
                     self.messages_sent += 1;
                     results.push(result);
                 }
@@ -451,10 +456,9 @@ impl SmtpService {
                     }
                     Err(e) => {
                         result.failed += 1;
-                        result.errors.push(format!(
-                            "{}: {}",
-                            recipient.address.address, e
-                        ));
+                        result
+                            .errors
+                            .push(format!("{}: {}", recipient.address.address, e));
                         continue;
                     }
                 }
@@ -471,17 +475,20 @@ impl SmtpService {
                 continue;
             };
 
-            match self.enqueue_scheduled(msg, request.schedule.clone(), request.profile_name.clone()) {
+            match self.enqueue_scheduled(
+                msg,
+                request.schedule.clone(),
+                request.profile_name.clone(),
+            ) {
                 Ok(id) => {
                     result.queued += 1;
                     result.queue_item_ids.push(id);
                 }
                 Err(e) => {
                     result.failed += 1;
-                    result.errors.push(format!(
-                        "{}: {}",
-                        recipient.address.address, e
-                    ));
+                    result
+                        .errors
+                        .push(format!("{}: {}", recipient.address.address, e));
                 }
             }
         }
@@ -586,10 +593,7 @@ pub struct SmtpStats {
 // ─── Internal helper ─────────────────────────────────────────────
 
 /// Send a message using a profile (connect, auth, build MIME, optionally DKIM-sign, send).
-async fn send_with_profile(
-    msg: &EmailMessage,
-    profile: &SmtpProfile,
-) -> SmtpResult<SendResult> {
+async fn send_with_profile(msg: &EmailMessage, profile: &SmtpProfile) -> SmtpResult<SendResult> {
     let started = Instant::now();
 
     // 1. Validate message
@@ -614,7 +618,10 @@ async fn send_with_profile(
     let rcpt_refs: Vec<&str> = recipients.iter().map(|s| s.as_str()).collect();
 
     // 5. Connect
-    debug!("Connecting to {}:{}", profile.config.host, profile.config.port);
+    debug!(
+        "Connecting to {}:{}",
+        profile.config.host, profile.config.port
+    );
     let mut client = SmtpClient::new(profile.config.clone());
     client.connect().await?;
 

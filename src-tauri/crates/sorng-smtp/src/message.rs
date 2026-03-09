@@ -17,10 +17,7 @@ pub fn build_message(msg: &EmailMessage) -> SmtpResult<String> {
     let boundary_alt = format!("----=_Alt_{}", uuid::Uuid::new_v4().simple());
     let boundary_related = format!("----=_Rel_{}", uuid::Uuid::new_v4().simple());
 
-    let has_attachments = msg
-        .attachments
-        .iter()
-        .any(|a| !a.inline);
+    let has_attachments = msg.attachments.iter().any(|a| !a.inline);
     let has_inline_images = msg.attachments.iter().any(|a| a.inline);
     let has_html = msg.html_body.is_some();
     let has_text = msg.text_body.is_some();
@@ -45,14 +42,22 @@ pub fn build_message(msg: &EmailMessage) -> SmtpResult<String> {
     write_header(
         &mut out,
         "To",
-        &msg.to.iter().map(|a| a.to_mailbox()).collect::<Vec<_>>().join(", "),
+        &msg.to
+            .iter()
+            .map(|a| a.to_mailbox())
+            .collect::<Vec<_>>()
+            .join(", "),
     );
 
     if !msg.cc.is_empty() {
         write_header(
             &mut out,
             "Cc",
-            &msg.cc.iter().map(|a| a.to_mailbox()).collect::<Vec<_>>().join(", "),
+            &msg.cc
+                .iter()
+                .map(|a| a.to_mailbox())
+                .collect::<Vec<_>>()
+                .join(", "),
         );
     }
     // BCC not included in headers (by design)
@@ -87,11 +92,7 @@ pub fn build_message(msg: &EmailMessage) -> SmtpResult<String> {
 
     // Read receipt
     if let Some(ref rr) = msg.read_receipt_to {
-        write_header(
-            &mut out,
-            "Disposition-Notification-To",
-            &rr.to_mailbox(),
-        );
+        write_header(&mut out, "Disposition-Notification-To", &rr.to_mailbox());
     }
 
     // Custom headers
@@ -207,6 +208,7 @@ pub fn build_message(msg: &EmailMessage) -> SmtpResult<String> {
 
 // ── Helper: write body content inside mixed ─────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn write_body_content(
     out: &mut String,
     msg: &EmailMessage,
@@ -378,9 +380,7 @@ pub fn encode_header_value(value: &str) -> String {
 pub fn encode_body(text: &str, encoding: TransferEncoding) -> String {
     match encoding {
         TransferEncoding::SevenBit => text.to_string(),
-        TransferEncoding::QuotedPrintable => {
-            quoted_printable::encode_to_str(text.as_bytes())
-        }
+        TransferEncoding::QuotedPrintable => quoted_printable::encode_to_str(text.as_bytes()),
         TransferEncoding::Base64 => {
             let b64 = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
             // Wrap at 76 chars
@@ -557,7 +557,8 @@ mod tests {
     #[test]
     fn build_with_attachment() {
         let mut msg = sample_message();
-        msg.attachments.push(Attachment::new("doc.pdf", "application/pdf", b"PDF"));
+        msg.attachments
+            .push(Attachment::new("doc.pdf", "application/pdf", b"PDF"));
         let raw = build_message(&msg).unwrap();
         assert!(raw.contains("multipart/mixed"));
         assert!(raw.contains("doc.pdf"));
@@ -602,7 +603,8 @@ mod tests {
     #[test]
     fn build_with_cc() {
         let mut msg = sample_message();
-        msg.cc.push(EmailAddress::with_name("cc@example.com", "CC Guy"));
+        msg.cc
+            .push(EmailAddress::with_name("cc@example.com", "CC Guy"));
         let raw = build_message(&msg).unwrap();
         assert!(raw.contains("Cc: \"CC Guy\" <cc@example.com>"));
     }
@@ -654,9 +656,7 @@ mod tests {
 
     #[test]
     fn message_builder_draft() {
-        let msg = MessageBuilder::new()
-            .subject("Draft")
-            .build_draft();
+        let msg = MessageBuilder::new().subject("Draft").build_draft();
         assert_eq!(msg.subject, "Draft");
         // No validation errors even though incomplete
     }

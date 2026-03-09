@@ -96,11 +96,10 @@ impl SendQueue {
         self.items
             .iter_mut()
             .filter(|item| {
-                matches!(item.status, QueueItemStatus::Pending | QueueItemStatus::ScheduledRetry)
-                    && item
-                        .scheduled_at
-                        .map(|s| s <= now)
-                        .unwrap_or(true)
+                matches!(
+                    item.status,
+                    QueueItemStatus::Pending | QueueItemStatus::ScheduledRetry
+                ) && item.scheduled_at.map(|s| s <= now).unwrap_or(true)
             })
             .take(batch_size)
             .collect()

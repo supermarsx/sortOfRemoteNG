@@ -165,7 +165,9 @@ pub async fn run_diagnostics(domain: &str) -> DiagnosticsReport {
         },
     ));
 
-    let all_passed = checks.iter().all(|c| matches!(c.result, DiagnosticCheck::Pass(_)));
+    let all_passed = checks
+        .iter()
+        .all(|c| matches!(c.result, DiagnosticCheck::Pass(_)));
 
     DiagnosticsReport {
         domain: domain.to_string(),
@@ -188,11 +190,7 @@ pub async fn lookup_mx(domain: &str) -> Vec<MxRecord> {
                     .iter()
                     .map(|mx| MxRecord {
                         priority: mx.preference(),
-                        exchange: mx
-                            .exchange()
-                            .to_string()
-                            .trim_end_matches('.')
-                            .to_string(),
+                        exchange: mx.exchange().to_string().trim_end_matches('.').to_string(),
                     })
                     .collect();
                 records.sort_by_key(|r| r.priority);
@@ -231,10 +229,7 @@ pub async fn check_port(host: &str, port: u16) -> SmtpResult<u64> {
     .await
     {
         Ok(Ok(_stream)) => Ok(start.elapsed().as_millis() as u64),
-        Ok(Err(e)) => Err(SmtpError::connection(format!(
-            "Connection refused: {}",
-            e
-        ))),
+        Ok(Err(e)) => Err(SmtpError::connection(format!("Connection refused: {}", e))),
         Err(_) => Err(SmtpError::connection("Port check timed out")),
     }
 }
@@ -278,11 +273,7 @@ pub async fn check_starttls(host: &str) -> bool {
 
         // Send EHLO
         let stream_mut = reader.get_mut();
-        if stream_mut
-            .write_all(b"EHLO diagnostics\r\n")
-            .await
-            .is_err()
-        {
+        if stream_mut.write_all(b"EHLO diagnostics\r\n").await.is_err() {
             continue;
         }
 
@@ -331,9 +322,7 @@ pub async fn get_smtp_banner(host: &str) -> Option<String> {
         {
             let mut reader = BufReader::new(stream);
             let mut buf = String::new();
-            if let Ok(Ok(n)) =
-                timeout(Duration::from_secs(5), reader.read_line(&mut buf)).await
-            {
+            if let Ok(Ok(n)) = timeout(Duration::from_secs(5), reader.read_line(&mut buf)).await {
                 if n > 0 {
                     return Some(buf);
                 }
@@ -396,10 +385,8 @@ pub async fn is_smtp_reachable(host: &str) -> bool {
 /// Suggest the best port/security for a given host based on open ports.
 pub async fn suggest_security(host: &str) -> (u16, SmtpSecurity) {
     // Prefer 587+STARTTLS > 465+SMTPS > 25+None
-    if check_port(host, 587).await.is_ok() {
-        if check_starttls(host).await {
-            return (587, SmtpSecurity::StartTls);
-        }
+    if check_port(host, 587).await.is_ok() && check_starttls(host).await {
+        return (587, SmtpSecurity::StartTls);
     }
     if check_port(host, 465).await.is_ok() {
         return (465, SmtpSecurity::ImplicitTls);

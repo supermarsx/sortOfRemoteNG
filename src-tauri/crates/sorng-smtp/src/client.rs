@@ -18,6 +18,7 @@ use crate::types::*;
 // ─── Stream Abstraction ─────────────────────────────────────────────
 
 /// Wrapper over plain-text or TLS socket so the rest of the engine is generic.
+#[allow(clippy::large_enum_variant)]
 enum SmtpStream {
     Plain(BufReader<TcpStream>),
     Tls(BufReader<TlsStream<TcpStream>>),
@@ -195,7 +196,10 @@ impl SmtpClient {
         }
 
         // Take the existing plain stream
-        let stream = self.stream.take().ok_or_else(|| SmtpError::io("No stream"))?;
+        let stream = self
+            .stream
+            .take()
+            .ok_or_else(|| SmtpError::io("No stream"))?;
         let tcp = match stream {
             SmtpStream::Plain(r) => r.into_inner(),
             _ => return Err(SmtpError::tls("Already using TLS")),
@@ -386,10 +390,7 @@ impl SmtpClient {
 
     // ── TLS helper ──────────────────────────────────────────────
 
-    async fn upgrade_to_tls_raw(
-        &self,
-        tcp: TcpStream,
-    ) -> SmtpResult<TlsStream<TcpStream>> {
+    async fn upgrade_to_tls_raw(&self, tcp: TcpStream) -> SmtpResult<TlsStream<TcpStream>> {
         let mut root_store = rustls::RootCertStore::empty();
 
         // Load system/webpki roots

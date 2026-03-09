@@ -16,14 +16,14 @@
 //! | [`service`] | Service façade (Tauri state) |
 //! | [`commands`] | `#[tauri::command]` handlers |
 
-pub mod types;
-pub mod client;
 pub mod auth;
-pub mod message;
-pub mod templates;
-pub mod queue;
-pub mod dkim;
+pub mod client;
+pub mod commands;
 pub mod contacts;
 pub mod diagnostics;
+pub mod dkim;
+pub mod message;
+pub mod queue;
 pub mod service;
-pub mod commands;
+pub mod templates;
+pub mod types;

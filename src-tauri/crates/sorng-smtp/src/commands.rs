@@ -69,11 +69,7 @@ pub async fn smtp_set_default_profile(
     state: State<'_, SmtpServiceState>,
     id: String,
 ) -> Result<(), String> {
-    state
-        .lock()
-        .await
-        .set_default_profile(&id)
-        .map_err(err_str)
+    state.lock().await.set_default_profile(&id).map_err(err_str)
 }
 
 #[tauri::command]
@@ -227,12 +223,7 @@ pub async fn smtp_find_contact_by_email(
     state: State<'_, SmtpServiceState>,
     email: String,
 ) -> Result<Option<Contact>, String> {
-    Ok(state
-        .lock()
-        .await
-        .contacts()
-        .find_by_email(&email)
-        .cloned())
+    Ok(state.lock().await.contacts().find_by_email(&email).cloned())
 }
 
 #[tauri::command]
@@ -433,12 +424,7 @@ pub async fn smtp_import_contacts_csv(
 pub async fn smtp_export_contacts_json(
     state: State<'_, SmtpServiceState>,
 ) -> Result<String, String> {
-    state
-        .lock()
-        .await
-        .contacts()
-        .export_json()
-        .map_err(err_str)
+    state.lock().await.contacts().export_json().map_err(err_str)
 }
 
 #[tauri::command]
@@ -509,11 +495,7 @@ pub async fn smtp_bulk_enqueue(
     state: State<'_, SmtpServiceState>,
     request: BulkSendRequest,
 ) -> Result<BulkSendResult, String> {
-    state
-        .lock()
-        .await
-        .bulk_enqueue(&request)
-        .map_err(err_str)
+    state.lock().await.bulk_enqueue(&request).map_err(err_str)
 }
 
 // ── Queue ────────────────────────────────────────────────────────────
@@ -526,9 +508,7 @@ pub async fn smtp_queue_summary(
 }
 
 #[tauri::command]
-pub async fn smtp_queue_list(
-    state: State<'_, SmtpServiceState>,
-) -> Result<Vec<QueueItem>, String> {
+pub async fn smtp_queue_list(state: State<'_, SmtpServiceState>) -> Result<Vec<QueueItem>, String> {
     Ok(state
         .lock()
         .await
@@ -555,9 +535,7 @@ pub async fn smtp_queue_cancel(
 }
 
 #[tauri::command]
-pub async fn smtp_queue_retry_failed(
-    state: State<'_, SmtpServiceState>,
-) -> Result<usize, String> {
+pub async fn smtp_queue_retry_failed(state: State<'_, SmtpServiceState>) -> Result<usize, String> {
     Ok(state.lock().await.queue_retry_failed())
 }
 
@@ -569,9 +547,7 @@ pub async fn smtp_queue_purge_completed(
 }
 
 #[tauri::command]
-pub async fn smtp_queue_clear(
-    state: State<'_, SmtpServiceState>,
-) -> Result<usize, String> {
+pub async fn smtp_queue_clear(state: State<'_, SmtpServiceState>) -> Result<usize, String> {
     Ok(state.lock().await.queue_clear())
 }
 
@@ -688,38 +664,28 @@ pub async fn smtp_connection_summary(
 }
 
 #[tauri::command]
-pub async fn smtp_stats(
-    state: State<'_, SmtpServiceState>,
-) -> Result<SmtpStats, String> {
+pub async fn smtp_stats(state: State<'_, SmtpServiceState>) -> Result<SmtpStats, String> {
     Ok(state.lock().await.stats())
 }
 
 // ── Message Utilities ────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn smtp_build_message(
-    message: EmailMessage,
-) -> Result<String, String> {
+pub async fn smtp_build_message(message: EmailMessage) -> Result<String, String> {
     crate::message::build_message(&message).map_err(err_str)
 }
 
 #[tauri::command]
-pub async fn smtp_validate_email_address(
-    address: String,
-) -> Result<bool, String> {
+pub async fn smtp_validate_email_address(address: String) -> Result<bool, String> {
     Ok(EmailAddress::new(&address).is_valid())
 }
 
 #[tauri::command]
-pub async fn smtp_parse_email_address(
-    input: String,
-) -> Result<EmailAddress, String> {
+pub async fn smtp_parse_email_address(input: String) -> Result<EmailAddress, String> {
     EmailAddress::parse(&input).map_err(err_str)
 }
 
 #[tauri::command]
-pub async fn smtp_reverse_dns(
-    host: String,
-) -> Result<Option<String>, String> {
+pub async fn smtp_reverse_dns(host: String) -> Result<Option<String>, String> {
     Ok(crate::diagnostics::reverse_lookup(&host))
 }

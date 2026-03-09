@@ -136,20 +136,15 @@ pub type SmtpResult<T> = Result<T, SmtpError>;
 // ─── Enums ──────────────────────────────────────────────────────────
 
 /// SMTP security mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SmtpSecurity {
     /// Unencrypted (port 25 / 587 without STARTTLS).
     None,
     /// STARTTLS upgrade on port 587.
+    #[default]
     StartTls,
     /// Implicit TLS (SMTPS) on port 465.
     ImplicitTls,
-}
-
-impl Default for SmtpSecurity {
-    fn default() -> Self {
-        Self::StartTls
-    }
 }
 
 /// Supported authentication mechanisms.
@@ -173,17 +168,12 @@ impl fmt::Display for SmtpAuthMethod {
 }
 
 /// Priority / importance header value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum MessagePriority {
     High,
+    #[default]
     Normal,
     Low,
-}
-
-impl Default for MessagePriority {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl fmt::Display for MessagePriority {
@@ -197,17 +187,12 @@ impl fmt::Display for MessagePriority {
 }
 
 /// Content-Transfer-Encoding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TransferEncoding {
     SevenBit,
+    #[default]
     QuotedPrintable,
     Base64,
-}
-
-impl Default for TransferEncoding {
-    fn default() -> Self {
-        Self::QuotedPrintable
-    }
 }
 
 impl fmt::Display for TransferEncoding {
@@ -221,8 +206,9 @@ impl fmt::Display for TransferEncoding {
 }
 
 /// Queue item status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum QueueItemStatus {
+    #[default]
     Pending,
     Sending,
     Sent,
@@ -231,37 +217,21 @@ pub enum QueueItemStatus {
     Cancelled,
 }
 
-impl Default for QueueItemStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
-}
-
 /// Send schedule mode.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum SendSchedule {
+    #[default]
     Immediate,
     At(DateTime<Utc>),
     AfterSeconds(u64),
 }
 
-impl Default for SendSchedule {
-    fn default() -> Self {
-        Self::Immediate
-    }
-}
-
 /// DKIM canonicalization algorithm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum DkimCanonicalization {
     Simple,
+    #[default]
     Relaxed,
-}
-
-impl Default for DkimCanonicalization {
-    fn default() -> Self {
-        Self::Relaxed
-    }
 }
 
 impl fmt::Display for DkimCanonicalization {
@@ -469,10 +439,17 @@ impl EmailAddress {
                 } else {
                     // Strip surrounding quotes if present
                     let n = name_part.trim_matches('"').trim().to_string();
-                    if n.is_empty() { None } else { Some(n) }
+                    if n.is_empty() {
+                        None
+                    } else {
+                        Some(n)
+                    }
                 };
                 if addr.contains('@') {
-                    return Ok(Self { name, address: addr });
+                    return Ok(Self {
+                        name,
+                        address: addr,
+                    });
                 }
             }
         }
@@ -483,7 +460,10 @@ impl EmailAddress {
                 address: input.to_string(),
             });
         }
-        Err(SmtpError::message(format!("Invalid email address: {}", input)))
+        Err(SmtpError::message(format!(
+            "Invalid email address: {}",
+            input
+        )))
     }
 
     /// Validate the address format (basic check).
@@ -768,7 +748,7 @@ impl SmtpReply {
             // Try to extract enhanced code from first line text
             if enhanced.is_none() && !text.is_empty() {
                 let parts: Vec<&str> = text.splitn(2, ' ').collect();
-                if parts.len() >= 1 {
+                if !parts.is_empty() {
                     let ec = parts[0];
                     // Enhanced code pattern: d.d.d or d.d.dd
                     if ec.len() >= 5
@@ -855,7 +835,8 @@ impl EhloCapabilities {
                     caps.max_size = param.parse().ok();
                 }
                 "AUTH" => {
-                    caps.auth_mechanisms = param.split_whitespace().map(|s| s.to_string()).collect();
+                    caps.auth_mechanisms =
+                        param.split_whitespace().map(|s| s.to_string()).collect();
                 }
                 "STARTTLS" => caps.starttls = true,
                 "8BITMIME" => caps.eight_bit_mime = true,
@@ -1204,15 +1185,13 @@ mod tests {
 
     #[test]
     fn error_with_enhanced_code() {
-        let e = SmtpError::server(550, "no such user")
-            .with_enhanced("5.1.1");
+        let e = SmtpError::server(550, "no such user").with_enhanced("5.1.1");
         assert_eq!(e.enhanced_code, Some("5.1.1".into()));
     }
 
     #[test]
     fn error_std_error_trait() {
-        let e: Box<dyn std::error::Error> =
-            Box::new(SmtpError::config("bad host"));
+        let e: Box<dyn std::error::Error> = Box::new(SmtpError::config("bad host"));
         assert!(e.to_string().contains("bad host"));
     }
 
