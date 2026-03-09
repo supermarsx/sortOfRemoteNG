@@ -12,17 +12,29 @@ pub struct DisplayGeometry {
 
 impl Default for DisplayGeometry {
     fn default() -> Self {
-        Self { width: 1024, height: 768, fullscreen: false }
+        Self {
+            width: 1024,
+            height: 768,
+            fullscreen: false,
+        }
     }
 }
 
 impl DisplayGeometry {
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, fullscreen: false }
+        Self {
+            width,
+            height,
+            fullscreen: false,
+        }
     }
 
     pub fn fullscreen(width: u32, height: u32) -> Self {
-        Self { width, height, fullscreen: true }
+        Self {
+            width,
+            height,
+            fullscreen: true,
+        }
     }
 
     /// Format as NX geometry string (e.g. "1920x1080+fullscreen").
@@ -43,12 +55,18 @@ impl DisplayGeometry {
         };
 
         let parts: Vec<&str> = dims.split('x').collect();
-        if parts.len() != 2 { return None; }
+        if parts.len() != 2 {
+            return None;
+        }
 
         let width: u32 = parts[0].parse().ok()?;
         let height: u32 = parts[1].parse().ok()?;
 
-        Some(Self { width, height, fullscreen: fs })
+        Some(Self {
+            width,
+            height,
+            fullscreen: fs,
+        })
     }
 
     /// Aspect ratio as a float.
@@ -146,7 +164,12 @@ pub struct DpiConfig {
 }
 
 impl Default for DpiConfig {
-    fn default() -> Self { Self { dpi: 96, scale_factor: 1.0 } }
+    fn default() -> Self {
+        Self {
+            dpi: 96,
+            scale_factor: 1.0,
+        }
+    }
 }
 
 #[cfg(test)]

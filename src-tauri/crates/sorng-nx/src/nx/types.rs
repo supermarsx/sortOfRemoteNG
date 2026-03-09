@@ -120,11 +120,15 @@ pub enum NxCompression {
 pub struct CompressionLevel(pub u8);
 
 impl Default for CompressionLevel {
-    fn default() -> Self { Self(6) }
+    fn default() -> Self {
+        Self(6)
+    }
 }
 
 impl CompressionLevel {
-    pub fn new(level: u8) -> Self { Self(level.min(9)) }
+    pub fn new(level: u8) -> Self {
+        Self(level.min(9))
+    }
 }
 
 // ── Link Speed ──────────────────────────────────────────────────────────────
@@ -488,7 +492,10 @@ impl From<std::io::Error> for NxError {
 
 impl NxError {
     pub fn new(kind: NxErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
 
     pub fn connection_failed(msg: impl Into<String>) -> Self {
@@ -500,7 +507,10 @@ impl NxError {
     }
 
     pub fn session_not_found(id: &str) -> Self {
-        Self::new(NxErrorKind::SessionNotFound, format!("session not found: {}", id))
+        Self::new(
+            NxErrorKind::SessionNotFound,
+            format!("session not found: {}", id),
+        )
     }
 
     pub fn proxy(msg: impl Into<String>) -> Self {
@@ -562,10 +572,7 @@ mod tests {
     fn default_config() {
         let config = NxConfig::default();
         assert_eq!(config.port, 4000);
-        assert_eq!(
-            config.session_type,
-            Some(NxSessionType::UnixDesktop)
-        );
+        assert_eq!(config.session_type, Some(NxSessionType::UnixDesktop));
         assert_eq!(config.version, Some(NxVersion::V3));
     }
 

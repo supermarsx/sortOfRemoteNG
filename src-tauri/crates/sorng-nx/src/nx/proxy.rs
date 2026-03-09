@@ -3,7 +3,7 @@
 use crate::nx::protocol::NxProxyParams;
 use crate::nx::types::*;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// State of the nxproxy child process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +32,12 @@ pub struct NxProxyProcess {
     pub started_at: Option<String>,
     pub bytes_in: u64,
     pub bytes_out: u64,
+}
+
+impl Default for NxProxyProcess {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NxProxyProcess {
@@ -82,12 +88,14 @@ pub fn find_nxproxy(custom_path: Option<&str>) -> Result<PathBuf, NxError> {
         return Ok(path);
     }
 
-    Err(NxError::proxy("nxproxy binary not found in PATH or common locations"))
+    Err(NxError::proxy(
+        "nxproxy binary not found in PATH or common locations",
+    ))
 }
 
 /// Build the full nxproxy command-line for a session.
 pub fn build_proxy_command(
-    proxy_path: &PathBuf,
+    proxy_path: &Path,
     params: &NxProxyParams,
     extra_args: &[String],
 ) -> (String, Vec<String>) {
@@ -98,10 +106,7 @@ pub fn build_proxy_command(
 }
 
 /// Environment variables required by nxproxy.
-pub fn proxy_environment(
-    nx_root: Option<&str>,
-    display: u32,
-) -> Vec<(String, String)> {
+pub fn proxy_environment(nx_root: Option<&str>, display: u32) -> Vec<(String, String)> {
     let mut env = Vec::new();
 
     if let Some(root) = nx_root {

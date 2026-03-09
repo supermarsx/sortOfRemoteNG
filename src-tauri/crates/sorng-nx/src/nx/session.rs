@@ -178,7 +178,10 @@ async fn session_task(
 
     // 3. Send hello
     let hello = format!("{}\n", crate::nx::protocol::NxCommand::hello("3.5.0"));
-    writer.write_all(hello.as_bytes()).await.map_err(NxError::from)?;
+    writer
+        .write_all(hello.as_bytes())
+        .await
+        .map_err(NxError::from)?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += hello.len() as u64;
@@ -187,12 +190,18 @@ async fn session_task(
     // 4. Authentication
     if let Some(ref username) = config.username {
         let login_cmd = format!("{}\n", crate::nx::protocol::NxCommand::login(username));
-        writer.write_all(login_cmd.as_bytes()).await.map_err(NxError::from)?;
+        writer
+            .write_all(login_cmd.as_bytes())
+            .await
+            .map_err(NxError::from)?;
     }
 
     if let Some(ref password) = config.password {
         let pass_cmd = format!("{}\n", password);
-        writer.write_all(pass_cmd.as_bytes()).await.map_err(NxError::from)?;
+        writer
+            .write_all(pass_cmd.as_bytes())
+            .await
+            .map_err(NxError::from)?;
     }
 
     // 5. Start or resume session
@@ -214,7 +223,10 @@ async fn session_task(
         crate::nx::protocol::NxCommand::start_session(&session_type, &geometry, "adsl", "8M")
     };
 
-    writer.write_all(format!("{}\n", start_cmd).as_bytes()).await.map_err(NxError::from)?;
+    writer
+        .write_all(format!("{}\n", start_cmd).as_bytes())
+        .await
+        .map_err(NxError::from)?;
 
     // 6. Mark running
     {
@@ -311,10 +323,20 @@ mod tests {
 
     #[test]
     fn session_command_variants() {
-        let _ = SessionCommand::KeyEvent { keysym: 0x61, down: true };
-        let _ = SessionCommand::PointerEvent { x: 100, y: 200, button_mask: 1 };
+        let _ = SessionCommand::KeyEvent {
+            keysym: 0x61,
+            down: true,
+        };
+        let _ = SessionCommand::PointerEvent {
+            x: 100,
+            y: 200,
+            button_mask: 1,
+        };
         let _ = SessionCommand::SendClipboard("test".into());
-        let _ = SessionCommand::Resize { width: 1920, height: 1080 };
+        let _ = SessionCommand::Resize {
+            width: 1920,
+            height: 1080,
+        };
         let _ = SessionCommand::Suspend;
         let _ = SessionCommand::Terminate;
         let _ = SessionCommand::Disconnect;

@@ -6,6 +6,7 @@ use crate::nx::types::*;
 // ── Connection management ───────────────────────────────────────────────
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn connect_nx(
     state: tauri::State<'_, NxServiceState>,
     host: String,
@@ -47,7 +48,10 @@ pub async fn connect_nx(
         resolution_height,
         fullscreen,
         clipboard,
-        audio: audio_enabled.map(|e| NxAudioConfig { enabled: e, ..NxAudioConfig::default() }),
+        audio: audio_enabled.map(|e| NxAudioConfig {
+            enabled: e,
+            ..NxAudioConfig::default()
+        }),
         resume_session_id,
         ..NxConfig::default()
     };
@@ -61,7 +65,9 @@ pub async fn disconnect_nx(
     session_id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.disconnect_and_remove(&session_id).await.map_err(|e| e.message)
+    svc.disconnect_and_remove(&session_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -98,7 +104,9 @@ pub async fn get_nx_session_info(
     session_id: String,
 ) -> Result<NxSession, String> {
     let svc = state.lock().await;
-    svc.get_session_info(&session_id).await.map_err(|e| e.message)
+    svc.get_session_info(&session_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -115,7 +123,9 @@ pub async fn get_nx_session_stats(
     session_id: String,
 ) -> Result<NxStats, String> {
     let svc = state.lock().await;
-    svc.get_session_stats(&session_id).await.map_err(|e| e.message)
+    svc.get_session_stats(&session_id)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Input events ────────────────────────────────────────────────────────
@@ -128,7 +138,9 @@ pub async fn send_nx_key_event(
     down: bool,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.send_key_event(&session_id, keysym, down).await.map_err(|e| e.message)
+    svc.send_key_event(&session_id, keysym, down)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -140,7 +152,9 @@ pub async fn send_nx_pointer_event(
     button_mask: u8,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.send_pointer_event(&session_id, x, y, button_mask).await.map_err(|e| e.message)
+    svc.send_pointer_event(&session_id, x, y, button_mask)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -150,7 +164,9 @@ pub async fn send_nx_clipboard(
     text: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.send_clipboard(&session_id, text).await.map_err(|e| e.message)
+    svc.send_clipboard(&session_id, text)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Display ─────────────────────────────────────────────────────────────
@@ -163,7 +179,9 @@ pub async fn resize_nx_display(
     height: u32,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    svc.resize(&session_id, width, height).await.map_err(|e| e.message)
+    svc.resize(&session_id, width, height)
+        .await
+        .map_err(|e| e.message)
 }
 
 // ── Session maintenance ─────────────────────────────────────────────────

@@ -61,15 +61,20 @@ impl PrintManager {
 
     /// Register a local printer for redirection.
     pub fn add_printer(&mut self, name: String, driver: PrinterDriver, is_default: bool) {
-        if !self.enabled { return; }
-        self.printers.insert(name.clone(), NxPrinter {
-            name,
-            driver,
-            state: PrinterState::Idle,
-            is_default,
-            jobs_printed: 0,
-            bytes_transferred: 0,
-        });
+        if !self.enabled {
+            return;
+        }
+        self.printers.insert(
+            name.clone(),
+            NxPrinter {
+                name,
+                driver,
+                state: PrinterState::Idle,
+                is_default,
+                jobs_printed: 0,
+                bytes_transferred: 0,
+            },
+        );
     }
 
     /// Remove a printer.
@@ -84,7 +89,8 @@ impl PrintManager {
                 return Some(name);
             }
         }
-        self.printers.values()
+        self.printers
+            .values()
             .find(|p| p.is_default)
             .map(|p| p.name.as_str())
     }
@@ -158,7 +164,10 @@ mod tests {
 
     #[test]
     fn print_lifecycle() {
-        let config = NxPrintConfig { enabled: true, ..NxPrintConfig::default() };
+        let config = NxPrintConfig {
+            enabled: true,
+            ..NxPrintConfig::default()
+        };
         let mut mgr = PrintManager::new(config);
 
         mgr.add_printer("MyPrinter".into(), PrinterDriver::Cups, true);
@@ -175,14 +184,20 @@ mod tests {
 
     #[test]
     fn print_disabled() {
-        let config = NxPrintConfig { enabled: false, ..NxPrintConfig::default() };
+        let config = NxPrintConfig {
+            enabled: false,
+            ..NxPrintConfig::default()
+        };
         let mut mgr = PrintManager::new(config);
         assert!(mgr.submit_job("any", "test", 100).is_err());
     }
 
     #[test]
     fn printer_not_found() {
-        let config = NxPrintConfig { enabled: true, ..NxPrintConfig::default() };
+        let config = NxPrintConfig {
+            enabled: true,
+            ..NxPrintConfig::default()
+        };
         let mut mgr = PrintManager::new(config);
         assert!(mgr.submit_job("nonexistent", "test", 100).is_err());
     }

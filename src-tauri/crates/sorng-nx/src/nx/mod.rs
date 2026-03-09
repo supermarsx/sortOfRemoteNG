@@ -1,13 +1,13 @@
-pub mod types;
-pub mod protocol;
-pub mod proxy;
+pub mod commands;
 pub mod display;
 pub mod media;
 pub mod printing;
-pub mod session;
+pub mod protocol;
+pub mod proxy;
 pub mod service;
-pub mod commands;
+pub mod session;
+pub mod types;
 
-pub use types::*;
-pub use service::{NxService, NxServiceState};
 pub use commands::*;
+pub use service::{NxService, NxServiceState};
+pub use types::*;

@@ -92,7 +92,9 @@ pub struct NxCommand {
 
 impl NxCommand {
     pub fn new(verb: &str) -> Self {
-        Self { parts: vec![verb.to_string()] }
+        Self {
+            parts: vec![verb.to_string()],
+        }
     }
 
     pub fn param(mut self, key: &str, value: &str) -> Self {
@@ -227,7 +229,9 @@ pub fn parse_session_list(text: &str) -> Vec<ResumableSession> {
         }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 6 { continue; }
+        if parts.len() < 6 {
+            continue;
+        }
 
         let display: u32 = match parts[0].parse() {
             Ok(d) => d,
@@ -241,7 +245,11 @@ pub fn parse_session_list(text: &str) -> Vec<ResumableSession> {
             state: parts.last().unwrap_or(&"unknown").to_string(),
             created_at: String::new(),
             user: String::new(),
-            geometry: if parts.len() > 5 { parts[5].to_string() } else { String::new() },
+            geometry: if parts.len() > 5 {
+                parts[5].to_string()
+            } else {
+                String::new()
+            },
         });
     }
 

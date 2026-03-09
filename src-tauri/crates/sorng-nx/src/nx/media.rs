@@ -108,7 +108,11 @@ impl AudioManager {
     /// Mute/unmute playback.
     pub fn set_muted(&mut self, muted: bool) {
         if let Some(ref mut stream) = self.playback {
-            stream.state = if muted { AudioState::Muted } else { AudioState::Active };
+            stream.state = if muted {
+                AudioState::Muted
+            } else {
+                AudioState::Active
+            };
         }
     }
 
@@ -153,7 +157,11 @@ pub struct MediaForwardManager {
 impl MediaForwardManager {
     pub fn new(enabled: bool) -> Self {
         Self {
-            state: if enabled { MediaForwardState::Active } else { MediaForwardState::Disabled },
+            state: if enabled {
+                MediaForwardState::Active
+            } else {
+                MediaForwardState::Disabled
+            },
             bandwidth_limit_kbps: None,
             bytes_forwarded: 0,
         }
@@ -213,7 +221,10 @@ mod tests {
 
     #[test]
     fn audio_disabled() {
-        let config = NxAudioConfig { enabled: false, ..NxAudioConfig::default() };
+        let config = NxAudioConfig {
+            enabled: false,
+            ..NxAudioConfig::default()
+        };
         let mut mgr = AudioManager::new(config);
         assert!(mgr.start_playback().is_err());
     }

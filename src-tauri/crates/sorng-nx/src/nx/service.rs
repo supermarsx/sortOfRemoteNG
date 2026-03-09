@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::nx::session::{SessionCommand, NxSessionHandle};
+use crate::nx::session::{NxSessionHandle, SessionCommand};
 use crate::nx::types::*;
 
 /// Thread-safe wrapper for the NX service state.
@@ -15,9 +15,17 @@ pub struct NxService {
     sessions: HashMap<String, NxSessionHandle>,
 }
 
+impl Default for NxService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NxService {
     pub fn new() -> Self {
-        Self { sessions: HashMap::new() }
+        Self {
+            sessions: HashMap::new(),
+        }
     }
 
     pub fn new_state() -> NxServiceState {
@@ -47,7 +55,9 @@ impl NxService {
 
     /// Disconnect a session.
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), NxError> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
         session.disconnect().await?;
         let mut st = session.state.lock().await;
@@ -57,7 +67,9 @@ impl NxService {
 
     /// Suspend a session (keep it alive on the server).
     pub async fn suspend(&mut self, session_id: &str) -> Result<(), NxError> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
         session.suspend().await
     }
@@ -88,31 +100,58 @@ impl NxService {
     }
 
     /// Send key event.
-    pub async fn send_key_event(&self, session_id: &str, keysym: u32, down: bool) -> Result<(), NxError> {
-        let session = self.sessions.get(session_id)
+    pub async fn send_key_event(
+        &self,
+        session_id: &str,
+        keysym: u32,
+        down: bool,
+    ) -> Result<(), NxError> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session.send_command(SessionCommand::KeyEvent { keysym, down }).await
+        session
+            .send_command(SessionCommand::KeyEvent { keysym, down })
+            .await
     }
 
     /// Send pointer event.
-    pub async fn send_pointer_event(&self, session_id: &str, x: i32, y: i32, button_mask: u8) -> Result<(), NxError> {
-        let session = self.sessions.get(session_id)
+    pub async fn send_pointer_event(
+        &self,
+        session_id: &str,
+        x: i32,
+        y: i32,
+        button_mask: u8,
+    ) -> Result<(), NxError> {
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session.send_command(SessionCommand::PointerEvent { x, y, button_mask }).await
+        session
+            .send_command(SessionCommand::PointerEvent { x, y, button_mask })
+            .await
     }
 
     /// Send clipboard text.
     pub async fn send_clipboard(&self, session_id: &str, text: String) -> Result<(), NxError> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session.send_command(SessionCommand::SendClipboard(text)).await
+        session
+            .send_command(SessionCommand::SendClipboard(text))
+            .await
     }
 
     /// Resize the display.
     pub async fn resize(&self, session_id: &str, width: u32, height: u32) -> Result<(), NxError> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session.send_command(SessionCommand::Resize { width, height }).await
+        session
+            .send_command(SessionCommand::Resize { width, height })
+            .await
     }
 
     /// Check if a session is running.
@@ -127,10 +166,16 @@ impl NxService {
 
     /// Get session info.
     pub async fn get_session_info(&self, session_id: &str) -> Result<NxSession, NxError> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
         let st = session.state.lock().await;
-        Ok(NxSession::from_config(&session.config, session.id.clone(), st.state))
+        Ok(NxSession::from_config(
+            &session.config,
+            session.id.clone(),
+            st.state,
+        ))
     }
 
     /// List all sessions.
@@ -138,14 +183,20 @@ impl NxService {
         let mut list = Vec::new();
         for session in self.sessions.values() {
             let st = session.state.lock().await;
-            list.push(NxSession::from_config(&session.config, session.id.clone(), st.state));
+            list.push(NxSession::from_config(
+                &session.config,
+                session.id.clone(),
+                st.state,
+            ));
         }
         list
     }
 
     /// Get session statistics.
     pub async fn get_session_stats(&self, session_id: &str) -> Result<NxStats, NxError> {
-        let session = self.sessions.get(session_id)
+        let session = self
+            .sessions
+            .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
         let st = session.state.lock().await;
         Ok(NxStats {
