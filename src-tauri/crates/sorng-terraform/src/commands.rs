@@ -153,7 +153,9 @@ pub async fn terraform_state_list(
     filter: Option<String>,
 ) -> Result<Vec<String>, String> {
     let svc = state.lock().await;
-    svc.state_list(&id, filter.as_deref()).await.map_err(|e| e.to_string())
+    svc.state_list(&id, filter.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -351,7 +353,9 @@ pub async fn terraform_fmt(
     diff: bool,
 ) -> Result<FmtResult, String> {
     let mut svc = state.lock().await;
-    svc.fmt(&id, recursive, diff).await.map_err(|e| e.to_string())
+    svc.fmt(&id, recursive, diff)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -360,9 +364,7 @@ pub async fn terraform_fmt_check(
     id: String,
 ) -> Result<FmtResult, String> {
     let svc = state.lock().await;
-    svc.fmt_check(&id)
-        .await
-        .map_err(|e| e.to_string())
+    svc.fmt_check(&id).await.map_err(|e| e.to_string())
 }
 
 // ── Outputs ──────────────────────────────────────────────────────────────────
@@ -415,9 +417,7 @@ pub async fn terraform_providers_schemas(
     id: String,
 ) -> Result<Vec<ProviderSchema>, String> {
     let svc = state.lock().await;
-    svc.providers_schemas(&id)
-        .await
-        .map_err(|e| e.to_string())
+    svc.providers_schemas(&id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

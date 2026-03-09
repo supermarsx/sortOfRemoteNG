@@ -68,10 +68,7 @@ impl ProvidersManager {
         target_dir: &str,
         platforms: &[&str],
     ) -> TerraformResult<StateOperationResult> {
-        let mut args: Vec<String> = vec![
-            "providers".to_string(),
-            "mirror".to_string(),
-        ];
+        let mut args: Vec<String> = vec!["providers".to_string(), "mirror".to_string()];
         for p in platforms {
             args.push("-platform".to_string());
             args.push(p.to_string());
@@ -90,7 +87,9 @@ impl ProvidersManager {
     }
 
     /// Parse the `.terraform.lock.hcl` file in the working directory.
-    pub async fn parse_lock_file(client: &TerraformClient) -> TerraformResult<Vec<ProviderLockEntry>> {
+    pub async fn parse_lock_file(
+        client: &TerraformClient,
+    ) -> TerraformResult<Vec<ProviderLockEntry>> {
         let lock_path = client.working_dir.join(".terraform.lock.hcl");
         let content = tokio::fs::read_to_string(&lock_path).await.map_err(|e| {
             TerraformError::new(
@@ -106,9 +105,7 @@ impl ProvidersManager {
 
     /// Parse the text output of `terraform providers`.
     fn parse_providers_output(stdout: &str) -> Vec<ProviderInfo> {
-        let re = Regex::new(
-            r"(?:─|-)+ provider\[([^\]]+)\]\s*(?:~>\s*([\d.]+))?"
-        ).unwrap();
+        let re = Regex::new(r"(?:─|-)+ provider\[([^\]]+)\]\s*(?:~>\s*([\d.]+))?").unwrap();
 
         re.captures_iter(stdout)
             .map(|cap| {
@@ -132,9 +129,7 @@ impl ProvidersManager {
 
     /// Parse the `.terraform.lock.hcl` content into lock entries.
     fn parse_lock_hcl(content: &str) -> Vec<ProviderLockEntry> {
-        let block_re = Regex::new(
-            r#"provider\s+"([^"]+)"\s*\{([^}]*)\}"#
-        ).unwrap();
+        let block_re = Regex::new(r#"provider\s+"([^"]+)"\s*\{([^}]*)\}"#).unwrap();
 
         let version_re = Regex::new(r#"version\s*=\s*"([^"]+)""#).unwrap();
         let constraints_re = Regex::new(r#"constraints\s*=\s*"([^"]+)""#).unwrap();
@@ -150,9 +145,7 @@ impl ProvidersManager {
                     .captures(body)
                     .map(|c| c[1].to_string())
                     .unwrap_or_default();
-                let constraints = constraints_re
-                    .captures(body)
-                    .map(|c| c[1].to_string());
+                let constraints = constraints_re.captures(body).map(|c| c[1].to_string());
                 let hashes: Vec<String> = hash_re
                     .captures_iter(body)
                     .map(|c| c[1].to_string())
@@ -182,12 +175,8 @@ impl ProvidersManager {
             let parts: Vec<&str> = source.rsplitn(3, '/').collect();
             let name = parts.first().unwrap_or(&"").to_string();
 
-            let resource_types = Self::parse_schema_types(
-                &schema_val["resource_schemas"],
-            );
-            let data_source_types = Self::parse_schema_types(
-                &schema_val["data_source_schemas"],
-            );
+            let resource_types = Self::parse_schema_types(&schema_val["resource_schemas"]);
+            let data_source_types = Self::parse_schema_types(&schema_val["data_source_schemas"]);
 
             // Version from provider block
             let version = schema_val["provider"]["version"]

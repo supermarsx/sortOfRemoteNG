@@ -57,8 +57,9 @@ impl InitManager {
 
         let success = output.exit_code == 0;
         if !success {
-            return Err(TerraformError::init_failed(&output.stderr)
-                .with_detail(output.stdout.clone()));
+            return Err(
+                TerraformError::init_failed(&output.stderr).with_detail(output.stdout.clone())
+            );
         }
 
         Ok(InitResult {

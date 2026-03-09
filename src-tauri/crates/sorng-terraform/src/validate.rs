@@ -14,16 +14,23 @@ impl ValidateManager {
         let output = client.run_raw(&args).await?;
 
         // terraform validate -json returns JSON even on validation failure
-        let v: serde_json::Value = serde_json::from_str(&output.stdout)
-            .map_err(|e| TerraformError::new(
+        let v: serde_json::Value = serde_json::from_str(&output.stdout).map_err(|e| {
+            TerraformError::new(
                 crate::error::TerraformErrorKind::ValidationFailed,
                 format!("failed to parse validate JSON: {}", e),
-            ))?;
+            )
+        })?;
 
         let valid = v["valid"].as_bool().unwrap_or(false);
         let diags = Self::parse_diagnostics(&v["diagnostics"]);
-        let error_count = diags.iter().filter(|d| d.severity == DiagnosticSeverity::Error).count();
-        let warning_count = diags.iter().filter(|d| d.severity == DiagnosticSeverity::Warning).count();
+        let error_count = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .count();
+        let warning_count = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Warning)
+            .count();
         let format_version = v["format_version"].as_str().map(|s| s.to_string());
 
         Ok(ValidationResult {
@@ -112,8 +119,12 @@ impl ValidateManager {
                         context: s["context"].as_str().map(|s| s.to_string()),
                         code: s["code"].as_str()?.to_string(),
                         start_line: s["start_line"].as_u64()? as usize,
-                        highlight_start_offset: s["highlight_start_offset"].as_u64().map(|v| v as usize),
-                        highlight_end_offset: s["highlight_end_offset"].as_u64().map(|v| v as usize),
+                        highlight_start_offset: s["highlight_start_offset"]
+                            .as_u64()
+                            .map(|v| v as usize),
+                        highlight_end_offset: s["highlight_end_offset"]
+                            .as_u64()
+                            .map(|v| v as usize),
                         values: s["values"]
                             .as_array()
                             .map(|arr| {

@@ -32,16 +32,26 @@ impl HclAnalyzer {
         };
 
         let mut entries = tokio::fs::read_dir(dir).await.map_err(|e| {
-            TerraformError::new(TerraformErrorKind::HclParseFailed, format!("read dir: {}", e))
+            TerraformError::new(
+                TerraformErrorKind::HclParseFailed,
+                format!("read dir: {}", e),
+            )
         })?;
 
         while let Some(entry) = entries.next_entry().await.map_err(|e| {
-            TerraformError::new(TerraformErrorKind::HclParseFailed, format!("read dir entry: {}", e))
+            TerraformError::new(
+                TerraformErrorKind::HclParseFailed,
+                format!("read dir entry: {}", e),
+            )
         })? {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("tf") {
                 if let Ok(content) = tokio::fs::read_to_string(&path).await {
-                    let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let filename = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     Self::merge_file(&mut combined, &content, &filename);
                     combined.files.push(filename);
                 }
@@ -71,13 +81,27 @@ impl HclAnalyzer {
     // ── internal helpers ──────────────────────────────────────────────────
 
     fn merge_file(analysis: &mut HclAnalysis, content: &str, filename: &str) {
-        analysis.variables.extend(Self::parse_variables(content, filename));
-        analysis.outputs.extend(Self::parse_outputs(content, filename));
-        analysis.resources.extend(Self::parse_resources(content, filename));
-        analysis.data_sources.extend(Self::parse_data_sources(content, filename));
-        analysis.locals.extend(Self::parse_locals(content, filename));
-        analysis.modules.extend(Self::parse_module_calls(content, filename));
-        analysis.providers_required.extend(Self::parse_required_providers(content));
+        analysis
+            .variables
+            .extend(Self::parse_variables(content, filename));
+        analysis
+            .outputs
+            .extend(Self::parse_outputs(content, filename));
+        analysis
+            .resources
+            .extend(Self::parse_resources(content, filename));
+        analysis
+            .data_sources
+            .extend(Self::parse_data_sources(content, filename));
+        analysis
+            .locals
+            .extend(Self::parse_locals(content, filename));
+        analysis
+            .modules
+            .extend(Self::parse_module_calls(content, filename));
+        analysis
+            .providers_required
+            .extend(Self::parse_required_providers(content));
 
         if let Some(settings) = Self::parse_terraform_settings(content) {
             analysis.terraform_settings = Some(settings);
@@ -98,7 +122,9 @@ impl HclAnalyzer {
 
                 let default_str = Self::extract_attr(&block, "default");
                 let default: Option<serde_json::Value> = default_str.and_then(|s| {
-                    serde_json::from_str(&s).ok().or_else(|| Some(serde_json::Value::String(s)))
+                    serde_json::from_str(&s)
+                        .ok()
+                        .or_else(|| Some(serde_json::Value::String(s)))
                 });
 
                 let validation_rules: Vec<String> = if block.contains("validation") {
@@ -259,7 +285,9 @@ impl HclAnalyzer {
                 let for_each_expr = Self::extract_attr(&block, "for_each");
                 let depends_on = Self::extract_list_attr(&block, "depends_on");
                 let providers: HashMap<String, String> =
-                    Self::extract_map_attr(&block, "providers").into_iter().collect();
+                    Self::extract_map_attr(&block, "providers")
+                        .into_iter()
+                        .collect();
 
                 HclModuleCall {
                     name,
@@ -279,6 +307,8 @@ impl HclAnalyzer {
     /// Parse `required_providers` inside `terraform { ... }` blocks.
     fn parse_required_providers(content: &str) -> Vec<HclRequiredProvider> {
         let tf_re = Regex::new(r#"(?m)^terraform\s*\{"#).unwrap();
+        let rp_re = Regex::new(r#"(?m)required_providers\s*\{"#).unwrap();
+        let entry_re = Regex::new(r#"(?m)(\w+)\s*=\s*\{"#).unwrap();
 
         let mut providers = Vec::new();
 
@@ -286,13 +316,9 @@ impl HclAnalyzer {
             let block_start = cap.get(0).unwrap().end();
             let tf_block = Self::extract_block(content, block_start);
 
-            let rp_re = Regex::new(r#"(?m)required_providers\s*\{"#).unwrap();
             if let Some(rp_cap) = rp_re.captures(&tf_block) {
                 let rp_start = rp_cap.get(0).unwrap().end();
                 let rp_block = Self::extract_block(&tf_block, rp_start);
-
-                // Each entry: name = { source = "..." version = "..." }
-                let entry_re = Regex::new(r#"(?m)(\w+)\s*=\s*\{"#).unwrap();
 
                 for entry in entry_re.captures_iter(&rp_block) {
                     let pname = entry[1].to_string();
@@ -303,10 +329,7 @@ impl HclAnalyzer {
                         name: pname,
                         source: Self::extract_string_attr(&entry_block, "source")
                             .unwrap_or_default(),
-                        version_constraint: Self::extract_string_attr(
-                            &entry_block,
-                            "version",
-                        ),
+                        version_constraint: Self::extract_string_attr(&entry_block, "version"),
                     });
                 }
             }
@@ -377,9 +400,7 @@ impl HclAnalyzer {
     /// Extract provisioner type names from the block.
     fn extract_provisioner_types(block: &str) -> Vec<String> {
         let re = Regex::new(r#"(?m)provisioner\s+"([^"]+)"\s*\{"#).unwrap();
-        re.captures_iter(block)
-            .map(|c| c[1].to_string())
-            .collect()
+        re.captures_iter(block).map(|c| c[1].to_string()).collect()
     }
 
     // ── block / attribute extraction helpers ──────────────────────────────
@@ -410,8 +431,7 @@ impl HclAnalyzer {
 
     /// Extract a simple attribute value:  `key = <value>` → the raw value token.
     fn extract_attr(block: &str, key: &str) -> Option<String> {
-        let re =
-            Regex::new(&format!(r#"(?m)^\s*{}\s*=\s*(.+)"#, regex::escape(key))).unwrap();
+        let re = Regex::new(&format!(r#"(?m)^\s*{}\s*=\s*(.+)"#, regex::escape(key))).unwrap();
         re.captures(block).map(|c| c[1].trim().to_string())
     }
 
@@ -489,7 +509,10 @@ impl HclAnalyzer {
         let mut provider_configs: HashMap<String, serde_json::Value> = HashMap::new();
         for p in &analysis.providers_required {
             let mut map = serde_json::Map::new();
-            map.insert("source".to_string(), serde_json::Value::String(p.source.clone()));
+            map.insert(
+                "source".to_string(),
+                serde_json::Value::String(p.source.clone()),
+            );
             if let Some(ref vc) = p.version_constraint {
                 map.insert("version".to_string(), serde_json::Value::String(vc.clone()));
             }

@@ -38,7 +38,8 @@ impl TerraformClient {
             let path = PathBuf::from(p);
             if !path.exists() {
                 return Err(TerraformError::binary_not_found(format!(
-                    "terraform binary not found at {}", p
+                    "terraform binary not found at {}",
+                    p
                 )));
             }
             path
@@ -49,7 +50,8 @@ impl TerraformClient {
         let working_dir = PathBuf::from(&cfg.working_dir);
         if !working_dir.is_dir() {
             return Err(TerraformError::working_dir_not_found(format!(
-                "working directory not found: {}", cfg.working_dir
+                "working directory not found: {}",
+                cfg.working_dir
             )));
         }
 
@@ -66,13 +68,19 @@ impl TerraformClient {
     /// Resolve a binary by name from PATH.
     async fn resolve_bin(name: &str) -> TerraformResult<PathBuf> {
         // Try `where` on Windows, `which` on Unix
-        let cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+        let cmd = if cfg!(target_os = "windows") {
+            "where"
+        } else {
+            "which"
+        };
         let output = Command::new(cmd)
             .arg(name)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| TerraformError::binary_not_found(format!("{} lookup failed: {}", name, e)))?
+            .map_err(|e| {
+                TerraformError::binary_not_found(format!("{} lookup failed: {}", name, e))
+            })?
             .wait_with_output()
             .await
             .map_err(|e| TerraformError::binary_not_found(e.to_string()))?;
@@ -85,11 +93,17 @@ impl TerraformClient {
                 .trim()
                 .to_string();
             if path.is_empty() {
-                return Err(TerraformError::binary_not_found(format!("{} not found in PATH", name)));
+                return Err(TerraformError::binary_not_found(format!(
+                    "{} not found in PATH",
+                    name
+                )));
             }
             Ok(PathBuf::from(path))
         } else {
-            Err(TerraformError::binary_not_found(format!("{} not found in PATH", name)))
+            Err(TerraformError::binary_not_found(format!(
+                "{} not found in PATH",
+                name
+            )))
         }
     }
 
@@ -98,17 +112,15 @@ impl TerraformClient {
     /// Detect version & environment info.
     pub async fn detect_info(&self) -> TerraformResult<TerraformInfo> {
         let output = self.run_json(&["version", "-json"]).await?;
-        let parsed: serde_json::Value = serde_json::from_str(&output.stdout)
-            .map_err(|e| TerraformError::json_parse(format!("failed to parse version JSON: {}", e)))?;
+        let parsed: serde_json::Value = serde_json::from_str(&output.stdout).map_err(|e| {
+            TerraformError::json_parse(format!("failed to parse version JSON: {}", e))
+        })?;
 
         let version = parsed["terraform_version"]
             .as_str()
             .unwrap_or("unknown")
             .to_string();
-        let platform = parsed["platform"]
-            .as_str()
-            .unwrap_or("unknown")
-            .to_string();
+        let platform = parsed["platform"].as_str().unwrap_or("unknown").to_string();
 
         let providers = if let Some(obj) = parsed["provider_selections"].as_object() {
             obj.iter()
@@ -145,7 +157,10 @@ impl TerraformClient {
 
     /// Try to read the backend type from the local state metadata.
     async fn detect_backend_type(&self) -> Option<String> {
-        let state_path = self.working_dir.join(".terraform").join("terraform.tfstate");
+        let state_path = self
+            .working_dir
+            .join(".terraform")
+            .join("terraform.tfstate");
         if let Ok(content) = tokio::fs::read_to_string(&state_path).await {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
                 return v["backend"]["type"].as_str().map(|s| s.to_string());
@@ -202,7 +217,11 @@ impl TerraformClient {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        debug!("terraform {} (cwd: {})", args.join(" "), self.working_dir.display());
+        debug!(
+            "terraform {} (cwd: {})",
+            args.join(" "),
+            self.working_dir.display()
+        );
 
         let start = Instant::now();
         let child = cmd.spawn().map_err(|e| {

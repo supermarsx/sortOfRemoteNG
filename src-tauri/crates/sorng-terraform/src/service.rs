@@ -33,6 +33,12 @@ pub struct TerraformService {
     history: Vec<ExecutionHistoryEntry>,
 }
 
+impl Default for TerraformService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TerraformService {
     pub fn new() -> Self {
         Self {
@@ -55,9 +61,9 @@ impl TerraformService {
     }
 
     pub fn disconnect(&mut self, id: &str) -> TerraformResult<()> {
-        self.connections.remove(id).ok_or_else(|| {
-            crate::error::TerraformError::connection_not_found(id)
-        })?;
+        self.connections
+            .remove(id)
+            .ok_or_else(|| crate::error::TerraformError::connection_not_found(id))?;
         Ok(())
     }
 
@@ -80,11 +86,7 @@ impl TerraformService {
 
     // ── Init ─────────────────────────────────────────────────────────
 
-    pub async fn init(
-        &mut self,
-        id: &str,
-        options: &InitOptions,
-    ) -> TerraformResult<InitResult> {
+    pub async fn init(&mut self, id: &str, options: &InitOptions) -> TerraformResult<InitResult> {
         let client = self.client(id)?;
         let result = InitManager::init(client, options).await?;
         self.record(id, CommandType::Init, &["init"]);
@@ -100,11 +102,7 @@ impl TerraformService {
 
     // ── Plan ─────────────────────────────────────────────────────────
 
-    pub async fn plan(
-        &mut self,
-        id: &str,
-        options: &PlanOptions,
-    ) -> TerraformResult<PlanResult> {
+    pub async fn plan(&mut self, id: &str, options: &PlanOptions) -> TerraformResult<PlanResult> {
         let client = self.client(id)?;
         let result = PlanManager::plan(client, options).await?;
         self.record(id, CommandType::Plan, &["plan"]);
@@ -158,11 +156,7 @@ impl TerraformService {
 
     // ── State management ─────────────────────────────────────────────
 
-    pub async fn state_list(
-        &self,
-        id: &str,
-        filter: Option<&str>,
-    ) -> TerraformResult<Vec<String>> {
+    pub async fn state_list(&self, id: &str, filter: Option<&str>) -> TerraformResult<Vec<String>> {
         let client = self.client(id)?;
         StateManager::list(client, filter).await
     }
@@ -275,25 +269,21 @@ impl TerraformService {
         WorkspaceManager::show(client).await
     }
 
-    pub async fn workspace_new(
-        &mut self,
-        id: &str,
-        name: &str,
-    ) -> TerraformResult<String> {
+    pub async fn workspace_new(&mut self, id: &str, name: &str) -> TerraformResult<String> {
         let client = self.client(id)?;
         let result = WorkspaceManager::new_workspace(client, name).await?;
         self.record(id, CommandType::WorkspaceNew, &["workspace", "new", name]);
         Ok(result)
     }
 
-    pub async fn workspace_select(
-        &mut self,
-        id: &str,
-        name: &str,
-    ) -> TerraformResult<String> {
+    pub async fn workspace_select(&mut self, id: &str, name: &str) -> TerraformResult<String> {
         let client = self.client(id)?;
         let result = WorkspaceManager::select(client, name).await?;
-        self.record(id, CommandType::WorkspaceSelect, &["workspace", "select", name]);
+        self.record(
+            id,
+            CommandType::WorkspaceSelect,
+            &["workspace", "select", name],
+        );
         Ok(result)
     }
 
@@ -305,7 +295,11 @@ impl TerraformService {
     ) -> TerraformResult<String> {
         let client = self.client(id)?;
         let result = WorkspaceManager::delete(client, name, force).await?;
-        self.record(id, CommandType::WorkspaceDelete, &["workspace", "delete", name]);
+        self.record(
+            id,
+            CommandType::WorkspaceDelete,
+            &["workspace", "delete", name],
+        );
         Ok(result)
     }
 
@@ -335,28 +329,17 @@ impl TerraformService {
 
     // ── Outputs ──────────────────────────────────────────────────────
 
-    pub async fn output_list(
-        &self,
-        id: &str,
-    ) -> TerraformResult<HashMap<String, OutputValue>> {
+    pub async fn output_list(&self, id: &str) -> TerraformResult<HashMap<String, OutputValue>> {
         let client = self.client(id)?;
         OutputManager::list(client).await
     }
 
-    pub async fn output_get(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> TerraformResult<OutputValue> {
+    pub async fn output_get(&self, id: &str, name: &str) -> TerraformResult<OutputValue> {
         let client = self.client(id)?;
         OutputManager::get(client, name).await
     }
 
-    pub async fn output_get_raw(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> TerraformResult<String> {
+    pub async fn output_get_raw(&self, id: &str, name: &str) -> TerraformResult<String> {
         let client = self.client(id)?;
         OutputManager::get_raw(client, name).await
     }
@@ -368,10 +351,7 @@ impl TerraformService {
         ProvidersManager::list(client).await
     }
 
-    pub async fn providers_schemas(
-        &self,
-        id: &str,
-    ) -> TerraformResult<Vec<ProviderSchema>> {
+    pub async fn providers_schemas(&self, id: &str) -> TerraformResult<Vec<ProviderSchema>> {
         let client = self.client(id)?;
         ProvidersManager::schemas(client).await
     }
@@ -422,10 +402,7 @@ impl TerraformService {
         Ok(result)
     }
 
-    pub async fn modules_list_installed(
-        &self,
-        id: &str,
-    ) -> TerraformResult<Vec<ModuleRef>> {
+    pub async fn modules_list_installed(&self, id: &str) -> TerraformResult<Vec<ModuleRef>> {
         let client = self.client(id)?;
         ModulesManager::list_installed(client).await
     }
@@ -450,11 +427,7 @@ impl TerraformService {
         GraphManager::generate(client, graph_type).await
     }
 
-    pub async fn graph_plan(
-        &self,
-        id: &str,
-        plan_file: &str,
-    ) -> TerraformResult<GraphResult> {
+    pub async fn graph_plan(&self, id: &str, plan_file: &str) -> TerraformResult<GraphResult> {
         let client = self.client(id)?;
         GraphManager::generate_plan_graph(client, plan_file).await
     }
@@ -513,9 +486,9 @@ impl TerraformService {
     // ── Internal helpers ─────────────────────────────────────────────
 
     fn client(&self, id: &str) -> TerraformResult<&TerraformClient> {
-        self.connections.get(id).ok_or_else(|| {
-            crate::error::TerraformError::connection_not_found(id)
-        })
+        self.connections
+            .get(id)
+            .ok_or_else(|| crate::error::TerraformError::connection_not_found(id))
     }
 
     fn record(&mut self, connection_id: &str, cmd_type: CommandType, args: &[&str]) {

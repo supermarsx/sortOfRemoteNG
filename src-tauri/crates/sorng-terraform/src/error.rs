@@ -76,7 +76,11 @@ pub struct TerraformError {
 
 impl TerraformError {
     pub fn new(kind: TerraformErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into(), detail: None }
+        Self {
+            kind,
+            message: msg.into(),
+            detail: None,
+        }
     }
 
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
@@ -95,7 +99,10 @@ impl TerraformError {
     }
 
     pub fn connection_not_found(id: &str) -> Self {
-        Self::new(TerraformErrorKind::ConnectionNotFound, format!("connection '{}' not found", id))
+        Self::new(
+            TerraformErrorKind::ConnectionNotFound,
+            format!("connection '{}' not found", id),
+        )
     }
 
     pub fn init_failed(msg: impl Into<String>) -> Self {

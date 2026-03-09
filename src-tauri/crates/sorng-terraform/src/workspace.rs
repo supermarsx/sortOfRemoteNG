@@ -15,11 +15,14 @@ impl WorkspaceManager {
 
         if output.exit_code != 0 {
             return Err(TerraformError::workspace_failed(format!(
-                "workspace list failed: {}", output.stderr
+                "workspace list failed: {}",
+                output.stderr
             )));
         }
 
-        let workspaces = output.stdout.lines()
+        let workspaces = output
+            .stdout
+            .lines()
             .map(|line| {
                 let trimmed = line.trim();
                 let is_current = trimmed.starts_with('*');
@@ -39,7 +42,8 @@ impl WorkspaceManager {
 
         if output.exit_code != 0 {
             return Err(TerraformError::workspace_failed(format!(
-                "workspace show failed: {}", output.stderr
+                "workspace show failed: {}",
+                output.stderr
             )));
         }
 
@@ -47,16 +51,14 @@ impl WorkspaceManager {
     }
 
     /// Create a new workspace.
-    pub async fn new_workspace(
-        client: &TerraformClient,
-        name: &str,
-    ) -> TerraformResult<String> {
+    pub async fn new_workspace(client: &TerraformClient, name: &str) -> TerraformResult<String> {
         let args = ["workspace", "new", "-no-color", name];
         let output = client.run_raw(&args).await?;
 
         if output.exit_code != 0 {
             return Err(TerraformError::workspace_failed(format!(
-                "workspace new '{}' failed: {}", name, output.stderr
+                "workspace new '{}' failed: {}",
+                name, output.stderr
             )));
         }
 
@@ -64,16 +66,14 @@ impl WorkspaceManager {
     }
 
     /// Select (switch to) an existing workspace.
-    pub async fn select(
-        client: &TerraformClient,
-        name: &str,
-    ) -> TerraformResult<String> {
+    pub async fn select(client: &TerraformClient, name: &str) -> TerraformResult<String> {
         let args = ["workspace", "select", "-no-color", name];
         let output = client.run_raw(&args).await?;
 
         if output.exit_code != 0 {
             return Err(TerraformError::workspace_failed(format!(
-                "workspace select '{}' failed: {}", name, output.stderr
+                "workspace select '{}' failed: {}",
+                name, output.stderr
             )));
         }
 
@@ -96,7 +96,8 @@ impl WorkspaceManager {
 
         if output.exit_code != 0 {
             return Err(TerraformError::workspace_failed(format!(
-                "workspace delete '{}' failed: {}", name, output.stderr
+                "workspace delete '{}' failed: {}",
+                name, output.stderr
             )));
         }
 

@@ -25,20 +25,20 @@
 //! - **service** — Aggregate façade + Tauri state alias
 //! - **commands** — `#[tauri::command]` handlers
 
-pub mod types;
-pub mod error;
-pub mod client;
-pub mod init;
-pub mod plan;
 pub mod apply;
-pub mod state;
-pub mod workspace;
-pub mod validate;
-pub mod output;
-pub mod providers;
-pub mod modules;
+pub mod client;
+pub mod commands;
+pub mod drift;
+pub mod error;
 pub mod graph;
 pub mod hcl;
-pub mod drift;
+pub mod init;
+pub mod modules;
+pub mod output;
+pub mod plan;
+pub mod providers;
 pub mod service;
-pub mod commands;
+pub mod state;
+pub mod types;
+pub mod validate;
+pub mod workspace;

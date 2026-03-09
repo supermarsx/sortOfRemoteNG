@@ -100,7 +100,10 @@ impl DriftDetector {
             2 => Ok(true),
             _ => Err(TerraformError::new(
                 TerraformErrorKind::DriftDetectionFailed,
-                format!("plan exited with code {}: {}", output.exit_code, output.stderr),
+                format!(
+                    "plan exited with code {}: {}",
+                    output.exit_code, output.stderr
+                ),
             )),
         }
     }
@@ -166,7 +169,9 @@ impl DriftDetector {
                         resource_type: before_res.resource_type.clone(),
                         name: before_res.name.clone(),
                         drift_type: DriftType::Modified,
-                        before: Some(serde_json::to_value(&before_res.instances).unwrap_or_default()),
+                        before: Some(
+                            serde_json::to_value(&before_res.instances).unwrap_or_default(),
+                        ),
                         after: Some(serde_json::to_value(&after_res.instances).unwrap_or_default()),
                         changed_attributes: Vec::new(),
                     });
@@ -236,10 +241,7 @@ impl DriftDetector {
     }
 
     /// Diff two JSON values representing resource attributes.
-    fn diff_json_objects(
-        before: &serde_json::Value,
-        after: &serde_json::Value,
-    ) -> Vec<String> {
+    fn diff_json_objects(before: &serde_json::Value, after: &serde_json::Value) -> Vec<String> {
         let mut changed = Vec::new();
 
         if let (Some(b), Some(a)) = (before.as_object(), after.as_object()) {

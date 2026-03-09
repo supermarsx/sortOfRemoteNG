@@ -58,8 +58,7 @@ impl PlanManager {
         let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let output = client.run_raw(&arg_refs).await?;
 
-        let success = output.exit_code == 0
-            || (options.detailed_exitcode && output.exit_code == 2);
+        let success = output.exit_code == 0 || (options.detailed_exitcode && output.exit_code == 2);
 
         // If a plan file was saved, try to parse it with `terraform show -json`
         let summary = if let Some(ref plan_file) = options.out {
@@ -146,13 +145,13 @@ impl PlanManager {
             .count();
         let has_changes = add + change + destroy + import_count > 0;
 
-        let prior_state = v.get("prior_state").and_then(|ps| {
-            serde_json::from_value::<StateSnapshot>(ps.clone()).ok()
-        });
+        let prior_state = v
+            .get("prior_state")
+            .and_then(|ps| serde_json::from_value::<StateSnapshot>(ps.clone()).ok());
 
-        let configuration = v.get("configuration").and_then(|c| {
-            serde_json::from_value::<ConfigurationSummary>(c.clone()).ok()
-        });
+        let configuration = v
+            .get("configuration")
+            .and_then(|c| serde_json::from_value::<ConfigurationSummary>(c.clone()).ok());
 
         Ok(PlanSummary {
             format_version,
@@ -194,14 +193,18 @@ impl PlanManager {
                     mode: item["mode"].as_str().unwrap_or("managed").to_string(),
                     resource_type: item["type"].as_str().unwrap_or_default().to_string(),
                     name: item["name"].as_str().unwrap_or_default().to_string(),
-                    provider_name: item["provider_name"].as_str().unwrap_or_default().to_string(),
+                    provider_name: item["provider_name"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string(),
                     actions,
                     before: change.get("before").cloned(),
                     after: change.get("after").cloned(),
                     after_unknown: change.get("after_unknown").cloned(),
                     before_sensitive: change.get("before_sensitive").cloned(),
                     after_sensitive: change.get("after_sensitive").cloned(),
-                    action_reason: item.get("action_reason")
+                    action_reason: item
+                        .get("action_reason")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
                 })
@@ -239,9 +242,8 @@ impl PlanManager {
 
     /// Attempt to parse a text summary from `terraform plan` stdout.
     fn parse_plan_text_summary(stdout: &str) -> Option<PlanSummary> {
-        let re = regex::Regex::new(
-            r"Plan: (\d+) to add, (\d+) to change, (\d+) to destroy"
-        ).ok()?;
+        let re =
+            regex::Regex::new(r"Plan: (\d+) to add, (\d+) to change, (\d+) to destroy").ok()?;
 
         let caps = re.captures(stdout)?;
         let add: usize = caps[1].parse().unwrap_or(0);

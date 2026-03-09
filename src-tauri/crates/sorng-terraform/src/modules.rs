@@ -30,14 +30,20 @@ impl ModulesManager {
 
     /// Parse the `.terraform/modules/modules.json` manifest to list installed modules.
     pub async fn list_installed(client: &TerraformClient) -> TerraformResult<Vec<ModuleRef>> {
-        let manifest_path = client.working_dir.join(".terraform").join("modules").join("modules.json");
+        let manifest_path = client
+            .working_dir
+            .join(".terraform")
+            .join("modules")
+            .join("modules.json");
 
-        let content = tokio::fs::read_to_string(&manifest_path).await.map_err(|e| {
-            TerraformError::new(
-                crate::error::TerraformErrorKind::ModuleFailed,
-                format!("failed to read modules manifest: {}", e),
-            )
-        })?;
+        let content = tokio::fs::read_to_string(&manifest_path)
+            .await
+            .map_err(|e| {
+                TerraformError::new(
+                    crate::error::TerraformErrorKind::ModuleFailed,
+                    format!("failed to read modules manifest: {}", e),
+                )
+            })?;
 
         let v: serde_json::Value = serde_json::from_str(&content)?;
 
@@ -96,29 +102,21 @@ impl ModulesManager {
 
     /// Minimal HTTP GET using system tools (curl on Linux/macOS, curl/Invoke-WebRequest on Windows).
     async fn http_get(url: &str) -> TerraformResult<String> {
-        let output = if cfg!(target_os = "windows") {
-            tokio::process::Command::new("curl")
-                .args(["-sS", "--fail", url])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .output()
-                .await
-        } else {
-            tokio::process::Command::new("curl")
-                .args(["-sS", "--fail", url])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .output()
-                .await
-        };
+        let output = tokio::process::Command::new("curl")
+            .args(["-sS", "--fail", url])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await;
 
         match output {
-            Ok(o) if o.status.success() => {
-                Ok(String::from_utf8_lossy(&o.stdout).to_string())
-            }
+            Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).to_string()),
             Ok(o) => Err(TerraformError::new(
                 crate::error::TerraformErrorKind::ModuleFailed,
-                format!("registry request failed: {}", String::from_utf8_lossy(&o.stderr)),
+                format!(
+                    "registry request failed: {}",
+                    String::from_utf8_lossy(&o.stderr)
+                ),
             )),
             Err(e) => Err(TerraformError::new(
                 crate::error::TerraformErrorKind::ModuleFailed,
@@ -135,19 +133,17 @@ impl ModulesManager {
             .as_array()
             .unwrap_or(&Vec::new())
             .iter()
-            .filter_map(|m| {
-                Some(RegistryModule {
-                    id: m["id"].as_str().unwrap_or_default().to_string(),
-                    namespace: m["namespace"].as_str().unwrap_or_default().to_string(),
-                    name: m["name"].as_str().unwrap_or_default().to_string(),
-                    provider: m["provider"].as_str().unwrap_or_default().to_string(),
-                    version: m["version"].as_str().unwrap_or_default().to_string(),
-                    description: m["description"].as_str().map(|s| s.to_string()),
-                    source: m["source"].as_str().unwrap_or_default().to_string(),
-                    downloads: m["downloads"].as_u64(),
-                    published_at: m["published_at"].as_str().map(|s| s.to_string()),
-                    verified: m["verified"].as_bool().unwrap_or(false),
-                })
+            .map(|m| RegistryModule {
+                id: m["id"].as_str().unwrap_or_default().to_string(),
+                namespace: m["namespace"].as_str().unwrap_or_default().to_string(),
+                name: m["name"].as_str().unwrap_or_default().to_string(),
+                provider: m["provider"].as_str().unwrap_or_default().to_string(),
+                version: m["version"].as_str().unwrap_or_default().to_string(),
+                description: m["description"].as_str().map(|s| s.to_string()),
+                source: m["source"].as_str().unwrap_or_default().to_string(),
+                downloads: m["downloads"].as_u64(),
+                published_at: m["published_at"].as_str().map(|s| s.to_string()),
+                verified: m["verified"].as_bool().unwrap_or(false),
             })
             .collect();
 

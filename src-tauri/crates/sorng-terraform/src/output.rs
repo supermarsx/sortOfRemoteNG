@@ -17,7 +17,9 @@ impl OutputManager {
 
         if output.exit_code != 0 {
             // No outputs is not an error — but terraform may exit 0 with "{}" anyway.
-            if output.stderr.contains("no outputs defined") || output.stderr.contains("No outputs found") {
+            if output.stderr.contains("no outputs defined")
+                || output.stderr.contains("No outputs found")
+            {
                 return Ok(HashMap::new());
             }
             return Err(TerraformError::new(
@@ -45,10 +47,7 @@ impl OutputManager {
     }
 
     /// Get a single output value.
-    pub async fn get(
-        client: &TerraformClient,
-        name: &str,
-    ) -> TerraformResult<OutputValue> {
+    pub async fn get(client: &TerraformClient, name: &str) -> TerraformResult<OutputValue> {
         let args = ["output", "-json", name];
         let output = client.run_raw(&args).await?;
 
@@ -79,10 +78,7 @@ impl OutputManager {
     }
 
     /// Get a single output as a raw string (no JSON parsing).
-    pub async fn get_raw(
-        client: &TerraformClient,
-        name: &str,
-    ) -> TerraformResult<String> {
+    pub async fn get_raw(client: &TerraformClient, name: &str) -> TerraformResult<String> {
         let args = ["output", "-raw", name];
         let output = client.run_raw(&args).await?;
 

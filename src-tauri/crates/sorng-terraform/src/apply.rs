@@ -33,8 +33,9 @@ impl ApplyManager {
 
         let success = output.exit_code == 0;
         if !success && options.plan_file.is_none() {
-            return Err(TerraformError::apply_failed(&output.stderr)
-                .with_detail(output.stdout.clone()));
+            return Err(
+                TerraformError::apply_failed(&output.stderr).with_detail(output.stdout.clone())
+            );
         }
 
         Ok(ApplyResult {
@@ -65,8 +66,9 @@ impl ApplyManager {
 
         let success = output.exit_code == 0;
         if !success {
-            return Err(TerraformError::destroy_failed(&output.stderr)
-                .with_detail(output.stdout.clone()));
+            return Err(
+                TerraformError::destroy_failed(&output.stderr).with_detail(output.stdout.clone())
+            );
         }
 
         Ok(ApplyResult {
@@ -147,19 +149,14 @@ impl ApplyManager {
 
     /// Parse "Apply complete! Resources: X added, Y changed, Z destroyed."
     fn parse_apply_summary(stdout: &str) -> (usize, usize, usize) {
-        let re = regex::Regex::new(
-            r"(\d+) added, (\d+) changed, (\d+) destroyed"
-        );
-        match re {
-            Ok(re) => {
-                if let Some(caps) = re.captures(stdout) {
-                    let a = caps[1].parse().unwrap_or(0);
-                    let c = caps[2].parse().unwrap_or(0);
-                    let d = caps[3].parse().unwrap_or(0);
-                    return (a, c, d);
-                }
+        let re = regex::Regex::new(r"(\d+) added, (\d+) changed, (\d+) destroyed");
+        if let Ok(re) = re {
+            if let Some(caps) = re.captures(stdout) {
+                let a = caps[1].parse().unwrap_or(0);
+                let c = caps[2].parse().unwrap_or(0);
+                let d = caps[3].parse().unwrap_or(0);
+                return (a, c, d);
             }
-            Err(_) => {}
         }
         (0, 0, 0)
     }

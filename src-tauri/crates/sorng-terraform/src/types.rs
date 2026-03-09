@@ -1,9 +1,9 @@
 // ── sorng-terraform/src/types.rs ──────────────────────────────────────────────
 //! Shared data structures for the Terraform crate.
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ── Connection & info ────────────────────────────────────────────────────────
 

@@ -26,7 +26,8 @@ impl StateManager {
 
         if output.exit_code != 0 {
             return Err(TerraformError::state_failed(format!(
-                "state list failed: {}", output.stderr
+                "state list failed: {}",
+                output.stderr
             )));
         }
 
@@ -39,16 +40,14 @@ impl StateManager {
     }
 
     /// Run `terraform state show <address>` and return the attributes.
-    pub async fn show(
-        client: &TerraformClient,
-        address: &str,
-    ) -> TerraformResult<StateResource> {
+    pub async fn show(client: &TerraformClient, address: &str) -> TerraformResult<StateResource> {
         let args = ["state", "show", "-no-color", address];
         let output = client.run_raw(&args).await?;
 
         if output.exit_code != 0 {
             return Err(TerraformError::state_failed(format!(
-                "state show failed for {}: {}", address, output.stderr
+                "state show failed for {}: {}",
+                address, output.stderr
             )));
         }
 
@@ -62,7 +61,8 @@ impl StateManager {
 
         if output.exit_code != 0 {
             return Err(TerraformError::state_failed(format!(
-                "terraform show -json failed: {}", output.stderr
+                "terraform show -json failed: {}",
+                output.stderr
             )));
         }
 
@@ -77,7 +77,8 @@ impl StateManager {
 
         if output.exit_code != 0 {
             return Err(TerraformError::state_failed(format!(
-                "state pull failed: {}", output.stderr
+                "state pull failed: {}",
+                output.stderr
             )));
         }
 
@@ -188,7 +189,8 @@ impl StateManager {
 
         if output.exit_code != 0 {
             return Err(TerraformError::import_failed(format!(
-                "import {} ({}): {}", options.address, options.resource_id, output.stderr
+                "import {} ({}): {}",
+                options.address, options.resource_id, output.stderr
             )));
         }
 
@@ -367,7 +369,10 @@ impl StateManager {
                     resource_type: rtype,
                     name,
                     provider,
-                    module: r.get("module_address").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    module: r
+                        .get("module_address")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     instances,
                     tainted,
                 });

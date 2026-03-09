@@ -62,16 +62,18 @@ impl GraphManager {
     /// Parse nodes from DOT format.
     fn parse_nodes(dot: &str) -> Vec<GraphNode> {
         // Match lines like: "aws_instance.web" [label = "aws_instance.web"]
-        let node_re = Regex::new(
-            r#""([^"]+)"\s*\[label\s*=\s*"([^"]*)"\]"#
-        ).unwrap();
+        let node_re = Regex::new(r#""([^"]+)"\s*\[label\s*=\s*"([^"]*)"\]"#).unwrap();
 
         let mut nodes = Vec::new();
         for cap in node_re.captures_iter(dot) {
             let id = cap[1].to_string();
             let label = cap[2].to_string();
             let node_type = Self::classify_node(&id, &label);
-            nodes.push(GraphNode { id, label, node_type });
+            nodes.push(GraphNode {
+                id,
+                label,
+                node_type,
+            });
         }
 
         // Also match simple node declarations (just the identifier on a line)
