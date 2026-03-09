@@ -5,16 +5,14 @@ use crate::error::{IpmiError, IpmiResult};
 use crate::protocol::{cmd, IpmiRequest};
 use crate::session::IpmiSessionHandle;
 use crate::types::*;
-use log::{debug, info};
+use log::debug;
 
 // ═══════════════════════════════════════════════════════════════════════
 // PEF Capabilities
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Get PEF capabilities from the BMC.
-pub fn get_pef_capabilities(
-    session: &mut IpmiSessionHandle,
-) -> IpmiResult<PefCapabilities> {
+pub fn get_pef_capabilities(session: &mut IpmiSessionHandle) -> IpmiResult<PefCapabilities> {
     let req = IpmiRequest::new(
         NetFunction::SensorEvent.as_byte(),
         cmd::GET_PEF_CAPABILITIES,
@@ -156,8 +154,7 @@ pub struct PefControlStatus {
 
 /// Get the number of event filters.
 pub fn get_event_filter_count(session: &mut IpmiSessionHandle) -> IpmiResult<u8> {
-    let data =
-        get_pef_config_param(session, PefParamId::NumberOfEventFilters, 0, 0)?;
+    let data = get_pef_config_param(session, PefParamId::NumberOfEventFilters, 0, 0)?;
     Ok(data.first().copied().unwrap_or(0))
 }
 
@@ -166,8 +163,7 @@ pub fn get_event_filter(
     session: &mut IpmiSessionHandle,
     filter_number: u8,
 ) -> IpmiResult<PefFilter> {
-    let data =
-        get_pef_config_param(session, PefParamId::EventFilterTable, filter_number, 0)?;
+    let data = get_pef_config_param(session, PefParamId::EventFilterTable, filter_number, 0)?;
 
     if data.len() < 20 {
         return Err(IpmiError::PefError("Event filter data too short".into()));
@@ -200,15 +196,15 @@ fn parse_event_filter(filter_number: u8, data: &[u8]) -> IpmiResult<PefFilter> {
     let event_trigger = data[8];
 
     // Event data masks
-    let event_data1_and_mask = data.get(9).copied().unwrap_or(0xFF);
-    let event_data1_compare1 = data.get(10).copied().unwrap_or(0);
-    let event_data1_compare2 = data.get(11).copied().unwrap_or(0);
-    let event_data2_and_mask = data.get(12).copied().unwrap_or(0xFF);
-    let event_data2_compare1 = data.get(13).copied().unwrap_or(0);
-    let event_data2_compare2 = data.get(14).copied().unwrap_or(0);
-    let event_data3_and_mask = data.get(15).copied().unwrap_or(0xFF);
-    let event_data3_compare1 = data.get(16).copied().unwrap_or(0);
-    let event_data3_compare2 = data.get(17).copied().unwrap_or(0);
+    let _event_data1_and_mask = data.get(9).copied().unwrap_or(0xFF);
+    let _event_data1_compare1 = data.get(10).copied().unwrap_or(0);
+    let _event_data1_compare2 = data.get(11).copied().unwrap_or(0);
+    let _event_data2_and_mask = data.get(12).copied().unwrap_or(0xFF);
+    let _event_data2_compare1 = data.get(13).copied().unwrap_or(0);
+    let _event_data2_compare2 = data.get(14).copied().unwrap_or(0);
+    let _event_data3_and_mask = data.get(15).copied().unwrap_or(0xFF);
+    let _event_data3_compare1 = data.get(16).copied().unwrap_or(0);
+    let _event_data3_compare2 = data.get(17).copied().unwrap_or(0);
 
     Ok(PefFilter {
         filter_number,
@@ -224,9 +220,7 @@ fn parse_event_filter(filter_number: u8, data: &[u8]) -> IpmiResult<PefFilter> {
 }
 
 /// Get all event filters.
-pub fn get_all_event_filters(
-    session: &mut IpmiSessionHandle,
-) -> IpmiResult<Vec<PefFilter>> {
+pub fn get_all_event_filters(session: &mut IpmiSessionHandle) -> IpmiResult<Vec<PefFilter>> {
     let count = get_event_filter_count(session)?;
     debug!("Reading {} PEF event filters", count);
 
@@ -249,12 +243,7 @@ pub fn get_all_event_filters(
 
 /// Get PEF action global control (which actions are globally enabled).
 pub fn get_pef_action_control(session: &mut IpmiSessionHandle) -> IpmiResult<PefAction> {
-    let data = get_pef_config_param(
-        session,
-        PefParamId::PefActionGlobalControl,
-        0,
-        0,
-    )?;
+    let data = get_pef_config_param(session, PefParamId::PefActionGlobalControl, 0, 0)?;
     let byte = data.first().copied().unwrap_or(0);
 
     Ok(PefAction {
@@ -299,10 +288,7 @@ pub fn set_pef_action_control(
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Arm the PEF postpone timer.
-pub fn arm_pef_postpone_timer(
-    session: &mut IpmiSessionHandle,
-    countdown: u8,
-) -> IpmiResult<u8> {
+pub fn arm_pef_postpone_timer(session: &mut IpmiSessionHandle, countdown: u8) -> IpmiResult<u8> {
     let req = IpmiRequest::new(
         NetFunction::SensorEvent.as_byte(),
         cmd::ARM_PEF_POSTPONE_TIMER,
@@ -391,11 +377,10 @@ pub fn get_pef_config(session: &mut IpmiSessionHandle) -> IpmiResult<PefConfig> 
         .unwrap_or(0);
 
     // Alert startup delay
-    let alert_startup_delay =
-        get_pef_config_param(session, PefParamId::PefAlertStartupDelay, 0, 0)
-            .ok()
-            .and_then(|d| d.first().copied())
-            .unwrap_or(0);
+    let alert_startup_delay = get_pef_config_param(session, PefParamId::PefAlertStartupDelay, 0, 0)
+        .ok()
+        .and_then(|d| d.first().copied())
+        .unwrap_or(0);
 
     Ok(PefConfig {
         capabilities,

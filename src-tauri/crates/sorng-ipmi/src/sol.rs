@@ -7,7 +7,7 @@ use crate::protocol::{cmd, IpmiRequest, PAYLOAD_SOL};
 use crate::session::IpmiSessionHandle;
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{debug, info};
 use uuid::Uuid;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -60,21 +60,14 @@ pub fn set_sol_config_param(
     let mut data = vec![channel & 0x0F, param as u8];
     data.extend_from_slice(value);
 
-    let req = IpmiRequest::new(
-        NetFunction::Transport.as_byte(),
-        cmd::SET_SOL_CONFIG,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::Transport.as_byte(), cmd::SET_SOL_CONFIG, data);
     let resp = session.send_request(req)?;
     resp.check()?;
     Ok(())
 }
 
 /// Get the full SOL configuration for a channel.
-pub fn get_sol_config(
-    session: &mut IpmiSessionHandle,
-    channel: u8,
-) -> IpmiResult<SolConfig> {
+pub fn get_sol_config(session: &mut IpmiSessionHandle, channel: u8) -> IpmiResult<SolConfig> {
     // SOL enabled
     let enable_data = get_sol_config_param(session, channel, SolParamId::Enable)?;
     let enabled = !enable_data.is_empty() && (enable_data[0] & 0x01) != 0;
@@ -115,8 +108,8 @@ pub fn get_sol_config(
     let volatile_bit_rate = v_rate_data.first().copied().unwrap_or(0);
 
     // Payload channel and port
-    let channel_data = get_sol_config_param(session, channel, SolParamId::PayloadChannel)
-        .unwrap_or_default();
+    let channel_data =
+        get_sol_config_param(session, channel, SolParamId::PayloadChannel).unwrap_or_default();
     let payload_channel = channel_data.first().copied().unwrap_or(channel);
 
     let port_data =
@@ -167,18 +160,14 @@ pub fn activate_sol(
     // Activate Payload command
     let data = vec![
         PAYLOAD_SOL, // payload type
-        instance,     // payload instance
-        flags,        // encryption/authentication
-        0x00,         // reserved
+        instance,    // payload instance
+        flags,       // encryption/authentication
+        0x00,        // reserved
         0x00,
         0x00,
     ];
 
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::ACTIVATE_PAYLOAD,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::ACTIVATE_PAYLOAD, data);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -199,26 +188,19 @@ pub fn activate_sol(
 }
 
 /// Deactivate a SOL payload.
-pub fn deactivate_sol(
-    session: &mut IpmiSessionHandle,
-    instance: u8,
-) -> IpmiResult<()> {
+pub fn deactivate_sol(session: &mut IpmiSessionHandle, instance: u8) -> IpmiResult<()> {
     info!("Deactivating SOL payload instance {}", instance);
 
     let data = vec![
         PAYLOAD_SOL, // payload type
-        instance,     // payload instance
+        instance,    // payload instance
         0x00,
         0x00,
         0x00,
         0x00,
     ];
 
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::DEACTIVATE_PAYLOAD,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::DEACTIVATE_PAYLOAD, data);
     let resp = session.send_request(req)?;
     resp.check()?;
     Ok(())
@@ -346,12 +328,12 @@ pub struct SolReceivedData {
 }
 
 /// Send a break signal over SOL.
-pub fn send_sol_break(session: &mut IpmiSessionHandle, instance: u8) -> IpmiResult<()> {
+pub fn send_sol_break(_session: &mut IpmiSessionHandle, instance: u8) -> IpmiResult<()> {
     let flags = SolPayloadFlags {
         generate_break: true,
         ..Default::default()
     };
-    let packet = build_sol_data_packet(0, 0, 0, &[], &flags);
+    let _packet = build_sol_data_packet(0, 0, 0, &[], &flags);
     debug!("Sending SOL break on instance {}", instance);
     // The break is sent as a SOL payload through the session
     // In practice this would go through the RMCP+ SOL payload path

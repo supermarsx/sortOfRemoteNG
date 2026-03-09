@@ -1,12 +1,12 @@
 //! IPMI service — multi-session connection management with an
 //! `Arc<Mutex<IpmiService>>` state suitable for Tauri managed state.
 
-use crate::channel::{self, ChannelAccess, ChannelAccessType, ChannelAuthCapabilities};
+use crate::channel::{self, ChannelAuthCapabilities};
 use crate::chassis;
-use crate::error::{IpmiError, IpmiResult};
+use crate::error::IpmiResult;
 use crate::fru;
 use crate::lan;
-use crate::pef::{self, PefControlStatus};
+use crate::pef::{self};
 use crate::raw;
 use crate::sel;
 use crate::sensors;
@@ -15,8 +15,6 @@ use crate::sol;
 use crate::types::*;
 use crate::users::{self, UserPasswordOperation};
 use crate::watchdog::{self, WatchdogTimerConfig};
-use log::{debug, info};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -37,6 +35,12 @@ pub fn new_state() -> IpmiServiceState {
 /// Manages multiple IPMI BMC sessions.
 pub struct IpmiService {
     manager: SessionManager,
+}
+
+impl Default for IpmiService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IpmiService {
@@ -85,11 +89,7 @@ impl IpmiService {
         chassis::get_chassis_status(s)
     }
 
-    pub fn chassis_control(
-        &mut self,
-        session_id: &str,
-        action: ChassisControl,
-    ) -> IpmiResult<()> {
+    pub fn chassis_control(&mut self, session_id: &str, action: ChassisControl) -> IpmiResult<()> {
         let s = self.session_mut(session_id)?;
         chassis::chassis_control(s, action)
     }
@@ -188,33 +188,21 @@ impl IpmiService {
         sel::clear_sel(s)
     }
 
-    pub fn delete_sel_entry(
-        &mut self,
-        session_id: &str,
-        record_id: u16,
-    ) -> IpmiResult<u16> {
+    pub fn delete_sel_entry(&mut self, session_id: &str, record_id: u16) -> IpmiResult<u16> {
         let s = self.session_mut(session_id)?;
         sel::delete_sel_entry(s, record_id)
     }
 
     // ── FRU ─────────────────────────────────────────────────────────
 
-    pub fn get_fru_info(
-        &mut self,
-        session_id: &str,
-        device_id: u8,
-    ) -> IpmiResult<FruDeviceInfo> {
+    pub fn get_fru_info(&mut self, session_id: &str, device_id: u8) -> IpmiResult<FruDeviceInfo> {
         let s = self.session_mut(session_id)?;
         fru::get_fru_info(s, device_id)
     }
 
     // ── SOL ─────────────────────────────────────────────────────────
 
-    pub fn get_sol_config(
-        &mut self,
-        session_id: &str,
-        channel: u8,
-    ) -> IpmiResult<SolConfig> {
+    pub fn get_sol_config(&mut self, session_id: &str, channel: u8) -> IpmiResult<SolConfig> {
         let s = self.session_mut(session_id)?;
         sol::get_sol_config(s, channel)
     }
@@ -230,21 +218,14 @@ impl IpmiService {
         sol::activate_sol(s, instance, encrypt, auth)
     }
 
-    pub fn deactivate_sol(
-        &mut self,
-        session_id: &str,
-        instance: u8,
-    ) -> IpmiResult<()> {
+    pub fn deactivate_sol(&mut self, session_id: &str, instance: u8) -> IpmiResult<()> {
         let s = self.session_mut(session_id)?;
         sol::deactivate_sol(s, instance)
     }
 
     // ── Watchdog ────────────────────────────────────────────────────
 
-    pub fn get_watchdog_timer(
-        &mut self,
-        session_id: &str,
-    ) -> IpmiResult<WatchdogTimer> {
+    pub fn get_watchdog_timer(&mut self, session_id: &str) -> IpmiResult<WatchdogTimer> {
         let s = self.session_mut(session_id)?;
         watchdog::get_watchdog_timer(s)
     }
@@ -265,21 +246,12 @@ impl IpmiService {
 
     // ── LAN ─────────────────────────────────────────────────────────
 
-    pub fn get_lan_config(
-        &mut self,
-        session_id: &str,
-        channel: u8,
-    ) -> IpmiResult<LanConfig> {
+    pub fn get_lan_config(&mut self, session_id: &str, channel: u8) -> IpmiResult<LanConfig> {
         let s = self.session_mut(session_id)?;
         lan::get_lan_config(s, channel)
     }
 
-    pub fn set_ip_address(
-        &mut self,
-        session_id: &str,
-        channel: u8,
-        ip: [u8; 4],
-    ) -> IpmiResult<()> {
+    pub fn set_ip_address(&mut self, session_id: &str, channel: u8, ip: [u8; 4]) -> IpmiResult<()> {
         let s = self.session_mut(session_id)?;
         lan::set_ip_address(s, channel, ip)
     }
@@ -306,21 +278,12 @@ impl IpmiService {
 
     // ── Users ───────────────────────────────────────────────────────
 
-    pub fn list_users(
-        &mut self,
-        session_id: &str,
-        channel: u8,
-    ) -> IpmiResult<Vec<IpmiUser>> {
+    pub fn list_users(&mut self, session_id: &str, channel: u8) -> IpmiResult<Vec<IpmiUser>> {
         let s = self.session_mut(session_id)?;
         users::list_users(s, channel)
     }
 
-    pub fn set_user_name(
-        &mut self,
-        session_id: &str,
-        user_id: u8,
-        name: &str,
-    ) -> IpmiResult<()> {
+    pub fn set_user_name(&mut self, session_id: &str, user_id: u8, name: &str) -> IpmiResult<()> {
         let s = self.session_mut(session_id)?;
         users::set_user_name(s, user_id, name)
     }
@@ -335,20 +298,12 @@ impl IpmiService {
         users::set_user_password(s, user_id, password, UserPasswordOperation::SetPassword)
     }
 
-    pub fn enable_user(
-        &mut self,
-        session_id: &str,
-        user_id: u8,
-    ) -> IpmiResult<()> {
+    pub fn enable_user(&mut self, session_id: &str, user_id: u8) -> IpmiResult<()> {
         let s = self.session_mut(session_id)?;
         users::enable_user(s, user_id)
     }
 
-    pub fn disable_user(
-        &mut self,
-        session_id: &str,
-        user_id: u8,
-    ) -> IpmiResult<()> {
+    pub fn disable_user(&mut self, session_id: &str, user_id: u8) -> IpmiResult<()> {
         let s = self.session_mut(session_id)?;
         users::disable_user(s, user_id)
     }
@@ -381,10 +336,7 @@ impl IpmiService {
 
     // ── PEF ─────────────────────────────────────────────────────────
 
-    pub fn get_pef_capabilities(
-        &mut self,
-        session_id: &str,
-    ) -> IpmiResult<PefCapabilities> {
+    pub fn get_pef_capabilities(&mut self, session_id: &str) -> IpmiResult<PefCapabilities> {
         let s = self.session_mut(session_id)?;
         pef::get_pef_capabilities(s)
     }
@@ -396,19 +348,12 @@ impl IpmiService {
 
     // ── Channel ─────────────────────────────────────────────────────
 
-    pub fn get_channel_info(
-        &mut self,
-        session_id: &str,
-        channel: u8,
-    ) -> IpmiResult<ChannelInfo> {
+    pub fn get_channel_info(&mut self, session_id: &str, channel: u8) -> IpmiResult<ChannelInfo> {
         let s = self.session_mut(session_id)?;
         channel::get_channel_info(s, channel)
     }
 
-    pub fn list_channels(
-        &mut self,
-        session_id: &str,
-    ) -> IpmiResult<Vec<ChannelInfo>> {
+    pub fn list_channels(&mut self, session_id: &str) -> IpmiResult<Vec<ChannelInfo>> {
         let s = self.session_mut(session_id)?;
         channel::list_channels(s)
     }

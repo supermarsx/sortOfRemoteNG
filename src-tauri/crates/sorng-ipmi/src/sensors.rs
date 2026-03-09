@@ -7,7 +7,7 @@ use crate::error::{IpmiError, IpmiResult};
 use crate::protocol::{cmd, IpmiRequest};
 use crate::session::IpmiSessionHandle;
 use crate::types::*;
-use log::{debug, trace, warn};
+use log::{debug, warn};
 
 /// Maximum bytes per SDR partial read.
 const SDR_READ_CHUNK: u8 = 20;

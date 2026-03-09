@@ -7,7 +7,7 @@ use crate::protocol::*;
 use crate::types::*;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use md5::Md5;
 use rand::RngCore;
 use sha1::Sha1;
@@ -21,6 +21,7 @@ type HmacSha1 = Hmac<Sha1>;
 type HmacSha256 = Hmac<Sha256>;
 
 /// Default RMCP+/IPMI 2.0 auth type indicator.
+#[allow(dead_code)]
 const AUTH_TYPE_RMCP_PLUS: u8 = 0x06;
 
 /// Maximum number of concurrent sessions per service.
@@ -185,7 +186,7 @@ impl IpmiSessionHandle {
         Ok(())
     }
 
-    fn send_recv(&mut self, datagram: &[u8], net_fn: u8, cmd: u8) -> IpmiResult<RawIpmiResponse> {
+    fn send_recv(&mut self, datagram: &[u8], _net_fn: u8, _cmd: u8) -> IpmiResult<RawIpmiResponse> {
         let timeout = Duration::from_secs(self.session.config.timeout_secs);
         let retries = self.session.config.retries;
 
@@ -221,10 +222,7 @@ impl IpmiSessionHandle {
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     if attempt == retries {
-                        return Err(IpmiError::timeout(
-                            timeout.as_millis() as u64,
-                            retries,
-                        ));
+                        return Err(IpmiError::timeout(timeout.as_millis() as u64, retries));
                     }
                     debug!("Timeout on attempt {}, retrying...", attempt);
                 }
@@ -254,7 +252,10 @@ impl IpmiSessionHandle {
                 // Simplified: MD5(password + session_id)
                 let mut hasher = <Md5 as md5::Digest>::new();
                 <Md5 as md5::Digest>::update(&mut hasher, self.session.config.password.as_bytes());
-                <Md5 as md5::Digest>::update(&mut hasher, &self.session.bmc_session_id.to_le_bytes());
+                <Md5 as md5::Digest>::update(
+                    &mut hasher,
+                    self.session.bmc_session_id.to_le_bytes(),
+                );
                 let result = <Md5 as md5::Digest>::finalize(hasher);
                 Ok(result.to_vec())
             }
@@ -268,9 +269,7 @@ impl IpmiSessionHandle {
                 code[..len].copy_from_slice(&pw[..len]);
                 Ok(code)
             }
-            AuthType::OEM => {
-                Err(IpmiError::NotSupported("OEM authentication".into()))
-            }
+            AuthType::OEM => Err(IpmiError::NotSupported("OEM authentication".into())),
         }
     }
 }
@@ -343,7 +342,11 @@ impl SessionManager {
         let session_id = Uuid::new_v4().to_string();
         info!(
             "Establishing IPMI {:?} session to {}:{} as user '{}' (id={})",
-            config.version, config.host, config.port, config.username, &session_id[..8]
+            config.version,
+            config.host,
+            config.port,
+            config.username,
+            &session_id[..8]
         );
 
         // Create UDP socket
@@ -352,9 +355,9 @@ impl SessionManager {
             .map_err(|e| IpmiError::connection_failed_with("Failed to bind UDP socket", e))?;
 
         let target = format!("{}:{}", config.host, config.port);
-        socket
-            .connect(&target)
-            .map_err(|e| IpmiError::connection_failed_with(format!("Failed to connect to {}", target), e))?;
+        socket.connect(&target).map_err(|e| {
+            IpmiError::connection_failed_with(format!("Failed to connect to {}", target), e)
+        })?;
 
         socket
             .set_read_timeout(Some(Duration::from_secs(config.timeout_secs)))
@@ -508,9 +511,10 @@ impl SessionManager {
         debug!("BMC supported auth types: 0x{:02X}", supported_auth);
 
         // Choose best available auth type
-        let chosen_auth = if (supported_auth & 0x04) != 0 && handle.session.config.auth_type == AuthType::MD5 {
-            AuthType::MD5
-        } else if (supported_auth & 0x02) != 0 {
+        let chosen_auth = if ((supported_auth & 0x04) != 0
+            && handle.session.config.auth_type == AuthType::MD5)
+            || (supported_auth & 0x02) != 0
+        {
             AuthType::MD5
         } else if (supported_auth & 0x10) != 0 {
             AuthType::Password
@@ -578,13 +582,8 @@ impl SessionManager {
         );
         // Send with temp session credentials
         let auth_code = handle.compute_v15_auth_code(&activate_req)?;
-        let datagram = build_v15_auth_message(
-            chosen_auth,
-            temp_session_id,
-            0,
-            &auth_code,
-            &activate_req,
-        );
+        let datagram =
+            build_v15_auth_message(chosen_auth, temp_session_id, 0, &auth_code, &activate_req);
 
         handle
             .socket
@@ -651,11 +650,17 @@ impl SessionManager {
         let msg = parse_datagram(&buf[..len])?;
         let resp = match msg {
             ParsedMessage::V15 { response, .. } => response,
-            _ => return Err(IpmiError::InvalidResponse("Expected V15 response for auth cap".into())),
+            _ => {
+                return Err(IpmiError::InvalidResponse(
+                    "Expected V15 response for auth cap".into(),
+                ))
+            }
         };
         resp.check()?;
         if resp.data.len() < 8 {
-            return Err(IpmiError::InvalidResponse("Auth cap response too short".into()));
+            return Err(IpmiError::InvalidResponse(
+                "Auth cap response too short".into(),
+            ));
         }
 
         let extended_cap = resp.data[2];
@@ -682,21 +687,21 @@ impl SessionManager {
         open_req.extend_from_slice(&[0x00, 0x00]); // reserved
         open_req.push(0x08); // payload length
         let auth_algo = match cipher_suite {
-            0 => 0x00, // None
-            1 | 2 | 3 => 0x01, // HMAC-SHA1
-            15 | 16 | 17 => 0x02, // HMAC-SHA256
-            _ => 0x01, // Default HMAC-SHA1
+            0 => 0x00,       // None
+            1..=3 => 0x01,   // HMAC-SHA1
+            15..=17 => 0x02, // HMAC-SHA256
+            _ => 0x01,       // Default HMAC-SHA1
         };
         open_req.push(auth_algo);
         open_req.extend_from_slice(&[0x00, 0x00, 0x00]); // reserved
-        // Integrity algorithm payload (type 0x01)
+                                                         // Integrity algorithm payload (type 0x01)
         open_req.push(0x01);
         open_req.extend_from_slice(&[0x00, 0x00]);
         open_req.push(0x08);
         let integrity_algo = match cipher_suite {
-            0 | 1 => 0x00, // None
-            2 | 3 => 0x01, // HMAC-SHA1-96
-            15 | 16 | 17 => 0x02, // HMAC-SHA256-128
+            0 | 1 => 0x00,   // None
+            2 | 3 => 0x01,   // HMAC-SHA1-96
+            15..=17 => 0x02, // HMAC-SHA256-128
             _ => 0x01,
         };
         open_req.push(integrity_algo);
@@ -706,8 +711,8 @@ impl SessionManager {
         open_req.extend_from_slice(&[0x00, 0x00]);
         open_req.push(0x08);
         let confid_algo = match cipher_suite {
-            0 | 1 | 2 => 0x00, // None
-            3 => 0x01, // AES-CBC-128
+            0..=2 => 0x00, // None
+            3 => 0x01,     // AES-CBC-128
             15 | 16 => 0x00,
             17 => 0x01,
             _ => 0x01,
@@ -715,12 +720,7 @@ impl SessionManager {
         open_req.push(confid_algo);
         open_req.extend_from_slice(&[0x00, 0x00, 0x00]);
 
-        let datagram = build_v20_message(
-            0, 0,
-            PAYLOAD_OPEN_SESSION_REQ,
-            false, false,
-            &open_req,
-        );
+        let datagram = build_v20_message(0, 0, PAYLOAD_OPEN_SESSION_REQ, false, false, &open_req);
 
         handle
             .socket
@@ -736,13 +736,20 @@ impl SessionManager {
         let msg = parse_datagram(&buf[..len])?;
         let open_rsp_data = match msg {
             ParsedMessage::V20 { payload, .. } => payload,
-            _ => return Err(IpmiError::InvalidResponse("Expected V20 open session response".into())),
+            _ => {
+                return Err(IpmiError::InvalidResponse(
+                    "Expected V20 open session response".into(),
+                ))
+            }
         };
 
         if open_rsp_data.len() < 36 {
             return Err(IpmiError::RakpFailed {
                 step: 0,
-                reason: format!("Open session response too short: {} bytes", open_rsp_data.len()),
+                reason: format!(
+                    "Open session response too short: {} bytes",
+                    open_rsp_data.len()
+                ),
             });
         }
 
@@ -779,12 +786,7 @@ impl SessionManager {
         rakp1.push(username_bytes.len() as u8);
         rakp1.extend_from_slice(username_bytes);
 
-        let datagram = build_v20_message(
-            0, 0,
-            PAYLOAD_RAKP1,
-            false, false,
-            &rakp1,
-        );
+        let datagram = build_v20_message(0, 0, PAYLOAD_RAKP1, false, false, &rakp1);
 
         handle
             .socket
@@ -800,7 +802,12 @@ impl SessionManager {
         let msg = parse_datagram(&buf[..len])?;
         let rakp2_data = match msg {
             ParsedMessage::V20 { payload, .. } => payload,
-            _ => return Err(IpmiError::RakpFailed { step: 2, reason: "Expected V20".into() }),
+            _ => {
+                return Err(IpmiError::RakpFailed {
+                    step: 2,
+                    reason: "Expected V20".into(),
+                })
+            }
         };
 
         if rakp2_data.len() < 40 {
@@ -824,7 +831,7 @@ impl SessionManager {
         handle.session.managed_system_guid = managed_system_guid.clone();
 
         // Key exchange authentication code from RAKP2
-        let rakp2_hmac = if rakp2_data.len() > 40 {
+        let _rakp2_hmac = if rakp2_data.len() > 40 {
             rakp2_data[40..].to_vec()
         } else {
             Vec::new()
@@ -867,12 +874,7 @@ impl SessionManager {
         rakp3.extend_from_slice(&bmc_session_id.to_le_bytes());
         rakp3.extend_from_slice(&rakp3_hmac);
 
-        let datagram = build_v20_message(
-            0, 0,
-            PAYLOAD_RAKP3,
-            false, false,
-            &rakp3,
-        );
+        let datagram = build_v20_message(0, 0, PAYLOAD_RAKP3, false, false, &rakp3);
 
         handle
             .socket
@@ -888,7 +890,12 @@ impl SessionManager {
         let msg = parse_datagram(&buf[..len])?;
         let rakp4_data = match msg {
             ParsedMessage::V20 { payload, .. } => payload,
-            _ => return Err(IpmiError::RakpFailed { step: 4, reason: "Expected V20".into() }),
+            _ => {
+                return Err(IpmiError::RakpFailed {
+                    step: 4,
+                    reason: "Expected V20".into(),
+                })
+            }
         };
 
         if rakp4_data.len() < 8 {
@@ -960,15 +967,17 @@ impl SessionManager {
         match auth_algo {
             0x00 => Ok(vec![0u8; 20]),
             0x01 => {
-                let mut mac = HmacSha1::new_from_slice(sik)
-                    .map_err(|e| IpmiError::KeyExchangeError(format!("K{} derive: {}", constant, e)))?;
+                let mut mac = HmacSha1::new_from_slice(sik).map_err(|e| {
+                    IpmiError::KeyExchangeError(format!("K{} derive: {}", constant, e))
+                })?;
                 mac.update(&input);
                 Ok(mac.finalize().into_bytes().to_vec())
             }
             0x02 => {
                 let input32 = [constant; 32];
-                let mut mac = HmacSha256::new_from_slice(sik)
-                    .map_err(|e| IpmiError::KeyExchangeError(format!("K{} derive: {}", constant, e)))?;
+                let mut mac = HmacSha256::new_from_slice(sik).map_err(|e| {
+                    IpmiError::KeyExchangeError(format!("K{} derive: {}", constant, e))
+                })?;
                 mac.update(&input32);
                 Ok(mac.finalize().into_bytes().to_vec())
             }

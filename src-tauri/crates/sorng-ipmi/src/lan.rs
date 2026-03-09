@@ -27,11 +27,7 @@ pub fn get_lan_param(
         block_selector,
     ];
 
-    let req = IpmiRequest::new(
-        NetFunction::Transport.as_byte(),
-        cmd::GET_LAN_CONFIG,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::Transport.as_byte(), cmd::GET_LAN_CONFIG, data);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -57,11 +53,7 @@ pub fn set_lan_param(
     let mut data = vec![channel & 0x0F, param.as_byte()];
     data.extend_from_slice(value);
 
-    let req = IpmiRequest::new(
-        NetFunction::Transport.as_byte(),
-        cmd::SET_LAN_CONFIG,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::Transport.as_byte(), cmd::SET_LAN_CONFIG, data);
     let resp = session.send_request(req)?;
     resp.check()?;
     Ok(())
@@ -95,7 +87,9 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
             if data.len() < 4 {
                 return Err(IpmiError::data_too_short_in("IP address", 4, data.len()));
             }
-            Ok(LanParameter::IpAddress([data[0], data[1], data[2], data[3]]))
+            Ok(LanParameter::IpAddress([
+                data[0], data[1], data[2], data[3],
+            ]))
         }
         LanParameterId::IpAddressSource => {
             let source = IpSource::from_byte(data.first().copied().unwrap_or(0));
@@ -135,14 +129,20 @@ fn parse_lan_parameter(param: LanParameterId, data: &[u8]) -> IpmiResult<LanPara
         }
         LanParameterId::BackupGateway => {
             if data.len() < 4 {
-                return Err(IpmiError::data_too_short_in("Backup gateway", 4, data.len()));
+                return Err(IpmiError::data_too_short_in(
+                    "Backup gateway",
+                    4,
+                    data.len(),
+                ));
             }
             Ok(LanParameter::BackupGateway([
                 data[0], data[1], data[2], data[3],
             ]))
         }
         LanParameterId::CommunityString => {
-            let s = String::from_utf8_lossy(data).trim_end_matches('\0').to_string();
+            let s = String::from_utf8_lossy(data)
+                .trim_end_matches('\0')
+                .to_string();
             Ok(LanParameter::CommunityString(s))
         }
         LanParameterId::VlanId => {
@@ -195,10 +195,7 @@ pub enum LanParameter {
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Retrieve the full LAN configuration for a channel.
-pub fn get_lan_config(
-    session: &mut IpmiSessionHandle,
-    channel: u8,
-) -> IpmiResult<LanConfig> {
+pub fn get_lan_config(session: &mut IpmiSessionHandle, channel: u8) -> IpmiResult<LanConfig> {
     debug!("Getting LAN config for channel {}", channel);
 
     // IP address
@@ -214,23 +211,21 @@ pub fn get_lan_config(
     };
 
     // Subnet mask
-    let subnet_mask =
-        match get_lan_param(session, channel, LanParameterId::SubnetMask, 0, 0)? {
-            LanParameter::SubnetMask(m) => format!("{}.{}.{}.{}", m[0], m[1], m[2], m[3]),
-            _ => String::new(),
-        };
+    let subnet_mask = match get_lan_param(session, channel, LanParameterId::SubnetMask, 0, 0)? {
+        LanParameter::SubnetMask(m) => format!("{}.{}.{}.{}", m[0], m[1], m[2], m[3]),
+        _ => String::new(),
+    };
 
     // MAC address
-    let mac_address =
-        match get_lan_param(session, channel, LanParameterId::MacAddress, 0, 0)? {
-            LanParameter::MacAddress(m) => {
-                format!(
-                    "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                    m[0], m[1], m[2], m[3], m[4], m[5]
-                )
-            }
-            _ => String::new(),
-        };
+    let mac_address = match get_lan_param(session, channel, LanParameterId::MacAddress, 0, 0)? {
+        LanParameter::MacAddress(m) => {
+            format!(
+                "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                m[0], m[1], m[2], m[3], m[4], m[5]
+            )
+        }
+        _ => String::new(),
+    };
 
     // Default gateway
     let default_gateway =
@@ -242,80 +237,47 @@ pub fn get_lan_config(
         };
 
     // Default gateway MAC (optional, may not be supported)
-    let default_gateway_mac = match get_lan_param(
-        session,
-        channel,
-        LanParameterId::DefaultGatewayMac,
-        0,
-        0,
-    ) {
-        Ok(LanParameter::DefaultGatewayMac(m)) => Some(format!(
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            m[0], m[1], m[2], m[3], m[4], m[5]
-        )),
-        _ => None,
-    };
+    let default_gateway_mac =
+        match get_lan_param(session, channel, LanParameterId::DefaultGatewayMac, 0, 0) {
+            Ok(LanParameter::DefaultGatewayMac(m)) => Some(format!(
+                "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                m[0], m[1], m[2], m[3], m[4], m[5]
+            )),
+            _ => None,
+        };
 
     // Backup gateway (optional)
-    let backup_gateway = match get_lan_param(
-        session,
-        channel,
-        LanParameterId::BackupGateway,
-        0,
-        0,
-    ) {
-        Ok(LanParameter::BackupGateway(g)) => {
-            Some(format!("{}.{}.{}.{}", g[0], g[1], g[2], g[3]))
-        }
+    let backup_gateway = match get_lan_param(session, channel, LanParameterId::BackupGateway, 0, 0)
+    {
+        Ok(LanParameter::BackupGateway(g)) => Some(format!("{}.{}.{}.{}", g[0], g[1], g[2], g[3])),
         _ => None,
     };
 
     // VLAN (optional)
-    let (vlan_id, vlan_enabled) = match get_lan_param(
-        session,
-        channel,
-        LanParameterId::VlanId,
-        0,
-        0,
-    ) {
-        Ok(LanParameter::VlanId { id, enabled }) => (Some(id), enabled),
-        _ => (None, false),
-    };
+    let (vlan_id, vlan_enabled) =
+        match get_lan_param(session, channel, LanParameterId::VlanId, 0, 0) {
+            Ok(LanParameter::VlanId { id, enabled }) => (Some(id), enabled),
+            _ => (None, false),
+        };
 
-    let vlan_priority = match get_lan_param(
-        session,
-        channel,
-        LanParameterId::VlanPriority,
-        0,
-        0,
-    ) {
+    let vlan_priority = match get_lan_param(session, channel, LanParameterId::VlanPriority, 0, 0) {
         Ok(LanParameter::VlanPriority(p)) => Some(p),
         _ => None,
     };
 
     // Community string (optional)
-    let community_string = match get_lan_param(
-        session,
-        channel,
-        LanParameterId::CommunityString,
-        0,
-        0,
-    ) {
-        Ok(LanParameter::CommunityString(s)) => Some(s),
-        _ => None,
-    };
+    let community_string =
+        match get_lan_param(session, channel, LanParameterId::CommunityString, 0, 0) {
+            Ok(LanParameter::CommunityString(s)) => Some(s),
+            _ => None,
+        };
 
     // Cipher suites (optional)
-    let cipher_suites = match get_lan_param(
-        session,
-        channel,
-        LanParameterId::CipherSuiteEntries,
-        0,
-        0,
-    ) {
-        Ok(LanParameter::CipherSuiteEntries(s)) => Some(s),
-        _ => None,
-    };
+    let cipher_suites =
+        match get_lan_param(session, channel, LanParameterId::CipherSuiteEntries, 0, 0) {
+            Ok(LanParameter::CipherSuiteEntries(s)) => Some(s),
+            _ => None,
+        };
 
     Ok(LanConfig {
         ip_address,
@@ -338,12 +300,11 @@ pub fn get_lan_config(
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Set the IP address.
-pub fn set_ip_address(
-    session: &mut IpmiSessionHandle,
-    channel: u8,
-    ip: [u8; 4],
-) -> IpmiResult<()> {
-    info!("Setting IP address to {}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3]);
+pub fn set_ip_address(session: &mut IpmiSessionHandle, channel: u8, ip: [u8; 4]) -> IpmiResult<()> {
+    info!(
+        "Setting IP address to {}.{}.{}.{}",
+        ip[0], ip[1], ip[2], ip[3]
+    );
     set_lan_param(session, channel, LanParameterId::IpAddress, &ip)
 }
 
@@ -390,12 +351,7 @@ pub fn set_vlan_id(
     if enabled {
         id |= 0x8000;
     }
-    set_lan_param(
-        session,
-        channel,
-        LanParameterId::VlanId,
-        &id.to_le_bytes(),
-    )
+    set_lan_param(session, channel, LanParameterId::VlanId, &id.to_le_bytes())
 }
 
 /// Set SNMP community string.

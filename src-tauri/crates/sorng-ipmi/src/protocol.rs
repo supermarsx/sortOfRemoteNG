@@ -4,7 +4,6 @@
 
 use crate::error::{IpmiError, IpmiResult};
 use crate::types::*;
-use log::{debug, trace};
 
 // ═══════════════════════════════════════════════════════════════════════
 // Constants
@@ -803,10 +802,7 @@ pub fn parse_datagram(data: &[u8]) -> IpmiResult<ParsedMessage> {
                 let (header, offset) = Ipmi20Header::decode(session_data)?;
                 let plen = header.payload_length as usize;
                 if session_data.len() < offset + plen {
-                    return Err(IpmiError::data_too_short(
-                        offset + plen,
-                        session_data.len(),
-                    ));
+                    return Err(IpmiError::data_too_short(offset + plen, session_data.len()));
                 }
                 let payload = session_data[offset..offset + plen].to_vec();
                 Ok(ParsedMessage::V20 { header, payload })
@@ -815,13 +811,9 @@ pub fn parse_datagram(data: &[u8]) -> IpmiResult<ParsedMessage> {
                 let (header, offset) = Ipmi15Header::decode(session_data)?;
                 let plen = header.payload_length as usize;
                 if session_data.len() < offset + plen {
-                    return Err(IpmiError::data_too_short(
-                        offset + plen,
-                        session_data.len(),
-                    ));
+                    return Err(IpmiError::data_too_short(offset + plen, session_data.len()));
                 }
-                let response =
-                    IpmiResponse::decode(&session_data[offset..offset + plen])?;
+                let response = IpmiResponse::decode(&session_data[offset..offset + plen])?;
                 Ok(ParsedMessage::V15 { header, response })
             }
         }

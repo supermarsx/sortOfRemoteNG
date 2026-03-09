@@ -54,24 +54,24 @@
 //! - **Channel Management** — info, access control, cipher suite enumeration
 //! - **Raw Commands** — arbitrary NetFn/Cmd passthrough with hex helpers
 
-pub mod types;
-pub mod error;
-pub mod protocol;
-pub mod session;
-pub mod chassis;
-pub mod sensors;
-pub mod sel;
-pub mod fru;
-pub mod sol;
-pub mod watchdog;
-pub mod lan;
-pub mod users;
-pub mod raw;
-pub mod pef;
 pub mod channel;
-pub mod service;
+pub mod chassis;
 pub mod commands;
+pub mod error;
+pub mod fru;
+pub mod lan;
+pub mod pef;
+pub mod protocol;
+pub mod raw;
+pub mod sel;
+pub mod sensors;
+pub mod service;
+pub mod session;
+pub mod sol;
+pub mod types;
+pub mod users;
+pub mod watchdog;
 
 pub use error::{IpmiError, IpmiResult};
-pub use types::*;
 pub use service::{IpmiService, IpmiServiceState};
+pub use types::*;

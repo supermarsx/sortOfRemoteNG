@@ -5,7 +5,7 @@ use crate::error::{IpmiError, IpmiResult};
 use crate::protocol::{cmd, IpmiRequest};
 use crate::session::IpmiSessionHandle;
 use crate::types::*;
-use log::{debug, info};
+use log::info;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Chassis Status
@@ -45,7 +45,11 @@ pub fn parse_chassis_status(data: &[u8]) -> IpmiResult<ChassisStatus> {
 
 /// Get the chassis power status.
 pub fn get_chassis_status(session: &mut IpmiSessionHandle) -> IpmiResult<ChassisStatus> {
-    let req = IpmiRequest::new(NetFunction::Chassis.as_byte(), cmd::GET_CHASSIS_STATUS, vec![]);
+    let req = IpmiRequest::new(
+        NetFunction::Chassis.as_byte(),
+        cmd::GET_CHASSIS_STATUS,
+        vec![],
+    );
     let resp = session.send_request(req)?;
     resp.check()?;
     parse_chassis_status(&resp.data)
@@ -56,10 +60,7 @@ pub fn get_chassis_status(session: &mut IpmiSessionHandle) -> IpmiResult<Chassis
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Send a chassis control command (power on/off/cycle/reset/soft-shutdown/diag).
-pub fn chassis_control(
-    session: &mut IpmiSessionHandle,
-    action: ChassisControl,
-) -> IpmiResult<()> {
+pub fn chassis_control(session: &mut IpmiSessionHandle, action: ChassisControl) -> IpmiResult<()> {
     info!("Sending chassis control: {:?}", action);
     let req = IpmiRequest::new(
         NetFunction::Chassis.as_byte(),
@@ -257,11 +258,7 @@ pub fn get_restart_cause(session: &mut IpmiSessionHandle) -> IpmiResult<RestartC
 
 /// Get the power-on hours counter.
 pub fn get_power_on_hours(session: &mut IpmiSessionHandle) -> IpmiResult<PowerOnHours> {
-    let req = IpmiRequest::new(
-        NetFunction::Chassis.as_byte(),
-        cmd::GET_POH_COUNTER,
-        vec![],
-    );
+    let req = IpmiRequest::new(NetFunction::Chassis.as_byte(), cmd::GET_POH_COUNTER, vec![]);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -288,11 +285,7 @@ pub fn get_power_on_hours(session: &mut IpmiSessionHandle) -> IpmiResult<PowerOn
 
 /// Get device ID information from the BMC.
 pub fn get_device_id(session: &mut IpmiSessionHandle) -> IpmiResult<IpmiDeviceId> {
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::GET_DEVICE_ID,
-        vec![],
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::GET_DEVICE_ID, vec![]);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -311,7 +304,11 @@ pub fn get_device_id(session: &mut IpmiSessionHandle) -> IpmiResult<IpmiDeviceId
         (firmware_minor_bcd >> 4) * 10 + (firmware_minor_bcd & 0x0F)
     );
     let ipmi_version_byte = resp.data[4];
-    let ipmi_version = format!("{}.{}", ipmi_version_byte & 0x0F, (ipmi_version_byte >> 4) & 0x0F);
+    let ipmi_version = format!(
+        "{}.{}",
+        ipmi_version_byte & 0x0F,
+        (ipmi_version_byte >> 4) & 0x0F
+    );
     let additional_device_support = resp.data[5];
     let manufacturer_id = u32::from_le_bytes([resp.data[6], resp.data[7], resp.data[8], 0x00]);
     let product_id = u16::from_le_bytes([resp.data[9], resp.data[10]]);

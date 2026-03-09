@@ -19,11 +19,7 @@ const IPMI_EPOCH_OFFSET: i64 = 0;
 
 /// Get SEL repository information.
 pub fn get_sel_info(session: &mut IpmiSessionHandle) -> IpmiResult<SelInfo> {
-    let req = IpmiRequest::new(
-        NetFunction::Storage.as_byte(),
-        cmd::GET_SEL_INFO,
-        vec![],
-    );
+    let req = IpmiRequest::new(NetFunction::Storage.as_byte(), cmd::GET_SEL_INFO, vec![]);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -65,11 +61,7 @@ pub fn get_sel_info(session: &mut IpmiSessionHandle) -> IpmiResult<SelInfo> {
 
 /// Reserve the SEL for partial reads.
 pub fn reserve_sel(session: &mut IpmiSessionHandle) -> IpmiResult<u16> {
-    let req = IpmiRequest::new(
-        NetFunction::Storage.as_byte(),
-        cmd::RESERVE_SEL,
-        vec![],
-    );
+    let req = IpmiRequest::new(NetFunction::Storage.as_byte(), cmd::RESERVE_SEL, vec![]);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -188,11 +180,7 @@ pub fn clear_sel(session: &mut IpmiSessionHandle) -> IpmiResult<()> {
         poll_data.push(b'R');
         poll_data.push(0x00); // get status
 
-        let req = IpmiRequest::new(
-            NetFunction::Storage.as_byte(),
-            cmd::CLEAR_SEL,
-            poll_data,
-        );
+        let req = IpmiRequest::new(NetFunction::Storage.as_byte(), cmd::CLEAR_SEL, poll_data);
         let resp = session.send_request(req)?;
         resp.check()?;
 
@@ -208,21 +196,14 @@ pub fn clear_sel(session: &mut IpmiSessionHandle) -> IpmiResult<()> {
 }
 
 /// Delete a single SEL entry by record ID.
-pub fn delete_sel_entry(
-    session: &mut IpmiSessionHandle,
-    record_id: u16,
-) -> IpmiResult<u16> {
+pub fn delete_sel_entry(session: &mut IpmiSessionHandle, record_id: u16) -> IpmiResult<u16> {
     let reservation_id = reserve_sel(session)?;
 
     let mut data = Vec::with_capacity(4);
     data.extend_from_slice(&reservation_id.to_le_bytes());
     data.extend_from_slice(&record_id.to_le_bytes());
 
-    let req = IpmiRequest::new(
-        NetFunction::Storage.as_byte(),
-        cmd::DELETE_SEL_ENTRY,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::Storage.as_byte(), cmd::DELETE_SEL_ENTRY, data);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -255,9 +236,7 @@ fn parse_sel_entry(data: &[u8]) -> IpmiResult<SelEntry> {
     match record_type_enum {
         SelRecordType::SystemEvent => parse_system_event(record_id, record_type, data),
         SelRecordType::OemTimestamped => parse_oem_timestamped(record_id, record_type, data),
-        SelRecordType::OemNonTimestamped => {
-            parse_oem_non_timestamped(record_id, record_type, data)
-        }
+        SelRecordType::OemNonTimestamped => parse_oem_non_timestamped(record_id, record_type, data),
         SelRecordType::Unknown(_) => Ok(SelEntry {
             record_id,
             record_type,
@@ -345,20 +324,13 @@ fn parse_oem_timestamped(record_id: u16, record_type: u8, data: &[u8]) -> IpmiRe
         event_dir: None,
         event_type: None,
         event_data: data[10..].to_vec(),
-        description: format!(
-            "OEM event from manufacturer 0x{:06X}",
-            manufacturer_id
-        ),
+        description: format!("OEM event from manufacturer 0x{:06X}", manufacturer_id),
         raw_data: data.to_vec(),
     })
 }
 
 /// Parse an OEM non-timestamped event record (types 0xE0-0xFF).
-fn parse_oem_non_timestamped(
-    record_id: u16,
-    record_type: u8,
-    data: &[u8],
-) -> IpmiResult<SelEntry> {
+fn parse_oem_non_timestamped(record_id: u16, record_type: u8, data: &[u8]) -> IpmiResult<SelEntry> {
     Ok(SelEntry {
         record_id,
         record_type,
@@ -478,7 +450,9 @@ pub fn ipmi_timestamp_to_datetime(timestamp: u32) -> DateTime<Utc> {
         return Utc.timestamp_opt(0, 0).unwrap();
     }
     let secs = timestamp as i64 + IPMI_EPOCH_OFFSET;
-    Utc.timestamp_opt(secs, 0).single().unwrap_or_else(|| Utc.timestamp_opt(0, 0).unwrap())
+    Utc.timestamp_opt(secs, 0)
+        .single()
+        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).unwrap())
 }
 
 /// Convert a `DateTime<Utc>` to an IPMI timestamp value.
@@ -493,11 +467,7 @@ pub fn datetime_to_ipmi_timestamp(dt: &DateTime<Utc>) -> u32 {
 
 /// Get the SEL time from the BMC.
 pub fn get_sel_time(session: &mut IpmiSessionHandle) -> IpmiResult<DateTime<Utc>> {
-    let req = IpmiRequest::new(
-        NetFunction::Storage.as_byte(),
-        cmd::GET_SEL_TIME,
-        vec![],
-    );
+    let req = IpmiRequest::new(NetFunction::Storage.as_byte(), cmd::GET_SEL_TIME, vec![]);
     let resp = session.send_request(req)?;
     resp.check()?;
 

@@ -14,11 +14,7 @@ use log::{debug, info};
 
 /// Get the current watchdog timer configuration and state.
 pub fn get_watchdog_timer(session: &mut IpmiSessionHandle) -> IpmiResult<WatchdogTimer> {
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::GET_WATCHDOG_TIMER,
-        vec![],
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::GET_WATCHDOG_TIMER, vec![]);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -40,7 +36,7 @@ fn parse_watchdog_response(data: &[u8]) -> IpmiResult<WatchdogTimer> {
     let dont_log = (timer_use_byte & 0x80) != 0;
 
     // Timer use expiration flags (bits [6:3] indicate which uses have expired)
-    let use_expiration_flags = (timer_use_byte >> 3) & 0x07;
+    let _use_expiration_flags = (timer_use_byte >> 3) & 0x07;
 
     // Byte 1: Timer Actions
     let actions_byte = data[1];
@@ -51,7 +47,7 @@ fn parse_watchdog_response(data: &[u8]) -> IpmiResult<WatchdogTimer> {
     let pre_timeout_interval = data[2];
 
     // Byte 3: Timer use expiration flags / clear (reserved use)
-    let timer_use_expiration_flags_clear = data[3];
+    let _timer_use_expiration_flags_clear = data[3];
 
     // Bytes 4-5: Initial countdown value (100ms/count, little-endian)
     let initial_countdown = u16::from_le_bytes([data[4], data[5]]);
@@ -93,8 +89,8 @@ pub fn set_watchdog_timer(
         timer_use_byte |= 0x40;
     }
 
-    let actions_byte: u8 =
-        (config.timeout_action.as_byte() & 0x07) | ((config.pre_timeout_interrupt.as_byte() & 0x07) << 4);
+    let actions_byte: u8 = (config.timeout_action.as_byte() & 0x07)
+        | ((config.pre_timeout_interrupt.as_byte() & 0x07) << 4);
 
     let countdown_bytes = config.initial_countdown.to_le_bytes();
 
@@ -107,11 +103,7 @@ pub fn set_watchdog_timer(
         countdown_bytes[1],
     ];
 
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::SET_WATCHDOG_TIMER,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::SET_WATCHDOG_TIMER, data);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -350,12 +342,7 @@ pub fn countdown_to_string(countdown: u16) -> String {
     let hours = minutes / 60;
 
     if hours > 0 {
-        format!(
-            "{}h {}m {}s",
-            hours,
-            minutes % 60,
-            seconds % 60
-        )
+        format!("{}h {}m {}s", hours, minutes % 60, seconds % 60)
     } else if minutes > 0 {
         format!("{}m {}s", minutes, seconds % 60)
     } else {

@@ -7,7 +7,7 @@ use crate::protocol::{cmd, IpmiRequest};
 use crate::session::IpmiSessionHandle;
 use crate::types::*;
 use chrono::{Duration, NaiveDate, TimeZone, Utc};
-use log::{debug, trace, warn};
+use log::{debug, warn};
 
 /// Maximum FRU read chunk size (bytes per read).
 const FRU_READ_CHUNK: u8 = 20;
@@ -59,11 +59,7 @@ pub fn read_fru_data(
     req_data.extend_from_slice(&offset.to_le_bytes());
     req_data.push(count);
 
-    let req = IpmiRequest::new(
-        NetFunction::Storage.as_byte(),
-        cmd::READ_FRU_DATA,
-        req_data,
-    );
+    let req = IpmiRequest::new(NetFunction::Storage.as_byte(), cmd::READ_FRU_DATA, req_data);
     let resp = session.send_request(req)?;
     resp.check()?;
 
@@ -137,10 +133,7 @@ pub fn write_fru_data(
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Read and parse complete FRU device info.
-pub fn get_fru_info(
-    session: &mut IpmiSessionHandle,
-    device_id: u8,
-) -> IpmiResult<FruDeviceInfo> {
+pub fn get_fru_info(session: &mut IpmiSessionHandle, device_id: u8) -> IpmiResult<FruDeviceInfo> {
     let inv_info = get_fru_inventory_info(session, device_id)?;
     debug!(
         "FRU device {}: {} bytes, access_by_words={}",

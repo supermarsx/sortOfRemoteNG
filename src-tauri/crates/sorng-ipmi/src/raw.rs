@@ -76,11 +76,11 @@ pub fn bridged_command(
     // Send Message command (NetFn App, Cmd 0x34)
     let mut send_msg_data = Vec::with_capacity(8 + data.len());
     send_msg_data.push(target_channel & 0x0F); // channel number
-    // Embedded IPMI message
+                                               // Embedded IPMI message
     send_msg_data.push(target_address); // target slave address
-    send_msg_data.push((netfn << 2) | 0x00); // NetFn/LUN
-    // Checksum of target addr + netfn
-    let hdr_sum = checksum(&[target_address, (netfn << 2) | 0x00]);
+    send_msg_data.push(netfn << 2); // NetFn/LUN
+                                    // Checksum of target addr + netfn
+    let hdr_sum = checksum(&[target_address, netfn << 2]);
     send_msg_data.push(hdr_sum);
     send_msg_data.push(0x20); // source address (BMC)
     send_msg_data.push(0x00); // seq/source LUN
@@ -158,7 +158,10 @@ pub fn parse_hex(input: &str) -> IpmiResult<Vec<u8>> {
         return cleaned
             .split_whitespace()
             .map(|token| {
-                let t = token.strip_prefix("0x").or_else(|| token.strip_prefix("0X")).unwrap_or(token);
+                let t = token
+                    .strip_prefix("0x")
+                    .or_else(|| token.strip_prefix("0X"))
+                    .unwrap_or(token);
                 u8::from_str_radix(t, 16).map_err(|_| {
                     IpmiError::InvalidParameter(format!("Invalid hex byte: {}", token))
                 })
@@ -172,7 +175,7 @@ pub fn parse_hex(input: &str) -> IpmiResult<Vec<u8>> {
         .or_else(|| cleaned.strip_prefix("0X"))
         .unwrap_or(cleaned);
 
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(IpmiError::InvalidParameter(
             "Hex string must have even number of characters".into(),
         ));

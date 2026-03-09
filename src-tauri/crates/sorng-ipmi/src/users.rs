@@ -5,7 +5,7 @@ use crate::error::{IpmiError, IpmiResult};
 use crate::protocol::{cmd, IpmiRequest};
 use crate::session::IpmiSessionHandle;
 use crate::types::*;
-use log::{debug, info, warn};
+use log::{debug, info};
 
 // ═══════════════════════════════════════════════════════════════════════
 // User Information Retrieval
@@ -26,7 +26,9 @@ pub fn get_user_access(
     resp.check()?;
 
     if resp.data.len() < 4 {
-        return Err(IpmiError::UserError("User access response too short".into()));
+        return Err(IpmiError::UserError(
+            "User access response too short".into(),
+        ));
     }
 
     let max_user_ids = resp.data[0] & 0x3F;
@@ -51,10 +53,7 @@ pub fn get_user_access(
 }
 
 /// Get a user name by user ID.
-pub fn get_user_name(
-    session: &mut IpmiSessionHandle,
-    user_id: u8,
-) -> IpmiResult<String> {
+pub fn get_user_name(session: &mut IpmiSessionHandle, user_id: u8) -> IpmiResult<String> {
     let req = IpmiRequest::new(
         NetFunction::App.as_byte(),
         cmd::GET_USER_NAME,
@@ -70,10 +69,7 @@ pub fn get_user_name(
 }
 
 /// List all users on a channel, returning their ID, name, and access info.
-pub fn list_users(
-    session: &mut IpmiSessionHandle,
-    channel: u8,
-) -> IpmiResult<Vec<IpmiUser>> {
+pub fn list_users(session: &mut IpmiSessionHandle, channel: u8) -> IpmiResult<Vec<IpmiUser>> {
     // First get user access to find max user IDs
     let access = get_user_access(session, channel, 1)?;
     let max = access.max_user_ids.min(20); // cap at 20 for safety
@@ -103,7 +99,7 @@ pub fn list_users(
             callin: user_access.callin_allowed,
             link_auth: user_access.link_auth_enabled,
             ipmi_messaging: user_access.ipmi_messaging_enabled,
-            privilege: user_access.privilege.clone(),
+            privilege: user_access.privilege,
         });
     }
 
@@ -115,11 +111,7 @@ pub fn list_users(
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Set a user name.
-pub fn set_user_name(
-    session: &mut IpmiSessionHandle,
-    user_id: u8,
-    name: &str,
-) -> IpmiResult<()> {
+pub fn set_user_name(session: &mut IpmiSessionHandle, user_id: u8, name: &str) -> IpmiResult<()> {
     if user_id == 0 || user_id > 63 {
         return Err(IpmiError::InvalidParameter(format!(
             "Invalid user ID: {}",
@@ -140,11 +132,7 @@ pub fn set_user_name(
     name_bytes[..len].copy_from_slice(&name.as_bytes()[..len]);
     data.extend_from_slice(&name_bytes);
 
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::SET_USER_NAME,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::SET_USER_NAME, data);
     let resp = session.send_request(req)?;
     resp.check()?;
     Ok(())
@@ -190,11 +178,7 @@ pub fn set_user_password(
         }
     }
 
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::SET_USER_PASSWORD,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::SET_USER_PASSWORD, data);
     let resp = session.send_request(req)?;
     resp.check()?;
     Ok(())
@@ -236,9 +220,9 @@ pub fn set_user_access(
     );
 
     let mut access_byte: u8 = 0x80; // bit 7: change bits in byte
-    access_byte |= (channel & 0x0F) << 0;
+    access_byte |= channel & 0x0F;
 
-    let mut user_byte: u8 = user_id & 0x3F;
+    let user_byte: u8 = user_id & 0x3F;
 
     let mut privilege_byte: u8 = privilege.as_byte() & 0x0F;
     if !callin {
@@ -259,29 +243,19 @@ pub fn set_user_access(
         0x00, // no session limit
     ];
 
-    let req = IpmiRequest::new(
-        NetFunction::App.as_byte(),
-        cmd::SET_USER_ACCESS,
-        data,
-    );
+    let req = IpmiRequest::new(NetFunction::App.as_byte(), cmd::SET_USER_ACCESS, data);
     let resp = session.send_request(req)?;
     resp.check()?;
     Ok(())
 }
 
 /// Enable a user (shortcut for set_user_password with enable operation).
-pub fn enable_user(
-    session: &mut IpmiSessionHandle,
-    user_id: u8,
-) -> IpmiResult<()> {
+pub fn enable_user(session: &mut IpmiSessionHandle, user_id: u8) -> IpmiResult<()> {
     set_user_password(session, user_id, "", UserPasswordOperation::EnableUser)
 }
 
 /// Disable a user.
-pub fn disable_user(
-    session: &mut IpmiSessionHandle,
-    user_id: u8,
-) -> IpmiResult<()> {
+pub fn disable_user(session: &mut IpmiSessionHandle, user_id: u8) -> IpmiResult<()> {
     set_user_password(session, user_id, "", UserPasswordOperation::DisableUser)
 }
 
@@ -291,7 +265,12 @@ pub fn test_user_password(
     user_id: u8,
     password: &str,
 ) -> IpmiResult<bool> {
-    match set_user_password(session, user_id, password, UserPasswordOperation::TestPassword) {
+    match set_user_password(
+        session,
+        user_id,
+        password,
+        UserPasswordOperation::TestPassword,
+    ) {
         Ok(()) => Ok(true),
         Err(IpmiError::CompletionCodeError { code, .. }) if code == 0x81 => Ok(false),
         Err(e) => Err(e),

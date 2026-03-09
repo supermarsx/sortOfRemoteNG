@@ -14,7 +14,6 @@ pub type IpmiResult<T> = Result<T, IpmiError>;
 #[derive(Debug, Error)]
 pub enum IpmiError {
     // ── Transport / connection ──────────────────────────────────────
-
     /// Failed to establish a UDP connection to the BMC.
     #[error("Connection failed: {message}")]
     ConnectionFailed {
@@ -36,7 +35,6 @@ pub enum IpmiError {
     AddressResolution { host: String, reason: String },
 
     // ── Authentication / session ────────────────────────────────────
-
     /// Authentication with the BMC failed.
     #[error("Authentication failed: {0}")]
     AuthenticationFailed(String),
@@ -51,10 +49,7 @@ pub enum IpmiError {
 
     /// Privilege level insufficient for the requested operation.
     #[error("Insufficient privilege: requested {requested:?}, active {active:?}")]
-    InsufficientPrivilege {
-        requested: String,
-        active: String,
-    },
+    InsufficientPrivilege { requested: String, active: String },
 
     /// RAKP handshake failure during IPMI 2.0 session establishment.
     #[error("RAKP handshake failed at step {step}: {reason}")]
@@ -69,7 +64,6 @@ pub enum IpmiError {
     KeyExchangeError(String),
 
     // ── Protocol / wire format ──────────────────────────────────────
-
     /// IPMI command failed with a non-zero completion code.
     #[error("Command failed: {code:?} — {}", code.description())]
     CompletionCodeError { code: CompletionCode },
@@ -103,7 +97,6 @@ pub enum IpmiError {
     SequenceMismatch { expected: u32, actual: u32 },
 
     // ── Subsystem parsing errors ────────────────────────────────────
-
     /// SDR record parsing error.
     #[error("SDR parse error: {0}")]
     SdrParseError(String),
@@ -145,7 +138,6 @@ pub enum IpmiError {
     ChannelError(String),
 
     // ── Bridging ────────────────────────────────────────────────────
-
     /// Bridged (Send Message) command error.
     #[error("Bridge error: target 0x{target_addr:02X} channel {channel}: {reason}")]
     BridgeError {
@@ -155,7 +147,6 @@ pub enum IpmiError {
     },
 
     // ── Generic / internal ──────────────────────────────────────────
-
     /// I/O error from tokio / std.
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
@@ -259,9 +250,7 @@ impl IpmiError {
     pub fn is_session_dead(&self) -> bool {
         matches!(
             self,
-            Self::ConnectionLost(_)
-                | Self::SessionExpired { .. }
-                | Self::Timeout { .. }
+            Self::ConnectionLost(_) | Self::SessionExpired { .. } | Self::Timeout { .. }
         )
     }
 
@@ -313,8 +302,7 @@ impl IpmiError {
             Self::IoError(_) => "io",
             Self::SerdeError(_) => "serde",
             Self::InternalError(_) | Self::NotSupported(_) => "internal",
-            Self::DataTooShort { .. }
-            | Self::InvalidParameter(_) => "validation",
+            Self::DataTooShort { .. } | Self::InvalidParameter(_) => "validation",
         }
     }
 
@@ -370,11 +358,11 @@ impl Severity {
     /// Classify severity from a threshold sensor event reading type offset.
     pub fn from_threshold_offset(offset: u8) -> Self {
         match offset {
-            0x00 | 0x01 => Self::Warning,       // lower non-critical going low/high
-            0x02 | 0x03 => Self::Critical,       // lower critical going low/high
+            0x00 | 0x01 => Self::Warning,  // lower non-critical going low/high
+            0x02 | 0x03 => Self::Critical, // lower critical going low/high
             0x04 | 0x05 => Self::NonRecoverable, // lower non-recoverable
-            0x06 | 0x07 => Self::Warning,        // upper non-critical
-            0x08 | 0x09 => Self::Critical,       // upper critical
+            0x06 | 0x07 => Self::Warning,  // upper non-critical
+            0x08 | 0x09 => Self::Critical, // upper critical
             0x0A | 0x0B => Self::NonRecoverable, // upper non-recoverable
             _ => Self::Informational,
         }

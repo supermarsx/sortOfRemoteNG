@@ -29,9 +29,7 @@ pub async fn ipmi_disconnect(
 }
 
 #[tauri::command]
-pub async fn ipmi_disconnect_all(
-    state: tauri::State<'_, IpmiServiceState>,
-) -> Result<(), String> {
+pub async fn ipmi_disconnect_all(state: tauri::State<'_, IpmiServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.disconnect_all();
     Ok(())
@@ -75,7 +73,8 @@ pub async fn ipmi_get_chassis_status(
     session_id: String,
 ) -> Result<ChassisStatus, String> {
     let mut svc = state.lock().await;
-    svc.get_chassis_status(&session_id).map_err(|e| e.to_string())
+    svc.get_chassis_status(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -183,7 +182,8 @@ pub async fn ipmi_get_all_sdr_records(
     session_id: String,
 ) -> Result<Vec<SdrRecord>, String> {
     let mut svc = state.lock().await;
-    svc.get_all_sdr_records(&session_id).map_err(|e| e.to_string())
+    svc.get_all_sdr_records(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -193,7 +193,8 @@ pub async fn ipmi_read_sensor(
     sensor: SdrFullSensor,
 ) -> Result<SensorReading, String> {
     let mut svc = state.lock().await;
-    svc.read_sensor(&session_id, &sensor).map_err(|e| e.to_string())
+    svc.read_sensor(&session_id, &sensor)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -227,7 +228,8 @@ pub async fn ipmi_get_all_sel_entries(
     session_id: String,
 ) -> Result<Vec<SelEntry>, String> {
     let mut svc = state.lock().await;
-    svc.get_all_sel_entries(&session_id).map_err(|e| e.to_string())
+    svc.get_all_sel_entries(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -319,7 +321,8 @@ pub async fn ipmi_get_watchdog_timer(
     session_id: String,
 ) -> Result<WatchdogTimer, String> {
     let mut svc = state.lock().await;
-    svc.get_watchdog_timer(&session_id).map_err(|e| e.to_string())
+    svc.get_watchdog_timer(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -328,7 +331,8 @@ pub async fn ipmi_reset_watchdog_timer(
     session_id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.reset_watchdog_timer(&session_id).map_err(|e| e.to_string())
+    svc.reset_watchdog_timer(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -392,7 +396,8 @@ pub async fn ipmi_enable_user(
     user_id: u8,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.enable_user(&session_id, user_id).map_err(|e| e.to_string())
+    svc.enable_user(&session_id, user_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -402,7 +407,8 @@ pub async fn ipmi_disable_user(
     user_id: u8,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.disable_user(&session_id, user_id).map_err(|e| e.to_string())
+    svc.disable_user(&session_id, user_id)
+        .map_err(|e| e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -454,7 +460,8 @@ pub async fn ipmi_get_pef_capabilities(
     session_id: String,
 ) -> Result<PefCapabilities, String> {
     let mut svc = state.lock().await;
-    svc.get_pef_capabilities(&session_id).map_err(|e| e.to_string())
+    svc.get_pef_capabilities(&session_id)
+        .map_err(|e| e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════════════

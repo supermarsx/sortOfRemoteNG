@@ -3,42 +3,32 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Protocol-level enums
 // ═══════════════════════════════════════════════════════════════════════
 
 /// IPMI protocol version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum IpmiVersion {
     /// IPMI 1.5 (RMCP, pre-RAKP authentication)
     V15,
     /// IPMI 2.0 / RMCP+ (RAKP handshake, encrypted payloads)
+    #[default]
     V20,
-}
-
-impl Default for IpmiVersion {
-    fn default() -> Self {
-        Self::V20
-    }
 }
 
 /// Authentication type for IPMI 1.5 sessions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum AuthType {
+    #[default]
     None = 0x00,
     MD2 = 0x01,
     MD5 = 0x02,
     Password = 0x04,
     OEM = 0x05,
-}
-
-impl Default for AuthType {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl AuthType {
@@ -57,18 +47,14 @@ impl AuthType {
 /// IPMI privilege level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum PrivilegeLevel {
     Callback = 0x01,
     User = 0x02,
     Operator = 0x03,
+    #[default]
     Administrator = 0x04,
     Oem = 0x05,
-}
-
-impl Default for PrivilegeLevel {
-    fn default() -> Self {
-        Self::Administrator
-    }
 }
 
 impl PrivilegeLevel {
@@ -842,10 +828,7 @@ pub enum SdrRecord {
     CompactSensor(SdrCompactSensor),
     FruLocator(SdrFruLocator),
     McLocator(SdrMcLocator),
-    Unknown {
-        header: SdrHeader,
-        data: Vec<u8>,
-    },
+    Unknown { header: SdrHeader, data: Vec<u8> },
 }
 
 /// SDR repository info.
@@ -1106,7 +1089,7 @@ pub struct SolSession {
 }
 
 /// SOL payload type flags.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SolPayloadFlags {
     pub nack: bool,
     pub ring_wor: bool,
@@ -1114,19 +1097,6 @@ pub struct SolPayloadFlags {
     pub cts_pause: bool,
     pub flush_inbound: bool,
     pub flush_outbound: bool,
-}
-
-impl Default for SolPayloadFlags {
-    fn default() -> Self {
-        Self {
-            nack: false,
-            ring_wor: false,
-            generate_break: false,
-            cts_pause: false,
-            flush_inbound: false,
-            flush_outbound: false,
-        }
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1312,12 +1282,24 @@ impl PefAction {
 
     pub fn to_byte(self) -> u8 {
         let mut b = 0u8;
-        if self.alert { b |= 0x01; }
-        if self.power_off { b |= 0x02; }
-        if self.reset { b |= 0x04; }
-        if self.power_cycle { b |= 0x08; }
-        if self.oem { b |= 0x10; }
-        if self.diagnostic_interrupt { b |= 0x20; }
+        if self.alert {
+            b |= 0x01;
+        }
+        if self.power_off {
+            b |= 0x02;
+        }
+        if self.reset {
+            b |= 0x04;
+        }
+        if self.power_cycle {
+            b |= 0x08;
+        }
+        if self.oem {
+            b |= 0x10;
+        }
+        if self.diagnostic_interrupt {
+            b |= 0x20;
+        }
         b
     }
 }

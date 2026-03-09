@@ -12,10 +12,7 @@ use log::{debug, info};
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Get channel information for a specific channel.
-pub fn get_channel_info(
-    session: &mut IpmiSessionHandle,
-    channel: u8,
-) -> IpmiResult<ChannelInfo> {
+pub fn get_channel_info(session: &mut IpmiSessionHandle, channel: u8) -> IpmiResult<ChannelInfo> {
     let req = IpmiRequest::new(
         NetFunction::App.as_byte(),
         cmd::GET_CHANNEL_INFO,
@@ -47,7 +44,7 @@ pub fn get_channel_info(
     let vendor_id = u32::from_le_bytes([resp.data[4], resp.data[5], resp.data[6], 0x00]);
 
     // Auxiliary info (bytes 7-8)
-    let aux_info = u16::from_le_bytes([resp.data[7], resp.data[8]]);
+    let _aux_info = u16::from_le_bytes([resp.data[7], resp.data[8]]);
 
     Ok(ChannelInfo {
         channel_number: actual_channel,
@@ -59,9 +56,7 @@ pub fn get_channel_info(
 }
 
 /// Enumerate all valid channels (typically 0-15).
-pub fn list_channels(
-    session: &mut IpmiSessionHandle,
-) -> IpmiResult<Vec<ChannelInfo>> {
+pub fn list_channels(session: &mut IpmiSessionHandle) -> IpmiResult<Vec<ChannelInfo>> {
     let mut channels = Vec::new();
     for ch in 0..16u8 {
         match get_channel_info(session, ch) {
