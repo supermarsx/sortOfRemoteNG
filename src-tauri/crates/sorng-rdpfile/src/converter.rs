@@ -46,14 +46,14 @@ pub fn connection_to_rdp(connection_json: &serde_json::Value) -> Result<RdpFile,
         return Ok(rdp);
     }
 
-    let mut rdp = RdpFile::default();
-
-    // Extract hostname
-    rdp.full_address = connection_json
-        .get("hostname")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let mut rdp = RdpFile {
+        full_address: connection_json
+            .get("hostname")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        ..RdpFile::default()
+    };
 
     if rdp.full_address.is_empty() {
         return Err(RdpFileError::MissingAddress);

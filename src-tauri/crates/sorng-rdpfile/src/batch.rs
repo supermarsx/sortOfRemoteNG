@@ -135,10 +135,7 @@ mod tests {
 
     #[test]
     fn parse_batch_with_error() {
-        let files = vec![(
-            "empty.rdp".to_string(),
-            "".to_string(),
-        )];
+        let files = vec![("empty.rdp".to_string(), "".to_string())];
         let results = parse_batch(&files);
         assert_eq!(results.len(), 1);
         assert!(results[0].1.is_err());
@@ -147,7 +144,10 @@ mod tests {
     #[test]
     fn sanitize_filename_basic() {
         assert_eq!(sanitize_filename("my-server.local", 0), "my-server.local");
-        assert_eq!(sanitize_filename("server with spaces", 0), "server_with_spaces");
+        assert_eq!(
+            sanitize_filename("server with spaces", 0),
+            "server_with_spaces"
+        );
         assert_eq!(sanitize_filename("", 0), "connection_1");
         assert_eq!(sanitize_filename("192.168.1.1", 0), "192.168.1.1");
     }

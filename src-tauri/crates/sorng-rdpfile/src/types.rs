@@ -44,7 +44,7 @@ impl RdpValue {
 // ─── RdpFile ────────────────────────────────────────────────────────
 
 /// Represents a fully parsed Microsoft .rdp file with all standard settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RdpFile {
     // ── Connection ──────────────────────────────────────────────
     /// The remote computer address (e.g. "192.168.1.100" or "server.example.com").
@@ -177,68 +177,6 @@ pub struct RdpFile {
     // ── Catch-all ───────────────────────────────────────────────
     /// Any settings not covered by the typed fields above.
     pub custom_settings: HashMap<String, RdpValue>,
-}
-
-impl Default for RdpFile {
-    fn default() -> Self {
-        Self {
-            full_address: String::new(),
-            server_port: None,
-            username: None,
-            domain: None,
-            screen_mode_id: None,
-            desktopwidth: None,
-            desktopheight: None,
-            session_bpp: None,
-            use_multimon: None,
-            smart_sizing: None,
-            dynamic_resolution: None,
-            compression: None,
-            connection_type: None,
-            networkautodetect: None,
-            bandwidthautodetect: None,
-            displayconnectionbar: None,
-            enableworkspacereconnect: None,
-            disable_wallpaper: None,
-            allow_font_smoothing: None,
-            allow_desktop_composition: None,
-            disable_full_window_drag: None,
-            disable_menu_anims: None,
-            disable_themes: None,
-            disable_cursor_setting: None,
-            bitmapcachepersistenable: None,
-            bitmapcachesize: None,
-            audiomode: None,
-            audiocapturemode: None,
-            videoplaybackmode: None,
-            redirectprinters: None,
-            redirectcomports: None,
-            redirectsmartcards: None,
-            redirectclipboard: None,
-            redirectposdevices: None,
-            redirectdirectx: None,
-            drivestoredirect: None,
-            redirectwebauthn: None,
-            autoreconnection_enabled: None,
-            authentication_level: None,
-            prompt_for_credentials: None,
-            negotiate_security_layer: None,
-            enablecredsspsupport: None,
-            remoteapplicationmode: None,
-            alternate_shell: None,
-            shell_working_directory: None,
-            gatewayhostname: None,
-            gatewayusagemethod: None,
-            gatewaycredentialssource: None,
-            gatewayprofileusagemethod: None,
-            keyboardhook: None,
-            use_redirection_server_name: None,
-            loadbalanceinfo: None,
-            rdgiskdcproxy: None,
-            kdcproxyname: None,
-            custom_settings: HashMap::new(),
-        }
-    }
 }
 
 // ─── RdpParseResult ─────────────────────────────────────────────────

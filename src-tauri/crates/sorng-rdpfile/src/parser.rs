@@ -367,9 +367,7 @@ pub fn parse_rdp_file(content: &str) -> Result<RdpParseResult, RdpFileError> {
     }
     if let Some(am) = rdp.audiomode {
         if am > 2 {
-            warnings.push(format!(
-                "audiomode {am} is out of range (expected 0–2)"
-            ));
+            warnings.push(format!("audiomode {am} is out of range (expected 0–2)"));
         }
     }
 
@@ -430,7 +428,10 @@ another_custom:s:hello
         let result = parse_rdp_file(content).unwrap();
         assert_eq!(result.unknown_settings.len(), 2);
         assert!(result.rdp_file.custom_settings.contains_key("custom_thing"));
-        assert!(result.rdp_file.custom_settings.contains_key("another_custom"));
+        assert!(result
+            .rdp_file
+            .custom_settings
+            .contains_key("another_custom"));
     }
 
     #[test]

@@ -20,7 +20,11 @@ pub enum RdpFileError {
     /// Serialization / deserialization failed.
     SerializationError(String),
     /// A batch operation partially failed.
-    BatchError { succeeded: usize, failed: usize, errors: Vec<String> },
+    BatchError {
+        succeeded: usize,
+        failed: usize,
+        errors: Vec<String>,
+    },
     /// A generic internal error.
     Internal(String),
 }
@@ -39,7 +43,11 @@ impl fmt::Display for RdpFileError {
             }
             Self::IoError(msg) => write!(f, "I/O error: {msg}"),
             Self::SerializationError(msg) => write!(f, "serialization error: {msg}"),
-            Self::BatchError { succeeded, failed, errors } => {
+            Self::BatchError {
+                succeeded,
+                failed,
+                errors,
+            } => {
                 write!(
                     f,
                     "batch error: {succeeded} succeeded, {failed} failed: {}",

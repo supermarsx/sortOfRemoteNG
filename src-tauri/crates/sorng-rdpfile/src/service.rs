@@ -67,10 +67,7 @@ impl RdpFileService {
     // ── Batch ───────────────────────────────────────────────────
 
     /// Batch export connections to RDP files.
-    pub fn batch_export(
-        &self,
-        connections: &[serde_json::Value],
-    ) -> Vec<(String, String)> {
+    pub fn batch_export(&self, connections: &[serde_json::Value]) -> Vec<(String, String)> {
         batch::generate_batch(connections)
     }
 

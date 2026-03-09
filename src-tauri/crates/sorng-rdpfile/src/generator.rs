@@ -144,7 +144,11 @@ pub fn generate_with_options(rdp: &RdpFile, options: &GenerateOptions) -> String
         write_opt_u8(&mut output, "connection type", rdp.connection_type);
         write_opt_bool(&mut output, "networkautodetect", rdp.networkautodetect);
         write_opt_bool(&mut output, "bandwidthautodetect", rdp.bandwidthautodetect);
-        write_opt_bool(&mut output, "displayconnectionbar", rdp.displayconnectionbar);
+        write_opt_bool(
+            &mut output,
+            "displayconnectionbar",
+            rdp.displayconnectionbar,
+        );
         write_opt_bool(
             &mut output,
             "enableworkspacereconnect",
@@ -166,11 +170,7 @@ pub fn generate_with_options(rdp: &RdpFile, options: &GenerateOptions) -> String
             "disable full window drag",
             rdp.disable_full_window_drag,
         );
-        write_opt_bool(
-            &mut output,
-            "disable menu anims",
-            rdp.disable_menu_anims,
-        );
+        write_opt_bool(&mut output, "disable menu anims", rdp.disable_menu_anims);
         write_opt_bool(&mut output, "disable themes", rdp.disable_themes);
         write_opt_bool(
             &mut output,
@@ -380,8 +380,10 @@ mod tests {
         rdp.full_address = "host1".to_string();
         rdp.custom_settings
             .insert("mycustom".to_string(), RdpValue::Integer(99));
-        rdp.custom_settings
-            .insert("anothercustom".to_string(), RdpValue::String("val".to_string()));
+        rdp.custom_settings.insert(
+            "anothercustom".to_string(),
+            RdpValue::String("val".to_string()),
+        );
 
         let content = generate_rdp_file(&rdp);
         assert!(content.contains("mycustom:i:99"));
