@@ -2,15 +2,15 @@
 //!
 //! OpenLDAP, 389DS, FreeIPA administration — users, groups, OUs, schema, replication.
 
-pub mod types;
-pub mod error;
 pub mod client;
-pub mod service;
 pub mod entries;
-pub mod users;
+pub mod error;
 pub mod groups;
-pub mod ous;
-pub mod schema;
-pub mod replication;
-pub mod slapd;
 pub mod ldif;
+pub mod ous;
+pub mod replication;
+pub mod schema;
+pub mod service;
+pub mod slapd;
+pub mod types;
+pub mod users;
