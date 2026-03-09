@@ -11,16 +11,16 @@
 //! - **Scheduled Tasks** – enumerate, create, modify, run remote tasks
 //! - **System Information** – OS, hardware, disks, network adapters
 
-pub mod types;
-pub mod transport;
-pub mod wql;
-pub mod services;
+pub mod backup;
+pub mod commands;
 pub mod eventlog;
-pub mod processes;
 pub mod perfmon;
+pub mod processes;
 pub mod registry;
 pub mod scheduled_tasks;
-pub mod system_info;
-pub mod backup;
 pub mod service;
-pub mod commands;
+pub mod services;
+pub mod system_info;
+pub mod transport;
+pub mod types;
+pub mod wql;

@@ -17,12 +17,10 @@ impl EventLogManager {
     // ─── Log Metadata ────────────────────────────────────────────────
 
     /// List available event logs on the remote host.
-    pub async fn list_logs(
-        transport: &mut WmiTransport,
-    ) -> Result<Vec<EventLogInfo>, String> {
+    pub async fn list_logs(transport: &mut WmiTransport) -> Result<Vec<EventLogInfo>, String> {
         let query = WqlQueries::event_log_list();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_log_info(r)).collect())
+        Ok(rows.iter().map(Self::row_to_log_info).collect())
     }
 
     /// Get metadata for a specific log.
@@ -74,10 +72,7 @@ impl EventLogManager {
 
         let rows = transport.wql_query(&query).await?;
 
-        let mut entries: Vec<EventLogEntry> = rows
-            .iter()
-            .map(|r| Self::row_to_event(r))
-            .collect();
+        let mut entries: Vec<EventLogEntry> = rows.iter().map(Self::row_to_event).collect();
 
         // Apply client-side message filter if specified
         if let Some(ref msg_filter) = filter.message_contains {
@@ -192,10 +187,7 @@ impl EventLogManager {
     // ─── Log Management ──────────────────────────────────────────────
 
     /// Clear an event log.
-    pub async fn clear_log(
-        transport: &mut WmiTransport,
-        log_name: &str,
-    ) -> Result<(), String> {
+    pub async fn clear_log(transport: &mut WmiTransport, log_name: &str) -> Result<(), String> {
         info!("Clearing event log '{}'", log_name);
 
         let result = transport
@@ -228,10 +220,7 @@ impl EventLogManager {
         log_name: &str,
         archive_path: &str,
     ) -> Result<(), String> {
-        info!(
-            "Backing up event log '{}' to '{}'",
-            log_name, archive_path
-        );
+        info!("Backing up event log '{}' to '{}'", log_name, archive_path);
 
         let mut params = HashMap::new();
         params.insert("ArchiveFileName".to_string(), archive_path.to_string());
@@ -459,11 +448,18 @@ impl EventLogManager {
     /// Convert a WMI result row to an EventLogEntry.
     fn row_to_event(row: &HashMap<String, String>) -> EventLogEntry {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
+        let get_u64 = |key: &str| {
+            row.get(key)
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0)
         };
-        let get_u64 = |key: &str| row.get(key).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        let get_u32 = |key: &str| row.get(key).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+        let get_u32 = |key: &str| {
+            row.get(key)
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(0)
+        };
 
         let event_type_val = row
             .get("EventType")
@@ -513,10 +509,13 @@ impl EventLogManager {
     /// Convert a WMI result row to EventLogInfo.
     fn row_to_log_info(row: &HashMap<String, String>) -> EventLogInfo {
         let _get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
+        let get_u64 = |key: &str| {
+            row.get(key)
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0)
         };
-        let get_u64 = |key: &str| row.get(key).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
 
         EventLogInfo {
             name: get_or("LogfileName", &get_or("Name", "")),
@@ -597,10 +596,7 @@ mod tests {
         assert_eq!(event.event_code, 1000);
         assert_eq!(event.event_type, EventLogLevel::Error);
         assert_eq!(event.source_name, "TestApp");
-        assert_eq!(
-            event.message.as_deref(),
-            Some("Test error message")
-        );
+        assert_eq!(event.message.as_deref(), Some("Test error message"));
     }
 
     #[test]

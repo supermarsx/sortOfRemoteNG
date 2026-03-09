@@ -18,12 +18,10 @@ impl ScheduledTaskManager {
 
     /// List all scheduled tasks.
     /// Note: Uses the `root\Microsoft\Windows\TaskScheduler` namespace.
-    pub async fn list_tasks(
-        transport: &mut WmiTransport,
-    ) -> Result<Vec<ScheduledTask>, String> {
+    pub async fn list_tasks(transport: &mut WmiTransport) -> Result<Vec<ScheduledTask>, String> {
         let query = WqlQueries::scheduled_tasks();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_task(r)).collect())
+        Ok(rows.iter().map(Self::row_to_task).collect())
     }
 
     /// Get a specific task by path and name.
@@ -49,7 +47,7 @@ impl ScheduledTaskManager {
             .where_like("TaskName", &format!("%{}%", pattern))
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_task(r)).collect())
+        Ok(rows.iter().map(Self::row_to_task).collect())
     }
 
     /// List tasks in a specific folder/path.
@@ -61,7 +59,7 @@ impl ScheduledTaskManager {
             .where_eq("TaskPath", folder_path)
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_task(r)).collect())
+        Ok(rows.iter().map(Self::row_to_task).collect())
     }
 
     /// List tasks by state.
@@ -81,7 +79,7 @@ impl ScheduledTaskManager {
             .where_eq_num("State", state_val)
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_task(r)).collect())
+        Ok(rows.iter().map(Self::row_to_task).collect())
     }
 
     // ─── Control ─────────────────────────────────────────────────────
@@ -202,7 +200,7 @@ impl ScheduledTaskManager {
         );
 
         match transport.wql_query(&query).await {
-            Ok(rows) => Ok(rows.iter().map(|r| Self::row_to_action(r)).collect()),
+            Ok(rows) => Ok(rows.iter().map(Self::row_to_action).collect()),
             Err(_) => {
                 // Fallback: return empty actions if the class is not available
                 debug!("MSFT_TaskExecAction not available, returning empty actions");
@@ -224,7 +222,7 @@ impl ScheduledTaskManager {
         );
 
         match transport.wql_query(&query).await {
-            Ok(rows) => Ok(rows.iter().map(|r| Self::row_to_trigger(r)).collect()),
+            Ok(rows) => Ok(rows.iter().map(Self::row_to_trigger).collect()),
             Err(_) => {
                 debug!("MSFT_TaskTrigger not available, returning empty triggers");
                 Ok(Vec::new())
@@ -288,9 +286,8 @@ impl ScheduledTaskManager {
     /// Convert a WMI result row to a ScheduledTask.
     fn row_to_task(row: &HashMap<String, String>) -> ScheduledTask {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
 
         let state = row
             .get("State")
@@ -316,12 +313,10 @@ impl ScheduledTaskManager {
             last_run_time,
             last_task_result: row.get("LastTaskResult").and_then(|v| v.parse().ok()),
             next_run_time,
-            number_of_missed_runs: row
-                .get("NumberOfMissedRuns")
-                .and_then(|v| v.parse().ok()),
-            actions: Vec::new(),   // populated separately
-            triggers: Vec::new(),  // populated separately
-            principal: None,       // populated separately
+            number_of_missed_runs: row.get("NumberOfMissedRuns").and_then(|v| v.parse().ok()),
+            actions: Vec::new(),  // populated separately
+            triggers: Vec::new(), // populated separately
+            principal: None,      // populated separately
         }
     }
 
@@ -398,9 +393,18 @@ mod tests {
 
     #[test]
     fn test_state_from_value() {
-        assert_eq!(ScheduledTaskState::from_value(1), ScheduledTaskState::Disabled);
+        assert_eq!(
+            ScheduledTaskState::from_value(1),
+            ScheduledTaskState::Disabled
+        );
         assert_eq!(ScheduledTaskState::from_value(3), ScheduledTaskState::Ready);
-        assert_eq!(ScheduledTaskState::from_value(4), ScheduledTaskState::Running);
-        assert_eq!(ScheduledTaskState::from_value(99), ScheduledTaskState::Unknown);
+        assert_eq!(
+            ScheduledTaskState::from_value(4),
+            ScheduledTaskState::Running
+        );
+        assert_eq!(
+            ScheduledTaskState::from_value(99),
+            ScheduledTaskState::Unknown
+        );
     }
 }

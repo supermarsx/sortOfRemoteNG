@@ -12,35 +12,27 @@ use std::collections::HashMap;
 /// Protocol used to reach the remote WMI provider.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum WmiTransportProtocol {
     /// WS-Management over HTTP/HTTPS (WinRM)
+    #[default]
     WinRm,
     /// DCOM / MS-RPC (classic — Windows only)
     Dcom,
 }
 
-impl Default for WmiTransportProtocol {
-    fn default() -> Self {
-        Self::WinRm
-    }
-}
-
 /// Authentication method for the WMI connection.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum WmiAuthMethod {
     Basic,
     Ntlm,
+    #[default]
     Negotiate,
     Kerberos,
     CredSsp,
     Default,
-}
-
-impl Default for WmiAuthMethod {
-    fn default() -> Self {
-        Self::Negotiate
-    }
 }
 
 /// Credentials for the remote host.
@@ -873,17 +865,13 @@ pub enum RegistrySearchMatchType {
 /// Export format for registry data.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum RegistryExportFormat {
     /// Windows .reg file format (REGEDIT4 / Windows Registry Editor 5.00).
+    #[default]
     RegFile,
     /// JSON representation.
     Json,
-}
-
-impl Default for RegistryExportFormat {
-    fn default() -> Self {
-        Self::RegFile
-    }
 }
 
 /// A snapshot of a registry subtree for comparison.

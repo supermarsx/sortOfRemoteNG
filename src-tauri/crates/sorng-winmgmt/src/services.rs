@@ -22,7 +22,7 @@ impl ServiceManager {
     ) -> Result<Vec<WindowsService>, String> {
         let query = WqlQueries::all_services();
         let rows = transport.wql_query(&query).await?;
-        let services = rows.iter().map(|r| Self::row_to_service(r)).collect();
+        let services = rows.iter().map(Self::row_to_service).collect();
         Ok(services)
     }
 
@@ -48,7 +48,7 @@ impl ServiceManager {
             .where_like("DisplayName", &format!("%{}%", pattern))
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_service(r)).collect())
+        Ok(rows.iter().map(Self::row_to_service).collect())
     }
 
     /// List services in a specific state.
@@ -58,7 +58,7 @@ impl ServiceManager {
     ) -> Result<Vec<WindowsService>, String> {
         let query = WqlQueries::services_by_state(state);
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_service(r)).collect())
+        Ok(rows.iter().map(Self::row_to_service).collect())
     }
 
     /// List services with a specific start mode.
@@ -68,7 +68,7 @@ impl ServiceManager {
     ) -> Result<Vec<WindowsService>, String> {
         let query = WqlQueries::services_by_start_mode(mode);
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_service(r)).collect())
+        Ok(rows.iter().map(Self::row_to_service).collect())
     }
 
     /// Get service dependencies (services this service depends on).
@@ -81,10 +81,7 @@ impl ServiceManager {
             name.replace('\'', "\\'")
         );
         let rows = transport.wql_query(&query).await?;
-        Ok(rows
-            .iter()
-            .filter_map(|r| r.get("Name").cloned())
-            .collect())
+        Ok(rows.iter().filter_map(|r| r.get("Name").cloned()).collect())
     }
 
     /// Get dependent services (services that depend on this service).
@@ -97,19 +94,13 @@ impl ServiceManager {
             name.replace('\'', "\\'")
         );
         let rows = transport.wql_query(&query).await?;
-        Ok(rows
-            .iter()
-            .filter_map(|r| r.get("Name").cloned())
-            .collect())
+        Ok(rows.iter().filter_map(|r| r.get("Name").cloned()).collect())
     }
 
     // ─── Control ─────────────────────────────────────────────────────
 
     /// Start a service.
-    pub async fn start_service(
-        transport: &mut WmiTransport,
-        name: &str,
-    ) -> Result<u32, String> {
+    pub async fn start_service(transport: &mut WmiTransport, name: &str) -> Result<u32, String> {
         info!("Starting service '{}'", name);
         let result = transport
             .invoke_method(
@@ -130,10 +121,7 @@ impl ServiceManager {
     }
 
     /// Stop a service.
-    pub async fn stop_service(
-        transport: &mut WmiTransport,
-        name: &str,
-    ) -> Result<u32, String> {
+    pub async fn stop_service(transport: &mut WmiTransport, name: &str) -> Result<u32, String> {
         info!("Stopping service '{}'", name);
         let result = transport
             .invoke_method(
@@ -154,10 +142,7 @@ impl ServiceManager {
     }
 
     /// Pause a service.
-    pub async fn pause_service(
-        transport: &mut WmiTransport,
-        name: &str,
-    ) -> Result<u32, String> {
+    pub async fn pause_service(transport: &mut WmiTransport, name: &str) -> Result<u32, String> {
         info!("Pausing service '{}'", name);
         let result = transport
             .invoke_method(
@@ -178,10 +163,7 @@ impl ServiceManager {
     }
 
     /// Resume a paused service.
-    pub async fn resume_service(
-        transport: &mut WmiTransport,
-        name: &str,
-    ) -> Result<u32, String> {
+    pub async fn resume_service(transport: &mut WmiTransport, name: &str) -> Result<u32, String> {
         info!("Resuming service '{}'", name);
         let result = transport
             .invoke_method(
@@ -202,10 +184,7 @@ impl ServiceManager {
     }
 
     /// Restart a service (stop then start).
-    pub async fn restart_service(
-        transport: &mut WmiTransport,
-        name: &str,
-    ) -> Result<u32, String> {
+    pub async fn restart_service(transport: &mut WmiTransport, name: &str) -> Result<u32, String> {
         info!("Restarting service '{}'", name);
 
         // Check current state
@@ -300,7 +279,10 @@ impl ServiceManager {
         transport: &mut WmiTransport,
         params: &ServiceChangeParams,
     ) -> Result<u32, String> {
-        info!("Changing configuration for service '{}'", params.service_name);
+        info!(
+            "Changing configuration for service '{}'",
+            params.service_name
+        );
 
         let mut method_params = HashMap::new();
 
@@ -360,10 +342,7 @@ impl ServiceManager {
     }
 
     /// Delete a service.
-    pub async fn delete_service(
-        transport: &mut WmiTransport,
-        name: &str,
-    ) -> Result<u32, String> {
+    pub async fn delete_service(transport: &mut WmiTransport, name: &str) -> Result<u32, String> {
         info!("Deleting service '{}'", name);
 
         let result = transport
@@ -406,10 +385,7 @@ impl ServiceManager {
             )
             .await?;
 
-        Ok(result
-            .get("Descriptor")
-            .cloned()
-            .unwrap_or_default())
+        Ok(result.get("Descriptor").cloned().unwrap_or_default())
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────
@@ -417,9 +393,8 @@ impl ServiceManager {
     /// Convert a WMI result row to a WindowsService struct.
     fn row_to_service(row: &HashMap<String, String>) -> WindowsService {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
         let get_u32 = |key: &str| row.get(key).and_then(|v| v.parse::<u32>().ok());
         let get_bool = |key: &str| {
             row.get(key)
@@ -442,10 +417,10 @@ impl ServiceManager {
             accept_pause: get_bool("AcceptPause"),
             accept_stop: get_bool("AcceptStop"),
             start_name: get("StartName"),
-            delayed_auto_start: row.get("DelayedAutoStart").map(|v| {
-                v.eq_ignore_ascii_case("true") || v == "1"
-            }),
-            depends_on: Vec::new(),      // populated separately via get_dependencies
+            delayed_auto_start: row
+                .get("DelayedAutoStart")
+                .map(|v| v.eq_ignore_ascii_case("true") || v == "1"),
+            depends_on: Vec::new(), // populated separately via get_dependencies
             dependent_services: Vec::new(), // populated separately via get_dependents
         }
     }
@@ -544,10 +519,7 @@ mod tests {
 
     #[test]
     fn test_service_error_description() {
-        assert_eq!(
-            ServiceManager::service_error_description(0),
-            "Success"
-        );
+        assert_eq!(ServiceManager::service_error_description(0), "Success");
         assert_eq!(
             ServiceManager::service_error_description(2),
             "Access Denied"

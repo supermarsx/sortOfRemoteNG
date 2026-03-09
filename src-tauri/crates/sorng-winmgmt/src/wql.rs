@@ -3,7 +3,6 @@
 //! Provides a builder pattern for constructing WQL SELECT, event subscription,
 //! and associator/reference queries targeting remote WMI classes.
 
-
 /// Builder for constructing WQL queries.
 #[derive(Debug, Clone)]
 pub struct WqlBuilder {
@@ -49,8 +48,7 @@ impl WqlBuilder {
 
     /// Add a numeric equality condition: `Property = value`.
     pub fn where_eq_num(mut self, property: &str, value: i64) -> Self {
-        self.conditions
-            .push(format!("{} = {}", property, value));
+        self.conditions.push(format!("{} = {}", property, value));
         self
     }
 
@@ -71,8 +69,7 @@ impl WqlBuilder {
             .map(|v| format!("'{}'", wql_escape(v)))
             .collect::<Vec<_>>()
             .join(", ");
-        self.conditions
-            .push(format!("{} IN ({})", property, list));
+        self.conditions.push(format!("{} IN ({})", property, list));
         self
     }
 
@@ -86,43 +83,37 @@ impl WqlBuilder {
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        self.conditions
-            .push(format!("{} IN ({})", property, list));
+        self.conditions.push(format!("{} IN ({})", property, list));
         self
     }
 
     /// Add a comparison condition: `Property > value`.
     pub fn where_gt(mut self, property: &str, value: i64) -> Self {
-        self.conditions
-            .push(format!("{} > {}", property, value));
+        self.conditions.push(format!("{} > {}", property, value));
         self
     }
 
     /// Add a comparison condition: `Property >= value`.
     pub fn where_gte(mut self, property: &str, value: i64) -> Self {
-        self.conditions
-            .push(format!("{} >= {}", property, value));
+        self.conditions.push(format!("{} >= {}", property, value));
         self
     }
 
     /// Add a comparison condition: `Property < value`.
     pub fn where_lt(mut self, property: &str, value: i64) -> Self {
-        self.conditions
-            .push(format!("{} < {}", property, value));
+        self.conditions.push(format!("{} < {}", property, value));
         self
     }
 
     /// Add IS NOT NULL condition.
     pub fn where_not_null(mut self, property: &str) -> Self {
-        self.conditions
-            .push(format!("{} IS NOT NULL", property));
+        self.conditions.push(format!("{} IS NOT NULL", property));
         self
     }
 
     /// Add IS NULL condition.
     pub fn where_null(mut self, property: &str) -> Self {
-        self.conditions
-            .push(format!("{} IS NULL", property));
+        self.conditions.push(format!("{} IS NULL", property));
         self
     }
 
@@ -255,10 +246,7 @@ pub fn associators_of(
     result_class: Option<&str>,
     assoc_class: Option<&str>,
 ) -> String {
-    let mut query = format!(
-        "ASSOCIATORS OF {{{}}}",
-        wql_escape(object_path)
-    );
+    let mut query = format!("ASSOCIATORS OF {{{}}}", wql_escape(object_path));
     if let Some(rc) = result_class {
         query.push_str(&format!(" WHERE ResultClass = {}", rc));
     }
@@ -274,10 +262,7 @@ pub fn associators_of(
 
 /// Build a REFERENCES OF query.
 pub fn references_of(object_path: &str, result_class: Option<&str>) -> String {
-    let mut query = format!(
-        "REFERENCES OF {{{}}}",
-        wql_escape(object_path)
-    );
+    let mut query = format!("REFERENCES OF {{{}}}", wql_escape(object_path));
     if let Some(rc) = result_class {
         query.push_str(&format!(" WHERE ResultClass = {}", rc));
     }
@@ -620,10 +605,7 @@ mod tests {
         let q = WqlBuilder::select("Win32_Process")
             .where_like("Name", "%chrome%")
             .build();
-        assert_eq!(
-            q,
-            "SELECT * FROM Win32_Process WHERE Name LIKE '%chrome%'"
-        );
+        assert_eq!(q, "SELECT * FROM Win32_Process WHERE Name LIKE '%chrome%'");
     }
 
     #[test]
@@ -648,11 +630,7 @@ mod tests {
 
     #[test]
     fn test_associators_of() {
-        let q = associators_of(
-            "Win32_Service.Name='Spooler'",
-            Some("Win32_Service"),
-            None,
-        );
+        let q = associators_of("Win32_Service.Name='Spooler'", Some("Win32_Service"), None);
         assert!(q.contains("ASSOCIATORS OF"));
         assert!(q.contains("ResultClass = Win32_Service"));
     }

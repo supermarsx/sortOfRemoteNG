@@ -22,7 +22,7 @@ impl ProcessManager {
     ) -> Result<Vec<WindowsProcess>, String> {
         let query = WqlQueries::all_processes();
         let rows = transport.wql_query(&query).await?;
-        let mut processes: Vec<WindowsProcess> = rows.iter().map(|r| Self::row_to_process(r)).collect();
+        let mut processes: Vec<WindowsProcess> = rows.iter().map(Self::row_to_process).collect();
         // Default sort by working set descending
         processes.sort_by(|a, b| b.working_set_size.cmp(&a.working_set_size));
         Ok(processes)
@@ -48,7 +48,7 @@ impl ProcessManager {
     ) -> Result<Vec<WindowsProcess>, String> {
         let query = WqlQueries::processes_by_name(name);
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_process(r)).collect())
+        Ok(rows.iter().map(Self::row_to_process).collect())
     }
 
     /// Search processes by name pattern (LIKE).
@@ -60,7 +60,7 @@ impl ProcessManager {
             .where_like("Name", &format!("%{}%", pattern))
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_process(r)).collect())
+        Ok(rows.iter().map(Self::row_to_process).collect())
     }
 
     /// Query processes with a filter.
@@ -72,7 +72,7 @@ impl ProcessManager {
         debug!("Process query: {}", query);
         let rows = transport.wql_query(&query).await?;
 
-        let mut processes: Vec<WindowsProcess> = rows.iter().map(|r| Self::row_to_process(r)).collect();
+        let mut processes: Vec<WindowsProcess> = rows.iter().map(Self::row_to_process).collect();
 
         // Client-side filtering for fields not easily filterable via WQL
         if let Some(ref owner_filter) = filter.owner {
@@ -146,10 +146,7 @@ impl ProcessManager {
             match Self::get_process_owner(transport, proc.process_id).await {
                 Ok(owner) => proc.owner = Some(owner),
                 Err(e) => {
-                    debug!(
-                        "Could not get owner for PID {}: {}",
-                        proc.process_id, e
-                    );
+                    debug!("Could not get owner for PID {}: {}", proc.process_id, e);
                 }
             }
         }
@@ -165,7 +162,7 @@ impl ProcessManager {
             .where_eq_num("ParentProcessId", parent_pid as i64)
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_process(r)).collect())
+        Ok(rows.iter().map(Self::row_to_process).collect())
     }
 
     /// Build a process tree (parent → children hierarchy).
@@ -180,8 +177,7 @@ impl ProcessManager {
         }
 
         // Find root processes (parents not in our process list)
-        let pid_set: std::collections::HashSet<u32> =
-            all.iter().map(|p| p.process_id).collect();
+        let pid_set: std::collections::HashSet<u32> = all.iter().map(|p| p.process_id).collect();
 
         let mut roots = Vec::new();
         for p in &all {
@@ -421,9 +417,7 @@ impl ProcessManager {
             let cmp = match field {
                 ProcessSortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
                 ProcessSortField::ProcessId => a.process_id.cmp(&b.process_id),
-                ProcessSortField::WorkingSetSize => {
-                    a.working_set_size.cmp(&b.working_set_size)
-                }
+                ProcessSortField::WorkingSetSize => a.working_set_size.cmp(&b.working_set_size),
                 ProcessSortField::CpuTime => {
                     let a_cpu = a.kernel_mode_time + a.user_mode_time;
                     let b_cpu = b.kernel_mode_time + b.user_mode_time;
@@ -458,15 +452,10 @@ impl ProcessManager {
         WindowsProcess {
             process_id: get_u32("ProcessId"),
             parent_process_id: get_u32("ParentProcessId"),
-            name: row
-                .get("Name")
-                .cloned()
-                .unwrap_or_else(|| "".to_string()),
+            name: row.get("Name").cloned().unwrap_or_else(|| "".to_string()),
             executable_path: get("ExecutablePath"),
             command_line: get("CommandLine"),
-            creation_date: row
-                .get("CreationDate")
-                .and_then(|v| parse_wmi_datetime(v)),
+            creation_date: row.get("CreationDate").and_then(|v| parse_wmi_datetime(v)),
             status: get("Status"),
             thread_count: get_u32("ThreadCount"),
             handle_count: get_u32("HandleCount"),
@@ -481,18 +470,10 @@ impl ProcessManager {
             priority: get_u32("Priority"),
             session_id: get_u32("SessionId"),
             owner: None, // populated separately via GetOwner
-            read_operation_count: row
-                .get("ReadOperationCount")
-                .and_then(|v| v.parse().ok()),
-            write_operation_count: row
-                .get("WriteOperationCount")
-                .and_then(|v| v.parse().ok()),
-            read_transfer_count: row
-                .get("ReadTransferCount")
-                .and_then(|v| v.parse().ok()),
-            write_transfer_count: row
-                .get("WriteTransferCount")
-                .and_then(|v| v.parse().ok()),
+            read_operation_count: row.get("ReadOperationCount").and_then(|v| v.parse().ok()),
+            write_operation_count: row.get("WriteOperationCount").and_then(|v| v.parse().ok()),
+            read_transfer_count: row.get("ReadTransferCount").and_then(|v| v.parse().ok()),
+            write_transfer_count: row.get("WriteTransferCount").and_then(|v| v.parse().ok()),
         }
     }
 

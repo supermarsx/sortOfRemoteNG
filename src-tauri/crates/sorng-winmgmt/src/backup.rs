@@ -13,7 +13,7 @@
 use crate::transport::WmiTransport;
 use crate::types::*;
 use crate::wql::WqlBuilder;
-use log::{debug, info, warn};
+use log::{debug, info};
 use std::collections::HashMap;
 
 /// Manages remote Windows Backup operations via WMI.
@@ -28,7 +28,7 @@ impl BackupManager {
     ) -> Result<Vec<ShadowCopy>, String> {
         let query = WqlBuilder::select("Win32_ShadowCopy").build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_shadow_copy(r)).collect())
+        Ok(rows.iter().map(Self::row_to_shadow_copy).collect())
     }
 
     /// Get a single shadow copy by its ID.
@@ -55,7 +55,7 @@ impl BackupManager {
             .where_like("VolumeName", &format!("%{}%", volume_name))
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_shadow_copy(r)).collect())
+        Ok(rows.iter().map(Self::row_to_shadow_copy).collect())
     }
 
     /// Create a new shadow copy for the given volume.
@@ -98,15 +98,13 @@ impl BackupManager {
     ) -> Result<Vec<ShadowStorage>, String> {
         let query = WqlBuilder::select("Win32_ShadowStorage").build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_shadow_storage(r)).collect())
+        Ok(rows.iter().map(Self::row_to_shadow_storage).collect())
     }
 
     // ─── Windows Server Backup (wbadmin) ─────────────────────────────
 
     /// Get the overall backup status / summary via `wbadmin get status`.
-    pub async fn get_backup_status(
-        transport: &mut WmiTransport,
-    ) -> Result<BackupStatus, String> {
+    pub async fn get_backup_status(transport: &mut WmiTransport) -> Result<BackupStatus, String> {
         debug!("Querying backup status via wbadmin");
         let cmd = "wbadmin get status 2>&1";
         let output = transport.exec_command(cmd).await?;
@@ -124,9 +122,7 @@ impl BackupManager {
     }
 
     /// Get backup configuration / policy via `wbadmin get policy` (Server editions).
-    pub async fn get_backup_policy(
-        transport: &mut WmiTransport,
-    ) -> Result<BackupPolicy, String> {
+    pub async fn get_backup_policy(transport: &mut WmiTransport) -> Result<BackupPolicy, String> {
         debug!("Querying backup policy via wbadmin");
         let cmd = "wbadmin get policy 2>&1";
         let output = transport.exec_command(cmd).await?;
@@ -134,9 +130,7 @@ impl BackupManager {
     }
 
     /// List items (volumes/files) included in the backup configuration.
-    pub async fn get_backup_items(
-        transport: &mut WmiTransport,
-    ) -> Result<Vec<BackupItem>, String> {
+    pub async fn get_backup_items(transport: &mut WmiTransport) -> Result<Vec<BackupItem>, String> {
         debug!("Querying backup items via wbadmin");
         let cmd = "wbadmin get items 2>&1";
         let output = transport.exec_command(cmd).await?;
@@ -187,10 +181,20 @@ impl BackupManager {
 
         match &params.recovery_type {
             RecoveryType::Volume { source, target } => {
-                cmd.push_str(&format!(" -itemType:Volume -items:{} -recoveryTarget:{}", source, target));
+                cmd.push_str(&format!(
+                    " -itemType:Volume -items:{} -recoveryTarget:{}",
+                    source, target
+                ));
             }
-            RecoveryType::File { source_path, target_path, recursive } => {
-                cmd.push_str(&format!(" -itemType:File -items:{} -recoveryTarget:{}", source_path, target_path));
+            RecoveryType::File {
+                source_path,
+                target_path,
+                recursive,
+            } => {
+                cmd.push_str(&format!(
+                    " -itemType:File -items:{} -recoveryTarget:{}",
+                    source_path, target_path
+                ));
                 if *recursive {
                     cmd.push_str(" -recursive");
                 }
@@ -209,17 +213,21 @@ impl BackupManager {
     // ─── Backup-related System Volumes ───────────────────────────────
 
     /// List volumes available for backup targeting.
-    pub async fn list_volumes(
-        transport: &mut WmiTransport,
-    ) -> Result<Vec<BackupVolume>, String> {
+    pub async fn list_volumes(transport: &mut WmiTransport) -> Result<Vec<BackupVolume>, String> {
         let query = WqlBuilder::select("Win32_Volume")
             .fields(&[
-                "Name", "DriveLetter", "Label", "Capacity", "FreeSpace",
-                "FileSystem", "DriveType", "DeviceID",
+                "Name",
+                "DriveLetter",
+                "Label",
+                "Capacity",
+                "FreeSpace",
+                "FileSystem",
+                "DriveType",
+                "DeviceID",
             ])
             .build();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_volume(r)).collect())
+        Ok(rows.iter().map(Self::row_to_volume).collect())
     }
 
     // ─── Parsers ─────────────────────────────────────────────────────
@@ -230,7 +238,10 @@ impl BackupManager {
             shadow_id: row.get("DeviceObject").cloned().unwrap_or_default(),
             volume_name: row.get("VolumeName").cloned().unwrap_or_default(),
             install_date: row.get("InstallDate").cloned(),
-            state: row.get("State").map(|s| ShadowCopyState::from_wmi(s)).unwrap_or(ShadowCopyState::Unknown),
+            state: row
+                .get("State")
+                .map(|s| ShadowCopyState::from_wmi(s))
+                .unwrap_or(ShadowCopyState::Unknown),
             provider_id: row.get("ProviderID").cloned(),
             count: row.get("Count").and_then(|v| v.parse().ok()).unwrap_or(0),
             client_accessible: row
@@ -260,9 +271,18 @@ impl BackupManager {
         ShadowStorage {
             volume: row.get("Volume").cloned().unwrap_or_default(),
             diff_volume: row.get("DiffVolume").cloned().unwrap_or_default(),
-            used_space: row.get("UsedSpace").and_then(|v| v.parse().ok()).unwrap_or(0),
-            allocated_space: row.get("AllocatedSpace").and_then(|v| v.parse().ok()).unwrap_or(0),
-            max_space: row.get("MaxSpace").and_then(|v| v.parse().ok()).unwrap_or(0),
+            used_space: row
+                .get("UsedSpace")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            allocated_space: row
+                .get("AllocatedSpace")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            max_space: row
+                .get("MaxSpace")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
         }
     }
 
@@ -271,10 +291,19 @@ impl BackupManager {
             name: row.get("Name").cloned().unwrap_or_default(),
             drive_letter: row.get("DriveLetter").cloned(),
             label: row.get("Label").cloned(),
-            capacity: row.get("Capacity").and_then(|v| v.parse().ok()).unwrap_or(0),
-            free_space: row.get("FreeSpace").and_then(|v| v.parse().ok()).unwrap_or(0),
+            capacity: row
+                .get("Capacity")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            free_space: row
+                .get("FreeSpace")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
             file_system: row.get("FileSystem").cloned(),
-            drive_type: row.get("DriveType").and_then(|v| v.parse().ok()).unwrap_or(0),
+            drive_type: row
+                .get("DriveType")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
             device_id: row.get("DeviceID").cloned().unwrap_or_default(),
         }
     }
@@ -322,7 +351,9 @@ impl BackupManager {
             } else if let Some(ref mut v) = current {
                 if trimmed.starts_with("Backup time:") || trimmed.starts_with("Backup Time:") {
                     v.backup_time = Some(Self::after_colon(trimmed).to_string());
-                } else if trimmed.starts_with("Backup location:") || trimmed.starts_with("Backup Location:") {
+                } else if trimmed.starts_with("Backup location:")
+                    || trimmed.starts_with("Backup Location:")
+                {
                     v.backup_location = Some(Self::after_colon(trimmed).to_string());
                 } else if trimmed.starts_with("Version:") {
                     v.version_info = Some(Self::after_colon(trimmed).to_string());
@@ -370,7 +401,9 @@ impl BackupManager {
             // Try to detect volume or file items
             if trimmed.contains(':') {
                 let name = trimmed.to_string();
-                let item_type = if trimmed.contains("\\\\?\\Volume") || (trimmed.len() >= 2 && trimmed.chars().nth(1) == Some(':')) {
+                let item_type = if trimmed.contains("\\\\?\\Volume")
+                    || (trimmed.len() >= 2 && trimmed.chars().nth(1) == Some(':'))
+                {
                     BackupItemType::Volume
                 } else if trimmed.to_lowercase().contains("system state") {
                     BackupItemType::SystemState
@@ -389,8 +422,12 @@ impl BackupManager {
 
     fn parse_backup_job(output: &str) -> BackupJobInfo {
         let success = output.to_lowercase().contains("completed successfully")
-            || output.to_lowercase().contains("the backup operation completed");
-        let error = if output.to_lowercase().contains("error") || output.to_lowercase().contains("failed") {
+            || output
+                .to_lowercase()
+                .contains("the backup operation completed");
+        let error = if output.to_lowercase().contains("error")
+            || output.to_lowercase().contains("failed")
+        {
             Some(
                 output
                     .lines()

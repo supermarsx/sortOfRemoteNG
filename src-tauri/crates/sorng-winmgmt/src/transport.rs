@@ -158,8 +158,7 @@ impl WmiTransport {
         let mut context = enum_ctx;
 
         loop {
-            let (items, next_context, end_of_sequence) =
-                self.pull(&resource_uri, &context).await?;
+            let (items, next_context, end_of_sequence) = self.pull(&resource_uri, &context).await?;
             all_items.extend(items);
 
             if end_of_sequence || next_context.is_empty() {
@@ -544,8 +543,7 @@ impl WmiTransport {
         if let Some(ref auth) = self.auth_header {
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                HeaderValue::from_str(auth)
-                    .map_err(|e| format!("Invalid auth header: {}", e))?,
+                HeaderValue::from_str(auth).map_err(|e| format!("Invalid auth header: {}", e))?,
             );
         }
 
@@ -572,7 +570,12 @@ impl WmiTransport {
             .await
             .map_err(|e| format!("Failed to read WMI response body: {}", e))?;
 
-        trace!("WMI response #{}: status={}, body length={}", req_id, status, body.len());
+        trace!(
+            "WMI response #{}: status={}, body length={}",
+            req_id,
+            status,
+            body.len()
+        );
 
         if !status.is_success() {
             let fault = Self::extract_soap_fault(&body).unwrap_or_default();
@@ -594,8 +597,8 @@ impl WmiTransport {
 
         // Check for SOAP fault inside a 200 response
         if body.contains(":Fault") || body.contains("<Fault") {
-            let fault = Self::extract_soap_fault(&body)
-                .unwrap_or_else(|| "Unknown SOAP fault".to_string());
+            let fault =
+                Self::extract_soap_fault(&body).unwrap_or_else(|| "Unknown SOAP fault".to_string());
             return Err(format!("WMI SOAP fault: {}", fault));
         }
 
@@ -660,6 +663,7 @@ impl WmiTransport {
     }
 
     /// Parse a PullResponse to extract items, next context, and end-of-sequence.
+    #[allow(clippy::type_complexity)]
     fn parse_pull_response(
         xml: &str,
     ) -> Result<(Vec<HashMap<String, String>>, String, bool), String> {
@@ -824,7 +828,7 @@ impl WmiTransport {
         }
 
         // Extract tag name
-        let tag_end = trimmed.find(|c: char| c == ' ' || c == '>' || c == '/')?;
+        let tag_end = trimmed.find([' ', '>', '/'])?;
         let tag_name = trimmed[1..tag_end].to_string();
 
         // Check for xsi:nil="true" (null value)
@@ -934,10 +938,7 @@ impl WmiTransport {
             ));
         }
 
-        Ok(result
-            .get("ProcessId")
-            .cloned()
-            .unwrap_or_default())
+        Ok(result.get("ProcessId").cloned().unwrap_or_default())
     }
 }
 
@@ -976,7 +977,9 @@ pub fn parse_wmi_datetime(s: &str) -> Option<chrono::DateTime<Utc>> {
     let second: u32 = s[12..14].parse().ok()?;
 
     let microsecond = if s.len() > 15 && s.as_bytes()[14] == b'.' {
-        let end = s[15..].find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len() - 15);
+        let end = s[15..]
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(s.len() - 15);
         let us_str = &s[15..15 + end];
         let padded = format!("{:0<6}", us_str);
         padded[..6].parse::<u32>().unwrap_or(0)
@@ -989,7 +992,9 @@ pub fn parse_wmi_datetime(s: &str) -> Option<chrono::DateTime<Utc>> {
     let time = NaiveTime::from_hms_micro_opt(hour, minute, second, microsecond)?;
     let naive = NaiveDateTime::new(date, time);
 
-    Some(chrono::DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc))
+    Some(chrono::DateTime::<Utc>::from_naive_utc_and_offset(
+        naive, Utc,
+    ))
 }
 
 /// Format a chrono DateTime to WMI CIM_DATETIME string.
@@ -1041,8 +1046,7 @@ mod tests {
 
     #[test]
     fn test_parse_simple_element() {
-        let (name, value) =
-            WmiTransport::parse_simple_element("<p:Name>Hello</p:Name>").unwrap();
+        let (name, value) = WmiTransport::parse_simple_element("<p:Name>Hello</p:Name>").unwrap();
         assert_eq!(name, "p:Name");
         assert_eq!(value, "Hello");
     }

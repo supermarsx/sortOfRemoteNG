@@ -408,12 +408,15 @@ pub async fn winmgmt_terminate_process(
     ProcessManager::terminate_process(transport, pid, reason).await
 }
 
+type TerminateByNameResult = Vec<(u32, Result<u32, String>)>;
+
 #[tauri::command]
+#[allow(clippy::type_complexity)]
 pub async fn winmgmt_terminate_by_name(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
     name: String,
-) -> Result<Vec<(u32, Result<u32, String>)>, String> {
+) -> Result<TerminateByNameResult, String> {
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ProcessManager::terminate_by_name(transport, &name).await
@@ -812,8 +815,14 @@ pub async fn winmgmt_registry_snapshot(
             .unwrap_or_else(|| "unknown".to_string())
     };
     let transport = svc.get_transport(&session_id)?;
-    RegistryManager::snapshot(transport, &hive, &path, &computer_name, max_depth.unwrap_or(0))
-        .await
+    RegistryManager::snapshot(
+        transport,
+        &hive,
+        &path,
+        &computer_name,
+        max_depth.unwrap_or(0),
+    )
+    .await
 }
 
 #[tauri::command]

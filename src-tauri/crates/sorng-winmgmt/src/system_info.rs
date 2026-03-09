@@ -17,9 +17,7 @@ impl SystemInfoManager {
     // ─── Full System Info ────────────────────────────────────────────
 
     /// Gather a complete system information snapshot.
-    pub async fn get_system_info(
-        transport: &mut WmiTransport,
-    ) -> Result<SystemInfo, String> {
+    pub async fn get_system_info(transport: &mut WmiTransport) -> Result<SystemInfo, String> {
         let computer_system = Self::get_computer_system(transport).await?;
         let operating_system = Self::get_operating_system(transport).await?;
         let bios = Self::get_bios(transport).await?;
@@ -75,7 +73,7 @@ impl SystemInfoManager {
     ) -> Result<Vec<ProcessorInfo>, String> {
         let query = WqlQueries::processor_info();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_processor(r)).collect())
+        Ok(rows.iter().map(Self::row_to_processor).collect())
     }
 
     /// Get logical disk information.
@@ -84,7 +82,7 @@ impl SystemInfoManager {
     ) -> Result<Vec<LogicalDiskInfo>, String> {
         let query = WqlQueries::logical_disks();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows.iter().map(|r| Self::row_to_logical_disk(r)).collect())
+        Ok(rows.iter().map(Self::row_to_logical_disk).collect())
     }
 
     /// Get network adapter information (IP-enabled adapters).
@@ -97,7 +95,10 @@ impl SystemInfoManager {
 
         // Get adapter info (speed, connection status)
         let adapter_query = WqlQueries::network_adapters();
-        let adapter_rows = transport.wql_query(&adapter_query).await.unwrap_or_default();
+        let adapter_rows = transport
+            .wql_query(&adapter_query)
+            .await
+            .unwrap_or_default();
 
         // Build a map of adapter details by InterfaceIndex
         let adapter_map: HashMap<u32, &HashMap<String, String>> = adapter_rows
@@ -130,18 +131,13 @@ impl SystemInfoManager {
     ) -> Result<Vec<PhysicalMemoryInfo>, String> {
         let query = WqlQueries::physical_memory();
         let rows = transport.wql_query(&query).await?;
-        Ok(rows
-            .iter()
-            .map(|r| Self::row_to_physical_memory(r))
-            .collect())
+        Ok(rows.iter().map(Self::row_to_physical_memory).collect())
     }
 
     // ─── Quick Info ──────────────────────────────────────────────────
 
     /// Get a quick summary (hostname, OS, memory, processors).
-    pub async fn quick_summary(
-        transport: &mut WmiTransport,
-    ) -> Result<QuickSystemSummary, String> {
+    pub async fn quick_summary(transport: &mut WmiTransport) -> Result<QuickSystemSummary, String> {
         let cs = Self::get_computer_system(transport).await?;
         let os = Self::get_operating_system(transport).await?;
 
@@ -163,9 +159,8 @@ impl SystemInfoManager {
 
     fn row_to_computer_system(row: &HashMap<String, String>) -> ComputerSystemInfo {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
         let get_u32 = |key: &str| {
             row.get(key)
                 .and_then(|v| v.parse::<u32>().ok())
@@ -213,9 +208,8 @@ impl SystemInfoManager {
 
     fn row_to_os(row: &HashMap<String, String>) -> OperatingSystemInfo {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
         let get_u32 = |key: &str| {
             row.get(key)
                 .and_then(|v| v.parse::<u32>().ok())
@@ -259,9 +253,8 @@ impl SystemInfoManager {
 
     fn row_to_bios(row: &HashMap<String, String>) -> BiosInfo {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
 
         BiosInfo {
             manufacturer: get_or("Manufacturer", ""),
@@ -275,9 +268,8 @@ impl SystemInfoManager {
 
     fn row_to_processor(row: &HashMap<String, String>) -> ProcessorInfo {
         let _get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
         let get_u32 = |key: &str| {
             row.get(key)
                 .and_then(|v| v.parse::<u32>().ok())
@@ -315,9 +307,8 @@ impl SystemInfoManager {
 
     fn row_to_logical_disk(row: &HashMap<String, String>) -> LogicalDiskInfo {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
         let get_u64 = |key: &str| {
             row.get(key)
                 .and_then(|v| v.parse::<u64>().ok())
@@ -399,10 +390,8 @@ impl SystemInfoManager {
         // Merge adapter details
         let speed = adapter_row.and_then(|r| r.get("Speed").and_then(|v| v.parse().ok()));
         let adapter_type = adapter_row.and_then(|r| r.get("AdapterType").cloned());
-        let net_connection_id =
-            adapter_row.and_then(|r| r.get("NetConnectionID").cloned());
-        let net_connection_status =
-            adapter_row.and_then(|r| r.get("NetConnectionStatus").cloned());
+        let net_connection_id = adapter_row.and_then(|r| r.get("NetConnectionID").cloned());
+        let net_connection_status = adapter_row.and_then(|r| r.get("NetConnectionStatus").cloned());
 
         NetworkAdapterInfo {
             description: get_cfg_or("Description", ""),
@@ -423,9 +412,8 @@ impl SystemInfoManager {
 
     fn row_to_physical_memory(row: &HashMap<String, String>) -> PhysicalMemoryInfo {
         let get = |key: &str| row.get(key).cloned();
-        let get_or = |key: &str, default: &str| {
-            row.get(key).cloned().unwrap_or_else(|| default.to_string())
-        };
+        let get_or =
+            |key: &str, default: &str| row.get(key).cloned().unwrap_or_else(|| default.to_string());
         let get_u64 = |key: &str| {
             row.get(key)
                 .and_then(|v| v.parse::<u64>().ok())
@@ -470,9 +458,7 @@ impl SystemInfoManager {
             part_number: get("PartNumber").map(|s| s.trim().to_string()),
             serial_number: get("SerialNumber").map(|s| s.trim().to_string()),
             speed: row.get("Speed").and_then(|v| v.parse().ok()),
-            configured_clock_speed: row
-                .get("ConfiguredClockSpeed")
-                .and_then(|v| v.parse().ok()),
+            configured_clock_speed: row.get("ConfiguredClockSpeed").and_then(|v| v.parse().ok()),
         }
     }
 }
@@ -508,10 +494,7 @@ mod tests {
         row.insert("Domain".to_string(), "contoso.com".to_string());
         row.insert("Manufacturer".to_string(), "Dell Inc.".to_string());
         row.insert("Model".to_string(), "PowerEdge R740".to_string());
-        row.insert(
-            "TotalPhysicalMemory".to_string(),
-            "68719476736".to_string(),
-        );
+        row.insert("TotalPhysicalMemory".to_string(), "68719476736".to_string());
         row.insert("NumberOfProcessors".to_string(), "2".to_string());
         row.insert("NumberOfLogicalProcessors".to_string(), "48".to_string());
         row.insert("DomainRole".to_string(), "3".to_string());

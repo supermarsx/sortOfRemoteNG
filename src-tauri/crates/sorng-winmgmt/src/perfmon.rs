@@ -124,15 +124,11 @@ impl PerfMonManager {
     // ─── Memory ──────────────────────────────────────────────────────
 
     /// Collect memory performance counters.
-    pub async fn collect_memory(
-        transport: &mut WmiTransport,
-    ) -> Result<MemoryPerformance, String> {
+    pub async fn collect_memory(transport: &mut WmiTransport) -> Result<MemoryPerformance, String> {
         // Performance counters
         let query = WqlQueries::perf_memory();
         let rows = transport.wql_query(&query).await?;
-        let row = rows
-            .first()
-            .ok_or("No memory performance data returned")?;
+        let row = rows.first().ok_or("No memory performance data returned")?;
 
         let available = Self::parse_u64(row, "AvailableBytes");
         let committed = Self::parse_u64(row, "CommittedBytes");
@@ -280,9 +276,7 @@ impl PerfMonManager {
     ) -> Result<SystemCounters, String> {
         let query = WqlQueries::perf_system();
         let rows = transport.wql_query(&query).await?;
-        let row = rows
-            .first()
-            .ok_or("No system performance data returned")?;
+        let row = rows.first().ok_or("No system performance data returned")?;
 
         Ok(SystemCounters {
             processes: Self::parse_u32(row, "Processes"),
@@ -357,9 +351,7 @@ impl PerfMonManager {
     }
 
     /// Quick health summary.
-    pub async fn quick_health(
-        transport: &mut WmiTransport,
-    ) -> Result<QuickHealthSummary, String> {
+    pub async fn quick_health(transport: &mut WmiTransport) -> Result<QuickHealthSummary, String> {
         let cpu = Self::quick_cpu_usage(transport).await.unwrap_or(-1.0);
         let memory = Self::collect_memory(transport).await.ok();
         let system = Self::collect_system_counters(transport).await.ok();

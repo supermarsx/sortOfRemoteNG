@@ -98,10 +98,7 @@ impl WinMgmtService {
     // ─── Session Management ──────────────────────────────────────────
 
     /// Connect to a remote host and create a new WMI session.
-    pub async fn connect(
-        &mut self,
-        config: WmiConnectionConfig,
-    ) -> Result<String, String> {
+    pub async fn connect(&mut self, config: WmiConnectionConfig) -> Result<String, String> {
         if self.sessions.len() >= self.config.max_sessions {
             return Err(format!(
                 "Maximum session limit ({}) reached",
@@ -117,8 +114,8 @@ impl WinMgmtService {
         );
 
         // Build transport from connection config
-        let mut transport = WmiTransport::new(&config)
-            .map_err(|e| format!("Failed to create transport: {e}"))?;
+        let mut transport =
+            WmiTransport::new(&config).map_err(|e| format!("Failed to create transport: {e}"))?;
 
         // Set auth if credentials provided
         if let Some(header) = WmiTransport::build_auth_header(&config) {
@@ -206,10 +203,7 @@ impl WinMgmtService {
     }
 
     /// Get a mutable reference to the transport for a session.
-    pub fn get_transport(
-        &mut self,
-        session_id: &str,
-    ) -> Result<&mut WmiTransport, String> {
+    pub fn get_transport(&mut self, session_id: &str) -> Result<&mut WmiTransport, String> {
         let managed = self
             .sessions
             .get_mut(session_id)

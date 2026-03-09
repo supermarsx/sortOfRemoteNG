@@ -92,7 +92,11 @@ impl RegistryManager {
 
         let pairs = names
             .into_iter()
-            .zip(types.into_iter().chain(std::iter::repeat(RegistryValueType::Unknown)))
+            .zip(
+                types
+                    .into_iter()
+                    .chain(std::iter::repeat(RegistryValueType::Unknown)),
+            )
             .collect();
 
         Ok(pairs)
@@ -174,9 +178,7 @@ impl RegistryManager {
                 name: name.to_string(),
                 value_type: RegistryValueType::MultiString,
                 data: serde_json::Value::Array(
-                    val.into_iter()
-                        .map(serde_json::Value::String)
-                        .collect(),
+                    val.into_iter().map(serde_json::Value::String).collect(),
                 ),
             });
         }
@@ -189,7 +191,12 @@ impl RegistryManager {
             });
         }
 
-        Err(format!("Could not read value '{}' at {}\\{}", name, hive.display_name(), path))
+        Err(format!(
+            "Could not read value '{}' at {}\\{}",
+            name,
+            hive.display_name(),
+            path
+        ))
     }
 
     /// Read a REG_SZ string value.
@@ -355,7 +362,12 @@ impl RegistryManager {
         name: &str,
         value: &str,
     ) -> Result<(), String> {
-        info!("Setting registry value {}\\{}\\{}", hive.display_name(), path, name);
+        info!(
+            "Setting registry value {}\\{}\\{}",
+            hive.display_name(),
+            path,
+            name
+        );
 
         let mut params = HashMap::new();
         params.insert("hDefKey".to_string(), hive.to_wmi_value().to_string());
@@ -378,7 +390,13 @@ impl RegistryManager {
         name: &str,
         value: u32,
     ) -> Result<(), String> {
-        info!("Setting registry DWORD {}\\{}\\{} = {}", hive.display_name(), path, name, value);
+        info!(
+            "Setting registry DWORD {}\\{}\\{} = {}",
+            hive.display_name(),
+            path,
+            name,
+            value
+        );
 
         let mut params = HashMap::new();
         params.insert("hDefKey".to_string(), hive.to_wmi_value().to_string());
@@ -693,14 +711,11 @@ impl RegistryManager {
         path: &'a str,
         max_depth: u32,
         current_depth: u32,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<RegistryTreeNode, String>> + Send + 'a>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<RegistryTreeNode, String>> + Send + 'a>,
+    > {
         Box::pin(async move {
-            let name = path
-                .rsplit('\\')
-                .next()
-                .unwrap_or(path)
-                .to_string();
+            let name = path.rsplit('\\').next().unwrap_or(path).to_string();
 
             // Get values for this key
             let values = match Self::get_key_info(transport, hive, path).await {
@@ -753,11 +768,7 @@ impl RegistryManager {
         hive: &RegistryHive,
         path: &str,
     ) -> Result<u32, String> {
-        info!(
-            "Recursively deleting {}\\{}",
-            hive.display_name(),
-            path
-        );
+        info!("Recursively deleting {}\\{}", hive.display_name(), path);
         Self::recursive_delete_inner(transport, hive, path).await
     }
 
@@ -776,10 +787,7 @@ impl RegistryManager {
                     match Self::recursive_delete_inner(transport, hive, &child_path).await {
                         Ok(c) => count += c,
                         Err(e) => {
-                            return Err(format!(
-                                "Failed to delete subkey {}: {}",
-                                child_path, e
-                            ));
+                            return Err(format!("Failed to delete subkey {}: {}", child_path, e));
                         }
                     }
                 }
@@ -832,7 +840,9 @@ impl RegistryManager {
             let key_name = path.rsplit('\\').next().unwrap_or(path);
 
             // Check key name match
-            if filter.search_keys && Self::matches_pattern(key_name, &filter.pattern, filter.is_regex) {
+            if filter.search_keys
+                && Self::matches_pattern(key_name, &filter.pattern, filter.is_regex)
+            {
                 results.push(RegistrySearchResult {
                     hive: filter.hive.clone(),
                     path: path.to_string(),
@@ -868,7 +878,8 @@ impl RegistryManager {
 
                         // Match value data (strings only)
                         if filter.search_value_data {
-                            if let Ok(val) = Self::get_value(transport, &filter.hive, path, vname).await
+                            if let Ok(val) =
+                                Self::get_value(transport, &filter.hive, path, vname).await
                             {
                                 let data_str = match &val.data {
                                     serde_json::Value::String(s) => Some(s.clone()),
@@ -1040,10 +1051,7 @@ impl RegistryManager {
                 format!("{}=\"{}\"", name_part, Self::escape_reg_string(s))
             }
             RegistryValueType::DWord => {
-                let n = val
-                    .data
-                    .as_u64()
-                    .unwrap_or(0) as u32;
+                let n = val.data.as_u64().unwrap_or(0) as u32;
                 format!("{}=dword:{:08x}", name_part, n)
             }
             RegistryValueType::QWord => {
@@ -1180,9 +1188,7 @@ impl RegistryManager {
                 if let Some((name, delete_val)) = Self::parse_reg_value_line(trimmed) {
                     if delete_val {
                         if !dry_run {
-                            if let Err(e) =
-                                Self::delete_value(transport, hive, path, &name).await
-                            {
+                            if let Err(e) = Self::delete_value(transport, hive, path, &name).await {
                                 result
                                     .errors
                                     .push(format!("Delete value {}\\{}: {}", path, name, e));
@@ -1332,9 +1338,7 @@ impl RegistryManager {
                     .unwrap_or_default();
                 Self::set_binary_value(transport, hive, path, name, &bytes).await
             }
-            RegistryValueType::Unknown => {
-                Err("Cannot set value of unknown type".to_string())
-            }
+            RegistryValueType::Unknown => Err("Cannot set value of unknown type".to_string()),
         }
     }
 
@@ -1368,11 +1372,14 @@ impl RegistryManager {
             return Some(("".to_string(), false));
         }
 
-        if line.starts_with('"') {
-            let end_quote = line[1..].find('"')?;
-            let name = line[1..end_quote + 1].replace("\\\\", "\x00").replace("\\\"", "\"").replace('\x00', "\\");
+        if let Some(stripped) = line.strip_prefix('"') {
+            let end_quote = stripped.find('"')?;
+            let name = stripped[..end_quote]
+                .replace("\\\\", "\x00")
+                .replace("\\\"", "\"")
+                .replace('\x00', "\\");
 
-            if line[end_quote + 2..].trim_start().starts_with("=-") {
+            if stripped[end_quote + 1..].trim_start().starts_with("=-") {
                 return Some((name, true));
             }
             return Some((name, false));
@@ -1457,7 +1464,7 @@ impl RegistryManager {
     fn parse_hex_bytes(s: &str) -> Vec<u8> {
         s.split(',')
             .filter_map(|h| {
-                let h = h.trim().replace('\\', "").replace('\r', "").replace('\n', "");
+                let h = h.trim().replace(['\\', '\r', '\n'], "");
                 if h.is_empty() {
                     None
                 } else {
@@ -1559,8 +1566,15 @@ impl RegistryManager {
                         } else {
                             format!("{}\\{}", path, subkey)
                         };
-                        Self::snapshot_inner(transport, hive, &child_path, max_depth, depth + 1, keys)
-                            .await?;
+                        Self::snapshot_inner(
+                            transport,
+                            hive,
+                            &child_path,
+                            max_depth,
+                            depth + 1,
+                            keys,
+                        )
+                        .await?;
                     }
                 }
             }
@@ -1570,10 +1584,7 @@ impl RegistryManager {
     }
 
     /// Compare two registry snapshots and return the differences.
-    pub fn compare_snapshots(
-        source: &RegistrySnapshot,
-        target: &RegistrySnapshot,
-    ) -> RegistryDiff {
+    pub fn compare_snapshots(source: &RegistrySnapshot, target: &RegistrySnapshot) -> RegistryDiff {
         let mut entries = Vec::new();
 
         let source_map: HashMap<&str, &RegistrySnapshotKey> =
@@ -1596,10 +1607,16 @@ impl RegistryManager {
             } else {
                 // Key exists in both — compare values
                 let tgt_key = target_map[path];
-                let src_vals: HashMap<&str, &RegistryValue> =
-                    src_key.values.iter().map(|v| (v.name.as_str(), v)).collect();
-                let tgt_vals: HashMap<&str, &RegistryValue> =
-                    tgt_key.values.iter().map(|v| (v.name.as_str(), v)).collect();
+                let src_vals: HashMap<&str, &RegistryValue> = src_key
+                    .values
+                    .iter()
+                    .map(|v| (v.name.as_str(), v))
+                    .collect();
+                let tgt_vals: HashMap<&str, &RegistryValue> = tgt_key
+                    .values
+                    .iter()
+                    .map(|v| (v.name.as_str(), v))
+                    .collect();
 
                 for (vname, sv) in &src_vals {
                     if let Some(tv) = tgt_vals.get(vname) {
@@ -1768,8 +1785,14 @@ impl RegistryManager {
             errors: Vec::new(),
         };
 
-        Self::copy_key_inner(transport, request, &request.source_path, &request.dest_path, &mut result)
-            .await;
+        Self::copy_key_inner(
+            transport,
+            request,
+            &request.source_path,
+            &request.dest_path,
+            &mut result,
+        )
+        .await;
 
         Ok(result)
     }
@@ -1795,12 +1818,12 @@ impl RegistryManager {
             if let Ok(info) = Self::get_key_info(transport, &request.source_hive, src_path).await {
                 for val in &info.values {
                     // Check if exists at destination when not overwriting
-                    if !request.overwrite {
-                        if let Ok(_) =
-                            Self::get_value(transport, &request.dest_hive, dst_path, &val.name).await
-                        {
-                            continue; // Skip — already exists
-                        }
+                    if !request.overwrite
+                        && Self::get_value(transport, &request.dest_hive, dst_path, &val.name)
+                            .await
+                            .is_ok()
+                    {
+                        continue; // Skip — already exists
                     }
 
                     match Self::set_typed_value(
@@ -1822,9 +1845,7 @@ impl RegistryManager {
             }
 
             // Recurse into subkeys
-            if let Ok(subkeys) =
-                Self::enum_keys(transport, &request.source_hive, src_path).await
-            {
+            if let Ok(subkeys) = Self::enum_keys(transport, &request.source_hive, src_path).await {
                 for subkey in subkeys {
                     let child_src = format!("{}\\{}", src_path, subkey);
                     let child_dst = format!("{}\\{}", dst_path, subkey);
@@ -1854,8 +1875,7 @@ impl RegistryManager {
         let val = Self::get_value(transport, hive, path, old_name).await?;
 
         // Write with new name
-        Self::set_typed_value(transport, hive, path, new_name, &val.value_type, &val.data)
-            .await?;
+        Self::set_typed_value(transport, hive, path, new_name, &val.value_type, &val.data).await?;
 
         // Delete old
         Self::delete_value(transport, hive, path, old_name).await?;
@@ -1871,11 +1891,7 @@ impl RegistryManager {
         hive: &RegistryHive,
         path: &str,
     ) -> Result<RegistryKeySecurity, String> {
-        debug!(
-            "Getting security for {}\\{}",
-            hive.display_name(),
-            path
-        );
+        debug!("Getting security for {}\\{}", hive.display_name(), path);
 
         // Use GetSecurityDescriptor method
         let mut params = HashMap::new();
@@ -2008,14 +2024,8 @@ mod tests {
 
     #[test]
     fn test_registry_hive_values() {
-        assert_eq!(
-            RegistryHive::HkeyLocalMachine.to_wmi_value(),
-            0x80000002
-        );
-        assert_eq!(
-            RegistryHive::HkeyCurrentUser.to_wmi_value(),
-            0x80000001
-        );
+        assert_eq!(RegistryHive::HkeyLocalMachine.to_wmi_value(), 0x80000002);
+        assert_eq!(RegistryHive::HkeyCurrentUser.to_wmi_value(), 0x80000001);
         assert_eq!(
             RegistryHive::HkeyLocalMachine.display_name(),
             "HKEY_LOCAL_MACHINE"
@@ -2075,15 +2085,12 @@ mod tests {
 
     #[test]
     fn test_parse_reg_key_path() {
-        let (hive, path) = RegistryManager::parse_reg_key_path(
-            "HKEY_LOCAL_MACHINE\\Software\\Test",
-        )
-        .unwrap();
+        let (hive, path) =
+            RegistryManager::parse_reg_key_path("HKEY_LOCAL_MACHINE\\Software\\Test").unwrap();
         assert_eq!(hive, RegistryHive::HkeyLocalMachine);
         assert_eq!(path, "Software\\Test");
 
-        let (hive, path) =
-            RegistryManager::parse_reg_key_path("HKCU\\Software").unwrap();
+        let (hive, path) = RegistryManager::parse_reg_key_path("HKCU\\Software").unwrap();
         assert_eq!(hive, RegistryHive::HkeyCurrentUser);
         assert_eq!(path, "Software");
 
@@ -2107,8 +2114,7 @@ mod tests {
 
     #[test]
     fn test_parse_reg_value_line_delete() {
-        let (name, delete) =
-            RegistryManager::parse_reg_value_line("\"OldValue\"=-").unwrap();
+        let (name, delete) = RegistryManager::parse_reg_value_line("\"OldValue\"=-").unwrap();
         assert_eq!(name, "OldValue");
         assert!(delete);
     }
@@ -2131,8 +2137,7 @@ mod tests {
 
     #[test]
     fn test_parse_reg_value_data_binary() {
-        let (vtype, data) =
-            RegistryManager::parse_reg_value_data("\"Bin\"=hex:01,02,ff").unwrap();
+        let (vtype, data) = RegistryManager::parse_reg_value_data("\"Bin\"=hex:01,02,ff").unwrap();
         assert_eq!(vtype, RegistryValueType::Binary);
         let arr = data.as_array().unwrap();
         assert_eq!(arr.len(), 3);
@@ -2203,10 +2208,7 @@ mod tests {
             value_type: RegistryValueType::String,
             data: serde_json::Value::String("default".to_string()),
         };
-        assert_eq!(
-            RegistryManager::value_to_reg_line(&val),
-            "@=\"default\""
-        );
+        assert_eq!(RegistryManager::value_to_reg_line(&val), "@=\"default\"");
     }
 
     #[test]
@@ -2335,10 +2337,8 @@ mod tests {
 
     #[test]
     fn test_parse_reg_value_data_qword() {
-        let (vtype, data) = RegistryManager::parse_reg_value_data(
-            "\"Q\"=hex(b):ff,00,00,00,00,00,00,00",
-        )
-        .unwrap();
+        let (vtype, data) =
+            RegistryManager::parse_reg_value_data("\"Q\"=hex(b):ff,00,00,00,00,00,00,00").unwrap();
         assert_eq!(vtype, RegistryValueType::QWord);
         assert_eq!(data.as_u64().unwrap(), 255);
     }
