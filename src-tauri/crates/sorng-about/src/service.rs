@@ -1,9 +1,9 @@
-use std::sync::{Arc, Mutex};
-use crate::types::*;
+use crate::js_deps;
 use crate::licenses;
 use crate::rust_deps;
-use crate::js_deps;
+use crate::types::*;
 use crate::workspace_crates;
+use std::sync::{Arc, Mutex};
 
 pub type AboutServiceState = Arc<Mutex<AboutService>>;
 
@@ -39,7 +39,8 @@ impl AboutService {
         let js = js_deps::get_all_js_deps();
         let crates = workspace_crates::get_all_workspace_crates();
 
-        let mut license_map: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut license_map: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
         for dep in &rust {
             *license_map.entry(dep.license.clone()).or_insert(0) += 1;
         }
@@ -155,27 +156,115 @@ impl AboutService {
 
 fn get_acknowledgments() -> Vec<Acknowledgment> {
     vec![
-        Acknowledgment { name: "Tauri Contributors".to_string(), role: "Application framework".to_string(), url: "https://github.com/tauri-apps/tauri".to_string() },
-        Acknowledgment { name: "Tokio Contributors".to_string(), role: "Async runtime".to_string(), url: "https://github.com/tokio-rs/tokio".to_string() },
-        Acknowledgment { name: "Serde Contributors".to_string(), role: "Serialization framework".to_string(), url: "https://github.com/serde-rs/serde".to_string() },
-        Acknowledgment { name: "RustCrypto Contributors".to_string(), role: "Cryptography libraries".to_string(), url: "https://github.com/RustCrypto".to_string() },
-        Acknowledgment { name: "Hyper Contributors".to_string(), role: "HTTP implementation".to_string(), url: "https://github.com/hyperium/hyper".to_string() },
-        Acknowledgment { name: "Reqwest Contributors".to_string(), role: "HTTP client".to_string(), url: "https://github.com/seanmonstar/reqwest".to_string() },
-        Acknowledgment { name: "Russh Contributors".to_string(), role: "SSH protocol implementation".to_string(), url: "https://github.com/warp-tech/russh".to_string() },
-        Acknowledgment { name: "React Team (Meta)".to_string(), role: "UI framework".to_string(), url: "https://github.com/facebook/react".to_string() },
-        Acknowledgment { name: "Vercel / Next.js Team".to_string(), role: "React framework".to_string(), url: "https://github.com/vercel/next.js".to_string() },
-        Acknowledgment { name: "Tailwind CSS Team".to_string(), role: "CSS framework".to_string(), url: "https://github.com/tailwindlabs/tailwindcss".to_string() },
-        Acknowledgment { name: "noVNC Contributors".to_string(), role: "VNC client library".to_string(), url: "https://github.com/novnc/noVNC".to_string() },
-        Acknowledgment { name: "xterm.js Contributors".to_string(), role: "Terminal emulator".to_string(), url: "https://github.com/xtermjs/xterm.js".to_string() },
-        Acknowledgment { name: "Lucide Contributors".to_string(), role: "Icon library".to_string(), url: "https://github.com/lucide-icons/lucide".to_string() },
-        Acknowledgment { name: "Apache Guacamole Contributors".to_string(), role: "Remote desktop gateway protocol".to_string(), url: "https://github.com/apache/guacamole-client".to_string() },
-        Acknowledgment { name: "Bollard Contributors".to_string(), role: "Docker API client".to_string(), url: "https://github.com/fussybeaver/bollard".to_string() },
-        Acknowledgment { name: "kube-rs Contributors".to_string(), role: "Kubernetes client".to_string(), url: "https://github.com/kube-rs/kube".to_string() },
-        Acknowledgment { name: "lettre Contributors".to_string(), role: "Email client".to_string(), url: "https://github.com/lettre/lettre".to_string() },
-        Acknowledgment { name: "trust-dns Contributors".to_string(), role: "DNS resolver".to_string(), url: "https://github.com/hickory-dns/hickory-dns".to_string() },
-        Acknowledgment { name: "SQLx Contributors".to_string(), role: "Database client".to_string(), url: "https://github.com/launchbadge/sqlx".to_string() },
-        Acknowledgment { name: "Zod Contributors".to_string(), role: "TypeScript schema validation".to_string(), url: "https://github.com/colinhacks/zod".to_string() },
-        Acknowledgment { name: "i18next Contributors".to_string(), role: "Internationalization framework".to_string(), url: "https://github.com/i18next/i18next".to_string() },
-        Acknowledgment { name: "mRemoteNG Contributors".to_string(), role: "Inspiration and connection file format".to_string(), url: "https://github.com/mRemoteNG/mRemoteNG".to_string() },
+        Acknowledgment {
+            name: "Tauri Contributors".to_string(),
+            role: "Application framework".to_string(),
+            url: "https://github.com/tauri-apps/tauri".to_string(),
+        },
+        Acknowledgment {
+            name: "Tokio Contributors".to_string(),
+            role: "Async runtime".to_string(),
+            url: "https://github.com/tokio-rs/tokio".to_string(),
+        },
+        Acknowledgment {
+            name: "Serde Contributors".to_string(),
+            role: "Serialization framework".to_string(),
+            url: "https://github.com/serde-rs/serde".to_string(),
+        },
+        Acknowledgment {
+            name: "RustCrypto Contributors".to_string(),
+            role: "Cryptography libraries".to_string(),
+            url: "https://github.com/RustCrypto".to_string(),
+        },
+        Acknowledgment {
+            name: "Hyper Contributors".to_string(),
+            role: "HTTP implementation".to_string(),
+            url: "https://github.com/hyperium/hyper".to_string(),
+        },
+        Acknowledgment {
+            name: "Reqwest Contributors".to_string(),
+            role: "HTTP client".to_string(),
+            url: "https://github.com/seanmonstar/reqwest".to_string(),
+        },
+        Acknowledgment {
+            name: "Russh Contributors".to_string(),
+            role: "SSH protocol implementation".to_string(),
+            url: "https://github.com/warp-tech/russh".to_string(),
+        },
+        Acknowledgment {
+            name: "React Team (Meta)".to_string(),
+            role: "UI framework".to_string(),
+            url: "https://github.com/facebook/react".to_string(),
+        },
+        Acknowledgment {
+            name: "Vercel / Next.js Team".to_string(),
+            role: "React framework".to_string(),
+            url: "https://github.com/vercel/next.js".to_string(),
+        },
+        Acknowledgment {
+            name: "Tailwind CSS Team".to_string(),
+            role: "CSS framework".to_string(),
+            url: "https://github.com/tailwindlabs/tailwindcss".to_string(),
+        },
+        Acknowledgment {
+            name: "noVNC Contributors".to_string(),
+            role: "VNC client library".to_string(),
+            url: "https://github.com/novnc/noVNC".to_string(),
+        },
+        Acknowledgment {
+            name: "xterm.js Contributors".to_string(),
+            role: "Terminal emulator".to_string(),
+            url: "https://github.com/xtermjs/xterm.js".to_string(),
+        },
+        Acknowledgment {
+            name: "Lucide Contributors".to_string(),
+            role: "Icon library".to_string(),
+            url: "https://github.com/lucide-icons/lucide".to_string(),
+        },
+        Acknowledgment {
+            name: "Apache Guacamole Contributors".to_string(),
+            role: "Remote desktop gateway protocol".to_string(),
+            url: "https://github.com/apache/guacamole-client".to_string(),
+        },
+        Acknowledgment {
+            name: "Bollard Contributors".to_string(),
+            role: "Docker API client".to_string(),
+            url: "https://github.com/fussybeaver/bollard".to_string(),
+        },
+        Acknowledgment {
+            name: "kube-rs Contributors".to_string(),
+            role: "Kubernetes client".to_string(),
+            url: "https://github.com/kube-rs/kube".to_string(),
+        },
+        Acknowledgment {
+            name: "lettre Contributors".to_string(),
+            role: "Email client".to_string(),
+            url: "https://github.com/lettre/lettre".to_string(),
+        },
+        Acknowledgment {
+            name: "trust-dns Contributors".to_string(),
+            role: "DNS resolver".to_string(),
+            url: "https://github.com/hickory-dns/hickory-dns".to_string(),
+        },
+        Acknowledgment {
+            name: "SQLx Contributors".to_string(),
+            role: "Database client".to_string(),
+            url: "https://github.com/launchbadge/sqlx".to_string(),
+        },
+        Acknowledgment {
+            name: "Zod Contributors".to_string(),
+            role: "TypeScript schema validation".to_string(),
+            url: "https://github.com/colinhacks/zod".to_string(),
+        },
+        Acknowledgment {
+            name: "i18next Contributors".to_string(),
+            role: "Internationalization framework".to_string(),
+            url: "https://github.com/i18next/i18next".to_string(),
+        },
+        Acknowledgment {
+            name: "mRemoteNG Contributors".to_string(),
+            role: "Inspiration and connection file format".to_string(),
+            url: "https://github.com/mRemoteNG/mRemoteNG".to_string(),
+        },
     ]
 }

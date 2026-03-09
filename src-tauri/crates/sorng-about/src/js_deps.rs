@@ -4,35 +4,66 @@ use std::collections::HashMap;
 fn categorize_js(name: &str) -> &'static str {
     match name {
         n if n.starts_with("@tauri-apps/") => "Tauri Integration",
-        n if n.starts_with("react") || n == "react-dom" || n == "react-beautiful-dnd"
-            || n == "react-grid-layout" || n == "react-resizable"
-            || n == "react-resizable-panels" || n == "react-zoom-pan-pinch"
-            || n == "react-i18next" || n == "lucide-react" => "React & UI",
+        n if n.starts_with("react")
+            || n == "react-dom"
+            || n == "react-beautiful-dnd"
+            || n == "react-grid-layout"
+            || n == "react-resizable"
+            || n == "react-resizable-panels"
+            || n == "react-zoom-pan-pinch"
+            || n == "react-i18next"
+            || n == "lucide-react" =>
+        {
+            "React & UI"
+        }
         n if n == "next" || n.starts_with("eslint-config-next") => "Next.js",
         n if n == "@xterm/xterm" || n.starts_with("@xterm/addon-") => "Terminal Emulation",
-        n if n == "novnc" || n == "guacamole-common-js" || n == "webssh2-frontend" => "Remote Desktop & SSH",
-        n if n == "node-ssh" || n == "simple-ssh" || n == "ssh2-sftp-client"
-            || n == "scp2" || n == "basic-ftp" => "SSH & File Transfer",
-        n if n == "crypto-js" || n == "bcryptjs" || n == "node-forge"
-            || n == "otplib" || n == "qrcode" || n == "jsqr" => "Cryptography & Auth",
+        n if n == "novnc" || n == "guacamole-common-js" || n == "webssh2-frontend" => {
+            "Remote Desktop & SSH"
+        }
+        n if n == "node-ssh"
+            || n == "simple-ssh"
+            || n == "ssh2-sftp-client"
+            || n == "scp2"
+            || n == "basic-ftp" =>
+        {
+            "SSH & File Transfer"
+        }
+        n if n == "crypto-js"
+            || n == "bcryptjs"
+            || n == "node-forge"
+            || n == "otplib"
+            || n == "qrcode"
+            || n == "jsqr" =>
+        {
+            "Cryptography & Auth"
+        }
         n if n == "i18next" || n == "i18next-browser-languagedetector" => "Internationalization",
-        n if n == "sql.js" => "Database",
-        n if n == "zod" => "Validation",
+        "sql.js" => "Database",
+        "zod" => "Validation",
         n if n == "jszip" || n == "file-saver" => "File & Archive",
         n if n == "socks" || n == "ipaddr.js" => "Networking",
-        n if n == "idb" => "Storage",
-        n if n == "gifenc" => "Media",
-        n if n == "@anthropic-ai/sdk" => "AI",
+        "idb" => "Storage",
+        "gifenc" => "Media",
+        "@anthropic-ai/sdk" => "AI",
         // Dev dependencies
         n if n.starts_with("@types/") => "Type Definitions",
         n if n.starts_with("eslint") || n == "@eslint/js" || n == "globals" => "Linting",
-        n if n == "vitest" || n.starts_with("@vitest/") || n.starts_with("@testing-library/")
-            || n == "fake-indexeddb" || n == "jsdom" => "Testing",
+        n if n == "vitest"
+            || n.starts_with("@vitest/")
+            || n.starts_with("@testing-library/")
+            || n == "fake-indexeddb"
+            || n == "jsdom" =>
+        {
+            "Testing"
+        }
         n if n == "vite" || n.starts_with("@vitejs/") => "Build Tooling",
-        n if n == "typescript" || n.starts_with("typescript-") || n.starts_with("@webgpu/") => "TypeScript",
+        n if n == "typescript" || n.starts_with("typescript-") || n.starts_with("@webgpu/") => {
+            "TypeScript"
+        }
         n if n == "tailwindcss" || n == "postcss" || n == "autoprefixer" => "CSS & Styling",
-        n if n == "prettier" => "Formatting",
-        n if n == "turbo" => "Monorepo",
+        "prettier" => "Formatting",
+        "turbo" => "Monorepo",
         _ => "Other",
     }
 }

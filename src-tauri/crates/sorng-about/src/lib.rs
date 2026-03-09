@@ -1,7 +1,7 @@
-pub mod types;
+pub mod commands;
+pub mod js_deps;
 pub mod licenses;
 pub mod rust_deps;
-pub mod js_deps;
-pub mod workspace_crates;
 pub mod service;
-pub mod commands;
+pub mod types;
+pub mod workspace_crates;
