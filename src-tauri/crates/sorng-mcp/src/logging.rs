@@ -3,8 +3,8 @@
 //! Structured logging via MCP notifications. Allows log messages to be
 //! sent to connected clients that have the logging capability.
 
-use crate::types::*;
 use crate::protocol;
+use crate::types::*;
 use chrono::Utc;
 use std::collections::VecDeque;
 

@@ -142,8 +142,7 @@ pub fn extract_resource_id(uri: &str) -> Option<String> {
         "sorng://server-stats/",
     ];
     for prefix in prefixes {
-        if uri.starts_with(prefix) {
-            let id = &uri[prefix.len()..];
+        if let Some(id) = uri.strip_prefix(prefix) {
             if !id.is_empty() {
                 return Some(id.to_string());
             }
@@ -206,17 +205,35 @@ mod tests {
 
     #[test]
     fn test_match_resource_uri() {
-        assert_eq!(match_resource_uri("sorng://connections"), Some("Connections".to_string()));
-        assert_eq!(match_resource_uri("sorng://connections/abc-123"), Some("Connection Details".to_string()));
-        assert_eq!(match_resource_uri("sorng://sessions/x"), Some("Session Details".to_string()));
-        assert_eq!(match_resource_uri("sorng://server-stats/y"), Some("Server Statistics".to_string()));
+        assert_eq!(
+            match_resource_uri("sorng://connections"),
+            Some("Connections".to_string())
+        );
+        assert_eq!(
+            match_resource_uri("sorng://connections/abc-123"),
+            Some("Connection Details".to_string())
+        );
+        assert_eq!(
+            match_resource_uri("sorng://sessions/x"),
+            Some("Session Details".to_string())
+        );
+        assert_eq!(
+            match_resource_uri("sorng://server-stats/y"),
+            Some("Server Statistics".to_string())
+        );
         assert!(match_resource_uri("sorng://unknown").is_none());
     }
 
     #[test]
     fn test_extract_resource_id() {
-        assert_eq!(extract_resource_id("sorng://connections/abc"), Some("abc".to_string()));
-        assert_eq!(extract_resource_id("sorng://sessions/xyz"), Some("xyz".to_string()));
+        assert_eq!(
+            extract_resource_id("sorng://connections/abc"),
+            Some("abc".to_string())
+        );
+        assert_eq!(
+            extract_resource_id("sorng://sessions/xyz"),
+            Some("xyz".to_string())
+        );
         assert!(extract_resource_id("sorng://connections").is_none());
         assert!(extract_resource_id("sorng://connections/").is_none());
     }

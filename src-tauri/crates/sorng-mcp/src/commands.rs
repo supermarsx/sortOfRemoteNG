@@ -19,14 +19,18 @@ pub fn mcp_get_status(state: tauri::State<'_, McpServiceState>) -> Result<McpSer
 
 /// Start the MCP server.
 #[tauri::command]
-pub fn mcp_start_server(state: tauri::State<'_, McpServiceState>) -> Result<McpServerStatus, String> {
+pub fn mcp_start_server(
+    state: tauri::State<'_, McpServiceState>,
+) -> Result<McpServerStatus, String> {
     let mut service = state.lock().map_err(|e| e.to_string())?;
     service.start()
 }
 
 /// Stop the MCP server.
 #[tauri::command]
-pub fn mcp_stop_server(state: tauri::State<'_, McpServiceState>) -> Result<McpServerStatus, String> {
+pub fn mcp_stop_server(
+    state: tauri::State<'_, McpServiceState>,
+) -> Result<McpServerStatus, String> {
     let mut service = state.lock().map_err(|e| e.to_string())?;
     service.stop()
 }
@@ -40,7 +44,10 @@ pub fn mcp_get_config(state: tauri::State<'_, McpServiceState>) -> Result<McpSer
 
 /// Update the MCP server config. Restarts the server if it was running.
 #[tauri::command]
-pub fn mcp_update_config(state: tauri::State<'_, McpServiceState>, config: McpServerConfig) -> Result<(), String> {
+pub fn mcp_update_config(
+    state: tauri::State<'_, McpServiceState>,
+    config: McpServerConfig,
+) -> Result<(), String> {
     let mut service = state.lock().map_err(|e| e.to_string())?;
     service.update_config(config)
 }
@@ -54,14 +61,19 @@ pub fn mcp_generate_api_key(state: tauri::State<'_, McpServiceState>) -> Result<
 
 /// List active MCP sessions.
 #[tauri::command]
-pub fn mcp_list_sessions(state: tauri::State<'_, McpServiceState>) -> Result<Vec<McpSession>, String> {
+pub fn mcp_list_sessions(
+    state: tauri::State<'_, McpServiceState>,
+) -> Result<Vec<McpSession>, String> {
     let service = state.lock().map_err(|e| e.to_string())?;
     Ok(service.list_sessions())
 }
 
 /// Disconnect a specific MCP session.
 #[tauri::command]
-pub fn mcp_disconnect_session(state: tauri::State<'_, McpServiceState>, session_id: String) -> Result<(), String> {
+pub fn mcp_disconnect_session(
+    state: tauri::State<'_, McpServiceState>,
+    session_id: String,
+) -> Result<(), String> {
     let mut service = state.lock().map_err(|e| e.to_string())?;
     service.disconnect_session(&session_id)
 }
@@ -82,7 +94,9 @@ pub fn mcp_get_tools(state: tauri::State<'_, McpServiceState>) -> Result<Vec<Mcp
 
 /// Get available MCP resources.
 #[tauri::command]
-pub fn mcp_get_resources(state: tauri::State<'_, McpServiceState>) -> Result<Vec<McpResource>, String> {
+pub fn mcp_get_resources(
+    state: tauri::State<'_, McpServiceState>,
+) -> Result<Vec<McpResource>, String> {
     let service = state.lock().map_err(|e| e.to_string())?;
     Ok(service.get_resources())
 }
@@ -96,21 +110,30 @@ pub fn mcp_get_prompts(state: tauri::State<'_, McpServiceState>) -> Result<Vec<M
 
 /// Get MCP server logs.
 #[tauri::command]
-pub fn mcp_get_logs(state: tauri::State<'_, McpServiceState>, limit: Option<usize>) -> Result<Vec<McpLogEntry>, String> {
+pub fn mcp_get_logs(
+    state: tauri::State<'_, McpServiceState>,
+    limit: Option<usize>,
+) -> Result<Vec<McpLogEntry>, String> {
     let service = state.lock().map_err(|e| e.to_string())?;
     Ok(service.get_logs(limit.unwrap_or(100)))
 }
 
 /// Get MCP event history.
 #[tauri::command]
-pub fn mcp_get_events(state: tauri::State<'_, McpServiceState>, limit: Option<usize>) -> Result<Vec<McpEvent>, String> {
+pub fn mcp_get_events(
+    state: tauri::State<'_, McpServiceState>,
+    limit: Option<usize>,
+) -> Result<Vec<McpEvent>, String> {
     let service = state.lock().map_err(|e| e.to_string())?;
     Ok(service.get_events(limit.unwrap_or(100)))
 }
 
 /// Get MCP tool call logs.
 #[tauri::command]
-pub fn mcp_get_tool_call_logs(state: tauri::State<'_, McpServiceState>, limit: Option<usize>) -> Result<Vec<ToolCallLog>, String> {
+pub fn mcp_get_tool_call_logs(
+    state: tauri::State<'_, McpServiceState>,
+    limit: Option<usize>,
+) -> Result<Vec<ToolCallLog>, String> {
     let service = state.lock().map_err(|e| e.to_string())?;
     Ok(service.get_tool_call_logs(limit.unwrap_or(50)))
 }

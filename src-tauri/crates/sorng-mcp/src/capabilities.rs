@@ -68,8 +68,7 @@ pub fn is_resource_enabled(config: &McpServerConfig, resource_uri: &str) -> bool
 
 /// Check if a specific prompt is enabled in the configuration.
 pub fn is_prompt_enabled(config: &McpServerConfig, prompt_name: &str) -> bool {
-    config.enabled_prompts.is_empty()
-        || config.enabled_prompts.iter().any(|p| p == prompt_name)
+    config.enabled_prompts.is_empty() || config.enabled_prompts.iter().any(|p| p == prompt_name)
 }
 
 #[cfg(test)]

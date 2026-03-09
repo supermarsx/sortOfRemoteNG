@@ -49,7 +49,10 @@ impl AuthManager {
         }
 
         // Try Authorization header first (Bearer token)
-        if let Some(auth) = headers.get("authorization").or(headers.get("Authorization")) {
+        if let Some(auth) = headers
+            .get("authorization")
+            .or(headers.get("Authorization"))
+        {
             if let Some(token) = auth.strip_prefix("Bearer ") {
                 if constant_time_eq(token.trim(), &self.api_key) {
                     self.failed_attempts = 0;

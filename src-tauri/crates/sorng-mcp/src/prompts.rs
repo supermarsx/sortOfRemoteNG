@@ -135,16 +135,23 @@ pub fn get_prompt(name: &str) -> Option<McpPrompt> {
 }
 
 /// Generate prompt messages for the "connect-to-server" prompt.
-pub fn generate_connect_prompt(hostname: &str, protocol: Option<&str>, username: Option<&str>) -> Vec<PromptMessage> {
-    let proto_hint = protocol.map(|p| format!(" using {}", p)).unwrap_or_default();
-    let user_hint = username.map(|u| format!(" as user '{}'", u)).unwrap_or_default();
+pub fn generate_connect_prompt(
+    hostname: &str,
+    protocol: Option<&str>,
+    username: Option<&str>,
+) -> Vec<PromptMessage> {
+    let proto_hint = protocol
+        .map(|p| format!(" using {}", p))
+        .unwrap_or_default();
+    let user_hint = username
+        .map(|u| format!(" as user '{}'", u))
+        .unwrap_or_default();
 
-    vec![
-        PromptMessage {
-            role: "user".to_string(),
-            content: PromptContent::Text {
-                text: format!(
-                    "Help me connect to the server at '{}'{}{}.
+    vec![PromptMessage {
+        role: "user".to_string(),
+        content: PromptContent::Text {
+            text: format!(
+                "Help me connect to the server at '{}'{}{}.
 
 Please:
 1. Check if a connection entry already exists for this host.
@@ -152,11 +159,10 @@ Please:
 3. Run connectivity diagnostics (ping, port check).
 4. Establish the connection.
 5. If it's an SSH server, show basic system info (hostname, OS, uptime).",
-                    hostname, proto_hint, user_hint
-                ),
-            },
+                hostname, proto_hint, user_hint
+            ),
         },
-    ]
+    }]
 }
 
 /// Generate prompt messages for the "troubleshoot-connection" prompt.
@@ -174,12 +180,11 @@ pub fn generate_troubleshoot_prompt(
         .map(|e| format!("\n\nThe error I'm seeing is: {}", e))
         .unwrap_or_default();
 
-    vec![
-        PromptMessage {
-            role: "user".to_string(),
-            content: PromptContent::Text {
-                text: format!(
-                    "I'm having trouble connecting to {}. Please diagnose the issue.{}
+    vec![PromptMessage {
+        role: "user".to_string(),
+        content: PromptContent::Text {
+            text: format!(
+                "I'm having trouble connecting to {}. Please diagnose the issue.{}
 
 Steps to investigate:
 1. Look up the connection details.
@@ -188,11 +193,10 @@ Steps to investigate:
 4. Scan the relevant port(s) to see if the service is reachable.
 5. Check recent log entries for related errors.
 6. Provide a diagnosis and recommended fix.",
-                    target, error_ctx
-                ),
-            },
+                target, error_ctx
+            ),
         },
-    ]
+    }]
 }
 
 /// Generate prompt messages for the "bulk-ssh-command" prompt.
@@ -201,12 +205,11 @@ pub fn generate_bulk_command_prompt(command: &str, filter: Option<&str>) -> Vec<
         .map(|f| format!("matching filter '{}'", f))
         .unwrap_or_else(|| "from the available connections".to_string());
 
-    vec![
-        PromptMessage {
-            role: "user".to_string(),
-            content: PromptContent::Text {
-                text: format!(
-                    "Execute the following command across multiple servers {}:
+    vec![PromptMessage {
+        role: "user".to_string(),
+        content: PromptContent::Text {
+            text: format!(
+                "Execute the following command across multiple servers {}:
 
 ```
 {}
@@ -218,23 +221,21 @@ Please:
 3. Execute the command on all servers.
 4. Collect and summarize the results, highlighting any failures.
 5. Show a comparison table of outputs per host.",
-                    filter_hint, command
-                ),
-            },
+                filter_hint, command
+            ),
         },
-    ]
+    }]
 }
 
 /// Generate prompt messages for the "server-audit" prompt.
 pub fn generate_audit_prompt(session_id: &str, checks: Option<&str>) -> Vec<PromptMessage> {
     let checks_list = checks.unwrap_or("all");
 
-    vec![
-        PromptMessage {
-            role: "user".to_string(),
-            content: PromptContent::Text {
-                text: format!(
-                    "Perform a comprehensive audit on the server connected via session '{}'.
+    vec![PromptMessage {
+        role: "user".to_string(),
+        content: PromptContent::Text {
+            text: format!(
+                "Perform a comprehensive audit on the server connected via session '{}'.
 
 Audit scope: {}
 
@@ -246,15 +247,17 @@ Please check:
 5. **Packages**: Outdated packages, pending security updates.
 
 Provide a structured report with findings and recommendations.",
-                    session_id, checks_list
-                ),
-            },
+                session_id, checks_list
+            ),
         },
-    ]
+    }]
 }
 
 /// Generate prompt messages for any known prompt by name.
-pub fn generate_prompt_messages(name: &str, args: &std::collections::HashMap<String, String>) -> Option<Vec<PromptMessage>> {
+pub fn generate_prompt_messages(
+    name: &str,
+    args: &std::collections::HashMap<String, String>,
+) -> Option<Vec<PromptMessage>> {
     match name {
         "connect-to-server" => {
             let hostname = args.get("hostname")?;
@@ -348,7 +351,8 @@ mod tests {
 
     #[test]
     fn test_generate_troubleshoot_prompt() {
-        let msgs = generate_troubleshoot_prompt(None, Some("example.com"), Some("Connection timed out"));
+        let msgs =
+            generate_troubleshoot_prompt(None, Some("example.com"), Some("Connection timed out"));
         assert_eq!(msgs.len(), 1);
         if let PromptContent::Text { ref text } = msgs[0].content {
             assert!(text.contains("example.com"));

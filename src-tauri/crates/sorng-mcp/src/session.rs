@@ -217,7 +217,11 @@ mod tests {
     fn test_mark_initialized() {
         let mut mgr = make_manager();
         let id = mgr
-            .create_session(None, ClientCapabilities::default(), "2025-03-26".to_string())
+            .create_session(
+                None,
+                ClientCapabilities::default(),
+                "2025-03-26".to_string(),
+            )
             .unwrap();
         assert!(mgr.mark_initialized(&id));
         assert!(mgr.get_session(&id).unwrap().initialized);
@@ -226,12 +230,23 @@ mod tests {
     #[test]
     fn test_max_sessions() {
         let mut mgr = SessionManager::new(2, 3600);
-        mgr.create_session(None, ClientCapabilities::default(), "2025-03-26".to_string())
-            .unwrap();
-        mgr.create_session(None, ClientCapabilities::default(), "2025-03-26".to_string())
-            .unwrap();
-        let result =
-            mgr.create_session(None, ClientCapabilities::default(), "2025-03-26".to_string());
+        mgr.create_session(
+            None,
+            ClientCapabilities::default(),
+            "2025-03-26".to_string(),
+        )
+        .unwrap();
+        mgr.create_session(
+            None,
+            ClientCapabilities::default(),
+            "2025-03-26".to_string(),
+        )
+        .unwrap();
+        let result = mgr.create_session(
+            None,
+            ClientCapabilities::default(),
+            "2025-03-26".to_string(),
+        );
         assert!(result.is_err());
     }
 
@@ -239,7 +254,11 @@ mod tests {
     fn test_remove_session() {
         let mut mgr = make_manager();
         let id = mgr
-            .create_session(None, ClientCapabilities::default(), "2025-03-26".to_string())
+            .create_session(
+                None,
+                ClientCapabilities::default(),
+                "2025-03-26".to_string(),
+            )
             .unwrap();
         assert!(mgr.remove_session(&id).is_some());
         assert!(mgr.get_session(&id).is_none());
@@ -249,7 +268,11 @@ mod tests {
     fn test_subscriptions() {
         let mut mgr = make_manager();
         let id = mgr
-            .create_session(None, ClientCapabilities::default(), "2025-03-26".to_string())
+            .create_session(
+                None,
+                ClientCapabilities::default(),
+                "2025-03-26".to_string(),
+            )
             .unwrap();
         assert!(mgr.add_subscription(&id, "sorng://connections"));
         let subs = mgr.get_subscribers("sorng://connections");
@@ -262,7 +285,11 @@ mod tests {
     fn test_touch_session() {
         let mut mgr = make_manager();
         let id = mgr
-            .create_session(None, ClientCapabilities::default(), "2025-03-26".to_string())
+            .create_session(
+                None,
+                ClientCapabilities::default(),
+                "2025-03-26".to_string(),
+            )
             .unwrap();
         mgr.touch_session(&id);
         assert_eq!(mgr.get_session(&id).unwrap().request_count, 1);

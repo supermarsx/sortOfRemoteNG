@@ -13,9 +13,9 @@
 
 use crate::types::*;
 
+use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;
-use chrono::Utc;
 
 /// SSE event for streaming.
 #[derive(Debug, Clone)]
@@ -135,12 +135,14 @@ impl McpHttpResponse {
             status: 400,
             content_type: "application/json".to_string(),
             headers: HashMap::new(),
-            body: Some(serde_json::to_string(&serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": null,
-                "error": { "code": -32600, "message": msg }
-            }))
-            .unwrap_or_default()),
+            body: Some(
+                serde_json::to_string(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": { "code": -32600, "message": msg }
+                }))
+                .unwrap_or_default(),
+            ),
         }
     }
 
@@ -245,7 +247,10 @@ pub fn validate_origin(origin: Option<&str>, config: &TransportConfig) -> bool {
     } else {
         match origin {
             None => true,
-            Some(o) => config.cors_origins.iter().any(|allowed| allowed == o || allowed == "*"),
+            Some(o) => config
+                .cors_origins
+                .iter()
+                .any(|allowed| allowed == o || allowed == "*"),
         }
     }
 }

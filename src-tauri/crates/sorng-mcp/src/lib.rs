@@ -37,19 +37,19 @@
 //! - **service** — Central McpService orchestrator + state
 //! - **commands** — Tauri command handlers
 
-pub mod types;
-pub mod protocol;
-pub mod transport;
-pub mod session;
-pub mod server;
-pub mod tools;
-pub mod resources;
-pub mod prompts;
 pub mod auth;
 pub mod capabilities;
-pub mod logging;
-pub mod service;
 pub mod commands;
+pub mod logging;
+pub mod prompts;
+pub mod protocol;
+pub mod resources;
+pub mod server;
+pub mod service;
+pub mod session;
+pub mod tools;
+pub mod transport;
+pub mod types;
 
-pub use types::*;
 pub use service::{McpService, McpServiceState};
+pub use types::*;

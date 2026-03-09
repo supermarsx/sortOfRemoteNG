@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-
 // ── MCP Protocol Version ────────────────────────────────────────────
 
 /// Current MCP protocol version supported by this server.

@@ -9,9 +9,9 @@
 
 use crate::auth::AuthManager;
 use crate::logging::McpLogBuffer;
-use crate::session::SessionManager;
 use crate::server;
-use crate::transport::{McpHttpRequest, HttpMethod};
+use crate::session::SessionManager;
+use crate::transport::{HttpMethod, McpHttpRequest};
 use crate::types::*;
 
 use log::info;
@@ -130,7 +130,8 @@ impl McpService {
 
         // Cleanup sessions
         let session_count = self.sessions.active_count();
-        self.sessions = SessionManager::new(self.config.max_sessions, self.config.session_timeout_secs);
+        self.sessions =
+            SessionManager::new(self.config.max_sessions, self.config.session_timeout_secs);
 
         self.log_buffer.log(
             McpLogLevel::Info,
@@ -139,7 +140,10 @@ impl McpService {
             None,
         );
 
-        self.record_event(McpEventType::ServerStopped, json!({ "sessions_terminated": session_count }));
+        self.record_event(
+            McpEventType::ServerStopped,
+            json!({ "sessions_terminated": session_count }),
+        );
 
         Ok(self.get_status())
     }
@@ -158,7 +162,11 @@ impl McpService {
 
         McpServerStatus {
             running: self.running,
-            listen_address: if self.running { Some(server::listen_address(&self.config)) } else { None },
+            listen_address: if self.running {
+                Some(server::listen_address(&self.config))
+            } else {
+                None
+            },
             port: Some(self.config.port),
             active_sessions: self.sessions.active_count(),
             total_requests: self.metrics.total_requests,
@@ -183,7 +191,8 @@ impl McpService {
         }
 
         self.config = config.clone();
-        self.sessions.update_config(config.max_sessions, config.session_timeout_secs);
+        self.sessions
+            .update_config(config.max_sessions, config.session_timeout_secs);
         self.auth = AuthManager::new(config.api_key.clone(), config.require_auth);
 
         self.log_buffer.log(
@@ -193,11 +202,14 @@ impl McpService {
             None,
         );
 
-        self.record_event(McpEventType::ConfigChanged, json!({
-            "enabled": config.enabled,
-            "port": config.port,
-            "require_auth": config.require_auth,
-        }));
+        self.record_event(
+            McpEventType::ConfigChanged,
+            json!({
+                "enabled": config.enabled,
+                "port": config.port,
+                "require_auth": config.require_auth,
+            }),
+        );
 
         if was_running && config.enabled {
             self.start()?;
@@ -212,12 +224,8 @@ impl McpService {
         self.config.api_key = key.clone();
         self.auth = AuthManager::new(self.config.api_key.clone(), self.config.require_auth);
 
-        self.log_buffer.log(
-            McpLogLevel::Info,
-            "mcp.auth",
-            "New API key generated",
-            None,
-        );
+        self.log_buffer
+            .log(McpLogLevel::Info, "mcp.auth", "New API key generated", None);
 
         key
     }
@@ -225,7 +233,13 @@ impl McpService {
     // ── Request Handling ─────────────────────────────────────────
 
     /// Handle an incoming MCP request. Returns the response body and optional session ID.
-    pub fn handle_request(&mut self, method: &str, body: Option<&str>, headers: HashMap<String, String>, path: Option<&str>) -> (String, u16, HashMap<String, String>) {
+    pub fn handle_request(
+        &mut self,
+        method: &str,
+        body: Option<&str>,
+        headers: HashMap<String, String>,
+        path: Option<&str>,
+    ) -> (String, u16, HashMap<String, String>) {
         if !self.running {
             let resp = crate::transport::McpHttpResponse::json(
                 503,
@@ -234,7 +248,8 @@ impl McpService {
                     error_codes::INTERNAL_ERROR,
                     "MCP server is not running",
                     None,
-                )).unwrap_or_default(),
+                ))
+                .unwrap_or_default(),
             );
             return (resp.body.unwrap_or_default(), resp.status, resp.headers);
         }
@@ -300,7 +315,10 @@ impl McpService {
             return Err(format!("Session not found: {}", session_id));
         }
         self.sessions.remove_session(session_id);
-        self.record_event(McpEventType::SessionEnded, json!({ "session_id": session_id }));
+        self.record_event(
+            McpEventType::SessionEnded,
+            json!({ "session_id": session_id }),
+        );
         Ok(())
     }
 
@@ -340,7 +358,14 @@ impl McpService {
     }
 
     /// Record a tool call.
-    pub fn record_tool_call(&mut self, tool_name: &str, params: Value, result: Value, success: bool, duration_ms: u64) {
+    pub fn record_tool_call(
+        &mut self,
+        tool_name: &str,
+        params: Value,
+        result: Value,
+        success: bool,
+        duration_ms: u64,
+    ) {
         self.tool_call_logs.push(ToolCallLog {
             id: uuid::Uuid::new_v4().to_string(),
             tool_name: tool_name.to_string(),
@@ -355,7 +380,8 @@ impl McpService {
 
         // Trim to 500
         if self.tool_call_logs.len() > 500 {
-            self.tool_call_logs.drain(0..self.tool_call_logs.len() - 500);
+            self.tool_call_logs
+                .drain(0..self.tool_call_logs.len() - 500);
         }
     }
 

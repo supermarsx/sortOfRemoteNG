@@ -61,7 +61,8 @@ pub fn get_all_tools() -> Vec<McpTool> {
 
     tools.push(McpTool {
         name: "get_connection".to_string(),
-        description: "Get detailed information about a specific connection by ID or name.".to_string(),
+        description: "Get detailed information about a specific connection by ID or name."
+            .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -215,7 +216,8 @@ pub fn get_all_tools() -> Vec<McpTool> {
 
     tools.push(McpTool {
         name: "ssh_list_sessions".to_string(),
-        description: "List all active SSH sessions with session IDs, connection info, and uptime.".to_string(),
+        description: "List all active SSH sessions with session IDs, connection info, and uptime."
+            .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {}
@@ -547,7 +549,8 @@ pub fn get_all_tools() -> Vec<McpTool> {
 
     tools.push(McpTool {
         name: "get_server_stats".to_string(),
-        description: "Get system statistics (CPU, RAM, disk, uptime) from a connected SSH server.".to_string(),
+        description: "Get system statistics (CPU, RAM, disk, uptime) from a connected SSH server."
+            .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {

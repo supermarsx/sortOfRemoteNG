@@ -29,12 +29,11 @@ pub fn parse_message(raw: &str) -> Result<Vec<JsonRpcRequest>, JsonRpcErrorData>
         Ok(requests)
     } else {
         // Single request
-        let req: JsonRpcRequest =
-            serde_json::from_value(value).map_err(|e| JsonRpcErrorData {
-                code: error_codes::INVALID_REQUEST,
-                message: format!("Invalid request: {e}"),
-                data: None,
-            })?;
+        let req: JsonRpcRequest = serde_json::from_value(value).map_err(|e| JsonRpcErrorData {
+            code: error_codes::INVALID_REQUEST,
+            message: format!("Invalid request: {e}"),
+            data: None,
+        })?;
         Ok(vec![req])
     }
 }
@@ -115,7 +114,10 @@ pub fn is_notification(req: &JsonRpcRequest) -> bool {
 pub fn extract_params<T: serde::de::DeserializeOwned>(
     req: &JsonRpcRequest,
 ) -> Result<T, JsonRpcErrorData> {
-    let params = req.params.clone().unwrap_or(Value::Object(Default::default()));
+    let params = req
+        .params
+        .clone()
+        .unwrap_or(Value::Object(Default::default()));
     serde_json::from_value(params).map_err(|e| JsonRpcErrorData {
         code: error_codes::INVALID_PARAMS,
         message: format!("Invalid params: {e}"),
@@ -195,10 +197,16 @@ mod tests {
         assert_eq!(classify_method("initialize"), MethodCategory::Initialize);
         assert_eq!(classify_method("tools/list"), MethodCategory::ToolsList);
         assert_eq!(classify_method("tools/call"), MethodCategory::ToolsCall);
-        assert_eq!(classify_method("resources/read"), MethodCategory::ResourcesRead);
+        assert_eq!(
+            classify_method("resources/read"),
+            MethodCategory::ResourcesRead
+        );
         assert_eq!(classify_method("prompts/get"), MethodCategory::PromptsGet);
         assert_eq!(classify_method("ping"), MethodCategory::Ping);
-        assert!(matches!(classify_method("unknown"), MethodCategory::Unknown(_)));
+        assert!(matches!(
+            classify_method("unknown"),
+            MethodCategory::Unknown(_)
+        ));
     }
 
     #[test]
