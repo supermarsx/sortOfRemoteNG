@@ -5,7 +5,9 @@ use crate::error::OsDetectError;
 use crate::types::*;
 
 /// Detect system locale (LANG, LC_ALL).
-pub async fn detect_locale(host: &OsDetectHost) -> Result<(Option<String>, Option<String>), OsDetectError> {
+pub async fn detect_locale(
+    host: &OsDetectHost,
+) -> Result<(Option<String>, Option<String>), OsDetectError> {
     // Try localectl
     let localectl = client::exec_soft(host, "localectl", &["status"]).await;
     if !localectl.is_empty() {
@@ -36,7 +38,9 @@ pub async fn detect_locale(host: &OsDetectHost) -> Result<(Option<String>, Optio
             lang = Some(val.trim_matches('"').to_string());
         } else if let Some(val) = line.strip_prefix("LC_ALL=") {
             let v = val.trim_matches('"').to_string();
-            if !v.is_empty() { lc_all = Some(v); }
+            if !v.is_empty() {
+                lc_all = Some(v);
+            }
         }
     }
 
@@ -54,7 +58,12 @@ pub async fn detect_locale(host: &OsDetectHost) -> Result<(Option<String>, Optio
 /// Detect system timezone.
 pub async fn detect_timezone(host: &OsDetectHost) -> Result<Option<String>, OsDetectError> {
     // timedatectl (systemd)
-    let timedatectl = client::exec_soft(host, "timedatectl", &["show", "--property=Timezone", "--value"]).await;
+    let timedatectl = client::exec_soft(
+        host,
+        "timedatectl",
+        &["show", "--property=Timezone", "--value"],
+    )
+    .await;
     if !timedatectl.is_empty() {
         return Ok(Some(timedatectl.trim().to_string()));
     }
@@ -65,7 +74,7 @@ pub async fn detect_timezone(host: &OsDetectHost) -> Result<Option<String>, OsDe
         let line = line.trim();
         if let Some(val) = line.strip_prefix("Time zone:") {
             // "Time zone: America/New_York (EST, -0500)"
-            let tz = val.trim().split_whitespace().next().unwrap_or("");
+            let tz = val.split_whitespace().next().unwrap_or("");
             if !tz.is_empty() {
                 return Ok(Some(tz.to_string()));
             }

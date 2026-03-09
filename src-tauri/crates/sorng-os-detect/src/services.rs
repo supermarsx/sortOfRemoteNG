@@ -5,14 +5,17 @@ use crate::error::OsDetectError;
 use crate::types::*;
 
 /// Scan for known services and return a list of available services.
-pub async fn detect_available_services(host: &OsDetectHost) -> Result<Vec<AvailableService>, OsDetectError> {
+pub async fn detect_available_services(
+    host: &OsDetectHost,
+) -> Result<Vec<AvailableService>, OsDetectError> {
     let mut services = Vec::new();
 
     // If systemd is available, use systemctl list-unit-files for comprehensive listing
     let unit_files = client::shell_exec(
         host,
         "systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null",
-    ).await;
+    )
+    .await;
 
     if !unit_files.is_empty() {
         for line in unit_files.lines() {
@@ -39,15 +42,46 @@ pub async fn detect_available_services(host: &OsDetectHost) -> Result<Vec<Availa
 
     // Fallback: check well-known service binaries
     let known_services = [
-        "sshd", "nginx", "apache2", "httpd", "haproxy", "traefik",
-        "docker", "dockerd", "podman", "containerd", "crio",
-        "postfix", "dovecot", "sendmail", "exim4",
-        "named", "bind9", "dnsmasq", "dhcpd",
-        "smbd", "nmbd", "nfsd",
-        "mysqld", "mariadbd", "postgres", "redis-server", "mongod",
-        "fail2ban-server", "openvpn", "wg", "squid",
-        "rsyslogd", "syslog-ng", "crond", "cron", "atd", "anacron",
-        "slapd", "ipa", "freeipa",
+        "sshd",
+        "nginx",
+        "apache2",
+        "httpd",
+        "haproxy",
+        "traefik",
+        "docker",
+        "dockerd",
+        "podman",
+        "containerd",
+        "crio",
+        "postfix",
+        "dovecot",
+        "sendmail",
+        "exim4",
+        "named",
+        "bind9",
+        "dnsmasq",
+        "dhcpd",
+        "smbd",
+        "nmbd",
+        "nfsd",
+        "mysqld",
+        "mariadbd",
+        "postgres",
+        "redis-server",
+        "mongod",
+        "fail2ban-server",
+        "openvpn",
+        "wg",
+        "squid",
+        "rsyslogd",
+        "syslog-ng",
+        "crond",
+        "cron",
+        "atd",
+        "anacron",
+        "slapd",
+        "ipa",
+        "freeipa",
     ];
 
     for svc in &known_services {
@@ -65,7 +99,10 @@ pub async fn detect_available_services(host: &OsDetectHost) -> Result<Vec<Availa
 }
 
 /// Build the full ServiceCapabilities matrix.
-pub async fn detect_service_capabilities(host: &OsDetectHost) -> Result<ServiceCapabilities, OsDetectError> {
+#[allow(clippy::field_reassign_with_default)]
+pub async fn detect_service_capabilities(
+    host: &OsDetectHost,
+) -> Result<ServiceCapabilities, OsDetectError> {
     let mut caps = ServiceCapabilities::default();
 
     // Init system
@@ -74,9 +111,13 @@ pub async fn detect_service_capabilities(host: &OsDetectHost) -> Result<ServiceC
     // Container runtimes
     caps.has_docker = client::has_command(host, "docker").await;
     caps.has_podman = client::has_command(host, "podman").await;
-    caps.has_lxc = client::has_command(host, "lxc-ls").await || client::has_command(host, "lxc").await;
+    caps.has_lxc =
+        client::has_command(host, "lxc-ls").await || client::has_command(host, "lxc").await;
     caps.has_kvm = client::has_command(host, "virsh").await
-        || client::shell_exec(host, "test -e /dev/kvm && echo yes").await.trim() == "yes";
+        || client::shell_exec(host, "test -e /dev/kvm && echo yes")
+            .await
+            .trim()
+            == "yes";
 
     // Firewall / security
     caps.has_firewalld = client::has_command(host, "firewall-cmd").await;
@@ -84,13 +125,20 @@ pub async fn detect_service_capabilities(host: &OsDetectHost) -> Result<ServiceC
     caps.has_nftables = client::has_command(host, "nft").await;
     caps.has_iptables = client::has_command(host, "iptables").await;
     caps.has_selinux = client::has_command(host, "getenforce").await
-        || client::shell_exec(host, "test -d /sys/fs/selinux && echo yes").await.trim() == "yes";
-    caps.has_apparmor = client::shell_exec(host, "test -d /sys/kernel/security/apparmor && echo yes").await.trim() == "yes";
+        || client::shell_exec(host, "test -d /sys/fs/selinux && echo yes")
+            .await
+            .trim()
+            == "yes";
+    caps.has_apparmor =
+        client::shell_exec(host, "test -d /sys/kernel/security/apparmor && echo yes")
+            .await
+            .trim()
+            == "yes";
 
     // File sharing
     caps.has_samba = client::has_command(host, "smbd").await;
-    caps.has_nfs = client::has_command(host, "nfsd").await
-        || client::has_command(host, "exportfs").await;
+    caps.has_nfs =
+        client::has_command(host, "nfsd").await || client::has_command(host, "exportfs").await;
 
     // Storage
     caps.has_lvm = client::has_command(host, "lvm").await || client::has_command(host, "lvs").await;
@@ -104,12 +152,14 @@ pub async fn detect_service_capabilities(host: &OsDetectHost) -> Result<ServiceC
     caps.has_anacron = client::has_command(host, "anacron").await;
 
     // Mail
-    caps.has_postfix = client::has_command(host, "postfix").await || client::has_command(host, "postconf").await;
+    caps.has_postfix =
+        client::has_command(host, "postfix").await || client::has_command(host, "postconf").await;
     caps.has_dovecot = client::has_command(host, "dovecot").await;
 
     // Web servers
     caps.has_nginx = client::has_command(host, "nginx").await;
-    caps.has_apache = client::has_command(host, "apache2").await || client::has_command(host, "httpd").await;
+    caps.has_apache =
+        client::has_command(host, "apache2").await || client::has_command(host, "httpd").await;
     caps.has_haproxy = client::has_command(host, "haproxy").await;
     caps.has_traefik = client::has_command(host, "traefik").await;
 
@@ -119,7 +169,8 @@ pub async fn detect_service_capabilities(host: &OsDetectHost) -> Result<ServiceC
 
     // Security / directory
     caps.has_fail2ban = client::has_command(host, "fail2ban-client").await;
-    caps.has_openldap = client::has_command(host, "slapd").await || client::has_command(host, "ldapsearch").await;
+    caps.has_openldap =
+        client::has_command(host, "slapd").await || client::has_command(host, "ldapsearch").await;
     caps.has_freeipa = client::has_command(host, "ipa").await;
 
     // DNS / DHCP / proxy
@@ -154,7 +205,10 @@ pub async fn detect_service_capabilities(host: &OsDetectHost) -> Result<ServiceC
 }
 
 /// Check if a specific command is available on the host.
-pub async fn check_command_available(host: &OsDetectHost, cmd: &str) -> Result<bool, OsDetectError> {
+pub async fn check_command_available(
+    host: &OsDetectHost,
+    cmd: &str,
+) -> Result<bool, OsDetectError> {
     Ok(client::has_command(host, cmd).await)
 }
 
@@ -216,9 +270,7 @@ pub async fn detect_web_servers(
 }
 
 /// Detect installed database servers.
-pub async fn detect_databases(
-    host: &OsDetectHost,
-) -> Result<Vec<(String, String)>, OsDetectError> {
+pub async fn detect_databases(host: &OsDetectHost) -> Result<Vec<(String, String)>, OsDetectError> {
     let dbs = [
         ("mysql", "--version"),
         ("mariadb", "--version"),

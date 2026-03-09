@@ -24,7 +24,7 @@ pub async fn detect_selinux(host: &OsDetectHost) -> Result<(bool, Option<String>
             if line.starts_with("selinux status:") {
                 enabled = line.contains("enabled");
             } else if line.starts_with("current mode:") {
-                mode_str = line.split(':').last().map(|s| s.trim().to_string());
+                mode_str = line.split(':').next_back().map(|s| s.trim().to_string());
             }
         }
         return Ok((enabled, mode_str));
@@ -54,7 +54,8 @@ pub async fn detect_apparmor(host: &OsDetectHost) -> Result<bool, OsDetectError>
     }
 
     // Check /sys/kernel/security/apparmor
-    let apparmor_fs = client::shell_exec(host, "test -d /sys/kernel/security/apparmor && echo yes").await;
+    let apparmor_fs =
+        client::shell_exec(host, "test -d /sys/kernel/security/apparmor && echo yes").await;
     if apparmor_fs.trim() == "yes" {
         return Ok(true);
     }

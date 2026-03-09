@@ -24,23 +24,32 @@ pub struct OsDetectService {
 
 impl OsDetectService {
     pub fn new() -> OsDetectServiceState {
-        Arc::new(Mutex::new(Self { hosts: HashMap::new() }))
+        Arc::new(Mutex::new(Self {
+            hosts: HashMap::new(),
+        }))
     }
 
     pub fn add_host(&mut self, host: OsDetectHost) -> Result<(), OsDetectError> {
         if self.hosts.contains_key(&host.id) {
-            return Err(OsDetectError::Other(format!("Host {} already exists", host.id)));
+            return Err(OsDetectError::Other(format!(
+                "Host {} already exists",
+                host.id
+            )));
         }
         self.hosts.insert(host.id.clone(), host);
         Ok(())
     }
 
     pub fn remove_host(&mut self, host_id: &str) -> Result<OsDetectHost, OsDetectError> {
-        self.hosts.remove(host_id).ok_or_else(|| OsDetectError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .remove(host_id)
+            .ok_or_else(|| OsDetectError::HostNotFound(host_id.to_string()))
     }
 
     pub fn get_host(&self, host_id: &str) -> Result<&OsDetectHost, OsDetectError> {
-        self.hosts.get(host_id).ok_or_else(|| OsDetectError::HostNotFound(host_id.to_string()))
+        self.hosts
+            .get(host_id)
+            .ok_or_else(|| OsDetectError::HostNotFound(host_id.to_string()))
     }
 
     pub fn list_hosts(&self) -> Vec<&OsDetectHost> {
@@ -115,29 +124,44 @@ impl OsDetectService {
         init_system::detect_init_system(host).await
     }
 
-    pub async fn detect_service_manager_version(&self, host_id: &str) -> Result<Option<String>, OsDetectError> {
+    pub async fn detect_service_manager_version(
+        &self,
+        host_id: &str,
+    ) -> Result<Option<String>, OsDetectError> {
         let host = self.get_host(host_id)?;
         init_system::detect_service_manager_version(host).await
     }
 
-    pub async fn list_init_services(&self, host_id: &str) -> Result<Vec<AvailableService>, OsDetectError> {
+    pub async fn list_init_services(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<AvailableService>, OsDetectError> {
         let host = self.get_host(host_id)?;
         init_system::list_init_services(host).await
     }
 
-    pub async fn detect_default_target(&self, host_id: &str) -> Result<Option<String>, OsDetectError> {
+    pub async fn detect_default_target(
+        &self,
+        host_id: &str,
+    ) -> Result<Option<String>, OsDetectError> {
         let host = self.get_host(host_id)?;
         init_system::detect_default_target(host).await
     }
 
     // ─── Package Manager ────────────────────────────────────────────
 
-    pub async fn detect_package_managers(&self, host_id: &str) -> Result<Vec<PackageManager>, OsDetectError> {
+    pub async fn detect_package_managers(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<PackageManager>, OsDetectError> {
         let host = self.get_host(host_id)?;
         package_mgr::detect_package_managers(host).await
     }
 
-    pub async fn detect_default_package_manager(&self, host_id: &str) -> Result<PackageManager, OsDetectError> {
+    pub async fn detect_default_package_manager(
+        &self,
+        host_id: &str,
+    ) -> Result<PackageManager, OsDetectError> {
         let host = self.get_host(host_id)?;
         package_mgr::detect_default_package_manager(host).await
     }
@@ -147,12 +171,18 @@ impl OsDetectService {
         package_mgr::count_installed_packages(host).await
     }
 
-    pub async fn list_installed_packages(&self, host_id: &str) -> Result<Vec<InstalledPackageInfo>, OsDetectError> {
+    pub async fn list_installed_packages(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<InstalledPackageInfo>, OsDetectError> {
         let host = self.get_host(host_id)?;
         package_mgr::list_installed_packages(host).await
     }
 
-    pub async fn detect_package_sources(&self, host_id: &str) -> Result<Vec<String>, OsDetectError> {
+    pub async fn detect_package_sources(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<String>, OsDetectError> {
         let host = self.get_host(host_id)?;
         package_mgr::detect_package_sources(host).await
     }
@@ -179,7 +209,10 @@ impl OsDetectService {
         hardware::detect_disks(host).await
     }
 
-    pub async fn detect_network_interfaces(&self, host_id: &str) -> Result<Vec<NetworkInterfaceInfo>, OsDetectError> {
+    pub async fn detect_network_interfaces(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<NetworkInterfaceInfo>, OsDetectError> {
         let host = self.get_host(host_id)?;
         hardware::detect_network_interfaces(host).await
     }
@@ -189,17 +222,26 @@ impl OsDetectService {
         hardware::detect_gpus(host).await
     }
 
-    pub async fn detect_virtualization(&self, host_id: &str) -> Result<VirtualizationInfo, OsDetectError> {
+    pub async fn detect_virtualization(
+        &self,
+        host_id: &str,
+    ) -> Result<VirtualizationInfo, OsDetectError> {
         let host = self.get_host(host_id)?;
         hardware::detect_virtualization(host).await
     }
 
-    pub async fn detect_dmi_info(&self, host_id: &str) -> Result<(Option<String>, Option<String>, Option<String>), OsDetectError> {
+    pub async fn detect_dmi_info(
+        &self,
+        host_id: &str,
+    ) -> Result<(Option<String>, Option<String>, Option<String>), OsDetectError> {
         let host = self.get_host(host_id)?;
         hardware::detect_dmi_info(host).await
     }
 
-    pub async fn build_hardware_profile(&self, host_id: &str) -> Result<HardwareProfile, OsDetectError> {
+    pub async fn build_hardware_profile(
+        &self,
+        host_id: &str,
+    ) -> Result<HardwareProfile, OsDetectError> {
         let host = self.get_host(host_id)?;
         hardware::build_hardware_profile(host).await
     }
@@ -230,14 +272,20 @@ impl OsDetectService {
         kernel::get_sysctl_values(host, keys).await
     }
 
-    pub async fn detect_kernel_features(&self, host_id: &str) -> Result<kernel::KernelFeatures, OsDetectError> {
+    pub async fn detect_kernel_features(
+        &self,
+        host_id: &str,
+    ) -> Result<kernel::KernelFeatures, OsDetectError> {
         let host = self.get_host(host_id)?;
         kernel::detect_kernel_features(host).await
     }
 
     // ─── Security ───────────────────────────────────────────────────
 
-    pub async fn detect_selinux(&self, host_id: &str) -> Result<(bool, Option<String>), OsDetectError> {
+    pub async fn detect_selinux(
+        &self,
+        host_id: &str,
+    ) -> Result<(bool, Option<String>), OsDetectError> {
         let host = self.get_host(host_id)?;
         security::detect_selinux(host).await
     }
@@ -264,42 +312,67 @@ impl OsDetectService {
 
     // ─── Services ───────────────────────────────────────────────────
 
-    pub async fn detect_available_services(&self, host_id: &str) -> Result<Vec<AvailableService>, OsDetectError> {
+    pub async fn detect_available_services(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<AvailableService>, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::detect_available_services(host).await
     }
 
-    pub async fn detect_service_capabilities(&self, host_id: &str) -> Result<ServiceCapabilities, OsDetectError> {
+    pub async fn detect_service_capabilities(
+        &self,
+        host_id: &str,
+    ) -> Result<ServiceCapabilities, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::detect_service_capabilities(host).await
     }
 
-    pub async fn check_command_available(&self, host_id: &str, cmd: &str) -> Result<bool, OsDetectError> {
+    pub async fn check_command_available(
+        &self,
+        host_id: &str,
+        cmd: &str,
+    ) -> Result<bool, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::check_command_available(host, cmd).await
     }
 
-    pub async fn detect_installed_runtimes(&self, host_id: &str) -> Result<Vec<(String, String)>, OsDetectError> {
+    pub async fn detect_installed_runtimes(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<(String, String)>, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::detect_installed_runtimes(host).await
     }
 
-    pub async fn detect_web_servers(&self, host_id: &str) -> Result<Vec<(String, String)>, OsDetectError> {
+    pub async fn detect_web_servers(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<(String, String)>, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::detect_web_servers(host).await
     }
 
-    pub async fn detect_databases(&self, host_id: &str) -> Result<Vec<(String, String)>, OsDetectError> {
+    pub async fn detect_databases(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<(String, String)>, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::detect_databases(host).await
     }
 
-    pub async fn detect_mail_services(&self, host_id: &str) -> Result<Vec<(String, String)>, OsDetectError> {
+    pub async fn detect_mail_services(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<(String, String)>, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::detect_mail_services(host).await
     }
 
-    pub async fn detect_container_runtimes(&self, host_id: &str) -> Result<Vec<(String, String)>, OsDetectError> {
+    pub async fn detect_container_runtimes(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<(String, String)>, OsDetectError> {
         let host = self.get_host(host_id)?;
         services::detect_container_runtimes(host).await
     }
@@ -311,19 +384,29 @@ impl OsDetectService {
         shell::detect_default_shell(host).await
     }
 
-    pub async fn detect_available_shells(&self, host_id: &str) -> Result<Vec<ShellInfo>, OsDetectError> {
+    pub async fn detect_available_shells(
+        &self,
+        host_id: &str,
+    ) -> Result<Vec<ShellInfo>, OsDetectError> {
         let host = self.get_host(host_id)?;
         shell::detect_available_shells(host).await
     }
 
-    pub async fn detect_shell_version(&self, host_id: &str, shell_path: &str) -> Result<String, OsDetectError> {
+    pub async fn detect_shell_version(
+        &self,
+        host_id: &str,
+        shell_path: &str,
+    ) -> Result<String, OsDetectError> {
         let host = self.get_host(host_id)?;
         shell::detect_shell_version(host, shell_path).await
     }
 
     // ─── Locale ─────────────────────────────────────────────────────
 
-    pub async fn detect_locale(&self, host_id: &str) -> Result<(Option<String>, Option<String>), OsDetectError> {
+    pub async fn detect_locale(
+        &self,
+        host_id: &str,
+    ) -> Result<(Option<String>, Option<String>), OsDetectError> {
         let host = self.get_host(host_id)?;
         locale::detect_locale(host).await
     }

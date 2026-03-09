@@ -46,11 +46,10 @@ pub async fn list_loaded_modules(host: &OsDetectHost) -> Result<Vec<String>, OsD
         return Ok(Vec::new());
     }
 
-    Ok(stdout.lines()
+    Ok(stdout
+        .lines()
         .skip(1) // skip header
-        .filter_map(|line| {
-            line.split_whitespace().next().map(|s| s.to_string())
-        })
+        .filter_map(|line| line.split_whitespace().next().map(|s| s.to_string()))
         .collect())
 }
 
@@ -75,12 +74,17 @@ pub async fn get_sysctl_values(
 /// Detect kernel features: cgroups version, namespace support, capabilities.
 pub async fn detect_kernel_features(host: &OsDetectHost) -> Result<KernelFeatures, OsDetectError> {
     // cgroups
-    let cgroups_v2 = client::shell_exec(host, "test -f /sys/fs/cgroup/cgroup.controllers && echo v2").await;
+    let cgroups_v2 =
+        client::shell_exec(host, "test -f /sys/fs/cgroup/cgroup.controllers && echo v2").await;
     let cgroups_version = if cgroups_v2.trim() == "v2" {
         "v2".to_string()
     } else {
         let cgroups_v1 = client::shell_exec(host, "test -d /sys/fs/cgroup/cpu && echo v1").await;
-        if cgroups_v1.trim() == "v1" { "v1".to_string() } else { "none".to_string() }
+        if cgroups_v1.trim() == "v1" {
+            "v1".to_string()
+        } else {
+            "none".to_string()
+        }
     };
 
     // Namespaces
@@ -121,9 +125,13 @@ pub struct KernelFeatures {
 // ─── Parsers ────────────────────────────────────────────────────────
 
 fn parse_kextstat(stdout: &str) -> Vec<String> {
-    stdout.lines().skip(1).filter_map(|line| {
-        // Format: Index Refs Address Size Wired Name (Version) UUID <Linked Against>
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        parts.get(5).map(|s| s.to_string())
-    }).collect()
+    stdout
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            // Format: Index Refs Address Size Wired Name (Version) UUID <Linked Against>
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            parts.get(5).map(|s| s.to_string())
+        })
+        .collect()
 }

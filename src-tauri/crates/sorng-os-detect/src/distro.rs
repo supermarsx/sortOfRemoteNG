@@ -207,14 +207,23 @@ fn parse_version_string(s: &str) -> OsVersion {
 
 fn parse_redhat_release(content: &str) -> LinuxDistro {
     let lower = content.to_lowercase();
-    if lower.contains("centos") { LinuxDistro::CentOS }
-    else if lower.contains("red hat") { LinuxDistro::RHEL }
-    else if lower.contains("rocky") { LinuxDistro::Rocky }
-    else if lower.contains("alma") { LinuxDistro::AlmaLinux }
-    else if lower.contains("oracle") { LinuxDistro::Oracle }
-    else if lower.contains("fedora") { LinuxDistro::Fedora }
-    else if lower.contains("amazon") { LinuxDistro::Amazon }
-    else { LinuxDistro::Unknown(content.trim().to_string()) }
+    if lower.contains("centos") {
+        LinuxDistro::CentOS
+    } else if lower.contains("red hat") {
+        LinuxDistro::RHEL
+    } else if lower.contains("rocky") {
+        LinuxDistro::Rocky
+    } else if lower.contains("alma") {
+        LinuxDistro::AlmaLinux
+    } else if lower.contains("oracle") {
+        LinuxDistro::Oracle
+    } else if lower.contains("fedora") {
+        LinuxDistro::Fedora
+    } else if lower.contains("amazon") {
+        LinuxDistro::Amazon
+    } else {
+        LinuxDistro::Unknown(content.trim().to_string())
+    }
 }
 
 fn distro_from_id(id: &str) -> LinuxDistro {

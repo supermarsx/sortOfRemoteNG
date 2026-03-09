@@ -74,7 +74,7 @@ pub async fn os_detect_get_host(
         .lock()
         .await
         .get_host(&host_id)
-        .map(|h| h.clone())
+        .cloned()
         .map_err(map_err)
 }
 
@@ -82,7 +82,13 @@ pub async fn os_detect_get_host(
 pub async fn os_detect_list_hosts(
     state: State<'_, OsDetectServiceState>,
 ) -> CmdResult<Vec<OsDetectHost>> {
-    Ok(state.lock().await.list_hosts().into_iter().cloned().collect())
+    Ok(state
+        .lock()
+        .await
+        .list_hosts()
+        .into_iter()
+        .cloned()
+        .collect())
 }
 
 // ── Distro ────────────────────────────────────────────────────────
@@ -92,7 +98,12 @@ pub async fn os_detect_os_family(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<OsFamily> {
-    state.lock().await.detect_os_family(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_os_family(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -100,7 +111,12 @@ pub async fn os_detect_linux_distro(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<LinuxDistro> {
-    state.lock().await.detect_linux_distro(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_linux_distro(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -108,7 +124,12 @@ pub async fn os_detect_os_version(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<OsVersion> {
-    state.lock().await.detect_os_version(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_os_version(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -116,7 +137,12 @@ pub async fn os_detect_macos_version(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<OsVersion> {
-    state.lock().await.detect_macos_version(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_macos_version(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -124,7 +150,12 @@ pub async fn os_detect_bsd_version(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<OsVersion> {
-    state.lock().await.detect_bsd_version(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_bsd_version(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Init System ───────────────────────────────────────────────────
@@ -134,7 +165,12 @@ pub async fn os_detect_init_system(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<InitSystem> {
-    state.lock().await.detect_init_system(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_init_system(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -142,7 +178,12 @@ pub async fn os_detect_init_services(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<AvailableService>> {
-    state.lock().await.list_init_services(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_init_services(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -150,7 +191,12 @@ pub async fn os_detect_default_target(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Option<String>> {
-    state.lock().await.detect_default_target(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_default_target(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Package Manager ───────────────────────────────────────────────
@@ -160,7 +206,12 @@ pub async fn os_detect_package_managers(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<PackageManager>> {
-    state.lock().await.detect_package_managers(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_package_managers(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -168,7 +219,12 @@ pub async fn os_detect_installed_packages(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<InstalledPackageInfo>> {
-    state.lock().await.list_installed_packages(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_installed_packages(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -176,7 +232,12 @@ pub async fn os_detect_package_sources(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.detect_package_sources(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_package_sources(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -184,7 +245,12 @@ pub async fn os_detect_updates_available(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<u64> {
-    state.lock().await.check_updates_available(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .check_updates_available(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Hardware ──────────────────────────────────────────────────────
@@ -194,7 +260,12 @@ pub async fn os_detect_cpu(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<CpuInfo> {
-    state.lock().await.detect_cpu(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_cpu(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -202,7 +273,12 @@ pub async fn os_detect_memory(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<MemoryInfo> {
-    state.lock().await.detect_memory(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_memory(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -210,7 +286,12 @@ pub async fn os_detect_disks(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<DiskInfo>> {
-    state.lock().await.detect_disks(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_disks(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -231,7 +312,12 @@ pub async fn os_detect_gpus(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<GpuInfo>> {
-    state.lock().await.detect_gpus(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_gpus(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -239,7 +325,12 @@ pub async fn os_detect_virtualization(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<VirtualizationInfo> {
-    state.lock().await.detect_virtualization(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_virtualization(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -247,7 +338,12 @@ pub async fn os_detect_hardware_profile(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<HardwareProfile> {
-    state.lock().await.build_hardware_profile(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .build_hardware_profile(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Kernel ────────────────────────────────────────────────────────
@@ -257,7 +353,12 @@ pub async fn os_detect_kernel(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<KernelInfo> {
-    state.lock().await.detect_kernel(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_kernel(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -265,7 +366,12 @@ pub async fn os_detect_architecture(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Architecture> {
-    state.lock().await.detect_architecture(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_architecture(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -273,7 +379,12 @@ pub async fn os_detect_loaded_modules(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<String>> {
-    state.lock().await.list_loaded_modules(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .list_loaded_modules(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -310,7 +421,12 @@ pub async fn os_detect_selinux(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<SecurityInfo> {
-    state.lock().await.detect_security_info(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_security_info(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -318,7 +434,12 @@ pub async fn os_detect_apparmor(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<SecurityInfo> {
-    state.lock().await.detect_security_info(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_security_info(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -326,7 +447,12 @@ pub async fn os_detect_firewall(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<SecurityInfo> {
-    state.lock().await.detect_security_info(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_security_info(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Services ──────────────────────────────────────────────────────
@@ -420,7 +546,12 @@ pub async fn os_detect_default_shell(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<ShellInfo> {
-    state.lock().await.detect_default_shell(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_default_shell(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -428,7 +559,12 @@ pub async fn os_detect_available_shells(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Vec<ShellInfo>> {
-    state.lock().await.detect_available_shells(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_available_shells(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Locale ────────────────────────────────────────────────────────
@@ -438,7 +574,12 @@ pub async fn os_detect_locale(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<SystemLocale> {
-    state.lock().await.detect_system_locale(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_system_locale(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -446,7 +587,12 @@ pub async fn os_detect_timezone(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<Option<String>> {
-    state.lock().await.detect_timezone(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .detect_timezone(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 // ── Full / Quick Scan ─────────────────────────────────────────────
@@ -456,7 +602,12 @@ pub async fn os_detect_full_scan(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<OsCapabilities> {
-    state.lock().await.full_scan(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .full_scan(&host_id)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -464,5 +615,10 @@ pub async fn os_detect_quick_scan(
     state: State<'_, OsDetectServiceState>,
     host_id: String,
 ) -> CmdResult<OsCapabilities> {
-    state.lock().await.quick_scan(&host_id).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .quick_scan(&host_id)
+        .await
+        .map_err(map_err)
 }

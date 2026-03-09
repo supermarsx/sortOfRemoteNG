@@ -47,20 +47,18 @@ pub async fn exec_ok(
 }
 
 /// Execute and return stdout; on failure return empty string instead of error.
-pub async fn exec_soft(
-    host: &OsDetectHost,
-    program: &str,
-    args: &[&str],
-) -> String {
+pub async fn exec_soft(host: &OsDetectHost, program: &str, args: &[&str]) -> String {
     match exec(host, program, args).await {
-        Ok((stdout, _, code)) if code == 0 => stdout,
+        Ok((stdout, _, 0)) => stdout,
         _ => String::new(),
     }
 }
 
 /// Check if a command is available on the host.
 pub async fn has_command(host: &OsDetectHost, cmd: &str) -> bool {
-    let (_, _, code) = exec(host, "sh", &["-c", &format!("command -v {cmd}")]).await.unwrap_or_default();
+    let (_, _, code) = exec(host, "sh", &["-c", &format!("command -v {cmd}")])
+        .await
+        .unwrap_or_default();
     code == 0
 }
 
@@ -75,7 +73,11 @@ async fn exec_local(
     args: &[&str],
 ) -> Result<std::process::Output, OsDetectError> {
     let output = if use_sudo {
-        Command::new("sudo").arg(program).args(args).output().await?
+        Command::new("sudo")
+            .arg(program)
+            .args(args)
+            .output()
+            .await?
     } else {
         Command::new(program).args(args).output().await?
     };
@@ -94,12 +96,16 @@ async fn exec_remote(
         format!("{} {}", program, args.join(" "))
     };
     let mut cmd = Command::new("ssh");
-    cmd.arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg(format!("ConnectTimeout={}", ssh.timeout_secs))
-        .arg("-p").arg(ssh.port.to_string());
+    cmd.arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg(format!("ConnectTimeout={}", ssh.timeout_secs))
+        .arg("-p")
+        .arg(ssh.port.to_string());
     if let crate::types::SshAuth::PrivateKey { key_path, .. } = &ssh.auth {
         cmd.arg("-i").arg(key_path);
     }
-    cmd.arg(format!("{}@{}", ssh.username, ssh.host)).arg(&remote_cmd);
+    cmd.arg(format!("{}@{}", ssh.username, ssh.host))
+        .arg(&remote_cmd);
     Ok(cmd.output().await?)
 }

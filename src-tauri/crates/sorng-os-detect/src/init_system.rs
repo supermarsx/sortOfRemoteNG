@@ -13,12 +13,19 @@ pub async fn detect_init_system(host: &OsDetectHost) -> Result<InitSystem, OsDet
         "init" => {
             // Could be SysVInit or OpenRC — disambiguate
             if client::has_command(host, "openrc").await
-                || client::shell_exec(host, "test -d /etc/runlevels && echo yes").await.trim() == "yes"
+                || client::shell_exec(host, "test -d /etc/runlevels && echo yes")
+                    .await
+                    .trim()
+                    == "yes"
             {
                 return Ok(InitSystem::OpenRC);
             }
             // Check for runit
-            if client::shell_exec(host, "test -d /etc/runit && echo yes").await.trim() == "yes" {
+            if client::shell_exec(host, "test -d /etc/runit && echo yes")
+                .await
+                .trim()
+                == "yes"
+            {
                 return Ok(InitSystem::Runit);
             }
             return Ok(InitSystem::SysVInit);
@@ -56,7 +63,9 @@ pub async fn detect_init_system(host: &OsDetectHost) -> Result<InitSystem, OsDet
 }
 
 /// Detect the version of the service manager.
-pub async fn detect_service_manager_version(host: &OsDetectHost) -> Result<Option<String>, OsDetectError> {
+pub async fn detect_service_manager_version(
+    host: &OsDetectHost,
+) -> Result<Option<String>, OsDetectError> {
     // systemd
     let systemd_ver = client::exec_soft(host, "systemctl", &["--version"]).await;
     if !systemd_ver.is_empty() {
@@ -82,12 +91,15 @@ pub async fn detect_service_manager_version(host: &OsDetectHost) -> Result<Optio
 }
 
 /// List all services managed by the detected init system.
-pub async fn list_init_services(host: &OsDetectHost) -> Result<Vec<AvailableService>, OsDetectError> {
+pub async fn list_init_services(
+    host: &OsDetectHost,
+) -> Result<Vec<AvailableService>, OsDetectError> {
     // Try systemd first
     let stdout = client::shell_exec(
         host,
         "systemctl list-units --all --type=service --no-pager --no-legend 2>/dev/null",
-    ).await;
+    )
+    .await;
     if !stdout.is_empty() {
         return Ok(parse_systemd_services(&stdout));
     }
@@ -130,14 +142,15 @@ pub async fn detect_default_target(host: &OsDetectHost) -> Result<Option<String>
     // SysVInit runlevel
     let runlevel = client::exec_soft(host, "runlevel", &[]).await;
     if !runlevel.is_empty() {
-        let parts: Vec<&str> = runlevel.trim().split_whitespace().collect();
+        let parts: Vec<&str> = runlevel.split_whitespace().collect();
         if let Some(level) = parts.last() {
             return Ok(Some(format!("runlevel {}", level)));
         }
     }
 
     // OpenRC default runlevel
-    let rc_default = client::shell_exec(host, "cat /etc/inittab 2>/dev/null | grep ':initdefault:'").await;
+    let rc_default =
+        client::shell_exec(host, "cat /etc/inittab 2>/dev/null | grep ':initdefault:'").await;
     if !rc_default.is_empty() {
         if let Some(level) = rc_default.split(':').nth(1) {
             return Ok(Some(format!("runlevel {}", level)));
@@ -150,26 +163,31 @@ pub async fn detect_default_target(host: &OsDetectHost) -> Result<Option<String>
 // ─── Parsers ────────────────────────────────────────────────────────
 
 fn parse_systemd_services(stdout: &str) -> Vec<AvailableService> {
-    stdout.lines().filter_map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 4 {
-            Some(AvailableService {
-                name: parts[0].trim_end_matches(".service").to_string(),
-                unit_type: Some("service".to_string()),
-                state: parts[2].to_string(), // active/inactive/failed
-                enabled: None,
-            })
-        } else {
-            None
-        }
-    }).collect()
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 {
+                Some(AvailableService {
+                    name: parts[0].trim_end_matches(".service").to_string(),
+                    unit_type: Some("service".to_string()),
+                    state: parts[2].to_string(), // active/inactive/failed
+                    enabled: None,
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn parse_openrc_services(stdout: &str) -> Vec<AvailableService> {
     let mut services = Vec::new();
     for line in stdout.lines() {
         let line = line.trim();
-        if line.is_empty() || line.ends_with(':') { continue; }
+        if line.is_empty() || line.ends_with(':') {
+            continue;
+        }
         // Format: "service_name   [ status ]"
         let parts: Vec<&str> = line.split('[').collect();
         if parts.len() == 2 {
@@ -187,56 +205,84 @@ fn parse_openrc_services(stdout: &str) -> Vec<AvailableService> {
 }
 
 fn parse_chkconfig_services(stdout: &str) -> Vec<AvailableService> {
-    stdout.lines().filter_map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() { return None; }
-        let name = parts[0].to_string();
-        // Check if any runlevel shows "on"
-        let enabled = parts.iter().any(|p| *p == "on" || p.ends_with(":on"));
-        Some(AvailableService {
-            name,
-            unit_type: Some("sysvinit".to_string()),
-            state: if enabled { "active".to_string() } else { "inactive".to_string() },
-            enabled: Some(enabled),
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.is_empty() {
+                return None;
+            }
+            let name = parts[0].to_string();
+            // Check if any runlevel shows "on"
+            let enabled = parts.iter().any(|p| *p == "on" || p.ends_with(":on"));
+            Some(AvailableService {
+                name,
+                unit_type: Some("sysvinit".to_string()),
+                state: if enabled {
+                    "active".to_string()
+                } else {
+                    "inactive".to_string()
+                },
+                enabled: Some(enabled),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn parse_service_status_all(stdout: &str) -> Vec<AvailableService> {
-    stdout.lines().filter_map(|line| {
-        let line = line.trim();
-        // Format: " [ + ]  service_name" or " [ - ]  service_name" or " [ ? ]  service_name"
-        if line.len() < 7 { return None; }
-        let state = if line.contains("[ + ]") { "active" }
-            else if line.contains("[ - ]") { "inactive" }
-            else { "unknown" };
-        let name = line.split(']').last()?.trim().to_string();
-        if name.is_empty() { return None; }
-        Some(AvailableService {
-            name,
-            unit_type: Some("sysvinit".to_string()),
-            state: state.to_string(),
-            enabled: None,
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            // Format: " [ + ]  service_name" or " [ - ]  service_name" or " [ ? ]  service_name"
+            if line.len() < 7 {
+                return None;
+            }
+            let state = if line.contains("[ + ]") {
+                "active"
+            } else if line.contains("[ - ]") {
+                "inactive"
+            } else {
+                "unknown"
+            };
+            let name = line.split(']').next_back()?.trim().to_string();
+            if name.is_empty() {
+                return None;
+            }
+            Some(AvailableService {
+                name,
+                unit_type: Some("sysvinit".to_string()),
+                state: state.to_string(),
+                enabled: None,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn parse_launchctl_services(stdout: &str) -> Vec<AvailableService> {
-    stdout.lines().skip(1).filter_map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        // Format: PID  Status  Label
-        if parts.len() >= 3 {
-            let pid = parts[0];
-            let label = parts[2].to_string();
-            let state = if pid == "-" { "inactive".to_string() } else { "active".to_string() };
-            Some(AvailableService {
-                name: label,
-                unit_type: Some("launchd".to_string()),
-                state,
-                enabled: None,
-            })
-        } else {
-            None
-        }
-    }).collect()
+    stdout
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            // Format: PID  Status  Label
+            if parts.len() >= 3 {
+                let pid = parts[0];
+                let label = parts[2].to_string();
+                let state = if pid == "-" {
+                    "inactive".to_string()
+                } else {
+                    "active".to_string()
+                };
+                Some(AvailableService {
+                    name: label,
+                    unit_type: Some("launchd".to_string()),
+                    state,
+                    enabled: None,
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }

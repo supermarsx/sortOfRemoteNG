@@ -38,7 +38,9 @@ pub async fn detect_cpu(host: &OsDetectHost) -> Result<CpuInfo, OsDetectError> {
         });
     }
 
-    Err(OsDetectError::ParseError("Could not detect CPU info".to_string()))
+    Err(OsDetectError::ParseError(
+        "Could not detect CPU info".to_string(),
+    ))
 }
 
 /// Detect memory information.
@@ -81,13 +83,20 @@ pub async fn detect_memory(host: &OsDetectHost) -> Result<MemoryInfo, OsDetectEr
         });
     }
 
-    Err(OsDetectError::ParseError("Could not detect memory info".to_string()))
+    Err(OsDetectError::ParseError(
+        "Could not detect memory info".to_string(),
+    ))
 }
 
 /// Detect disk information via lsblk, df.
 pub async fn detect_disks(host: &OsDetectHost) -> Result<Vec<DiskInfo>, OsDetectError> {
     // Try df (most portable)
-    let df = client::exec_soft(host, "df", &["-B1", "--output=source,target,fstype,size,used,avail"]).await;
+    let df = client::exec_soft(
+        host,
+        "df",
+        &["-B1", "--output=source,target,fstype,size,used,avail"],
+    )
+    .await;
     if !df.is_empty() {
         return Ok(parse_df_output(&df));
     }
@@ -102,7 +111,9 @@ pub async fn detect_disks(host: &OsDetectHost) -> Result<Vec<DiskInfo>, OsDetect
 }
 
 /// Detect network interfaces.
-pub async fn detect_network_interfaces(host: &OsDetectHost) -> Result<Vec<NetworkInterfaceInfo>, OsDetectError> {
+pub async fn detect_network_interfaces(
+    host: &OsDetectHost,
+) -> Result<Vec<NetworkInterfaceInfo>, OsDetectError> {
     // Try ip -j link/addr (Linux with iproute2)
     let ip_json = client::shell_exec(host, "ip -j addr show 2>/dev/null").await;
     if !ip_json.is_empty() && ip_json.trim().starts_with('[') {
@@ -132,7 +143,9 @@ pub async fn detect_gpus(host: &OsDetectHost) -> Result<Vec<GpuInfo>, OsDetectEr
     let lspci = client::shell_exec(host, "lspci 2>/dev/null | grep -iE 'VGA|3D|Display'").await;
     for line in lspci.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         // Format: "00:02.0 VGA compatible controller: Intel Corporation ..."
         let desc = line.splitn(2, ": ").last().unwrap_or(line);
         let (vendor, model) = split_gpu_vendor_model(desc);
@@ -175,13 +188,17 @@ pub async fn detect_gpus(host: &OsDetectHost) -> Result<Vec<GpuInfo>, OsDetectEr
 }
 
 /// Detect virtualization hypervisor / container runtime.
-pub async fn detect_virtualization(host: &OsDetectHost) -> Result<VirtualizationInfo, OsDetectError> {
+pub async fn detect_virtualization(
+    host: &OsDetectHost,
+) -> Result<VirtualizationInfo, OsDetectError> {
     // systemd-detect-virt (most reliable on systemd systems)
     let detect_virt = client::exec_soft(host, "systemd-detect-virt", &[]).await;
     let virt = detect_virt.trim().to_lowercase();
     if !virt.is_empty() && virt != "none" {
         let container_runtime = match virt.as_str() {
-            "docker" | "podman" | "lxc" | "lxc-libvirt" | "wsl" | "systemd-nspawn" => Some(virt.clone()),
+            "docker" | "podman" | "lxc" | "lxc-libvirt" | "wsl" | "systemd-nspawn" => {
+                Some(virt.clone())
+            }
             _ => None,
         };
         return Ok(VirtualizationInfo {
@@ -195,15 +212,24 @@ pub async fn detect_virtualization(host: &OsDetectHost) -> Result<Virtualization
     let dmi_vendor = client::shell_exec(
         host,
         "cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null",
-    ).await;
+    )
+    .await;
     let vendor_lower = dmi_vendor.trim().to_lowercase();
-    let hypervisor = if vendor_lower.contains("vmware") { "vmware" }
-        else if vendor_lower.contains("qemu") || vendor_lower.contains("kvm") { "kvm" }
-        else if vendor_lower.contains("microsoft") { "hyperv" }
-        else if vendor_lower.contains("xen") { "xen" }
-        else if vendor_lower.contains("parallels") { "parallels" }
-        else if vendor_lower.contains("virtualbox") { "virtualbox" }
-        else { "" };
+    let hypervisor = if vendor_lower.contains("vmware") {
+        "vmware"
+    } else if vendor_lower.contains("qemu") || vendor_lower.contains("kvm") {
+        "kvm"
+    } else if vendor_lower.contains("microsoft") {
+        "hyperv"
+    } else if vendor_lower.contains("xen") {
+        "xen"
+    } else if vendor_lower.contains("parallels") {
+        "parallels"
+    } else if vendor_lower.contains("virtualbox") {
+        "virtualbox"
+    } else {
+        ""
+    };
 
     if !hypervisor.is_empty() {
         return Ok(VirtualizationInfo {
@@ -258,11 +284,25 @@ pub async fn detect_virtualization(host: &OsDetectHost) -> Result<Virtualization
 }
 
 /// Detect DMI information (vendor, product, serial) via dmidecode or /sys.
-pub async fn detect_dmi_info(host: &OsDetectHost) -> Result<(Option<String>, Option<String>, Option<String>), OsDetectError> {
+pub async fn detect_dmi_info(
+    host: &OsDetectHost,
+) -> Result<(Option<String>, Option<String>, Option<String>), OsDetectError> {
     // Try /sys first (no sudo needed)
-    let vendor = client::shell_exec(host, "cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null").await;
-    let product = client::shell_exec(host, "cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null").await;
-    let serial = client::shell_exec(host, "cat /sys/devices/virtual/dmi/id/product_serial 2>/dev/null").await;
+    let vendor = client::shell_exec(
+        host,
+        "cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null",
+    )
+    .await;
+    let product = client::shell_exec(
+        host,
+        "cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null",
+    )
+    .await;
+    let serial = client::shell_exec(
+        host,
+        "cat /sys/devices/virtual/dmi/id/product_serial 2>/dev/null",
+    )
+    .await;
 
     let v = non_empty(vendor.trim());
     let p = non_empty(product.trim());
@@ -301,7 +341,10 @@ pub async fn detect_dmi_info(host: &OsDetectHost) -> Result<(Option<String>, Opt
             if let Some(val) = line.strip_prefix("Model Name:") {
                 model = non_empty(val.trim());
             } else if let Some(val) = line.strip_prefix("Serial Number") {
-                let val = val.trim_start_matches(':').trim_start_matches("(system):").trim();
+                let val = val
+                    .trim_start_matches(':')
+                    .trim_start_matches("(system):")
+                    .trim();
                 serial_mac = non_empty(val);
             }
         }
@@ -319,7 +362,8 @@ pub async fn build_hardware_profile(host: &OsDetectHost) -> Result<HardwareProfi
     let network_interfaces = detect_network_interfaces(host).await.unwrap_or_default();
     let gpus = detect_gpus(host).await.unwrap_or_default();
     let virtualization = detect_virtualization(host).await.ok();
-    let (dmi_vendor, dmi_product, dmi_serial) = detect_dmi_info(host).await.unwrap_or((None, None, None));
+    let (dmi_vendor, dmi_product, dmi_serial) =
+        detect_dmi_info(host).await.unwrap_or((None, None, None));
 
     Ok(HardwareProfile {
         cpu,
@@ -415,13 +459,19 @@ fn parse_proc_cpuinfo(content: &str) -> CpuInfo {
             match key {
                 "processor" => processor_count += 1,
                 "model name" => {
-                    if model.is_empty() { model = val.to_string(); }
+                    if model.is_empty() {
+                        model = val.to_string();
+                    }
                 }
                 "vendor_id" => {
-                    if vendor.is_none() { vendor = Some(val.to_string()); }
+                    if vendor.is_none() {
+                        vendor = Some(val.to_string());
+                    }
                 }
                 "cpu MHz" => {
-                    if freq.is_none() { freq = val.parse().ok(); }
+                    if freq.is_none() {
+                        freq = val.parse().ok();
+                    }
                 }
                 "flags" => {
                     if flags.is_empty() {
@@ -429,19 +479,33 @@ fn parse_proc_cpuinfo(content: &str) -> CpuInfo {
                     }
                 }
                 "microcode" => {
-                    if microcode.is_none() { microcode = Some(val.to_string()); }
+                    if microcode.is_none() {
+                        microcode = Some(val.to_string());
+                    }
                 }
                 "cache size" => {
-                    if cache_size.is_none() { cache_size = Some(val.to_string()); }
+                    if cache_size.is_none() {
+                        cache_size = Some(val.to_string());
+                    }
                 }
-                "core id" => { core_ids.insert(val.to_string()); }
+                "core id" => {
+                    core_ids.insert(val.to_string());
+                }
                 _ => {}
             }
         }
     }
 
-    let cores_physical = if core_ids.is_empty() { None } else { Some(core_ids.len() as u32) };
-    let cores_logical = if processor_count > 0 { Some(processor_count) } else { None };
+    let cores_physical = if core_ids.is_empty() {
+        None
+    } else {
+        Some(core_ids.len() as u32)
+    };
+    let cores_logical = if processor_count > 0 {
+        Some(processor_count)
+    } else {
+        None
+    };
     let arch_str = if flags.iter().any(|f| f == "lm") {
         "x86_64"
     } else {
@@ -478,7 +542,9 @@ fn parse_meminfo(content: &str) -> MemoryInfo {
                 "SwapTotal" => swap_total = val_kb * 1024,
                 "SwapFree" => swap_free = val_kb * 1024,
                 "HugePages_Total" => {
-                    huge_pages = val.trim().split_whitespace().next()
+                    huge_pages = val
+                        .split_whitespace()
+                        .next()
                         .and_then(|v| v.parse::<u64>().ok());
                 }
                 _ => {}
@@ -497,7 +563,10 @@ fn parse_meminfo(content: &str) -> MemoryInfo {
 
 fn parse_kb_value(s: &str) -> u64 {
     // "16384000 kB" -> 16384000
-    s.split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0)
+    s.split_whitespace()
+        .next()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
 }
 
 fn parse_macos_available_memory(vm_stat: &str) -> u64 {
@@ -518,7 +587,8 @@ fn parse_macos_available_memory(vm_stat: &str) -> u64 {
 }
 
 fn extract_trailing_number(line: &str) -> u64 {
-    line.split_whitespace().last()
+    line.split_whitespace()
+        .last()
         .map(|s| s.trim_end_matches('.'))
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
@@ -526,43 +596,60 @@ fn extract_trailing_number(line: &str) -> u64 {
 
 fn parse_df_output(stdout: &str) -> Vec<DiskInfo> {
     // Header: Filesystem  Mounted on  Type  Size  Used  Avail
-    stdout.lines().skip(1).filter_map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 6 { return None; }
-        // Skip pseudo filesystems
-        let device = parts[0];
-        if device.starts_with("tmpfs") || device.starts_with("devtmpfs")
-            || device == "none" || device.starts_with("overlay") {
-            return None;
-        }
-        Some(DiskInfo {
-            device: device.to_string(),
-            mount_point: parts[1].to_string(),
-            fs_type: parts[2].to_string(),
-            total_bytes: parts[3].parse().unwrap_or(0),
-            used_bytes: parts[4].parse().unwrap_or(0),
-            available_bytes: parts[5].parse().unwrap_or(0),
+    stdout
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 6 {
+                return None;
+            }
+            // Skip pseudo filesystems
+            let device = parts[0];
+            if device.starts_with("tmpfs")
+                || device.starts_with("devtmpfs")
+                || device == "none"
+                || device.starts_with("overlay")
+            {
+                return None;
+            }
+            Some(DiskInfo {
+                device: device.to_string(),
+                mount_point: parts[1].to_string(),
+                fs_type: parts[2].to_string(),
+                total_bytes: parts[3].parse().unwrap_or(0),
+                used_bytes: parts[4].parse().unwrap_or(0),
+                available_bytes: parts[5].parse().unwrap_or(0),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn parse_df_bsd(stdout: &str) -> Vec<DiskInfo> {
     // macOS/BSD df -b: Filesystem 512-blocks Used Available Capacity Mounted on
-    stdout.lines().skip(1).filter_map(|line| {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 6 { return None; }
-        let device = parts[0];
-        if device == "devfs" || device == "map" { return None; }
-        let block_size = 512u64;
-        Some(DiskInfo {
-            device: device.to_string(),
-            mount_point: parts[5..].join(" "),
-            fs_type: String::new(),
-            total_bytes: parts[1].parse::<u64>().unwrap_or(0) * block_size,
-            used_bytes: parts[2].parse::<u64>().unwrap_or(0) * block_size,
-            available_bytes: parts[3].parse::<u64>().unwrap_or(0) * block_size,
+    stdout
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 6 {
+                return None;
+            }
+            let device = parts[0];
+            if device == "devfs" || device == "map" {
+                return None;
+            }
+            let block_size = 512u64;
+            Some(DiskInfo {
+                device: device.to_string(),
+                mount_point: parts[5..].join(" "),
+                fs_type: String::new(),
+                total_bytes: parts[1].parse::<u64>().unwrap_or(0) * block_size,
+                used_bytes: parts[2].parse::<u64>().unwrap_or(0) * block_size,
+                available_bytes: parts[3].parse::<u64>().unwrap_or(0) * block_size,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn parse_ip_json(json_str: &str) -> Result<Vec<NetworkInterfaceInfo>, OsDetectError> {
@@ -571,7 +658,10 @@ fn parse_ip_json(json_str: &str) -> Result<Vec<NetworkInterfaceInfo>, OsDetectEr
 
     for entry in &entries {
         let name = entry["ifname"].as_str().unwrap_or("").to_string();
-        let state = entry["operstate"].as_str().unwrap_or("unknown").to_lowercase();
+        let state = entry["operstate"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_lowercase();
         let mac = entry["address"].as_str().map(|s| s.to_string());
         let mtu = entry["mtu"].as_u64().map(|v| v as u32);
 
@@ -617,9 +707,18 @@ fn parse_ip_addr(stdout: &str) -> Vec<NetworkInterfaceInfo> {
                 interfaces.push(iface);
             }
             let parts: Vec<&str> = line.split_whitespace().collect();
-            let name = parts.get(1).unwrap_or(&"").trim_end_matches(':').to_string();
-            let state = if line.contains("state UP") { "up" } else { "down" };
-            let mtu = parts.iter()
+            let name = parts
+                .get(1)
+                .unwrap_or(&"")
+                .trim_end_matches(':')
+                .to_string();
+            let state = if line.contains("state UP") {
+                "up"
+            } else {
+                "down"
+            };
+            let mtu = parts
+                .iter()
                 .position(|p| *p == "mtu")
                 .and_then(|i| parts.get(i + 1))
                 .and_then(|v| v.parse().ok());
@@ -664,10 +763,19 @@ fn parse_ifconfig(stdout: &str) -> Vec<NetworkInterfaceInfo> {
             if let Some(iface) = current.take() {
                 interfaces.push(iface);
             }
-            let name = line.split(':').next().unwrap_or("").split_whitespace().next().unwrap_or("").to_string();
+            let name = line
+                .split(':')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
             let state = if line.contains("UP") { "up" } else { "down" };
-            let mtu = line.split("mtu").last()
-                .and_then(|s| s.trim().split_whitespace().next())
+            let mtu = line
+                .split("mtu")
+                .last()
+                .and_then(|s| s.split_whitespace().next())
                 .and_then(|v| v.parse().ok());
             current = Some(NetworkInterfaceInfo {
                 name,
@@ -690,7 +798,9 @@ fn parse_ifconfig(stdout: &str) -> Vec<NetworkInterfaceInfo> {
                 let addr = rest.split_whitespace().next().unwrap_or("");
                 iface.ipv6_addrs.push(addr.to_string());
             } else if trimmed.starts_with("HWaddr") || trimmed.contains("HWaddr") {
-                let mac = trimmed.split("HWaddr").last()
+                let mac = trimmed
+                    .split("HWaddr")
+                    .last()
                     .and_then(|s| s.split_whitespace().next())
                     .map(|s| s.to_string());
                 iface.mac = mac;
@@ -705,7 +815,13 @@ fn parse_ifconfig(stdout: &str) -> Vec<NetworkInterfaceInfo> {
 
 fn split_gpu_vendor_model(desc: &str) -> (String, String) {
     let known_vendors = [
-        "NVIDIA", "AMD", "Intel", "Matrox", "ASPEED", "VMware", "VirtualBox",
+        "NVIDIA",
+        "AMD",
+        "Intel",
+        "Matrox",
+        "ASPEED",
+        "VMware",
+        "VirtualBox",
     ];
     for v in &known_vendors {
         if desc.to_uppercase().contains(&v.to_uppercase()) {
@@ -730,5 +846,9 @@ pub fn parse_architecture(s: &str) -> Architecture {
 }
 
 fn non_empty(s: &str) -> Option<String> {
-    if s.is_empty() { None } else { Some(s.to_string()) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
 }

@@ -11,7 +11,11 @@ pub async fn detect_default_shell(host: &OsDetectHost) -> Result<ShellInfo, OsDe
     let shell_path = shell_env.trim();
 
     if !shell_path.is_empty() && shell_path.starts_with('/') {
-        let name = shell_path.rsplit('/').next().unwrap_or(shell_path).to_string();
+        let name = shell_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(shell_path)
+            .to_string();
         let version = detect_shell_version(host, shell_path).await.ok();
         return Ok(ShellInfo {
             name,
@@ -24,13 +28,18 @@ pub async fn detect_default_shell(host: &OsDetectHost) -> Result<ShellInfo, OsDe
     let passwd = client::shell_exec(
         host,
         "getent passwd $(whoami) 2>/dev/null || grep \"^$(whoami):\" /etc/passwd 2>/dev/null",
-    ).await;
+    )
+    .await;
     if !passwd.is_empty() {
         // Format: user:x:uid:gid:info:home:shell
         let fields: Vec<&str> = passwd.trim().split(':').collect();
         if let Some(shell_path) = fields.last() {
             let shell_path = shell_path.trim();
-            let name = shell_path.rsplit('/').next().unwrap_or(shell_path).to_string();
+            let name = shell_path
+                .rsplit('/')
+                .next()
+                .unwrap_or(shell_path)
+                .to_string();
             let version = detect_shell_version(host, shell_path).await.ok();
             return Ok(ShellInfo {
                 name,
@@ -60,7 +69,9 @@ pub async fn detect_default_shell(host: &OsDetectHost) -> Result<ShellInfo, OsDe
         });
     }
 
-    Err(OsDetectError::ParseError("Could not detect default shell".to_string()))
+    Err(OsDetectError::ParseError(
+        "Could not detect default shell".to_string(),
+    ))
 }
 
 /// List all available shells from /etc/shells.
@@ -70,17 +81,29 @@ pub async fn detect_available_shells(host: &OsDetectHost) -> Result<Vec<ShellInf
 
     for line in etc_shells.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
 
         let path = line.to_string();
         let name = path.rsplit('/').next().unwrap_or(&path).to_string();
         let version = detect_shell_version(host, &path).await.ok();
-        shells.push(ShellInfo { name, path, version });
+        shells.push(ShellInfo {
+            name,
+            path,
+            version,
+        });
     }
 
     // If /etc/shells was empty (e.g. macOS minimal, containers), try common shells
     if shells.is_empty() {
-        let common = ["/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/fish", "/bin/dash"];
+        let common = [
+            "/bin/sh",
+            "/bin/bash",
+            "/bin/zsh",
+            "/usr/bin/fish",
+            "/bin/dash",
+        ];
         for path in &common {
             let exists = client::shell_exec(host, &format!("test -x {path} && echo yes")).await;
             if exists.trim() == "yes" {
@@ -99,7 +122,10 @@ pub async fn detect_available_shells(host: &OsDetectHost) -> Result<Vec<ShellInf
 }
 
 /// Detect the version of a specific shell.
-pub async fn detect_shell_version(host: &OsDetectHost, shell_path: &str) -> Result<String, OsDetectError> {
+pub async fn detect_shell_version(
+    host: &OsDetectHost,
+    shell_path: &str,
+) -> Result<String, OsDetectError> {
     let name = shell_path.rsplit('/').next().unwrap_or(shell_path);
 
     let output = match name {
@@ -124,7 +150,9 @@ pub async fn detect_shell_version(host: &OsDetectHost, shell_path: &str) -> Resu
 
     let version = output.lines().next().unwrap_or("").trim().to_string();
     if version.is_empty() {
-        Err(OsDetectError::ParseError(format!("Could not detect version for {name}")))
+        Err(OsDetectError::ParseError(format!(
+            "Could not detect version for {name}"
+        )))
     } else {
         Ok(version)
     }
