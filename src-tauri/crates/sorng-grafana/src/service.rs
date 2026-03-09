@@ -29,6 +29,12 @@ pub struct GrafanaService {
     connections: HashMap<String, GrafanaClient>,
 }
 
+impl Default for GrafanaService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GrafanaService {
     pub fn new() -> Self {
         Self {
@@ -72,7 +78,11 @@ impl GrafanaService {
 
     // ── Dashboards ───────────────────────────────────────────────
 
-    pub async fn search_dashboards(&self, id: &str, query: &SearchQuery) -> GrafanaResult<Vec<Dashboard>> {
+    pub async fn search_dashboards(
+        &self,
+        id: &str,
+        query: &SearchQuery,
+    ) -> GrafanaResult<Vec<Dashboard>> {
         dashboards::DashboardManager::search(self.client(id)?, query).await
     }
 
@@ -80,7 +90,11 @@ impl GrafanaService {
         dashboards::DashboardManager::get_by_uid(self.client(id)?, uid).await
     }
 
-    pub async fn save_dashboard(&self, id: &str, request: &SaveDashboardRequest) -> GrafanaResult<SaveDashboardResponse> {
+    pub async fn save_dashboard(
+        &self,
+        id: &str,
+        request: &SaveDashboardRequest,
+    ) -> GrafanaResult<SaveDashboardResponse> {
         dashboards::DashboardManager::save(self.client(id)?, request).await
     }
 
@@ -92,23 +106,46 @@ impl GrafanaService {
         dashboards::DashboardManager::get_home(self.client(id)?).await
     }
 
-    pub async fn list_dashboard_versions(&self, id: &str, dashboard_id: u64) -> GrafanaResult<Vec<DashboardVersion>> {
+    pub async fn list_dashboard_versions(
+        &self,
+        id: &str,
+        dashboard_id: u64,
+    ) -> GrafanaResult<Vec<DashboardVersion>> {
         dashboards::DashboardManager::list_versions(self.client(id)?, dashboard_id).await
     }
 
-    pub async fn get_dashboard_version(&self, id: &str, dashboard_id: u64, version: u64) -> GrafanaResult<DashboardVersion> {
+    pub async fn get_dashboard_version(
+        &self,
+        id: &str,
+        dashboard_id: u64,
+        version: u64,
+    ) -> GrafanaResult<DashboardVersion> {
         dashboards::DashboardManager::get_version(self.client(id)?, dashboard_id, version).await
     }
 
-    pub async fn restore_dashboard_version(&self, id: &str, dashboard_id: u64, version: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn restore_dashboard_version(
+        &self,
+        id: &str,
+        dashboard_id: u64,
+        version: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         dashboards::DashboardManager::restore_version(self.client(id)?, dashboard_id, version).await
     }
 
-    pub async fn get_dashboard_permissions(&self, id: &str, uid: &str) -> GrafanaResult<serde_json::Value> {
+    pub async fn get_dashboard_permissions(
+        &self,
+        id: &str,
+        uid: &str,
+    ) -> GrafanaResult<serde_json::Value> {
         dashboards::DashboardManager::get_permissions(self.client(id)?, uid).await
     }
 
-    pub async fn update_dashboard_permissions(&self, id: &str, uid: &str, permissions: &serde_json::Value) -> GrafanaResult<serde_json::Value> {
+    pub async fn update_dashboard_permissions(
+        &self,
+        id: &str,
+        uid: &str,
+        permissions: &serde_json::Value,
+    ) -> GrafanaResult<serde_json::Value> {
         dashboards::DashboardManager::update_permissions(self.client(id)?, uid, permissions).await
     }
 
@@ -134,15 +171,28 @@ impl GrafanaService {
         datasources::DatasourceManager::get_by_name(self.client(id)?, name).await
     }
 
-    pub async fn create_datasource(&self, id: &str, request: &DatasourceCreateRequest) -> GrafanaResult<serde_json::Value> {
+    pub async fn create_datasource(
+        &self,
+        id: &str,
+        request: &DatasourceCreateRequest,
+    ) -> GrafanaResult<serde_json::Value> {
         datasources::DatasourceManager::create(self.client(id)?, request).await
     }
 
-    pub async fn update_datasource(&self, id: &str, ds_id: u64, request: &DatasourceCreateRequest) -> GrafanaResult<serde_json::Value> {
+    pub async fn update_datasource(
+        &self,
+        id: &str,
+        ds_id: u64,
+        request: &DatasourceCreateRequest,
+    ) -> GrafanaResult<serde_json::Value> {
         datasources::DatasourceManager::update(self.client(id)?, ds_id, request).await
     }
 
-    pub async fn delete_datasource(&self, id: &str, ds_id: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete_datasource(
+        &self,
+        id: &str,
+        ds_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         datasources::DatasourceManager::delete_by_id(self.client(id)?, ds_id).await
     }
 
@@ -160,11 +210,22 @@ impl GrafanaService {
         folders::FolderManager::get_by_uid(self.client(id)?, uid).await
     }
 
-    pub async fn create_folder(&self, id: &str, uid: Option<&str>, title: &str) -> GrafanaResult<Folder> {
+    pub async fn create_folder(
+        &self,
+        id: &str,
+        uid: Option<&str>,
+        title: &str,
+    ) -> GrafanaResult<Folder> {
         folders::FolderManager::create(self.client(id)?, uid, title).await
     }
 
-    pub async fn update_folder(&self, id: &str, uid: &str, title: &str, version: Option<u64>) -> GrafanaResult<Folder> {
+    pub async fn update_folder(
+        &self,
+        id: &str,
+        uid: &str,
+        title: &str,
+        version: Option<u64>,
+    ) -> GrafanaResult<Folder> {
         folders::FolderManager::update(self.client(id)?, uid, title, version).await
     }
 
@@ -198,15 +259,30 @@ impl GrafanaService {
         orgs::OrgManager::switch_org(self.client(id)?, org_id).await
     }
 
-    pub async fn list_org_users(&self, id: &str, org_id: u64) -> GrafanaResult<Vec<serde_json::Value>> {
+    pub async fn list_org_users(
+        &self,
+        id: &str,
+        org_id: u64,
+    ) -> GrafanaResult<Vec<serde_json::Value>> {
         orgs::OrgManager::list_users(self.client(id)?, org_id).await
     }
 
-    pub async fn add_org_user(&self, id: &str, org_id: u64, login_or_email: &str, role: &str) -> GrafanaResult<serde_json::Value> {
+    pub async fn add_org_user(
+        &self,
+        id: &str,
+        org_id: u64,
+        login_or_email: &str,
+        role: &str,
+    ) -> GrafanaResult<serde_json::Value> {
         orgs::OrgManager::add_user(self.client(id)?, org_id, login_or_email, role).await
     }
 
-    pub async fn remove_org_user(&self, id: &str, org_id: u64, user_id: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn remove_org_user(
+        &self,
+        id: &str,
+        org_id: u64,
+        user_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         orgs::OrgManager::remove_user(self.client(id)?, org_id, user_id).await
     }
 
@@ -240,7 +316,12 @@ impl GrafanaService {
         users::UserManager::get_current(self.client(id)?).await
     }
 
-    pub async fn set_user_admin(&self, id: &str, user_id: u64, is_admin: bool) -> GrafanaResult<serde_json::Value> {
+    pub async fn set_user_admin(
+        &self,
+        id: &str,
+        user_id: u64,
+        is_admin: bool,
+    ) -> GrafanaResult<serde_json::Value> {
         users::UserManager::set_admin(self.client(id)?, user_id, is_admin).await
     }
 
@@ -254,7 +335,12 @@ impl GrafanaService {
         teams::TeamManager::get(self.client(id)?, team_id).await
     }
 
-    pub async fn create_team(&self, id: &str, name: &str, email: Option<&str>) -> GrafanaResult<serde_json::Value> {
+    pub async fn create_team(
+        &self,
+        id: &str,
+        name: &str,
+        email: Option<&str>,
+    ) -> GrafanaResult<serde_json::Value> {
         teams::TeamManager::create(self.client(id)?, name, email).await
     }
 
@@ -262,21 +348,40 @@ impl GrafanaService {
         teams::TeamManager::delete(self.client(id)?, team_id).await
     }
 
-    pub async fn list_team_members(&self, id: &str, team_id: u64) -> GrafanaResult<Vec<TeamMember>> {
+    pub async fn list_team_members(
+        &self,
+        id: &str,
+        team_id: u64,
+    ) -> GrafanaResult<Vec<TeamMember>> {
         teams::TeamManager::list_members(self.client(id)?, team_id).await
     }
 
-    pub async fn add_team_member(&self, id: &str, team_id: u64, user_id: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn add_team_member(
+        &self,
+        id: &str,
+        team_id: u64,
+        user_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         teams::TeamManager::add_member(self.client(id)?, team_id, user_id).await
     }
 
-    pub async fn remove_team_member(&self, id: &str, team_id: u64, user_id: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn remove_team_member(
+        &self,
+        id: &str,
+        team_id: u64,
+        user_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         teams::TeamManager::remove_member(self.client(id)?, team_id, user_id).await
     }
 
     // ── Alerts ───────────────────────────────────────────────────
 
-    pub async fn list_alert_rules(&self, id: &str, folder_uid: Option<&str>, rule_group: Option<&str>) -> GrafanaResult<Vec<AlertRule>> {
+    pub async fn list_alert_rules(
+        &self,
+        id: &str,
+        folder_uid: Option<&str>,
+        rule_group: Option<&str>,
+    ) -> GrafanaResult<Vec<AlertRule>> {
         alerts::AlertManager::list_rules(self.client(id)?, folder_uid, rule_group).await
     }
 
@@ -288,7 +393,12 @@ impl GrafanaService {
         alerts::AlertManager::create_rule(self.client(id)?, rule).await
     }
 
-    pub async fn update_alert_rule(&self, id: &str, uid: &str, rule: &AlertRule) -> GrafanaResult<AlertRule> {
+    pub async fn update_alert_rule(
+        &self,
+        id: &str,
+        uid: &str,
+        rule: &AlertRule,
+    ) -> GrafanaResult<AlertRule> {
         alerts::AlertManager::update_rule(self.client(id)?, uid, rule).await
     }
 
@@ -296,24 +406,41 @@ impl GrafanaService {
         alerts::AlertManager::delete_rule(self.client(id)?, uid).await
     }
 
-    pub async fn pause_alert_rule(&self, id: &str, uid: &str, paused: bool) -> GrafanaResult<AlertRule> {
+    pub async fn pause_alert_rule(
+        &self,
+        id: &str,
+        uid: &str,
+        paused: bool,
+    ) -> GrafanaResult<AlertRule> {
         alerts::AlertManager::pause_rule(self.client(id)?, uid, paused).await
     }
 
-    pub async fn list_alert_notifications(&self, id: &str) -> GrafanaResult<Vec<AlertNotification>> {
+    pub async fn list_alert_notifications(
+        &self,
+        id: &str,
+    ) -> GrafanaResult<Vec<AlertNotification>> {
         alerts::AlertManager::list_notifications(self.client(id)?).await
     }
 
-    pub async fn create_alert_notification(&self, id: &str, config: &AlertNotification) -> GrafanaResult<AlertNotification> {
+    pub async fn create_alert_notification(
+        &self,
+        id: &str,
+        config: &AlertNotification,
+    ) -> GrafanaResult<AlertNotification> {
         alerts::AlertManager::create_notification(self.client(id)?, config).await
     }
 
-    pub async fn delete_alert_notification(&self, id: &str, notif_id: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete_alert_notification(
+        &self,
+        id: &str,
+        notif_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         alerts::AlertManager::delete_notification(self.client(id)?, notif_id).await
     }
 
     // ── Annotations ──────────────────────────────────────────────
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn list_annotations(
         &self,
         id: &str,
@@ -324,14 +451,31 @@ impl GrafanaService {
         tags: Option<&[String]>,
         limit: Option<u64>,
     ) -> GrafanaResult<Vec<Annotation>> {
-        annotations::AnnotationManager::list(self.client(id)?, from, to, dashboard_id, panel_id, tags, limit).await
+        annotations::AnnotationManager::list(
+            self.client(id)?,
+            from,
+            to,
+            dashboard_id,
+            panel_id,
+            tags,
+            limit,
+        )
+        .await
     }
 
-    pub async fn create_annotation(&self, id: &str, request: &CreateAnnotationRequest) -> GrafanaResult<Annotation> {
+    pub async fn create_annotation(
+        &self,
+        id: &str,
+        request: &CreateAnnotationRequest,
+    ) -> GrafanaResult<Annotation> {
         annotations::AnnotationManager::create(self.client(id)?, request).await
     }
 
-    pub async fn delete_annotation(&self, id: &str, ann_id: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete_annotation(
+        &self,
+        id: &str,
+        ann_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         annotations::AnnotationManager::delete(self.client(id)?, ann_id).await
     }
 
@@ -345,11 +489,21 @@ impl GrafanaService {
         playlists::PlaylistManager::get(self.client(id)?, playlist_id).await
     }
 
-    pub async fn create_playlist(&self, id: &str, name: &str, interval: &str, items: &[PlaylistItem]) -> GrafanaResult<Playlist> {
+    pub async fn create_playlist(
+        &self,
+        id: &str,
+        name: &str,
+        interval: &str,
+        items: &[PlaylistItem],
+    ) -> GrafanaResult<Playlist> {
         playlists::PlaylistManager::create(self.client(id)?, name, interval, items).await
     }
 
-    pub async fn delete_playlist(&self, id: &str, playlist_id: u64) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete_playlist(
+        &self,
+        id: &str,
+        playlist_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         playlists::PlaylistManager::delete(self.client(id)?, playlist_id).await
     }
 
@@ -359,7 +513,13 @@ impl GrafanaService {
         snapshots::SnapshotManager::list(self.client(id)?).await
     }
 
-    pub async fn create_snapshot(&self, id: &str, dashboard: &serde_json::Value, name: Option<&str>, expires: Option<u64>) -> GrafanaResult<serde_json::Value> {
+    pub async fn create_snapshot(
+        &self,
+        id: &str,
+        dashboard: &serde_json::Value,
+        name: Option<&str>,
+        expires: Option<u64>,
+    ) -> GrafanaResult<serde_json::Value> {
         snapshots::SnapshotManager::create(self.client(id)?, dashboard, name, expires).await
     }
 

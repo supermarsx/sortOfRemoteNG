@@ -47,7 +47,10 @@ impl std::error::Error for GrafanaError {}
 
 impl GrafanaError {
     pub fn new(kind: GrafanaErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(GrafanaErrorKind::NotConnected, msg)

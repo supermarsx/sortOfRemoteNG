@@ -27,7 +27,11 @@ impl GrafanaClient {
     // ── URL builders ─────────────────────────────────────────────
 
     fn scheme(&self) -> &str {
-        if self.config.use_tls.unwrap_or(true) { "https" } else { "http" }
+        if self.config.use_tls.unwrap_or(true) {
+            "https"
+        } else {
+            "http"
+        }
     }
 
     fn base_url(&self) -> String {
@@ -83,7 +87,8 @@ impl GrafanaClient {
     pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> GrafanaResult<T> {
         let url = self.api_url(path);
         debug!("GRAFANA GET {url}");
-        let resp = self.prepare(self.http.get(&url))
+        let resp = self
+            .prepare(self.http.get(&url))
             .send()
             .await
             .map_err(|e| GrafanaError::http(format!("GET {url}: {e}")))?;
@@ -108,7 +113,8 @@ impl GrafanaClient {
     ) -> GrafanaResult<T> {
         let url = self.api_url(path);
         debug!("GRAFANA POST {url}");
-        let resp = self.prepare(self.http.post(&url).json(body))
+        let resp = self
+            .prepare(self.http.post(&url).json(body))
             .send()
             .await
             .map_err(|e| GrafanaError::http(format!("POST {url}: {e}")))?;
@@ -129,7 +135,8 @@ impl GrafanaClient {
     ) -> GrafanaResult<T> {
         let url = self.api_url(path);
         debug!("GRAFANA PUT {url}");
-        let resp = self.prepare(self.http.put(&url).json(body))
+        let resp = self
+            .prepare(self.http.put(&url).json(body))
             .send()
             .await
             .map_err(|e| GrafanaError::http(format!("PUT {url}: {e}")))?;
@@ -150,7 +157,8 @@ impl GrafanaClient {
     ) -> GrafanaResult<T> {
         let url = self.api_url(path);
         debug!("GRAFANA PATCH {url}");
-        let resp = self.prepare(self.http.patch(&url).json(body))
+        let resp = self
+            .prepare(self.http.patch(&url).json(body))
             .send()
             .await
             .map_err(|e| GrafanaError::http(format!("PATCH {url}: {e}")))?;
@@ -167,7 +175,8 @@ impl GrafanaClient {
     pub async fn api_delete(&self, path: &str) -> GrafanaResult<serde_json::Value> {
         let url = self.api_url(path);
         debug!("GRAFANA DELETE {url}");
-        let resp = self.prepare(self.http.delete(&url))
+        let resp = self
+            .prepare(self.http.delete(&url))
             .send()
             .await
             .map_err(|e| GrafanaError::http(format!("DELETE {url}: {e}")))?;
@@ -190,12 +199,19 @@ impl GrafanaClient {
     pub async fn ping(&self) -> GrafanaResult<GrafanaConnectionSummary> {
         let health: HealthResponse = self.health().await?;
         let org: serde_json::Value = self.api_get("org").await.unwrap_or_default();
-        let search: Vec<serde_json::Value> = self.api_get("search?type=dash-db").await.unwrap_or_default();
+        let search: Vec<serde_json::Value> = self
+            .api_get("search?type=dash-db")
+            .await
+            .unwrap_or_default();
         let users: Vec<serde_json::Value> = self.api_get("org/users").await.unwrap_or_default();
         Ok(GrafanaConnectionSummary {
             host: self.config.host.clone(),
             version: health.version.unwrap_or_else(|| "unknown".into()),
-            org_name: org.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+            org_name: org
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
             user_count: users.len() as u64,
             dashboard_count: search.len() as u64,
         })

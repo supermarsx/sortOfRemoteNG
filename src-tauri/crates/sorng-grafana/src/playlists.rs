@@ -50,26 +50,17 @@ impl PlaylistManager {
     }
 
     /// Delete a playlist.  DELETE /api/playlists/:id
-    pub async fn delete(
-        client: &GrafanaClient,
-        id: u64,
-    ) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete(client: &GrafanaClient, id: u64) -> GrafanaResult<serde_json::Value> {
         client.api_delete(&format!("playlists/{id}")).await
     }
 
     /// Get playlist items.  GET /api/playlists/:id/items
-    pub async fn get_items(
-        client: &GrafanaClient,
-        id: u64,
-    ) -> GrafanaResult<Vec<PlaylistItem>> {
+    pub async fn get_items(client: &GrafanaClient, id: u64) -> GrafanaResult<Vec<PlaylistItem>> {
         client.api_get(&format!("playlists/{id}/items")).await
     }
 
     /// Get playlist dashboards.  GET /api/playlists/:id/dashboards
-    pub async fn get_dashboards(
-        client: &GrafanaClient,
-        id: u64,
-    ) -> GrafanaResult<Vec<Dashboard>> {
+    pub async fn get_dashboards(client: &GrafanaClient, id: u64) -> GrafanaResult<Vec<Dashboard>> {
         client.api_get(&format!("playlists/{id}/dashboards")).await
     }
 }

@@ -50,9 +50,7 @@ impl AlertManager {
             for group in arr {
                 if let Some(r) = group.get("rules").and_then(|v| v.as_array()) {
                     for rule_val in r {
-                        if let Ok(rule) =
-                            serde_json::from_value::<AlertRule>(rule_val.clone())
-                        {
+                        if let Ok(rule) = serde_json::from_value::<AlertRule>(rule_val.clone()) {
                             rules.push(rule);
                         }
                     }
@@ -63,23 +61,15 @@ impl AlertManager {
     }
 
     /// Get a single alert rule.  GET /api/v1/provisioning/alert-rules/:uid
-    pub async fn get_rule(
-        client: &GrafanaClient,
-        uid: &str,
-    ) -> GrafanaResult<AlertRule> {
+    pub async fn get_rule(client: &GrafanaClient, uid: &str) -> GrafanaResult<AlertRule> {
         client
             .api_get(&format!("v1/provisioning/alert-rules/{uid}"))
             .await
     }
 
     /// Create an alert rule.  POST /api/v1/provisioning/alert-rules
-    pub async fn create_rule(
-        client: &GrafanaClient,
-        rule: &AlertRule,
-    ) -> GrafanaResult<AlertRule> {
-        client
-            .api_post("v1/provisioning/alert-rules", rule)
-            .await
+    pub async fn create_rule(client: &GrafanaClient, rule: &AlertRule) -> GrafanaResult<AlertRule> {
+        client.api_post("v1/provisioning/alert-rules", rule).await
     }
 
     /// Update an alert rule.  PUT /api/v1/provisioning/alert-rules/:uid
@@ -127,9 +117,7 @@ impl AlertManager {
         client: &GrafanaClient,
         id: u64,
     ) -> GrafanaResult<AlertNotification> {
-        client
-            .api_get(&format!("alert-notifications/{id}"))
-            .await
+        client.api_get(&format!("alert-notifications/{id}")).await
     }
 
     /// Create a notification channel.  POST /api/alert-notifications
@@ -167,8 +155,6 @@ impl AlertManager {
         id: u64,
     ) -> GrafanaResult<serde_json::Value> {
         let body = serde_json::json!({ "id": id });
-        client
-            .api_post("alert-notifications/test", &body)
-            .await
+        client.api_post("alert-notifications/test", &body).await
     }
 }

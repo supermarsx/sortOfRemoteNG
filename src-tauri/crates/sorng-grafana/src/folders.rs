@@ -14,10 +14,7 @@ impl FolderManager {
     }
 
     /// Get folder by UID.  GET /api/folders/:uid
-    pub async fn get_by_uid(
-        client: &GrafanaClient,
-        uid: &str,
-    ) -> GrafanaResult<Folder> {
+    pub async fn get_by_uid(client: &GrafanaClient, uid: &str) -> GrafanaResult<Folder> {
         client.api_get(&format!("folders/{uid}")).await
     }
 
@@ -61,9 +58,7 @@ impl FolderManager {
         client: &GrafanaClient,
         uid: &str,
     ) -> GrafanaResult<serde_json::Value> {
-        client
-            .api_get(&format!("folders/{uid}/permissions"))
-            .await
+        client.api_get(&format!("folders/{uid}/permissions")).await
     }
 
     /// Update folder permissions.  POST /api/folders/:uid/permissions

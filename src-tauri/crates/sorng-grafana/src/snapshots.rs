@@ -31,10 +31,7 @@ impl SnapshotManager {
     }
 
     /// Get snapshot by key.  GET /api/snapshots/:key
-    pub async fn get_by_key(
-        client: &GrafanaClient,
-        key: &str,
-    ) -> GrafanaResult<Snapshot> {
+    pub async fn get_by_key(client: &GrafanaClient, key: &str) -> GrafanaResult<Snapshot> {
         client.api_get(&format!("snapshots/{key}")).await
     }
 

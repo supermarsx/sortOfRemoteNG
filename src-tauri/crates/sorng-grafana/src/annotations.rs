@@ -48,10 +48,7 @@ impl AnnotationManager {
     }
 
     /// Get annotation by ID.  GET /api/annotations/:id
-    pub async fn get(
-        client: &GrafanaClient,
-        id: u64,
-    ) -> GrafanaResult<Annotation> {
+    pub async fn get(client: &GrafanaClient, id: u64) -> GrafanaResult<Annotation> {
         client.api_get(&format!("annotations/{id}")).await
     }
 
@@ -91,16 +88,11 @@ impl AnnotationManager {
         if let Some(t) = tags {
             body["tags"] = serde_json::json!(t);
         }
-        client
-            .api_patch(&format!("annotations/{id}"), &body)
-            .await
+        client.api_patch(&format!("annotations/{id}"), &body).await
     }
 
     /// Delete an annotation.  DELETE /api/annotations/:id
-    pub async fn delete(
-        client: &GrafanaClient,
-        id: u64,
-    ) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete(client: &GrafanaClient, id: u64) -> GrafanaResult<serde_json::Value> {
         client.api_delete(&format!("annotations/{id}")).await
     }
 

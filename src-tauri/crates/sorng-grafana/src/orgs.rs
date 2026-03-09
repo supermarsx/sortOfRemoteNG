@@ -19,18 +19,12 @@ impl OrgManager {
     }
 
     /// Get organization by name.  GET /api/orgs/name/:name
-    pub async fn get_by_name(
-        client: &GrafanaClient,
-        name: &str,
-    ) -> GrafanaResult<Organization> {
+    pub async fn get_by_name(client: &GrafanaClient, name: &str) -> GrafanaResult<Organization> {
         client.api_get(&format!("orgs/name/{name}")).await
     }
 
     /// Create an organization.  POST /api/orgs
-    pub async fn create(
-        client: &GrafanaClient,
-        name: &str,
-    ) -> GrafanaResult<serde_json::Value> {
+    pub async fn create(client: &GrafanaClient, name: &str) -> GrafanaResult<serde_json::Value> {
         let body = serde_json::json!({ "name": name });
         client.api_post("orgs", &body).await
     }
@@ -44,24 +38,18 @@ impl OrgManager {
     ) -> GrafanaResult<serde_json::Value> {
         let mut body = serde_json::json!({ "name": name });
         if let Some(addr) = address {
-            body["address"] = serde_json::to_value(addr)
-                .unwrap_or_default();
+            body["address"] = serde_json::to_value(addr).unwrap_or_default();
         }
         client.api_put(&format!("orgs/{id}"), &body).await
     }
 
     /// Delete an organization.  DELETE /api/orgs/:id
-    pub async fn delete(
-        client: &GrafanaClient,
-        id: u64,
-    ) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete(client: &GrafanaClient, id: u64) -> GrafanaResult<serde_json::Value> {
         client.api_delete(&format!("orgs/{id}")).await
     }
 
     /// Get current organization.  GET /api/org
-    pub async fn get_current(
-        client: &GrafanaClient,
-    ) -> GrafanaResult<Organization> {
+    pub async fn get_current(client: &GrafanaClient) -> GrafanaResult<Organization> {
         client.api_get("org").await
     }
 

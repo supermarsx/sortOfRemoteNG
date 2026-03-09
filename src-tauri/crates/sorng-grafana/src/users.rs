@@ -19,20 +19,14 @@ impl UserManager {
     }
 
     /// Get user by login / username.  GET /api/users/lookup?loginOrEmail=:login
-    pub async fn get_by_login(
-        client: &GrafanaClient,
-        login: &str,
-    ) -> GrafanaResult<GrafanaUser> {
+    pub async fn get_by_login(client: &GrafanaClient, login: &str) -> GrafanaResult<GrafanaUser> {
         client
             .api_get(&format!("users/lookup?loginOrEmail={login}"))
             .await
     }
 
     /// Get user by email.  GET /api/users/lookup?loginOrEmail=:email
-    pub async fn get_by_email(
-        client: &GrafanaClient,
-        email: &str,
-    ) -> GrafanaResult<GrafanaUser> {
+    pub async fn get_by_email(client: &GrafanaClient, email: &str) -> GrafanaResult<GrafanaUser> {
         client
             .api_get(&format!("users/lookup?loginOrEmail={email}"))
             .await
@@ -89,10 +83,7 @@ impl UserManager {
     }
 
     /// Delete user (admin).  DELETE /api/admin/users/:id
-    pub async fn delete(
-        client: &GrafanaClient,
-        id: u64,
-    ) -> GrafanaResult<serde_json::Value> {
+    pub async fn delete(client: &GrafanaClient, id: u64) -> GrafanaResult<serde_json::Value> {
         client.api_delete(&format!("admin/users/{id}")).await
     }
 

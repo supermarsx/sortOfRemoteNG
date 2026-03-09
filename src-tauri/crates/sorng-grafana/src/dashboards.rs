@@ -53,10 +53,7 @@ impl DashboardManager {
     }
 
     /// Get dashboard by UID.  GET /api/dashboards/uid/:uid
-    pub async fn get_by_uid(
-        client: &GrafanaClient,
-        uid: &str,
-    ) -> GrafanaResult<DashboardDetail> {
+    pub async fn get_by_uid(client: &GrafanaClient, uid: &str) -> GrafanaResult<DashboardDetail> {
         client.api_get(&format!("dashboards/uid/{uid}")).await
     }
 
@@ -98,9 +95,7 @@ impl DashboardManager {
         version: u64,
     ) -> GrafanaResult<DashboardVersion> {
         client
-            .api_get(&format!(
-                "dashboards/id/{dashboard_id}/versions/{version}"
-            ))
+            .api_get(&format!("dashboards/id/{dashboard_id}/versions/{version}"))
             .await
     }
 
@@ -151,9 +146,7 @@ impl DashboardManager {
     }
 
     /// Get all dashboard tags.  GET /api/dashboards/tags
-    pub async fn get_tags(
-        client: &GrafanaClient,
-    ) -> GrafanaResult<Vec<(String, u64)>> {
+    pub async fn get_tags(client: &GrafanaClient) -> GrafanaResult<Vec<(String, u64)>> {
         #[derive(serde::Deserialize)]
         struct TagItem {
             term: String,
