@@ -21,7 +21,12 @@ pub async fn dovecot_connect(
     id: String,
     config: DovecotConnectionConfig,
 ) -> CmdResult<DovecotConnectionSummary> {
-    state.lock().await.connect(id, config).await.map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]
@@ -40,10 +45,7 @@ pub async fn dovecot_list_connections(
 }
 
 #[tauri::command]
-pub async fn dovecot_ping(
-    state: State<'_, DovecotServiceState>,
-    id: String,
-) -> CmdResult<bool> {
+pub async fn dovecot_ping(state: State<'_, DovecotServiceState>, id: String) -> CmdResult<bool> {
     state.lock().await.ping(&id).await.map_err(map_err)
 }
 
@@ -515,12 +517,7 @@ pub async fn dovecot_get_config(
     state: State<'_, DovecotServiceState>,
     id: String,
 ) -> CmdResult<Vec<DovecotConfigParam>> {
-    state
-        .lock()
-        .await
-        .get_config(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.get_config(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -584,12 +581,7 @@ pub async fn dovecot_list_plugins(
     state: State<'_, DovecotServiceState>,
     id: String,
 ) -> CmdResult<Vec<DovecotPlugin>> {
-    state
-        .lock()
-        .await
-        .list_plugins(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_plugins(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -653,12 +645,7 @@ pub async fn dovecot_list_services(
     state: State<'_, DovecotServiceState>,
     id: String,
 ) -> CmdResult<Vec<DovecotService>> {
-    state
-        .lock()
-        .await
-        .list_services(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.list_services(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -666,12 +653,7 @@ pub async fn dovecot_test_config(
     state: State<'_, DovecotServiceState>,
     id: String,
 ) -> CmdResult<ConfigTestResult> {
-    state
-        .lock()
-        .await
-        .test_config(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.test_config(&id).await.map_err(map_err)
 }
 
 // ── ACL ───────────────────────────────────────────────────────────
@@ -803,34 +785,22 @@ pub async fn dovecot_dsync_mirror(
 // ── Process ───────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn dovecot_start(
-    state: State<'_, DovecotServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dovecot_start(state: State<'_, DovecotServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.start(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dovecot_stop(
-    state: State<'_, DovecotServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dovecot_stop(state: State<'_, DovecotServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.stop(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dovecot_restart(
-    state: State<'_, DovecotServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dovecot_restart(state: State<'_, DovecotServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.restart(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
-pub async fn dovecot_reload(
-    state: State<'_, DovecotServiceState>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn dovecot_reload(state: State<'_, DovecotServiceState>, id: String) -> CmdResult<()> {
     state.lock().await.reload(&id).await.map_err(map_err)
 }
 
@@ -871,12 +841,7 @@ pub async fn dovecot_process_stats(
     state: State<'_, DovecotServiceState>,
     id: String,
 ) -> CmdResult<Vec<DovecotStats>> {
-    state
-        .lock()
-        .await
-        .process_stats(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.process_stats(&id).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -941,10 +906,5 @@ pub async fn dovecot_get_log_level(
     state: State<'_, DovecotServiceState>,
     id: String,
 ) -> CmdResult<String> {
-    state
-        .lock()
-        .await
-        .get_log_level(&id)
-        .await
-        .map_err(map_err)
+    state.lock().await.get_log_level(&id).await.map_err(map_err)
 }

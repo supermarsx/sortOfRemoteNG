@@ -50,9 +50,7 @@ impl DovecotProcessManager {
 
     /// Get service status via systemctl.
     pub async fn status(client: &DovecotClient) -> DovecotResult<String> {
-        let out = client
-            .exec_ssh("systemctl is-active dovecot 2>&1")
-            .await?;
+        let out = client.exec_ssh("systemctl is-active dovecot 2>&1").await?;
         Ok(out.stdout.trim().to_string())
     }
 
@@ -63,42 +61,42 @@ impl DovecotProcessManager {
 
     /// Get detailed dovecot info via `dovecot --version` and `doveconf -n`.
     pub async fn info(client: &DovecotClient) -> DovecotResult<DovecotInfo> {
-        let version = client.version().await.unwrap_or_else(|_| "unknown".to_string());
+        let version = client
+            .version()
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
 
         // Get protocols
         let protocols_out = client
-            .exec_ssh(&format!("sudo {} -h protocols 2>/dev/null", client.dovecot_bin()))
+            .exec_ssh(&format!(
+                "sudo {} -h protocols 2>/dev/null",
+                client.dovecot_bin()
+            ))
             .await;
         let protocols: Vec<String> = protocols_out
             .ok()
-            .map(|o| {
-                o.stdout
-                    .trim()
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect()
-            })
+            .map(|o| o.stdout.split_whitespace().map(String::from).collect())
             .unwrap_or_default();
 
         // Get SSL library
         let ssl_out = client
-            .exec_ssh(&format!("{} --build-options 2>&1 | grep -i ssl", client.dovecot_bin()))
+            .exec_ssh(&format!(
+                "{} --build-options 2>&1 | grep -i ssl",
+                client.dovecot_bin()
+            ))
             .await;
         let ssl_library = ssl_out.ok().map(|o| o.stdout.trim().to_string());
 
         // Get mail plugins
         let plugins_out = client
-            .exec_ssh(&format!("sudo {} -h mail_plugins 2>/dev/null", client.dovecot_bin()))
+            .exec_ssh(&format!(
+                "sudo {} -h mail_plugins 2>/dev/null",
+                client.dovecot_bin()
+            ))
             .await;
         let mail_plugins: Vec<String> = plugins_out
             .ok()
-            .map(|o| {
-                o.stdout
-                    .trim()
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect()
-            })
+            .map(|o| o.stdout.split_whitespace().map(String::from).collect())
             .unwrap_or_default();
 
         // Get auth mechanisms
@@ -110,13 +108,7 @@ impl DovecotProcessManager {
             .await;
         let auth_mechanisms: Vec<String> = auth_out
             .ok()
-            .map(|o| {
-                o.stdout
-                    .trim()
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect()
-            })
+            .map(|o| o.stdout.split_whitespace().map(String::from).collect())
             .unwrap_or_default();
 
         Ok(DovecotInfo {

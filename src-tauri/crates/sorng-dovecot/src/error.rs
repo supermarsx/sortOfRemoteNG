@@ -42,15 +42,24 @@ impl std::error::Error for DovecotError {}
 
 impl DovecotError {
     pub fn new(kind: DovecotErrorKind, msg: impl Into<String>) -> Self {
-        Self { kind, message: msg.into() }
+        Self {
+            kind,
+            message: msg.into(),
+        }
     }
 
     pub fn not_connected() -> Self {
-        Self::new(DovecotErrorKind::NotConnected, "Not connected to Dovecot host")
+        Self::new(
+            DovecotErrorKind::NotConnected,
+            "Not connected to Dovecot host",
+        )
     }
 
     pub fn already_connected(id: &str) -> Self {
-        Self::new(DovecotErrorKind::AlreadyConnected, format!("Connection '{}' already exists", id))
+        Self::new(
+            DovecotErrorKind::AlreadyConnected,
+            format!("Connection '{}' already exists", id),
+        )
     }
 
     pub fn connection_failed(msg: impl Into<String>) -> Self {
@@ -66,15 +75,24 @@ impl DovecotError {
     }
 
     pub fn config_not_found(path: &str) -> Self {
-        Self::new(DovecotErrorKind::ConfigNotFound, format!("Config not found: {}", path))
+        Self::new(
+            DovecotErrorKind::ConfigNotFound,
+            format!("Config not found: {}", path),
+        )
     }
 
     pub fn user_not_found(user: &str) -> Self {
-        Self::new(DovecotErrorKind::UserNotFound, format!("User not found: {}", user))
+        Self::new(
+            DovecotErrorKind::UserNotFound,
+            format!("User not found: {}", user),
+        )
     }
 
     pub fn mailbox_not_found(name: &str) -> Self {
-        Self::new(DovecotErrorKind::MailboxNotFound, format!("Mailbox not found: {}", name))
+        Self::new(
+            DovecotErrorKind::MailboxNotFound,
+            format!("Mailbox not found: {}", name),
+        )
     }
 
     pub fn sieve(msg: impl Into<String>) -> Self {
@@ -86,7 +104,10 @@ impl DovecotError {
     }
 
     pub fn namespace_not_found(name: &str) -> Self {
-        Self::new(DovecotErrorKind::NamespaceNotFound, format!("Namespace not found: {}", name))
+        Self::new(
+            DovecotErrorKind::NamespaceNotFound,
+            format!("Namespace not found: {}", name),
+        )
     }
 
     pub fn process(msg: impl Into<String>) -> Self {

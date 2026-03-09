@@ -28,6 +28,12 @@ pub struct DovecotServiceFacade {
     connections: HashMap<String, DovecotClient>,
 }
 
+impl Default for DovecotServiceFacade {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DovecotServiceFacade {
     pub fn new() -> Self {
         Self {
@@ -50,7 +56,10 @@ impl DovecotServiceFacade {
         let summary = DovecotConnectionSummary {
             host: client.config.host.clone(),
             version: ver,
-            protocols: info.as_ref().map(|i| i.protocols.clone()).unwrap_or_default(),
+            protocols: info
+                .as_ref()
+                .map(|i| i.protocols.clone())
+                .unwrap_or_default(),
             auth_mechanisms: info
                 .as_ref()
                 .map(|i| i.auth_mechanisms.clone())
@@ -65,7 +74,7 @@ impl DovecotServiceFacade {
         self.connections
             .remove(id)
             .map(|_| ())
-            .ok_or_else(|| DovecotError::not_connected())
+            .ok_or_else(DovecotError::not_connected)
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -75,7 +84,7 @@ impl DovecotServiceFacade {
     fn client(&self, id: &str) -> DovecotResult<&DovecotClient> {
         self.connections
             .get(id)
-            .ok_or_else(|| DovecotError::not_connected())
+            .ok_or_else(DovecotError::not_connected)
     }
 
     pub async fn ping(&self, id: &str) -> DovecotResult<bool> {
@@ -86,11 +95,7 @@ impl DovecotServiceFacade {
 
     // ── Mailboxes ────────────────────────────────────────────────
 
-    pub async fn list_mailboxes(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> DovecotResult<Vec<DovecotMailbox>> {
+    pub async fn list_mailboxes(&self, id: &str, user: &str) -> DovecotResult<Vec<DovecotMailbox>> {
         MailboxManager::list(self.client(id)?, user).await
     }
 
@@ -103,21 +108,11 @@ impl DovecotServiceFacade {
         MailboxManager::status(self.client(id)?, user, mailbox).await
     }
 
-    pub async fn create_mailbox(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn create_mailbox(&self, id: &str, user: &str, name: &str) -> DovecotResult<()> {
         MailboxManager::create(self.client(id)?, user, name).await
     }
 
-    pub async fn delete_mailbox(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn delete_mailbox(&self, id: &str, user: &str, name: &str) -> DovecotResult<()> {
         MailboxManager::delete(self.client(id)?, user, name).await
     }
 
@@ -131,29 +126,15 @@ impl DovecotServiceFacade {
         MailboxManager::rename(self.client(id)?, user, old_name, new_name).await
     }
 
-    pub async fn subscribe_mailbox(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn subscribe_mailbox(&self, id: &str, user: &str, name: &str) -> DovecotResult<()> {
         MailboxManager::subscribe(self.client(id)?, user, name).await
     }
 
-    pub async fn unsubscribe_mailbox(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn unsubscribe_mailbox(&self, id: &str, user: &str, name: &str) -> DovecotResult<()> {
         MailboxManager::unsubscribe(self.client(id)?, user, name).await
     }
 
-    pub async fn list_subscriptions(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> DovecotResult<Vec<String>> {
+    pub async fn list_subscriptions(&self, id: &str, user: &str) -> DovecotResult<Vec<String>> {
         MailboxManager::list_subscriptions(self.client(id)?, user).await
     }
 
@@ -161,12 +142,7 @@ impl DovecotServiceFacade {
         MailboxManager::sync(self.client(id)?, user).await
     }
 
-    pub async fn force_resync(
-        &self,
-        id: &str,
-        user: &str,
-        mailbox: &str,
-    ) -> DovecotResult<()> {
+    pub async fn force_resync(&self, id: &str, user: &str, mailbox: &str) -> DovecotResult<()> {
         MailboxManager::force_resync(self.client(id)?, user, mailbox).await
     }
 
@@ -201,12 +177,7 @@ impl DovecotServiceFacade {
         UserManager::delete(self.client(id)?, username).await
     }
 
-    pub async fn auth_test(
-        &self,
-        id: &str,
-        username: &str,
-        password: &str,
-    ) -> DovecotResult<bool> {
+    pub async fn auth_test(&self, id: &str, username: &str, password: &str) -> DovecotResult<bool> {
         UserManager::auth_test(self.client(id)?, username, password).await
     }
 
@@ -220,11 +191,7 @@ impl DovecotServiceFacade {
 
     // ── Sieve ────────────────────────────────────────────────────
 
-    pub async fn list_sieve(
-        &self,
-        id: &str,
-        user: &str,
-    ) -> DovecotResult<Vec<DovecotSieveScript>> {
+    pub async fn list_sieve(&self, id: &str, user: &str) -> DovecotResult<Vec<DovecotSieveScript>> {
         SieveManager::list(self.client(id)?, user).await
     }
 
@@ -256,21 +223,11 @@ impl DovecotServiceFacade {
         SieveManager::update(self.client(id)?, user, name, &req).await
     }
 
-    pub async fn delete_sieve(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn delete_sieve(&self, id: &str, user: &str, name: &str) -> DovecotResult<()> {
         SieveManager::delete(self.client(id)?, user, name).await
     }
 
-    pub async fn activate_sieve(
-        &self,
-        id: &str,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn activate_sieve(&self, id: &str, user: &str, name: &str) -> DovecotResult<()> {
         SieveManager::activate(self.client(id)?, user, name).await
     }
 
@@ -306,18 +263,11 @@ impl DovecotServiceFacade {
         QuotaManager::recalculate(self.client(id)?, user).await
     }
 
-    pub async fn list_quota_rules(
-        &self,
-        id: &str,
-    ) -> DovecotResult<Vec<DovecotQuotaRule>> {
+    pub async fn list_quota_rules(&self, id: &str) -> DovecotResult<Vec<DovecotQuotaRule>> {
         QuotaManager::list_rules(self.client(id)?).await
     }
 
-    pub async fn set_quota_rule(
-        &self,
-        id: &str,
-        rule: DovecotQuotaRule,
-    ) -> DovecotResult<()> {
+    pub async fn set_quota_rule(&self, id: &str, rule: DovecotQuotaRule) -> DovecotResult<()> {
         QuotaManager::set_rule(self.client(id)?, &rule).await
     }
 
@@ -327,10 +277,7 @@ impl DovecotServiceFacade {
 
     // ── Config ───────────────────────────────────────────────────
 
-    pub async fn get_config(
-        &self,
-        id: &str,
-    ) -> DovecotResult<Vec<DovecotConfigParam>> {
+    pub async fn get_config(&self, id: &str) -> DovecotResult<Vec<DovecotConfigParam>> {
         DovecotConfigManager::get_all(self.client(id)?).await
     }
 
@@ -338,27 +285,15 @@ impl DovecotServiceFacade {
         DovecotConfigManager::get_param(self.client(id)?, name).await
     }
 
-    pub async fn set_config_param(
-        &self,
-        id: &str,
-        name: &str,
-        value: &str,
-    ) -> DovecotResult<()> {
+    pub async fn set_config_param(&self, id: &str, name: &str, value: &str) -> DovecotResult<()> {
         DovecotConfigManager::set_param(self.client(id)?, name, value).await
     }
 
-    pub async fn list_namespaces(
-        &self,
-        id: &str,
-    ) -> DovecotResult<Vec<DovecotNamespace>> {
+    pub async fn list_namespaces(&self, id: &str) -> DovecotResult<Vec<DovecotNamespace>> {
         DovecotConfigManager::list_namespaces(self.client(id)?).await
     }
 
-    pub async fn get_namespace(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> DovecotResult<DovecotNamespace> {
+    pub async fn get_namespace(&self, id: &str, name: &str) -> DovecotResult<DovecotNamespace> {
         DovecotConfigManager::get_namespace(self.client(id)?, name).await
     }
 
@@ -439,37 +374,19 @@ impl DovecotServiceFacade {
 
     // ── Replication ──────────────────────────────────────────────
 
-    pub async fn replication_status(
-        &self,
-        id: &str,
-    ) -> DovecotResult<Vec<DovecotReplication>> {
+    pub async fn replication_status(&self, id: &str) -> DovecotResult<Vec<DovecotReplication>> {
         ReplicationManager::status(self.client(id)?).await
     }
 
-    pub async fn replicate_user(
-        &self,
-        id: &str,
-        user: &str,
-        priority: &str,
-    ) -> DovecotResult<()> {
+    pub async fn replicate_user(&self, id: &str, user: &str, priority: &str) -> DovecotResult<()> {
         ReplicationManager::replicate_user(self.client(id)?, user, priority).await
     }
 
-    pub async fn dsync_backup(
-        &self,
-        id: &str,
-        user: &str,
-        remote: &str,
-    ) -> DovecotResult<()> {
+    pub async fn dsync_backup(&self, id: &str, user: &str, remote: &str) -> DovecotResult<()> {
         ReplicationManager::dsync_backup(self.client(id)?, user, remote).await
     }
 
-    pub async fn dsync_mirror(
-        &self,
-        id: &str,
-        user: &str,
-        remote: &str,
-    ) -> DovecotResult<()> {
+    pub async fn dsync_mirror(&self, id: &str, user: &str, remote: &str) -> DovecotResult<()> {
         ReplicationManager::dsync_mirror(self.client(id)?, user, remote).await
     }
 
@@ -511,10 +428,7 @@ impl DovecotServiceFacade {
         DovecotProcessManager::stats(self.client(id)?).await
     }
 
-    pub async fn process_test_config(
-        &self,
-        id: &str,
-    ) -> DovecotResult<ConfigTestResult> {
+    pub async fn process_test_config(&self, id: &str) -> DovecotResult<ConfigTestResult> {
         DovecotProcessManager::test_config(self.client(id)?).await
     }
 

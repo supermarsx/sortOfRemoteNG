@@ -22,11 +22,7 @@ impl SieveManager {
                 continue;
             }
             let active = line.contains("ACTIVE");
-            let name = line
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let name = line.split_whitespace().next().unwrap_or("").to_string();
             if name.is_empty() {
                 continue;
             }
@@ -55,10 +51,7 @@ impl SieveManager {
             ))
             .await?;
         if out.exit_code != 0 {
-            return Err(DovecotError::sieve(format!(
-                "Script not found: {}",
-                name
-            )));
+            return Err(DovecotError::sieve(format!("Script not found: {}", name)));
         }
 
         // Check if this script is active
@@ -138,11 +131,7 @@ impl SieveManager {
     }
 
     /// Delete a sieve script via `doveadm sieve delete`.
-    pub async fn delete(
-        client: &DovecotClient,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn delete(client: &DovecotClient, user: &str, name: &str) -> DovecotResult<()> {
         let out = client
             .doveadm(&format!(
                 "sieve delete -u {} {}",
@@ -160,11 +149,7 @@ impl SieveManager {
     }
 
     /// Activate a sieve script via `doveadm sieve activate`.
-    pub async fn activate(
-        client: &DovecotClient,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn activate(client: &DovecotClient, user: &str, name: &str) -> DovecotResult<()> {
         let out = client
             .doveadm(&format!(
                 "sieve activate -u {} {}",
@@ -210,18 +195,30 @@ impl SieveManager {
         client.write_remote_file(&tmp_path, &content).await?;
 
         let out = client
-            .exec_ssh(&format!("sievec {} 2>&1; echo EXIT:$?", shell_escape(&tmp_path)))
+            .exec_ssh(&format!(
+                "sievec {} 2>&1; echo EXIT:$?",
+                shell_escape(&tmp_path)
+            ))
             .await;
 
         // Clean up temp file
         let _ = client
-            .exec_ssh(&format!("rm -f {} {}.svbin", shell_escape(&tmp_path), shell_escape(&tmp_path)))
+            .exec_ssh(&format!(
+                "rm -f {} {}.svbin",
+                shell_escape(&tmp_path),
+                shell_escape(&tmp_path)
+            ))
             .await;
 
         match out {
             Ok(o) => {
                 let success = o.stdout.contains("EXIT:0");
-                let output = o.stdout.replace("EXIT:0", "").replace("EXIT:1", "").trim().to_string();
+                let output = o
+                    .stdout
+                    .replace("EXIT:0", "")
+                    .replace("EXIT:1", "")
+                    .trim()
+                    .to_string();
                 let errors = if !success {
                     output.lines().map(|l| l.to_string()).collect()
                 } else {

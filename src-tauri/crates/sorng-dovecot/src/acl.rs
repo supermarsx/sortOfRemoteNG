@@ -59,7 +59,10 @@ impl AclManager {
             .ok_or_else(|| {
                 DovecotError::new(
                     crate::error::DovecotErrorKind::InternalError,
-                    format!("ACL not found for identifier '{}' on mailbox '{}'", identifier, mailbox),
+                    format!(
+                        "ACL not found for identifier '{}' on mailbox '{}'",
+                        identifier, mailbox
+                    ),
                 )
             })
     }

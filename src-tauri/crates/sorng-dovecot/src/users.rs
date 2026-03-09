@@ -17,16 +17,18 @@ impl UserManager {
             if username.is_empty() {
                 continue;
             }
-            let user = Self::get(client, username).await.unwrap_or_else(|_| DovecotUser {
-                username: username.to_string(),
-                uid: None,
-                gid: None,
-                home: None,
-                mail_location: None,
-                quota_rule: None,
-                password_hash: None,
-                extra_fields: HashMap::new(),
-            });
+            let user = Self::get(client, username)
+                .await
+                .unwrap_or_else(|_| DovecotUser {
+                    username: username.to_string(),
+                    uid: None,
+                    gid: None,
+                    home: None,
+                    mail_location: None,
+                    quota_rule: None,
+                    password_hash: None,
+                    extra_fields: HashMap::new(),
+                });
             users.push(user);
         }
         Ok(users)
@@ -136,10 +138,12 @@ impl UserManager {
         // Read current user, delete, re-create with updated fields
         let current = Self::get(client, username).await?;
 
-        let password_hash = req
-            .password
-            .as_deref()
-            .unwrap_or(current.password_hash.as_deref().unwrap_or("{PLAIN}changeme"));
+        let password_hash = req.password.as_deref().unwrap_or(
+            current
+                .password_hash
+                .as_deref()
+                .unwrap_or("{PLAIN}changeme"),
+        );
         let uid_str = req
             .uid
             .or(current.uid)
@@ -159,10 +163,7 @@ impl UserManager {
             .mail_location
             .as_deref()
             .or(current.mail_location.as_deref());
-        let quota = req
-            .quota_rule
-            .as_deref()
-            .or(current.quota_rule.as_deref());
+        let quota = req.quota_rule.as_deref().or(current.quota_rule.as_deref());
 
         let mut extra_parts = Vec::new();
         if let Some(ml) = mail_loc {
@@ -262,7 +263,7 @@ impl UserManager {
             processes.push(DovecotProcess {
                 pid: parts.get(2).and_then(|p| p.parse().ok()).unwrap_or(0),
                 service: parts.get(1).unwrap_or(&"").to_string(),
-                user: Some(parts.get(0).unwrap_or(&"").to_string()),
+                user: Some(parts.first().unwrap_or(&"").to_string()),
                 ip: parts.get(3).map(|s| s.to_string()),
                 state: None,
                 uptime_secs: None,

@@ -120,10 +120,7 @@ impl DovecotLogManager {
     }
 
     /// Set the log level via doveadm or config modification.
-    pub async fn set_log_level(
-        client: &DovecotClient,
-        level: &str,
-    ) -> DovecotResult<()> {
+    pub async fn set_log_level(client: &DovecotClient, level: &str) -> DovecotResult<()> {
         // Validate level
         let valid_levels = ["error", "warning", "info", "debug"];
         if !valid_levels.contains(&level) {
@@ -138,17 +135,20 @@ impl DovecotLogManager {
         match level {
             "debug" => {
                 crate::config::DovecotConfigManager::set_param(client, "auth_debug", "yes").await?;
-                crate::config::DovecotConfigManager::set_param(client, "auth_verbose", "yes").await?;
+                crate::config::DovecotConfigManager::set_param(client, "auth_verbose", "yes")
+                    .await?;
                 crate::config::DovecotConfigManager::set_param(client, "mail_debug", "yes").await?;
             }
             "info" => {
                 crate::config::DovecotConfigManager::set_param(client, "auth_debug", "no").await?;
-                crate::config::DovecotConfigManager::set_param(client, "auth_verbose", "yes").await?;
+                crate::config::DovecotConfigManager::set_param(client, "auth_verbose", "yes")
+                    .await?;
                 crate::config::DovecotConfigManager::set_param(client, "mail_debug", "no").await?;
             }
             "warning" | "error" => {
                 crate::config::DovecotConfigManager::set_param(client, "auth_debug", "no").await?;
-                crate::config::DovecotConfigManager::set_param(client, "auth_verbose", "no").await?;
+                crate::config::DovecotConfigManager::set_param(client, "auth_verbose", "no")
+                    .await?;
                 crate::config::DovecotConfigManager::set_param(client, "mail_debug", "no").await?;
             }
             _ => {}
@@ -201,7 +201,11 @@ fn parse_dovecot_log_line(line: &str) -> DovecotLog {
                 None
             };
 
-            let rest = if parts.len() >= 4 { parts[3] } else { parts.last().unwrap_or(&"") };
+            let rest = if parts.len() >= 4 {
+                parts[3]
+            } else {
+                parts.last().unwrap_or(&"")
+            };
 
             // Try to extract process and pid
             let (process, pid, message) = if let Some(bracket_pos) = rest.find('[') {

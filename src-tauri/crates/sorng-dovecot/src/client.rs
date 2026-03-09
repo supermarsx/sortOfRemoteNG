@@ -11,6 +11,7 @@ use std::time::Duration;
 /// Dovecot management client – connects via SSH to manage Dovecot remotely.
 pub struct DovecotClient {
     pub config: DovecotConnectionConfig,
+    #[allow(dead_code)]
     http: HttpClient,
 }
 
@@ -26,11 +27,17 @@ impl DovecotClient {
     // ── Paths ────────────────────────────────────────────────────────
 
     pub fn doveadm_bin(&self) -> &str {
-        self.config.doveadm_bin.as_deref().unwrap_or("/usr/bin/doveadm")
+        self.config
+            .doveadm_bin
+            .as_deref()
+            .unwrap_or("/usr/bin/doveadm")
     }
 
     pub fn dovecot_bin(&self) -> &str {
-        self.config.dovecot_bin.as_deref().unwrap_or("/usr/sbin/dovecot")
+        self.config
+            .dovecot_bin
+            .as_deref()
+            .unwrap_or("/usr/sbin/dovecot")
     }
 
     pub fn config_dir(&self) -> &str {
@@ -52,7 +59,9 @@ impl DovecotClient {
     }
 
     pub async fn read_remote_file(&self, path: &str) -> DovecotResult<String> {
-        let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
+        let out = self
+            .exec_ssh(&format!("cat {}", shell_escape(path)))
+            .await?;
         Ok(out.stdout)
     }
 

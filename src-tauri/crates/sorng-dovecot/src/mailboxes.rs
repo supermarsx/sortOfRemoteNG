@@ -153,11 +153,7 @@ impl MailboxManager {
     }
 
     /// Unsubscribe from a mailbox via `doveadm mailbox unsubscribe`.
-    pub async fn unsubscribe(
-        client: &DovecotClient,
-        user: &str,
-        name: &str,
-    ) -> DovecotResult<()> {
+    pub async fn unsubscribe(client: &DovecotClient, user: &str, name: &str) -> DovecotResult<()> {
         let out = client
             .doveadm(&format!(
                 "mailbox unsubscribe -u {} {}",

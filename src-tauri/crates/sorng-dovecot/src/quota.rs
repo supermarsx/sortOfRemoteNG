@@ -37,9 +37,16 @@ impl QuotaManager {
             let type_idx = parts.iter().position(|&p| p == "STORAGE" || p == "MESSAGE");
             if let Some(idx) = type_idx {
                 let quota_type = parts[idx];
-                let value = parts.get(idx + 1).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+                let value = parts
+                    .get(idx + 1)
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0);
                 let limit = parts.get(idx + 2).and_then(|v| {
-                    if *v == "-" { None } else { v.parse::<u64>().ok() }
+                    if *v == "-" {
+                        None
+                    } else {
+                        v.parse::<u64>().ok()
+                    }
                 });
                 match quota_type {
                     "STORAGE" => {
@@ -135,7 +142,10 @@ impl QuotaManager {
 
         // Also check config files for quota_rule directives
         let config_path = format!("{}/conf.d/90-quota.conf", client.config_dir());
-        let content = client.read_remote_file(&config_path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file(&config_path)
+            .await
+            .unwrap_or_default();
 
         for line in content.lines() {
             let trimmed = line.trim();
@@ -193,12 +203,12 @@ impl QuotaManager {
     }
 
     /// Set a global quota rule in the config.
-    pub async fn set_rule(
-        client: &DovecotClient,
-        rule: &DovecotQuotaRule,
-    ) -> DovecotResult<()> {
+    pub async fn set_rule(client: &DovecotClient, rule: &DovecotQuotaRule) -> DovecotResult<()> {
         let config_path = format!("{}/conf.d/90-quota.conf", client.config_dir());
-        let content = client.read_remote_file(&config_path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file(&config_path)
+            .await
+            .unwrap_or_default();
 
         let mut parts = Vec::new();
         if let Some(storage) = rule.storage_limit_mb {

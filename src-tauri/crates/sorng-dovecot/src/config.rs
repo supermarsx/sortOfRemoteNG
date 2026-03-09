@@ -74,14 +74,13 @@ impl DovecotConfigManager {
     }
 
     /// Set a config parameter by writing to the appropriate config file.
-    pub async fn set_param(
-        client: &DovecotClient,
-        name: &str,
-        value: &str,
-    ) -> DovecotResult<()> {
+    pub async fn set_param(client: &DovecotClient, name: &str, value: &str) -> DovecotResult<()> {
         // Write to local.conf override file
         let local_conf = format!("{}/local.conf", client.config_dir());
-        let content = client.read_remote_file(&local_conf).await.unwrap_or_default();
+        let content = client
+            .read_remote_file(&local_conf)
+            .await
+            .unwrap_or_default();
 
         let new_line = format!("{} = {}", name, value);
         let mut new_content = String::new();
@@ -109,11 +108,12 @@ impl DovecotConfigManager {
     }
 
     /// List namespaces from config.
-    pub async fn list_namespaces(
-        client: &DovecotClient,
-    ) -> DovecotResult<Vec<DovecotNamespace>> {
+    pub async fn list_namespaces(client: &DovecotClient) -> DovecotResult<Vec<DovecotNamespace>> {
         let out = client
-            .exec_ssh(&format!("sudo {} -n | grep -A 20 'namespace'", client.dovecot_bin()))
+            .exec_ssh(&format!(
+                "sudo {} -n | grep -A 20 'namespace'",
+                client.dovecot_bin()
+            ))
             .await?;
         let mut namespaces = Vec::new();
         let mut current: Option<DovecotNamespace> = None;
@@ -186,14 +186,14 @@ impl DovecotConfigManager {
 
     /// List plugins via config inspection.
     pub async fn list_plugins(client: &DovecotClient) -> DovecotResult<Vec<DovecotPlugin>> {
-        let out = client
-            .doveadm("config -f tabescaped mail_plugins")
-            .await;
+        let out = client.doveadm("config -f tabescaped mail_plugins").await;
         let plugins_str = match out {
             Ok(ref o) => o.stdout.trim().to_string(),
             Err(_) => {
                 // Fallback: read from config
-                let param = Self::get_param(client, "mail_plugins").await.unwrap_or_default();
+                let param = Self::get_param(client, "mail_plugins")
+                    .await
+                    .unwrap_or_default();
                 param
             }
         };
@@ -203,7 +203,9 @@ impl DovecotConfigManager {
             if name.is_empty() {
                 continue;
             }
-            let settings = Self::get_plugin_settings(client, name).await.unwrap_or_default();
+            let settings = Self::get_plugin_settings(client, name)
+                .await
+                .unwrap_or_default();
             plugins.push(DovecotPlugin {
                 name: name.to_string(),
                 enabled: true,
@@ -236,11 +238,10 @@ impl DovecotConfigManager {
     }
 
     /// Enable a plugin by adding it to mail_plugins.
-    pub async fn enable_plugin(
-        client: &DovecotClient,
-        name: &str,
-    ) -> DovecotResult<()> {
-        let current = Self::get_param(client, "mail_plugins").await.unwrap_or_default();
+    pub async fn enable_plugin(client: &DovecotClient, name: &str) -> DovecotResult<()> {
+        let current = Self::get_param(client, "mail_plugins")
+            .await
+            .unwrap_or_default();
         let plugins: Vec<&str> = current.split_whitespace().collect();
         if plugins.contains(&name) {
             return Ok(()); // Already enabled
@@ -254,15 +255,11 @@ impl DovecotConfigManager {
     }
 
     /// Disable a plugin by removing it from mail_plugins.
-    pub async fn disable_plugin(
-        client: &DovecotClient,
-        name: &str,
-    ) -> DovecotResult<()> {
-        let current = Self::get_param(client, "mail_plugins").await.unwrap_or_default();
-        let new_value: Vec<&str> = current
-            .split_whitespace()
-            .filter(|p| *p != name)
-            .collect();
+    pub async fn disable_plugin(client: &DovecotClient, name: &str) -> DovecotResult<()> {
+        let current = Self::get_param(client, "mail_plugins")
+            .await
+            .unwrap_or_default();
+        let new_value: Vec<&str> = current.split_whitespace().filter(|p| *p != name).collect();
         Self::set_param(client, "mail_plugins", &new_value.join(" ")).await
     }
 
@@ -273,9 +270,10 @@ impl DovecotConfigManager {
         settings: &HashMap<String, String>,
     ) -> DovecotResult<()> {
         let plugin_conf = format!("{}/conf.d/90-plugin.conf", client.config_dir());
-        let mut content = client.read_remote_file(&plugin_conf).await.unwrap_or_else(|_| {
-            "plugin {\n}\n".to_string()
-        });
+        let mut content = client
+            .read_remote_file(&plugin_conf)
+            .await
+            .unwrap_or_else(|_| "plugin {\n}\n".to_string());
 
         for (key, value) in settings {
             let setting_key = format!("{}_{}", name, key);
@@ -304,11 +302,12 @@ impl DovecotConfigManager {
     }
 
     /// Get authentication config details.
-    pub async fn list_auth_config(
-        client: &DovecotClient,
-    ) -> DovecotResult<DovecotAuthConfig> {
+    pub async fn list_auth_config(client: &DovecotClient) -> DovecotResult<DovecotAuthConfig> {
         let auth_conf = format!("{}/conf.d/10-auth.conf", client.config_dir());
-        let content = client.read_remote_file(&auth_conf).await.unwrap_or_default();
+        let content = client
+            .read_remote_file(&auth_conf)
+            .await
+            .unwrap_or_default();
 
         let mut mechanisms = Vec::new();
         let mut passdb_drivers = Vec::new();
@@ -382,9 +381,7 @@ impl DovecotConfigManager {
     }
 
     /// List service definitions from dovecot config.
-    pub async fn list_services(
-        client: &DovecotClient,
-    ) -> DovecotResult<Vec<DovecotService>> {
+    pub async fn list_services(client: &DovecotClient) -> DovecotResult<Vec<DovecotService>> {
         let out = client
             .exec_ssh(&format!(
                 "sudo {} -n | grep -A 30 'service '",
@@ -396,7 +393,7 @@ impl DovecotConfigManager {
         let mut current: Option<DovecotService> = None;
         let mut in_listener = false;
         let mut current_listener: Option<DovecotListener> = None;
-        let mut listener_type = String::new();
+        let mut listener_type;
 
         for line in out.stdout.lines() {
             let trimmed = line.trim();
@@ -493,12 +490,20 @@ impl DovecotConfigManager {
     /// Test configuration via `dovecot -n` (or `doveconf -n`).
     pub async fn test_config(client: &DovecotClient) -> DovecotResult<ConfigTestResult> {
         let out = client
-            .exec_ssh(&format!("sudo {} -n 2>&1; echo EXIT:$?", client.dovecot_bin()))
+            .exec_ssh(&format!(
+                "sudo {} -n 2>&1; echo EXIT:$?",
+                client.dovecot_bin()
+            ))
             .await;
         match out {
             Ok(o) => {
                 let success = o.stdout.contains("EXIT:0") && !o.stderr.contains("Error");
-                let output = o.stdout.replace("EXIT:0", "").replace("EXIT:1", "").trim().to_string();
+                let output = o
+                    .stdout
+                    .replace("EXIT:0", "")
+                    .replace("EXIT:1", "")
+                    .trim()
+                    .to_string();
                 let errors: Vec<String> = o
                     .stderr
                     .lines()
