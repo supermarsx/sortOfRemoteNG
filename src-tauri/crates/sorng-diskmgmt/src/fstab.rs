@@ -9,25 +9,47 @@ pub async fn read_fstab(host: &DiskHost) -> Result<Vec<MountEntry>, DiskError> {
 }
 
 pub async fn add_entry(host: &DiskHost, entry: &MountEntry) -> Result<(), DiskError> {
-    let line = format!("{} {} {} {} {} {}", entry.device, entry.mount_point, entry.fs_type, entry.options.join(","), entry.dump, entry.pass);
+    let line = format!(
+        "{} {} {} {} {} {}",
+        entry.device,
+        entry.mount_point,
+        entry.fs_type,
+        entry.options.join(","),
+        entry.dump,
+        entry.pass
+    );
     let escaped = line.replace('\'', "'\\''");
-    client::exec_ok(host, "sh", &["-c", &format!("echo '{escaped}' >> /etc/fstab")]).await?;
+    client::exec_ok(
+        host,
+        "sh",
+        &["-c", &format!("echo '{escaped}' >> /etc/fstab")],
+    )
+    .await?;
     Ok(())
 }
 
 pub fn parse_fstab(content: &str) -> Vec<MountEntry> {
-    content.lines().filter_map(|line| {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { return None; }
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 4 { return None; }
-        Some(MountEntry {
-            device: cols[0].to_string(), mount_point: cols[1].to_string(),
-            fs_type: cols[2].to_string(), options: cols[3].split(',').map(|s| s.to_string()).collect(),
-            dump: cols.get(4).and_then(|v| v.parse().ok()).unwrap_or(0),
-            pass: cols.get(5).and_then(|v| v.parse().ok()).unwrap_or(0),
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() < 4 {
+                return None;
+            }
+            Some(MountEntry {
+                device: cols[0].to_string(),
+                mount_point: cols[1].to_string(),
+                fs_type: cols[2].to_string(),
+                options: cols[3].split(',').map(|s| s.to_string()).collect(),
+                dump: cols.get(4).and_then(|v| v.parse().ok()).unwrap_or(0),
+                pass: cols.get(5).and_then(|v| v.parse().ok()).unwrap_or(0),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 #[cfg(test)]

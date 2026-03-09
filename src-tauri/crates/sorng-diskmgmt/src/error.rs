@@ -4,7 +4,11 @@ use std::fmt;
 #[derive(Debug)]
 pub enum DiskError {
     CommandNotFound(String),
-    CommandFailed { command: String, exit_code: i32, stderr: String },
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
     SshError(String),
     HostNotFound(String),
     DeviceNotFound(String),
@@ -26,7 +30,11 @@ impl fmt::Display for DiskError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CommandNotFound(c) => write!(f, "Command not found: {c}"),
-            Self::CommandFailed { command, exit_code, stderr } => write!(f, "`{command}` failed (exit {exit_code}): {stderr}"),
+            Self::CommandFailed {
+                command,
+                exit_code,
+                stderr,
+            } => write!(f, "`{command}` failed (exit {exit_code}): {stderr}"),
             Self::SshError(e) => write!(f, "SSH: {e}"),
             Self::HostNotFound(h) => write!(f, "Host not found: {h}"),
             Self::DeviceNotFound(d) => write!(f, "Device not found: {d}"),
@@ -46,5 +54,13 @@ impl fmt::Display for DiskError {
     }
 }
 impl std::error::Error for DiskError {}
-impl From<std::io::Error> for DiskError { fn from(e: std::io::Error) -> Self { Self::IoError(e.to_string()) } }
-impl From<serde_json::Error> for DiskError { fn from(e: serde_json::Error) -> Self { Self::JsonError(e.to_string()) } }
+impl From<std::io::Error> for DiskError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e.to_string())
+    }
+}
+impl From<serde_json::Error> for DiskError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::JsonError(e.to_string())
+    }
+}

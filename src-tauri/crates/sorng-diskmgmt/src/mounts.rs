@@ -10,39 +10,62 @@ pub async fn list_mounts(host: &DiskHost) -> Result<Vec<MountEntry>, DiskError> 
 
 pub async fn mount(host: &DiskHost, opts: &MountOpts) -> Result<(), DiskError> {
     let mut args: Vec<String> = Vec::new();
-    if let Some(ref ft) = opts.fs_type { args.push("-t".into()); args.push(ft.clone()); }
-    if opts.read_only { args.push("-r".into()); }
-    if !opts.options.is_empty() { args.push("-o".into()); args.push(opts.options.join(",")); }
+    if let Some(ref ft) = opts.fs_type {
+        args.push("-t".into());
+        args.push(ft.clone());
+    }
+    if opts.read_only {
+        args.push("-r".into());
+    }
+    if !opts.options.is_empty() {
+        args.push("-o".into());
+        args.push(opts.options.join(","));
+    }
     args.push(opts.device.clone());
     args.push(opts.mount_point.clone());
     let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    client::exec_ok(host, "mount", &refs).await?; Ok(())
+    client::exec_ok(host, "mount", &refs).await?;
+    Ok(())
 }
 
 pub async fn umount(host: &DiskHost, path: &str, force: bool, lazy: bool) -> Result<(), DiskError> {
     let mut args = vec![];
-    if force { args.push("-f"); }
-    if lazy { args.push("-l"); }
+    if force {
+        args.push("-f");
+    }
+    if lazy {
+        args.push("-l");
+    }
     args.push(path);
-    client::exec_ok(host, "umount", &args).await?; Ok(())
+    client::exec_ok(host, "umount", &args).await?;
+    Ok(())
 }
 
 pub async fn remount(host: &DiskHost, path: &str, options: &[&str]) -> Result<(), DiskError> {
     let mut opts = vec!["remount".to_string()];
     opts.extend(options.iter().map(|s| s.to_string()));
-    client::exec_ok(host, "mount", &["-o", &opts.join(","), path]).await?; Ok(())
+    client::exec_ok(host, "mount", &["-o", &opts.join(","), path]).await?;
+    Ok(())
 }
 
 pub fn parse_mounts(content: &str) -> Vec<MountEntry> {
-    content.lines().filter_map(|line| {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 6 { return None; }
-        Some(MountEntry {
-            device: cols[0].to_string(), mount_point: cols[1].to_string(), fs_type: cols[2].to_string(),
-            options: cols[3].split(',').map(|s| s.to_string()).collect(),
-            dump: cols[4].parse().unwrap_or(0), pass: cols[5].parse().unwrap_or(0),
+    content
+        .lines()
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() < 6 {
+                return None;
+            }
+            Some(MountEntry {
+                device: cols[0].to_string(),
+                mount_point: cols[1].to_string(),
+                fs_type: cols[2].to_string(),
+                options: cols[3].split(',').map(|s| s.to_string()).collect(),
+                dump: cols[4].parse().unwrap_or(0),
+                pass: cols[5].parse().unwrap_or(0),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 #[cfg(test)]

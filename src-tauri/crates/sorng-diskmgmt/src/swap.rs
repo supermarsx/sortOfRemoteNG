@@ -9,29 +9,43 @@ pub async fn list_swap(host: &DiskHost) -> Result<Vec<SwapEntry>, DiskError> {
 }
 
 pub async fn swapon(host: &DiskHost, device: &str) -> Result<(), DiskError> {
-    client::exec_ok(host, "swapon", &[device]).await?; Ok(())
+    client::exec_ok(host, "swapon", &[device]).await?;
+    Ok(())
 }
 
 pub async fn swapoff(host: &DiskHost, device: &str) -> Result<(), DiskError> {
-    client::exec_ok(host, "swapoff", &[device]).await?; Ok(())
+    client::exec_ok(host, "swapoff", &[device]).await?;
+    Ok(())
 }
 
 pub async fn mkswap(host: &DiskHost, device: &str, label: Option<&str>) -> Result<(), DiskError> {
     let mut args = vec![device];
-    if let Some(l) = label { args.insert(0, "-L"); args.insert(1, l); }
-    client::exec_ok(host, "mkswap", &args).await?; Ok(())
+    if let Some(l) = label {
+        args.insert(0, "-L");
+        args.insert(1, l);
+    }
+    client::exec_ok(host, "mkswap", &args).await?;
+    Ok(())
 }
 
 fn parse_swaps(content: &str) -> Vec<SwapEntry> {
-    content.lines().skip(1).filter_map(|line| {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 5 { return None; }
-        Some(SwapEntry {
-            filename: cols[0].into(), swap_type: cols[1].into(),
-            size_kb: cols[2].parse().unwrap_or(0), used_kb: cols[3].parse().unwrap_or(0),
-            priority: cols[4].parse().unwrap_or(-1),
+    content
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() < 5 {
+                return None;
+            }
+            Some(SwapEntry {
+                filename: cols[0].into(),
+                swap_type: cols[1].into(),
+                size_kb: cols[2].parse().unwrap_or(0),
+                used_kb: cols[3].parse().unwrap_or(0),
+                priority: cols[4].parse().unwrap_or(-1),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 #[cfg(test)]

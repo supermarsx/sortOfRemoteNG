@@ -8,8 +8,16 @@ pub async fn get_partitions(host: &DiskHost, device: &str) -> Result<DiskPartiti
     parse_parted_output(device, &stdout)
 }
 
-pub async fn create_partition(host: &DiskHost, opts: &CreatePartitionOpts) -> Result<(), DiskError> {
-    client::exec_ok(host, "parted", &["-s", &opts.device, "mkpart", "primary", &opts.size]).await?;
+pub async fn create_partition(
+    host: &DiskHost,
+    opts: &CreatePartitionOpts,
+) -> Result<(), DiskError> {
+    client::exec_ok(
+        host,
+        "parted",
+        &["-s", &opts.device, "mkpart", "primary", &opts.size],
+    )
+    .await?;
     Ok(())
 }
 
@@ -28,15 +36,21 @@ fn parse_parted_output(device: &str, output: &str) -> Result<DiskPartitionInfo, 
         let line = line.trim();
         if line.starts_with("Partition Table:") {
             let t = line.split(':').nth(1).unwrap_or("").trim();
-            table_type = match t { "gpt" => PartitionTable::Gpt, "msdos" => PartitionTable::Mbr, _ => PartitionTable::Unknown };
+            table_type = match t {
+                "gpt" => PartitionTable::Gpt,
+                "msdos" => PartitionTable::Mbr,
+                _ => PartitionTable::Unknown,
+            };
         } else if line.starts_with("Disk ") && line.contains("s") {
             // Disk /dev/sda: 976773168s
             if let Some(sz) = line.rsplit(':').next() {
                 let sz = sz.trim().trim_end_matches('s');
                 size_bytes = sz.parse().unwrap_or(0) * 512;
             }
-        } else if line.starts_with("Number") { in_table = true; continue; }
-        else if in_table && !line.is_empty() {
+        } else if line.starts_with("Number") {
+            in_table = true;
+            continue;
+        } else if in_table && !line.is_empty() {
             let cols: Vec<&str> = line.split_whitespace().collect();
             if cols.len() >= 4 {
                 let num: u32 = cols[0].parse().unwrap_or(0);
@@ -44,16 +58,27 @@ fn parse_parted_output(device: &str, output: &str) -> Result<DiskPartitionInfo, 
                 let end: u64 = cols[2].trim_end_matches('s').parse().unwrap_or(0);
                 let sz: u64 = cols[3].trim_end_matches('s').parse().unwrap_or(0);
                 partitions.push(Partition {
-                    device: format!("{device}{num}"), number: num, start_sector: start,
-                    end_sector: end, size_bytes: sz * 512, size_human: crate::blocks::humanize_bytes(sz * 512),
+                    device: format!("{device}{num}"),
+                    number: num,
+                    start_sector: start,
+                    end_sector: end,
+                    size_bytes: sz * 512,
+                    size_human: crate::blocks::humanize_bytes(sz * 512),
                     partition_type: cols.get(4).unwrap_or(&"").to_string(),
                     fs_type: cols.get(5).map(|s| s.to_string()),
-                    label: None, uuid: None, flags: Vec::new(),
+                    label: None,
+                    uuid: None,
+                    flags: Vec::new(),
                 });
             }
         }
     }
-    Ok(DiskPartitionInfo { device: device.to_string(), table_type, size_bytes, partitions })
+    Ok(DiskPartitionInfo {
+        device: device.to_string(),
+        table_type,
+        size_bytes,
+        partitions,
+    })
 }
 
 #[cfg(test)]

@@ -13,28 +13,43 @@ pub async fn detail(host: &DiskHost, device: &str) -> Result<String, DiskError> 
 }
 
 pub async fn create_array(host: &DiskHost, opts: &CreateArrayOpts) -> Result<(), DiskError> {
-    let mut args = vec!["--create".to_string(), opts.device.clone(), "--level".into(), opts.level.clone(),
-        "--raid-devices".into(), opts.members.len().to_string()];
-    for m in &opts.members { args.push(m.clone()); }
+    let mut args = vec![
+        "--create".to_string(),
+        opts.device.clone(),
+        "--level".into(),
+        opts.level.clone(),
+        "--raid-devices".into(),
+        opts.members.len().to_string(),
+    ];
+    for m in &opts.members {
+        args.push(m.clone());
+    }
     if !opts.spare.is_empty() {
-        args.push("--spare-devices".into()); args.push(opts.spare.len().to_string());
-        for s in &opts.spare { args.push(s.clone()); }
+        args.push("--spare-devices".into());
+        args.push(opts.spare.len().to_string());
+        for s in &opts.spare {
+            args.push(s.clone());
+        }
     }
     let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    client::exec_ok(host, "mdadm", &refs).await?; Ok(())
+    client::exec_ok(host, "mdadm", &refs).await?;
+    Ok(())
 }
 
 pub async fn add_member(host: &DiskHost, array: &str, device: &str) -> Result<(), DiskError> {
-    client::exec_ok(host, "mdadm", &[array, "--add", device]).await?; Ok(())
+    client::exec_ok(host, "mdadm", &[array, "--add", device]).await?;
+    Ok(())
 }
 
 pub async fn remove_member(host: &DiskHost, array: &str, device: &str) -> Result<(), DiskError> {
     client::exec_ok(host, "mdadm", &[array, "--fail", device]).await?;
-    client::exec_ok(host, "mdadm", &[array, "--remove", device]).await?; Ok(())
+    client::exec_ok(host, "mdadm", &[array, "--remove", device]).await?;
+    Ok(())
 }
 
 pub async fn stop_array(host: &DiskHost, device: &str) -> Result<(), DiskError> {
-    client::exec_ok(host, "mdadm", &["--stop", device]).await?; Ok(())
+    client::exec_ok(host, "mdadm", &["--stop", device]).await?;
+    Ok(())
 }
 
 fn parse_mdstat(content: &str) -> Vec<MdArray> {
@@ -45,11 +60,39 @@ fn parse_mdstat(content: &str) -> Vec<MdArray> {
             let dev = line.split_whitespace().next().unwrap_or("").to_string();
             let rest = line.split(" : ").nth(1).unwrap_or("");
             let level = rest.split_whitespace().nth(1).unwrap_or("").to_string();
-            let state = if rest.contains("active") { "active" } else { "inactive" }.to_string();
-            let members: Vec<MdMember> = rest.split_whitespace().skip(2).filter(|s| s.contains('['))
-                .map(|s| { let d = s.split('[').next().unwrap_or(s); MdMember { device: format!("/dev/{d}"), number: 0, state: "active".into() } }).collect();
+            let state = if rest.contains("active") {
+                "active"
+            } else {
+                "inactive"
+            }
+            .to_string();
+            let members: Vec<MdMember> = rest
+                .split_whitespace()
+                .skip(2)
+                .filter(|s| s.contains('['))
+                .map(|s| {
+                    let d = s.split('[').next().unwrap_or(s);
+                    MdMember {
+                        device: format!("/dev/{d}"),
+                        number: 0,
+                        state: "active".into(),
+                    }
+                })
+                .collect();
             let count = members.len() as u32;
-            arrays.push(MdArray { device: format!("/dev/{dev}"), level, state, member_count: count, active_count: count, failed_count: 0, spare_count: 0, size: String::new(), members, rebuild_percent: None, uuid: None });
+            arrays.push(MdArray {
+                device: format!("/dev/{dev}"),
+                level,
+                state,
+                member_count: count,
+                active_count: count,
+                failed_count: 0,
+                spare_count: 0,
+                size: String::new(),
+                members,
+                rebuild_percent: None,
+                uuid: None,
+            });
         }
     }
     arrays
