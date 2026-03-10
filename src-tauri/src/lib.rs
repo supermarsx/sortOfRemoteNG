@@ -33,6 +33,13 @@ mod app_shell_commands;
 mod domains;
 mod invoke_handler;
 mod mongodb_commands;
+mod mssql_commands;
+mod mysql_commands;
+mod postgres_commands;
+mod redis_commands;
+#[cfg(not(feature = "rdp"))]
+mod rdp;
+mod sqlite_commands;
 mod state_registry;
 pub use domains::*;
 
