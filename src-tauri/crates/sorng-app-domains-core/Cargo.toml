@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tauri = { workspace = true }
 sorng-1password = { path = "../sorng-1password" }
 sorng-ai-agent = { path = "../sorng-ai-agent" }
 sorng-auth = { path = "../sorng-auth", default-features = false }
@@ -17,21 +16,21 @@ sorng-google-passwords = { path = "../sorng-google-passwords" }
 sorng-gpo = { path = "../sorng-gpo" }
 sorng-keepass = { path = "../sorng-keepass" }
 sorng-lastpass = { path = "../sorng-lastpass" }
-sorng-mongodb = { path = "../sorng-mongodb" }
-sorng-mssql = { path = "../sorng-mssql" }
-sorng-mysql = { path = "../sorng-mysql" }
+sorng-mongodb = { path = "../sorng-mongodb", optional = true }
+sorng-mssql = { path = "../sorng-mssql", optional = true }
+sorng-mysql = { path = "../sorng-mysql", optional = true }
 sorng-network = { path = "../sorng-network" }
 sorng-passbolt = { path = "../sorng-passbolt" }
-sorng-postgres = { path = "../sorng-postgres" }
+sorng-postgres = { path = "../sorng-postgres", optional = true }
 sorng-protocols = { path = "../sorng-protocols", default-features = false }
 sorng-rdp = { path = "../sorng-rdp", optional = true }
-sorng-redis = { path = "../sorng-redis" }
+sorng-redis = { path = "../sorng-redis", optional = true }
 sorng-remote-mgmt = { path = "../sorng-remote-mgmt" }
 sorng-rustdesk = { path = "../sorng-rustdesk" }
 sorng-scp = { path = "../sorng-scp" }
 sorng-serial = { path = "../sorng-serial" }
 sorng-sftp = { path = "../sorng-sftp" }
-sorng-sqlite = { path = "../sorng-sqlite" }
+sorng-sqlite = { path = "../sorng-sqlite", optional = true }
 sorng-ssh = { path = "../sorng-ssh", default-features = false }
 sorng-storage = { path = "../sorng-storage" }
 sorng-telnet = { path = "../sorng-telnet" }
@@ -42,6 +41,12 @@ sorng-vpn = { path = "../sorng-vpn" }
 [features]
 default = ["rdp"]
 cert-auth = ["sorng-auth/cert-auth"]
+db-mongo = ["dep:sorng-mongodb"]
+db-mssql = ["dep:sorng-mssql"]
+db-mysql = ["dep:sorng-mysql"]
+db-postgres = ["dep:sorng-postgres"]
+db-redis = ["dep:sorng-redis"]
+db-sqlite = ["dep:sorng-sqlite"]
 rdp = ["dep:sorng-rdp"]
 script-engine = ["sorng-ssh/script-engine"]
 tls-cert-details = ["sorng-protocols/tls-cert-details"]

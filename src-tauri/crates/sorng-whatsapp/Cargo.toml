@@ -20,7 +20,7 @@ hmac = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
 qrcode = "0.14"
-png = "0.18"
+png = "0.17"
 tokio-tungstenite = { workspace = true }
 futures-util = "0.3"
 aes-gcm = { workspace = true }

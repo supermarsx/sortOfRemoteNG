@@ -207,12 +207,12 @@ tauri = { version = "=2.10.3", features = ["devtools"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }
-reqwest = { version = "0.11", default-features = false, features = ["json", "cookies", "stream", "multipart", "rustls-tls-native-roots"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots"] }
 url = "2.5"
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
 tokio-rustls = "0.24"
 rustls-native-certs = "0.6"
-tokio-tungstenite = { version = "0.21", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 bytes = "1"
 ssh2 = "0.9"
 windows = "=0.62.2"
@@ -292,10 +292,20 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 
 [features]
-default = ["rdp"]
-full = ["cert-auth", "kafka", "rdp", "script-engine", "tls-cert-details"]
+default = ["cloud", "collab", "ops", "platform", "rdp"]
+full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "ops", "platform", "rdp", "script-engine", "tls-cert-details"]
 cert-auth = ["sorng-app-domains/cert-auth"]
+cloud = ["sorng-app-domains/cloud"]
+collab = ["sorng-app-domains/collab"]
+db-mongo = ["sorng-app-domains/db-mongo"]
+db-mssql = ["sorng-app-domains/db-mssql"]
+db-mysql = ["sorng-app-domains/db-mysql"]
+db-postgres = ["sorng-app-domains/db-postgres"]
+db-redis = ["sorng-app-domains/db-redis"]
+db-sqlite = ["sorng-app-domains/db-sqlite"]
 kafka = ["dep:sorng-kafka"]
+ops = ["sorng-app-domains/ops"]
+platform = ["sorng-app-domains/platform"]
 rdp = ["sorng-app-domains/rdp"]
 script-engine = ["sorng-app-domains/script-engine"]
 tls-cert-details = ["sorng-app-domains/tls-cert-details"]

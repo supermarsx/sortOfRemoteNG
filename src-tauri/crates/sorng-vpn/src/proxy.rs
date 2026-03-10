@@ -1189,7 +1189,7 @@ impl ProxyService {
                             match result {
                                 Ok(0) => break,
                                 Ok(n) => {
-                                    if write.send(tokio_tungstenite::tungstenite::Message::Binary(buf[..n].to_vec())).await.is_err() {
+                                    if write.send(tokio_tungstenite::tungstenite::Message::Binary(buf[..n].to_vec().into())).await.is_err() {
                                         break;
                                     }
                                 }

@@ -1,6 +1,9 @@
+#[cfg(feature = "db-mongo")]
 use crate::mongodb::service::MongoServiceState;
+#[cfg(feature = "db-mongo")]
 use crate::mongodb::types::*;
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_connect(
     state: tauri::State<'_, MongoServiceState>,
@@ -10,6 +13,7 @@ pub async fn mongo_connect(
     svc.connect(config).await.map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_disconnect(
     state: tauri::State<'_, MongoServiceState>,
@@ -19,6 +23,7 @@ pub async fn mongo_disconnect(
     svc.disconnect(&session_id).await.map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_disconnect_all(
     state: tauri::State<'_, MongoServiceState>,
@@ -28,6 +33,7 @@ pub async fn mongo_disconnect_all(
     Ok(())
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_list_sessions(
     state: tauri::State<'_, MongoServiceState>,
@@ -36,6 +42,7 @@ pub async fn mongo_list_sessions(
     Ok(svc.list_sessions())
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_get_session(
     state: tauri::State<'_, MongoServiceState>,
@@ -45,6 +52,7 @@ pub async fn mongo_get_session(
     svc.get_session(&session_id).map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_ping(
     state: tauri::State<'_, MongoServiceState>,
@@ -54,6 +62,7 @@ pub async fn mongo_ping(
     svc.ping(&session_id).await.map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_list_databases(
     state: tauri::State<'_, MongoServiceState>,
@@ -63,6 +72,7 @@ pub async fn mongo_list_databases(
     svc.list_databases(&session_id).await.map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_drop_database(
     state: tauri::State<'_, MongoServiceState>,
@@ -75,6 +85,7 @@ pub async fn mongo_drop_database(
         .map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_list_collections(
     state: tauri::State<'_, MongoServiceState>,
@@ -87,6 +98,7 @@ pub async fn mongo_list_collections(
         .map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_create_collection(
     state: tauri::State<'_, MongoServiceState>,
@@ -100,6 +112,7 @@ pub async fn mongo_create_collection(
         .map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_drop_collection(
     state: tauri::State<'_, MongoServiceState>,
@@ -113,6 +126,7 @@ pub async fn mongo_drop_collection(
         .map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_collection_stats(
     state: tauri::State<'_, MongoServiceState>,
@@ -126,6 +140,7 @@ pub async fn mongo_collection_stats(
         .map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_server_status(
     state: tauri::State<'_, MongoServiceState>,
@@ -135,6 +150,7 @@ pub async fn mongo_server_status(
     svc.server_status(&session_id).await.map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_list_users(
     state: tauri::State<'_, MongoServiceState>,
@@ -147,6 +163,7 @@ pub async fn mongo_list_users(
         .map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_replica_set_status(
     state: tauri::State<'_, MongoServiceState>,
@@ -158,6 +175,7 @@ pub async fn mongo_replica_set_status(
         .map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_current_op(
     state: tauri::State<'_, MongoServiceState>,
@@ -167,6 +185,7 @@ pub async fn mongo_current_op(
     svc.current_op(&session_id).await.map_err(|e| e.message)
 }
 
+#[cfg(feature = "db-mongo")]
 #[tauri::command]
 pub async fn mongo_kill_op(
     state: tauri::State<'_, MongoServiceState>,
@@ -176,3 +195,40 @@ pub async fn mongo_kill_op(
     let svc = state.lock().await;
     svc.kill_op(&session_id, op_id).await.map_err(|e| e.message)
 }
+
+#[cfg(not(feature = "db-mongo"))]
+mod disabled {
+    macro_rules! disabled_commands {
+        ($($name:ident),* $(,)?) => {
+            $(
+                #[tauri::command]
+                pub async fn $name() -> Result<(), String> {
+                    Err("MongoDB support is not enabled in this build".into())
+                }
+            )*
+        };
+    }
+
+    disabled_commands!(
+        mongo_connect,
+        mongo_disconnect,
+        mongo_disconnect_all,
+        mongo_list_sessions,
+        mongo_get_session,
+        mongo_ping,
+        mongo_list_databases,
+        mongo_drop_database,
+        mongo_list_collections,
+        mongo_create_collection,
+        mongo_drop_collection,
+        mongo_collection_stats,
+        mongo_server_status,
+        mongo_list_users,
+        mongo_replica_set_status,
+        mongo_current_op,
+        mongo_kill_op
+    );
+}
+
+#[cfg(not(feature = "db-mongo"))]
+pub use disabled::*;

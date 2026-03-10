@@ -4,15 +4,25 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sorng-app-domains-cloud = { path = "../sorng-app-domains-cloud" }
-sorng-app-domains-collab = { path = "../sorng-app-domains-collab" }
+sorng-app-domains-cloud = { path = "../sorng-app-domains-cloud", optional = true }
+sorng-app-domains-collab = { path = "../sorng-app-domains-collab", optional = true }
 sorng-app-domains-core = { path = "../sorng-app-domains-core", default-features = false }
-sorng-app-domains-ops = { path = "../sorng-app-domains-ops" }
-sorng-app-domains-platform = { path = "../sorng-app-domains-platform" }
+sorng-app-domains-ops = { path = "../sorng-app-domains-ops", optional = true }
+sorng-app-domains-platform = { path = "../sorng-app-domains-platform", optional = true }
 
 [features]
-default = ["rdp"]
+default = ["cloud", "collab", "ops", "platform", "rdp"]
 cert-auth = ["sorng-app-domains-core/cert-auth"]
+cloud = ["dep:sorng-app-domains-cloud"]
+collab = ["dep:sorng-app-domains-collab"]
+db-mongo = ["sorng-app-domains-core/db-mongo"]
+db-mssql = ["sorng-app-domains-core/db-mssql"]
+db-mysql = ["sorng-app-domains-core/db-mysql"]
+db-postgres = ["sorng-app-domains-core/db-postgres"]
+db-redis = ["sorng-app-domains-core/db-redis"]
+db-sqlite = ["sorng-app-domains-core/db-sqlite"]
+ops = ["dep:sorng-app-domains-ops"]
+platform = ["dep:sorng-app-domains-platform"]
 rdp = ["sorng-app-domains-core/rdp"]
 script-engine = ["sorng-app-domains-core/script-engine"]
 tls-cert-details = ["sorng-app-domains-core/tls-cert-details"]

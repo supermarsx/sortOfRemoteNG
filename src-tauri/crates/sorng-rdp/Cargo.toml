@@ -21,7 +21,7 @@ bytes = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 softbuffer = "0.4"
-wgpu = "24"
+wgpu = { version = "24", default-features = false, features = ["dx12", "wgsl"] }
 raw-window-handle = "0.6"
 log = { workspace = true }
 x509-cert = { version = "0.2", features = ["std"] }
@@ -32,7 +32,7 @@ rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 smallvec = "1"
 base64 = { workspace = true }
-png = "0.18"
+png = "0.17"
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Com", "Win32_Media_MediaFoundation", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Graphics_Direct3D", "Win32_Foundation"] }

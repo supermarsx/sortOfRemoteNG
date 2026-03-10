@@ -37,78 +37,6 @@ pub use sorng_rdp::h264;
 #[cfg(feature = "rdp")]
 pub use sorng_rdp::rdp;
 
-#[cfg(not(feature = "rdp"))]
-pub mod rdp {
-    #[tauri::command]
-    pub async fn connect_rdp() -> Result<(), String> {
-        Err("RDP feature is not enabled. Rebuild with --features rdp".into())
-    }
-    #[tauri::command]
-    pub async fn disconnect_rdp() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn attach_rdp_session() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn detach_rdp_session() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn rdp_send_input() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn rdp_get_frame_data() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn get_rdp_session_info() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn list_rdp_sessions() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn get_rdp_stats() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn detect_keyboard_layout() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn diagnose_rdp_connection() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn rdp_sign_out() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn rdp_force_reboot() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn reconnect_rdp_session() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn rdp_get_thumbnail() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn rdp_save_screenshot() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-    #[tauri::command]
-    pub async fn get_rdp_logs() -> Result<(), String> {
-        Err("RDP feature is not enabled".into())
-    }
-}
-
 pub use sorng_ftp::ftp;
 pub use sorng_protocols::db;
 pub use sorng_protocols::http;
@@ -138,11 +66,17 @@ pub use sorng_passbolt::passbolt;
 pub use sorng_rustdesk::rustdesk;
 pub use sorng_scp::scp;
 
+#[cfg(feature = "db-mongo")]
 pub use sorng_mongodb::mongodb;
+#[cfg(feature = "db-mssql")]
 pub use sorng_mssql::mssql;
+#[cfg(feature = "db-mysql")]
 pub use sorng_mysql::mysql;
+#[cfg(feature = "db-postgres")]
 pub use sorng_postgres::postgres;
+#[cfg(feature = "db-redis")]
 pub use sorng_redis::redis_impl as redis;
+#[cfg(feature = "db-sqlite")]
 pub use sorng_sqlite::sqlite;
 
 pub use sorng_1password::onepassword;

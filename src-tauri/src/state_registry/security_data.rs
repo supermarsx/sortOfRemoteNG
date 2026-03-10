@@ -100,21 +100,39 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let scp_service = ScpService::new();
     app.manage(scp_service.clone());
 
-    let mysql_service: MysqlServiceState = mysql::service::new_state();
-    app.manage(mysql_service);
+    #[cfg(feature = "db-mysql")]
+    {
+        let mysql_service: MysqlServiceState = mysql::service::new_state();
+        app.manage(mysql_service);
+    }
 
-    let postgres_service: PostgresServiceState = postgres::service::new_state();
-    app.manage(postgres_service);
+    #[cfg(feature = "db-postgres")]
+    {
+        let postgres_service: PostgresServiceState = postgres::service::new_state();
+        app.manage(postgres_service);
+    }
 
-    let mssql_service: MssqlServiceState = mssql::service::new_state();
-    app.manage(mssql_service);
+    #[cfg(feature = "db-mssql")]
+    {
+        let mssql_service: MssqlServiceState = mssql::service::new_state();
+        app.manage(mssql_service);
+    }
 
-    let sqlite_service: SqliteServiceState = sqlite::service::new_state();
-    app.manage(sqlite_service);
+    #[cfg(feature = "db-sqlite")]
+    {
+        let sqlite_service: SqliteServiceState = sqlite::service::new_state();
+        app.manage(sqlite_service);
+    }
 
-    let mongodb_service: MongoServiceState = mongodb::service::new_state();
-    app.manage(mongodb_service);
+    #[cfg(feature = "db-mongo")]
+    {
+        let mongodb_service: MongoServiceState = mongodb::service::new_state();
+        app.manage(mongodb_service);
+    }
 
-    let redis_service: RedisServiceState = redis::service::new_state();
-    app.manage(redis_service);
+    #[cfg(feature = "db-redis")]
+    {
+        let redis_service: RedisServiceState = redis::service::new_state();
+        app.manage(redis_service);
+    }
 }

@@ -20,10 +20,10 @@ hmac = { workspace = true }
 md-5 = "0.10"
 hex = { workspace = true }
 rsa = { version = "0.9", features = ["sha2"] }
-tokio-rustls = "0.25"
-rustls = "0.22"
+tokio-rustls = "0.26"
+rustls = "0.23"
 rustls-pemfile = "2.0"
-webpki-roots = "0.26"
+webpki-roots = "1"
 trust-dns-resolver = "0.23"
 mime_guess = "2.0"
 quoted_printable = "0.5"

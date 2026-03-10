@@ -24,4 +24,4 @@ pbkdf2 = { workspace = true }
 hex = { workspace = true }
 regex = { workspace = true }
 qrcode = "0.14"
-png = "0.18"
+png = "0.17"

@@ -20,7 +20,9 @@
 
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use oauth2::basic::BasicClient;
-use oauth2::{ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope};
+use oauth2::{
+    AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenUrl,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -239,19 +241,17 @@ impl BearerAuthService {
         redirect_uri: &str,
     ) -> Result<String, String> {
         if let Some(provider) = self.providers.get(provider_name) {
-            let client = BasicClient::new(
-                ClientId::new(provider.client_id.clone()),
-                Some(ClientSecret::new(provider.client_secret.clone())),
-                oauth2::AuthUrl::new(provider.auth_url.clone()).map_err(|e| e.to_string())?,
-                Some(oauth2::TokenUrl::new(provider.token_url.clone()).map_err(|e| e.to_string())?),
-            )
+            let client = BasicClient::new(ClientId::new(provider.client_id.clone()))
+            .set_client_secret(ClientSecret::new(provider.client_secret.clone()))
+            .set_auth_uri(AuthUrl::new(provider.auth_url.clone()).map_err(|e| e.to_string())?)
+            .set_token_uri(TokenUrl::new(provider.token_url.clone()).map_err(|e| e.to_string())?)
             .set_redirect_uri(
                 RedirectUrl::new(redirect_uri.to_string()).map_err(|e| e.to_string())?,
             );
 
             let (pkce_challenge, _pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-            let (auth_url, _csrf_token) = client
+            let (auth_url, _csrf_token): (_, CsrfToken) = client
                 .authorize_url(CsrfToken::new_random)
                 .add_scopes(provider.scopes.iter().map(|s| Scope::new(s.clone())))
                 .set_pkce_challenge(pkce_challenge)

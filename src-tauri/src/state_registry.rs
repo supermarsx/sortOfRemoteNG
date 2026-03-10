@@ -62,9 +62,12 @@ pub(crate) use lxd::service::LxdService;
 pub(crate) use mailcow::service::MailcowServiceState;
 pub(crate) use mcp_server::McpServiceState as McpServerServiceState;
 pub(crate) use meshcentral_dedicated::MeshCentralService;
+#[cfg(feature = "db-mongo")]
 pub(crate) use mongodb::service::MongoServiceState;
 pub(crate) use mremoteng_dedicated::MremotengService;
+#[cfg(feature = "db-mssql")]
 pub(crate) use mssql::service::MssqlServiceState;
+#[cfg(feature = "db-mysql")]
 pub(crate) use mysql::service::MysqlServiceState;
 pub(crate) use mysql_admin::service::MysqlServiceState as MysqlAdminServiceState;
 pub(crate) use netbox::service::NetboxServiceState;
@@ -86,6 +89,7 @@ pub(crate) use pg_admin::service::PgServiceState;
 pub(crate) use php_mgmt::service::PhpServiceState;
 pub(crate) use port_knock::service::PortKnockServiceState;
 pub(crate) use postfix::service::PostfixServiceState;
+#[cfg(feature = "db-postgres")]
 pub(crate) use postgres::service::PostgresServiceState;
 pub(crate) use proc_mgmt::service::ProcServiceState;
 pub(crate) use procmail::service::ProcmailServiceState;
@@ -97,6 +101,7 @@ pub(crate) use raw_socket::RawSocketService;
 #[cfg(feature = "rdp")]
 pub(crate) use rdp::RdpService;
 pub(crate) use recording::RecordingServiceState;
+#[cfg(feature = "db-redis")]
 pub(crate) use redis::service::RedisServiceState;
 pub(crate) use rlogin::RloginService;
 pub(crate) use roundcube::service::RoundcubeServiceState;
@@ -112,6 +117,7 @@ pub(crate) use sftp::SftpService;
 pub(crate) use smtp::service::SmtpService;
 pub(crate) use snmp::service::SnmpServiceState;
 pub(crate) use spamassassin::service::SpamAssassinServiceState;
+#[cfg(feature = "db-sqlite")]
 pub(crate) use sqlite::service::SqliteServiceState;
 pub(crate) use ssh::SshService;
 pub(crate) use ssh3::Ssh3Service;

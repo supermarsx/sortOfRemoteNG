@@ -410,7 +410,7 @@ impl UnofficialClient {
         // Step 1: send ephemeral public key
         let client_hello = handshake.build_client_hello();
         write
-            .send(WsMessage::Binary(client_hello))
+            .send(WsMessage::Binary(client_hello.into()))
             .await
             .map_err(|e| WhatsAppError::network(format!("WS send error: {}", e)))?;
 
@@ -427,7 +427,7 @@ impl UnofficialClient {
         // Step 3: send client finish (includes device identity)
         let client_finish = handshake.build_client_finish(&identity)?;
         write
-            .send(WsMessage::Binary(client_finish))
+            .send(WsMessage::Binary(client_finish.into()))
             .await
             .map_err(|e| WhatsAppError::network(format!("WS send error: {}", e)))?;
 
@@ -629,7 +629,7 @@ impl UnofficialClient {
     ) -> WhatsAppResult<Vec<u8>> {
         while let Some(msg_result) = read.next().await {
             match msg_result {
-                Ok(WsMessage::Binary(data)) => return Ok(data),
+                Ok(WsMessage::Binary(data)) => return Ok(data.to_vec()),
                 Ok(WsMessage::Close(_)) => {
                     return Err(WhatsAppError::network("WebSocket closed by server"));
                 }
@@ -666,7 +666,7 @@ impl UnofficialClient {
                                 }
                             }
                         } else {
-                            data.clone()
+                            data.to_vec()
                         }
                     };
 
