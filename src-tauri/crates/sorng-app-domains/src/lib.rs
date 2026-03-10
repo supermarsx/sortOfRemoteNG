@@ -1,8 +1,8 @@
-pub use sorng_app_domains_core::*;
 #[cfg(feature = "cloud")]
 pub use sorng_app_domains_cloud::*;
 #[cfg(feature = "collab")]
 pub use sorng_app_domains_collab::*;
+pub use sorng_app_domains_core::*;
 #[cfg(feature = "ops")]
 pub use sorng_app_domains_ops::*;
 #[cfg(feature = "platform")]
