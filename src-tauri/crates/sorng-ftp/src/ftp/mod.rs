@@ -20,10 +20,8 @@
 //! - `pool` — connection pool with idle reaping
 //! - `queue` — transfer queue with concurrency + retry + progress
 //! - `service` — high-level orchestrator (owns sessions, pool, queue)
-//! - `commands` — thin `#[tauri::command]` wrappers
 
 pub mod client;
-pub mod commands;
 pub mod connection;
 pub mod directory;
 pub mod error;
@@ -38,7 +36,6 @@ pub mod transfer;
 pub mod types;
 
 // Re-exports for lib.rs consumers
-pub use commands::*;
 pub use error::{FtpError, FtpResult};
 pub use service::{FtpService, FtpServiceState};
 pub use types::*;

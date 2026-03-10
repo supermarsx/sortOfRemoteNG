@@ -1,9 +1,9 @@
 mod access;
-mod core;
 #[cfg(feature = "cloud")]
 mod cloud;
 #[cfg(any(feature = "collab", feature = "platform"))]
 mod collab;
+mod core;
 #[cfg(feature = "ops")]
 mod infra;
 #[cfg(feature = "ops")]
@@ -38,42 +38,52 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
     move |invoke| {
         let command = invoke.message.command();
         if core::is_command(command) {
-            core_handler(invoke)
+            return core_handler(invoke);
         }
+
         #[cfg(feature = "cloud")]
-        else if cloud::is_command(command) {
-            cloud_handler(invoke)
+        if cloud::is_command(command) {
+            return cloud_handler(invoke);
         }
-        else if access::is_command(command) {
-            access_handler(invoke)
-        } else if sessions::is_command(command) {
-            sessions_handler(invoke)
+
+        if access::is_command(command) {
+            return access_handler(invoke);
         }
+
+        if sessions::is_command(command) {
+            return sessions_handler(invoke);
+        }
+
         #[cfg(feature = "ops")]
-        else if infra::is_command(command) {
-            infra_handler(invoke)
+        if infra::is_command(command) {
+            return infra_handler(invoke);
         }
+
         #[cfg(any(feature = "collab", feature = "platform"))]
-        else if collab::is_command(command) {
-            collab_handler(invoke)
+        if collab::is_command(command) {
+            return collab_handler(invoke);
         }
+
         #[cfg(feature = "platform")]
-        else if platform::is_command(command) {
-            platform_handler(invoke)
+        if platform::is_command(command) {
+            return platform_handler(invoke);
         }
+
         #[cfg(feature = "ops")]
-        else if services::is_command(command) {
-            services_handler(invoke)
+        if services::is_command(command) {
+            return services_handler(invoke);
         }
+
         #[cfg(feature = "ops")]
-        else if mail::is_command(command) {
-            mail_handler(invoke)
+        if mail::is_command(command) {
+            return mail_handler(invoke);
         }
+
         #[cfg(feature = "ops")]
-        else if ops::is_command(command) {
-            ops_handler(invoke)
-        } else {
-            false
+        if ops::is_command(command) {
+            return ops_handler(invoke);
         }
+
+        false
     }
 }

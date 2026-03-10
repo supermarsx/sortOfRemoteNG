@@ -30,17 +30,22 @@
 
 mod app_auth_commands;
 mod app_shell_commands;
+mod aws_commands;
 mod domains;
+mod ftp_commands;
 mod invoke_handler;
 mod mongodb_commands;
 mod mssql_commands;
 mod mysql_commands;
 mod postgres_commands;
-mod redis_commands;
 #[cfg(not(feature = "rdp"))]
 mod rdp;
+mod redis_commands;
+mod smtp_commands;
 mod sqlite_commands;
 mod state_registry;
+mod telnet_commands;
+mod updater_commands;
 pub use domains::*;
 
 // App-level module: REST API gateway (stays in the main crate)

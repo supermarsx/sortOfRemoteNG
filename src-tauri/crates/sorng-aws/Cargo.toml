@@ -8,7 +8,6 @@ description = "Comprehensive AWS integration crate with SigV4 signing, EC2, S3, 
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 reqwest = { workspace = true, features = ["cookies"] }
 uuid = { workspace = true }
 chrono = { workspace = true }

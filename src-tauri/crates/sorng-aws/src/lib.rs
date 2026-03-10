@@ -59,8 +59,7 @@ pub mod sqs;
 pub mod ssm;
 pub mod sts;
 
-// High-level service + Tauri bindings
-pub mod commands;
+// High-level service
 pub mod service;
 
 // ── Re-exports for ergonomic access ─────────────────────────────────────
@@ -71,13 +70,3 @@ pub use config::{
 };
 pub use error::{AwsError, AwsResult};
 pub use service::{AwsService, AwsServiceState};
-
-// Re-export all Tauri commands for registration in the main app
-pub use commands::{
-    connect_aws, create_s3_bucket, disconnect_aws, execute_ec2_action, get_aws_session,
-    get_caller_identity, get_cloudwatch_metrics, get_s3_objects, get_secret_value,
-    get_ssm_parameter, invoke_lambda_function, list_aws_sessions, list_cloudformation_stacks,
-    list_ec2_instances, list_ecs_clusters, list_ecs_services, list_hosted_zones, list_iam_roles,
-    list_iam_users, list_lambda_functions, list_rds_instances, list_s3_buckets, list_secrets,
-    list_sns_topics, list_sqs_queues,
-};

@@ -13,12 +13,10 @@
 //! | [`dkim`] | DKIM signing (RSA-SHA256) |
 //! | [`contacts`] | Contact/address-book management, groups, import/export |
 //! | [`diagnostics`] | MX lookup, connectivity tests, deliverability checks |
-//! | [`service`] | Service façade (Tauri state) |
-//! | [`commands`] | `#[tauri::command]` handlers |
+//! | [`service`] | Service façade |
 
 pub mod auth;
 pub mod client;
-pub mod commands;
 pub mod contacts;
 pub mod diagnostics;
 pub mod dkim;

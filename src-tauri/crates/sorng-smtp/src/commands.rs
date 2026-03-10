@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 use tauri::State;
 
-use crate::service::{SmtpServiceState, SmtpStats};
-use crate::types::*;
+use super::service::{SmtpServiceState, SmtpStats};
+use super::types::*;
 
 /// Convert an SmtpError to a String for Tauri's error channel.
 fn err_str(e: SmtpError) -> String {

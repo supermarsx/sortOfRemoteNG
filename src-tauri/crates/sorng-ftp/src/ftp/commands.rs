@@ -3,8 +3,8 @@
 //! Thin wrappers that take `State<FtpServiceState>`, lock the mutex, and
 //! delegate to the service.  Every command returns `Result<T, String>`.
 
-use crate::ftp::service::FtpServiceState;
-use crate::ftp::types::*;
+use super::service::FtpServiceState;
+use super::types::*;
 
 // ── Connection / session ─────────────────────────────────────────────────────
 
