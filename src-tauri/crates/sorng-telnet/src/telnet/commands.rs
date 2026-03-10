@@ -5,8 +5,8 @@
 
 use tauri::{AppHandle, Runtime, State};
 
-use crate::telnet::service::TelnetServiceState;
-use crate::telnet::types::{TelnetConfig, TelnetSession};
+use super::service::TelnetServiceState;
+use super::types::{TelnetConfig, TelnetSession};
 
 /// Connect to a telnet server.
 ///

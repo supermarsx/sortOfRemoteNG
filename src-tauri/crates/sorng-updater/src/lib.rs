@@ -18,11 +18,9 @@
 //! | `installer`  | Installation, backup creation, restart scheduling  |
 //! | `rollback`   | Rollback and backup lifecycle management           |
 //! | `service`    | Service façade (`UpdaterServiceState`)             |
-//! | `commands`   | Tauri `#[command]` handlers                        |
 
 pub mod channels;
 pub mod checker;
-pub mod commands;
 pub mod downloader;
 pub mod error;
 pub mod installer;

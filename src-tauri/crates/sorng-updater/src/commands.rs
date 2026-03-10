@@ -5,11 +5,11 @@
 
 use tauri::State;
 
-use crate::service::UpdaterServiceState;
-use crate::types::*;
+use super::service::UpdaterServiceState;
+use super::types::*;
 
 /// Helper to map UpdateError → String for Tauri command results.
-fn err_str(e: crate::error::UpdateError) -> String {
+fn err_str(e: super::error::UpdateError) -> String {
     e.to_string()
 }
 
