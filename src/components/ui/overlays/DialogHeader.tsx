@@ -1,8 +1,6 @@
 import React from 'react';
 import { X, type LucideIcon } from 'lucide-react';
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(' ');
+import { cx } from '../lib/cx';
 
 export interface DialogHeaderProps {
   /** Lucide icon component */

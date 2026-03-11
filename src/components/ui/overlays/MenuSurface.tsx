@@ -1,7 +1,5 @@
 import React, { CSSProperties, useEffect, useRef } from "react";
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(" ");
+import { cx } from "../lib/cx";
 
 export interface MenuSurfacePosition {
   x: number;

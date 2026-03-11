@@ -6,9 +6,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(" ");
+import { cx } from "../lib/cx";
 
 type PopoverAlign = "start" | "center" | "end";
 

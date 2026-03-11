@@ -1,7 +1,5 @@
 import React, { InputHTMLAttributes } from 'react';
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(' ');
+import { cx } from '../lib/cx';
 
 /* ── Variant → CSS class mapping ──────────────────────────────── */
 const VARIANT_CLASS: Record<CheckboxVariant, string> = {

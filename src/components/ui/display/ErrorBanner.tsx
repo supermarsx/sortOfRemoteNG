@@ -1,8 +1,6 @@
 import React from 'react';
 import { AlertCircle, XCircle } from 'lucide-react';
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(' ');
+import { cx } from '../lib/cx';
 
 export interface ErrorBannerProps {
   /** Error message to display. If null/empty, nothing is rendered. */

@@ -1,9 +1,7 @@
 import React from "react";
 import { X } from "lucide-react";
 import { PopoverSurface } from "./PopoverSurface";
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(" ");
+import { cx } from "../lib/cx";
 
 interface ToolbarPopoverProps {
   isOpen: boolean;

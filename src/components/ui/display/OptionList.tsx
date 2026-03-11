@@ -1,7 +1,5 @@
 import React from "react";
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(" ");
+import { cx } from "../lib/cx";
 
 interface OptionListProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;

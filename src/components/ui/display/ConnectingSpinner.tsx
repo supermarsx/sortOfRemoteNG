@@ -1,7 +1,5 @@
 import React from 'react';
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(' ');
+import { cx } from '../lib/cx';
 
 export interface ConnectingSpinnerProps {
   /** Primary message, e.g. "Connecting to RDP server..." */
