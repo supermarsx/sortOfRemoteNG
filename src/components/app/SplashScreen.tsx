@@ -6,17 +6,19 @@ type Mgr = ReturnType<typeof useSplashScreen>;
 
 interface SplashScreenProps {
   isLoading: boolean;
+  progress: number;
+  status: string;
   onLoadComplete?: () => void;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, onLoadComplete }) => {
-  const mgr = useSplashScreen(isLoading, onLoadComplete);
+export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, progress, status, onLoadComplete }) => {
+  const mgr = useSplashScreen(isLoading, progress, status, onLoadComplete);
 
   if (!mgr.shouldShow) return null;
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 transition-opacity duration-500 ${
+      className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 transition-opacity duration-200 ${
         mgr.fadeOut ? 'opacity-0' : 'opacity-100'
       }`}
     >

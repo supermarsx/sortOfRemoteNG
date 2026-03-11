@@ -136,7 +136,7 @@ const AppContent: React.FC = () => {
     confirmDialog,
   } = useSessionManager();
 
-  const { isInitialized } = useAppLifecycle({
+  const { isInitialized, initProgress, initStatus } = useAppLifecycle({
     handleConnect,
     restoreSession,
     setShowCollectionSelector,
@@ -1085,6 +1085,8 @@ const AppContent: React.FC = () => {
       {showSplash && (
         <SplashScreen
           isLoading={!isInitialized}
+          progress={initProgress}
+          status={initStatus}
           onLoadComplete={() => setShowSplash(false)}
         />
       )}

@@ -73,6 +73,8 @@ export const useAppLifecycle = ({
   const themeManager = ThemeManager.getInstance();
 
   const [isInitialized, setIsInitialized] = useState(false);
+  const [initProgress, setInitProgress] = useState(0);
+  const [initStatus, setInitStatus] = useState("Initializing...");
   const [didUnexpectedClose, setDidUnexpectedClose] = useState(false);
   const hasReconnected = useRef(false);
   const initStarted = useRef(false);
@@ -82,79 +84,98 @@ export const useAppLifecycle = ({
     if (initStarted.current) return;
     initStarted.current = true;
     try {
+      // Phase 1: Settings (must come first — everything else depends on it)
+      setInitStatus("Loading settings...");
       console.log("Initializing app...");
       await settingsManager.initialize();
+      const settings = settingsManager.getSettings();
+      setInitProgress(25);
       console.log("Settings manager initialized");
 
-      // Check for unexpected close (if enabled in settings)
-      const initialSettings = settingsManager.getSettings();
-      if (initialSettings.detectUnexpectedClose) {
-        // Check both localStorage (set on beforeunload) and IndexedDB (for persistence)
-        const localCleanExit = localStorage.getItem(CLEAN_EXIT_KEY) === "true";
-        const dbCleanExit = await IndexedDbService.getItem<boolean>(CLEAN_EXIT_KEY);
-        const lastSession = await IndexedDbService.getItem<number>(LAST_SESSION_KEY);
-        
-        const wasCleanExit = localCleanExit || dbCleanExit;
-        
-        // If there was a previous session and it wasn't a clean exit, it was unexpected
-        if (lastSession !== null && !wasCleanExit) {
-          setDidUnexpectedClose(true);
-          settingsManager.logAction(
-            "warn",
-            "Unexpected close detected",
-            undefined,
-            "The application was not closed properly in the previous session",
+      // Phase 2: Theme, language, and crash detection — all independent, run in parallel
+      setInitStatus("Applying theme...");
+      const parallelTasks: Promise<void>[] = [];
+
+      // Theme loading
+      parallelTasks.push(
+        themeManager.loadSavedTheme().then(() => {
+          themeManager.injectThemeCSS();
+          themeManager.applyTheme(
+            settings.theme,
+            settings.colorScheme,
+            settings.primaryAccentColor,
           );
-        }
-        
-        // Clear localStorage flag and reset IndexedDB for new session
-        localStorage.removeItem(CLEAN_EXIT_KEY);
-        await IndexedDbService.setItem(CLEAN_EXIT_KEY, false);
-        await IndexedDbService.setItem(LAST_SESSION_KEY, Date.now());
-      }
-
-      await themeManager.loadSavedTheme();
-      themeManager.injectThemeCSS();
-      console.log("Theme manager initialized");
-
-      const settings = settingsManager.getSettings();
-      themeManager.applyTheme(
-        settings.theme,
-        settings.colorScheme,
-        settings.primaryAccentColor,
+          console.log("Theme manager initialized");
+        }),
       );
+
+      // Language loading
       if (
         settings.language &&
         settings.language !== i18n.language &&
         typeof i18n.changeLanguage === "function"
       ) {
-        try {
-          // Load language resources if not already loaded
-          if (settings.language !== "en") {
-            await loadLanguage(settings.language);
-          }
-          await i18n.changeLanguage(settings.language);
-          console.log(`Language changed to: ${settings.language}`);
-        } catch (error) {
-          console.warn("Failed to change language:", error);
-        }
+        parallelTasks.push(
+          (async () => {
+            try {
+              if (settings.language !== "en") {
+                await loadLanguage(settings.language);
+              }
+              await i18n.changeLanguage(settings.language);
+              console.log(`Language changed to: ${settings.language}`);
+            } catch (error) {
+              console.warn("Failed to change language:", error);
+            }
+          })(),
+        );
       }
 
-      // Auto-open last used collection if enabled and available
+      // Unexpected close detection (IndexedDB reads/writes)
+      if (settings.detectUnexpectedClose) {
+        parallelTasks.push(
+          (async () => {
+            const localCleanExit = localStorage.getItem(CLEAN_EXIT_KEY) === "true";
+            const [dbCleanExit, lastSession] = await Promise.all([
+              IndexedDbService.getItem<boolean>(CLEAN_EXIT_KEY),
+              IndexedDbService.getItem<number>(LAST_SESSION_KEY),
+            ]);
+
+            const wasCleanExit = localCleanExit || dbCleanExit;
+            if (lastSession !== null && !wasCleanExit) {
+              setDidUnexpectedClose(true);
+              settingsManager.logAction(
+                "warn",
+                "Unexpected close detected",
+                undefined,
+                "The application was not closed properly in the previous session",
+              );
+            }
+
+            localStorage.removeItem(CLEAN_EXIT_KEY);
+            await Promise.all([
+              IndexedDbService.setItem(CLEAN_EXIT_KEY, false),
+              IndexedDbService.setItem(LAST_SESSION_KEY, Date.now()),
+            ]);
+          })(),
+        );
+      }
+
+      await Promise.all(parallelTasks);
+      setInitProgress(60);
+
+      // Phase 3: Collection loading
+      setInitStatus("Loading connections...");
       if (settings.autoOpenLastCollection && settings.lastOpenedCollectionId) {
         try {
           const collections = await collectionManager.getAllCollections();
           const lastCollection = collections.find(c => c.id === settings.lastOpenedCollectionId);
-          
+
           if (lastCollection) {
             if (lastCollection.isEncrypted) {
-              // For encrypted collections, show the collection selector so user can enter password
               console.log(`Last collection "${lastCollection.name}" requires password, showing selector`);
               setShowCollectionSelector(true);
             } else {
-              // For unencrypted collections, auto-open directly
               await collectionManager.selectCollection(lastCollection.id);
-              // Load the collection data into React state
               await loadData();
               console.log(`Auto-opened last collection: ${lastCollection.name}`);
               settingsManager.logAction(
@@ -173,6 +194,8 @@ export const useAppLifecycle = ({
           setShowCollectionSelector(true);
         }
       }
+      setInitProgress(100);
+      setInitStatus("Ready!");
 
       setIsInitialized(true);
       console.log("App initialized successfully");
@@ -184,7 +207,8 @@ export const useAppLifecycle = ({
       );
     } catch (error) {
       console.error("Failed to initialize application:", error);
-      // Set initialized to true even on error to prevent loading screen forever
+      setInitProgress(100);
+      setInitStatus("Ready!");
       setIsInitialized(true);
       settingsManager.logAction(
         "error",
@@ -369,5 +393,5 @@ export const useAppLifecycle = ({
     }
   }, [state.sessions, settingsManager]);
 
-  return { isInitialized, didUnexpectedClose, dismissUnexpectedClose: () => setDidUnexpectedClose(false) };
+  return { isInitialized, initProgress, initStatus, didUnexpectedClose, dismissUnexpectedClose: () => setDidUnexpectedClose(false) };
 };
