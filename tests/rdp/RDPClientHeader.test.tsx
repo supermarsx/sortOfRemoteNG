@@ -45,6 +45,7 @@ const buildProps = () => {
       onRenameConnection: vi.fn(),
       totpConfigs: [],
       onUpdateTotpConfigs: vi.fn(),
+      onUpdateServerCertValidation: vi.fn(),
     },
     handleSendKeys,
   };

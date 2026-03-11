@@ -39,6 +39,8 @@ export interface RDPClientHeaderProps {
   certFingerprint: string;
   connectionName: string;
   onRenameConnection: (name: string) => void;
+  serverCertValidation?: 'validate' | 'warn' | 'ignore';
+  onUpdateServerCertValidation: (mode: 'validate' | 'warn' | 'ignore') => void;
   totpConfigs?: TOTPConfig[];
   onUpdateTotpConfigs: (configs: TOTPConfig[]) => void;
   handleAutoTypeTOTP?: (code: string) => void;
