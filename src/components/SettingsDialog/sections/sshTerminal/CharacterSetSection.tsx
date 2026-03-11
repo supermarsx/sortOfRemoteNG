@@ -3,7 +3,7 @@ import React from "react";
 import { CharacterSets } from "../../../../types/settings/settings";
 import { Type } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
-import { Select } from "../../../ui/forms";
+import { Select, FormField } from "../../../ui/forms";
 
 const CharacterSetSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -11,29 +11,31 @@ const CharacterSetSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     icon={<Type className="w-4 h-4 text-accent" />}
     defaultOpen={false}
   >
-    <Select
-      value={cfg.characterSet}
-      onChange={(v) => up({ characterSet: v })}
-      label={t(
+    <FormField label={t(
         "settings.sshTerminal.remoteCharset",
         "Remote Character Set",
-      )}
-      options={CharacterSets.map((cs) => ({ value: cs, label: cs }))}
-    />
-    <Select
-      value={cfg.unicodeAmbiguousWidth}
-      onChange={(v) =>
-        up({ unicodeAmbiguousWidth: v as "narrow" | "wide" })
-      }
-      label={t(
+      )}>
+      <Select
+        value={cfg.characterSet}
+        onChange={(v) => up({ characterSet: v })}
+        options={CharacterSets.map((cs) => ({ value: cs, label: cs }))}
+      />
+    </FormField>
+    <FormField label={t(
         "settings.sshTerminal.unicodeWidth",
         "Unicode Ambiguous Width",
-      )}
-      options={[
-        { value: "narrow", label: "Narrow (1 cell)" },
-        { value: "wide", label: "Wide (2 cells)" },
-      ]}
-    />
+      )}>
+      <Select
+        value={cfg.unicodeAmbiguousWidth}
+        onChange={(v) =>
+          up({ unicodeAmbiguousWidth: v as "narrow" | "wide" })
+        }
+        options={[
+          { value: "narrow", label: "Narrow (1 cell)" },
+          { value: "wide", label: "Wide (2 cells)" },
+        ]}
+      />
+    </FormField>
   </SettingsCollapsibleSection>
 );
 

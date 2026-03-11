@@ -5,7 +5,7 @@ import React from "react";
 import { BellStyles, TaskbarFlashModes } from "../../../../types/settings/settings";
 import { Bell, Volume2, VolumeX } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
-import { NumberInput, Select } from "../../../ui/forms";
+import { NumberInput, Select, FormField } from "../../../ui/forms";
 
 const BELL_STYLE_LABELS: Record<string, string> = {
   none: "None (disabled)",
@@ -20,17 +20,18 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     title={t("settings.sshTerminal.bellSettings", "Bell Settings")}
     icon={<Bell className="w-4 h-4 text-warning" />}
   >
-    <Select
-      value={cfg.bellStyle}
-      onChange={(v) =>
-        up({ bellStyle: v as typeof cfg.bellStyle })
-      }
-      label={t("settings.sshTerminal.bellStyle", "Bell Style")}
-      options={BellStyles.map((s) => ({
-        value: s,
-        label: BELL_STYLE_LABELS[s] || s,
-      }))}
-    />
+    <FormField label={t("settings.sshTerminal.bellStyle", "Bell Style")}>
+      <Select
+        value={cfg.bellStyle}
+        onChange={(v) =>
+          up({ bellStyle: v as typeof cfg.bellStyle })
+        }
+        options={BellStyles.map((s) => ({
+          value: s,
+          label: BELL_STYLE_LABELS[s] || s,
+        }))}
+      />
+    </FormField>
 
     <div className="border-t border-[var(--color-border)] pt-4 mt-4">
       <h5 className="text-sm font-medium text-[var(--color-text)] mb-3 flex items-center gap-2">
@@ -62,77 +63,81 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
       {cfg.bellOveruseProtection.enabled && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3 ml-10">
-          <NumberInput
-            value={cfg.bellOveruseProtection.maxBells}
-            onChange={(v) =>
-              up({
-                bellOveruseProtection: {
-                  ...cfg.bellOveruseProtection,
-                  maxBells: v,
-                },
-              })
-            }
-            label={t("settings.sshTerminal.maxBells", "Max bells")}
-            min={1}
-            max={100}
-          />
-          <NumberInput
-            value={cfg.bellOveruseProtection.timeWindowSeconds}
-            onChange={(v) =>
-              up({
-                bellOveruseProtection: {
-                  ...cfg.bellOveruseProtection,
-                  timeWindowSeconds: v,
-                },
-              })
-            }
-            label={t(
+          <FormField label={t("settings.sshTerminal.maxBells", "Max bells")}>
+            <NumberInput
+              value={cfg.bellOveruseProtection.maxBells}
+              onChange={(v) =>
+                up({
+                  bellOveruseProtection: {
+                    ...cfg.bellOveruseProtection,
+                    maxBells: v,
+                  },
+                })
+              }
+              min={1}
+              max={100}
+            />
+          </FormField>
+          <FormField label={t(
               "settings.sshTerminal.timeWindow",
               "Time window (sec)",
-            )}
-            min={1}
-            max={60}
-          />
-          <NumberInput
-            value={cfg.bellOveruseProtection.silenceDurationSeconds}
-            onChange={(v) =>
-              up({
-                bellOveruseProtection: {
-                  ...cfg.bellOveruseProtection,
-                  silenceDurationSeconds: v,
-                },
-              })
-            }
-            label={t(
+            )}>
+            <NumberInput
+              value={cfg.bellOveruseProtection.timeWindowSeconds}
+              onChange={(v) =>
+                up({
+                  bellOveruseProtection: {
+                    ...cfg.bellOveruseProtection,
+                    timeWindowSeconds: v,
+                  },
+                })
+              }
+              min={1}
+              max={60}
+            />
+          </FormField>
+          <FormField label={t(
               "settings.sshTerminal.silenceDuration",
               "Silence duration (sec)",
-            )}
-            min={1}
-            max={300}
-          />
+            )}>
+            <NumberInput
+              value={cfg.bellOveruseProtection.silenceDurationSeconds}
+              onChange={(v) =>
+                up({
+                  bellOveruseProtection: {
+                    ...cfg.bellOveruseProtection,
+                    silenceDurationSeconds: v,
+                  },
+                })
+              }
+              min={1}
+              max={300}
+            />
+          </FormField>
         </div>
       )}
     </div>
 
     <div className="border-t border-[var(--color-border)] pt-4 mt-4">
-      <Select
-        value={cfg.taskbarFlash}
-        onChange={(v) =>
-          up({
-            taskbarFlash: v as typeof cfg.taskbarFlash,
-          })
-        }
-        label={t("settings.sshTerminal.taskbarFlash", "Taskbar Flashing")}
-        options={TaskbarFlashModes.map((m) => ({
-          value: m,
-          label:
-            m === "disabled"
-              ? "Disabled"
-              : m === "flashing"
-                ? "Flash until focused"
-                : "Steady highlight",
-        }))}
-      />
+      <FormField label={t("settings.sshTerminal.taskbarFlash", "Taskbar Flashing")}>
+        <Select
+          value={cfg.taskbarFlash}
+          onChange={(v) =>
+            up({
+              taskbarFlash: v as typeof cfg.taskbarFlash,
+            })
+          }
+          options={TaskbarFlashModes.map((m) => ({
+            value: m,
+            label:
+              m === "disabled"
+                ? "Disabled"
+                : m === "flashing"
+                  ? "Flash until focused"
+                  : "Steady highlight",
+          }))}
+        />
+      </FormField>
     </div>
   </SettingsCollapsibleSection>
 );

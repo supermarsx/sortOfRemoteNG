@@ -4,7 +4,7 @@ import React from "react";
 import { SSHVersions } from "../../../../types/settings/settings";
 import { Shield } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
-import { NumberInput, Select } from "../../../ui/forms";
+import { NumberInput, Select, FormField } from "../../../ui/forms";
 
 const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -13,17 +13,18 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     defaultOpen={false}
   >
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <Select
-        value={cfg.sshVersion}
-        onChange={(v) =>
-          up({ sshVersion: v as typeof cfg.sshVersion })
-        }
-        label={t("settings.sshTerminal.sshVersion", "SSH Version")}
-        options={SSHVersions.map((v) => ({
-          value: v,
-          label: v === "auto" ? "Auto (negotiate)" : `SSH-${v}`,
-        }))}
-      />
+      <FormField label={t("settings.sshTerminal.sshVersion", "SSH Version")}>
+        <Select
+          value={cfg.sshVersion}
+          onChange={(v) =>
+            up({ sshVersion: v as typeof cfg.sshVersion })
+          }
+          options={SSHVersions.map((v) => ({
+            value: v,
+            label: v === "auto" ? "Auto (negotiate)" : `SSH-${v}`,
+          }))}
+        />
+      </FormField>
     </div>
 
     <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
@@ -41,16 +42,17 @@ const SSHProtocolSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       />
       {cfg.enableCompression && (
         <div className="mt-3 ml-10">
-          <NumberInput
-            value={cfg.compressionLevel}
-            onChange={(v) => up({ compressionLevel: v })}
-            label={t(
+          <FormField label={t(
               "settings.sshTerminal.compressionLevel",
               "Compression Level (1-9)",
-            )}
-            min={1}
-            max={9}
-          />
+            )}>
+            <NumberInput
+              value={cfg.compressionLevel}
+              onChange={(v) => up({ compressionLevel: v })}
+              min={1}
+              max={9}
+            />
+          </FormField>
         </div>
       )}
     </div>

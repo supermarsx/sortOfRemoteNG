@@ -3,7 +3,7 @@ import Toggle from "./Toggle";
 import React from "react";
 import { Terminal, LayoutGrid } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
-import { NumberInput } from "../../../ui/forms";
+import { NumberInput, FormField } from "../../../ui/forms";
 
 const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -25,20 +25,22 @@ const DimensionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
     {cfg.useCustomDimensions && (
       <div className="grid grid-cols-2 gap-4 mt-3 ml-10">
-        <NumberInput
-          value={cfg.columns}
-          onChange={(v) => up({ columns: v })}
-          label={t("settings.sshTerminal.columns", "Columns")}
-          min={40}
-          max={500}
-        />
-        <NumberInput
-          value={cfg.rows}
-          onChange={(v) => up({ rows: v })}
-          label={t("settings.sshTerminal.rows", "Rows")}
-          min={10}
-          max={200}
-        />
+        <FormField label={t("settings.sshTerminal.columns", "Columns")}>
+          <NumberInput
+            value={cfg.columns}
+            onChange={(v) => up({ columns: v })}
+            min={40}
+            max={500}
+          />
+        </FormField>
+        <FormField label={t("settings.sshTerminal.rows", "Rows")}>
+          <NumberInput
+            value={cfg.rows}
+            onChange={(v) => up({ rows: v })}
+            min={10}
+            max={200}
+          />
+        </FormField>
       </div>
     )}
   </SettingsCollapsibleSection>

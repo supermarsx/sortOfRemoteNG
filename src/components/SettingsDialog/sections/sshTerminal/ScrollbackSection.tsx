@@ -2,7 +2,7 @@ import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Monitor } from "lucide-react";
-import { TextInput } from "../../../ui/forms";
+import { TextInput, FormField } from "../../../ui/forms";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput } from "../../../ui/forms";
 
@@ -12,14 +12,15 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     icon={<Monitor className="w-4 h-4 text-text-muted" />}
     defaultOpen={false}
   >
-    <NumberInput
-      value={cfg.scrollbackLines}
-      onChange={(v) => up({ scrollbackLines: v })}
-      label={t("settings.sshTerminal.scrollbackLines", "Scrollback Lines")}
-      min={100}
-      max={100000}
-      step={100}
-    />
+    <FormField label={t("settings.sshTerminal.scrollbackLines", "Scrollback Lines")}>
+      <NumberInput
+        value={cfg.scrollbackLines}
+        onChange={(v) => up({ scrollbackLines: v })}
+        min={100}
+        max={100000}
+        step={100}
+      />
+    </FormField>
     <Toggle
       checked={cfg.scrollOnOutput}
       onChange={(v) => up({ scrollOnOutput: v })}
@@ -64,15 +65,16 @@ const ScrollbackSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
         )}
       />
       <div className="mt-3">
-        <TextInput
-          value={cfg.wordSeparators}
-          onChange={(v) => up({ wordSeparators: v })}
-          label={t(
+        <FormField label={t(
             "settings.sshTerminal.wordSeparators",
             "Word Separators (for double-click selection)",
-          )}
-          placeholder={' !"#$%&\'()*+,-./:;<=>?@[\\]^`{|}~'}
-        />
+          )}>
+          <TextInput
+            value={cfg.wordSeparators}
+            onChange={(v) => up({ wordSeparators: v })}
+            placeholder={' !"#$%&\'()*+,-./:;<=>?@[\\]^`{|}~'}
+          />
+        </FormField>
       </div>
     </div>
   </SettingsCollapsibleSection>

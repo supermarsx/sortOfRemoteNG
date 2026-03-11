@@ -4,7 +4,7 @@ import React from "react";
 import { IPProtocols } from "../../../../types/settings/settings";
 import { Network } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
-import { NumberInput, Select } from "../../../ui/forms";
+import { NumberInput, Select, FormField } from "../../../ui/forms";
 
 const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -56,68 +56,72 @@ const TcpOptionsSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     />
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-[var(--color-border)]">
-      <Select
-        value={cfg.tcpOptions.ipProtocol}
-        onChange={(v) =>
-          up({
-            tcpOptions: {
-              ...cfg.tcpOptions,
-              ipProtocol: v as typeof cfg.tcpOptions.ipProtocol,
-            },
-          })
-        }
-        label={t("settings.sshTerminal.ipProtocol", "IP Protocol")}
-        options={IPProtocols.map((p) => ({
-          value: p,
-          label: p === "auto" ? "Auto (IPv4/IPv6)" : p.toUpperCase(),
-        }))}
-      />
-      <NumberInput
-        value={cfg.tcpOptions.connectionTimeout}
-        onChange={(v) =>
-          up({
-            tcpOptions: { ...cfg.tcpOptions, connectionTimeout: v },
-          })
-        }
-        label={t(
+      <FormField label={t("settings.sshTerminal.ipProtocol", "IP Protocol")}>
+        <Select
+          value={cfg.tcpOptions.ipProtocol}
+          onChange={(v) =>
+            up({
+              tcpOptions: {
+                ...cfg.tcpOptions,
+                ipProtocol: v as typeof cfg.tcpOptions.ipProtocol,
+              },
+            })
+          }
+          options={IPProtocols.map((p) => ({
+            value: p,
+            label: p === "auto" ? "Auto (IPv4/IPv6)" : p.toUpperCase(),
+          }))}
+        />
+      </FormField>
+      <FormField label={t(
           "settings.sshTerminal.connectionTimeout",
           "Connection Timeout (sec)",
-        )}
-        min={5}
-        max={300}
-      />
+        )}>
+        <NumberInput
+          value={cfg.tcpOptions.connectionTimeout}
+          onChange={(v) =>
+            up({
+              tcpOptions: { ...cfg.tcpOptions, connectionTimeout: v },
+            })
+          }
+          min={5}
+          max={300}
+        />
+      </FormField>
     </div>
 
     {cfg.tcpOptions.tcpKeepAlive && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-[var(--color-border)]">
-        <NumberInput
-          value={cfg.tcpOptions.keepAliveInterval}
-          onChange={(v) =>
-            up({
-              tcpOptions: { ...cfg.tcpOptions, keepAliveInterval: v },
-            })
-          }
-          label={t(
+        <FormField label={t(
             "settings.sshTerminal.keepAliveInterval",
             "Keepalive Interval (sec)",
-          )}
-          min={1}
-          max={3600}
-        />
-        <NumberInput
-          value={cfg.tcpOptions.keepAliveProbes}
-          onChange={(v) =>
-            up({
-              tcpOptions: { ...cfg.tcpOptions, keepAliveProbes: v },
-            })
-          }
-          label={t(
+          )}>
+          <NumberInput
+            value={cfg.tcpOptions.keepAliveInterval}
+            onChange={(v) =>
+              up({
+                tcpOptions: { ...cfg.tcpOptions, keepAliveInterval: v },
+              })
+            }
+            min={1}
+            max={3600}
+          />
+        </FormField>
+        <FormField label={t(
             "settings.sshTerminal.keepAliveProbes",
             "Keepalive Probes",
-          )}
-          min={1}
-          max={30}
-        />
+          )}>
+          <NumberInput
+            value={cfg.tcpOptions.keepAliveProbes}
+            onChange={(v) =>
+              up({
+                tcpOptions: { ...cfg.tcpOptions, keepAliveProbes: v },
+              })
+            }
+            min={1}
+            max={30}
+          />
+        </FormField>
       </div>
     )}
   </SettingsCollapsibleSection>

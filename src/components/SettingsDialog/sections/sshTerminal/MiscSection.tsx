@@ -2,7 +2,7 @@ import type { SectionProps } from "./types";
 import Toggle from "./Toggle";
 import React from "react";
 import { Settings2 } from "lucide-react";
-import { TextInput } from "../../../ui/forms";
+import { TextInput, FormField } from "../../../ui/forms";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 
 const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
@@ -13,12 +13,13 @@ const MiscSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
     }
     defaultOpen={false}
   >
-    <TextInput
-      value={cfg.answerbackString}
-      onChange={(v) => up({ answerbackString: v })}
-      label={t("settings.sshTerminal.answerback", "Answerback String")}
-      placeholder="Optional terminal identification string"
-    />
+    <FormField label={t("settings.sshTerminal.answerback", "Answerback String")}>
+      <TextInput
+        value={cfg.answerbackString}
+        onChange={(v) => up({ answerbackString: v })}
+        placeholder="Optional terminal identification string"
+      />
+    </FormField>
     <Toggle
       checked={cfg.localPrinting}
       onChange={(v) => up({ localPrinting: v })}
