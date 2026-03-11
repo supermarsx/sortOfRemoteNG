@@ -1,14 +1,3 @@
-/* Override Tailwind's default border color (gray-200) with the theme variable.
-   This ensures bare `border`, `border-b`, etc. classes use the themed color
-   instead of a hardcoded light gray that looks white on dark/OLED themes. */
-@layer base {
-  *,
-  ::before,
-  ::after {
-    border-color: var(--color-border);
-  }
-}
-
 /* Default color variables so the UI has sensible colors before the ThemeManager runs */
 :root {
   --color-primary: #3b82f6;
@@ -79,6 +68,3 @@ body {
   color: var(--color-text);
 }
 
-/* Map commonly used Tailwind utility classes to theme variables */
-.bg-gray-900,
-.bg-gray-800,
