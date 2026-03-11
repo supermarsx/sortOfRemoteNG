@@ -1,19 +1,142 @@
 /* ── Centralized button primitives ─────────────────────────────── */
-.sor-btn-primary {
+
+/* Base class — use with a variant: sor-btn sor-btn-primary, etc. */
+.sor-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  background: var(--color-primary);
-  color: var(--color-text);
-  font-size: 0.875rem;
+  gap: 0.375rem;
+  padding: 0.4rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
   font-weight: 500;
-  transition: background-color 150ms ease;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
-.sor-btn-primary:hover { background: color-mix(in srgb, var(--color-primary) 85%, black); }
-.sor-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.sor-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.sor-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 50%);
+}
+
+/* ── Filled variants ─────────────────────────────────────────── */
+
+.sor-btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 80%, black);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.sor-btn-primary:hover {
+  background: color-mix(in srgb, var(--color-primary) 88%, black);
+}
+.sor-btn-primary:active {
+  background: color-mix(in srgb, var(--color-primary) 78%, black);
+  box-shadow: none;
+}
+
+.sor-btn-secondary {
+  background: color-mix(in srgb, var(--color-border) 65%, transparent);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.sor-btn-secondary:hover {
+  background: var(--color-border);
+}
+.sor-btn-secondary:active {
+  background: color-mix(in srgb, var(--color-border) 120%, transparent);
+}
+
+.sor-btn-danger {
+  background: var(--color-error);
+  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--color-error) 75%, black);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.sor-btn-danger:hover {
+  background: color-mix(in srgb, var(--color-error) 88%, black);
+}
+.sor-btn-danger:active {
+  background: color-mix(in srgb, var(--color-error) 78%, black);
+  box-shadow: none;
+}
+
+/* ── Tinted / soft variants ──────────────────────────────────── */
+
+.sor-btn-accent {
+  background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 18%, transparent);
+  color: color-mix(in srgb, var(--color-accent, var(--color-primary)) 80%, white);
+  border: 1px solid color-mix(in srgb, var(--color-accent, var(--color-primary)) 32%, transparent);
+}
+.sor-btn-accent:hover {
+  background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 28%, transparent);
+  color: color-mix(in srgb, var(--color-accent, var(--color-primary)) 65%, white);
+  border-color: color-mix(in srgb, var(--color-accent, var(--color-primary)) 48%, transparent);
+}
+.sor-btn-accent:active {
+  background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 36%, transparent);
+}
+
+.sor-btn-ghost {
+  background: transparent;
+  color: var(--color-textSecondary);
+  border: 1px solid transparent;
+}
+.sor-btn-ghost:hover {
+  background: color-mix(in srgb, var(--color-border) 50%, transparent);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.sor-btn-ghost:active {
+  background: color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+.sor-btn-success {
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+.sor-btn-success:hover {
+  background: color-mix(in srgb, var(--color-success) 26%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 38%, transparent);
+}
+
+.sor-btn-warning {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent);
+}
+.sor-btn-warning:hover {
+  background: color-mix(in srgb, var(--color-warning) 26%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 38%, transparent);
+}
+
+/* ── Size modifiers (combine: sor-btn sor-btn-sm sor-btn-primary) */
+
+.sor-btn-sm {
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border-radius: 0.375rem;
+}
+
+.sor-btn-xs {
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  border-radius: 0.25rem;
+}
+
+/* ── Legacy standalone classes (existing callers) ────────────── */
 
 .sor-btn-primary-sm {
   display: inline-flex;
@@ -23,29 +146,14 @@
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
   background: var(--color-primary);
-  color: var(--color-text);
+  color: #fff;
   font-size: 0.75rem;
   font-weight: 500;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 80%, black);
   transition: background-color 150ms ease;
 }
 .sor-btn-primary-sm:hover { background: color-mix(in srgb, var(--color-primary) 85%, black); }
-.sor-btn-primary-sm:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.sor-btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  background: var(--color-secondary);
-  color: var(--color-text);
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: background-color 150ms ease;
-}
-.sor-btn-secondary:hover { background: color-mix(in srgb, var(--color-secondary) 80%, white); }
-.sor-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.sor-btn-primary-sm:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .sor-btn-secondary-sm {
   display: inline-flex;
@@ -54,30 +162,15 @@
   gap: 0.375rem;
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
-  background: var(--color-secondary);
+  background: color-mix(in srgb, var(--color-border) 65%, transparent);
   color: var(--color-text);
   font-size: 0.75rem;
   font-weight: 500;
+  border: 1px solid var(--color-border);
   transition: background-color 150ms ease;
 }
-.sor-btn-secondary-sm:hover { background: color-mix(in srgb, var(--color-secondary) 80%, white); }
-.sor-btn-secondary-sm:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.sor-btn-danger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  background: var(--color-error);
-  color: var(--color-text);
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: background-color 150ms ease;
-}
-.sor-btn-danger:hover { background: color-mix(in srgb, var(--color-error) 85%, black); }
-.sor-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.sor-btn-secondary-sm:hover { background: var(--color-border); }
+.sor-btn-secondary-sm:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .sor-btn-danger-sm {
   display: inline-flex;
@@ -87,29 +180,30 @@
   padding: 0.25rem 0.75rem;
   border-radius: 0.375rem;
   background: var(--color-error);
-  color: var(--color-text);
+  color: #fff;
   font-size: 0.75rem;
   font-weight: 500;
+  border: 1px solid color-mix(in srgb, var(--color-error) 75%, black);
   transition: background-color 150ms ease;
 }
 .sor-btn-danger-sm:hover { background: color-mix(in srgb, var(--color-error) 85%, black); }
-.sor-btn-danger-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+.sor-btn-danger-sm:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── Icon buttons ────────────────────────────────────────────── */
 .sor-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem;
+  padding: 0.375rem;
   border-radius: 0.375rem;
   color: var(--color-textSecondary);
   transition: color 150ms ease, background-color 150ms ease;
 }
 .sor-icon-btn:hover {
   color: var(--color-primary);
-  background: var(--color-border);
+  background: color-mix(in srgb, var(--color-border) 60%, transparent);
 }
-.sor-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sor-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .sor-icon-btn-sm {
   display: inline-flex;
@@ -122,21 +216,21 @@
 }
 .sor-icon-btn-sm:hover {
   color: var(--color-text);
-  background: var(--color-border);
+  background: color-mix(in srgb, var(--color-border) 60%, transparent);
 }
-.sor-icon-btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+.sor-icon-btn-sm:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .sor-icon-btn-danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem;
+  padding: 0.375rem;
   border-radius: 0.375rem;
   color: var(--color-textSecondary);
   transition: color 150ms ease, background-color 150ms ease;
 }
 .sor-icon-btn-danger:hover {
   color: var(--color-error);
-  background: var(--color-border);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
 }
-.sor-icon-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.sor-icon-btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }

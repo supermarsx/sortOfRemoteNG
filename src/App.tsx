@@ -37,6 +37,8 @@ import { useWindowTheme } from "./hooks/window/useWindowTheme";
 import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
 import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
 import { AppToolbar } from "./components/app/AppToolbar";
+import { AppStatusBar } from "./components/app/AppStatusBar";
+import { DebugPanel } from "./components/debug/DebugPanel";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
 
@@ -82,6 +84,7 @@ const AppContent: React.FC = () => {
   const [showMacroManager, setShowMacroManager] = useState(false);
   const [showRecordingManager, setShowRecordingManager] = useState(false);
   const [showWindowsBackup, setShowWindowsBackup] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -1004,26 +1007,60 @@ const AppContent: React.FC = () => {
     };
   }, [settingsManager, state.sessions.length, t]);
 
+  // Convert native title attributes to data-tooltip for the styled tooltip
+  // system. Uses a MutationObserver so dynamically-added elements (e.g. RDP
+  // session toolbar buttons) are picked up automatically.
   useEffect(() => {
-    const elements = document.querySelectorAll<HTMLElement>("[title]");
-    elements.forEach((element) => {
-      if (element.dataset.tooltip) return;
-      const title = element.getAttribute("title");
-      if (!title) return;
-      element.setAttribute("data-tooltip", title);
-      element.removeAttribute("title");
+    const convert = (root: ParentNode) => {
+      root.querySelectorAll<HTMLElement>("[title]").forEach((el) => {
+        if (el.dataset.tooltip) return;
+        const title = el.getAttribute("title");
+        if (!title) return;
+        el.setAttribute("data-tooltip", title);
+        el.removeAttribute("title");
+      });
+    };
+
+    // Initial pass
+    convert(document);
+
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === "attributes" && m.attributeName === "title") {
+          const el = m.target as HTMLElement;
+          if (el.dataset.tooltip) continue;
+          const title = el.getAttribute("title");
+          if (!title) continue;
+          el.setAttribute("data-tooltip", title);
+          el.removeAttribute("title");
+        }
+        if (m.type === "childList") {
+          for (const node of m.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const el = node as HTMLElement;
+              if (el.hasAttribute("title")) {
+                const title = el.getAttribute("title")!;
+                if (!el.dataset.tooltip) {
+                  el.setAttribute("data-tooltip", title);
+                  el.removeAttribute("title");
+                }
+              }
+              convert(el);
+            }
+          }
+        }
+      }
     });
-  }, [
-    showSettings,
-    showQuickConnect,
-    showConnectionEditor,
-    showCollectionSelector,
-    showPerformanceMonitor,
-    showActionLog,
-    showImportExport,
-    showPasswordDialog,
-    state.sessions.length,
-  ]);
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["title"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   // Window/sidebar persistence is in useWindowPersistence hook
   // Window control handlers are in useWindowControls hook
@@ -1124,6 +1161,7 @@ const AppContent: React.FC = () => {
         handleOpenDevtools={handleOpenDevtools}
         handleShowPasswordDialog={handleShowPasswordDialog}
         performCloudSync={performCloudSync}
+        setShowDebugPanel={setShowDebugPanel}
       />
 
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
@@ -1226,6 +1264,13 @@ const AppContent: React.FC = () => {
         {renderSidebar("right")}
       </div>
 
+      <AppStatusBar
+        connections={state.connections}
+        sessions={state.sessions}
+        collectionManager={collectionManager}
+        isInitialized={isInitialized}
+      />
+
       <AppDialogs
         appSettings={appSettings}
         showCollectionSelector={showCollectionSelector}
@@ -1293,6 +1338,15 @@ const AppContent: React.FC = () => {
         activeRdpBackendIds={activeRdpBackendIds}
         settingsManager={settingsManager}
         collectionManager={collectionManager}
+      />
+
+      <DebugPanel
+        isOpen={showDebugPanel}
+        onClose={() => setShowDebugPanel(false)}
+        dispatch={dispatch}
+        setActiveSessionId={setActiveSessionId}
+        sessions={state.sessions}
+        handleOpenDevtools={handleOpenDevtools}
       />
     </div>
   );
