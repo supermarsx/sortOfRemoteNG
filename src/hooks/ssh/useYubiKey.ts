@@ -903,5 +903,8 @@ export function useYubiKey() {
 
     // Tab
     setActiveTab,
+
+    // Error
+    clearError: () => setError(null),
   };
 }
