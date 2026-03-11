@@ -18,9 +18,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@tauri-apps/api": "^2.9.1",
-    "@tauri-apps/plugin-dialog": "^2.4.2",
-    "@tauri-apps/plugin-fs": "^2.4.4",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-fs": "^2.4.5",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^8.57.0",
-    "@tauri-apps/cli": "^2.9.6",
+    "@tauri-apps/cli": "^2.10.1",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^14.2.2",
     "@types/bcryptjs": "^2.4.6",

@@ -179,17 +179,26 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.21.7",
  "chrono",
  "dirs 6.0.0",
+ "hex 0.4.3",
  "log 0.4.29",
  "mockall",
+ "regex",
+ "reqwest 0.12.28",
+ "rustls 0.23.37",
  "serde",
  "serde_json",
  "serial_test",
+ "sha2 0.10.9",
  "sorng-app-auth",
  "sorng-app-domains",
  "sorng-app-shell",
+ "sorng-bmc-common",
+ "sorng-core",
  "sorng-kafka",
+ "ssh2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -199,8 +208,10 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "tokio 1.50.0",
+ "tokio-rustls 0.26.4",
  "tokio-test",
  "uuid",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -602,8 +613,8 @@ dependencies = [
  "axum-core",
  "bytes 1.11.1",
  "futures-util",
- "http 1.4.0",
- "http-body 1.0.1",
+ "http",
+ "http-body",
  "http-body-util",
  "hyper 1.8.1",
  "hyper-util",
@@ -618,7 +629,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
- "sync_wrapper 1.0.2",
+ "sync_wrapper",
  "tokio 1.50.0",
  "tower",
  "tower-layer",
@@ -635,13 +646,13 @@ dependencies = [
  "async-trait",
  "bytes 1.11.1",
  "futures-util",
- "http 1.4.0",
- "http-body 1.0.1",
+ "http",
+ "http-body",
  "http-body-util",
  "mime",
  "pin-project-lite",
  "rustversion",
- "sync_wrapper 1.0.2",
+ "sync_wrapper",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -1295,9 +1306,9 @@ dependencies = [
 
 [[package]]
 name = "cookie"
-version = "0.17.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7efb37c3e1ccb1ff97164ad95ac1606e8ccd35b3fa0a7d99a304c7f4a428cc24"
+checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
 dependencies = [
  "percent-encoding 2.3.2",
  "time 0.3.47",
@@ -1305,23 +1316,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "cookie"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
-dependencies = [
- "time 0.3.47",
- "version_check",
-]
-
-[[package]]
 name = "cookie_store"
-version = "0.20.0"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "387461abbc748185c3a6e1673d826918b450b87ff22639429c694619a83b6cf6"
+checksum = "15b2c103cf610ec6cae3da84a766285b42fd16aad564758459e6ecf128c75206"
 dependencies = [
- "cookie 0.17.0",
- "idna 0.3.0",
+ "cookie",
+ "document-features",
+ "idna 1.1.0",
  "log 0.4.29",
  "publicsuffix",
  "serde",
@@ -3305,25 +3307,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "h2"
-version = "0.3.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0beca50380b1fc32983fc1cb4587bfa4bb9e78fc259aad4a0032d2080309222d"
-dependencies = [
- "bytes 1.11.1",
- "fnv",
- "futures-core",
- "futures-sink",
- "futures-util",
- "http 0.2.12",
- "indexmap 2.13.0",
- "slab 0.4.12",
- "tokio 1.50.0",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "hash32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3503,17 +3486,6 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "601cbb57e577e2f5ef5be8e7b83f0f63994f25aa94d673e54a92d5c516d101f1"
-dependencies = [
- "bytes 1.11.1",
- "fnv",
- "itoa",
-]
-
-[[package]]
-name = "http"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3ba2a386d7f85a81f119ad7498ebe444d2e22c2af0b86b069416ace48b3311a"
@@ -3524,23 +3496,12 @@ dependencies = [
 
 [[package]]
 name = "http-body"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ceab25649e9960c0311ea418d17bee82c0dcec1bd053b5f9a66e265a693bed2"
-dependencies = [
- "bytes 1.11.1",
- "http 0.2.12",
- "pin-project-lite",
-]
-
-[[package]]
-name = "http-body"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1efedce1fb8e6913f23e0c92de8e62cd5b772a67e7b3946df930a62566c93184"
 dependencies = [
  "bytes 1.11.1",
- "http 1.4.0",
+ "http",
 ]
 
 [[package]]
@@ -3551,8 +3512,8 @@ checksum = "b021d93e26becf5dc7e1b75b1bed1fd93124b374ceb73f43d4d4eafec896a64a"
 dependencies = [
  "bytes 1.11.1",
  "futures-core",
- "http 1.4.0",
- "http-body 1.0.1",
+ "http",
+ "http-body",
  "pin-project-lite",
 ]
 
@@ -3608,30 +3569,6 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "0.14.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41dfc780fdec9373c01bae43289ea34c972e40ee3c9f6b3c8801a35f35586ce7"
-dependencies = [
- "bytes 1.11.1",
- "futures-channel",
- "futures-core",
- "futures-util",
- "h2",
- "http 0.2.12",
- "http-body 0.4.6",
- "httparse",
- "httpdate",
- "itoa",
- "pin-project-lite",
- "socket2 0.5.10",
- "tokio 1.50.0",
- "tower-service",
- "tracing",
- "want 0.3.1",
-]
-
-[[package]]
-name = "hyper"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ab2d4f250c3d7b1c9fcdff1cece94ea4e2dfbec68614f7b87cb205f24ca9d11"
@@ -3640,8 +3577,8 @@ dependencies = [
  "bytes 1.11.1",
  "futures-channel",
  "futures-core",
- "http 1.4.0",
- "http-body 1.0.1",
+ "http",
+ "http-body",
  "httparse",
  "httpdate",
  "itoa",
@@ -3654,16 +3591,19 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.24.2"
+version = "0.27.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec3efd23720e2049821a693cbc7e65ea87c72f1c58ff2f9522ff332b1491e590"
+checksum = "e3c93eb611681b207e1fe55d5a71ecf91572ec8a6705cdb6857f7d8d5242cf58"
 dependencies = [
- "futures-util",
- "http 0.2.12",
- "hyper 0.14.32",
- "rustls 0.21.12",
+ "http",
+ "hyper 1.8.1",
+ "hyper-util",
+ "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
+ "rustls-pki-types",
  "tokio 1.50.0",
- "tokio-rustls 0.24.1",
+ "tokio-rustls 0.26.4",
+ "tower-service",
 ]
 
 [[package]]
@@ -3676,8 +3616,8 @@ dependencies = [
  "bytes 1.11.1",
  "futures-channel",
  "futures-util",
- "http 1.4.0",
- "http-body 1.0.1",
+ "http",
+ "http-body",
  "hyper 1.8.1",
  "ipnet",
  "libc",
@@ -3830,16 +3770,6 @@ name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
-
-[[package]]
-name = "idna"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e14ddfc70884202db2244c223200c204c2bda1bc6e0998d11b5e024d657209e6"
-dependencies = [
- "unicode-bidi",
- "unicode-normalization",
-]
 
 [[package]]
 name = "idna"
@@ -4652,6 +4582,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru-slab"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
+
+[[package]]
 name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4975,7 +4911,7 @@ dependencies = [
  "hexf-parse",
  "indexmap 2.13.0",
  "log 0.4.29",
- "rustc-hash",
+ "rustc-hash 1.1.0",
  "spirv",
  "strum",
  "termcolor",
@@ -5258,7 +5194,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "getrandom 0.2.17",
- "http 1.4.0",
+ "http",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -5940,7 +5876,7 @@ dependencies = [
  "hex 0.4.3",
  "hkdf 0.13.0-rc.2",
  "hmac 0.13.0-rc.2",
- "http 1.4.0",
+ "http",
  "inout 0.2.0-rc.6",
  "keccak",
  "md-5 0.11.0-rc.2",
@@ -6522,6 +6458,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "quinn"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20"
+dependencies = [
+ "bytes 1.11.1",
+ "cfg_aliases",
+ "pin-project-lite",
+ "quinn-proto",
+ "quinn-udp",
+ "rustc-hash 2.1.1",
+ "rustls 0.23.37",
+ "socket2 0.6.3",
+ "thiserror 2.0.18",
+ "tokio 1.50.0",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
+name = "quinn-proto"
+version = "0.11.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+dependencies = [
+ "bytes 1.11.1",
+ "getrandom 0.3.4",
+ "lru-slab",
+ "rand 0.9.2",
+ "ring",
+ "rustc-hash 2.1.1",
+ "rustls 0.23.37",
+ "rustls-pki-types",
+ "slab 0.4.12",
+ "thiserror 2.0.18",
+ "tinyvec",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
+name = "quinn-udp"
+version = "0.5.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "addec6a0dcad8a8d96a771f815f0eaf55f9d1805756410b39f5fa81332574cbd"
+dependencies = [
+ "cfg_aliases",
+ "libc",
+ "once_cell",
+ "socket2 0.6.3",
+ "tracing",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "quote"
 version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6940,48 +6931,47 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "reqwest"
-version = "0.11.27"
+version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd67538700a17451e7cba03ac727fb961abb7607553461627b97de0b89cf4a62"
+checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "bytes 1.11.1",
- "cookie 0.17.0",
+ "cookie",
  "cookie_store",
- "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
- "h2",
- "http 0.2.12",
- "http-body 0.4.6",
- "hyper 0.14.32",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper 1.8.1",
  "hyper-rustls",
- "ipnet",
+ "hyper-util",
  "js-sys",
  "log 0.4.29",
- "mime",
  "mime_guess",
- "once_cell",
  "percent-encoding 2.3.2",
  "pin-project-lite",
- "rustls 0.21.12",
- "rustls-pemfile 1.0.4",
+ "quinn",
+ "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_urlencoded",
- "sync_wrapper 0.1.2",
- "system-configuration",
+ "sync_wrapper",
  "tokio 1.50.0",
- "tokio-rustls 0.24.1",
+ "tokio-rustls 0.26.4",
  "tokio-util",
+ "tower",
+ "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-streams 0.4.2",
  "web-sys",
- "webpki-roots 0.25.4",
- "winreg 0.50.0",
 ]
 
 [[package]]
@@ -6994,8 +6984,8 @@ dependencies = [
  "bytes 1.11.1",
  "futures-core",
  "futures-util",
- "http 1.4.0",
- "http-body 1.0.1",
+ "http",
+ "http-body",
  "http-body-util",
  "hyper 1.8.1",
  "hyper-util",
@@ -7005,7 +6995,7 @@ dependencies = [
  "pin-project-lite",
  "serde",
  "serde_json",
- "sync_wrapper 1.0.2",
+ "sync_wrapper",
  "tokio 1.50.0",
  "tokio-util",
  "tower",
@@ -7315,6 +7305,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
+name = "rustc-hash"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
+
+[[package]]
 name = "rustc_version"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7456,6 +7452,7 @@ version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be040f8b0a225e40375822a563fa9524378b9d63112f53e19ffff34df5d33fdd"
 dependencies = [
+ "web-time",
  "zeroize",
 ]
 
@@ -8254,12 +8251,11 @@ dependencies = [
  "hmac 0.12.1",
  "log 0.4.29",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tempfile",
  "thiserror 1.0.69",
  "tokio 1.50.0",
@@ -8275,7 +8271,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio-test",
 ]
 
@@ -8293,12 +8288,11 @@ dependencies = [
  "log 0.4.29",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tiktoken-rs",
  "tokio 1.50.0",
  "tokio-stream",
@@ -8316,7 +8310,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-llm",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8327,10 +8320,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8346,7 +8338,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8357,10 +8348,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8368,10 +8358,6 @@ dependencies = [
 [[package]]
 name = "sorng-app-auth"
 version = "0.1.0"
-dependencies = [
- "sorng-auth",
- "tauri",
-]
 
 [[package]]
 name = "sorng-app-domains"
@@ -8393,6 +8379,8 @@ dependencies = [
  "sorng-cloud",
  "sorng-exchange",
  "sorng-gcp",
+ "sorng-hetzner",
+ "sorng-oracle-cloud",
  "sorng-smtp",
 ]
 
@@ -8410,10 +8398,12 @@ dependencies = [
  "sorng-gdrive",
  "sorng-llm",
  "sorng-nextcloud",
+ "sorng-onedrive",
  "sorng-recording",
  "sorng-secure-clip",
  "sorng-telegram",
  "sorng-terminal-themes",
+ "sorng-totp",
  "sorng-whatsapp",
 ]
 
@@ -8467,27 +8457,38 @@ dependencies = [
  "sorng-bootloader",
  "sorng-budibase",
  "sorng-caddy",
+ "sorng-ceph",
+ "sorng-cicd",
  "sorng-clamav",
+ "sorng-consul",
  "sorng-cpanel",
  "sorng-credentials",
  "sorng-cron",
+ "sorng-cups",
  "sorng-cyrus-sasl",
  "sorng-dashboard",
  "sorng-ddns",
  "sorng-dns",
  "sorng-docker",
+ "sorng-docker-compose",
  "sorng-dovecot",
+ "sorng-etcd",
+ "sorng-fail2ban",
  "sorng-filters",
+ "sorng-freeipa",
  "sorng-gpg-agent",
  "sorng-grafana",
  "sorng-haproxy",
+ "sorng-hashicorp-vault",
  "sorng-hooks",
  "sorng-i18n",
+ "sorng-ipmi",
  "sorng-jira",
  "sorng-k8s",
  "sorng-kernel",
  "sorng-letsencrypt",
  "sorng-lxd",
+ "sorng-mac",
  "sorng-mailcow",
  "sorng-marketplace",
  "sorng-mcp",
@@ -8508,10 +8509,13 @@ dependencies = [
  "sorng-portable",
  "sorng-postfix",
  "sorng-postgres-admin",
+ "sorng-powershell",
  "sorng-proc",
  "sorng-procmail",
  "sorng-prometheus",
+ "sorng-rabbitmq",
  "sorng-rdpfile",
+ "sorng-remote-backup",
  "sorng-replay",
  "sorng-roundcube",
  "sorng-rspamd",
@@ -8528,8 +8532,10 @@ dependencies = [
  "sorng-updater",
  "sorng-ups",
  "sorng-warpgate",
+ "sorng-winmgmt",
  "sorng-wireguard",
  "sorng-yubikey",
+ "sorng-zabbix",
  "sorng-zerotier",
 ]
 
@@ -8543,12 +8549,16 @@ dependencies = [
  "sorng-lenovo",
  "sorng-meshcentral",
  "sorng-mremoteng",
+ "sorng-nx",
  "sorng-proxmox",
+ "sorng-spice",
  "sorng-supermicro",
  "sorng-synology",
  "sorng-termserv",
  "sorng-vmware",
  "sorng-vmware-desktop",
+ "sorng-x2go",
+ "sorng-xdmcp",
 ]
 
 [[package]]
@@ -8582,7 +8592,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8613,14 +8622,13 @@ dependencies = [
  "rand 0.8.5",
  "rcgen",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "rsa 0.9.10",
  "rustls-pemfile 1.0.4",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "sha2 0.10.9",
- "tauri",
  "time 0.3.47",
  "tokio 1.50.0",
  "totp-rs",
@@ -8643,7 +8651,7 @@ dependencies = [
  "percent-encoding 2.3.2",
  "quick-xml 0.31.0",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -8659,10 +8667,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -8680,7 +8687,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tempfile",
  "thiserror 1.0.69",
  "tokio 1.50.0",
@@ -8700,7 +8706,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "uuid",
@@ -8722,12 +8727,11 @@ dependencies = [
  "log 0.4.29",
  "pbkdf2 0.12.2",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tempfile",
  "thiserror 1.0.69",
  "tokio 1.50.0",
@@ -8743,7 +8747,7 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio 1.50.0",
@@ -8757,7 +8761,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -8769,10 +8772,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -8784,10 +8786,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8799,11 +8800,10 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-core",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "url",
@@ -8816,10 +8816,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8830,10 +8829,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8847,11 +8845,10 @@ dependencies = [
  "hex 0.4.3",
  "jsonwebtoken",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha1 0.10.6",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8883,7 +8880,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-llm",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8894,10 +8890,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8919,10 +8914,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8936,7 +8930,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8949,7 +8942,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -8962,11 +8954,10 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-core",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "url",
@@ -8979,10 +8970,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -8995,7 +8985,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9010,12 +8999,11 @@ dependencies = [
  "hmac 0.12.1",
  "log 0.4.29",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "url",
@@ -9033,7 +9021,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9072,7 +9059,7 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -9092,10 +9079,9 @@ dependencies = [
  "http-body-util",
  "hyperlocal",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9121,7 +9107,6 @@ dependencies = [
  "serde_yaml",
  "sha2 0.10.9",
  "shellexpand",
- "tauri",
  "tempfile",
  "tokio 1.50.0",
  "tokio-test",
@@ -9135,10 +9120,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9154,11 +9138,10 @@ dependencies = [
  "log 0.4.29",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9171,10 +9154,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9186,10 +9168,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9205,7 +9186,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9219,7 +9199,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9246,7 +9225,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9259,7 +9237,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
 ]
 
@@ -9269,10 +9246,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9286,13 +9262,12 @@ dependencies = [
  "lazy_static",
  "log 0.4.29",
  "regex",
- "rustls 0.21.12",
- "rustls-native-certs 0.6.3",
+ "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
- "tokio-rustls 0.24.1",
+ "tokio-rustls 0.26.4",
  "url",
  "uuid",
 ]
@@ -9322,12 +9297,11 @@ dependencies = [
  "jsonwebtoken",
  "log 0.4.29",
  "percent-encoding 2.3.2",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-dns",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9341,10 +9315,9 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "mime_guess",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9358,12 +9331,11 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "url",
@@ -9381,7 +9353,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9403,10 +9374,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9417,10 +9387,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9432,10 +9401,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9446,10 +9414,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9462,7 +9429,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9478,7 +9444,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9496,7 +9461,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
- "tauri",
  "tempfile",
  "thiserror 2.0.18",
  "tokio 1.50.0",
@@ -9513,10 +9477,9 @@ dependencies = [
  "futures 0.3.32",
  "log 0.4.29",
  "quick-xml 0.31.0",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9532,11 +9495,10 @@ dependencies = [
  "futures 0.3.32",
  "log 0.4.29",
  "quick-xml 0.31.0",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-bmc-common",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9558,7 +9520,6 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-bmc-common",
  "sorng-core",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "uuid",
@@ -9571,10 +9532,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
 ]
@@ -9590,11 +9550,10 @@ dependencies = [
  "futures 0.3.32",
  "log 0.4.29",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "serde_yaml",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9608,11 +9567,10 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "rdkafka",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-core",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "url",
@@ -9636,7 +9594,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9649,7 +9606,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -9668,12 +9624,11 @@ dependencies = [
  "log 0.4.29",
  "pbkdf2 0.12.2",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tempfile",
  "thiserror 1.0.69",
  "tokio 1.50.0",
@@ -9703,11 +9658,10 @@ dependencies = [
  "chrono",
  "futures 0.3.32",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-bmc-common",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9721,11 +9675,10 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9744,11 +9697,10 @@ dependencies = [
  "log 0.4.29",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "tokio-stream",
  "uuid",
@@ -9761,10 +9713,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9779,7 +9730,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9790,10 +9740,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9804,11 +9753,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9821,7 +9769,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9833,10 +9780,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -9871,7 +9817,6 @@ dependencies = [
  "serde_json",
  "sha1 0.10.6",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
  "winreg 0.52.0",
@@ -9916,10 +9861,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9945,10 +9889,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -9990,12 +9933,11 @@ dependencies = [
  "log 0.4.29",
  "mac_address",
  "qrcode",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-core",
  "sorng-dns",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10012,11 +9954,10 @@ dependencies = [
  "quick-xml 0.31.0",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -10028,10 +9969,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10042,10 +9982,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10057,10 +9996,9 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10077,7 +10015,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "tauri",
  "tempfile",
  "tokio 1.50.0",
  "tokio-test",
@@ -10096,11 +10033,10 @@ dependencies = [
  "mime_guess",
  "percent-encoding 2.3.2",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "tokio-util",
  "url",
@@ -10113,10 +10049,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10134,8 +10069,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sorng-core",
  "sorng-dns",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10149,7 +10084,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10160,10 +10094,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10176,7 +10109,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -10188,10 +10120,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
 ]
@@ -10233,7 +10164,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -10248,12 +10178,11 @@ dependencies = [
  "log 0.4.29",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tempfile",
  "thiserror 1.0.69",
  "tokio 1.50.0",
@@ -10268,10 +10197,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10282,10 +10210,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10298,7 +10225,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -10312,7 +10238,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10323,10 +10248,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10355,7 +10279,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10376,12 +10299,11 @@ dependencies = [
  "quick-xml 0.31.0",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sorng-core",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -10395,7 +10317,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -10407,10 +10328,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10421,10 +10341,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10442,9 +10361,9 @@ dependencies = [
  "log 0.4.29",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
- "rustls 0.21.12",
- "rustls-native-certs 0.6.3",
+ "reqwest 0.12.28",
+ "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
  "serde",
  "serde_json",
  "serialport",
@@ -10454,9 +10373,8 @@ dependencies = [
  "sqlx",
  "ssh2",
  "suppaftp",
- "tauri",
  "tokio 1.50.0",
- "tokio-rustls 0.24.1",
+ "tokio-rustls 0.26.4",
  "uuid",
  "vnc-rs",
  "x509-parser",
@@ -10471,10 +10389,9 @@ dependencies = [
  "chrono",
  "futures 0.3.32",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -10487,11 +10404,10 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-core",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "url",
@@ -10514,9 +10430,9 @@ dependencies = [
  "openh264",
  "png 0.17.16",
  "raw-window-handle",
- "reqwest 0.11.27",
- "rustls 0.21.12",
- "rustls-native-certs 0.6.3",
+ "reqwest 0.12.28",
+ "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -10525,7 +10441,6 @@ dependencies = [
  "softbuffer",
  "sorng-core",
  "sorng-dns",
- "tauri",
  "tokio 1.50.0",
  "uuid",
  "wgpu",
@@ -10541,7 +10456,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10557,7 +10471,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
  "zstd",
@@ -10589,7 +10502,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
  "which 7.0.3",
@@ -10604,7 +10516,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-tungstenite",
  "uuid",
@@ -10620,7 +10531,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10631,10 +10541,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10645,10 +10554,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10662,11 +10570,10 @@ dependencies = [
  "dirs 6.0.0",
  "lazy_static",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-core",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -10680,7 +10587,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10706,7 +10612,6 @@ dependencies = [
  "sorng-core",
  "ssh-key",
  "ssh2",
- "tauri",
  "tokio 1.50.0",
  "uuid",
  "walkdir",
@@ -10720,7 +10625,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10740,7 +10644,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serialport",
- "tauri",
+ "sorng-core",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10766,7 +10670,6 @@ dependencies = [
  "sorng-core",
  "ssh-key",
  "ssh2",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10792,7 +10695,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sorng-dns",
- "tauri",
  "tokio 1.50.0",
  "tokio-rustls 0.26.4",
  "trust-dns-resolver",
@@ -10808,11 +10710,10 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10823,10 +10724,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10843,7 +10743,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "tauri",
  "tempfile",
  "tokio 1.50.0",
  "tokio-test",
@@ -10893,7 +10792,6 @@ dependencies = [
  "sorng-dns",
  "ssh-key",
  "ssh2",
- "tauri",
  "tempfile",
  "tokio 1.50.0",
  "totp-rs",
@@ -10911,7 +10809,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10926,7 +10823,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10947,7 +10843,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -10961,11 +10856,10 @@ dependencies = [
  "chrono",
  "futures 0.3.32",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sorng-bmc-common",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -10980,10 +10874,9 @@ dependencies = [
  "chrono",
  "futures 0.3.32",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -11041,11 +10934,10 @@ dependencies = [
  "log 0.4.29",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -11075,7 +10967,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-core",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11089,7 +10980,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "uuid",
 ]
 
@@ -11101,7 +10991,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "uuid",
@@ -11118,7 +11007,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11131,7 +11019,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-test",
  "uuid",
@@ -11145,7 +11032,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11170,7 +11056,6 @@ dependencies = [
  "serde_json",
  "sha1 0.10.6",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -11182,10 +11067,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11196,11 +11080,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11213,7 +11096,6 @@ dependencies = [
  "log 0.4.29",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11248,7 +11130,6 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-biometrics",
  "sorng-vault-windows",
- "tauri",
  "thiserror 1.0.69",
  "tokio 1.50.0",
  "uuid",
@@ -11271,14 +11152,13 @@ dependencies = [
  "chrono",
  "futures 0.3.32",
  "log 0.4.29",
- "reqwest 0.11.27",
- "rustls 0.21.12",
- "rustls-native-certs 0.6.3",
+ "reqwest 0.12.28",
+ "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
- "tokio-rustls 0.24.1",
+ "tokio-rustls 0.26.4",
  "url",
  "uuid",
 ]
@@ -11290,10 +11170,9 @@ dependencies = [
  "base64 0.21.7",
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -11319,7 +11198,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-core",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11333,10 +11211,9 @@ dependencies = [
  "futures 0.3.32",
  "futures-util",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "tokio-tungstenite",
  "uuid",
@@ -11348,10 +11225,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -11373,11 +11249,10 @@ dependencies = [
  "png 0.17.16",
  "qrcode",
  "rand 0.8.5",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "tokio-tungstenite",
  "url",
@@ -11400,11 +11275,10 @@ dependencies = [
  "quick-xml 0.31.0",
  "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "url",
  "uuid",
@@ -11436,7 +11310,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
  "which 6.0.3",
@@ -11453,7 +11326,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "tauri",
  "tempfile",
  "tokio 1.50.0",
  "tokio-test",
@@ -11472,7 +11344,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -11483,10 +11354,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log 0.4.29",
- "reqwest 0.11.27",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
- "tauri",
  "tokio 1.50.0",
  "uuid",
 ]
@@ -12045,12 +11915,6 @@ dependencies = [
 
 [[package]]
 name = "sync_wrapper"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
-
-[[package]]
-name = "sync_wrapper"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
@@ -12087,27 +11951,6 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
 dependencies = [
- "libc",
-]
-
-[[package]]
-name = "system-configuration"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba3a3adc5c275d719af8cb4272ea1c4a6d668a777f37e115f6d11ddbc1c8e0e7"
-dependencies = [
- "bitflags 1.3.2",
- "core-foundation 0.9.4",
- "system-configuration-sys",
-]
-
-[[package]]
-name = "system-configuration-sys"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a75fb188eb626b924683e3b95e3a48e63551fcfb51949de2f06a9d91dbee93c9"
-dependencies = [
- "core-foundation-sys",
  "libc",
 ]
 
@@ -12199,7 +12042,7 @@ checksum = "da77cc00fb9028caf5b5d4650f75e31f1ef3693459dfca7f7e506d1ecef0ba2d"
 dependencies = [
  "anyhow",
  "bytes 1.11.1",
- "cookie 0.18.1",
+ "cookie",
  "dirs 6.0.0",
  "dunce",
  "embed_plist",
@@ -12207,7 +12050,7 @@ dependencies = [
  "glob",
  "gtk",
  "heck 0.5.0",
- "http 1.4.0",
+ "http",
  "jni",
  "libc",
  "log 0.4.29",
@@ -12419,10 +12262,10 @@ version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2826d79a3297ed08cd6ea7f412644ef58e32969504bc4fbd8d7dbeabc4445ea2"
 dependencies = [
- "cookie 0.18.1",
+ "cookie",
  "dpi",
  "gtk",
- "http 1.4.0",
+ "http",
  "jni",
  "objc2",
  "objc2-ui-kit",
@@ -12445,7 +12288,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e11ea2e6f801d275fdd890d6c9603736012742a1c33b96d0db788c9cdebf7f9e"
 dependencies = [
  "gtk",
- "http 1.4.0",
+ "http",
  "jni",
  "log 0.4.29",
  "objc2",
@@ -12477,7 +12320,7 @@ dependencies = [
  "dunce",
  "glob",
  "html5ever",
- "http 1.4.0",
+ "http",
  "infer",
  "json-patch",
  "kuchikiki",
@@ -12641,7 +12484,7 @@ dependencies = [
  "fancy-regex",
  "lazy_static",
  "parking_lot 0.12.5",
- "rustc-hash",
+ "rustc-hash 1.1.0",
 ]
 
 [[package]]
@@ -13221,7 +13064,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "pin-project-lite",
- "sync_wrapper 1.0.2",
+ "sync_wrapper",
  "tokio 1.50.0",
  "tower-layer",
  "tower-service",
@@ -13237,8 +13080,8 @@ dependencies = [
  "bitflags 2.11.0",
  "bytes 1.11.1",
  "futures-util",
- "http 1.4.0",
- "http-body 1.0.1",
+ "http",
+ "http-body",
  "iri-string",
  "pin-project-lite",
  "tower",
@@ -13378,7 +13221,7 @@ checksum = "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
 dependencies = [
  "bytes 1.11.1",
  "data-encoding",
- "http 1.4.0",
+ "http",
  "httparse",
  "log 0.4.29",
  "rand 0.9.2",
@@ -13930,6 +13773,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "web-time"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "webkit2gtk"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14067,7 +13920,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "profiling",
  "raw-window-handle",
- "rustc-hash",
+ "rustc-hash 1.1.0",
  "smallvec 1.15.1",
  "thiserror 2.0.18",
  "wgpu-hal",
@@ -14109,7 +13962,7 @@ dependencies = [
  "range-alloc",
  "raw-window-handle",
  "renderdoc-sys",
- "rustc-hash",
+ "rustc-hash 1.1.0",
  "smallvec 1.15.1",
  "thiserror 2.0.18",
  "wasm-bindgen",
@@ -15007,7 +14860,7 @@ checksum = "bb26159b420aa77684589a744ae9a9461a95395b848764ad12290a14d960a11a"
 dependencies = [
  "base64 0.22.1",
  "block2",
- "cookie 0.18.1",
+ "cookie",
  "crossbeam-channel",
  "dirs 6.0.0",
  "dpi",
@@ -15015,7 +14868,7 @@ dependencies = [
  "gdkx11",
  "gtk",
  "html5ever",
- "http 1.4.0",
+ "http",
  "javascriptcore-rs",
  "jni",
  "kuchikiki",
