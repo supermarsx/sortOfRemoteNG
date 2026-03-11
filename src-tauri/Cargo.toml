@@ -207,11 +207,11 @@ tauri = { version = "=2.10.3", features = ["devtools"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }
-reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls-native-roots"] }
 url = "2.5"
-rustls = { version = "0.21", features = ["dangerous_configuration"] }
-tokio-rustls = "0.24"
-rustls-native-certs = "0.6"
+rustls = "0.23"
+tokio-rustls = "0.26"
+rustls-native-certs = "0.8"
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 bytes = "1"
 ssh2 = "0.9"
@@ -268,6 +268,7 @@ tauri-build = { version = "=2.5.6", features = [] }
 sorng-app-auth = { path = "crates/sorng-app-auth" }
 sorng-app-domains = { path = "crates/sorng-app-domains", default-features = false }
 sorng-app-shell = { path = "crates/sorng-app-shell" }
+sorng-core = { path = "crates/sorng-core" }
 sorng-kafka = { path = "crates/sorng-kafka", optional = true }
 
 serde_json = { workspace = true }
@@ -283,13 +284,27 @@ dirs = { workspace = true }
 tauri-plugin-window-state = "=2.4.1"
 axum = "0.7"
 
+# ── Crates required by include!()'d leaf-crate command files ──────
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }
+ssh2 = { workspace = true }
+reqwest = { workspace = true }
+tokio-rustls = { workspace = true }
+regex = { workspace = true }
+rustls = { workspace = true, features = ["ring"] }
+sorng-bmc-common = { path = "crates/sorng-bmc-common" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 tempfile = { workspace = true }
 mockall = "0.11"
 serial_test = "2.0"
-chrono = { workspace = true }
-uuid = { workspace = true }
 
 [features]
 default = ["cloud", "collab", "ops", "platform", "rdp"]

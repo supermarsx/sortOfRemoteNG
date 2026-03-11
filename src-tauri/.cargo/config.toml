@@ -10,6 +10,8 @@
 # 32 GB.  Bump to 2-4 after the first build populates the incremental
 # cache (incremental rebuilds only recompile one or two crates).
 jobs = 1
+# Default Windows builds to the MSVC target.
+target = "x86_64-pc-windows-msvc"
 # `sccache` is installed on this machine, but wrapper-enabled builds were
 # failing nondeterministically in this workspace (`h2` / `tauri-utils`
 # exiting without a Rust diagnostic). Keep the default build path reliable.
@@ -94,13 +96,17 @@ low-speed-limit = 5
 #
 # Combined with the x86-64-v3 target features for crypto / SIMD.
 
+[target.x86_64-pc-windows-gnu]
+rustflags = [
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+]
+
 [target.x86_64-pc-windows-msvc]
-# NOTE: We intentionally do NOT set linker = "rust-lld.exe" here.
+# Keep the same CPU feature tuning available for explicit MSVC builds.
+# We intentionally do NOT set linker = "rust-lld.exe" here.
 # While rust-lld ships with the toolchain, it hangs when linking this
-# project's 178-crate binary (~7 GB of rlibs).  The default MSVC link.exe
-# handles it reliably.  If link times become a bottleneck, consider:
-#   1. Upgrading to a Rust nightly that supports -Clinker-flavor=msvc-lld
-#   2. Using `cargo-nextest` to reduce relink frequency
+# project's 178-crate binary (~7 GB of rlibs). The default MSVC link.exe
+# handles it reliably when MSVC is selected on purpose.
 rustflags = [
   "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
 ]

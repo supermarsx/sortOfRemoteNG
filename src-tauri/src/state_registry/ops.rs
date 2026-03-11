@@ -1,6 +1,6 @@
 use super::*;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 
 pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Path) {
@@ -217,9 +217,13 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
             Arc::new(i18n::I18nEngine::new_empty("en"))
         }
     };
-    let i18n_watcher = i18n::watcher::I18nWatcher::start_with_tauri_events(
+    let app_handle = app.handle().clone();
+    let i18n_watcher = i18n::watcher::I18nWatcher::start(
         i18n_engine.clone(),
-        app.handle().clone(),
+        i18n::watcher::WatcherConfig::default(),
+        Some(Arc::new(move || {
+            let _ = app_handle.emit("i18n-reload", ());
+        })),
     )
     .ok();
     app.manage(I18nServiceState {
