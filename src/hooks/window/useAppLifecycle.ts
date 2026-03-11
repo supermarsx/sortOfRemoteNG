@@ -75,9 +75,12 @@ export const useAppLifecycle = ({
   const [isInitialized, setIsInitialized] = useState(false);
   const [didUnexpectedClose, setDidUnexpectedClose] = useState(false);
   const hasReconnected = useRef(false);
+  const initStarted = useRef(false);
   const reconnectingSessions = useRef<Set<string>>(new Set());
 
   const initializeApp = useCallback(async () => {
+    if (initStarted.current) return;
+    initStarted.current = true;
     try {
       console.log("Initializing app...");
       await settingsManager.initialize();
@@ -222,7 +225,10 @@ export const useAppLifecycle = ({
 
   useEffect(() => {
     initializeApp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  useEffect(() => {
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     const settings = settingsManager.getSettings();
@@ -238,7 +244,6 @@ export const useAppLifecycle = ({
       statusChecker.cleanup();
     };
   }, [
-    initializeApp,
     handleBeforeUnload,
     checkSingleWindow,
     settingsManager,
