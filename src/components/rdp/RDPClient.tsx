@@ -104,7 +104,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
       ref={mgr.canvasRef}
       className="border border-[var(--color-border)] max-w-full max-h-full"
       style={{
-        cursor: mgr.magnifierActive ? 'crosshair' : mgr.pointerStyle,
+        cursor: !mgr.mouseEnabled ? 'not-allowed' : mgr.magnifierActive ? 'crosshair' : mgr.pointerStyle,
         imageRendering: 'auto',
         objectFit: 'contain',
         display: mgr.connectionStatus !== 'disconnected' ? 'block' : 'none',
@@ -183,6 +183,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         certFingerprint={mgr.certFingerprint ?? ''}
         connectionName={mgr.connection?.name || session.name}
         onRenameConnection={mgr.handleRenameConnection}
+        serverCertValidation={mgr.connection?.rdpSettings?.security?.serverCertValidation}
+        onUpdateServerCertValidation={mgr.handleUpdateServerCertValidation}
         totpConfigs={mgr.connection?.totpConfigs}
         onUpdateTotpConfigs={mgr.handleUpdateTotpConfigs}
         handleAutoTypeTOTP={mgr.handleAutoTypeTOTP}
@@ -226,6 +228,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         audioEnabled={mgr.audioEnabled}
         clipboardEnabled={mgr.clipboardEnabled}
         magnifierActive={mgr.magnifierActive}
+        mouseEnabled={mgr.mouseEnabled}
+        keyboardEnabled={mgr.keyboardEnabled}
+        rdpSettings={mgr.rdpSettings}
+        onToggleInput={mgr.handleToggleInput}
+        onToggleRedirection={mgr.handleToggleRedirection}
+        onToggleAudio={mgr.handleToggleAudio}
       />
 
       {mgr.trustPrompt && mgr.certIdentity && (

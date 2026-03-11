@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { RDPStatusBar } from "../../src/components/rdp/RDPStatusBar";
 import type { RDPStatsEvent } from "../../src/types/rdp/rdpEvents";
@@ -13,6 +13,11 @@ const baseProps = {
   audioEnabled: false,
   clipboardEnabled: false,
   magnifierActive: false,
+  mouseEnabled: true,
+  keyboardEnabled: true,
+  onToggleInput: vi.fn(),
+  onToggleRedirection: vi.fn(),
+  onToggleAudio: vi.fn(),
 };
 
 describe("RDPStatusBar", () => {

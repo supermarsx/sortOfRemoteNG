@@ -183,6 +183,9 @@ export function useRDPClient(session: ConnectionSession) {
   // Keep the renderer type ref in sync with the resolved settings
   frontendRendererTypeRef.current = (rdpSettings.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
 
+  const mouseEnabled = rdpSettings.input?.mouseEnabled ?? true;
+  const keyboardEnabled = rdpSettings.input?.keyboardEnabled ?? true;
+
   const perfLabel = rdpSettings.performance?.connectionSpeed ?? 'broadband-high';
   const audioEnabled = rdpSettings.audio?.playbackMode !== 'disabled';
   const clipboardEnabled = rdpSettings.deviceRedirection?.clipboard ?? true;
@@ -829,12 +832,8 @@ export function useRDPClient(session: ConnectionSession) {
 
     observer.observe(container);
 
-    const invalidateRect = () => { cachedRectRef.current = null; };
-    window.addEventListener('scroll', invalidateRect, { passive: true });
-
     return () => {
       observer.disconnect();
-      window.removeEventListener('scroll', invalidateRect);
       if (resizeTimer) clearTimeout(resizeTimer);
     };
   }, [isConnected, rdpSettings.display?.resizeToWindow]);
@@ -898,8 +897,29 @@ export function useRDPClient(session: ConnectionSession) {
     }
   }, [isConnected, flushInputBuffer]);
 
-  /** Cached canvas bounding rect — invalidated on resize/scroll. */
+  /** Cached canvas bounding rect — invalidated on resize/scroll/fullscreen. */
   const cachedRectRef = useRef<DOMRect | null>(null);
+
+  useEffect(() => {
+    const invalidateRect = () => { cachedRectRef.current = null; };
+    window.addEventListener('resize', invalidateRect, { passive: true });
+    window.addEventListener('scroll', invalidateRect, { passive: true });
+    document.addEventListener('fullscreenchange', invalidateRect);
+
+    const canvas = canvasRef.current;
+    let canvasObserver: ResizeObserver | undefined;
+    if (canvas) {
+      canvasObserver = new ResizeObserver(invalidateRect);
+      canvasObserver.observe(canvas);
+    }
+
+    return () => {
+      window.removeEventListener('resize', invalidateRect);
+      window.removeEventListener('scroll', invalidateRect);
+      document.removeEventListener('fullscreenchange', invalidateRect);
+      canvasObserver?.disconnect();
+    };
+  }, []);
   const scaleCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -984,8 +1004,10 @@ export function useRDPClient(session: ConnectionSession) {
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected) return;
-    const { x, y } = scaleCoords(e.clientX, e.clientY);
-    sendInput([{ type: 'MouseMove', x, y }]);
+    if (mouseEnabled) {
+      const { x, y } = scaleCoords(e.clientX, e.clientY);
+      sendInput([{ type: 'MouseMove', x, y }]);
+    }
 
     if (magnifierEnabled && magnifierActive) {
       let rect = cachedRectRef.current;
@@ -1003,55 +1025,56 @@ export function useRDPClient(session: ConnectionSession) {
         updateMagnifier(mx, my);
       }
     }
-  }, [isConnected, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
+  }, [isConnected, mouseEnabled, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected) return;
+    if (!isConnected || !mouseEnabled) return;
     e.preventDefault();
     (e.target as HTMLCanvasElement).focus();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: true }], true);
-  }, [isConnected, scaleCoords, sendInput]);
+  }, [isConnected, mouseEnabled, scaleCoords, sendInput]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected) return;
+    if (!isConnected || !mouseEnabled) return;
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: false }], true);
-  }, [isConnected, scaleCoords, sendInput]);
+  }, [isConnected, mouseEnabled, scaleCoords, sendInput]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    if (!isConnected) return;
+    if (!isConnected || !mouseEnabled) return;
     e.preventDefault();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     const delta = Math.sign(e.deltaY) * -120;
     sendInput([{ type: 'Wheel', x, y, delta, horizontal: e.shiftKey }], true);
-  }, [isConnected, scaleCoords, sendInput]);
+  }, [isConnected, mouseEnabled, scaleCoords, sendInput]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!isConnected) return;
+    if (!isConnected || !keyboardEnabled) return;
     e.preventDefault();
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: true, extended: scan.extended }], true);
     }
-  }, [isConnected, sendInput]);
+  }, [isConnected, keyboardEnabled, sendInput]);
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
-    if (!isConnected) return;
+    if (!isConnected || !keyboardEnabled) return;
     e.preventDefault();
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: false, extended: scan.extended }], true);
     }
-  }, [isConnected, sendInput]);
+  }, [isConnected, keyboardEnabled, sendInput]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
   }, []);
 
   const toggleFullscreen = useCallback(() => {
+    cachedRectRef.current = null;
     setIsFullscreen(prev => !prev);
   }, []);
 
@@ -1066,6 +1089,78 @@ export function useRDPClient(session: ConnectionSession) {
   const handleUpdateTotpConfigs = useCallback((configs: NonNullable<Connection['totpConfigs']>) => {
     if (connection) {
       dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, totpConfigs: configs } });
+    }
+  }, [connection, dispatch]);
+
+  const handleUpdateServerCertValidation = useCallback((mode: 'validate' | 'warn' | 'ignore') => {
+    if (connection) {
+      dispatch({
+        type: 'UPDATE_CONNECTION',
+        payload: {
+          ...connection,
+          rdpSettings: {
+            ...connection.rdpSettings,
+            security: {
+              ...connection.rdpSettings?.security,
+              serverCertValidation: mode,
+            },
+          },
+        },
+      });
+    }
+  }, [connection, dispatch]);
+
+  const handleToggleInput = useCallback((key: 'mouseEnabled' | 'keyboardEnabled', value: boolean) => {
+    if (connection) {
+      dispatch({
+        type: 'UPDATE_CONNECTION',
+        payload: {
+          ...connection,
+          rdpSettings: {
+            ...connection.rdpSettings,
+            input: {
+              ...connection.rdpSettings?.input,
+              [key]: value,
+            },
+          },
+        },
+      });
+    }
+  }, [connection, dispatch]);
+
+  const handleToggleRedirection = useCallback((key: keyof NonNullable<RDPConnectionSettings['deviceRedirection']>, value: boolean) => {
+    if (connection) {
+      dispatch({
+        type: 'UPDATE_CONNECTION',
+        payload: {
+          ...connection,
+          rdpSettings: {
+            ...connection.rdpSettings,
+            deviceRedirection: {
+              ...connection.rdpSettings?.deviceRedirection,
+              [key]: value,
+            },
+          },
+        },
+      });
+    }
+  }, [connection, dispatch]);
+
+  const handleToggleAudio = useCallback((enabled: boolean) => {
+    if (connection) {
+      dispatch({
+        type: 'UPDATE_CONNECTION',
+        payload: {
+          ...connection,
+          rdpSettings: {
+            ...connection.rdpSettings,
+            audio: {
+              ...connection.rdpSettings?.audio,
+              playbackMode: enabled ? 'local' : 'disabled',
+            },
+          },
+        },
+      });
     }
   }, [connection, dispatch]);
 
@@ -1130,6 +1225,12 @@ export function useRDPClient(session: ConnectionSession) {
     toggleFullscreen,
     handleRenameConnection,
     handleUpdateTotpConfigs,
+    handleUpdateServerCertValidation,
+    handleToggleInput,
+    handleToggleRedirection,
+    handleToggleAudio,
+    mouseEnabled,
+    keyboardEnabled,
     // Input handlers
     handleMouseMove,
     handleMouseDown,

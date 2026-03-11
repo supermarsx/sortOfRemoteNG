@@ -253,6 +253,10 @@ export type RdpMouseMode = 'relative' | 'absolute';
 export type RdpKeyboardLayout = number; // LCID e.g. 0x0409 for US English
 
 export interface RdpInputSettings {
+  /** Enable mouse input forwarding to the remote session */
+  mouseEnabled?: boolean;
+  /** Enable keyboard input forwarding to the remote session */
+  keyboardEnabled?: boolean;
   /** Mouse input mode: relative (virtual) or absolute (real) */
   mouseMode?: RdpMouseMode;
   /** Keyboard layout LCID (e.g., 0x0409 = US, 0x0407 = German) */
@@ -601,6 +605,8 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     audioQuality: 'dynamic',
   },
   input: {
+    mouseEnabled: true,
+    keyboardEnabled: true,
     mouseMode: 'absolute',
     keyboardLayout: 0x0409,
     keyboardType: 'ibm-enhanced',
@@ -1023,6 +1029,9 @@ export interface ConnectionSession {
   // Reconnection
   reconnectAttempts?: number;
   maxReconnectAttempts?: number;
+
+  // Error detail (shown on error screens when available)
+  errorMessage?: string;
 }
 
 export interface TabLayout {
