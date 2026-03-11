@@ -10,6 +10,7 @@ mod types {
     pub use crate::updater::types::*;
 }
 
+#[allow(dead_code)]
 mod inner {
     include!("../crates/sorng-updater/src/commands.rs");
 }

@@ -6,6 +6,7 @@ mod types {
     pub use crate::ftp::types::*;
 }
 
+#[allow(dead_code)]
 mod inner {
     include!("../crates/sorng-ftp/src/ftp/commands.rs");
 }
