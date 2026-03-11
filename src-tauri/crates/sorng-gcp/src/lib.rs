@@ -68,7 +68,6 @@ pub mod sql;
 pub mod storage;
 
 // High-level service + Tauri bindings
-pub mod commands;
 pub mod service;
 
 // ── Re-exports for ergonomic access ─────────────────────────────────────
@@ -80,19 +79,3 @@ pub use config::{
 pub use error::{GcpError, GcpResult};
 pub use service::{GcpService, GcpServiceState};
 
-// Re-export all Tauri commands for registration in the main app
-pub use commands::{
-    access_gcp_secret_version, call_gcp_function, connect_gcp, create_gcp_bucket,
-    create_gcp_secret, create_gcp_topic, delete_gcp_bucket, delete_gcp_instance, delete_gcp_object,
-    delete_gcp_secret, delete_gcp_topic, disconnect_gcp, download_gcp_object, get_gcp_bucket,
-    get_gcp_cluster, get_gcp_function, get_gcp_iam_policy, get_gcp_instance, get_gcp_secret,
-    get_gcp_session, get_gcp_sql_instance, list_gcp_alert_policies, list_gcp_buckets,
-    list_gcp_clusters, list_gcp_disks, list_gcp_dns_record_sets, list_gcp_firewalls,
-    list_gcp_functions, list_gcp_instances, list_gcp_log_entries, list_gcp_log_sinks,
-    list_gcp_logs, list_gcp_machine_types, list_gcp_managed_zones, list_gcp_metric_descriptors,
-    list_gcp_networks, list_gcp_node_pools, list_gcp_objects, list_gcp_roles, list_gcp_run_jobs,
-    list_gcp_run_services, list_gcp_secrets, list_gcp_service_accounts, list_gcp_sessions,
-    list_gcp_snapshots, list_gcp_sql_databases, list_gcp_sql_instances, list_gcp_sql_users,
-    list_gcp_subscriptions, list_gcp_time_series, list_gcp_topics, publish_gcp_message,
-    pull_gcp_messages, reset_gcp_instance, start_gcp_instance, stop_gcp_instance,
-};

@@ -32,8 +32,8 @@ impl Default for WatcherConfig {
 pub struct I18nWatcher {
     /// Hold the debouncer alive — dropping it stops watching.
     _debouncer: notify_debouncer_mini::Debouncer<RecommendedWatcher>,
-    /// Join handle for the async consumer task.
-    _task: tokio::task::JoinHandle<()>,
+    /// Join handle for the consumer thread.
+    _thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl I18nWatcher {
@@ -79,37 +79,39 @@ impl I18nWatcher {
 
         log::info!("i18n: watching {:?} for locale file changes", dir);
 
-        // Async consumer task
+        // Consumer thread — uses blocking_recv so no Tokio runtime is needed.
         let engine_clone = Arc::clone(&engine);
-        let task = tokio::spawn(async move {
-            while let Some(events) = rx.recv().await {
-                // Only react to JSON file changes
-                let any_json = events
-                    .iter()
-                    .any(|ev| ev.path.extension().map(|e| e == "json").unwrap_or(false));
+        let thread = std::thread::Builder::new()
+            .name("i18n-watcher".into())
+            .spawn(move || {
+                while let Some(events) = rx.blocking_recv() {
+                    let any_json = events
+                        .iter()
+                        .any(|ev| ev.path.extension().map(|e| e == "json").unwrap_or(false));
 
-                if !any_json {
-                    continue;
-                }
+                    if !any_json {
+                        continue;
+                    }
 
-                log::info!("i18n: detected locale file change, reloading…");
-                match engine_clone.reload_all() {
-                    Ok(()) => {
-                        log::info!("i18n: hot-reload successful");
-                        if let Some(ref cb) = on_reload {
-                            cb();
+                    log::info!("i18n: detected locale file change, reloading…");
+                    match engine_clone.reload_all() {
+                        Ok(()) => {
+                            log::info!("i18n: hot-reload successful");
+                            if let Some(ref cb) = on_reload {
+                                cb();
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("i18n: hot-reload failed: {}", e);
                         }
                     }
-                    Err(e) => {
-                        log::error!("i18n: hot-reload failed: {}", e);
-                    }
                 }
-            }
-        });
+            })
+            .map_err(|e| crate::error::I18nError::WatcherError(e.to_string()))?;
 
         Ok(I18nWatcher {
             _debouncer: debouncer,
-            _task: task,
+            _thread: Some(thread),
         })
     }
 
@@ -118,18 +120,4 @@ impl I18nWatcher {
         Self::start(engine, WatcherConfig::default(), None)
     }
 
-    /// Start watching with a Tauri app handle — emits an `i18n-reload` event
-    /// to all windows whenever translations are reloaded.
-    pub fn start_with_tauri_events(
-        engine: Arc<I18nEngine>,
-        app_handle: tauri::AppHandle,
-    ) -> I18nResult<Self> {
-        use tauri::Emitter;
-
-        let callback: Arc<dyn Fn() + Send + Sync + 'static> = Arc::new(move || {
-            let _ = app_handle.emit("i18n-reload", ());
-        });
-
-        Self::start(engine, WatcherConfig::default(), Some(callback))
-    }
 }

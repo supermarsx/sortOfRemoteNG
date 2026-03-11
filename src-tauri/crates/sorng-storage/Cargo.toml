@@ -8,7 +8,6 @@ description = "Secure storage and backup management"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 sha2 = { workspace = true }
 flate2 = "1.0"
 aes-gcm = { workspace = true }

@@ -8,7 +8,6 @@ description = "Full mRemoteNG connection import/export — XML confCons.xml, CSV
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

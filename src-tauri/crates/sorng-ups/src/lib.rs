@@ -5,7 +5,6 @@
 
 pub mod battery;
 pub mod client;
-pub mod commands;
 pub mod configuration;
 pub mod devices;
 pub mod error;

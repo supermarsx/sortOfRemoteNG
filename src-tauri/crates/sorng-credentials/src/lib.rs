@@ -23,7 +23,6 @@
 
 pub mod alerts;
 pub mod audit;
-pub mod commands;
 pub mod error;
 pub mod groups;
 pub mod policies;

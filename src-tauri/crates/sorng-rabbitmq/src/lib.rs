@@ -11,7 +11,6 @@ pub mod bindings;
 pub mod channels;
 pub mod client;
 pub mod cluster;
-pub mod commands;
 pub mod connections;
 pub mod consumers;
 pub mod definitions;

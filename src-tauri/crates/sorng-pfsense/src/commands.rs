@@ -1,10 +1,10 @@
 // ── sorng-pfsense/src/commands.rs ───────────────────────────────────────────
-//! Tauri commands – thin wrappers around `PfsenseServiceWrapper`.
+// Tauri commands – thin wrappers around `PfsenseServiceWrapper`.
 
 use tauri::State;
 
-use crate::service::PfsenseServiceState;
-use crate::types::*;
+use super::service::PfsenseServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

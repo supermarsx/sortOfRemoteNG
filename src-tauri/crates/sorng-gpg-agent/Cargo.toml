@@ -8,7 +8,6 @@ description = "GPG agent manager for SortOfRemote NG — Assuan protocol, keyrin
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

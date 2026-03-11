@@ -8,7 +8,6 @@ description = "Remote management tools (WMI, RPC, MeshCentral, Agent, Commander,
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

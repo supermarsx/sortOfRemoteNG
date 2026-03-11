@@ -5,7 +5,6 @@
 //! management, default kernel selection, and recovery options.
 
 pub mod client;
-pub mod commands;
 pub mod detect;
 pub mod error;
 pub mod grub;

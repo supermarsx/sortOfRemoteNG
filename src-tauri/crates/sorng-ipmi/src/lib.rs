@@ -56,7 +56,6 @@
 
 pub mod channel;
 pub mod chassis;
-pub mod commands;
 pub mod error;
 pub mod fru;
 pub mod lan;

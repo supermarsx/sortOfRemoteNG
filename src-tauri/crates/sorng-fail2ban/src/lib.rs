@@ -7,7 +7,6 @@
 pub mod actions;
 pub mod bans;
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod filters;
 pub mod jails;

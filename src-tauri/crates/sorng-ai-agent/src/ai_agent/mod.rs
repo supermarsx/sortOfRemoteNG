@@ -4,7 +4,6 @@
 //! [`service::AiAgentService`] and exposed as Tauri commands.
 
 pub mod code_assist;
-pub mod commands;
 pub mod conversation;
 pub mod embeddings;
 pub mod engine;
@@ -21,7 +20,6 @@ pub mod workflows;
 
 // ── Re-exports ───────────────────────────────────────────────────────────────
 
-pub use commands::*;
 pub use service::AiAgentService;
 pub use types::AiAgentServiceState;
 pub use types::*;

@@ -11,7 +11,6 @@
 //   • Tauri command bindings for the frontend
 
 pub mod bookmarks;
-pub mod commands;
 pub mod diagnostics;
 pub mod dir_ops;
 pub mod file_ops;
@@ -21,7 +20,6 @@ pub mod transfer;
 pub mod types;
 pub mod watch;
 
-pub use commands::*;
 pub use dir_ops::*;
 pub use service::SftpService;
 pub use types::*;

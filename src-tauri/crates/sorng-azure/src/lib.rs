@@ -21,7 +21,6 @@
 pub mod app_service;
 pub mod auth;
 pub mod client;
-pub mod commands;
 pub mod container_instances;
 pub mod cost;
 pub mod key_vault;

@@ -1,8 +1,8 @@
 // ── sorng-rspamd/src/commands.rs ──────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `RspamdService`.
+// Tauri commands – thin wrappers around `RspamdService`.
 
-use crate::service::RspamdServiceState;
-use crate::types::*;
+use super::service::RspamdServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

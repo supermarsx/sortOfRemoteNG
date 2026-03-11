@@ -1,7 +1,7 @@
 //! Tauri commands for the PostgreSQL integration.
 
-use crate::postgres::service::PostgresServiceState;
-use crate::postgres::types::*;
+use super::postgres::service::PostgresServiceState;
+use super::postgres::types::*;
 
 // ── Connection ──────────────────────────────────────────────────────
 

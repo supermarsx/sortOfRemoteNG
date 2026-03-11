@@ -17,8 +17,6 @@
 //! | `installer`  | Download, verify, extract, uninstall extensions  |
 //! | `service`    | Service façade (`MarketplaceServiceState`)       |
 //! | `commands`   | Tauri `#[command]` handlers                      |
-
-pub mod commands;
 pub mod error;
 pub mod installer;
 pub mod ratings;

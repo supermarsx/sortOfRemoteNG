@@ -12,7 +12,6 @@
 
 pub mod api;
 pub mod cli;
-pub mod commands;
 pub mod crypto;
 pub mod generate;
 pub mod service;
@@ -20,7 +19,5 @@ pub mod sync;
 pub mod types;
 pub mod vault;
 
-// Re-export top-level items for convenience.
-pub use commands::*;
 pub use service::{BitwardenService, BitwardenServiceState};
 pub use types::*;

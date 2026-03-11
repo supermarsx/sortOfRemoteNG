@@ -1,11 +1,11 @@
-//! # MCP Tauri Commands
-//!
-//! `#[tauri::command]` handlers that bridge the frontend UI to the MCP service.
-//! All commands take `McpServiceState` via Tauri's managed state.
+// # MCP Tauri Commands
+//
+// `#[tauri::command]` handlers that bridge the frontend UI to the MCP service.
+// All commands take `McpServiceState` via Tauri's managed state.
 
-use crate::logging::McpLogEntry;
-use crate::service::McpServiceState;
-use crate::types::*;
+use super::logging::McpLogEntry;
+use super::service::McpServiceState;
+use super::types::*;
 
 use serde_json::Value;
 use std::collections::HashMap;

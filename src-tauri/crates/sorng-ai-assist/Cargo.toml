@@ -8,7 +8,6 @@ description = "AI-powered SSH assistance — command autocomplete, error explana
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }

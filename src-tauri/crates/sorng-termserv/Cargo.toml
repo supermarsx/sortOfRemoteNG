@@ -8,7 +8,6 @@ description = "Terminal Services / Remote Desktop Services management — sessio
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

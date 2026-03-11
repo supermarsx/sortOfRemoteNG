@@ -1,11 +1,11 @@
-//! # Tauri Commands
-//!
-//! All `#[tauri::command]` handlers for SNMP functionality.  Each command
-//! takes `State<'_, SnmpServiceState>` and delegates to the service.
+// # Tauri Commands
+//
+// All `#[tauri::command]` handlers for SNMP functionality.  Each command
+// takes `State<'_, SnmpServiceState>` and delegates to the service.
 
-use crate::error::SnmpResult;
-use crate::service::SnmpServiceState;
-use crate::types::*;
+use super::error::SnmpResult;
+use super::service::SnmpServiceState;
+use super::types::*;
 use std::sync::Arc;
 use tauri::State;
 
@@ -16,7 +16,7 @@ type BulkWalkResult = Vec<(String, Result<WalkResult, String>)>;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn to_err(e: crate::error::SnmpError) -> String {
+fn to_err(e: super::error::SnmpError) -> String {
     e.to_string()
 }
 
@@ -564,7 +564,7 @@ pub async fn snmp_bulk_get(
     _state: State<'_, SnmpServiceState>,
     config: BulkOperationConfig,
 ) -> Result<BulkOperationResult, String> {
-    Ok(crate::bulk::bulk_get(&config).await)
+    Ok(super::bulk::bulk_get(&config).await)
 }
 
 #[tauri::command]
@@ -574,7 +574,7 @@ pub async fn snmp_bulk_walk(
     root_oid: String,
     concurrency: Option<usize>,
 ) -> Result<BulkWalkResult, String> {
-    Ok(crate::bulk::bulk_walk(&targets, &root_oid, concurrency.unwrap_or(10)).await)
+    Ok(super::bulk::bulk_walk(&targets, &root_oid, concurrency.unwrap_or(10)).await)
 }
 
 // ---------------------------------------------------------------------------
@@ -586,7 +586,7 @@ fn parse_typed_value(value_type: &str, value: &str) -> SnmpResult<SnmpValue> {
         "integer" | "int" | "i" => {
             let v: i64 = value
                 .parse()
-                .map_err(|_| crate::error::SnmpError::config("Invalid integer value"))?;
+                .map_err(|_| super::error::SnmpError::config("Invalid integer value"))?;
             Ok(SnmpValue::Integer(v))
         }
         "string" | "str" | "s" => Ok(SnmpValue::OctetString(value.to_string())),
@@ -595,25 +595,25 @@ fn parse_typed_value(value_type: &str, value: &str) -> SnmpResult<SnmpValue> {
         "counter32" | "c" => {
             let v: u32 = value
                 .parse()
-                .map_err(|_| crate::error::SnmpError::config("Invalid counter32 value"))?;
+                .map_err(|_| super::error::SnmpError::config("Invalid counter32 value"))?;
             Ok(SnmpValue::Counter32(v))
         }
         "gauge32" | "gauge" | "g" | "unsigned" | "u" => {
             let v: u32 = value
                 .parse()
-                .map_err(|_| crate::error::SnmpError::config("Invalid gauge32 value"))?;
+                .map_err(|_| super::error::SnmpError::config("Invalid gauge32 value"))?;
             Ok(SnmpValue::Gauge32(v))
         }
         "timeticks" | "t" => {
             let v: u32 = value
                 .parse()
-                .map_err(|_| crate::error::SnmpError::config("Invalid timeticks value"))?;
+                .map_err(|_| super::error::SnmpError::config("Invalid timeticks value"))?;
             Ok(SnmpValue::TimeTicks(v))
         }
         "counter64" => {
             let v: u64 = value
                 .parse()
-                .map_err(|_| crate::error::SnmpError::config("Invalid counter64 value"))?;
+                .map_err(|_| super::error::SnmpError::config("Invalid counter64 value"))?;
             Ok(SnmpValue::Counter64(v))
         }
         "hex" | "x" => {
@@ -628,7 +628,7 @@ fn parse_typed_value(value_type: &str, value: &str) -> SnmpResult<SnmpValue> {
                 .join("");
             Ok(SnmpValue::OctetString(hex_string))
         }
-        _ => Err(crate::error::SnmpError::config(format!(
+        _ => Err(super::error::SnmpError::config(format!(
             "Unknown value type: {}",
             value_type
         ))),

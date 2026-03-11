@@ -13,13 +13,11 @@
 //! - **Variable interpolation** — `{{var}}` placeholders resolved at runtime.
 //! - **Locale negotiation** — BCP 47 parsing, OS locale detection via
 //!   `sys-locale`, and configurable fallback chains.
-//! - **Tauri commands** — ready-made `#[tauri::command]` handlers for the
-//!   frontend to call.
 //! - **Namespace support** — translations can be scoped per feature / crate.
 //! - **Thread-safe & zero-copy reads** — `DashMap` + `ArcSwap` means
 //!   translation lookups never block writers.
 
-pub mod commands;
+pub mod command_types;
 pub mod engine;
 pub mod error;
 pub mod interpolation;
@@ -29,7 +27,7 @@ pub mod ssr;
 pub mod watcher;
 
 // Re-exports for convenience
-pub use commands::I18nServiceState;
+pub use command_types::I18nServiceState;
 pub use engine::{I18nEngine, TranslationBundle};
 pub use error::I18nError;
 pub use locale::Locale;

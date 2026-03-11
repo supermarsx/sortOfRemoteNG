@@ -1,41 +1,33 @@
-pub(crate) mod errors;
+pub mod errors;
+pub mod frame_channel;
 mod frame_delivery;
-mod frame_store;
-mod input;
+pub mod frame_store;
+pub mod input;
 mod network;
-mod session_runner;
-mod settings;
-mod stats;
-mod types;
-// These must be pub(crate) because #[tauri::command] generates hidden
-// __cmd__<name> symbols that the invoke handler needs to resolve.
-pub(crate) mod commands;
-pub(crate) mod diagnostics;
+pub mod session_runner;
+pub mod settings;
+pub mod stats;
+pub mod types;
+pub mod commands;
+pub mod diagnostics;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // ---- Public type aliases ----
 pub type RdpServiceState = Arc<Mutex<types::RdpService>>;
-pub(crate) type RdpTlsConfig = Arc<rustls::ClientConfig>;
-pub(crate) type RdpTlsStream = rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>;
+pub type RdpTlsConfig = Arc<rustls::ClientConfig>;
+pub type RdpTlsStream = rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>;
 
-// ---- Re-exports: types visible to the rest of the crate ----
+// ---- Re-exports: types visible to consumers ----
 pub use errors::RdpError;
 pub use frame_store::{SharedFrameStore, SharedFrameStoreState};
 pub use settings::RdpSettingsPayload;
 pub use stats::ConnectionPhase;
 pub use types::{
-    RdpInputAction, RdpLogEntry, RdpPointerEvent, RdpService, RdpSession, RdpStatsEvent,
-    RdpStatusEvent,
+    RdpActiveConnection, RdpCommand, RdpInputAction, RdpLogEntry, RdpPointerEvent, RdpService,
+    RdpSession, RdpStatsEvent, RdpStatusEvent,
 };
 
 // Re-export shared diagnostics types so the frontend API stays unchanged.
 pub use sorng_core::diagnostics::{DiagnosticReport, DiagnosticStep};
-
-// ---- Re-exports: all Tauri commands + hidden __cmd__ symbols ----
-// Wildcard re-export is needed because #[tauri::command] generates
-// companion __cmd__<name> items that the invoke handler resolves
-// at the same module path as the function itself.
-pub use commands::*;
-pub use diagnostics::*;

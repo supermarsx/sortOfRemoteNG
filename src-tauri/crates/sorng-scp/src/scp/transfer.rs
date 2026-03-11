@@ -554,7 +554,7 @@ impl ScpService {
 
     // ── Progress helpers ─────────────────────────────────────────────────────
 
-    pub(crate) fn update_progress_status(&self, transfer_id: &str, status: ScpTransferStatus) {
+    pub fn update_progress_status(&self, transfer_id: &str, status: ScpTransferStatus) {
         if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
             if let Some(p) = map.get_mut(transfer_id) {
                 p.status = status;
@@ -566,7 +566,7 @@ impl ScpService {
         }
     }
 
-    pub(crate) fn update_progress_error(&self, transfer_id: &str, error: &str) {
+    pub fn update_progress_error(&self, transfer_id: &str, error: &str) {
         if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
             if let Some(p) = map.get_mut(transfer_id) {
                 p.status = ScpTransferStatus::Failed;

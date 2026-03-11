@@ -30,7 +30,6 @@
 
 pub mod api_client;
 pub mod auth;
-pub mod commands;
 pub mod drives;
 pub mod error;
 pub mod files;
@@ -45,7 +44,6 @@ pub mod types;
 pub mod webhooks;
 
 // Re-exports
-pub use commands::*;
 pub use error::{OneDriveError, OneDriveResult};
 pub use service::{OneDriveService, OneDriveServiceState};
 pub use types::*;

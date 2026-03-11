@@ -20,8 +20,6 @@
 //! - `converter` — mRemoteNG ↔ app Connection model mapping
 //! - `service` — high-level orchestrator
 //! - `commands` — thin `#[tauri::command]` wrappers
-
-pub mod commands;
 pub mod converter;
 pub mod csv_parser;
 pub mod csv_writer;
@@ -35,7 +33,6 @@ pub mod xml_parser;
 pub mod xml_writer;
 
 // Re-exports
-pub use commands::*;
 pub use error::{MremotengError, MremotengResult};
 pub use service::MremotengService;
 pub use types::*;

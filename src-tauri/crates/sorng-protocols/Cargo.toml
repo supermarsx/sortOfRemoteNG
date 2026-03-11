@@ -13,7 +13,6 @@ sorng-core = { path = "../sorng-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 vnc-rs = "0.5"
 suppaftp = "4.5"
 ssh2 = { workspace = true }

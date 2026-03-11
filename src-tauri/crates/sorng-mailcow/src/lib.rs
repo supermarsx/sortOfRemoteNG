@@ -20,7 +20,6 @@
 
 pub mod aliases;
 pub mod client;
-pub mod commands;
 pub mod dkim;
 pub mod domain_aliases;
 pub mod domains;

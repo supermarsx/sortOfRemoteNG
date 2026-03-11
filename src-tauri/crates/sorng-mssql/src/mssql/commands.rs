@@ -1,7 +1,7 @@
 //! Tauri commands for the Microsoft SQL Server integration.
 
-use crate::mssql::service::MssqlServiceState;
-use crate::mssql::types::*;
+use super::mssql::service::MssqlServiceState;
+use super::mssql::types::*;
 
 // ── Connection ──────────────────────────────────────────────────────
 

@@ -8,7 +8,6 @@ description = "Synology NAS management — DSM 6.x/7.x via the SYNO.API REST int
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

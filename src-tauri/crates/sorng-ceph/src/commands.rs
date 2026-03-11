@@ -1,11 +1,11 @@
-#![allow(clippy::await_holding_lock)]
+#[allow(clippy::await_holding_lock)]
 
 use serde_json::Value;
 use tauri::State;
 
-use crate::error::CephError;
-use crate::service::CephServiceState;
-use crate::types::*;
+use super::error::CephError;
+use super::service::CephServiceState;
+use super::types::*;
 
 // ---------------------------------------------------------------------------
 // Connection & Session Commands

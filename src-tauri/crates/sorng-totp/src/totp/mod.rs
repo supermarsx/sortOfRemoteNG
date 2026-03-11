@@ -1,6 +1,4 @@
 //! TOTP crate: sub-modules.
-
-pub mod commands;
 pub mod core;
 pub mod crypto;
 pub mod export;
@@ -12,6 +10,5 @@ pub mod types;
 pub mod uri;
 
 // Re-export top-level items for convenience.
-pub use commands::*;
 pub use service::{TotpService, TotpServiceState};
 pub use types::*;

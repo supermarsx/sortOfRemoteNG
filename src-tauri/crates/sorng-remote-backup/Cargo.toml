@@ -9,7 +9,6 @@ description = "SSH-based remote backup and sync crate for SortOfRemote NG — rs
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

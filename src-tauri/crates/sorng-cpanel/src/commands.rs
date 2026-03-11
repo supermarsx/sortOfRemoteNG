@@ -1,8 +1,8 @@
 // ── sorng-cpanel/src/commands.rs ─────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `CpanelService`.
+// Tauri commands – thin wrappers around `CpanelService`.
 
-use crate::service::CpanelServiceState;
-use crate::types::*;
+use super::service::CpanelServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

@@ -35,7 +35,6 @@
 //! - Mounted filesystems, sysctl limits
 
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod files;
 pub mod list;

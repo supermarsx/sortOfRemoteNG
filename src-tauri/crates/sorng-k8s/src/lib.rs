@@ -27,7 +27,6 @@
 //! - **commands** — `#[tauri::command]` handlers
 
 pub mod client;
-pub mod commands;
 pub mod configmaps;
 pub mod deployments;
 pub mod error;

@@ -21,7 +21,6 @@
 
 pub mod aggregator;
 pub mod alerts;
-pub mod commands;
 pub mod error;
 pub mod monitor;
 pub mod service;

@@ -1,5 +1,5 @@
-use crate::lastpass::service::LastPassServiceState;
-use crate::lastpass::types::*;
+use super::service::LastPassServiceState;
+use super::types::*;
 
 #[tauri::command]
 pub async fn lp_configure(
@@ -234,7 +234,7 @@ pub async fn lp_check_password_strength(
 #[tauri::command]
 pub async fn lp_get_stats(
     state: tauri::State<'_, LastPassServiceState>,
-) -> Result<crate::lastpass::service::VaultStats, String> {
+) -> Result<super::service::VaultStats, String> {
     let mut svc = state.lock().await;
     svc.get_stats().await.map_err(|e| e.message)
 }

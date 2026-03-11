@@ -1,11 +1,11 @@
 use chrono::Utc;
+use sorng_core::events::DynEventEmitter;
 use ssh2::{KeyboardInteractivePrompt, MethodType, Prompt, Session};
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::time::Duration;
-use tauri::Emitter;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream as AsyncTcpStream;
 use tokio::sync::mpsc;
@@ -45,12 +45,13 @@ pub fn generate_totp_code(secret: &str) -> Result<String, String> {
 }
 
 pub struct SshService {
-    pub(crate) sessions: HashMap<String, SshSession>,
+    pub sessions: HashMap<String, SshSession>,
     #[allow(dead_code)]
     connection_pool: HashMap<String, Vec<SshSession>>,
     #[allow(dead_code)]
     known_hosts: HashMap<String, String>,
-    pub(crate) shells: HashMap<String, SshShellHandle>,
+    pub shells: HashMap<String, SshShellHandle>,
+    pub event_emitter: Option<DynEventEmitter>,
 }
 
 impl SshService {
@@ -60,6 +61,17 @@ impl SshService {
             connection_pool: HashMap::new(),
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
+            event_emitter: None,
+        }))
+    }
+
+    pub fn new_with_emitter(emitter: DynEventEmitter) -> SshServiceState {
+        std::sync::Arc::new(tokio::sync::Mutex::new(SshService {
+            sessions: HashMap::new(),
+            connection_pool: HashMap::new(),
+            known_hosts: HashMap::new(),
+            shells: HashMap::new(),
+            event_emitter: Some(emitter),
         }))
     }
 
@@ -199,7 +211,7 @@ impl SshService {
         Ok(session_id)
     }
 
-    pub(crate) async fn establish_direct_connection(
+    pub async fn establish_direct_connection(
         &self,
         config: &SshConnectionConfig,
     ) -> Result<TcpStream, String> {
@@ -238,7 +250,7 @@ impl SshService {
         Ok(std_stream)
     }
 
-    pub(crate) async fn establish_proxy_connection(
+    pub async fn establish_proxy_connection(
         &self,
         config: &SshConnectionConfig,
         proxy_config: &ProxyConfig,
@@ -269,7 +281,7 @@ impl SshService {
         }
     }
 
-    pub(crate) async fn connect_through_socks5(
+    pub async fn connect_through_socks5(
         &self,
         mut stream: AsyncTcpStream,
         target: &str,
@@ -518,7 +530,7 @@ impl SshService {
     }
 
     /// Establish connection through a proxy chain
-    pub(crate) async fn establish_proxy_chain_connection(
+    pub async fn establish_proxy_chain_connection(
         &self,
         config: &SshConnectionConfig,
         chain_config: &ProxyChainConfig,
@@ -1665,7 +1677,7 @@ impl SshService {
     pub async fn start_shell(
         &mut self,
         session_id: &str,
-        app_handle: tauri::AppHandle,
+        event_emitter: DynEventEmitter,
     ) -> Result<String, String> {
         if let Some(existing) = self.shells.get(session_id) {
             return Ok(existing.id.clone());
@@ -1757,7 +1769,7 @@ impl SshService {
         let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
         let shell_id = Uuid::new_v4().to_string();
         let session_id_owned = session_id.to_string();
-        let app_handle_clone = app_handle.clone();
+        let emitter = event_emitter.clone();
 
         let thread = std::thread::spawn(move || {
             let mut buffer = [0u8; 16384];
@@ -1774,13 +1786,11 @@ impl SshService {
                             record_input(&session_id_owned, &data);
 
                             if let Err(error) = channel.write_all(data.as_bytes()) {
-                                let _ = app_handle_clone.emit(
-                                    "ssh-error",
-                                    SshShellError {
-                                        session_id: session_id_owned.clone(),
-                                        message: error.to_string(),
-                                    },
-                                );
+                                let payload = SshShellError {
+                                    session_id: session_id_owned.clone(),
+                                    message: error.to_string(),
+                                };
+                                let _ = emitter.emit_event("ssh-error", serde_json::to_value(&payload).unwrap_or_default());
                                 running = false;
                                 break;
                             }
@@ -1822,13 +1832,11 @@ impl SshService {
                             }
                         }
 
-                        let _ = app_handle_clone.emit(
-                            "ssh-output",
-                            SshShellOutput {
-                                session_id: session_id_owned.clone(),
-                                data: output,
-                            },
-                        );
+                        let payload = SshShellOutput {
+                            session_id: session_id_owned.clone(),
+                            data: output,
+                        };
+                        let _ = emitter.emit_event("ssh-output", serde_json::to_value(&payload).unwrap_or_default());
                     }
                     Ok(_) => {
                         idle_count = idle_count.saturating_add(1);
@@ -1837,13 +1845,11 @@ impl SshService {
                         idle_count = idle_count.saturating_add(1);
                     }
                     Err(error) => {
-                        let _ = app_handle_clone.emit(
-                            "ssh-error",
-                            SshShellError {
-                                session_id: session_id_owned.clone(),
-                                message: error.to_string(),
-                            },
-                        );
+                        let payload = SshShellError {
+                            session_id: session_id_owned.clone(),
+                            message: error.to_string(),
+                        };
+                        let _ = emitter.emit_event("ssh-error", serde_json::to_value(&payload).unwrap_or_default());
                         running = false;
                     }
                 }
@@ -1860,12 +1866,10 @@ impl SshService {
                 std::thread::sleep(Duration::from_millis(sleep_ms));
             }
 
-            let _ = app_handle_clone.emit(
-                "ssh-shell-closed",
-                SshShellClosed {
-                    session_id: session_id_owned,
-                },
-            );
+            let payload = SshShellClosed {
+                session_id: session_id_owned,
+            };
+            let _ = emitter.emit_event("ssh-shell-closed", serde_json::to_value(&payload).unwrap_or_default());
         });
 
         self.shells.insert(

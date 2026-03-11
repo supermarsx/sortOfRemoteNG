@@ -1,15 +1,15 @@
-//! Tauri command handlers for the hook engine.
-//!
-//! Each command follows the `hook_*` naming convention and delegates
-//! to [`HookService`].
+// Tauri command handlers for the hook engine.
+//
+// Each command follows the `hook_*` naming convention and delegates
+// to [`HookService`].
 
 use tauri::State;
 
-use crate::service::HookServiceState;
-use crate::types::*;
+use super::service::HookServiceState;
+use super::types::*;
 
 /// Helper to map HookError → String for Tauri command results.
-fn err_str(e: crate::error::HookError) -> String {
+fn err_str(e: super::error::HookError) -> String {
     e.to_string()
 }
 
@@ -143,7 +143,7 @@ pub async fn hook_execute_pipeline(
     state: State<'_, HookServiceState>,
     pipeline_id: String,
     event: HookEventData,
-) -> Result<Vec<crate::pipeline::PipelineStepResult>, String> {
+) -> Result<Vec<super::pipeline::PipelineStepResult>, String> {
     let svc = state.lock().await;
     svc.execute_pipeline(&pipeline_id, &event).map_err(err_str)
 }

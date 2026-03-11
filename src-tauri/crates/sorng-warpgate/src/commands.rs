@@ -1,8 +1,8 @@
 // ── sorng-warpgate/src/commands.rs ──────────────────────────────────────────
-//! Tauri commands – thin wrappers around `WarpgateService`.
+// Tauri commands – thin wrappers around `WarpgateService`.
 
-use crate::service::WarpgateServiceState;
-use crate::types::*;
+use super::service::WarpgateServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

@@ -1,10 +1,10 @@
 // ── sorng-grafana/src/commands.rs ───────────────────────────────────────────
-//! Tauri commands – thin wrappers around `GrafanaService`.
+// Tauri commands – thin wrappers around `GrafanaService`.
 
 use tauri::State;
 
-use crate::service::GrafanaServiceState;
-use crate::types::*;
+use super::service::GrafanaServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

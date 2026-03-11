@@ -1,8 +1,8 @@
-//! # DDNS Tauri Commands
-//!
-//! All `#[tauri::command]` functions exposed to the frontend via IPC.
+// # DDNS Tauri Commands
+//
+// All `#[tauri::command]` functions exposed to the frontend via IPC.
 
-use crate::types::*;
+use super::types::*;
 use tauri::State;
 
 // ── Profile CRUD ────────────────────────────────────────────────────

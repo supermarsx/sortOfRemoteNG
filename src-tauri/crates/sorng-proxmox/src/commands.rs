@@ -1,10 +1,10 @@
-//! Tauri command handlers for all Proxmox VE operations.
-//!
-//! Every command is `async`, takes `State<'_, ProxmoxServiceState>` and
-//! returns `Result<T, String>` (Tauri requires `String` errors).
+// Tauri command handlers for all Proxmox VE operations.
+//
+// Every command is `async`, takes `State<'_, ProxmoxServiceState>` and
+// returns `Result<T, String>` (Tauri requires `String` errors).
 
-use crate::service::ProxmoxServiceState;
-use crate::types::*;
+use super::service::ProxmoxServiceState;
+use super::types::*;
 use tauri::State;
 
 // ── Connection ──────────────────────────────────────────────────────

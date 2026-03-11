@@ -17,7 +17,6 @@
 //! | `commands`  | Tauri `#[command]` handlers                       |
 
 pub mod batch;
-pub mod commands;
 pub mod converter;
 pub mod error;
 pub mod generator;

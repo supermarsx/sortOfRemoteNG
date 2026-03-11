@@ -4,8 +4,6 @@
 //! FTP/SFTP, MySQL database, and HTTP services.
 
 pub mod db;
-pub mod ftp;
 pub mod http;
 pub mod raw_socket;
 pub mod rlogin;
-pub mod serial;

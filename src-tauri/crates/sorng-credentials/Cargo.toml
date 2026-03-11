@@ -8,7 +8,6 @@ description = "Credential lifecycle management for SortOfRemote NG — password 
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

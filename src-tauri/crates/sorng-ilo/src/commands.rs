@@ -1,10 +1,10 @@
-//! Tauri command handlers for all HP iLO operations.
-//!
-//! Every command is `async`, takes `State<'_, IloServiceState>` and
-//! returns `Result<T, String>` (Tauri requires `String` errors).
+// Tauri command handlers for all HP iLO operations.
+//
+// Every command is `async`, takes `State<'_, IloServiceState>` and
+// returns `Result<T, String>` (Tauri requires `String` errors).
 
-use crate::service::IloServiceState;
-use crate::types::*;
+use super::service::IloServiceState;
+use super::types::*;
 use tauri::State;
 
 // ── Connection ──────────────────────────────────────────────────────

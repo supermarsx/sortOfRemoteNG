@@ -1,5 +1,4 @@
 pub mod ai;
-pub mod commands;
 pub mod history;
 pub mod import_export;
 pub mod persistence;

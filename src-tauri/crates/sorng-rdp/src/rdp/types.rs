@@ -4,14 +4,14 @@ use std::time::Duration;
 
 use ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use serde::{Deserialize, Serialize};
-use tauri::ipc::{Channel, InvokeResponseBody};
+use super::frame_channel::DynFrameChannel;
 use tokio::sync::mpsc;
 
 use super::network::build_tls_config;
 use super::stats::RdpSessionStats;
 
 // ---- Events emitted to the frontend ----
-// Frame pixel data is now pushed via Tauri Channel (binary ArrayBuffer) --
+// Frame pixel data is pushed via FrameChannel (binary ArrayBuffer) --
 // no JSON event for frames.  Status/pointer/stats still use emit().
 
 #[derive(Clone, Serialize)]
@@ -114,11 +114,11 @@ pub struct RdpSession {
     pub reconnecting: bool,
 }
 
-pub(crate) enum RdpCommand {
+pub enum RdpCommand {
     Input(Vec<FastPathInputEvent>),
     Shutdown,
     /// Attach a new frame channel viewer (for session persistence).
-    AttachViewer(Channel<InvokeResponseBody>),
+    AttachViewer(DynFrameChannel),
     /// Detach the current viewer without killing the session.
     DetachViewer,
     /// Send a graceful sign-out / logoff to the remote session.
@@ -130,17 +130,17 @@ pub(crate) enum RdpCommand {
     Reconnect,
 }
 
-pub(crate) struct RdpActiveConnection {
-    pub(crate) session: RdpSession,
-    pub(crate) cmd_tx: mpsc::UnboundedSender<RdpCommand>,
-    pub(crate) stats: Arc<RdpSessionStats>,
-    pub(crate) _handle: tokio::task::JoinHandle<()>,
+pub struct RdpActiveConnection {
+    pub session: RdpSession,
+    pub cmd_tx: mpsc::UnboundedSender<RdpCommand>,
+    pub stats: Arc<RdpSessionStats>,
+    pub _handle: tokio::task::JoinHandle<()>,
     /// Cached password for automatic reconnection (CredSSP re-auth).
     #[allow(dead_code)]
-    pub(crate) cached_password: String,
+    pub cached_password: String,
     /// Cached domain for automatic reconnection.
     #[allow(dead_code)]
-    pub(crate) cached_domain: Option<String>,
+    pub cached_domain: Option<String>,
 }
 
 /// A single RDP log entry stored in the ring buffer.
@@ -154,18 +154,18 @@ pub struct RdpLogEntry {
 }
 
 pub struct RdpService {
-    pub(crate) connections: HashMap<String, RdpActiveConnection>,
+    pub connections: HashMap<String, RdpActiveConnection>,
     /// Cached TLS connector -- built once, reused for every connection.
     /// Building a TLS connector loads the system root certificate store which
     /// is very expensive on Windows (200-500 ms).  Caching it avoids paying that
     /// cost on every connection.
-    pub(crate) cached_tls_connector: Option<super::RdpTlsConfig>,
+    pub cached_tls_connector: Option<super::RdpTlsConfig>,
     /// Cached reqwest blocking client for CredSSP/Kerberos HTTP requests.
     /// Has a short connect + request timeout so it doesn't hang waiting for an
     /// unreachable KDC.
-    pub(crate) cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+    pub cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     /// Ring buffer of the last 1000 RDP log entries (VecDeque for O(1) pop_front).
-    pub(crate) log_buffer: VecDeque<RdpLogEntry>,
+    pub log_buffer: VecDeque<RdpLogEntry>,
 }
 
 impl RdpService {

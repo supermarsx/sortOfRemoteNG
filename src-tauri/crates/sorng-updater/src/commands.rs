@@ -1,7 +1,7 @@
-//! Tauri command handlers for the updater.
-//!
-//! Each command follows the `updater_*` naming convention and delegates
-//! to [`UpdaterService`].
+// Tauri command handlers for the updater.
+//
+// Each command follows the `updater_*` naming convention and delegates
+// to `UpdaterService`.
 
 use tauri::State;
 

@@ -1,6 +1,5 @@
 pub mod api_client;
 pub mod auth;
-pub mod commands;
 pub mod dark_web;
 pub mod devices;
 pub mod identities;
@@ -15,6 +14,5 @@ pub mod sharing;
 pub mod types;
 pub mod vault;
 
-pub use commands::*;
 pub use service::{DashlaneService, DashlaneServiceState};
 pub use types::*;

@@ -20,7 +20,6 @@
 pub mod auth;
 pub mod changes;
 pub mod client;
-pub mod commands;
 pub mod comments;
 pub mod downloads;
 pub mod drives;

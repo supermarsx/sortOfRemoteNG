@@ -1,10 +1,10 @@
-//! Tauri command handlers for the Terminal Services Management crate.
-//!
-//! Each command acquires the `TermServServiceState` lock and delegates
-//! to the service facade.  All commands are prefixed with `ts_`.
+// Tauri command handlers for the Terminal Services Management crate.
+//
+// Each command acquires the `TermServServiceState` lock and delegates
+// to the service facade.  All commands are prefixed with `ts_`.
 
-use crate::service::{TermServConfig, TermServServiceState};
-use crate::types::*;
+use super::service::{TermServConfig, TermServServiceState};
+use super::types::*;
 use tauri::State;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -1,12 +1,12 @@
 // ── sorng-terraform/src/commands.rs ───────────────────────────────────────────
-//! Tauri command handlers — every public function is a `#[tauri::command]`.
+// Tauri command handlers — every public function is a `#[tauri::command]`.
 
 use std::collections::HashMap;
 
 use tauri::State;
 
-use crate::service::TerraformServiceState;
-use crate::types::*;
+use super::service::TerraformServiceState;
+use super::types::*;
 
 // ── Connection lifecycle ─────────────────────────────────────────────────────
 

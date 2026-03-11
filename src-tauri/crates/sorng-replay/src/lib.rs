@@ -5,7 +5,6 @@
 // frame-accurate seeking, and export.
 
 pub mod annotations;
-pub mod commands;
 pub mod error;
 pub mod export;
 pub mod har_replay;

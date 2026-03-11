@@ -124,7 +124,7 @@ pub struct RdpSessionStats {
 }
 
 impl RdpSessionStats {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let now = Instant::now();
         Self {
             connected_at: now,
@@ -152,7 +152,7 @@ impl RdpSessionStats {
     }
 
     /// Transition to a new connection phase using the typed enum.
-    pub(crate) fn set_phase(&self, phase: &str) {
+    pub fn set_phase(&self, phase: &str) {
         if let Ok(mut p) = self.phase.lock() {
             *p = ConnectionPhase::from_str_lossy(phase);
         }
@@ -160,7 +160,7 @@ impl RdpSessionStats {
 
     /// Set the phase directly from a typed `ConnectionPhase`.
     #[allow(dead_code)]
-    pub(crate) fn set_phase_typed(&self, phase: ConnectionPhase) {
+    pub fn set_phase_typed(&self, phase: ConnectionPhase) {
         if let Ok(mut p) = self.phase.lock() {
             *p = phase;
         }
@@ -168,21 +168,21 @@ impl RdpSessionStats {
 
     /// Get the current phase as a typed enum.
     #[allow(dead_code)]
-    pub(crate) fn get_phase_typed(&self) -> ConnectionPhase {
+    pub fn get_phase_typed(&self) -> ConnectionPhase {
         self.phase
             .lock()
             .map(|p| *p)
             .unwrap_or(ConnectionPhase::Initializing)
     }
 
-    pub(crate) fn get_phase(&self) -> String {
+    pub fn get_phase(&self) -> String {
         self.phase
             .lock()
             .map(|p| p.as_str().to_string())
             .unwrap_or_default()
     }
 
-    pub(crate) fn set_last_error(&self, err: &str) {
+    pub fn set_last_error(&self, err: &str) {
         if let Ok(mut e) = self.last_error.lock() {
             *e = Some(err.to_string());
         }
@@ -190,7 +190,7 @@ impl RdpSessionStats {
 
     /// Record a frame.  Lock-free: just an atomic increment.
     #[inline]
-    pub(crate) fn record_frame(&self) {
+    pub fn record_frame(&self) {
         self.frame_count.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -211,7 +211,7 @@ impl RdpSessionStats {
     /// Record that a PDU was successfully received.  Resets consecutive
     /// error counters.  Fully lock-free.
     #[inline]
-    pub(crate) fn record_successful_pdu(&self) {
+    pub fn record_successful_pdu(&self) {
         self.consecutive_pdu_errors.store(0, Ordering::Relaxed);
         self.consecutive_zero_reads.store(0, Ordering::Relaxed);
         self.last_data_time_ms
@@ -220,21 +220,21 @@ impl RdpSessionStats {
 
     /// Record a PDU processing error.  Returns the new consecutive count.
     #[inline]
-    pub(crate) fn record_pdu_error(&self) -> u64 {
+    pub fn record_pdu_error(&self) -> u64 {
         self.errors_recovered.fetch_add(1, Ordering::Relaxed);
         self.consecutive_pdu_errors.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     /// Record a zero-byte read.  Returns the new consecutive count.
     #[inline]
-    pub(crate) fn record_zero_byte_read(&self) -> u64 {
+    pub fn record_zero_byte_read(&self) -> u64 {
         self.consecutive_zero_reads.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     /// Record that an input event was sent.  Lock-free.
     #[inline]
     #[allow(dead_code)]
-    pub(crate) fn record_input_sent(&self) {
+    pub fn record_input_sent(&self) {
         self.input_events.fetch_add(1, Ordering::Relaxed);
         self.last_input_time_ms
             .store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
@@ -243,7 +243,7 @@ impl RdpSessionStats {
     /// Record N input events in a single batch (avoids N separate
     /// `Instant::now()` calls on the input coalescing path).
     #[inline]
-    pub(crate) fn record_input_sent_batch(&self, count: u64) {
+    pub fn record_input_sent_batch(&self, count: u64) {
         if count == 0 {
             return;
         }
@@ -253,7 +253,7 @@ impl RdpSessionStats {
     }
 
     /// Record that a keepalive was sent.  Lock-free.
-    pub(crate) fn record_keepalive_sent(&self) {
+    pub fn record_keepalive_sent(&self) {
         self.last_keepalive_time_ms
             .store(self.elapsed_ms(Instant::now()), Ordering::Relaxed);
     }
@@ -264,7 +264,7 @@ impl RdpSessionStats {
     /// received PDUs or sent input events), and only fires after
     /// `idle_threshold` of silence.  Additionally, keepalives are
     /// rate-limited to `min_interval`.
-    pub(crate) fn should_send_keepalive(
+    pub fn should_send_keepalive(
         &self,
         idle_threshold: Duration,
         min_interval: Duration,
@@ -297,7 +297,7 @@ impl RdpSessionStats {
     /// frame count and a snapshot taken ~1 s ago.  Only the periodic
     /// stats emitter calls this (once per second), so the two Mutex
     /// locks are completely off the hot path.
-    pub(crate) fn current_fps(&self) -> f64 {
+    pub fn current_fps(&self) -> f64 {
         let current = self.frame_count.load(Ordering::Relaxed);
         let now = Instant::now();
         let (fps, should_rotate) = {
@@ -329,7 +329,7 @@ impl RdpSessionStats {
         fps
     }
 
-    pub(crate) fn to_event(&self, session_id: &str) -> RdpStatsEvent {
+    pub fn to_event(&self, session_id: &str) -> RdpStatsEvent {
         RdpStatsEvent {
             session_id: session_id.to_string(),
             uptime_secs: self.connected_at.elapsed().as_secs(),

@@ -4,7 +4,6 @@ pub mod acl;
 pub mod agent;
 pub mod catalog;
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod events;
 pub mod health;

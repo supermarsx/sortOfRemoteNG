@@ -1,8 +1,8 @@
 // ── sorng-consul/src/commands.rs ─────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `ConsulServiceHolder`.
+// Tauri commands – thin wrappers around `ConsulServiceHolder`.
 
-use crate::service::ConsulServiceState;
-use crate::types::*;
+use super::service::ConsulServiceState;
+use super::types::*;
 use std::collections::HashMap;
 use tauri::State;
 

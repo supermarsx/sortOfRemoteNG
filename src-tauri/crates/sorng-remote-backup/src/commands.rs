@@ -1,10 +1,10 @@
-//! Tauri commands — thin async handlers that lock service state and delegate.
+// Tauri commands — thin async handlers that lock service state and delegate.
 
-use crate::error::err_str;
-use crate::progress::AggregateProgress;
-use crate::retention::{RetentionEntry, RetentionResult};
-use crate::service::RemoteBackupServiceState;
-use crate::types::{BackupExecutionRecord, BackupJob, BackupJobStatus, BackupProgress, ToolInfo};
+use super::error::err_str;
+use super::progress::AggregateProgress;
+use super::retention::{RetentionEntry, RetentionResult};
+use super::service::RemoteBackupServiceState;
+use super::types::{BackupExecutionRecord, BackupJob, BackupJobStatus, BackupProgress, ToolInfo};
 use tauri::State;
 
 // ─── Job Management ─────────────────────────────────────────────────
@@ -128,7 +128,7 @@ pub async fn backup_aggregate_progress(
 
 #[tauri::command]
 pub async fn backup_detect_tools() -> Result<Vec<ToolInfo>, String> {
-    Ok(crate::service::RemoteBackupService::detect_tools().await)
+    Ok(super::service::RemoteBackupService::detect_tools().await)
 }
 
 // ─── Retention Evaluation ───────────────────────────────────────────
@@ -136,7 +136,7 @@ pub async fn backup_detect_tools() -> Result<Vec<ToolInfo>, String> {
 #[tauri::command]
 pub async fn backup_evaluate_retention(
     entries: Vec<RetentionEntry>,
-    policy: crate::types::RetentionPolicy,
+    policy: super::types::RetentionPolicy,
 ) -> Result<RetentionResult, String> {
-    crate::retention::evaluate(&entries, &policy).map_err(err_str)
+    super::retention::evaluate(&entries, &policy).map_err(err_str)
 }

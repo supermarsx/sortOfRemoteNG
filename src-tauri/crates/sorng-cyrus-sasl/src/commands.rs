@@ -1,11 +1,11 @@
 // ── sorng-cyrus-sasl/src/commands.rs ─────────────────────────────────────────
-//! Tauri commands – thin wrappers around `CyrusSaslService`.
+// Tauri commands – thin wrappers around `CyrusSaslService`.
 
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::service::CyrusSaslServiceState;
-use crate::types::*;
+use super::service::CyrusSaslServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

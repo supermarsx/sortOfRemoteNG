@@ -1,10 +1,10 @@
 // ── sorng-amavis/src/commands.rs ───────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `AmavisService`.
+// Tauri commands – thin wrappers around `AmavisService`.
 
 use tauri::State;
 
-use crate::service::AmavisServiceState;
-use crate::types::*;
+use super::service::AmavisServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

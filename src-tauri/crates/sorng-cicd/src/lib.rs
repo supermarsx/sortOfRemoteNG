@@ -2,7 +2,6 @@
 
 pub mod artifacts;
 pub mod client;
-pub mod commands;
 pub mod drone;
 pub mod error;
 pub mod github_actions;

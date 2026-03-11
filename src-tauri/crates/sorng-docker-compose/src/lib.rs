@@ -28,7 +28,6 @@
 //! - **commands** — `#[tauri::command]` handlers (50+ commands).
 
 pub mod cli;
-pub mod commands;
 pub mod error;
 pub mod graph;
 pub mod parser;

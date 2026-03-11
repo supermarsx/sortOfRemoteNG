@@ -1,8 +1,8 @@
 // ── sorng-php/src/commands.rs ────────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `PhpService`.
+// Tauri commands – thin wrappers around `PhpService`.
 
-use crate::service::PhpServiceState;
-use crate::types::*;
+use super::service::PhpServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

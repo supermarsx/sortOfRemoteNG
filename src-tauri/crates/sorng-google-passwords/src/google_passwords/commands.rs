@@ -1,5 +1,5 @@
-use crate::google_passwords::service::GooglePasswordsServiceState;
-use crate::google_passwords::types::*;
+use super::service::GooglePasswordsServiceState;
+use super::types::*;
 
 #[tauri::command]
 pub async fn gp_configure(

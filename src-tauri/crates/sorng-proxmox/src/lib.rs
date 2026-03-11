@@ -33,7 +33,6 @@ pub mod backup;
 pub mod ceph;
 pub mod client;
 pub mod cluster;
-pub mod commands;
 pub mod console;
 pub mod error;
 pub mod firewall;

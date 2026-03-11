@@ -1,10 +1,10 @@
-//! Tauri command handlers for the Hyper-V management crate.
-//!
-//! Each command acquires the `HyperVServiceState` lock and delegates to
-//! the service. Commands are prefixed with `hyperv_`.
+// Tauri command handlers for the Hyper-V management crate.
+//
+// Each command acquires the `HyperVServiceState` lock and delegates to
+// the service. Commands are prefixed with `hyperv_`.
 
-use crate::service::HyperVServiceState;
-use crate::types::*;
+use super::service::HyperVServiceState;
+use super::types::*;
 use tauri::State;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

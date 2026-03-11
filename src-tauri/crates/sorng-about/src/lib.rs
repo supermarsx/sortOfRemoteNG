@@ -1,4 +1,3 @@
-pub mod commands;
 pub mod js_deps;
 pub mod licenses;
 pub mod rust_deps;

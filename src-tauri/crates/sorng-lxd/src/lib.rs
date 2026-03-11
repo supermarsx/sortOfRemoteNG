@@ -1,6 +1,5 @@
 pub mod backups;
 pub mod client;
-pub mod commands;
 pub mod images;
 pub mod instances;
 pub mod migration;

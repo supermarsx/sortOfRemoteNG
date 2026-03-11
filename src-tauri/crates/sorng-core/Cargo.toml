@@ -6,8 +6,8 @@ description = "Shared types and diagnostics infrastructure"
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt", "macros"] }

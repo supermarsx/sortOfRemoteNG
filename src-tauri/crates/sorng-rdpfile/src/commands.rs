@@ -1,16 +1,16 @@
-//! Tauri command handlers for the RDP file parser/generator.
-//!
-//! Each command follows the `rdpfile_*` naming convention and delegates
-//! to [`RdpFileService`].
+// Tauri command handlers for the RDP file parser/generator.
+//
+// Each command follows the `rdpfile_*` naming convention and delegates
+// to [`RdpFileService`].
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::service::RdpFileServiceState;
-use crate::types::*;
+use super::service::RdpFileServiceState;
+use super::types::*;
 
 /// Helper to map RdpFileError → String for Tauri command results.
-fn err_str(e: crate::error::RdpFileError) -> String {
+fn err_str(e: super::error::RdpFileError) -> String {
     e.to_string()
 }
 

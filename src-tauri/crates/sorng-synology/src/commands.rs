@@ -1,9 +1,9 @@
-//! Tauri command handlers for Synology NAS management.
-//!
-//! All commands are prefixed `syn_` and use `State<'_, SynologyServiceState>`.
+// Tauri command handlers for Synology NAS management.
+//
+// All commands are prefixed `syn_` and use `State<'_, SynologyServiceState>`.
 
-use crate::service::SynologyServiceState;
-use crate::types::*;
+use super::service::SynologyServiceState;
+use super::types::*;
 use tauri::State;
 
 // ─── Connection ──────────────────────────────────────────────────

@@ -3,7 +3,6 @@
 pub mod app_config;
 pub mod auxprop;
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod mechanisms;
 pub mod process;

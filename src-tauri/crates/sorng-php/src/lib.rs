@@ -4,7 +4,6 @@
 //! Composer, error logging, version management, and process control.
 
 pub mod client;
-pub mod commands;
 pub mod composer;
 pub mod error;
 pub mod fpm;

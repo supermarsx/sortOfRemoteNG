@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 use regex::Regex;
 
@@ -14,7 +13,7 @@ use super::ACTIVE_HIGHLIGHTS;
 ///
 /// This lets us run regex against *visible* text and map the match byte
 /// offsets back into the original (ANSI-laden) string.
-fn strip_ansi_with_map(input: &str) -> (String, Vec<usize>) {
+pub fn strip_ansi_with_map(input: &str) -> (String, Vec<usize>) {
     // Matches CSI sequences (\x1b\[…<letter>), OSC (\x1b\]…\x07/\x1b\\),
     // and two-byte SS2/SS3/ESC-letter sequences.
     lazy_static::lazy_static! {
@@ -66,7 +65,7 @@ fn strip_ansi_with_map(input: &str) -> (String, Vec<usize>) {
 ///   `magenta`, `cyan`, `white`, plus `bright_*` variants.
 /// - 8-bit index (`0`–`255`): becomes `38;5;<n>` (fg) or `48;5;<n>` (bg).
 /// - 24-bit hex: `#rrggbb` → `38;2;r;g;b` (fg) or `48;2;r;g;b` (bg).
-fn color_to_sgr(color: &str, is_bg: bool) -> Option<String> {
+pub fn color_to_sgr(color: &str, is_bg: bool) -> Option<String> {
     let base: u8 = if is_bg { 40 } else { 30 };
     let bright_base: u8 = if is_bg { 100 } else { 90 };
 
@@ -107,7 +106,7 @@ fn color_to_sgr(color: &str, is_bg: bool) -> Option<String> {
 }
 
 /// Build the full ANSI SGR "open" sequence for a highlight rule.
-fn build_ansi_open(rule: &HighlightRule) -> String {
+pub fn build_ansi_open(rule: &HighlightRule) -> String {
     let mut params: Vec<String> = Vec::new();
     if rule.bold {
         params.push("1".to_string());
@@ -140,7 +139,7 @@ fn build_ansi_open(rule: &HighlightRule) -> String {
 // ===============================
 
 /// Compile a set of highlight rules into ready-to-use state.
-pub(crate) fn compile_rules(rules: &[HighlightRule]) -> Result<HighlightState, String> {
+pub fn compile_rules(rules: &[HighlightRule]) -> Result<HighlightState, String> {
     let mut compiled = Vec::new();
     for rule in rules {
         if !rule.enabled {
@@ -173,7 +172,7 @@ pub(crate) fn compile_rules(rules: &[HighlightRule]) -> Result<HighlightState, S
 /// The function is ANSI-aware: it strips ANSI sequences, runs regex against
 /// the visible text, then injects colour sequences at the correct positions
 /// in the original string.
-pub(crate) fn apply_highlights(input: &str, state: &HighlightState) -> String {
+pub fn apply_highlights(input: &str, state: &HighlightState) -> String {
     if state.compiled.is_empty() || input.is_empty() {
         return input.to_string();
     }
@@ -272,7 +271,7 @@ pub(crate) fn apply_highlights(input: &str, state: &HighlightState) -> String {
 ///
 /// If no highlights are active for this session the input is returned
 /// unchanged.
-pub(crate) fn process_highlight_output(session_id: &str, output: &str) -> String {
+pub fn process_highlight_output(session_id: &str, output: &str) -> String {
     if let Ok(highlights) = ACTIVE_HIGHLIGHTS.lock() {
         if let Some(state) = highlights.get(session_id) {
             return apply_highlights(output, state);
@@ -284,160 +283,3 @@ pub(crate) fn process_highlight_output(session_id: &str, output: &str) -> String
 // ===============================
 // Tauri commands
 // ===============================
-
-/// Set (replace) the full list of highlight rules for a session.
-#[tauri::command]
-pub fn set_highlight_rules(session_id: String, rules: Vec<HighlightRule>) -> Result<(), String> {
-    let state = compile_rules(&rules)?;
-    let mut highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-    highlights.insert(session_id.clone(), state);
-    log::info!(
-        "Set {} highlight rules for session {}",
-        rules.len(),
-        session_id
-    );
-    Ok(())
-}
-
-/// Get the current highlight rules for a session.
-#[tauri::command]
-pub fn get_highlight_rules(session_id: String) -> Result<Vec<HighlightRule>, String> {
-    let highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-    Ok(highlights
-        .get(&session_id)
-        .map(|s| s.rules.clone())
-        .unwrap_or_default())
-}
-
-/// Add a single highlight rule to a session (appended to the end).
-#[tauri::command]
-pub fn add_highlight_rule(session_id: String, rule: HighlightRule) -> Result<(), String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-
-    let mut rules = highlights
-        .get(&session_id)
-        .map(|s| s.rules.clone())
-        .unwrap_or_default();
-
-    // Validate the regex eagerly
-    Regex::new(&rule.pattern).map_err(|e| format!("Invalid regex pattern: {}", e))?;
-
-    rules.push(rule);
-    let state = compile_rules(&rules)?;
-    highlights.insert(session_id, state);
-    Ok(())
-}
-
-/// Remove a highlight rule by its id.
-#[tauri::command]
-pub fn remove_highlight_rule(session_id: String, rule_id: String) -> Result<bool, String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-
-    if let Some(existing) = highlights.get(&session_id) {
-        let mut rules = existing.rules.clone();
-        let before = rules.len();
-        rules.retain(|r| r.id != rule_id);
-        let removed = rules.len() < before;
-        let state = compile_rules(&rules)?;
-        highlights.insert(session_id, state);
-        Ok(removed)
-    } else {
-        Ok(false)
-    }
-}
-
-/// Update an existing highlight rule in-place (matched by `rule.id`).
-#[tauri::command]
-pub fn update_highlight_rule(session_id: String, rule: HighlightRule) -> Result<bool, String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-
-    if let Some(existing) = highlights.get(&session_id) {
-        let mut rules = existing.rules.clone();
-        let mut found = false;
-        for r in rules.iter_mut() {
-            if r.id == rule.id {
-                *r = rule.clone();
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            return Ok(false);
-        }
-        // Re-validate
-        Regex::new(&rule.pattern).map_err(|e| format!("Invalid regex pattern: {}", e))?;
-        let state = compile_rules(&rules)?;
-        highlights.insert(session_id, state);
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-/// Clear all highlight rules for a session.
-#[tauri::command]
-pub fn clear_highlight_rules(session_id: String) -> Result<(), String> {
-    let mut highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-    highlights.remove(&session_id);
-    log::info!("Cleared highlight rules for session {}", session_id);
-    Ok(())
-}
-
-/// Get highlight status for a session.
-#[tauri::command]
-pub fn get_highlight_status(session_id: String) -> Result<Option<HighlightStatus>, String> {
-    let highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-
-    Ok(highlights.get(&session_id).map(|state| HighlightStatus {
-        session_id: session_id.clone(),
-        rules: state.rules.clone(),
-        active_count: state.compiled.len(),
-    }))
-}
-
-/// List all sessions that have active highlight rules.
-#[tauri::command]
-pub fn list_highlighted_sessions() -> Result<Vec<String>, String> {
-    let highlights = ACTIVE_HIGHLIGHTS
-        .lock()
-        .map_err(|e| format!("Failed to lock highlights: {}", e))?;
-    Ok(highlights.keys().cloned().collect())
-}
-
-/// Test highlight rules against sample text without affecting any session.
-#[tauri::command]
-pub fn test_highlight_rules(
-    rules: Vec<HighlightRule>,
-    sample_text: String,
-) -> Result<HighlightTestResult, String> {
-    let state = compile_rules(&rules)?;
-    let output = apply_highlights(&sample_text, &state);
-
-    // Count matches per rule
-    let (clean, _) = strip_ansi_with_map(&sample_text);
-    let mut match_counts: HashMap<String, usize> = HashMap::new();
-    for compiled in &state.compiled {
-        let count = compiled.regex.find_iter(&clean).count();
-        match_counts.insert(compiled.rule_id.clone(), count);
-    }
-
-    Ok(HighlightTestResult {
-        input: sample_text,
-        output,
-        match_counts,
-    })
-}

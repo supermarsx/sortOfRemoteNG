@@ -1,12 +1,12 @@
-//! Tauri `#[tauri::command]` handlers for the OneDrive integration.
-//!
-//! Every command is prefixed with `od_` and takes the managed
-//! `OneDriveServiceState` as its first parameter.
+// Tauri `#[tauri::command]` handlers for the OneDrive integration.
+//
+// Every command is prefixed with `od_` and takes the managed
+// `OneDriveServiceState` as its first parameter.
 
-use crate::onedrive::auth;
-use crate::onedrive::error::OneDriveResult;
-use crate::onedrive::service::OneDriveServiceState;
-use crate::onedrive::types::*;
+use super::auth;
+use super::error::OneDriveResult;
+use super::service::OneDriveServiceState;
+use super::types::*;
 #[allow(unused_imports)]
 use log::info;
 

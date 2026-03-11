@@ -3,7 +3,6 @@
 pub mod alerts;
 pub mod annotations;
 pub mod client;
-pub mod commands;
 pub mod dashboards;
 pub mod datasources;
 pub mod error;

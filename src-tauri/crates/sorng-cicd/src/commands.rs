@@ -1,8 +1,8 @@
 // ── sorng-cicd/src/commands.rs ───────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `CicdService`.
+// Tauri commands – thin wrappers around `CicdService`.
 
-use crate::service::CicdServiceState;
-use crate::types::*;
+use super::service::CicdServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

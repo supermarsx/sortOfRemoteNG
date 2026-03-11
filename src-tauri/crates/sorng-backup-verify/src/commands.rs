@@ -1,12 +1,12 @@
-//! Tauri commands for the backup-verify integration.
+//! Commands for the backup-verify integration.
 //!
 //! Each command follows the pattern: acquire the `BackupVerifyServiceState` lock,
 //! delegate to the service method, and map errors to `String`.
 
 use chrono::{DateTime, Utc};
 
-use crate::service::BackupVerifyServiceState;
-use crate::types::*;
+use super::service::BackupVerifyServiceState;
+use super::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Overview
@@ -219,7 +219,7 @@ pub async fn backup_verify_run_dr_drill(
     state: tauri::State<'_, BackupVerifyServiceState>,
     policy_id: String,
     entry_id: String,
-) -> Result<crate::dr_testing::DrDrillResult, String> {
+) -> Result<super::dr_testing::DrDrillResult, String> {
     let mut svc = state.lock().await;
     svc.run_dr_drill(&policy_id, &entry_id)
         .map_err(|e| e.to_string())
@@ -228,7 +228,7 @@ pub async fn backup_verify_run_dr_drill(
 #[tauri::command]
 pub async fn backup_verify_get_drill_history(
     state: tauri::State<'_, BackupVerifyServiceState>,
-) -> Result<Vec<crate::dr_testing::DrDrillResult>, String> {
+) -> Result<Vec<super::dr_testing::DrDrillResult>, String> {
     let svc = state.lock().await;
     Ok(svc.dr_testing.get_drill_history().to_vec())
 }
@@ -324,7 +324,7 @@ pub async fn backup_verify_get_replication_status(
 #[tauri::command]
 pub async fn backup_verify_get_replication_overview(
     state: tauri::State<'_, BackupVerifyServiceState>,
-) -> Result<Vec<crate::replication::ReplicationOverview>, String> {
+) -> Result<Vec<super::replication::ReplicationOverview>, String> {
     let svc = state.lock().await;
     Ok(svc.replication.get_replication_overview())
 }
@@ -337,7 +337,7 @@ pub async fn backup_verify_get_replication_overview(
 pub async fn backup_verify_enforce_retention(
     state: tauri::State<'_, BackupVerifyServiceState>,
     policy_id: String,
-) -> Result<crate::retention::PurgeResult, String> {
+) -> Result<super::retention::PurgeResult, String> {
     let mut svc = state.lock().await;
     svc.enforce_retention(&policy_id).map_err(|e| e.to_string())
 }
@@ -345,7 +345,7 @@ pub async fn backup_verify_enforce_retention(
 #[tauri::command]
 pub async fn backup_verify_get_retention_forecast(
     state: tauri::State<'_, BackupVerifyServiceState>,
-) -> Result<Vec<crate::retention::RetentionForecastEntry>, String> {
+) -> Result<Vec<super::retention::RetentionForecastEntry>, String> {
     let svc = state.lock().await;
     Ok(svc.get_retention_forecast())
 }
@@ -356,7 +356,7 @@ pub async fn backup_verify_set_immutability_lock(
     entry_id: String,
     duration_days: u32,
     reason: String,
-) -> Result<crate::retention::ImmutabilityLock, String> {
+) -> Result<super::retention::ImmutabilityLock, String> {
     let mut svc = state.lock().await;
     Ok(svc
         .retention
@@ -366,7 +366,7 @@ pub async fn backup_verify_set_immutability_lock(
 #[tauri::command]
 pub async fn backup_verify_check_immutability(
     state: tauri::State<'_, BackupVerifyServiceState>,
-) -> Result<Vec<crate::retention::ImmutabilityLock>, String> {
+) -> Result<Vec<super::retention::ImmutabilityLock>, String> {
     let svc = state.lock().await;
     Ok(svc
         .retention
@@ -394,7 +394,7 @@ pub async fn backup_verify_configure_notifications(
 pub async fn backup_verify_send_test_notification(
     state: tauri::State<'_, BackupVerifyServiceState>,
     _policy_id: String,
-) -> Result<Vec<crate::notifications::DispatchResult>, String> {
+) -> Result<Vec<super::notifications::DispatchResult>, String> {
     let mut svc = state.lock().await;
     let notification = BackupNotification::new(
         NotifyEvent::JobStarted,
@@ -409,7 +409,7 @@ pub async fn backup_verify_test_channel(
     state: tauri::State<'_, BackupVerifyServiceState>,
     channel: NotifyChannel,
     policy_id: String,
-) -> Result<crate::notifications::ChannelTestResult, String> {
+) -> Result<super::notifications::ChannelTestResult, String> {
     let svc = state.lock().await;
     Ok(svc.notifications.test_channel(&channel, &policy_id))
 }

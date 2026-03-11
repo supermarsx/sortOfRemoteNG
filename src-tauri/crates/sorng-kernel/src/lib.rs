@@ -33,7 +33,6 @@
 //! - Block device enumeration
 
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod features;
 pub mod interrupts;

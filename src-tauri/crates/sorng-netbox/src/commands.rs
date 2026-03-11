@@ -1,10 +1,10 @@
 // ── sorng-netbox/src/commands.rs ─────────────────────────────────────────────
-//! Tauri command wrappers for NetBox IPAM/DCIM management.
+// Tauri command wrappers for NetBox IPAM/DCIM management.
 
 use tauri::State;
 
-use crate::service::NetboxServiceState;
-use crate::types::*;
+use super::service::NetboxServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 fn map_err<E: std::fmt::Display>(e: E) -> String {

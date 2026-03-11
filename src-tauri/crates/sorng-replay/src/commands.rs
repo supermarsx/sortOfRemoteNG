@@ -4,9 +4,9 @@
 // All are async, take `tauri::State<ReplayServiceState>`, and return
 // `Result<T, String>` for Tauri bridge compatibility.
 
-use crate::service::ReplayServiceState;
-use crate::types::*;
-use crate::{export, har_replay, search, terminal_replay, timeline};
+use super::service::ReplayServiceState;
+use super::types::*;
+use super::{export, har_replay, search, terminal_replay, timeline};
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Loading recordings

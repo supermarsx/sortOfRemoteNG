@@ -5,11 +5,11 @@ edition = "2021"
 description = "Specialized OpenVPN connection management – process lifecycle, management interface, tunnel monitoring, routing, DNS, auth, config generation, and logging"
 
 [dependencies]
+sorng-core = { path = "../sorng-core" }
 sorng-dns = { path = "../sorng-dns" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

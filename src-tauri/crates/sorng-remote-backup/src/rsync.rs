@@ -381,7 +381,7 @@ fn parse_byte_value(s: &str) -> u64 {
     parse_comma_number(num_str)
 }
 
-pub(crate) fn truncate_output(s: &str, max_len: usize) -> String {
+pub fn truncate_output(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {

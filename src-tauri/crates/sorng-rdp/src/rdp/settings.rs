@@ -203,7 +203,7 @@ pub struct RdpTcpPayload {
 }
 
 /// Build IronRDP PerformanceFlags from the frontend settings
-pub(crate) fn build_performance_flags(perf: &RdpPerformancePayload) -> PerformanceFlags {
+pub fn build_performance_flags(perf: &RdpPerformancePayload) -> PerformanceFlags {
     let mut flags = PerformanceFlags::empty();
     if perf.disable_wallpaper.unwrap_or(true) {
         flags |= PerformanceFlags::DISABLE_WALLPAPER;
@@ -235,7 +235,7 @@ pub(crate) fn build_performance_flags(perf: &RdpPerformancePayload) -> Performan
 /// Build IronRDP BitmapCodecs from resolved settings.
 /// When codecs are disabled, returns an empty list (raw/RLE only).
 /// When enabled, constructs the negotiation list based on individual codec toggles.
-pub(crate) fn build_bitmap_codecs(
+pub fn build_bitmap_codecs(
     settings: &ResolvedSettings,
 ) -> ironrdp::pdu::rdp::capability_sets::BitmapCodecs {
     use ironrdp::pdu::rdp::capability_sets::{
@@ -273,7 +273,7 @@ pub(crate) fn build_bitmap_codecs(
 }
 
 /// Map frontend keyboard type string to IronRDP enum
-pub(crate) fn parse_keyboard_type(s: &str) -> ironrdp::pdu::gcc::KeyboardType {
+pub fn parse_keyboard_type(s: &str) -> ironrdp::pdu::gcc::KeyboardType {
     match s {
         "ibm-pc-xt" => ironrdp::pdu::gcc::KeyboardType::IbmPcXt,
         "olivetti" => ironrdp::pdu::gcc::KeyboardType::OlivettiIco,
@@ -288,87 +288,87 @@ pub(crate) fn parse_keyboard_type(s: &str) -> ironrdp::pdu::gcc::KeyboardType {
 
 /// Resolved settings used internally by the session runner (all defaults applied).
 #[derive(Clone)]
-pub(crate) struct ResolvedSettings {
-    pub(crate) width: u16,
-    pub(crate) height: u16,
-    pub(crate) color_depth: u32,
-    pub(crate) desktop_scale_factor: u32,
-    pub(crate) lossy_compression: bool,
-    pub(crate) enable_tls: bool,
-    pub(crate) enable_credssp: bool,
-    pub(crate) use_credssp: bool,
-    pub(crate) autologon: bool,
-    pub(crate) enable_audio_playback: bool,
-    pub(crate) keyboard_type: ironrdp::pdu::gcc::KeyboardType,
-    pub(crate) keyboard_layout: u32,
-    pub(crate) keyboard_subtype: u32,
-    pub(crate) keyboard_functional_keys_count: u32,
-    pub(crate) ime_file_name: String,
-    pub(crate) client_name: String,
-    pub(crate) client_build: u32,
-    pub(crate) enable_server_pointer: bool,
-    pub(crate) pointer_software_rendering: bool,
+pub struct ResolvedSettings {
+    pub width: u16,
+    pub height: u16,
+    pub color_depth: u32,
+    pub desktop_scale_factor: u32,
+    pub lossy_compression: bool,
+    pub enable_tls: bool,
+    pub enable_credssp: bool,
+    pub use_credssp: bool,
+    pub autologon: bool,
+    pub enable_audio_playback: bool,
+    pub keyboard_type: ironrdp::pdu::gcc::KeyboardType,
+    pub keyboard_layout: u32,
+    pub keyboard_subtype: u32,
+    pub keyboard_functional_keys_count: u32,
+    pub ime_file_name: String,
+    pub client_name: String,
+    pub client_build: u32,
+    pub enable_server_pointer: bool,
+    pub pointer_software_rendering: bool,
     // CredSSP remediation
-    pub(crate) allow_hybrid_ex: bool,
-    pub(crate) _nla_fallback_to_tls: bool,
-    pub(crate) ntlm_enabled: bool,
-    pub(crate) kerberos_enabled: bool,
-    pub(crate) pku2u_enabled: bool,
-    pub(crate) _restricted_admin: bool,
-    pub(crate) sspi_package_list: String,
-    pub(crate) _server_cert_validation: String,
-    pub(crate) performance_flags: PerformanceFlags,
+    pub allow_hybrid_ex: bool,
+    pub _nla_fallback_to_tls: bool,
+    pub ntlm_enabled: bool,
+    pub kerberos_enabled: bool,
+    pub pku2u_enabled: bool,
+    pub _restricted_admin: bool,
+    pub sspi_package_list: String,
+    pub _server_cert_validation: String,
+    pub performance_flags: PerformanceFlags,
     // Gateway
-    pub(crate) gateway_enabled: bool,
-    pub(crate) gateway_hostname: String,
-    pub(crate) gateway_port: u16,
-    pub(crate) _gateway_auth_method: String,
-    pub(crate) _gateway_transport_mode: String,
-    pub(crate) _gateway_bypass_local: bool,
+    pub gateway_enabled: bool,
+    pub gateway_hostname: String,
+    pub gateway_port: u16,
+    pub _gateway_auth_method: String,
+    pub _gateway_transport_mode: String,
+    pub _gateway_bypass_local: bool,
     // Hyper-V
-    pub(crate) use_vm_id: bool,
-    pub(crate) vm_id: String,
-    pub(crate) enhanced_session_mode: bool,
-    pub(crate) _host_server: String,
+    pub use_vm_id: bool,
+    pub vm_id: String,
+    pub enhanced_session_mode: bool,
+    pub _host_server: String,
     // Negotiation
-    pub(crate) auto_detect: bool,
-    pub(crate) negotiation_strategy: String,
-    pub(crate) max_retries: u32,
-    pub(crate) retry_delay_ms: u64,
-    pub(crate) load_balancing_info: String,
-    pub(crate) use_routing_token: bool,
+    pub auto_detect: bool,
+    pub negotiation_strategy: String,
+    pub max_retries: u32,
+    pub retry_delay_ms: u64,
+    pub load_balancing_info: String,
+    pub use_routing_token: bool,
     // Frame delivery
-    pub(crate) frame_batching: bool,
-    pub(crate) frame_batch_interval: Duration,
-    pub(crate) full_frame_sync_interval: u64,
+    pub frame_batching: bool,
+    pub frame_batch_interval: Duration,
+    pub full_frame_sync_interval: u64,
     // Render backend
-    pub(crate) render_backend: String,
+    pub render_backend: String,
     // Bitmap codecs
-    pub(crate) codecs_enabled: bool,
-    pub(crate) remotefx_enabled: bool,
-    pub(crate) remotefx_entropy: String,
+    pub codecs_enabled: bool,
+    pub remotefx_enabled: bool,
+    pub remotefx_entropy: String,
     // RDPGFX / H.264
-    pub(crate) gfx_enabled: bool,
-    pub(crate) h264_decoder_preference: crate::h264::H264DecoderPreference,
+    pub gfx_enabled: bool,
+    pub h264_decoder_preference: crate::h264::H264DecoderPreference,
     // Session behaviour
-    pub(crate) read_timeout: Duration,
-    pub(crate) max_consecutive_errors: u32,
-    pub(crate) stats_interval: Duration,
+    pub read_timeout: Duration,
+    pub max_consecutive_errors: u32,
+    pub stats_interval: Duration,
     // TCP / Socket
-    pub(crate) tcp_connect_timeout: Duration,
-    pub(crate) tcp_nodelay: bool,
-    pub(crate) tcp_keep_alive: bool,
-    pub(crate) tcp_keep_alive_interval: Duration,
-    pub(crate) tcp_recv_buffer_size: u32,
-    pub(crate) tcp_send_buffer_size: u32,
+    pub tcp_connect_timeout: Duration,
+    pub tcp_nodelay: bool,
+    pub tcp_keep_alive: bool,
+    pub tcp_keep_alive_interval: Duration,
+    pub tcp_recv_buffer_size: u32,
+    pub tcp_send_buffer_size: u32,
     // Reconnection
-    pub(crate) reconnect_base_delay: Duration,
-    pub(crate) reconnect_max_delay: Duration,
-    pub(crate) reconnect_on_network_loss: bool,
+    pub reconnect_base_delay: Duration,
+    pub reconnect_max_delay: Duration,
+    pub reconnect_on_network_loss: bool,
 }
 
 impl ResolvedSettings {
-    pub(crate) fn from_payload(payload: &RdpSettingsPayload, width: u16, height: u16) -> Self {
+    pub fn from_payload(payload: &RdpSettingsPayload, width: u16, height: u16) -> Self {
         let display = payload.display.as_ref();
         let perf = payload.performance.as_ref();
         let sec = payload.security.as_ref();

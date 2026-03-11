@@ -10,9 +10,14 @@ sorng-ilo = { path = "../sorng-ilo" }
 sorng-lenovo = { path = "../sorng-lenovo" }
 sorng-meshcentral = { path = "../sorng-meshcentral" }
 sorng-mremoteng = { path = "../sorng-mremoteng" }
+sorng-nx = { path = "../sorng-nx" }
 sorng-proxmox = { path = "../sorng-proxmox" }
+sorng-spice = { path = "../sorng-spice" }
 sorng-supermicro = { path = "../sorng-supermicro" }
 sorng-synology = { path = "../sorng-synology" }
 sorng-termserv = { path = "../sorng-termserv" }
 sorng-vmware = { path = "../sorng-vmware" }
 sorng-vmware-desktop = { path = "../sorng-vmware-desktop" }
+
+sorng-x2go = { path = "../sorng-x2go" }
+sorng-xdmcp = { path = "../sorng-xdmcp" }

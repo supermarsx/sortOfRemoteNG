@@ -13,10 +13,9 @@
 //! - **Compliance Reporting** — SOX, HIPAA, GDPR, PCI-DSS, ISO 27001, NIST frameworks
 //! - **Cross-Site Replication** — Replica management, lag monitoring, and promotion
 //! - **Retention Engine** — GFS rotation, immutability enforcement, and storage reclamation
-//! - **Notifications** — Email, webhook, syslog, SNMP, and Tauri event dispatch
+//! - **Notifications** — Email, webhook, syslog, SNMP, and frontend event dispatch
 
 pub mod catalog;
-pub mod commands;
 pub mod compliance;
 pub mod dr_testing;
 pub mod error;

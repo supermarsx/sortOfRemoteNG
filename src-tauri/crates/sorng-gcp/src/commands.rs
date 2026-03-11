@@ -1,23 +1,23 @@
-//! Tauri command bindings for the GCP crate.
-//!
-//! Every `#[tauri::command]` declared here is registered in the main app's
-//! command handler. Commands take `tauri::State<'_, GcpServiceState>` and
-//! delegate to `GcpService` methods.
+// Tauri command bindings for the GCP crate.
+//
+// Every `#[tauri::command]` declared here is registered in the main app's
+// command handler. Commands take `tauri::State<'_, GcpServiceState>` and
+// delegate to `GcpService` methods.
 
-use crate::compute;
-use crate::config::{GcpConnectionConfig, GcpSession};
-use crate::dns;
-use crate::functions;
-use crate::gke;
-use crate::iam;
-use crate::logging;
-use crate::monitoring;
-use crate::pubsub;
-use crate::run;
-use crate::secrets;
-use crate::service::GcpServiceState;
-use crate::sql;
-use crate::storage;
+use super::compute;
+use super::config::{GcpConnectionConfig, GcpSession};
+use super::dns;
+use super::functions;
+use super::gke;
+use super::iam;
+use super::logging;
+use super::monitoring;
+use super::pubsub;
+use super::run;
+use super::secrets;
+use super::service::GcpServiceState;
+use super::sql;
+use super::storage;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Session management

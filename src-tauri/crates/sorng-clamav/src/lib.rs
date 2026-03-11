@@ -2,7 +2,6 @@
 
 pub mod clamd_config;
 pub mod client;
-pub mod commands;
 pub mod database;
 pub mod error;
 pub mod freshclam_config;

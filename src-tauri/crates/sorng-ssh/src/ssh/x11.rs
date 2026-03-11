@@ -56,7 +56,7 @@ pub struct X11ForwardState {
 ///
 /// On Unix this is typically parsed from `$DISPLAY` (e.g. `:0` → `localhost:6000`).
 /// On Windows we default to `localhost:6000` (Xming / VcXsrv / X410 default).
-fn resolve_local_display(cfg: &X11ForwardingConfig) -> (String, u16) {
+pub fn resolve_local_display(cfg: &X11ForwardingConfig) -> (String, u16) {
     if let Some(ref display) = cfg.display_override {
         // Parse "host:display.screen" or just ":display"
         if let Some((host, rest)) = display.split_once(':') {
@@ -88,7 +88,7 @@ fn resolve_local_display(cfg: &X11ForwardingConfig) -> (String, u16) {
 }
 
 /// Build the DISPLAY value seen by the remote session.
-fn build_remote_display(display_offset: u32, screen: u32) -> String {
+pub fn build_remote_display(display_offset: u32, screen: u32) -> String {
     format!("localhost:{}.{}", display_offset, screen)
 }
 
@@ -301,7 +301,7 @@ impl super::service::SshService {
 }
 
 /// Bi-directional relay between two std::net::TcpStream instances for X11.
-fn relay_x11_streams(
+pub fn relay_x11_streams(
     mut remote: TcpStream,
     mut local: TcpStream,
     active: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -353,59 +353,3 @@ fn relay_x11_streams(
 }
 
 // ── Tauri Commands ────────────────────────────────────────────────────
-
-/// Enable X11 forwarding on an SSH session.
-#[tauri::command]
-pub async fn enable_x11_forwarding(
-    state: tauri::State<'_, SshServiceState>,
-    session_id: String,
-    config: X11ForwardingConfig,
-) -> Result<X11ForwardInfo, String> {
-    let mut ssh = state.lock().await;
-    ssh.enable_x11_forwarding(&session_id, config)
-}
-
-/// Disable X11 forwarding on an SSH session.
-#[tauri::command]
-pub async fn disable_x11_forwarding(
-    state: tauri::State<'_, SshServiceState>,
-    session_id: String,
-) -> Result<(), String> {
-    let mut ssh = state.lock().await;
-    ssh.disable_x11_forwarding(&session_id)
-}
-
-/// Get X11 forwarding status for a session.
-#[tauri::command]
-pub async fn get_x11_forward_status(
-    state: tauri::State<'_, SshServiceState>,
-    session_id: String,
-) -> Result<X11ForwardStatus, String> {
-    let ssh = state.lock().await;
-    ssh.get_x11_forward_status(&session_id)
-}
-
-/// List all active X11 forwards across all sessions.
-#[tauri::command]
-pub fn list_x11_forwards() -> Result<Vec<X11ForwardStatus>, String> {
-    let fwds = X11_FORWARDS
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    Ok(fwds
-        .values()
-        .map(|state| X11ForwardStatus {
-            session_id: state.session_id.clone(),
-            enabled: true,
-            info: Some(X11ForwardInfo {
-                session_id: state.session_id.clone(),
-                remote_display: state.remote_display.clone(),
-                local_bind: state.local_bind.clone(),
-                trusted: state.trusted,
-                active_channels: state
-                    .active_channels
-                    .load(std::sync::atomic::Ordering::Relaxed),
-                total_channels_opened: state.total_channels_opened,
-            }),
-        })
-        .collect())
-}

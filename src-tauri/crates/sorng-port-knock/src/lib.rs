@@ -110,7 +110,6 @@
 
 pub mod base64_util;
 pub mod client;
-pub mod commands;
 pub mod crypto;
 pub mod error;
 pub mod firewall;

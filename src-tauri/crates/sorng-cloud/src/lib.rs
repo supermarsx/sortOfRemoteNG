@@ -7,10 +7,8 @@
 //! Azure has been moved to its own crate: `sorng-azure`.
 //! GCP has been moved to its own crate: `sorng-gcp`.
 
-pub mod aws;
 pub mod cloudflare;
 pub mod digital_ocean;
-pub mod gcp;
 pub mod heroku;
 pub mod ibm;
 pub mod linode;

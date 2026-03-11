@@ -12,7 +12,6 @@
 
 pub mod access;
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod limits;
 pub mod login_defs;

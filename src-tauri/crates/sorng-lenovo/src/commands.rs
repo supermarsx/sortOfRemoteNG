@@ -1,7 +1,7 @@
-//! Tauri command handlers for all Lenovo XCC/IMM operations.
+// Tauri command handlers for all Lenovo XCC/IMM operations.
 
-use crate::service::LenovoServiceState;
-use crate::types::*;
+use super::service::LenovoServiceState;
+use super::types::*;
 use tauri::State;
 
 // ── Connection ──────────────────────────────────────────────────────

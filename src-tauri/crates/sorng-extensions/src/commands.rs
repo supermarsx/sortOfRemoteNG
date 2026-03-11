@@ -1,14 +1,14 @@
-//! Tauri command handlers for the extensions engine.
-//!
-//! Each command follows the `ext_*` naming convention and delegates
-//! to [`ExtensionsService`].
+// Tauri command handlers for the extensions engine.
+//
+// Each command follows the `ext_*` naming convention and delegates
+// to `ExtensionsService`.
 
 use std::collections::HashMap;
 
 use tauri::State;
 
-use crate::service::ExtensionsServiceState;
-use crate::types::*;
+use super::service::ExtensionsServiceState;
+use super::types::*;
 
 /// Helper to map ExtError → String for Tauri.
 fn err_str(e: ExtError) -> String {
@@ -281,9 +281,11 @@ pub async fn ext_create_manifest_template(
 #[tauri::command]
 pub async fn ext_api_documentation(
     state: State<'_, ExtensionsServiceState>,
-) -> Result<Vec<crate::api::ApiFunctionDoc>, String> {
+) -> Result<Vec<super::api::ApiFunctionDoc>, String> {
+    use super::api::ApiFunctionDoc;
+
     let svc = state.lock().await;
-    Ok(svc.api_documentation())
+    Ok::<Vec<ApiFunctionDoc>, String>(svc.api_documentation())
 }
 
 #[tauri::command]
@@ -327,7 +329,9 @@ pub async fn ext_audit_log(
 #[tauri::command]
 pub async fn ext_dispatch_log(
     state: State<'_, ExtensionsServiceState>,
-) -> Result<Vec<crate::hooks::DispatchRecord>, String> {
+) -> Result<Vec<super::hooks::DispatchRecord>, String> {
+    use super::hooks::DispatchRecord;
+
     let svc = state.lock().await;
-    Ok(svc.dispatch_log().to_vec())
+    Ok::<Vec<DispatchRecord>, String>(svc.dispatch_log().to_vec())
 }

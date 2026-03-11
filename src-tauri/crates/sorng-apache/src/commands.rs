@@ -1,8 +1,8 @@
 // ── sorng-apache/src/commands.rs ─────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `ApacheService`.
+// Tauri commands – thin wrappers around `ApacheService`.
 
-use crate::service::ApacheServiceState;
-use crate::types::*;
+use super::service::ApacheServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

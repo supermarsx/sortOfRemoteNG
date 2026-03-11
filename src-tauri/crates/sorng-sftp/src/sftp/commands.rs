@@ -3,9 +3,9 @@
 // Thin wrappers that take `State<SftpServiceState>`, lock the mutex, and
 // delegate to the service methods.  Every command returns `Result<T, String>`.
 
-use crate::sftp::dir_ops::DiskUsageResult;
-use crate::sftp::types::*;
-use crate::sftp::watch::{SyncResult, WatchInfo};
+use super::dir_ops::DiskUsageResult;
+use super::types::*;
+use super::watch::{SyncResult, WatchInfo};
 
 // ── Connection / session ─────────────────────────────────────────────────────
 

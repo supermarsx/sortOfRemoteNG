@@ -50,7 +50,6 @@
 
 pub mod audit;
 pub mod binary;
-pub mod commands;
 pub mod keys;
 pub mod login;
 pub mod providers;

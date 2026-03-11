@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use tauri::State;
 
-use crate::error::KafkaError;
-use crate::service::KafkaServiceState;
-use crate::types::*;
+use super::error::KafkaError;
+use super::service::KafkaServiceState;
+use super::types::*;
 
 // ---------------------------------------------------------------------------
 // Connection
@@ -30,14 +30,14 @@ pub async fn kafka_disconnect(
 
 #[tauri::command]
 pub async fn kafka_test_connection(config: KafkaConnectionConfig) -> Result<bool, KafkaError> {
-    crate::service::KafkaService::test_connection(&config)?;
+    super::service::KafkaService::test_connection(&config)?;
     Ok(true)
 }
 
 #[tauri::command]
 pub async fn kafka_list_sessions(
     state: State<'_, KafkaServiceState>,
-) -> Result<Vec<crate::service::SessionSummary>, KafkaError> {
+) -> Result<Vec<super::service::SessionSummary>, KafkaError> {
     let svc = state.lock().await;
     Ok(svc.list_sessions())
 }

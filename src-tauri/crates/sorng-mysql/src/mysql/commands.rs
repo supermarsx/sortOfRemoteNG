@@ -1,7 +1,7 @@
 //! Tauri commands for the MySQL / MariaDB integration.
 
-use crate::mysql::service::MysqlServiceState;
-use crate::mysql::types::*;
+use super::mysql::service::MysqlServiceState;
+use super::mysql::types::*;
 
 // ── Connection ──────────────────────────────────────────────────────
 

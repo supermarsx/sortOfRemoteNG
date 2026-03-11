@@ -1,38 +1,36 @@
-//! Tauri command wrappers for the serial service.
-//!
-//! Each command is a thin wrapper that delegates to the `SerialService`.
+// Command wrappers for the serial service.
+//
+// Each command is a thin wrapper that delegates to the `SerialService`.
 
-use crate::serial::modem::{ModemInfo, SignalQuality};
-use crate::serial::port_scanner::ScanOptions;
-use crate::serial::service::SerialServiceState;
-use crate::serial::types::LogConfig;
-use crate::serial::types::*;
-use tauri::State;
+use super::modem::{ModemInfo, SignalQuality};
+use super::port_scanner::ScanOptions;
+use super::service::SerialServiceState;
+use super::types::LogConfig;
+use super::types::*;
 
 // ── Port scanning ─────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn serial_scan_ports(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     options: Option<ScanOptions>,
-) -> Result<crate::serial::port_scanner::ScanResult, String> {
+) -> Result<super::port_scanner::ScanResult, String> {
     service.scan_ports(options.unwrap_or_default()).await
 }
 
 // ── Connection management ─────────────────────────────────────────
 
 #[tauri::command]
-pub async fn serial_connect<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-    service: State<'_, SerialServiceState>,
+pub async fn serial_connect(
+    service: tauri::State<'_, SerialServiceState>,
     config: SerialConfig,
 ) -> Result<SerialSession, String> {
-    service.connect_with_events(app, config).await
+    service.connect_with_events(config).await
 }
 
 #[tauri::command]
 pub async fn serial_disconnect(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<(), String> {
     service.disconnect(&session_id).await
@@ -40,7 +38,7 @@ pub async fn serial_disconnect(
 
 #[tauri::command]
 pub async fn serial_disconnect_all(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
 ) -> Result<Vec<String>, String> {
     service.disconnect_all().await
 }
@@ -49,7 +47,7 @@ pub async fn serial_disconnect_all(
 
 #[tauri::command]
 pub async fn serial_send_raw(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
@@ -58,7 +56,7 @@ pub async fn serial_send_raw(
 
 #[tauri::command]
 pub async fn serial_send_line(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     line: String,
 ) -> Result<(), String> {
@@ -67,7 +65,7 @@ pub async fn serial_send_line(
 
 #[tauri::command]
 pub async fn serial_send_char(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     ch: u8,
 ) -> Result<(), String> {
@@ -76,11 +74,11 @@ pub async fn serial_send_char(
 
 #[tauri::command]
 pub async fn serial_send_hex(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     hex: String,
 ) -> Result<(), String> {
-    let data = crate::serial::transport::hex_to_bytes(&hex)?;
+    let data = super::transport::hex_to_bytes(&hex)?;
     service.send_raw(&session_id, data).await
 }
 
@@ -88,7 +86,7 @@ pub async fn serial_send_hex(
 
 #[tauri::command]
 pub async fn serial_send_break(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     duration_ms: Option<u32>,
 ) -> Result<(), String> {
@@ -99,7 +97,7 @@ pub async fn serial_send_break(
 
 #[tauri::command]
 pub async fn serial_set_dtr(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     state: bool,
 ) -> Result<(), String> {
@@ -108,7 +106,7 @@ pub async fn serial_set_dtr(
 
 #[tauri::command]
 pub async fn serial_set_rts(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     state: bool,
 ) -> Result<(), String> {
@@ -117,7 +115,7 @@ pub async fn serial_set_rts(
 
 #[tauri::command]
 pub async fn serial_read_control_lines(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<ControlLines, String> {
     service.read_control_lines(&session_id).await
@@ -127,7 +125,7 @@ pub async fn serial_read_control_lines(
 
 #[tauri::command]
 pub async fn serial_reconfigure(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     config: SerialConfig,
 ) -> Result<(), String> {
@@ -136,7 +134,7 @@ pub async fn serial_reconfigure(
 
 #[tauri::command]
 pub async fn serial_set_line_ending(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     line_ending: LineEnding,
 ) -> Result<(), String> {
@@ -145,7 +143,7 @@ pub async fn serial_set_line_ending(
 
 #[tauri::command]
 pub async fn serial_set_local_echo(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     echo: bool,
 ) -> Result<(), String> {
@@ -154,7 +152,7 @@ pub async fn serial_set_local_echo(
 
 #[tauri::command]
 pub async fn serial_flush(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<(), String> {
     service.flush(&session_id).await
@@ -164,7 +162,7 @@ pub async fn serial_flush(
 
 #[tauri::command]
 pub async fn serial_get_session_info(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<SerialSession, String> {
     service.get_session_info(&session_id).await
@@ -172,14 +170,14 @@ pub async fn serial_get_session_info(
 
 #[tauri::command]
 pub async fn serial_list_sessions(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
 ) -> Result<Vec<SerialSession>, String> {
     Ok(service.list_sessions().await)
 }
 
 #[tauri::command]
 pub async fn serial_get_stats(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<SessionStats, String> {
     service.get_stats(&session_id).await
@@ -189,7 +187,7 @@ pub async fn serial_get_stats(
 
 #[tauri::command]
 pub async fn serial_send_at_command(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     command: String,
     timeout_ms: Option<u64>,
@@ -201,7 +199,7 @@ pub async fn serial_send_at_command(
 
 #[tauri::command]
 pub async fn serial_get_modem_info(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<ModemInfo, String> {
     service.get_modem_info(&session_id).await
@@ -209,7 +207,7 @@ pub async fn serial_get_modem_info(
 
 #[tauri::command]
 pub async fn serial_get_signal_quality(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<SignalQuality, String> {
     service.get_signal_quality(&session_id).await
@@ -217,7 +215,7 @@ pub async fn serial_get_signal_quality(
 
 #[tauri::command]
 pub async fn serial_modem_init(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     profile: Option<ModemProfile>,
 ) -> Result<AtCommandResult, String> {
@@ -226,7 +224,7 @@ pub async fn serial_modem_init(
 
 #[tauri::command]
 pub async fn serial_modem_dial(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     number: String,
 ) -> Result<AtCommandResult, String> {
@@ -235,7 +233,7 @@ pub async fn serial_modem_dial(
 
 #[tauri::command]
 pub async fn serial_modem_hangup(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<AtCommandResult, String> {
     service.modem_hangup(&session_id).await
@@ -243,14 +241,14 @@ pub async fn serial_modem_hangup(
 
 #[tauri::command]
 pub async fn serial_get_modem_profiles() -> Result<Vec<ModemProfile>, String> {
-    Ok(crate::serial::modem::preset_profiles())
+    Ok(super::modem::preset_profiles())
 }
 
 // ── Logging ───────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn serial_start_logging(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
     config: LogConfig,
 ) -> Result<(), String> {
@@ -259,7 +257,7 @@ pub async fn serial_start_logging(
 
 #[tauri::command]
 pub async fn serial_stop_logging(
-    service: State<'_, SerialServiceState>,
+    service: tauri::State<'_, SerialServiceState>,
     session_id: String,
 ) -> Result<(), String> {
     service.stop_logging(&session_id).await
@@ -274,10 +272,10 @@ pub async fn serial_get_baud_rates() -> Result<Vec<u32>, String> {
 
 #[tauri::command]
 pub async fn serial_hex_to_bytes(hex: String) -> Result<Vec<u8>, String> {
-    crate::serial::transport::hex_to_bytes(&hex)
+    super::transport::hex_to_bytes(&hex)
 }
 
 #[tauri::command]
 pub async fn serial_bytes_to_hex(data: Vec<u8>) -> Result<String, String> {
-    Ok(crate::serial::transport::bytes_to_hex(&data))
+    Ok(super::transport::bytes_to_hex(&data))
 }

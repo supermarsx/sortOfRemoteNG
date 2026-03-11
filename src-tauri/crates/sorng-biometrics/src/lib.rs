@@ -14,11 +14,9 @@
 //! - [`authenticate`] — prompt the user for biometric verification
 //! - [`types`]        — shared types, errors, results
 //! - [`platform`]     — per-OS implementation details (private)
-//! - [`commands`]     — Tauri `#[tauri::command]` entry-points
 
 pub mod authenticate;
 pub mod availability;
-pub mod commands;
 pub mod platform;
 pub mod types;
 

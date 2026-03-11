@@ -8,7 +8,6 @@ description = "Azure Resource Manager integration — VMs, resource groups, stor
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

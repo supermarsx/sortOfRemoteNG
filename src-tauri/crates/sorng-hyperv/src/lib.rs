@@ -14,8 +14,6 @@
 //!   host capacity, integration services status
 //! - **Replication** – Hyper-V Replica configuration, enable / disable / suspend /
 //!   resume replication, planned & unplanned failover, reverse replication
-
-pub mod commands;
 pub mod error;
 pub mod metrics;
 pub mod network;

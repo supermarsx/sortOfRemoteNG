@@ -37,7 +37,6 @@
 pub mod bios;
 pub mod certificates;
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod event_log;
 pub mod firmware;

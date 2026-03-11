@@ -22,7 +22,6 @@
 //! | `commands`    | Tauri `#[command]` handlers                   |
 
 pub mod api;
-pub mod commands;
 pub mod hooks;
 pub mod manifest;
 pub mod permissions;

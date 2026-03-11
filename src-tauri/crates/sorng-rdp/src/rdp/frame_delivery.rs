@@ -4,7 +4,7 @@ use std::time::Duration;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::ActiveStageOutput;
 use ironrdp_blocking::Framed;
-use tauri::ipc::{Channel, InvokeResponseBody};
+use super::frame_channel::DynFrameChannel;
 
 use super::frame_store::SharedFrameStore;
 use super::stats::RdpSessionStats;
@@ -16,18 +16,18 @@ use std::sync::atomic::Ordering;
 /// Helper to write response frames and emit graphics/pointer events from
 /// `process_fastpath_input` outputs.  Returns `Err` only on fatal write errors.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn process_outputs(
+pub fn process_outputs(
     session_id: &str,
     outputs: &[ActiveStageOutput],
     tls_framed: &mut Framed<RdpTlsStream>,
     image: &DecodedImage,
     desktop_width: u16,
     desktop_height: u16,
-    _app_handle: &tauri::AppHandle,
+    _event_emitter: &sorng_core::events::DynEventEmitter,
     stats: &RdpSessionStats,
     full_frame_sync_interval: u64,
     frame_store: &SharedFrameStore,
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for output in outputs {
         match output {
@@ -67,7 +67,7 @@ pub(crate) fn process_outputs(
 /// Sorts by (y, x) then greedily merges rects whose bounding boxes overlap.
 /// If the result still has more than `MAX_REGIONS` rects, collapses everything
 /// into a single bounding rect.
-pub(crate) fn merge_dirty_regions(regions: &mut Vec<(u16, u16, u16, u16)>) {
+pub fn merge_dirty_regions(regions: &mut Vec<(u16, u16, u16, u16)>) {
     if regions.len() <= 1 {
         return;
     }
@@ -116,11 +116,11 @@ pub(crate) fn merge_dirty_regions(regions: &mut Vec<(u16, u16, u16, u16)>) {
 /// This reduces IPC overhead dramatically -- one `Channel.send()` and one
 /// `ArrayBuffer` allocation instead of N.
 #[inline]
-pub(crate) fn push_multi_rect_via_channel(
+pub fn push_multi_rect_via_channel(
     image_data: &[u8],
     fb_width: u16,
     rects: &[(u16, u16, u16, u16)],
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
 ) {
     if rects.is_empty() {
         return;
@@ -186,20 +186,20 @@ pub(crate) fn push_multi_rect_via_channel(
         }
     }
 
-    let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
+    let _ = frame_channel.send_raw(payload);
 }
 
-/// Push a dirty region's pixel data directly through the Tauri Channel.
+/// Push a dirty region's pixel data directly through the frame channel.
 ///
 /// Binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
 /// followed by w*h*4 raw RGBA bytes.  The JS side receives this as a
 /// single ArrayBuffer -- zero JSON, zero base64, zero invoke round-trips.
 #[inline]
-pub(crate) fn push_frame_via_channel(
+pub fn push_frame_via_channel(
     image_data: &[u8],
     fb_width: u16,
     region: &ironrdp::pdu::geometry::InclusiveRectangle,
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
 ) {
     let bpp = 4usize;
     let stride = fb_width as usize * bpp;
@@ -251,15 +251,15 @@ pub(crate) fn push_frame_via_channel(
         }
     }
 
-    let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
+    let _ = frame_channel.send_raw(payload);
 }
 
 /// Push a composed frame from the compositor through the Channel.
 /// Uses the same binary protocol as `push_frame_via_channel`.
 #[inline]
-pub(crate) fn push_compositor_frame_via_channel(
+pub fn push_compositor_frame_via_channel(
     frame: native_renderer::CompositorFrame,
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
 ) {
     // The compositor's flush() pre-reserves 8 leading bytes (zeroed) in
     // frame.rgba.  Write the header in-place -- zero extra allocation,
@@ -274,17 +274,17 @@ pub(crate) fn push_compositor_frame_via_channel(
     payload[4..6].copy_from_slice(&frame.width.to_le_bytes());
     payload[6..8].copy_from_slice(&frame.height.to_le_bytes());
 
-    let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
+    let _ = frame_channel.send_raw(payload);
 }
 
 /// Push the entire desktop as a single full-frame through the channel
 /// and update the SharedFrameStore (for the rdp_get_frame_data fallback).
-pub(crate) fn send_full_frame_via_channel(
+pub fn send_full_frame_via_channel(
     session_id: &str,
     image: &DecodedImage,
     width: u16,
     height: u16,
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
     frame_store: &SharedFrameStore,
 ) {
     let region = ironrdp::pdu::geometry::InclusiveRectangle {
@@ -302,7 +302,7 @@ pub(crate) fn send_full_frame_via_channel(
 /// Legacy: extract a rectangular region as a contiguous RGBA byte vec.
 /// Used only by the `rdp_get_frame_data` fallback command.
 #[allow(dead_code)]
-pub(crate) fn extract_region_rgba(
+pub fn extract_region_rgba(
     framebuffer: &[u8],
     fb_width: u16,
     region: &ironrdp::pdu::geometry::InclusiveRectangle,
@@ -330,13 +330,13 @@ pub(crate) fn extract_region_rgba(
     rgba
 }
 
-pub(crate) fn set_read_timeout_on_framed(framed: &Framed<RdpTlsStream>, timeout: Option<Duration>) {
+pub fn set_read_timeout_on_framed(framed: &Framed<RdpTlsStream>, timeout: Option<Duration>) {
     let (tls_stream, _) = framed.get_inner();
     let tcp = tls_stream.get_ref();
     let _ = tcp.set_read_timeout(timeout);
 }
 
-pub(crate) fn is_timeout_error(e: &io::Error) -> bool {
+pub fn is_timeout_error(e: &io::Error) -> bool {
     matches!(
         e.kind(),
         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut

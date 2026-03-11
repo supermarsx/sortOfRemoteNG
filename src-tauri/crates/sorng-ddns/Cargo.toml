@@ -8,7 +8,6 @@ description = "Dynamic DNS management for SortOfRemote NG — No-IP, Cloudflare,
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

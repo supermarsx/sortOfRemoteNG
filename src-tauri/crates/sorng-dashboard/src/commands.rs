@@ -1,15 +1,15 @@
-//! Tauri command handlers for the dashboard engine.
-//!
-//! Each command follows the `dash_*` naming convention and delegates
-//! to [`DashboardService`].
+// Tauri command handlers for the dashboard engine.
+//
+// Each command follows the `dash_*` naming convention and delegates
+// to [`DashboardService`].
 
 use tauri::State;
 
-use crate::service::DashboardServiceState;
-use crate::types::*;
+use super::service::DashboardServiceState;
+use super::types::*;
 
 /// Helper to map `DashboardError` → `String` for Tauri command results.
-fn err_str(e: crate::error::DashboardError) -> String {
+fn err_str(e: super::error::DashboardError) -> String {
     e.to_string()
 }
 

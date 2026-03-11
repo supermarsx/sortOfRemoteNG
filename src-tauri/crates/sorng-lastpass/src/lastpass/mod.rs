@@ -1,6 +1,5 @@
 pub mod api_client;
 pub mod auth;
-pub mod commands;
 pub mod crypto;
 pub mod emergency;
 pub mod folders;
@@ -16,6 +15,5 @@ pub mod sharing;
 pub mod types;
 pub mod vault_parser;
 
-pub use commands::*;
 pub use service::{LastPassService, LastPassServiceState};
 pub use types::*;

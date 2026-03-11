@@ -1,8 +1,8 @@
 // ── sorng-nginx/src/commands.rs ──────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `NginxService`.
+// Tauri commands – thin wrappers around `NginxService`.
 
-use crate::service::NginxServiceState;
-use crate::types::*;
+use super::service::NginxServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

@@ -12,7 +12,6 @@
 //   • Tauri command bindings for the frontend
 
 pub mod batch;
-pub mod commands;
 pub mod diagnostics;
 pub mod history;
 pub mod queue;
@@ -20,7 +19,6 @@ pub mod service;
 pub mod transfer;
 pub mod types;
 
-pub use commands::*;
 pub use service::ScpService;
 pub use types::*;
 

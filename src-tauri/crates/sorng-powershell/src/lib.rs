@@ -1,6 +1,5 @@
 pub mod auth;
 pub mod cim;
-pub mod commands;
 pub mod configuration;
 pub mod copy;
 pub mod diagnostics;

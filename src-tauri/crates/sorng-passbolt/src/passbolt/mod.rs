@@ -17,7 +17,6 @@
 
 pub mod api_client;
 pub mod auth;
-pub mod commands;
 pub mod comments;
 pub mod crypto;
 pub mod folders;
@@ -31,7 +30,5 @@ pub mod tags;
 pub mod types;
 pub mod users_groups;
 
-// Re-export top-level items for convenience.
-pub use commands::*;
 pub use service::{PassboltService, PassboltServiceState};
 pub use types::*;

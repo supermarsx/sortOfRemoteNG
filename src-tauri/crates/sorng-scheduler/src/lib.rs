@@ -16,8 +16,6 @@
 //! | `scheduler` | Core scheduler: due-task detection, tick loop    |
 //! | `service`   | Service façade (`SchedulerServiceState`)         |
 //! | `commands`  | Tauri `#[command]` handlers                      |
-
-pub mod commands;
 pub mod cron;
 pub mod error;
 pub mod executor;

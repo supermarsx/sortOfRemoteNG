@@ -17,8 +17,6 @@
 //! - **host** — ESXi host management (maintenance, services, hardware)
 //! - **service** — Aggregate facade + Tauri state alias
 //! - **commands** — `#[tauri::command]` handlers
-
-pub mod commands;
 pub mod error;
 pub mod host;
 pub mod metrics;

@@ -21,7 +21,6 @@
 pub mod alerts;
 pub mod cephfs;
 pub mod cluster;
-pub mod commands;
 pub mod crush;
 pub mod error;
 pub mod mds;

@@ -1,18 +1,18 @@
-//! Tauri command handlers for the Windows Management crate.
-//!
-//! Each command acquires the `WinMgmtServiceState` lock, retrieves the
-//! appropriate transport, and delegates to the domain-specific manager.
+// Tauri command handlers for the Windows Management crate.
+//
+// Each command acquires the `WinMgmtServiceState` lock, retrieves the
+// appropriate transport, and delegates to the domain-specific manager.
 
-use crate::backup::BackupManager;
-use crate::eventlog::EventLogManager;
-use crate::perfmon::PerfMonManager;
-use crate::processes::ProcessManager;
-use crate::registry::RegistryManager;
-use crate::scheduled_tasks::ScheduledTaskManager;
-use crate::service::{SessionSummary, WinMgmtConfig, WinMgmtServiceState};
-use crate::services::ServiceManager;
-use crate::system_info::{QuickSystemSummary, SystemInfoManager};
-use crate::types::*;
+use super::backup::BackupManager;
+use super::eventlog::EventLogManager;
+use super::perfmon::PerfMonManager;
+use super::processes::ProcessManager;
+use super::registry::RegistryManager;
+use super::scheduled_tasks::ScheduledTaskManager;
+use super::service::{SessionSummary, WinMgmtConfig, WinMgmtServiceState};
+use super::services::ServiceManager;
+use super::system_info::{QuickSystemSummary, SystemInfoManager};
+use super::types::*;
 use std::collections::HashMap;
 use tauri::State;
 
@@ -449,7 +449,7 @@ pub async fn winmgmt_get_process_owner(
 pub async fn winmgmt_process_tree(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
-) -> Result<Vec<crate::processes::ProcessTreeNode>, String> {
+) -> Result<Vec<super::processes::ProcessTreeNode>, String> {
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ProcessManager::get_process_tree(transport).await
@@ -459,7 +459,7 @@ pub async fn winmgmt_process_tree(
 pub async fn winmgmt_process_statistics(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
-) -> Result<crate::processes::ProcessStatistics, String> {
+) -> Result<super::processes::ProcessStatistics, String> {
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ProcessManager::process_statistics(transport).await
@@ -526,7 +526,7 @@ pub async fn winmgmt_perf_network(
 pub async fn winmgmt_perf_quick_health(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
-) -> Result<crate::perfmon::QuickHealthSummary, String> {
+) -> Result<super::perfmon::QuickHealthSummary, String> {
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     PerfMonManager::quick_health(transport).await

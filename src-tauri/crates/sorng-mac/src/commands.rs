@@ -1,10 +1,10 @@
 // ── sorng-mac/src/commands.rs ─────────────────────────────────────────────────
-//! Tauri commands — thin wrappers around `MacService`.
+// Tauri commands — thin wrappers around `MacService`.
 
 use tauri::State;
 
-use crate::service::MacServiceState;
-use crate::types::*;
+use super::service::MacServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

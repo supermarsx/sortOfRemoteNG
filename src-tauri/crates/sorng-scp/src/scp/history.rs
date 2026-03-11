@@ -8,7 +8,7 @@ use chrono::Utc;
 const MAX_HISTORY_SIZE: usize = 500;
 
 /// Record a completed or failed transfer in global history.
-pub(crate) fn record_transfer(svc: &ScpService, result: &ScpTransferResult, session_id: &str) {
+pub fn record_transfer(svc: &ScpService, result: &ScpTransferResult, session_id: &str) {
     let (host, username) = svc
         .sessions
         .get(session_id)

@@ -1,10 +1,10 @@
-//! Tauri command bindings for the MeshCentral crate.
-//!
-//! Thin wrappers that take `State<MeshCentralServiceState>`, lock the mutex,
-//! and delegate to the service. Every command returns `Result<T, String>`.
+// Tauri command bindings for the MeshCentral crate.
+//
+// Thin wrappers that take `State<MeshCentralServiceState>`, lock the mutex,
+// and delegate to the service. Every command returns `Result<T, String>`.
 
-use crate::meshcentral::service::MeshCentralServiceState;
-use crate::meshcentral::types::*;
+use super::service::MeshCentralServiceState;
+use super::types::*;
 
 // ── Connection / session ─────────────────────────────────────────────────────
 

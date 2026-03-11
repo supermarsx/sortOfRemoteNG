@@ -4,7 +4,6 @@
 pub mod attachments;
 pub mod boards;
 pub mod client;
-pub mod commands;
 pub mod comments;
 pub mod dashboards;
 pub mod error;

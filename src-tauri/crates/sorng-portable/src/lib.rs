@@ -15,8 +15,6 @@
 //! | `migration` | Migration between portable and installed modes     |
 //! | `service`   | Service façade (`PortableServiceState`)            |
 //! | `commands`  | Tauri `#[command]` handlers                       |
-
-pub mod commands;
 pub mod detector;
 pub mod error;
 pub mod migration;

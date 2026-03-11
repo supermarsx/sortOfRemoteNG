@@ -1,11 +1,11 @@
-//! Tauri command handlers for all VMware operations.
-//!
-//! Every command is `async`, takes `State<'_, VmwareServiceState>` and
-//! returns `Result<T, String>` (Tauri requires `String` errors).
+// Tauri command handlers for all VMware operations.
+//
+// Every command is `async`, takes `State<'_, VmwareServiceState>` and
+// returns `Result<T, String>` (Tauri requires `String` errors).
 
-use crate::metrics::InventorySummary;
-use crate::service::{VmwareServiceState, VsphereConfigSafe};
-use crate::types::*;
+use super::metrics::InventorySummary;
+use super::service::{VmwareServiceState, VsphereConfigSafe};
+use super::types::*;
 use tauri::State;
 
 // ── Connection ──────────────────────────────────────────────────────

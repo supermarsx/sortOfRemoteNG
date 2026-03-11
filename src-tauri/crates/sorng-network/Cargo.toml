@@ -10,7 +10,6 @@ sorng-dns = { path = "../sorng-dns" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 dns-lookup = "2.0"
 mac_address = "1.1"
 futures = { workspace = true }

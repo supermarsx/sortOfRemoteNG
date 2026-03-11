@@ -1,9 +1,9 @@
-//! # SSH Agent Tauri Commands
-//!
-//! All `#[tauri::command]` handlers for the SSH agent subsystem.
-//! Registered in the main Tauri `generate_handler![]` macro.
+// # SSH Agent Tauri Commands
+//
+// All `#[tauri::command]` handlers for the SSH agent subsystem.
+// Registered in the main Tauri `generate_handler![]` macro.
 
-use crate::types::*;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
@@ -137,7 +137,7 @@ pub async fn ssh_agent_set_system_path(
 /// Discover the system agent socket path.
 #[tauri::command]
 pub async fn ssh_agent_discover_system() -> CmdResult<Option<String>> {
-    Ok(crate::bridge::SystemAgentBridge::discover_socket_path())
+    Ok(super::bridge::SystemAgentBridge::discover_socket_path())
 }
 
 // ── Agent Forwarding ────────────────────────────────────────────────
@@ -226,7 +226,7 @@ pub async fn ssh_agent_run_maintenance(state: State<'_, SshAgentServiceState>) -
 pub async fn ssh_agent_load_pkcs11(
     state: State<'_, SshAgentServiceState>,
     provider_path: String,
-) -> CmdResult<Vec<crate::types::Pkcs11SlotInfo>> {
+) -> CmdResult<Vec<super::types::Pkcs11SlotInfo>> {
     let mut svc = state.lock().await;
     svc.load_pkcs11_provider(&provider_path)
 }
@@ -245,7 +245,7 @@ pub async fn ssh_agent_unload_pkcs11(
 #[tauri::command]
 pub async fn ssh_agent_list_pkcs11_providers(
     state: State<'_, SshAgentServiceState>,
-) -> CmdResult<Vec<crate::types::Pkcs11ProviderStatus>> {
+) -> CmdResult<Vec<super::types::Pkcs11ProviderStatus>> {
     let svc = state.lock().await;
     Ok(svc.list_pkcs11_providers())
 }
@@ -255,7 +255,7 @@ pub async fn ssh_agent_list_pkcs11_providers(
 pub async fn ssh_agent_get_pkcs11_slots(
     state: State<'_, SshAgentServiceState>,
     provider_path: String,
-) -> CmdResult<Vec<crate::types::Pkcs11SlotInfo>> {
+) -> CmdResult<Vec<super::types::Pkcs11SlotInfo>> {
     let svc = state.lock().await;
     svc.get_pkcs11_slots(&provider_path)
 }
@@ -285,7 +285,7 @@ pub async fn ssh_agent_remove_smartcard_key(
 #[tauri::command]
 pub async fn ssh_agent_list_security_keys(
     state: State<'_, SshAgentServiceState>,
-) -> CmdResult<Vec<crate::types::AgentKey>> {
+) -> CmdResult<Vec<super::types::AgentKey>> {
     let svc = state.lock().await;
     Ok(svc.list_security_keys())
 }
@@ -319,7 +319,7 @@ pub async fn ssh_agent_add_security_key(
 #[tauri::command]
 pub async fn ssh_agent_get_pending_confirm(
     state: State<'_, SshAgentServiceState>,
-) -> CmdResult<Vec<crate::types::PendingSignRequest>> {
+) -> CmdResult<Vec<super::types::PendingSignRequest>> {
     let svc = state.lock().await;
     Ok(svc.get_pending_confirmations())
 }
@@ -340,7 +340,7 @@ pub async fn ssh_agent_confirm_sign(
 pub async fn ssh_agent_get_key_details(
     state: State<'_, SshAgentServiceState>,
     key_id: String,
-) -> CmdResult<crate::types::AgentKey> {
+) -> CmdResult<super::types::AgentKey> {
     let svc = state.lock().await;
     svc.get_key_details(&key_id)
 }
@@ -361,7 +361,7 @@ pub async fn ssh_agent_update_key_comment(
 pub async fn ssh_agent_update_key_constraints(
     state: State<'_, SshAgentServiceState>,
     key_id: String,
-    constraints: Vec<crate::types::KeyConstraint>,
+    constraints: Vec<super::types::KeyConstraint>,
 ) -> CmdResult<()> {
     let mut svc = state.lock().await;
     svc.update_key_constraints(&key_id, constraints)

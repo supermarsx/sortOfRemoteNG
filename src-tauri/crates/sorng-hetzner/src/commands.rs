@@ -1,5 +1,5 @@
-use crate::service::HetznerServiceState;
-use crate::types::*;
+use super::service::HetznerServiceState;
+use super::types::*;
 use tauri::State;
 
 // ── Connection management ───────────────────────────────────────────────

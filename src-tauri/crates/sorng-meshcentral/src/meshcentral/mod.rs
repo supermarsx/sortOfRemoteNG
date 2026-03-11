@@ -42,7 +42,6 @@
 pub mod agents;
 pub mod api_client;
 pub mod auth;
-pub mod commands;
 pub mod device_groups;
 pub mod devices;
 pub mod error;
@@ -59,7 +58,6 @@ pub mod user_groups;
 pub mod users;
 
 // Re-exports
-pub use commands::*;
 pub use error::{MeshCentralError, MeshCentralResult};
 pub use service::{MeshCentralService, MeshCentralServiceState};
 pub use types::*;

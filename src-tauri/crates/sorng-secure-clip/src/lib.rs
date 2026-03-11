@@ -1,4 +1,3 @@
-pub mod commands;
 pub mod engine;
 pub mod guard;
 pub mod history;

@@ -28,7 +28,6 @@
 
 pub mod balancer;
 pub mod cache;
-pub mod commands;
 pub mod config;
 pub mod error;
 pub mod provider;
@@ -41,7 +40,6 @@ pub mod tools;
 pub mod types;
 pub mod usage;
 
-pub use commands::*;
 pub use config::*;
 pub use error::LlmError;
 pub use provider::{LlmProvider, ProviderRegistry};

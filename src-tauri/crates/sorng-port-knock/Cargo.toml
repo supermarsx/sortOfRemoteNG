@@ -9,7 +9,6 @@ publish = false
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-tauri = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }

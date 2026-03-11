@@ -5,5 +5,3 @@ edition = "2021"
 description = "Tauri command adapters for app-level auth administration"
 
 [dependencies]
-tauri = { workspace = true }
-sorng-auth = { path = "../sorng-auth" }

@@ -8,7 +8,6 @@ description = "WhatsApp Business Cloud API + unofficial WhatsApp Web multi-devic
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

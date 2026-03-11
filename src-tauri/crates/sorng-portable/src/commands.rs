@@ -1,15 +1,15 @@
-//! Tauri command handlers for portable mode.
-//!
-//! Each command follows the `portable_*` naming convention and delegates
-//! to [`PortableService`].
+// Tauri command handlers for portable mode.
+//
+// Each command follows the `portable_*` naming convention and delegates
+// to [`PortableService`].
 
 use tauri::State;
 
-use crate::service::PortableServiceState;
-use crate::types::*;
+use super::service::PortableServiceState;
+use super::types::*;
 
 /// Helper to map PortableError → String for Tauri command results.
-fn err_str(e: crate::error::PortableError) -> String {
+fn err_str(e: super::error::PortableError) -> String {
     e.to_string()
 }
 

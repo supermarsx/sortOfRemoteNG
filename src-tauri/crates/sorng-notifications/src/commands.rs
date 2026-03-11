@@ -1,10 +1,8 @@
-//! # Tauri Commands
-//!
-//! IPC command handlers exposed to the SortOfRemote NG front-end via Tauri's
-//! `#[tauri::command]` system. All commands are prefixed with `notif_`.
+// IPC command handlers exposed to the SortOfRemote NG front-end via Tauri's
+// `#[tauri::command]` system. All commands are prefixed with `notif_`.
 
-use crate::service::NotificationServiceState;
-use crate::types::*;
+use super::service::NotificationServiceState;
+use super::types::*;
 use tauri::State;
 
 // ── Rule Management ─────────────────────────────────────────────────
@@ -209,13 +207,17 @@ pub async fn notif_test_channel(
     _state: State<'_, NotificationServiceState>,
     channel: ChannelConfig,
 ) -> Result<(), String> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string());
     let test_data = serde_json::json!({
         "test": true,
         "source": "SortOfRemote NG",
-        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "timestamp": timestamp,
     });
 
-    crate::channels::deliver_notification(
+    super::channels::deliver_notification(
         &channel,
         "SortOfRemote NG — Test Notification",
         "This is a test notification from SortOfRemote NG. If you see this, the channel is configured correctly.",

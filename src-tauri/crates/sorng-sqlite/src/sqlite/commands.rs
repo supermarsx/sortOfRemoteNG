@@ -1,7 +1,7 @@
 //! Tauri commands for the SQLite integration.
 
-use crate::sqlite::service::SqliteServiceState;
-use crate::sqlite::types::*;
+use super::sqlite::service::SqliteServiceState;
+use super::sqlite::types::*;
 
 // ── Connection ──────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
-//! Tauri commands — async wrappers for the kernel management service.
+// Tauri commands — async wrappers for the kernel management service.
 
-use crate::error::KernelError;
-use crate::service::KernelServiceState;
-use crate::types::*;
+use super::error::KernelError;
+use super::service::KernelServiceState;
+use super::types::*;
 use std::collections::HashMap;
 use tauri::State;
 
@@ -66,7 +66,7 @@ pub async fn kernel_list_modules(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::list_loaded_modules(&host)
+    super::modules::list_loaded_modules(&host)
         .await
         .map_err(err_str)
 }
@@ -83,7 +83,7 @@ pub async fn kernel_get_module_info(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::get_module_info(&host, &name)
+    super::modules::get_module_info(&host, &name)
         .await
         .map_err(err_str)
 }
@@ -102,7 +102,7 @@ pub async fn kernel_load_module(
         .cloned()
         .map_err(err_str)?;
     let pairs: Vec<(&str, &str)> = params.iter().filter_map(|p| p.split_once('=')).collect();
-    crate::modules::load_module(&host, &name, &pairs)
+    super::modules::load_module(&host, &name, &pairs)
         .await
         .map_err(err_str)
 }
@@ -120,7 +120,7 @@ pub async fn kernel_unload_module(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::unload_module(&host, &name, force)
+    super::modules::unload_module(&host, &name, force)
         .await
         .map_err(err_str)
 }
@@ -137,7 +137,7 @@ pub async fn kernel_get_module_params(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::get_module_params(&host, &name)
+    super::modules::get_module_params(&host, &name)
         .await
         .map_err(err_str)
 }
@@ -156,7 +156,7 @@ pub async fn kernel_set_module_param(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::set_module_param(&host, &module_name, &param, &value)
+    super::modules::set_module_param(&host, &module_name, &param, &value)
         .await
         .map_err(err_str)
 }
@@ -172,7 +172,7 @@ pub async fn kernel_list_available_modules(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::list_available_modules(&host)
+    super::modules::list_available_modules(&host)
         .await
         .map_err(err_str)
 }
@@ -189,7 +189,7 @@ pub async fn kernel_blacklist_module(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::blacklist_module(&host, &name)
+    super::modules::blacklist_module(&host, &name)
         .await
         .map_err(err_str)
 }
@@ -206,7 +206,7 @@ pub async fn kernel_unblacklist_module(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::unblacklist_module(&host, &name)
+    super::modules::unblacklist_module(&host, &name)
         .await
         .map_err(err_str)
 }
@@ -222,7 +222,7 @@ pub async fn kernel_list_blacklisted(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::list_blacklisted(&host)
+    super::modules::list_blacklisted(&host)
         .await
         .map_err(err_str)
 }
@@ -238,7 +238,7 @@ pub async fn kernel_list_autoload(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::get_modules_autoload(&host)
+    super::modules::get_modules_autoload(&host)
         .await
         .map_err(err_str)
 }
@@ -255,7 +255,7 @@ pub async fn kernel_add_autoload(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::add_autoload_module(&host, &name)
+    super::modules::add_autoload_module(&host, &name)
         .await
         .map_err(err_str)
 }
@@ -272,7 +272,7 @@ pub async fn kernel_remove_autoload(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::modules::remove_autoload_module(&host, &name)
+    super::modules::remove_autoload_module(&host, &name)
         .await
         .map_err(err_str)
 }
@@ -290,7 +290,7 @@ pub async fn kernel_get_all_sysctl(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::get_all_sysctl(&host).await.map_err(err_str)
+    super::sysctl::get_all_sysctl(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -305,7 +305,7 @@ pub async fn kernel_get_sysctl(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::get_sysctl(&host, &key)
+    super::sysctl::get_sysctl(&host, &key)
         .await
         .map_err(err_str)
 }
@@ -323,7 +323,7 @@ pub async fn kernel_set_sysctl(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::set_sysctl(&host, &key, &value)
+    super::sysctl::set_sysctl(&host, &key, &value)
         .await
         .map_err(err_str)
 }
@@ -341,7 +341,7 @@ pub async fn kernel_set_sysctl_persistent(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::set_sysctl_persistent(&host, &key, &value)
+    super::sysctl::set_sysctl_persistent(&host, &key, &value)
         .await
         .map_err(err_str)
 }
@@ -358,7 +358,7 @@ pub async fn kernel_remove_sysctl_persistent(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::remove_sysctl_persistent(&host, &key)
+    super::sysctl::remove_sysctl_persistent(&host, &key)
         .await
         .map_err(err_str)
 }
@@ -374,7 +374,7 @@ pub async fn kernel_reload_sysctl(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::reload_sysctl(&host).await.map_err(err_str)
+    super::sysctl::reload_sysctl(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -388,7 +388,7 @@ pub async fn kernel_get_network_sysctl(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::get_network_sysctl(&host)
+    super::sysctl::get_network_sysctl(&host)
         .await
         .map_err(err_str)
 }
@@ -404,7 +404,7 @@ pub async fn kernel_get_vm_sysctl(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysctl::get_vm_sysctl(&host).await.map_err(err_str)
+    super::sysctl::get_vm_sysctl(&host).await.map_err(err_str)
 }
 
 // ─── Features ───────────────────────────────────────────────────────
@@ -420,7 +420,7 @@ pub async fn kernel_get_config(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::features::get_kernel_config(&host)
+    super::features::get_kernel_config(&host)
         .await
         .map_err(err_str)
 }
@@ -437,7 +437,7 @@ pub async fn kernel_check_feature(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::features::check_kernel_feature(&host, &feature)
+    super::features::check_kernel_feature(&host, &feature)
         .await
         .map_err(err_str)
 }
@@ -453,7 +453,7 @@ pub async fn kernel_detect_cgroup_version(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::features::detect_cgroup_version(&host)
+    super::features::detect_cgroup_version(&host)
         .await
         .map_err(err_str)
 }
@@ -469,7 +469,7 @@ pub async fn kernel_detect_namespace_support(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::features::detect_namespace_support(&host)
+    super::features::detect_namespace_support(&host)
         .await
         .map_err(err_str)
 }
@@ -485,7 +485,7 @@ pub async fn kernel_detect_security_modules(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::features::detect_security_modules(&host)
+    super::features::detect_security_modules(&host)
         .await
         .map_err(err_str)
 }
@@ -501,7 +501,7 @@ pub async fn kernel_detect_io_schedulers(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::features::detect_io_schedulers(&host)
+    super::features::detect_io_schedulers(&host)
         .await
         .map_err(err_str)
 }
@@ -517,7 +517,7 @@ pub async fn kernel_get_command_line(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::features::get_kernel_command_line(&host)
+    super::features::get_kernel_command_line(&host)
         .await
         .map_err(err_str)
 }
@@ -535,7 +535,7 @@ pub async fn kernel_get_power_state(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::power::get_power_state(&host).await.map_err(err_str)
+    super::power::get_power_state(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -549,7 +549,7 @@ pub async fn kernel_list_thermal_zones(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::power::list_thermal_zones(&host)
+    super::power::list_thermal_zones(&host)
         .await
         .map_err(err_str)
 }
@@ -566,7 +566,7 @@ pub async fn kernel_get_cpu_governor(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::power::get_governor(&host, cpu)
+    super::power::get_governor(&host, cpu)
         .await
         .map_err(err_str)
 }
@@ -584,7 +584,7 @@ pub async fn kernel_set_cpu_governor(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::power::set_governor(&host, cpu, &governor)
+    super::power::set_governor(&host, cpu, &governor)
         .await
         .map_err(err_str)
 }
@@ -600,7 +600,7 @@ pub async fn kernel_list_governors(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::power::list_governors(&host).await.map_err(err_str)
+    super::power::list_governors(&host).await.map_err(err_str)
 }
 
 // ─── Sysfs ──────────────────────────────────────────────────────────
@@ -617,7 +617,7 @@ pub async fn kernel_read_sysfs(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysfs::read_sysfs(&host, &path)
+    super::sysfs::read_sysfs(&host, &path)
         .await
         .map_err(err_str)
 }
@@ -635,7 +635,7 @@ pub async fn kernel_write_sysfs(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysfs::write_sysfs(&host, &path, &value)
+    super::sysfs::write_sysfs(&host, &path, &value)
         .await
         .map_err(err_str)
 }
@@ -651,7 +651,7 @@ pub async fn kernel_list_block_devices(
         .get_host(&host_id)
         .cloned()
         .map_err(err_str)?;
-    crate::sysfs::get_block_devices(&host)
+    super::sysfs::get_block_devices(&host)
         .await
         .map_err(err_str)
 }

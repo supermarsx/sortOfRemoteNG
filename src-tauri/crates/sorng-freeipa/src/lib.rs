@@ -1,6 +1,5 @@
 pub mod certificates;
 pub mod client;
-pub mod commands;
 pub mod dns;
 pub mod error;
 pub mod groups;

@@ -44,7 +44,6 @@
 pub mod auth;
 pub mod backup;
 pub mod client;
-pub mod commands;
 pub mod docker;
 pub mod download_station;
 pub mod error;

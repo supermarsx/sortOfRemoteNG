@@ -1,11 +1,11 @@
-//! # Tauri Commands
-//!
-//! IPC command handlers exposed to the SortOfRemote NG front-end via Tauri's
-//! `#[tauri::command]` system. All commands are prefixed with `cred_`.
+// # Tauri Commands
+//
+// IPC command handlers exposed to the SortOfRemote NG front-end via Tauri's
+// `#[tauri::command]` system. All commands are prefixed with `cred_`.
 
-use crate::service::CredentialServiceState;
-use crate::tracker::CredentialTracker;
-use crate::types::*;
+use super::service::CredentialServiceState;
+use super::tracker::CredentialTracker;
+use super::types::*;
 use chrono::Utc;
 use tauri::State;
 use uuid::Uuid;

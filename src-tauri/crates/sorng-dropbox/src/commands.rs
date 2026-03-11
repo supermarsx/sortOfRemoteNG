@@ -1,18 +1,18 @@
-//! Tauri `#[tauri::command]` wrappers for the Dropbox integration.
-//!
-//! Each command acquires the `DropboxServiceState` mutex, delegates to the
-//! appropriate module, and returns a JSON-serialisable result.
+// Tauri `#[tauri::command]` wrappers for the Dropbox integration.
+//
+// Each command acquires the `DropboxServiceState` mutex, delegates to the
+// appropriate module, and returns a JSON-serialisable result.
 
-use crate::account;
-use crate::auth;
-use crate::client::DropboxClient;
-use crate::files;
-use crate::folders;
-use crate::paper;
-use crate::service::DropboxServiceState;
-use crate::sharing;
-use crate::team;
-use crate::types::*;
+use super::account;
+use super::auth;
+use super::client::DropboxClient;
+use super::files;
+use super::folders;
+use super::paper;
+use super::service::DropboxServiceState;
+use super::sharing;
+use super::team;
+use super::types::*;
 use tauri::State;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

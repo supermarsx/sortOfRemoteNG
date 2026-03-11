@@ -3,7 +3,6 @@
 pub mod apps;
 pub mod automations;
 pub mod client;
-pub mod commands;
 pub mod datasources;
 pub mod error;
 pub mod queries;

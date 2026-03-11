@@ -1,8 +1,8 @@
 // ── sorng-clamav/src/commands.rs ──────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `ClamavService`.
+// Tauri commands – thin wrappers around `ClamavService`.
 
-use crate::service::ClamavServiceState;
-use crate::types::*;
+use super::service::ClamavServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

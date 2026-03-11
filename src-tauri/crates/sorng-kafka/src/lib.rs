@@ -17,7 +17,6 @@
 pub mod acls;
 pub mod admin;
 pub mod broker;
-pub mod commands;
 pub mod connect;
 pub mod consumer;
 pub mod consumer_groups;

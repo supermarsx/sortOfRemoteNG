@@ -7,15 +7,15 @@
 // appropriate module, and returns a JSON-serialisable result.
 // ──────────────────────────────────────────────────────────────────────────────
 
-use crate::activity;
-use crate::auth;
-use crate::client::NextcloudClient;
-use crate::files;
-use crate::folders;
-use crate::service::NextcloudServiceState;
-use crate::sharing;
-use crate::types::*;
-use crate::users;
+use super::activity;
+use super::auth;
+use super::client::NextcloudClient;
+use super::files;
+use super::folders;
+use super::service::NextcloudServiceState;
+use super::sharing;
+use super::types::*;
+use super::users;
 use tauri::State;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -994,7 +994,7 @@ pub fn nextcloud_sync_add(
         "download" => SyncDirection::Download,
         _ => SyncDirection::Bidirectional,
     };
-    let config = crate::sync::build_sync_config(&local_path, &remote_path, dir);
+    let config = super::sync::build_sync_config(&local_path, &remote_path, dir);
     let id = config.id.clone();
     svc.sync_manager.add_config(config);
     Ok(id)
@@ -1078,7 +1078,7 @@ pub fn nextcloud_backup_add(
     include_scripts: Option<bool>,
 ) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
-    let mut config = crate::backup::build_backup_config("backup", &remote_path);
+    let mut config = super::backup::build_backup_config("backup", &remote_path);
     config.includes.connections = include_connections.unwrap_or(true);
     config.includes.credentials = include_credentials.unwrap_or(false);
     config.includes.settings = include_settings.unwrap_or(true);
@@ -1185,7 +1185,7 @@ pub fn nextcloud_watch_add(
 ) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     let mut config =
-        crate::watcher::build_watch_config(&remote_path, poll_interval_secs.unwrap_or(60));
+        super::watcher::build_watch_config(&remote_path, poll_interval_secs.unwrap_or(60));
     config.recursive = recursive.unwrap_or(false);
     let id = config.id.clone();
     svc.watch_manager.add_config(config);

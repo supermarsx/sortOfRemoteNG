@@ -1,6 +1,6 @@
 // ── sorng-jira/src/commands.rs ─────────────────────────────────────────────────
-use crate::service::JiraServiceState;
-use crate::types::*;
+use super::service::JiraServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

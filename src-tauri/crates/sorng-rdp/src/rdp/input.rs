@@ -4,11 +4,11 @@ use smallvec::{smallvec, SmallVec};
 use super::types::RdpInputAction;
 
 /// Inline capacity — 95%+ of input events produce exactly 1 `FastPathInputEvent`.
-pub(crate) type InputEvents = SmallVec<[FastPathInputEvent; 2]>;
+pub type InputEvents = SmallVec<[FastPathInputEvent; 2]>;
 
 // ---- Convert frontend input to IronRDP FastPathInputEvent ----
 
-pub(crate) fn convert_input(action: &RdpInputAction) -> InputEvents {
+pub fn convert_input(action: &RdpInputAction) -> InputEvents {
     use ironrdp::pdu::input::fast_path::KeyboardFlags;
     use ironrdp::pdu::input::mouse::PointerFlags;
     use ironrdp::pdu::input::mouse_x::PointerXFlags;

@@ -1,8 +1,8 @@
 // ── sorng-nginx-proxy-mgr/src/commands.rs ────────────────────────────────────
-//! Tauri commands – thin wrappers around `NpmService`.
+// Tauri commands – thin wrappers around `NpmService`.
 
-use crate::service::NpmServiceState;
-use crate::types::*;
+use super::service::NpmServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

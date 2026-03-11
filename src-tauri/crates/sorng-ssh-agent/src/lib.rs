@@ -54,7 +54,6 @@
 pub mod agent;
 pub mod audit;
 pub mod bridge;
-pub mod commands;
 pub mod constraints;
 pub mod forwarding;
 pub mod keystore;

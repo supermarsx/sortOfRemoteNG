@@ -17,7 +17,6 @@ pub mod account;
 pub mod auth;
 pub mod backup;
 pub mod client;
-pub mod commands;
 pub mod files;
 pub mod folders;
 pub mod paper;

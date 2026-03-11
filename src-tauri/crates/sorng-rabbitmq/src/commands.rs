@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::error::RabbitError;
-use crate::service::RabbitServiceState;
-use crate::types::{
+use super::error::RabbitError;
+use super::service::RabbitServiceState;
+use super::types::{
     BindingInfo, ChannelInfo, ClusterNode, ConnectionInfo, ConsumerInfo, DefinitionsExport,
     ExchangeInfo, FederationLink, FederationUpstream, FederationUpstreamDef, OverviewInfo,
     PermissionInfo, PolicyInfo, QueueInfo, RabbitConnectionConfig, RabbitSession, ShovelDefinition,
@@ -541,7 +541,7 @@ pub async fn rabbit_get_node(
 pub async fn rabbit_get_cluster_name(
     state: State<'_, RabbitServiceState>,
     session_id: String,
-) -> Result<crate::types::ClusterName, RabbitError> {
+) -> Result<super::types::ClusterName, RabbitError> {
     let svc = state.lock().await;
     svc.get_cluster_name(&session_id).await
 }
@@ -664,7 +664,7 @@ pub async fn rabbit_get_overview(
 pub async fn rabbit_get_message_rates(
     state: State<'_, RabbitServiceState>,
     session_id: String,
-) -> Result<crate::types::MessageStats, RabbitError> {
+) -> Result<super::types::MessageStats, RabbitError> {
     let svc = state.lock().await;
     svc.get_message_rates(&session_id).await
 }

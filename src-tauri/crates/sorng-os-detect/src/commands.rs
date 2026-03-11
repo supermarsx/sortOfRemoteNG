@@ -1,10 +1,10 @@
 // ── sorng-os-detect/src/commands.rs ─────────────────────────────────────────
-//! Tauri commands – thin wrappers around `OsDetectService`.
+// Tauri commands – thin wrappers around `OsDetectService`.
 
 use tauri::State;
 
-use crate::service::OsDetectServiceState;
-use crate::types::*;
+use super::service::OsDetectServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

@@ -282,9 +282,9 @@ impl BackupVerifyService {
         self.notifications.send_notification(notification)
     }
 
-    /// Set the Tauri app handle for Tauri event dispatch.
-    pub fn set_app_handle(&mut self, handle: tauri::AppHandle) {
-        self.notifications.set_app_handle(handle);
+    /// Set the event emitter for frontend event dispatch.
+    pub fn set_event_emitter(&mut self, emitter: sorng_core::events::DynEventEmitter) {
+        self.notifications.set_event_emitter(emitter);
     }
 }
 

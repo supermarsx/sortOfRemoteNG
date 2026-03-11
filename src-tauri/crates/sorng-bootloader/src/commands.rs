@@ -1,16 +1,16 @@
 // ── sorng-bootloader/src/commands.rs ─────────────────────────────────────────
-//! Tauri commands – thin wrappers around the bootloader service and modules.
+// Tauri commands – thin wrappers around the bootloader service and modules.
 
 use tauri::State;
 
-use crate::detect;
-use crate::grub;
-use crate::initramfs;
-use crate::kernels;
-use crate::service::BootloaderServiceState;
-use crate::systemd_boot;
-use crate::types::*;
-use crate::uefi;
+use super::detect;
+use super::grub;
+use super::initramfs;
+use super::kernels;
+use super::service::BootloaderServiceState;
+use super::systemd_boot;
+use super::types::*;
+use super::uefi;
 
 type CmdResult<T> = Result<T, String>;
 

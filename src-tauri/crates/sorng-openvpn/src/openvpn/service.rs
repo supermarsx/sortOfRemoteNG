@@ -14,6 +14,7 @@ use crate::openvpn::routing::{self, AppliedRoutes, RoutingPolicy};
 use crate::openvpn::tunnel::{HealthCheck, TunnelState};
 use crate::openvpn::types::*;
 use chrono::Utc;
+use sorng_core::events::DynEventEmitter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -101,6 +102,7 @@ pub struct OpenVpnService {
     default_routing: RwLock<RoutingPolicy>,
     default_dns: RwLock<DnsConfig>,
     log_rotation: RwLock<LogRotation>,
+    event_emitter: Option<DynEventEmitter>,
 }
 
 impl OpenVpnService {
@@ -112,6 +114,19 @@ impl OpenVpnService {
             default_routing: RwLock::new(RoutingPolicy::default()),
             default_dns: RwLock::new(DnsConfig::default()),
             log_rotation: RwLock::new(LogRotation::default()),
+            event_emitter: None,
+        })
+    }
+
+    /// Create a new service instance with an event emitter.
+    pub fn new_with_emitter(emitter: DynEventEmitter) -> OpenVpnServiceState {
+        Arc::new(Self {
+            connections: RwLock::new(HashMap::new()),
+            default_reconnect: RwLock::new(ReconnectPolicy::default()),
+            default_routing: RwLock::new(RoutingPolicy::default()),
+            default_dns: RwLock::new(DnsConfig::default()),
+            log_rotation: RwLock::new(LogRotation::default()),
+            event_emitter: Some(emitter),
         })
     }
 
@@ -246,38 +261,37 @@ impl OpenVpnService {
         self.connect(&info.id).await
     }
 
-    /// Start with event forwarding to Tauri frontend.
-    pub async fn connect_with_events<R: tauri::Runtime>(
+    /// Start with event forwarding to the stored emitter.
+    pub async fn connect_with_events(
         &self,
-        app: tauri::AppHandle<R>,
         connection_id: &str,
     ) -> Result<ConnectionInfo, String> {
         let info = self.connect(connection_id).await?;
-        let handle = self.get_connection(connection_id).await?;
 
-        // Spawn a task that monitors the management interface and emits events
-        let tunnel = handle.tunnel.clone();
-        let log = handle.log.clone();
-        let conn_id = connection_id.to_string();
-        let mgmt_port = handle.mgmt_port.read().await.unwrap_or(0);
+        if let Some(emitter) = &self.event_emitter {
+            let handle = self.get_connection(connection_id).await?;
+            let tunnel = handle.tunnel.clone();
+            let log = handle.log.clone();
+            let conn_id = connection_id.to_string();
+            let mgmt_port = handle.mgmt_port.read().await.unwrap_or(0);
+            let emitter = emitter.clone();
 
-        tokio::spawn(async move {
-            Self::event_loop(app, conn_id, tunnel, log, mgmt_port).await;
-        });
+            tokio::spawn(async move {
+                Self::event_loop(emitter, conn_id, tunnel, log, mgmt_port).await;
+            });
+        }
 
         Ok(info)
     }
 
     /// Background event loop that reads management events and forwards them.
-    async fn event_loop<R: tauri::Runtime>(
-        app: tauri::AppHandle<R>,
+    async fn event_loop(
+        emitter: DynEventEmitter,
         connection_id: String,
         tunnel: Arc<TunnelState>,
         log: Arc<ConnectionLog>,
         _mgmt_port: u16,
     ) {
-        use tauri::Emitter;
-
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
         let mut consecutive_failures = 0u32;
 
@@ -291,31 +305,27 @@ impl OpenVpnService {
 
             // Emit status
             let current_status = tunnel.get_status().await;
-            let _ = app.emit(
-                "openvpn:status",
-                StatusChangeEvent {
-                    connection_id: connection_id.clone(),
-                    old_status: ConnectionStatus::Disconnected,
-                    new_status: current_status,
-                    timestamp: Utc::now(),
-                },
-            );
+            let evt = StatusChangeEvent {
+                connection_id: connection_id.clone(),
+                old_status: ConnectionStatus::Disconnected,
+                new_status: current_status,
+                timestamp: Utc::now(),
+            };
+            let _ = emitter.emit_event("openvpn:status", serde_json::to_value(&evt).unwrap_or_default());
 
             // Emit bandwidth (from tunnel state)
             let stats = tunnel.get_stats().await;
-            let _ = app.emit(
-                "openvpn:bandwidth",
-                BandwidthEvent {
-                    connection_id: connection_id.clone(),
-                    sample: BandwidthSample {
-                        timestamp: Utc::now(),
-                        bytes_rx: stats.total_bytes_rx,
-                        bytes_tx: stats.total_bytes_tx,
-                        rx_per_sec: stats.avg_rx_per_sec,
-                        tx_per_sec: stats.avg_tx_per_sec,
-                    },
+            let bw = BandwidthEvent {
+                connection_id: connection_id.clone(),
+                sample: BandwidthSample {
+                    timestamp: Utc::now(),
+                    bytes_rx: stats.total_bytes_rx,
+                    bytes_tx: stats.total_bytes_tx,
+                    rx_per_sec: stats.avg_rx_per_sec,
+                    tx_per_sec: stats.avg_tx_per_sec,
                 },
-            );
+            };
+            let _ = emitter.emit_event("openvpn:bandwidth", serde_json::to_value(&bw).unwrap_or_default());
 
             // Check for disconnection / process exit
             consecutive_failures += 1;

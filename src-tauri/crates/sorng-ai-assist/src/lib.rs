@@ -1,6 +1,5 @@
 #![allow(dead_code, non_snake_case)]
 
-pub mod commands;
 pub mod completion;
 pub mod context;
 pub mod error;
@@ -16,7 +15,6 @@ pub mod snippets;
 pub mod suggestions;
 pub mod types;
 
-pub use commands::*;
 pub use error::AiAssistError;
 pub use service::{AiAssistService, AiAssistServiceState};
 pub use types::*;

@@ -9,7 +9,6 @@ sorng-llm = { path = "../sorng-llm" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 regex = { workspace = true }

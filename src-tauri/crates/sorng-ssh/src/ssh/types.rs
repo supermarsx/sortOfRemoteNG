@@ -16,28 +16,28 @@ pub fn default_true() -> bool {
 pub fn default_keepalive_probes() -> u32 {
     2
 }
-pub(crate) fn default_ip_protocol() -> String {
+pub fn default_ip_protocol() -> String {
     "auto".to_string()
 }
-pub(crate) fn default_compression_level() -> u32 {
+pub fn default_compression_level() -> u32 {
     6
 }
-pub(crate) fn default_compression_config() -> SshCompressionConfig {
+pub fn default_compression_config() -> SshCompressionConfig {
     SshCompressionConfig::default()
 }
-pub(crate) fn default_ssh_version() -> String {
+pub fn default_ssh_version() -> String {
     "auto".to_string()
 }
-pub(crate) fn default_proxy_timeout() -> u64 {
+pub fn default_proxy_timeout() -> u64 {
     10000
 }
-pub(crate) fn default_automation_timeout() -> u64 {
+pub fn default_automation_timeout() -> u64 {
     30000
 }
 pub fn default_ftp_port() -> u16 {
     21
 }
-pub(crate) fn default_passive_port_count() -> u16 {
+pub fn default_passive_port_count() -> u16 {
     10
 }
 pub fn default_rdp_port() -> u16 {
@@ -671,7 +671,7 @@ pub struct SessionRecording {
 }
 
 #[derive(Debug)]
-pub(crate) struct RecordingState {
+pub struct RecordingState {
     pub start_time: std::time::Instant,
     pub start_utc: DateTime<Utc>,
     pub host: String,
@@ -743,7 +743,7 @@ pub struct AutomationStatus {
 
 // State for active automation
 #[derive(Debug)]
-pub(crate) struct AutomationState {
+pub struct AutomationState {
     pub script: AutomationScript,
     pub compiled_patterns: Vec<regex::Regex>,
     pub output_buffer: String,
@@ -921,13 +921,13 @@ pub type SshServiceState = Arc<Mutex<SshService>>;
 // X11 Forwarding Types
 // ===============================
 
-pub(crate) fn default_x11_display_offset() -> u32 {
+pub fn default_x11_display_offset() -> u32 {
     10
 }
-pub(crate) fn default_x11_screen() -> u32 {
+pub fn default_x11_screen() -> u32 {
     0
 }
-pub(crate) fn default_x11_timeout() -> u64 {
+pub fn default_x11_timeout() -> u64 {
     0
 }
 
@@ -1116,7 +1116,7 @@ pub struct HighlightRule {
 
 /// Compiled state for highlight rules on a session.
 #[derive(Debug)]
-pub(crate) struct HighlightState {
+pub struct HighlightState {
     /// The original rules (kept for serialisation back to the frontend).
     pub rules: Vec<HighlightRule>,
     /// Pre-compiled regexes (same order as `rules`, only for enabled rules).
@@ -1125,7 +1125,7 @@ pub(crate) struct HighlightState {
 
 /// A compiled highlight rule ready for use in the reader thread.
 #[derive(Debug)]
-pub(crate) struct CompiledHighlight {
+pub struct CompiledHighlight {
     pub rule_id: String,
     pub regex: regex::Regex,
     /// Full ANSI SGR "open" sequence (e.g. `\x1b[1;31m`).

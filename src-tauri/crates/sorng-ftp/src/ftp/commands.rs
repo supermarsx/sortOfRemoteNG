@@ -1,7 +1,7 @@
-//! Tauri command bindings for the FTP crate.
-//!
-//! Thin wrappers that take `State<FtpServiceState>`, lock the mutex, and
-//! delegate to the service.  Every command returns `Result<T, String>`.
+// Tauri command bindings for the FTP crate.
+//
+// Thin wrappers that take `State<FtpServiceState>`, lock the mutex, and
+// delegate to the service. Every command returns `Result<T, String>`.
 
 use super::service::FtpServiceState;
 use super::types::*;

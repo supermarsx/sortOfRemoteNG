@@ -1,7 +1,6 @@
 pub mod actions;
 pub mod alerts;
 pub mod client;
-pub mod commands;
 pub mod discovery;
 pub mod error;
 pub mod graphs;

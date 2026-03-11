@@ -26,7 +26,6 @@
 //! | `commands`   | Tauri `#[command]` handlers                               |
 
 pub mod borg;
-pub mod commands;
 pub mod duplicity;
 pub mod error;
 pub mod integrity;

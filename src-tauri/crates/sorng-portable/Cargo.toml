@@ -8,7 +8,6 @@ description = "Portable mode support for SortOfRemote NG — relative data stora
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

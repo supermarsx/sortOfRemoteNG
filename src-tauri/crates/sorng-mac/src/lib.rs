@@ -3,7 +3,6 @@
 pub mod apparmor;
 pub mod audit;
 pub mod client;
-pub mod commands;
 pub mod compliance;
 pub mod error;
 pub mod selinux;

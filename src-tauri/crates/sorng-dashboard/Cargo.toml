@@ -8,7 +8,6 @@ description = "Connection health dashboard engine for SortOfRemote NG — backgr
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

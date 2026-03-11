@@ -27,7 +27,6 @@
 
 pub mod apply;
 pub mod client;
-pub mod commands;
 pub mod drift;
 pub mod error;
 pub mod graph;

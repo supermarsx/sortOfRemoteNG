@@ -4,7 +4,6 @@
 pub mod agents;
 pub mod canned_responses;
 pub mod client;
-pub mod commands;
 pub mod custom_fields;
 pub mod departments;
 pub mod error;

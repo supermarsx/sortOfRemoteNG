@@ -6,8 +6,6 @@
 //! lifecycle events (login, logout, reconnect, idle, errors), scheduled timers,
 //! cron expressions, output pattern matching, file-change watchers, and
 //! manual invocation.
-
-pub mod commands;
 pub mod conditions;
 pub mod engine;
 pub mod error;

@@ -1,11 +1,11 @@
 // ── sorng-dovecot/src/commands.rs ────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `DovecotServiceFacade`.
+// Tauri commands – thin wrappers around `DovecotServiceFacade`.
 
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::service::DovecotServiceState;
-use crate::types::*;
+use super::service::DovecotServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

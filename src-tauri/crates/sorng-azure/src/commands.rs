@@ -1,14 +1,14 @@
-//! Tauri command handlers for Azure Resource Manager integration.
-//!
-//! All commands follow the `azure_*` naming convention and accept
-//! `State<'_, AzureServiceState>` as their first parameter.
+// Tauri command handlers for Azure Resource Manager integration.
+//
+// All commands follow the `azure_*` naming convention and accept
+// `State<'_, AzureServiceState>` as their first parameter.
 
 use std::collections::HashMap;
 
 use tauri::State;
 
-use crate::service::AzureServiceState;
-use crate::types::*;
+use super::service::AzureServiceState;
+use super::types::*;
 
 /// Convert an AzureError to a String for Tauri's error channel.
 fn err_str(e: AzureError) -> String {

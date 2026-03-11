@@ -53,7 +53,6 @@
 
 pub mod audit;
 pub mod card;
-pub mod commands;
 pub mod config;
 pub mod encryption;
 pub mod keyring;

@@ -1,10 +1,10 @@
-//! # Let's Encrypt Tauri Commands
-//!
-//! All `#[tauri::command]` handlers for the Let's Encrypt / ACME subsystem.
-//! Registered in the main Tauri `generate_handler![]` macro.
+// # Let's Encrypt Tauri Commands
+//
+// All `#[tauri::command]` handlers for the Let's Encrypt / ACME subsystem.
+// Registered in the main Tauri `generate_handler![]` macro.
 
-use crate::service::LetsEncryptServiceState;
-use crate::types::*;
+use super::service::LetsEncryptServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
@@ -171,7 +171,7 @@ pub async fn le_get_cert_paths(
 #[tauri::command]
 pub async fn le_health_check(
     state: State<'_, LetsEncryptServiceState>,
-) -> CmdResult<crate::monitor::CertificateHealthSummary> {
+) -> CmdResult<super::monitor::CertificateHealthSummary> {
     let mut svc = state.lock().await;
     Ok(svc.health_check())
 }

@@ -11,7 +11,7 @@ pub struct SecureClipService {
     engine: Arc<RwLock<ClipEngine>>,
     history: Arc<RwLock<ClipHistory>>,
     config: SecureClipConfig,
-    _auto_clear_handle: Option<tokio::task::JoinHandle<()>>,
+    _auto_clear_task: Option<guard::AutoClearTask>,
 }
 
 /// Thread-safe state handle for Tauri managed state.
@@ -29,7 +29,7 @@ pub fn create_secure_clip_state() -> SecureClipServiceState {
         engine,
         history,
         config,
-        _auto_clear_handle: Some(handle),
+        _auto_clear_task: Some(handle),
     }))
 }
 

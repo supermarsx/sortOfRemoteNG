@@ -1,9 +1,9 @@
-//! Tauri commands for XDMCP remote display sessions.
+// Tauri commands for XDMCP remote display sessions.
 
 use tauri;
 
-use crate::xdmcp::service::XdmcpServiceState;
-use crate::xdmcp::types::*;
+use super::service::XdmcpServiceState;
+use super::types::*;
 
 #[tauri::command]
 pub async fn connect_xdmcp(

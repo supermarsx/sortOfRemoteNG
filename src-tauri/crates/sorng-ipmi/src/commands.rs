@@ -1,10 +1,10 @@
-//! Tauri commands for the IPMI integration.
-//!
-//! Each command follows the pattern: acquire the `IpmiServiceState` lock,
-//! delegate to the service method, and map errors to `String`.
+// Tauri commands for the IPMI integration.
+//
+// Each command follows the pattern: acquire the `IpmiServiceState` lock,
+// delegate to the service method, and map errors to `String`.
 
-use crate::service::IpmiServiceState;
-use crate::types::*;
+use super::service::IpmiServiceState;
+use super::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Connection

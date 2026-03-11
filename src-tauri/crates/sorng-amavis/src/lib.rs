@@ -2,7 +2,6 @@
 
 pub mod banned;
 pub mod client;
-pub mod commands;
 pub mod config;
 pub mod error;
 pub mod lists;

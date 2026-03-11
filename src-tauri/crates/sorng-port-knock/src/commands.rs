@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 use tauri::command;
 
-use crate::service::PortKnockService;
-use crate::types::*;
+use super::service::PortKnockService;
+use super::types::*;
 
 type State<'a> = tauri::State<'a, Arc<Mutex<PortKnockService>>>;
 
@@ -165,7 +165,7 @@ pub async fn port_knock_send_spa(
     key_base64: String,
     options: SpaOptions,
 ) -> Result<SpaResult, String> {
-    let key = crate::base64_util::decode(&key_base64)
+    let key = super::base64_util::decode(&key_base64)
         .map_err(|e| format!("Invalid base64 key: {}", e))?;
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     svc.send_spa(
@@ -197,9 +197,9 @@ pub async fn port_knock_encrypt_payload(
     key_base64: String,
     algorithm: KnockEncryption,
 ) -> Result<EncryptedKnockPayload, String> {
-    let data = crate::base64_util::decode(&data_base64)
+    let data = super::base64_util::decode(&data_base64)
         .map_err(|e| format!("Invalid base64 data: {}", e))?;
-    let key = crate::base64_util::decode(&key_base64)
+    let key = super::base64_util::decode(&key_base64)
         .map_err(|e| format!("Invalid base64 key: {}", e))?;
     let svc = state.lock().map_err(|e| e.to_string())?;
     svc.encrypt_payload(&data, &key, algorithm)
@@ -212,20 +212,20 @@ pub async fn port_knock_decrypt_payload(
     payload: EncryptedKnockPayload,
     key_base64: String,
 ) -> Result<String, String> {
-    let key = crate::base64_util::decode(&key_base64)
+    let key = super::base64_util::decode(&key_base64)
         .map_err(|e| format!("Invalid base64 key: {}", e))?;
     let svc = state.lock().map_err(|e| e.to_string())?;
     let plaintext = svc
         .decrypt_payload(&payload, &key)
         .map_err(|e| e.to_string())?;
-    Ok(crate::base64_util::encode(&plaintext))
+    Ok(super::base64_util::encode(&plaintext))
 }
 
 #[command]
 pub async fn port_knock_generate_key(state: State<'_>, length: usize) -> Result<String, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     let key = svc.generate_key(length);
-    Ok(crate::base64_util::encode(&key))
+    Ok(super::base64_util::encode(&key))
 }
 
 // ─── Firewall (5) ──────────────────────────────────────────────────

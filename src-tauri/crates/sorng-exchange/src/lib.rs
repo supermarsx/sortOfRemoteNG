@@ -37,7 +37,6 @@ pub mod auth;
 pub mod calendars;
 pub mod certificates;
 pub mod client;
-pub mod commands;
 pub mod compliance;
 pub mod connectors;
 pub mod contacts;

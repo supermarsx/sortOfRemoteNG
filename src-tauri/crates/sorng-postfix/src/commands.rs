@@ -1,11 +1,11 @@
 // ── sorng-postfix/src/commands.rs ─────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `PostfixService`.
+// Tauri commands – thin wrappers around `PostfixService`.
 
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::service::PostfixServiceState;
-use crate::types::*;
+use super::service::PostfixServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

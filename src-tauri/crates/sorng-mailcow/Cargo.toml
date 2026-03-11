@@ -8,7 +8,6 @@ description = "Mailcow (mailcow-dockerized) administration via REST API"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

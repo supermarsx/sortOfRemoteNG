@@ -60,7 +60,6 @@
 //! ```
 
 pub mod audit;
-pub mod commands;
 pub mod ip_detect;
 pub mod providers;
 pub mod scheduler;

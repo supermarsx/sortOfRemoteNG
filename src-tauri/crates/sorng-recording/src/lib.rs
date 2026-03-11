@@ -2,7 +2,6 @@
 //
 // Re-exports everything the app crate needs.
 
-pub mod commands;
 pub mod compression;
 pub mod encoders;
 pub mod engine;

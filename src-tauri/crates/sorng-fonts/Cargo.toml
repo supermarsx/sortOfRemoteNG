@@ -8,6 +8,5 @@ description = "Comprehensive font management for SSH terminals, app UI, and edit
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }

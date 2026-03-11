@@ -1,8 +1,8 @@
 // ── sorng-roundcube/src/commands.rs ────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `RoundcubeService`.
+// Tauri commands – thin wrappers around `RoundcubeService`.
 
-use crate::service::RoundcubeServiceState;
-use crate::types::*;
+use super::service::RoundcubeServiceState;
+use super::types::*;
 use std::collections::HashMap;
 use tauri::State;
 

@@ -3,7 +3,6 @@
 pub mod backups;
 pub mod certificates;
 pub mod client;
-pub mod commands;
 pub mod dhcp;
 pub mod diagnostics;
 pub mod dns;

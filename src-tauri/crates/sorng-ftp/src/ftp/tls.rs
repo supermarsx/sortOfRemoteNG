@@ -6,6 +6,9 @@
 
 use crate::ftp::error::{FtpError, FtpResult};
 use crate::ftp::protocol::{FtpCodec, ReadHalf, WriteHalf};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::{DigitallySignedStruct, SignatureScheme};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_rustls::{client::TlsStream, TlsConnector};
@@ -13,17 +16,48 @@ use tokio_rustls::{client::TlsStream, TlsConnector};
 #[derive(Debug)]
 struct NoCertificateVerification;
 
-impl rustls::client::ServerCertVerifier for NoCertificateVerification {
+impl ServerCertVerifier for NoCertificateVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::Certificate,
-        _intermediates: &[rustls::Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::ServerCertVerified::assertion())
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::ED25519,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+        ]
     }
 }
 
@@ -31,21 +65,19 @@ impl rustls::client::ServerCertVerifier for NoCertificateVerification {
 pub fn build_tls_connector(accept_invalid_certs: bool) -> FtpResult<TlsConnector> {
     let config = if accept_invalid_certs {
         rustls::ClientConfig::builder()
-            .with_safe_defaults()
+            .dangerous()
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
             .with_no_client_auth()
     } else {
         let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs()
-            .map_err(|e| FtpError::tls_failed(format!("Native cert load failed: {e}")))?
-        {
+        let cert_result = rustls_native_certs::load_native_certs();
+        for cert in cert_result.certs {
             roots
-                .add(&rustls::Certificate(cert.0))
+                .add(cert)
                 .map_err(|e| FtpError::tls_failed(format!("Native cert parse failed: {e}")))?;
         }
 
         rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(roots)
             .with_no_client_auth()
     };
@@ -53,8 +85,8 @@ pub fn build_tls_connector(accept_invalid_certs: bool) -> FtpResult<TlsConnector
     Ok(TlsConnector::from(Arc::new(config)))
 }
 
-fn server_name(host: &str) -> FtpResult<rustls::ServerName> {
-    rustls::ServerName::try_from(host)
+fn server_name(host: &str) -> FtpResult<ServerName<'static>> {
+    ServerName::try_from(host.to_owned())
         .map_err(|_| FtpError::tls_failed(format!("Invalid TLS server name: {host}")))
 }
 

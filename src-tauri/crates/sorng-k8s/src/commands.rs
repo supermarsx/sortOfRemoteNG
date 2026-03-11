@@ -1,10 +1,10 @@
 // ── sorng-k8s/src/commands.rs ─────────────────────────────────────────────────
-//! Tauri command handlers – every public function is a `#[tauri::command]`.
+// Tauri command handlers – every public function is a `#[tauri::command]`.
 
 use tauri::State;
 
-use crate::service::K8sServiceState;
-use crate::types::*;
+use super::service::K8sServiceState;
+use super::types::*;
 use std::collections::HashMap;
 
 // ── Connection lifecycle ──────────────────────────────────────────────────────

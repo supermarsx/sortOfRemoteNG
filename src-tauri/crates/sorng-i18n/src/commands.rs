@@ -1,74 +1,14 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-use tauri::State;
-
-use crate::engine::I18nEngine;
-use crate::error::I18nError;
-use crate::ssr::{self, SsrOptions, SsrTranslationPayload};
-use crate::watcher::I18nWatcher;
-
-// ─── Managed state ───────────────────────────────────────────────────
-
-/// State managed by Tauri's `app.manage()`.
-pub struct I18nServiceState {
-    pub engine: Arc<I18nEngine>,
-    /// Hold the watcher alive for the lifetime of the app.
-    pub _watcher: Option<I18nWatcher>,
-}
-
-// ─── Command payloads ────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct TranslateRequest {
-    pub locale: String,
-    pub key: String,
-    #[serde(default)]
-    pub vars: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TranslatePluralRequest {
-    pub locale: String,
-    pub key: String,
-    pub count: i64,
-    #[serde(default)]
-    pub vars: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TranslateBatchRequest {
-    pub locale: String,
-    pub keys: Vec<String>,
-    #[serde(default)]
-    pub vars: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct TranslateBatchResponse {
-    pub translations: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct LocaleInfo {
-    pub tag: String,
-    pub key_count: usize,
-}
-
-#[derive(Debug, Serialize)]
-pub struct I18nStatus {
-    pub default_locale: String,
-    pub available_locales: Vec<LocaleInfo>,
-    pub total_keys: usize,
-}
+use super::command_types::*;
+use super::error::I18nError;
+use super::ssr::{self, SsrOptions, SsrTranslationPayload};
 
 // ─── Tauri commands ──────────────────────────────────────────────────
 
 /// Translate a single key.
 #[tauri::command]
 pub fn i18n_translate(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     request: TranslateRequest,
 ) -> Result<String, I18nError> {
     Ok(state.engine.t(&request.locale, &request.key, &request.vars))
@@ -77,7 +17,7 @@ pub fn i18n_translate(
 /// Translate a single key with pluralisation.
 #[tauri::command]
 pub fn i18n_translate_plural(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     request: TranslatePluralRequest,
 ) -> Result<String, I18nError> {
     Ok(state
@@ -88,7 +28,7 @@ pub fn i18n_translate_plural(
 /// Translate a batch of keys at once (reduces IPC round-trips).
 #[tauri::command]
 pub fn i18n_translate_batch(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     request: TranslateBatchRequest,
 ) -> Result<TranslateBatchResponse, I18nError> {
     let translations = request
@@ -109,7 +49,7 @@ pub fn i18n_translate_batch(
 /// language switch to fetch all translations at once.
 #[tauri::command]
 pub fn i18n_get_bundle(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     locale: String,
 ) -> Result<serde_json::Value, I18nError> {
     state
@@ -121,7 +61,7 @@ pub fn i18n_get_bundle(
 /// Get a bundle scoped to a namespace.
 #[tauri::command]
 pub fn i18n_get_namespace_bundle(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     locale: String,
     namespace: String,
 ) -> Result<serde_json::Value, I18nError> {
@@ -129,20 +69,20 @@ pub fn i18n_get_namespace_bundle(
     if map.is_empty() {
         return Err(I18nError::NamespaceNotFound(namespace));
     }
-    Ok(crate::loader::unflatten(&map))
+    Ok(super::loader::unflatten(&map))
 }
 
 /// List available locales.
 #[tauri::command]
 pub fn i18n_available_locales(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
 ) -> Result<Vec<String>, I18nError> {
     Ok(state.engine.available_locales())
 }
 
 /// Get i18n engine status / diagnostics.
 #[tauri::command]
-pub fn i18n_status(state: State<'_, I18nServiceState>) -> Result<I18nStatus, I18nError> {
+pub fn i18n_status(state: tauri::State<'_, I18nServiceState>) -> Result<I18nStatus, I18nError> {
     let locales: Vec<LocaleInfo> = state
         .engine
         .available_locales()
@@ -165,7 +105,7 @@ pub fn i18n_status(state: State<'_, I18nServiceState>) -> Result<I18nStatus, I18
 /// Detect the OS locale.
 #[tauri::command]
 pub fn i18n_detect_os_locale() -> Result<String, I18nError> {
-    crate::locale::Locale::detect_os_locale()
+    super::locale::Locale::detect_os_locale()
         .map(|l| l.to_tag())
         .ok_or_else(|| I18nError::Other("could not detect OS locale".into()))
 }
@@ -173,7 +113,7 @@ pub fn i18n_detect_os_locale() -> Result<String, I18nError> {
 /// Check whether a translation key exists.
 #[tauri::command]
 pub fn i18n_has_key(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     locale: String,
     key: String,
 ) -> Result<bool, I18nError> {
@@ -183,7 +123,7 @@ pub fn i18n_has_key(
 /// Find keys present in the default locale but missing in the target.
 #[tauri::command]
 pub fn i18n_missing_keys(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     locale: String,
 ) -> Result<Vec<String>, I18nError> {
     Ok(state.engine.missing_keys(&locale))
@@ -191,14 +131,14 @@ pub fn i18n_missing_keys(
 
 /// Force a full reload of all locale files from disk.
 #[tauri::command]
-pub fn i18n_reload(state: State<'_, I18nServiceState>) -> Result<(), I18nError> {
+pub fn i18n_reload(state: tauri::State<'_, I18nServiceState>) -> Result<(), I18nError> {
     state.engine.reload_all()
 }
 
 /// Build the SSR hydration payload for a locale.
 #[tauri::command]
 pub fn i18n_ssr_payload(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     locale: String,
     namespace: Option<String>,
     include_fallback: Option<bool>,
@@ -214,7 +154,7 @@ pub fn i18n_ssr_payload(
 /// Build the SSR `<script>` tag for injecting translations into HTML.
 #[tauri::command]
 pub fn i18n_ssr_script(
-    state: State<'_, I18nServiceState>,
+    state: tauri::State<'_, I18nServiceState>,
     locale: String,
 ) -> Result<String, I18nError> {
     let payload = ssr::build_ssr_payload(

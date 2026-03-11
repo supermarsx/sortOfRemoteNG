@@ -64,7 +64,6 @@
 //! - Partial scan for selected subsystems
 
 pub mod client;
-pub mod commands;
 pub mod distro;
 pub mod error;
 pub mod full_scan;

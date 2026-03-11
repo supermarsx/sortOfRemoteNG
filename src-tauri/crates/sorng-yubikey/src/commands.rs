@@ -1,10 +1,10 @@
-//! # Tauri Commands for YubiKey
-//!
-//! Each function is a `#[tauri::command]` that locks the shared state
-//! (`YubiKeyServiceState = Arc<tokio::sync::Mutex<YubiKeyService>>`)
-//! and delegates to `YubiKeyService`.
+// # Tauri Commands for YubiKey
+//
+// Each function is a `#[tauri::command]` that locks the shared state
+// (`YubiKeyServiceState = Arc<tokio::sync::Mutex<YubiKeyService>>`)
+// and delegates to `YubiKeyService`.
 
-use crate::types::*;
+use super::types::*;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use std::collections::HashMap;
 use tauri::State;

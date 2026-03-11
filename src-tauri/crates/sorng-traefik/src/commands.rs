@@ -1,8 +1,8 @@
 // ── sorng-traefik/src/commands.rs ────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `TraefikService`.
+// Tauri commands – thin wrappers around `TraefikService`.
 
-use crate::service::TraefikServiceState;
-use crate::types::*;
+use super::service::TraefikServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

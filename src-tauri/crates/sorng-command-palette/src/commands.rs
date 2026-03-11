@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::service::CommandPaletteServiceState;
-use crate::types::*;
+use super::service::CommandPaletteServiceState;
+use super::types::*;
 
 // ── Unified Search ──────────────────────────────────────────────
 
@@ -540,7 +540,7 @@ pub async fn palette_create_share_package(
 ) -> Result<String, String> {
     let svc = state.read().await;
     let pkg = svc.create_share_package(metadata, scope.as_ref(), filter.as_ref())?;
-    crate::import_export::serialise_share_package(&pkg)
+    super::import_export::serialise_share_package(&pkg)
 }
 
 /// Import from a share package JSON string.
@@ -589,7 +589,7 @@ pub async fn palette_save_share_package(
 ) -> Result<(), String> {
     let svc = state.read().await;
     let pkg = svc.create_share_package(metadata, scope.as_ref(), filter.as_ref())?;
-    let json = crate::import_export::serialise_share_package(&pkg)?;
+    let json = super::import_export::serialise_share_package(&pkg)?;
     std::fs::write(&path, json).map_err(|e| format!("Failed to write share package: {}", e))
 }
 

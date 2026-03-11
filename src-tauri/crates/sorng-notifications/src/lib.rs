@@ -43,7 +43,6 @@
 //! - [`commands`] — Tauri IPC command handlers
 
 pub mod channels;
-pub mod commands;
 pub mod error;
 pub mod escalation;
 pub mod history;

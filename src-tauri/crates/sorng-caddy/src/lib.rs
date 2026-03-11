@@ -1,7 +1,6 @@
 // ── sorng-caddy – Caddy web server integration ──────────────────────────────
 
 pub mod client;
-pub mod commands;
 pub mod config;
 pub mod error;
 pub mod reverse_proxy;

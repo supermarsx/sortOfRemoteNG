@@ -1,8 +1,8 @@
 // ── sorng-mailcow/src/commands.rs ────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `MailcowService`.
+// Tauri commands – thin wrappers around `MailcowService`.
 
-use crate::service::MailcowServiceState;
-use crate::types::*;
+use super::service::MailcowServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

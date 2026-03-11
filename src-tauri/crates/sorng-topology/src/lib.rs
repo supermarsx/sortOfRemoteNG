@@ -16,7 +16,6 @@
 
 pub mod analysis;
 pub mod builder;
-pub mod commands;
 pub mod diff;
 pub mod error;
 pub mod graph;

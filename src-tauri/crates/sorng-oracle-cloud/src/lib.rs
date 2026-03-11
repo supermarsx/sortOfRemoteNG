@@ -1,5 +1,4 @@
 pub mod client;
-pub mod commands;
 pub mod compute;
 pub mod containers;
 pub mod database;

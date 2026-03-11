@@ -8,7 +8,6 @@ description = "Dell iDRAC management with Redfish (modern), WS-Management (legac
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

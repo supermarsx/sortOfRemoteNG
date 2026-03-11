@@ -1,10 +1,10 @@
-//! # opkssh Tauri Commands
-//!
-//! All `#[tauri::command]` handlers for the OpenPubkey SSH subsystem.
-//! Registered in the main Tauri `generate_handler![]` macro.
+// # opkssh Tauri Commands
+//
+// All `#[tauri::command]` handlers for the OpenPubkey SSH subsystem.
+// Registered in the main Tauri `generate_handler![]` macro.
 
-use crate::service::OpksshServiceState;
-use crate::types::*;
+use super::service::OpksshServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
@@ -23,7 +23,7 @@ pub async fn opkssh_check_binary(
 /// Get the download URL for the current platform.
 #[tauri::command]
 pub async fn opkssh_get_download_url() -> CmdResult<String> {
-    Ok(crate::binary::download_url())
+    Ok(super::binary::download_url())
 }
 
 // ── OIDC Login ──────────────────────────────────────────────────────

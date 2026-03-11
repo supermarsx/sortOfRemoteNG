@@ -1,13 +1,13 @@
-//! Tauri command handlers for WhatsApp integration.
-//!
-//! Every command follows the `wa_*` naming convention and accepts
-//! `State<'_, WhatsAppServiceState>`.  All return `Result<T, String>`
-//! so errors are serialisable across the Tauri IPC bridge.
+// Tauri command handlers for WhatsApp integration.
+//
+// Every command follows the `wa_*` naming convention and accepts
+// `State<'_, WhatsAppServiceState>`.  All return `Result<T, String>`
+// so errors are serialisable across the Tauri IPC bridge.
 
-use crate::whatsapp::pairing::{PairingState, QrCodeData};
-use crate::whatsapp::service::WhatsAppServiceState;
-use crate::whatsapp::types::*;
-use crate::whatsapp::unofficial::UnofficialConnectionState;
+use super::pairing::{PairingState, QrCodeData};
+use super::service::WhatsAppServiceState;
+use super::types::*;
+use super::unofficial::UnofficialConnectionState;
 use tauri::State;
 
 // Helper to map WhatsAppError → String for Tauri.
@@ -367,7 +367,7 @@ pub async fn wa_check_contact(
 /// Generate a wa.me link.
 #[tauri::command]
 pub async fn wa_me_link(phone_number: String, message: Option<String>) -> Result<String, String> {
-    Ok(crate::whatsapp::contacts::WaContacts::wa_me_link(
+    Ok(super::contacts::WaContacts::wa_me_link(
         &phone_number,
         message.as_deref(),
     ))
@@ -521,7 +521,7 @@ pub async fn wa_unofficial_send_text(
 ) -> Result<String, String> {
     let svc = state.lock().await;
     let client = map_err!(svc.unofficial())?;
-    let jid = crate::whatsapp::unofficial::UnofficialClient::phone_to_jid(&to);
+    let jid = super::unofficial::UnofficialClient::phone_to_jid(&to);
     map_err!(client.send_text(&jid, &text, reply_to.as_deref()).await)
 }
 

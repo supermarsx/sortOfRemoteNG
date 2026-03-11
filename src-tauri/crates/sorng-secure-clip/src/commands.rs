@@ -1,7 +1,7 @@
 use tauri::State;
 
-use crate::service::SecureClipServiceState;
-use crate::types::*;
+use super::service::SecureClipServiceState;
+use super::types::*;
 
 // ═══════════════════════════════════════════════════════════════════
 //  Copy commands
@@ -219,5 +219,5 @@ pub async fn secure_clip_update_config(
 /// Read the raw OS clipboard text (for debugging / diagnostics).
 #[tauri::command]
 pub async fn secure_clip_read_os_clipboard() -> Result<String, String> {
-    crate::engine::ClipEngine::read_os_clipboard_static()
+    super::engine::ClipEngine::read_os_clipboard_static()
 }

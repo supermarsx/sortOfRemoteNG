@@ -1,10 +1,10 @@
-//! Tauri command handlers for all VMware Desktop operations.
-//!
-//! Every command is `async`, takes `State<'_, VmwDesktopServiceState>` and
-//! returns `Result<T, String>`. All prefixed with `vmwd_`.
+// Tauri command handlers for all VMware Desktop operations.
+//
+// Every command is `async`, takes `State<'_, VmwDesktopServiceState>` and
+// returns `Result<T, String>`. All prefixed with `vmwd_`.
 
-use crate::service::VmwDesktopServiceState;
-use crate::types::*;
+use super::service::VmwDesktopServiceState;
+use super::types::*;
 use tauri::State;
 
 // ── Connection ──────────────────────────────────────────────────────

@@ -10,4 +10,6 @@ pub use sorng_cloud::scaleway;
 pub use sorng_cloud::vercel;
 pub use sorng_exchange as exchange;
 pub use sorng_gcp as gcp;
+pub use sorng_hetzner as hetzner;
+pub use sorng_oracle_cloud as oracle_cloud;
 pub use sorng_smtp as smtp;

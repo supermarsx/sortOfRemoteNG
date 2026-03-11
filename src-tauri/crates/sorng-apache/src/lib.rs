@@ -1,7 +1,6 @@
 // ── sorng-apache – Apache HTTP Server integration ────────────────────────────
 
 pub mod client;
-pub mod commands;
 pub mod config;
 pub mod error;
 pub mod logs;

@@ -1,10 +1,10 @@
-//! Tauri commands for the Passbolt integration.
-//!
-//! Each function is a `#[tauri::command]` that can be invoked
-//! from the frontend via `invoke("pb_command_name", { ... })`.
+// Tauri commands for the Passbolt integration.
+//
+// Each function is a `#[tauri::command]` that can be invoked
+// from the frontend via `invoke("pb_command_name", { ... })`.
 
-use crate::passbolt::service::PassboltServiceState;
-use crate::passbolt::types::*;
+use super::service::PassboltServiceState;
+use super::types::*;
 
 // ── Configuration ───────────────────────────────────────────────────
 

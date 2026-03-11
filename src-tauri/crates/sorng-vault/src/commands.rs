@@ -1,7 +1,7 @@
-//! Tauri commands for the vault crate.
+// Tauri commands for the vault crate.
 
-use crate::types::*;
-use crate::{envelope, keychain, migration};
+use super::types::*;
+use super::{envelope, keychain, migration};
 use std::path::PathBuf;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -116,7 +116,7 @@ pub async fn vault_biometric_store(
     reason: String,
 ) -> Result<(), String> {
     // Verify biometric first
-    sorng_biometrics::authenticate::verify(&reason)
+    super::biometrics::verify(&reason)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -132,7 +132,7 @@ pub async fn vault_biometric_read(
     account: String,
     reason: String,
 ) -> Result<String, String> {
-    sorng_biometrics::authenticate::verify(&reason)
+    super::biometrics::verify(&reason)
         .await
         .map_err(|e| e.to_string())?;
 

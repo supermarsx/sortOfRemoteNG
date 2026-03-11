@@ -7,7 +7,6 @@
 pub mod backup;
 pub mod binlogs;
 pub mod client;
-pub mod commands;
 pub mod databases;
 pub mod error;
 pub mod innodb;

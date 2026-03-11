@@ -1,9 +1,9 @@
 use tauri::State;
 
-use crate::config::*;
-use crate::error::LlmError;
-use crate::service::LlmServiceState;
-use crate::types::*;
+use super::config::*;
+use super::error::LlmError;
+use super::service::LlmServiceState;
+use super::types::*;
 
 type Res<T> = Result<T, LlmError>;
 
@@ -126,13 +126,13 @@ pub async fn llm_health_check_all(state: State<'_, LlmServiceState>) -> Res<Vec<
 pub async fn llm_usage_summary(
     state: State<'_, LlmServiceState>,
     days: Option<u32>,
-) -> Res<crate::usage::UsageSummary> {
+) -> Res<super::usage::UsageSummary> {
     let svc = state.0.read().await;
     Ok(svc.usage_summary(days))
 }
 
 #[tauri::command]
-pub async fn llm_cache_stats(state: State<'_, LlmServiceState>) -> Res<crate::cache::CacheStats> {
+pub async fn llm_cache_stats(state: State<'_, LlmServiceState>) -> Res<super::cache::CacheStats> {
     let svc = state.0.read().await;
     Ok(svc.cache_stats())
 }
@@ -180,9 +180,9 @@ pub async fn llm_set_balancer_strategy(
 #[tauri::command]
 pub async fn llm_estimate_tokens(text: String, model: Option<String>) -> Res<u32> {
     let count = if let Some(ref m) = model {
-        crate::tokens::TokenCounter::estimate_for_model(&text, m)
+        super::tokens::TokenCounter::estimate_for_model(&text, m)
     } else {
-        crate::tokens::TokenCounter::estimate(&text)
+        super::tokens::TokenCounter::estimate(&text)
     };
     Ok(count)
 }

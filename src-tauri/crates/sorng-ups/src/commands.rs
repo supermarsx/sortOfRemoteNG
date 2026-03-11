@@ -1,10 +1,10 @@
 // ── sorng-ups/src/commands.rs ────────────────────────────────────────────────
-//! Tauri command wrappers for UPS (NUT) management.
+// Tauri command wrappers for UPS (NUT) management.
 
 use tauri::State;
 
-use crate::service::UpsServiceState;
-use crate::types::*;
+use super::service::UpsServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 fn map_err<E: std::fmt::Display>(e: E) -> String {

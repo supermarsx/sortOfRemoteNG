@@ -1,11 +1,11 @@
 // ── sorng-zabbix/src/commands.rs ─────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `ZabbixService`.
+// Tauri commands – thin wrappers around `ZabbixService`.
 
 use serde_json::Value;
 use tauri::State;
 
-use crate::service::ZabbixServiceState;
-use crate::types::*;
+use super::service::ZabbixServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

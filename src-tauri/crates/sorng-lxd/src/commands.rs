@@ -1,10 +1,10 @@
 // ─── LXD / Incus – Tauri command wrappers ───────────────────────────────────
-//!
-//! Every public function here is a `#[tauri::command]` callable from the
-//! frontend via `invoke("lxd_*", { … })`.
+//
+// Every public function here is a `#[tauri::command]` callable from the
+// frontend via `invoke("lxd_*", { … })`.
 
-use crate::service::LxdService;
-use crate::types::*;
+use super::service::LxdService;
+use super::types::*;
 
 fn err_str(e: LxdError) -> String {
     e.message

@@ -39,7 +39,6 @@
 
 pub mod auth;
 pub mod capabilities;
-pub mod commands;
 pub mod logging;
 pub mod prompts;
 pub mod protocol;

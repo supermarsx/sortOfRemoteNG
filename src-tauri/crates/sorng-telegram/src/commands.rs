@@ -1,11 +1,11 @@
-//! Tauri commands — thin `#[tauri::command]` wrappers that delegate to
-//! the [`TelegramService`] state.
+// Tauri commands — thin `#[tauri::command]` wrappers that delegate to
+// the [`TelegramService`] state.
 
-use crate::files::FileUpload;
-use crate::monitoring::MonitoringSummary;
-use crate::service::TelegramServiceState;
-use crate::templates;
-use crate::types::*;
+use super::files::FileUpload;
+use super::monitoring::MonitoringSummary;
+use super::service::TelegramServiceState;
+use super::templates;
+use super::types::*;
 use std::collections::HashMap;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -493,8 +493,8 @@ pub async fn telegram_upload_file(
     caption: Option<String>,
     parse_mode: Option<ParseMode>,
 ) -> Result<TgMessage, String> {
-    let mime = crate::files::guess_mime_type(&file_name);
-    let field = crate::files::field_for_mime(mime);
+    let mime = super::files::guess_mime_type(&file_name);
+    let field = super::files::field_for_mime(mime);
     let mime_string = mime.to_string();
     let upload = FileUpload {
         field_name: field.to_string(),

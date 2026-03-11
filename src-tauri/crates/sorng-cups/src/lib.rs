@@ -20,7 +20,6 @@
 
 pub mod admin;
 pub mod classes;
-pub mod commands;
 pub mod drivers;
 pub mod error;
 pub mod ipp;

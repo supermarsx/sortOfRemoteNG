@@ -15,4 +15,3 @@ base64 = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }
-tauri = { workspace = true }

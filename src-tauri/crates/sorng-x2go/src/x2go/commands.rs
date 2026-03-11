@@ -1,9 +1,9 @@
-//! Tauri commands for X2Go remote desktop sessions.
+// Tauri commands for X2Go remote desktop sessions.
 
 use tauri;
 
-use crate::x2go::service::X2goServiceState;
-use crate::x2go::types::*;
+use super::service::X2goServiceState;
+use super::types::*;
 
 #[tauri::command]
 pub async fn connect_x2go(

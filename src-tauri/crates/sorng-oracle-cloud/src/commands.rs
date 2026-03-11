@@ -1,5 +1,5 @@
-use crate::service::OciServiceState;
-use crate::types::*;
+use super::service::OciServiceState;
+use super::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Connection management

@@ -1,7 +1,7 @@
 use tauri::State;
 
-use crate::service::FontServiceState;
-use crate::types::*;
+use super::service::FontServiceState;
+use super::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Registry queries

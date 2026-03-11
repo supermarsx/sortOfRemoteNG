@@ -1,11 +1,11 @@
-//! Tauri commands — async wrappers for the Fail2ban service.
+// Tauri commands — async wrappers for the Fail2ban service.
 
-use crate::error::err_str;
-use crate::filters::FilterTestResult;
-use crate::logs::LogFileInfo;
-use crate::service::Fail2banServiceState;
-use crate::stats::{HourlyBanCount, LogStats};
-use crate::types::{
+use super::error::err_str;
+use super::filters::FilterTestResult;
+use super::logs::LogFileInfo;
+use super::service::Fail2banServiceState;
+use super::stats::{HourlyBanCount, LogStats};
+use super::types::{
     ActionDef, BannedIpSummary, Fail2banHost, Fail2banStats, FilterRule, Jail, LogEntry,
 };
 use tauri::State;
@@ -59,7 +59,7 @@ pub async fn f2b_ping(
     host_id: String,
 ) -> Result<bool, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::client::ping(&host).await.map_err(err_str)
+    super::client::ping(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -68,7 +68,7 @@ pub async fn f2b_version(
     host_id: String,
 ) -> Result<String, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::client::version(&host).await.map_err(err_str)
+    super::client::version(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -77,7 +77,7 @@ pub async fn f2b_server_status(
     host_id: String,
 ) -> Result<String, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::client::server_status(&host).await.map_err(err_str)
+    super::client::server_status(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -86,7 +86,7 @@ pub async fn f2b_reload(
     host_id: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::client::reload(&host).await.map_err(err_str)
+    super::client::reload(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -96,7 +96,7 @@ pub async fn f2b_reload_jail(
     jail_name: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::client::reload_jail(&host, &jail_name)
+    super::client::reload_jail(&host, &jail_name)
         .await
         .map_err(err_str)
 }
@@ -107,7 +107,7 @@ pub async fn f2b_restart_server(
     host_id: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::client::restart_server(&host).await.map_err(err_str)
+    super::client::restart_server(&host).await.map_err(err_str)
 }
 
 // ─── Jails ──────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ pub async fn f2b_list_jails(
     host_id: String,
 ) -> Result<Vec<String>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::list_jails(&host).await.map_err(err_str)
+    super::jails::list_jails(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -128,7 +128,7 @@ pub async fn f2b_jail_status(
     jail_name: String,
 ) -> Result<Jail, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::jail_status(&host, &jail_name)
+    super::jails::jail_status(&host, &jail_name)
         .await
         .map_err(err_str)
 }
@@ -139,7 +139,7 @@ pub async fn f2b_all_jail_statuses(
     host_id: String,
 ) -> Result<Vec<Jail>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::all_jail_statuses(&host)
+    super::jails::all_jail_statuses(&host)
         .await
         .map_err(err_str)
 }
@@ -151,7 +151,7 @@ pub async fn f2b_start_jail(
     jail_name: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::start_jail(&host, &jail_name)
+    super::jails::start_jail(&host, &jail_name)
         .await
         .map_err(err_str)
 }
@@ -163,7 +163,7 @@ pub async fn f2b_stop_jail(
     jail_name: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::stop_jail(&host, &jail_name)
+    super::jails::stop_jail(&host, &jail_name)
         .await
         .map_err(err_str)
 }
@@ -175,7 +175,7 @@ pub async fn f2b_restart_jail(
     jail_name: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::restart_jail(&host, &jail_name)
+    super::jails::restart_jail(&host, &jail_name)
         .await
         .map_err(err_str)
 }
@@ -188,7 +188,7 @@ pub async fn f2b_set_jail_bantime(
     seconds: i64,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::set_bantime(&host, &jail_name, seconds)
+    super::jails::set_bantime(&host, &jail_name, seconds)
         .await
         .map_err(err_str)
 }
@@ -201,7 +201,7 @@ pub async fn f2b_set_jail_maxretry(
     count: u32,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::jails::set_maxretry(&host, &jail_name, count)
+    super::jails::set_maxretry(&host, &jail_name, count)
         .await
         .map_err(err_str)
 }
@@ -216,7 +216,7 @@ pub async fn f2b_ban_ip(
     ip: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::bans::ban_ip(&host, &jail_name, &ip)
+    super::bans::ban_ip(&host, &jail_name, &ip)
         .await
         .map_err(err_str)
 }
@@ -229,7 +229,7 @@ pub async fn f2b_unban_ip(
     ip: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::bans::unban_ip(&host, &jail_name, &ip)
+    super::bans::unban_ip(&host, &jail_name, &ip)
         .await
         .map_err(err_str)
 }
@@ -241,7 +241,7 @@ pub async fn f2b_unban_ip_all(
     ip: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::bans::unban_ip_all(&host, &ip)
+    super::bans::unban_ip_all(&host, &ip)
         .await
         .map(|_| ())
         .map_err(err_str)
@@ -252,9 +252,9 @@ pub async fn f2b_list_banned(
     state: State<'_, Fail2banServiceState>,
     host_id: String,
     jail_name: String,
-) -> Result<Vec<crate::types::BanRecord>, String> {
+) -> Result<Vec<super::types::BanRecord>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::bans::list_banned(&host, &jail_name)
+    super::bans::list_banned(&host, &jail_name)
         .await
         .map_err(err_str)
 }
@@ -263,9 +263,9 @@ pub async fn f2b_list_banned(
 pub async fn f2b_list_all_banned(
     state: State<'_, Fail2banServiceState>,
     host_id: String,
-) -> Result<Vec<crate::types::BanRecord>, String> {
+) -> Result<Vec<super::types::BanRecord>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::bans::list_all_banned(&host).await.map_err(err_str)
+    super::bans::list_all_banned(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -276,7 +276,7 @@ pub async fn f2b_is_banned(
     ip: String,
 ) -> Result<bool, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::bans::is_banned(&host, &ip)
+    super::bans::is_banned(&host, &ip)
         .await
         .map(|jails| jails.iter().any(|j| j == &jail_name))
         .map_err(err_str)
@@ -290,7 +290,7 @@ pub async fn f2b_list_filters(
     host_id: String,
 ) -> Result<Vec<String>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::filters::list_filters(&host).await.map_err(err_str)
+    super::filters::list_filters(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -300,7 +300,7 @@ pub async fn f2b_read_filter(
     filter_name: String,
 ) -> Result<FilterRule, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::filters::read_filter(&host, &filter_name)
+    super::filters::read_filter(&host, &filter_name)
         .await
         .map_err(err_str)
 }
@@ -313,7 +313,7 @@ pub async fn f2b_test_filter(
     filter_name: String,
 ) -> Result<FilterTestResult, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::filters::test_filter(&host, &log_file, &filter_name)
+    super::filters::test_filter(&host, &log_file, &filter_name)
         .await
         .map_err(err_str)
 }
@@ -326,7 +326,7 @@ pub async fn f2b_test_regex(
     regex: String,
 ) -> Result<FilterTestResult, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::filters::test_regex(&host, &log_file, &regex)
+    super::filters::test_regex(&host, &log_file, &regex)
         .await
         .map_err(err_str)
 }
@@ -339,7 +339,7 @@ pub async fn f2b_list_actions(
     host_id: String,
 ) -> Result<Vec<String>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::actions::list_actions(&host).await.map_err(err_str)
+    super::actions::list_actions(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -349,7 +349,7 @@ pub async fn f2b_read_action(
     action_name: String,
 ) -> Result<ActionDef, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::actions::read_action(&host, &action_name)
+    super::actions::read_action(&host, &action_name)
         .await
         .map_err(err_str)
 }
@@ -363,7 +363,7 @@ pub async fn f2b_list_ignored(
     jail_name: String,
 ) -> Result<Vec<String>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::whitelist::list_ignored(&host, &jail_name)
+    super::whitelist::list_ignored(&host, &jail_name)
         .await
         .map_err(err_str)
 }
@@ -376,7 +376,7 @@ pub async fn f2b_add_ignored(
     ip: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::whitelist::add_ignored(&host, &jail_name, &ip)
+    super::whitelist::add_ignored(&host, &jail_name, &ip)
         .await
         .map_err(err_str)
 }
@@ -389,7 +389,7 @@ pub async fn f2b_remove_ignored(
     ip: String,
 ) -> Result<(), String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::whitelist::remove_ignored(&host, &jail_name, &ip)
+    super::whitelist::remove_ignored(&host, &jail_name, &ip)
         .await
         .map_err(err_str)
 }
@@ -401,7 +401,7 @@ pub async fn f2b_add_ignored_all_jails(
     ip: String,
 ) -> Result<Vec<String>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::whitelist::add_ignored_all_jails(&host, &ip)
+    super::whitelist::add_ignored_all_jails(&host, &ip)
         .await
         .map_err(err_str)
 }
@@ -415,7 +415,7 @@ pub async fn f2b_tail_log(
     lines: u32,
 ) -> Result<Vec<LogEntry>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::logs::tail_log(&host, lines, None)
+    super::logs::tail_log(&host, lines, None)
         .await
         .map_err(err_str)
 }
@@ -427,7 +427,7 @@ pub async fn f2b_search_log_by_ip(
     ip: String,
 ) -> Result<Vec<LogEntry>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::logs::search_by_ip(&host, &ip, None)
+    super::logs::search_by_ip(&host, &ip, None)
         .await
         .map_err(err_str)
 }
@@ -439,7 +439,7 @@ pub async fn f2b_search_log_by_jail(
     jail_name: String,
 ) -> Result<Vec<LogEntry>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::logs::search_by_jail(&host, &jail_name, None)
+    super::logs::search_by_jail(&host, &jail_name, None)
         .await
         .map_err(err_str)
 }
@@ -450,7 +450,7 @@ pub async fn f2b_search_bans(
     host_id: String,
 ) -> Result<Vec<LogEntry>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::logs::search_bans(&host, None).await.map_err(err_str)
+    super::logs::search_bans(&host, None).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -459,7 +459,7 @@ pub async fn f2b_log_info(
     host_id: String,
 ) -> Result<LogFileInfo, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::logs::log_info(&host, None).await.map_err(err_str)
+    super::logs::log_info(&host, None).await.map_err(err_str)
 }
 
 // ─── Statistics ─────────────────────────────────────────────────────
@@ -470,7 +470,7 @@ pub async fn f2b_host_stats(
     host_id: String,
 ) -> Result<Fail2banStats, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::stats::host_stats(&host).await.map_err(err_str)
+    super::stats::host_stats(&host).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -480,7 +480,7 @@ pub async fn f2b_top_banned_ips(
     limit: usize,
 ) -> Result<Vec<BannedIpSummary>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::stats::top_banned_ips(&host, limit)
+    super::stats::top_banned_ips(&host, limit)
         .await
         .map_err(err_str)
 }
@@ -491,7 +491,7 @@ pub async fn f2b_log_stats(
     host_id: String,
 ) -> Result<LogStats, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::stats::log_stats(&host, None).await.map_err(err_str)
+    super::stats::log_stats(&host, None).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -500,7 +500,7 @@ pub async fn f2b_ban_frequency(
     host_id: String,
 ) -> Result<Vec<HourlyBanCount>, String> {
     let host = state.lock().await.clone_host(&host_id).map_err(err_str)?;
-    crate::stats::ban_frequency(&host, None)
+    super::stats::ban_frequency(&host, None)
         .await
         .map_err(err_str)
 }

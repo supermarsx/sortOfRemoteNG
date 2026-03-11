@@ -1,11 +1,11 @@
 // ── sorng-docker-compose/src/commands.rs ───────────────────────────────────────
-//! Tauri `#[tauri::command]` handlers for Docker Compose management.
+// Tauri `#[tauri::command]` handlers for Docker Compose management.
 
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::service::ComposeServiceState;
-use crate::types::*;
+use super::service::ComposeServiceState;
+use super::types::*;
 
 // ── Init / Detection ──────────────────────────────────────────────────────────
 

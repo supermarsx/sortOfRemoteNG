@@ -1,11 +1,11 @@
 // ── sorng-spamassassin/src/commands.rs ───────────────────────────────────────
-//! Tauri commands – thin wrappers around `SpamAssassinService`.
+// Tauri commands – thin wrappers around `SpamAssassinService`.
 
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::service::SpamAssassinServiceState;
-use crate::types::*;
+use super::service::SpamAssassinServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

@@ -1,7 +1,6 @@
 pub mod audit;
 pub mod auth_methods;
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod kv;
 pub mod leases;

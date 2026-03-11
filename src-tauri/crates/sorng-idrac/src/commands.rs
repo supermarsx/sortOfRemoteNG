@@ -1,10 +1,10 @@
-//! Tauri command handlers for all Dell iDRAC operations.
-//!
-//! Every command is `async`, takes `State<'_, IdracServiceState>` and
-//! returns `Result<T, String>` (Tauri requires `String` errors).
+// Tauri command handlers for all Dell iDRAC operations.
+//
+// Every command is `async`, takes `State<'_, IdracServiceState>` and
+// returns `Result<T, String>` (Tauri requires `String` errors).
 
-use crate::service::IdracServiceState;
-use crate::types::*;
+use super::service::IdracServiceState;
+use super::types::*;
 use tauri::State;
 
 // ── Connection ──────────────────────────────────────────────────────

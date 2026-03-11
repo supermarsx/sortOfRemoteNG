@@ -13,8 +13,6 @@
 //! | VMX parser | Direct `.vmx` file read/write for full configuration access |
 //! | `vmware-vdiskmanager` | VMDK creation, defrag, shrink, expand, convert |
 //! | `ovftool` | OVF / OVA import and export |
-
-pub mod commands;
 pub mod error;
 pub mod guest;
 pub mod networks;

@@ -3,8 +3,8 @@
 // Thin wrappers that take `State<ScpServiceState>`, lock the mutex, and
 // delegate to the service methods.  Every command returns `Result<T, String>`.
 
-use crate::scp::history::ScpHistoryStats;
-use crate::scp::types::*;
+use super::history::ScpHistoryStats;
+use super::types::*;
 
 // ── Connection / session ─────────────────────────────────────────────────────
 
@@ -152,7 +152,7 @@ pub async fn scp_remote_checksum(
 
 #[tauri::command]
 pub async fn scp_local_checksum(path: String) -> Result<String, String> {
-    crate::scp::service::ScpService::local_checksum(&path)
+    super::service::ScpService::local_checksum(&path)
 }
 
 // ── Single-file transfers ────────────────────────────────────────────────────

@@ -24,9 +24,7 @@
 //! - [`keychain`]  — cross-platform store/read/delete API
 //! - [`envelope`]  — AES-256-GCM envelope encryption with Argon2id KDF
 //! - [`migration`] — migrate legacy plain-JSON storage into the vault
-//! - [`commands`]  — Tauri `#[tauri::command]` entry-points
 
-pub mod commands;
 pub mod envelope;
 pub mod keychain;
 pub mod migration;

@@ -1,7 +1,7 @@
-//! Tauri command wrappers for the NX service.
+// Tauri command wrappers for the NX service.
 
-use crate::nx::service::NxServiceState;
-use crate::nx::types::*;
+use super::service::NxServiceState;
+use super::types::*;
 
 // ── Connection management ───────────────────────────────────────────────
 

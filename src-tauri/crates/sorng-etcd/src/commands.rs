@@ -1,10 +1,10 @@
 // ── sorng-etcd/src/commands.rs ───────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `EtcdService`.
+// Tauri commands – thin wrappers around `EtcdService`.
 
 use tauri::State;
 
-use crate::service::EtcdServiceState;
-use crate::types::*;
+use super::service::EtcdServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

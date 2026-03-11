@@ -3,15 +3,15 @@ use std::sync::{Arc, RwLock};
 
 /// Per-session framebuffer slot with its own lock for per-session
 /// concurrency — update_region only blocks the target session.
-pub(crate) struct FrameSlot {
-    pub(crate) inner: RwLock<FrameSlotInner>,
+pub struct FrameSlot {
+    pub inner: RwLock<FrameSlotInner>,
 }
 
 #[allow(dead_code)]
-pub(crate) struct FrameSlotInner {
-    pub(crate) data: Vec<u8>,
-    pub(crate) width: u16,
-    pub(crate) height: u16,
+pub struct FrameSlotInner {
+    pub data: Vec<u8>,
+    pub width: u16,
+    pub height: u16,
 }
 
 /// Thread-safe store of framebuffers for all active RDP sessions.
@@ -19,7 +19,7 @@ pub(crate) struct FrameSlotInner {
 /// session add/remove (rare), and per-slot RwLock for pixel updates
 /// (frequent) so sessions never contend with each other.
 pub struct SharedFrameStore {
-    pub(crate) slots: RwLock<HashMap<String, Arc<FrameSlot>>>,
+    pub slots: RwLock<HashMap<String, Arc<FrameSlot>>>,
 }
 
 pub type SharedFrameStoreState = Arc<SharedFrameStore>;
@@ -32,7 +32,7 @@ impl SharedFrameStore {
     }
 
     /// Create or reset a slot for the given session.
-    pub(crate) fn init(&self, session_id: &str, width: u16, height: u16) {
+    pub fn init(&self, session_id: &str, width: u16, height: u16) {
         let size = width as usize * height as usize * 4;
         let slot = Arc::new(FrameSlot {
             inner: RwLock::new(FrameSlotInner {
@@ -49,7 +49,7 @@ impl SharedFrameStore {
     /// the shared slot.  Only takes a read-lock on the top-level map, then
     /// a write-lock on the individual session slot, so other sessions are
     /// never blocked.
-    pub(crate) fn update_region(
+    pub fn update_region(
         &self,
         session_id: &str,
         source: &[u8],
@@ -79,7 +79,7 @@ impl SharedFrameStore {
 
     /// Extract a rectangular region as a contiguous RGBA byte vec.
     /// Called by the `rdp_get_frame_data` command.
-    pub(crate) fn extract_region(
+    pub fn extract_region(
         &self,
         session_id: &str,
         x: u16,
@@ -105,12 +105,12 @@ impl SharedFrameStore {
     }
 
     /// Reset slot dimensions (e.g. after reactivation at a new desktop size).
-    pub(crate) fn reinit(&self, session_id: &str, width: u16, height: u16) {
+    pub fn reinit(&self, session_id: &str, width: u16, height: u16) {
         self.init(session_id, width, height);
     }
 
     /// Remove the slot when the session ends.
-    pub(crate) fn remove(&self, session_id: &str) {
+    pub fn remove(&self, session_id: &str) {
         let mut slots = self.slots.write().unwrap();
         slots.remove(session_id);
     }

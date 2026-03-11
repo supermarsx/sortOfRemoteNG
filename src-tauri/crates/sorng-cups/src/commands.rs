@@ -1,12 +1,12 @@
-//! Tauri command handlers for the CUPS integration.
-//!
-//! Each function is annotated with `#[tauri::command]` and prefixed with
-//! `cups_`. They acquire the `CupsServiceState` lock, delegate to the
-//! `CupsService` methods, and map errors to `String` for the Tauri IPC
-//! boundary.
+// Tauri command handlers for the CUPS integration.
+//
+// Each function is annotated with `#[tauri::command]` and prefixed with
+// `cups_`. They acquire the `CupsServiceState` lock, delegate to the
+// `CupsService` methods, and map errors to `String` for the Tauri IPC
+// boundary.
 
-use crate::service::CupsServiceState;
-use crate::types::*;
+use super::service::CupsServiceState;
+use super::types::*;
 use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════

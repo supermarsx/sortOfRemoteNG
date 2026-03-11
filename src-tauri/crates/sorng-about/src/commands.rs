@@ -1,5 +1,5 @@
-use crate::service::AboutService;
-use crate::types::*;
+use super::service::AboutService;
+use super::types::*;
 use std::sync::{Arc, Mutex};
 use tauri::command;
 

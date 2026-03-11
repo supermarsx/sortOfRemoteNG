@@ -1,7 +1,7 @@
-//! Tauri commands — async wrappers exposing all process management functionality.
+// Tauri commands — async wrappers exposing all process management functionality.
 
-use crate::service::ProcServiceState;
-use crate::types::*;
+use super::service::ProcServiceState;
+use super::types::*;
 use std::collections::HashMap;
 use tauri::State;
 
@@ -75,7 +75,7 @@ pub async fn proc_list_processes(
     host_id: String,
 ) -> CmdResult<Vec<ProcessInfo>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::list::list_processes(&host).await.map_err(map_err)
+    super::list::list_processes(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -85,7 +85,7 @@ pub async fn proc_get_process(
     pid: u32,
 ) -> CmdResult<ProcessInfo> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::list::get_process(&host, pid).await.map_err(map_err)
+    super::list::get_process(&host, pid).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -94,7 +94,7 @@ pub async fn proc_get_process_tree(
     host_id: String,
 ) -> CmdResult<Vec<ProcessTree>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::list::get_process_tree(&host).await.map_err(map_err)
+    super::list::get_process_tree(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -104,7 +104,7 @@ pub async fn proc_get_process_children(
     pid: u32,
 ) -> CmdResult<Vec<ProcessInfo>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::list::get_process_children(&host, pid)
+    super::list::get_process_children(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -116,7 +116,7 @@ pub async fn proc_search_processes(
     pattern: String,
 ) -> CmdResult<Vec<ProcessInfo>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::list::search_processes(&host, &pattern)
+    super::list::search_processes(&host, &pattern)
         .await
         .map_err(map_err)
 }
@@ -129,7 +129,7 @@ pub async fn proc_top_processes(
     count: usize,
 ) -> CmdResult<Vec<TopProcess>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::list::top_processes(&host, &sort_by, count)
+    super::list::top_processes(&host, &sort_by, count)
         .await
         .map_err(map_err)
 }
@@ -140,7 +140,7 @@ pub async fn proc_count_processes(
     host_id: String,
 ) -> CmdResult<HashMap<String, usize>> {
     let host = resolve_host(&state, &host_id).await?;
-    let counts = crate::list::count_processes(&host).await.map_err(map_err)?;
+    let counts = super::list::count_processes(&host).await.map_err(map_err)?;
     Ok(counts
         .into_iter()
         .map(|(state, n)| (format!("{state:?}").to_lowercase(), n))
@@ -157,7 +157,7 @@ pub async fn proc_kill_process(
     signal: Signal,
 ) -> CmdResult<()> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::signals::kill_process(&host, pid, signal)
+    super::signals::kill_process(&host, pid, signal)
         .await
         .map_err(map_err)
 }
@@ -170,7 +170,7 @@ pub async fn proc_kill_processes(
     signal: Signal,
 ) -> CmdResult<()> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::signals::kill_processes(&host, &pids, signal)
+    super::signals::kill_processes(&host, &pids, signal)
         .await
         .map_err(map_err)
 }
@@ -183,7 +183,7 @@ pub async fn proc_killall(
     signal: Signal,
 ) -> CmdResult<()> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::signals::killall(&host, &name, signal)
+    super::signals::killall(&host, &name, signal)
         .await
         .map_err(map_err)
 }
@@ -196,7 +196,7 @@ pub async fn proc_renice(
     niceness: i32,
 ) -> CmdResult<()> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::signals::renice(&host, pid, niceness)
+    super::signals::renice(&host, pid, niceness)
         .await
         .map_err(map_err)
 }
@@ -210,7 +210,7 @@ pub async fn proc_list_open_files(
     pid: u32,
 ) -> CmdResult<Vec<OpenFile>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::files::list_open_files(&host, pid)
+    super::files::list_open_files(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -221,7 +221,7 @@ pub async fn proc_list_sockets(
     host_id: String,
 ) -> CmdResult<Vec<SocketInfo>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::files::list_sockets(&host).await.map_err(map_err)
+    super::files::list_sockets(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -231,7 +231,7 @@ pub async fn proc_list_process_sockets(
     pid: u32,
 ) -> CmdResult<Vec<SocketInfo>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::files::list_process_sockets(&host, pid)
+    super::files::list_process_sockets(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -242,7 +242,7 @@ pub async fn proc_list_listening_ports(
     host_id: String,
 ) -> CmdResult<Vec<SocketInfo>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::files::list_listening_ports(&host)
+    super::files::list_listening_ports(&host)
         .await
         .map_err(map_err)
 }
@@ -256,7 +256,7 @@ pub async fn proc_get_status(
     pid: u32,
 ) -> CmdResult<HashMap<String, String>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_status(&host, pid)
+    super::proc_fs::get_proc_status(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -268,7 +268,7 @@ pub async fn proc_get_cmdline(
     pid: u32,
 ) -> CmdResult<String> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_cmdline(&host, pid)
+    super::proc_fs::get_proc_cmdline(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -280,7 +280,7 @@ pub async fn proc_get_environ(
     pid: u32,
 ) -> CmdResult<ProcessEnvironment> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_environ(&host, pid)
+    super::proc_fs::get_proc_environ(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -292,7 +292,7 @@ pub async fn proc_get_limits(
     pid: u32,
 ) -> CmdResult<ProcessLimits> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_limits(&host, pid)
+    super::proc_fs::get_proc_limits(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -304,7 +304,7 @@ pub async fn proc_get_maps(
     pid: u32,
 ) -> CmdResult<Vec<MemoryMap>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_maps(&host, pid)
+    super::proc_fs::get_proc_maps(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -316,7 +316,7 @@ pub async fn proc_get_io(
     pid: u32,
 ) -> CmdResult<ProcessIo> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_io(&host, pid)
+    super::proc_fs::get_proc_io(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -328,7 +328,7 @@ pub async fn proc_get_namespaces(
     pid: u32,
 ) -> CmdResult<ProcessNamespace> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_namespaces(&host, pid)
+    super::proc_fs::get_proc_namespaces(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -340,7 +340,7 @@ pub async fn proc_get_cgroup(
     pid: u32,
 ) -> CmdResult<CgroupInfo> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::proc_fs::get_proc_cgroup(&host, pid)
+    super::proc_fs::get_proc_cgroup(&host, pid)
         .await
         .map_err(map_err)
 }
@@ -353,7 +353,7 @@ pub async fn proc_get_load_average(
     host_id: String,
 ) -> CmdResult<SystemLoad> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::system::get_load_average(&host)
+    super::system::get_load_average(&host)
         .await
         .map_err(map_err)
 }
@@ -364,7 +364,7 @@ pub async fn proc_get_uptime(
     host_id: String,
 ) -> CmdResult<UptimeInfo> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::system::get_uptime(&host).await.map_err(map_err)
+    super::system::get_uptime(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -373,7 +373,7 @@ pub async fn proc_get_meminfo(
     host_id: String,
 ) -> CmdResult<HashMap<String, String>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::system::get_meminfo(&host).await.map_err(map_err)
+    super::system::get_meminfo(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -382,5 +382,5 @@ pub async fn proc_get_cpu_stats(
     host_id: String,
 ) -> CmdResult<HashMap<String, String>> {
     let host = resolve_host(&state, &host_id).await?;
-    crate::system::get_cpu_stats(&host).await.map_err(map_err)
+    super::system::get_cpu_stats(&host).await.map_err(map_err)
 }

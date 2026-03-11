@@ -1,10 +1,10 @@
 // ── sorng-opendkim/src/commands.rs ────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `OpendkimService`.
+// Tauri commands – thin wrappers around `OpendkimService`.
 
 use tauri::State;
 
-use crate::service::OpendkimServiceState;
-use crate::types::*;
+use super::service::OpendkimServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

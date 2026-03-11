@@ -1,7 +1,7 @@
-//! Tauri commands — async wrappers for time, timezone & NTP management.
+// Tauri commands — async wrappers for time, timezone & NTP management.
 
-use crate::service::TimeNtpServiceState;
-use crate::types::*;
+use super::service::TimeNtpServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
@@ -70,7 +70,7 @@ pub async fn time_get_status(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::timedatectl::get_time_status(&host)
+    super::timedatectl::get_time_status(&host)
         .await
         .map_err(map_err)
 }
@@ -87,7 +87,7 @@ pub async fn time_set_timezone(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::timedatectl::set_timezone(&host, &tz)
+    super::timedatectl::set_timezone(&host, &tz)
         .await
         .map_err(map_err)
 }
@@ -103,7 +103,7 @@ pub async fn time_list_timezones(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::timedatectl::list_timezones(&host)
+    super::timedatectl::list_timezones(&host)
         .await
         .map_err(map_err)
 }
@@ -123,7 +123,7 @@ pub async fn time_set_time(
     let dt = time_str
         .parse::<chrono::DateTime<chrono::Utc>>()
         .map_err(|e| format!("Invalid datetime: {e}"))?;
-    crate::timedatectl::set_time(&host, dt)
+    super::timedatectl::set_time(&host, dt)
         .await
         .map_err(map_err)
 }
@@ -140,7 +140,7 @@ pub async fn time_set_ntp(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::timedatectl::set_ntp(&host, enabled)
+    super::timedatectl::set_ntp(&host, enabled)
         .await
         .map_err(map_err)
 }
@@ -158,7 +158,7 @@ pub async fn time_get_chrony_config(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::chrony::get_chrony_config(&host)
+    super::chrony::get_chrony_config(&host)
         .await
         .map_err(map_err)
 }
@@ -187,7 +187,7 @@ pub async fn time_chrony_add_server(
         maxpoll: None,
         key: None,
     };
-    crate::chrony::add_server(&host, &cfg)
+    super::chrony::add_server(&host, &cfg)
         .await
         .map_err(map_err)
 }
@@ -204,7 +204,7 @@ pub async fn time_chrony_remove_server(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::chrony::remove_server(&host, &address)
+    super::chrony::remove_server(&host, &address)
         .await
         .map_err(map_err)
 }
@@ -220,7 +220,7 @@ pub async fn time_chrony_get_sources(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::chrony::get_sources(&host).await.map_err(map_err)
+    super::chrony::get_sources(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -234,7 +234,7 @@ pub async fn time_chrony_get_tracking(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::chrony::get_tracking(&host).await.map_err(map_err)
+    super::chrony::get_tracking(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -248,7 +248,7 @@ pub async fn time_chrony_makestep(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::chrony::makestep(&host).await.map_err(map_err)
+    super::chrony::makestep(&host).await.map_err(map_err)
 }
 
 // ── ntpd ─────────────────────────────────────────────────────────────
@@ -264,7 +264,7 @@ pub async fn time_get_ntpd_config(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::ntpd::get_ntpd_config(&host).await.map_err(map_err)
+    super::ntpd::get_ntpd_config(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -291,7 +291,7 @@ pub async fn time_ntpd_add_server(
         maxpoll: None,
         key: None,
     };
-    crate::ntpd::add_server(&host, &cfg).await.map_err(map_err)
+    super::ntpd::add_server(&host, &cfg).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -306,7 +306,7 @@ pub async fn time_ntpd_remove_server(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::ntpd::remove_server(&host, &address)
+    super::ntpd::remove_server(&host, &address)
         .await
         .map_err(map_err)
 }
@@ -322,7 +322,7 @@ pub async fn time_ntpd_get_peers(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::ntpd::get_peers(&host).await.map_err(map_err)
+    super::ntpd::get_peers(&host).await.map_err(map_err)
 }
 
 #[tauri::command]
@@ -336,7 +336,7 @@ pub async fn time_ntpd_get_status(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::ntpd::get_status(&host).await.map_err(map_err)
+    super::ntpd::get_status(&host).await.map_err(map_err)
 }
 
 // ── Hardware Clock ───────────────────────────────────────────────────
@@ -352,7 +352,7 @@ pub async fn time_get_hwclock(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    let dt = crate::hwclock::get_hwclock(&host).await.map_err(map_err)?;
+    let dt = super::hwclock::get_hwclock(&host).await.map_err(map_err)?;
     Ok(dt.to_rfc3339())
 }
 
@@ -367,7 +367,7 @@ pub async fn time_sync_hwclock_from_system(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::hwclock::set_hwclock_from_system(&host)
+    super::hwclock::set_hwclock_from_system(&host)
         .await
         .map_err(map_err)
 }
@@ -383,7 +383,7 @@ pub async fn time_sync_system_from_hwclock(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::hwclock::set_system_from_hwclock(&host)
+    super::hwclock::set_system_from_hwclock(&host)
         .await
         .map_err(map_err)
 }
@@ -399,7 +399,7 @@ pub async fn time_get_hwclock_drift(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::hwclock::get_hwclock_drift(&host)
+    super::hwclock::get_hwclock_drift(&host)
         .await
         .map_err(map_err)
 }
@@ -417,7 +417,7 @@ pub async fn time_detect_ntp(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::detect::detect_ntp_implementation(&host)
+    super::detect::detect_ntp_implementation(&host)
         .await
         .map_err(map_err)
 }
@@ -433,5 +433,5 @@ pub async fn time_is_synced(
         .get_host(&host_id)
         .cloned()
         .map_err(map_err)?;
-    crate::detect::is_ntp_synced(&host).await.map_err(map_err)
+    super::detect::is_ntp_synced(&host).await.map_err(map_err)
 }

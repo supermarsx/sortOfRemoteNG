@@ -1,13 +1,13 @@
-#![allow(dead_code, non_snake_case)]
+// Intentionally broad command surface for terminal theme management.
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::ansi;
-use crate::custom;
-use crate::engine::ThemeEngineState;
-use crate::export;
-use crate::types::*;
+use super::ansi;
+use super::custom;
+use super::engine::ThemeEngineState;
+use super::export;
+use super::types::*;
 
 // ─── List / Query ────────────────────────────────────────────
 

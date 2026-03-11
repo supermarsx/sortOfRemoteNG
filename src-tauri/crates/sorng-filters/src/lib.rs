@@ -1,5 +1,4 @@
 pub mod cache;
-pub mod commands;
 pub mod error;
 pub mod evaluator;
 pub mod groups;

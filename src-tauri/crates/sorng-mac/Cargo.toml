@@ -8,7 +8,6 @@ description = "Linux Mandatory Access Control (SELinux, AppArmor, TOMOYO, SMACK)
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

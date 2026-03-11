@@ -1,6 +1,6 @@
 // ─── Exchange Integration – Tauri commands ───────────────────────────────────
-use crate::service::ExchangeServiceState;
-use crate::types::*;
+use super::service::ExchangeServiceState;
+use super::types::*;
 use tauri::State;
 
 fn err_str(e: ExchangeError) -> String {

@@ -8,7 +8,6 @@ description = "osTicket integration crate for SortOfRemoteNG"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "blocking"] }

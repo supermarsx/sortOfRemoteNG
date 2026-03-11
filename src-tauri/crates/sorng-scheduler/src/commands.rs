@@ -1,16 +1,16 @@
-//! Tauri command handlers for the scheduler.
-//!
-//! Each command follows the `sched_*` naming convention and delegates
-//! to [`SchedulerService`].
+// Tauri command handlers for the scheduler.
+//
+// Each command follows the `sched_*` naming convention and delegates
+// to [`SchedulerService`].
 
 use chrono::{DateTime, Utc};
 use tauri::State;
 
-use crate::service::SchedulerServiceState;
-use crate::types::*;
+use super::service::SchedulerServiceState;
+use super::types::*;
 
 /// Helper to map SchedulerError → String for Tauri command results.
-fn err_str(e: crate::error::SchedulerError) -> String {
+fn err_str(e: super::error::SchedulerError) -> String {
     e.to_string()
 }
 

@@ -14,8 +14,10 @@ sorng-gateway = { path = "../sorng-gateway" }
 sorng-gdrive = { path = "../sorng-gdrive" }
 sorng-llm = { path = "../sorng-llm" }
 sorng-nextcloud = { path = "../sorng-nextcloud" }
+sorng-onedrive = { path = "../sorng-onedrive" }
 sorng-recording = { path = "../sorng-recording" }
 sorng-secure-clip = { path = "../sorng-secure-clip" }
 sorng-telegram = { path = "../sorng-telegram" }
 sorng-terminal-themes = { path = "../sorng-terminal-themes" }
+sorng-totp = { path = "../sorng-totp" }
 sorng-whatsapp = { path = "../sorng-whatsapp" }

@@ -1,7 +1,6 @@
 pub mod actions;
 pub mod certificates;
 pub mod client;
-pub mod commands;
 pub mod error;
 pub mod firewalls;
 pub mod floating_ips;

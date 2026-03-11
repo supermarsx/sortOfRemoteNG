@@ -22,7 +22,6 @@
 pub mod bot;
 pub mod chat;
 pub mod client;
-pub mod commands;
 pub mod files;
 pub mod messaging;
 pub mod monitoring;

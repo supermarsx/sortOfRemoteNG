@@ -1,10 +1,10 @@
-//! # Tauri Commands for GPG Agent
-//!
-//! Each function is a `#[tauri::command]` that locks the shared state
-//! (`GpgServiceState = Arc<tokio::sync::Mutex<GpgAgentService>>`) and
-//! delegates to `GpgAgentService`.
+// # Tauri Commands for GPG Agent
+//
+// Each function is a `#[tauri::command]` that locks the shared state
+// (`GpgServiceState = Arc<tokio::sync::Mutex<GpgAgentService>>`) and
+// delegates to `GpgAgentService`.
 
-use crate::types::*;
+use super::types::*;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use tauri::State;
 

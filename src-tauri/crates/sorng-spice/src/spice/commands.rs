@@ -1,7 +1,7 @@
-//! Tauri command wrappers for the SPICE service.
+// Tauri command wrappers for the SPICE service.
 
-use crate::spice::service::SpiceServiceState;
-use crate::spice::types::*;
+use super::service::SpiceServiceState;
+use super::types::*;
 
 // ── Connection management ───────────────────────────────────────────────
 

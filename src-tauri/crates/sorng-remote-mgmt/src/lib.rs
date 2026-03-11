@@ -8,5 +8,4 @@ pub mod anydesk;
 pub mod commander;
 pub mod meshcentral;
 pub mod rpc;
-pub mod rustdesk;
 pub mod wmi;

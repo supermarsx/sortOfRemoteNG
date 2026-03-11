@@ -1,10 +1,10 @@
 // ── sorng-docker/src/commands.rs ──────────────────────────────────────────────
-//! Tauri command handlers for Docker daemon management.
+// Tauri command handlers for Docker daemon management.
 
 use tauri::State;
 
-use crate::service::DockerServiceState;
-use crate::types::*;
+use super::service::DockerServiceState;
+use super::types::*;
 
 // ── Connection lifecycle ──────────────────────────────────────────────────────
 

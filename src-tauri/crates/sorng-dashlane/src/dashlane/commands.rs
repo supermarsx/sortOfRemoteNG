@@ -1,7 +1,7 @@
 use tauri::State;
 
-use crate::dashlane::service::DashlaneServiceState;
-use crate::dashlane::types::*;
+use super::service::DashlaneServiceState;
+use super::types::*;
 
 // --- Configuration & Auth ---
 

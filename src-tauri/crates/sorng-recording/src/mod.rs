@@ -7,4 +7,3 @@ pub mod encoders;
 pub mod compression;
 pub mod storage;
 pub mod service;
-pub mod commands;

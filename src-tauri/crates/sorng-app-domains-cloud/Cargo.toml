@@ -9,4 +9,6 @@ sorng-azure = { path = "../sorng-azure" }
 sorng-cloud = { path = "../sorng-cloud" }
 sorng-exchange = { path = "../sorng-exchange" }
 sorng-gcp = { path = "../sorng-gcp" }
+sorng-hetzner = { path = "../sorng-hetzner" }
+sorng-oracle-cloud = { path = "../sorng-oracle-cloud" }
 sorng-smtp = { path = "../sorng-smtp" }

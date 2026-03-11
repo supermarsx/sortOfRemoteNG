@@ -12,8 +12,8 @@ use ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 use ironrdp_blocking::Framed;
-use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter};
+use sorng_core::events::DynEventEmitter;
+use super::frame_channel::DynFrameChannel;
 use tokio::sync::mpsc;
 
 use super::frame_delivery::*;
@@ -31,7 +31,7 @@ use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
 /// DeactivateAll.  This re-runs the Capability Exchange and Connection
 /// Finalization phases so the server can transition from the login screen
 /// to the user desktop (MS-RDPBCGR section 1.3.1.3).
-pub(crate) fn handle_reactivation<S: std::io::Read + std::io::Write>(
+pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
     mut cas: Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>,
     tls_framed: &mut Framed<S>,
     stats: &RdpSessionStats,
@@ -146,7 +146,7 @@ struct EstablishedSession {
 // ---- Blocking RDP session runner ----
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn run_rdp_session(
+pub fn run_rdp_session(
     session_id: String,
     host: String,
     port: u16,
@@ -154,13 +154,13 @@ pub(crate) fn run_rdp_session(
     password: String,
     domain: Option<String>,
     settings: ResolvedSettings,
-    app_handle: AppHandle,
+    event_emitter: DynEventEmitter,
     mut cmd_rx: mpsc::UnboundedReceiver<RdpCommand>,
     stats: Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: SharedFrameStoreState,
-    frame_channel: Channel<InvokeResponseBody>,
+    frame_channel: DynFrameChannel,
 ) {
     // Log CPU SIMD capabilities once (first session only).
     static LOG_FEATURES: std::sync::Once = std::sync::Once::new();
@@ -176,7 +176,7 @@ pub(crate) fn run_rdp_session(
             &password,
             domain.as_deref(),
             &settings,
-            &app_handle,
+            &event_emitter,
             &mut cmd_rx,
             &stats,
             cached_tls_connector,
@@ -193,7 +193,7 @@ pub(crate) fn run_rdp_session(
             &password,
             domain.as_deref(),
             &settings,
-            &app_handle,
+            &event_emitter,
             &mut cmd_rx,
             &stats,
             cached_tls_connector,
@@ -212,15 +212,15 @@ pub(crate) fn run_rdp_session(
             log::info!("RDP session {session_id} ended normally");
             stats.set_phase("disconnected");
             // Only emit disconnected for clean exits -- errors already emitted their own status.
-            let _ = app_handle.emit(
+            let _ = event_emitter.emit_event(
                 "rdp://status",
-                RdpStatusEvent {
+                serde_json::to_value(&RdpStatusEvent {
                     session_id,
                     status: "disconnected".to_string(),
                     message: "Session ended".to_string(),
                     desktop_width: None,
                     desktop_height: None,
-                },
+                }).unwrap_or_default(),
             );
         }
         Err(e) => {
@@ -232,15 +232,15 @@ pub(crate) fn run_rdp_session(
             if err_msg.contains("session_shutdown") {
                 log::info!("RDP session {session_id} was shut down before connecting");
                 stats.set_phase("disconnected");
-                let _ = app_handle.emit(
+                let _ = event_emitter.emit_event(
                     "rdp://status",
-                    RdpStatusEvent {
+                    serde_json::to_value(&RdpStatusEvent {
                         session_id,
                         status: "disconnected".to_string(),
                         message: "Session cancelled".to_string(),
                         desktop_width: None,
                         desktop_height: None,
-                    },
+                    }).unwrap_or_default(),
                 );
                 return;
             }
@@ -248,15 +248,15 @@ pub(crate) fn run_rdp_session(
             log::error!("RDP session {session_id} error: {err_msg}");
             stats.set_phase("error");
             stats.set_last_error(&err_msg);
-            let _ = app_handle.emit(
+            let _ = event_emitter.emit_event(
                 "rdp://status",
-                RdpStatusEvent {
+                serde_json::to_value(&RdpStatusEvent {
                     session_id,
                     status: "error".to_string(),
                     message: err_msg,
                     desktop_width: None,
                     desktop_height: None,
-                },
+                }).unwrap_or_default(),
             );
         }
     }
@@ -264,7 +264,7 @@ pub(crate) fn run_rdp_session(
 
 /// Build a list of (enable_tls, enable_credssp, allow_hybrid_ex) combos to try
 /// based on the negotiation strategy.
-pub(crate) fn build_negotiation_combos(
+pub fn build_negotiation_combos(
     strategy: &str,
     base: &ResolvedSettings,
 ) -> Vec<(bool, bool, bool)> {
@@ -316,13 +316,13 @@ fn run_rdp_session_auto_detect(
     password: &str,
     domain: Option<&str>,
     settings: &ResolvedSettings,
-    app_handle: &AppHandle,
+    event_emitter: &DynEventEmitter,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
@@ -348,9 +348,9 @@ fn run_rdp_session_auto_detect(
             hybrid_ex
         );
 
-        let _ = app_handle.emit(
+        let _ = event_emitter.emit_event(
             "rdp://status",
-            RdpStatusEvent {
+            serde_json::to_value(&RdpStatusEvent {
                 session_id: session_id.to_string(),
                 status: "negotiating".to_string(),
                 message: format!(
@@ -363,7 +363,7 @@ fn run_rdp_session_auto_detect(
                 ),
                 desktop_width: None,
                 desktop_height: None,
-            },
+            }).unwrap_or_default(),
         );
 
         let mut attempt_settings = ResolvedSettings {
@@ -384,7 +384,7 @@ fn run_rdp_session_auto_detect(
             password,
             domain,
             &attempt_settings,
-            app_handle,
+            &event_emitter,
             cmd_rx,
             stats,
             cached_tls_connector.clone(),
@@ -452,9 +452,9 @@ fn run_rdp_session_auto_detect(
                     attempt_num, total_fallback, tls, credssp, hybrid_ex, depth
                 );
 
-                let _ = app_handle.emit(
+                let _ = event_emitter.emit_event(
                     "rdp://status",
-                    RdpStatusEvent {
+                    serde_json::to_value(&RdpStatusEvent {
                         session_id: session_id.to_string(),
                         status: "negotiating".to_string(),
                         message: format!(
@@ -463,7 +463,7 @@ fn run_rdp_session_auto_detect(
                         ),
                         desktop_width: None,
                         desktop_height: None,
-                    },
+                    }).unwrap_or_default(),
                 );
 
                 let mut fallback_settings = ResolvedSettings {
@@ -494,7 +494,7 @@ fn run_rdp_session_auto_detect(
                     password,
                     domain,
                     &fallback_settings,
-                    app_handle,
+                    &event_emitter,
                     cmd_rx,
                     stats,
                     cached_tls_connector.clone(),
@@ -564,7 +564,7 @@ fn establish_rdp_connection(
     password: &str,
     domain: Option<&str>,
     settings: &ResolvedSettings,
-    app_handle: &AppHandle,
+    event_emitter: &DynEventEmitter,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
@@ -588,15 +588,15 @@ fn establish_rdp_connection(
     log::info!("RDP session {session_id}: connecting to {addr}");
     stats.set_phase("tcp_connect");
 
-    let _ = app_handle.emit(
+    let _ = event_emitter.emit_event(
         "rdp://status",
-        RdpStatusEvent {
+        serde_json::to_value(&RdpStatusEvent {
             session_id: session_id.to_string(),
             status: "connecting".to_string(),
             message: format!("Connecting to {addr}..."),
             desktop_width: None,
             desktop_height: None,
-        },
+        }).unwrap_or_default(),
     );
 
     // Resolve address -- supports both raw IPs and hostnames.
@@ -823,14 +823,14 @@ fn establish_rdp_connection(
     {
         let (tls_stream, _) = tls_framed.get_inner();
         if let Some(fp) = extract_cert_fingerprint(tls_stream) {
-            let _ = app_handle.emit(
+            let _ = event_emitter.emit_event(
                 "rdp://cert-fingerprint",
-                serde_json::json!({
+                serde_json::to_value(&serde_json::json!({
                     "session_id": session_id,
                     "fingerprint": fp,
                     "host": host,
                     "port": port,
-                }),
+                })).unwrap_or_default(),
             );
         }
     }
@@ -851,15 +851,15 @@ fn establish_rdp_connection(
     stats.set_phase("authenticating");
     log::info!("RDP session {session_id}: finalizing connection (CredSSP/NLA)");
 
-    let _ = app_handle.emit(
+    let _ = event_emitter.emit_event(
         "rdp://status",
-        RdpStatusEvent {
+        serde_json::to_value(&RdpStatusEvent {
             session_id: session_id.to_string(),
             status: "connecting".to_string(),
             message: "Authenticating...".to_string(),
             desktop_width: None,
             desktop_height: None,
-        },
+        }).unwrap_or_default(),
     );
 
     let t_auth = Instant::now();
@@ -911,9 +911,9 @@ fn establish_rdp_connection(
     );
 
     // Emit timing event to frontend for visibility
-    let _ = app_handle.emit(
+    let _ = event_emitter.emit_event(
         "rdp://timing",
-        serde_json::json!({
+        serde_json::to_value(&serde_json::json!({
             "session_id": session_id,
             "dns_ms": dns_ms,
             "tcp_ms": tcp_ms,
@@ -921,7 +921,7 @@ fn establish_rdp_connection(
             "tls_ms": tls_ms,
             "auth_ms": auth_ms,
             "total_ms": total_ms,
-        }),
+        })).unwrap_or_default(),
     );
 
     // -- 6. Enter active session --
@@ -932,15 +932,15 @@ fn establish_rdp_connection(
     stats.set_phase("active");
     log::info!("RDP session {session_id}: connected! Desktop: {desktop_width}x{desktop_height}");
 
-    let _ = app_handle.emit(
+    let _ = event_emitter.emit_event(
         "rdp://status",
-        RdpStatusEvent {
+        serde_json::to_value(&RdpStatusEvent {
             session_id: session_id.to_string(),
             status: "connected".to_string(),
             message: format!("Connected ({desktop_width}x{desktop_height})"),
             desktop_width: Some(desktop_width),
             desktop_height: Some(desktop_height),
-        },
+        }).unwrap_or_default(),
     );
 
     let image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
@@ -972,12 +972,12 @@ fn establish_rdp_connection(
     }
 
     // Notify the frontend which render backend is actually active
-    let _ = app_handle.emit(
+    let _ = event_emitter.emit_event(
         "rdp://render-backend",
-        serde_json::json!({
+        serde_json::to_value(&serde_json::json!({
             "session_id": session_id,
             "backend": active_render_backend,
-        }),
+        })).unwrap_or_default(),
     );
 
     Ok(EstablishedSession {
@@ -1001,15 +1001,15 @@ fn run_active_session_loop(
     session_id: &str,
     est: &mut EstablishedSession,
     settings: &ResolvedSettings,
-    app_handle: &AppHandle,
+    event_emitter: &DynEventEmitter,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
     frame_store: &SharedFrameStoreState,
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
 ) -> SessionLoopExit {
     // Viewer channel management for session persistence.
     let mut viewer_detached = false;
-    let mut attached_channel: Option<Channel<InvokeResponseBody>> = None;
+    let mut attached_channel: Option<DynFrameChannel> = None;
 
     // Set a short read timeout so we can interleave input handling
     set_read_timeout_on_framed(&est.tls_framed, Some(settings.read_timeout));
@@ -1090,16 +1090,16 @@ fn run_active_session_loop(
                             payload.extend_from_slice(&w.to_le_bytes());
                             payload.extend_from_slice(&h.to_le_bytes());
                             payload.extend_from_slice(&slot.data);
-                            let _ = new_channel.send(InvokeResponseBody::Raw(payload));
+                            let _ = new_channel.send_raw(payload);
                         }
                     }
                     attached_channel = Some(new_channel);
                     viewer_detached = false;
 
                     // Emit "connected" status so the frontend knows the session is live
-                    let _ = app_handle.emit(
+                    let _ = event_emitter.emit_event(
                         "rdp://status",
-                        RdpStatusEvent {
+                        serde_json::to_value(&RdpStatusEvent {
                             session_id: session_id.to_string(),
                             status: "connected".to_string(),
                             message: format!(
@@ -1108,7 +1108,7 @@ fn run_active_session_loop(
                             ),
                             desktop_width: Some(est.desktop_width),
                             desktop_height: Some(est.desktop_height),
-                        },
+                        }).unwrap_or_default(),
                     );
                 }
                 Ok(RdpCommand::DetachViewer) => {
@@ -1219,7 +1219,7 @@ fn run_active_session_loop(
                             &est.image,
                             est.desktop_width,
                             est.desktop_height,
-                            app_handle,
+                            &event_emitter,
                             stats,
                             full_frame_sync_interval,
                             frame_store,
@@ -1256,7 +1256,7 @@ fn run_active_session_loop(
 
         // - Emit periodic stats -
         if last_stats_emit.elapsed() >= stats_interval {
-            let _ = app_handle.emit("rdp://stats", stats.to_event(session_id));
+            let _ = event_emitter.emit_event("rdp://stats", serde_json::to_value(&stats.to_event(session_id)).unwrap_or_default());
             last_stats_emit = Instant::now();
 
             // -- RDP-level keepalive guard --
@@ -1361,7 +1361,7 @@ fn run_active_session_loop(
                 payload[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
                 payload[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
                 payload[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
-                let _ = active_ch.send(InvokeResponseBody::Raw(payload));
+                let _ = active_ch.send_raw(payload);
             }
         }
 
@@ -1455,36 +1455,36 @@ fn run_active_session_loop(
                                         }
                                     }
                                     ActiveStageOutput::PointerDefault => {
-                                        let _ = app_handle.emit(
+                                        let _ = event_emitter.emit_event(
                                             "rdp://pointer",
-                                            RdpPointerEvent {
+                                            serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "default",
                                                 x: None,
                                                 y: None,
-                                            },
+                                            }).unwrap_or_default(),
                                         );
                                     }
                                     ActiveStageOutput::PointerHidden => {
-                                        let _ = app_handle.emit(
+                                        let _ = event_emitter.emit_event(
                                             "rdp://pointer",
-                                            RdpPointerEvent {
+                                            serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "hidden",
                                                 x: None,
                                                 y: None,
-                                            },
+                                            }).unwrap_or_default(),
                                         );
                                     }
                                     ActiveStageOutput::PointerPosition { x, y } => {
-                                        let _ = app_handle.emit(
+                                        let _ = event_emitter.emit_event(
                                             "rdp://pointer",
-                                            RdpPointerEvent {
+                                            serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "position",
                                                 x: Some(x),
                                                 y: Some(y),
-                                            },
+                                            }).unwrap_or_default(),
                                         );
                                     }
                                     ActiveStageOutput::PointerBitmap(_bitmap) => {}
@@ -1595,15 +1595,15 @@ fn run_active_session_loop(
             log::info!("RDP session {session_id}: DeactivateAll received, running reactivation");
             stats.reactivations.fetch_add(1, Ordering::Relaxed);
 
-            let _ = app_handle.emit(
+            let _ = event_emitter.emit_event(
                 "rdp://status",
-                RdpStatusEvent {
+                serde_json::to_value(&RdpStatusEvent {
                     session_id: session_id.to_string(),
                     status: "connecting".to_string(),
                     message: "Reactivating session...".to_string(),
                     desktop_width: None,
                     desktop_height: None,
-                },
+                }).unwrap_or_default(),
             );
 
             // Remove read timeout for reactivation
@@ -1628,9 +1628,9 @@ fn run_active_session_loop(
                         est.desktop_height
                     );
 
-                    let _ = app_handle.emit(
+                    let _ = event_emitter.emit_event(
                         "rdp://status",
-                        RdpStatusEvent {
+                        serde_json::to_value(&RdpStatusEvent {
                             session_id: session_id.to_string(),
                             status: "connected".to_string(),
                             message: format!(
@@ -1639,7 +1639,7 @@ fn run_active_session_loop(
                             ),
                             desktop_width: Some(est.desktop_width),
                             desktop_height: Some(est.desktop_height),
-                        },
+                        }).unwrap_or_default(),
                     );
 
                     set_read_timeout_on_framed(&est.tls_framed, Some(settings.read_timeout));
@@ -1668,13 +1668,13 @@ fn run_rdp_session_inner(
     password: &str,
     domain: Option<&str>,
     settings: &ResolvedSettings,
-    app_handle: &AppHandle,
+    event_emitter: &DynEventEmitter,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
-    frame_channel: &Channel<InvokeResponseBody>,
+    frame_channel: &DynFrameChannel,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut reconnect_count: u32 = 0;
     let reconnect_enabled = settings.reconnect_on_network_loss;
@@ -1697,7 +1697,7 @@ fn run_rdp_session_inner(
             password,
             domain,
             settings,
-            app_handle,
+            &event_emitter,
             cmd_rx,
             stats,
             cached_tls_connector.clone(),
@@ -1740,15 +1740,15 @@ fn run_rdp_session_inner(
                 );
 
                 stats.set_phase("reconnecting");
-                let _ = app_handle.emit(
+                let _ = event_emitter.emit_event(
                     "rdp://status",
-                    RdpStatusEvent {
+                    serde_json::to_value(&RdpStatusEvent {
                         session_id: session_id.to_string(),
                         status: "reconnecting".to_string(),
                         message: format!("Reconnecting ({reconnect_count})... {msg}"),
                         desktop_width: None,
                         desktop_height: None,
-                    },
+                    }).unwrap_or_default(),
                 );
 
                 sleep_with_shutdown_check(
@@ -1768,7 +1768,7 @@ fn run_rdp_session_inner(
             session_id,
             &mut established,
             settings,
-            app_handle,
+            &event_emitter,
             cmd_rx,
             stats,
             frame_store,
@@ -1811,15 +1811,15 @@ fn run_rdp_session_inner(
 
         // Shared reconnection logic for NetworkError and ReconnectRequested
         stats.set_phase("reconnecting");
-        let _ = app_handle.emit(
+        let _ = event_emitter.emit_event(
             "rdp://status",
-            RdpStatusEvent {
+            serde_json::to_value(&RdpStatusEvent {
                 session_id: session_id.to_string(),
                 status: "reconnecting".to_string(),
                 message: format!("Reconnecting ({reconnect_count})..."),
                 desktop_width: None,
                 desktop_height: None,
-            },
+            }).unwrap_or_default(),
         );
 
         // Preserve the framebuffer — don't remove it during reconnect.

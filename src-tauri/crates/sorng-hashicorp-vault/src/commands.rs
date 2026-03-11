@@ -1,8 +1,8 @@
 // ── sorng-hashicorp-vault/src/commands.rs ─────────────────────────────────────
-//! Tauri commands – thin wrappers around `VaultService`.
+// Tauri commands – thin wrappers around `VaultService`.
 
-use crate::service::VaultServiceState;
-use crate::types::*;
+use super::service::VaultServiceState;
+use super::types::*;
 use serde_json::Value;
 use tauri::State;
 

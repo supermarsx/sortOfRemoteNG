@@ -1,7 +1,6 @@
 // ── sorng-opendkim – OpenDKIM management via SSH ─────────────────────────────
 
 pub mod client;
-pub mod commands;
 pub mod config;
 pub mod error;
 pub mod key_table;

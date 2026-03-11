@@ -3,19 +3,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ironrdp_blocking::Framed;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::{DigitallySignedStruct, SignatureScheme};
 
 use super::{RdpTlsConfig, RdpTlsStream};
 
 // ---- Network client for CredSSP HTTP requests ----
 
-pub(crate) struct BlockingNetworkClient {
+pub struct BlockingNetworkClient {
     client: Arc<reqwest::blocking::Client>,
 }
 
 impl BlockingNetworkClient {
     /// Create from a pre-built (cached) client.  Falls back to building a
     /// new one with aggressive timeouts if no cached client is supplied.
-    pub(crate) fn new(cached: Option<Arc<reqwest::blocking::Client>>) -> Self {
+    pub fn new(cached: Option<Arc<reqwest::blocking::Client>>) -> Self {
         let client = cached.unwrap_or_else(|| {
             Arc::new(
                 reqwest::blocking::Client::builder()
@@ -131,36 +134,67 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
 #[derive(Debug)]
 struct NoCertificateVerification;
 
-impl rustls::client::ServerCertVerifier for NoCertificateVerification {
+impl ServerCertVerifier for NoCertificateVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::Certificate,
-        _intermediates: &[rustls::Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::ServerCertVerified::assertion())
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::ED25519,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+        ]
     }
 }
 
-pub(crate) fn build_tls_config(
+pub fn build_tls_config(
     accept_invalid_certs: bool,
 ) -> Result<RdpTlsConfig, Box<dyn std::error::Error + Send + Sync>> {
     let config = if accept_invalid_certs {
         rustls::ClientConfig::builder()
-            .with_safe_defaults()
+            .dangerous()
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
             .with_no_client_auth()
     } else {
         let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs()? {
-            roots.add(&rustls::Certificate(cert.0))?;
+        let cert_result = rustls_native_certs::load_native_certs();
+        for cert in cert_result.certs {
+            roots.add(cert)?;
         }
 
         rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(roots)
             .with_no_client_auth()
     };
@@ -169,7 +203,7 @@ pub(crate) fn build_tls_config(
 }
 
 #[allow(clippy::type_complexity)]
-pub(crate) fn tls_upgrade(
+pub fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
     leftover: ::bytes::BytesMut,
@@ -182,7 +216,7 @@ pub(crate) fn tls_upgrade(
         None => build_tls_config(true)?,
     };
 
-    let server_name = rustls::ServerName::try_from(server_name)
+    let server_name = ServerName::try_from(server_name.to_owned())
         .map_err(|_| format!("Invalid TLS server name: {server_name}"))?;
     let mut client = rustls::ClientConnection::new(tls_config, server_name)
         .map_err(|e| format!("TLS client creation failed: {e}"))?;
@@ -197,7 +231,7 @@ pub(crate) fn tls_upgrade(
     Ok((framed, server_public_key))
 }
 
-pub(crate) fn extract_server_public_key(
+pub fn extract_server_public_key(
     tls_stream: &RdpTlsStream,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     use x509_cert::der::Decode;
@@ -206,7 +240,7 @@ pub(crate) fn extract_server_public_key(
         .conn
         .peer_certificates()
         .and_then(|certs| certs.first())
-        .map(|cert| cert.0.clone())
+        .map(|cert| cert.as_ref().to_vec())
         .ok_or("Peer certificate is missing")?;
 
     let cert = x509_cert::Certificate::from_der(&der)
@@ -224,14 +258,14 @@ pub(crate) fn extract_server_public_key(
 }
 
 /// Extract SHA-256 fingerprint of the server's TLS certificate
-pub(crate) fn extract_cert_fingerprint(tls_stream: &RdpTlsStream) -> Option<String> {
+pub fn extract_cert_fingerprint(tls_stream: &RdpTlsStream) -> Option<String> {
     use sha2::{Digest, Sha256};
 
     let der = tls_stream
         .conn
         .peer_certificates()
         .and_then(|certs| certs.first())
-        .map(|cert| cert.0.clone())?;
+        .map(|cert| cert.as_ref().to_vec())?;
     let hash = Sha256::digest(&der);
     let hex: Vec<String> = hash.iter().map(|b| format!("{b:02x}")).collect();
     Some(hex.join(":"))

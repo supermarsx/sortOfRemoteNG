@@ -1,15 +1,15 @@
-//! Tauri command handlers for the marketplace.
-//!
-//! Each command follows the `mkt_*` naming convention and delegates
-//! to [`MarketplaceService`].
+// Tauri command handlers for the marketplace.
+//
+// Each command follows the `mkt_*` naming convention and delegates
+// to [`MarketplaceService`].
 
 use tauri::State;
 
-use crate::service::MarketplaceServiceState;
-use crate::types::*;
+use super::service::MarketplaceServiceState;
+use super::types::*;
 
 /// Helper to map MarketplaceError → String for Tauri command results.
-fn err_str(e: crate::error::MarketplaceError) -> String {
+fn err_str(e: super::error::MarketplaceError) -> String {
     e.to_string()
 }
 

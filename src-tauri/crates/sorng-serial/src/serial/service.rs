@@ -1,7 +1,7 @@
 //! Serial service — multi-session manager.
 //!
 //! Owns all active serial sessions, handles port scanning, and forwards
-//! session events to the Tauri frontend via the app handle.
+//! session events to the frontend via the event emitter.
 
 use crate::serial::logging::{DataDirection, LogEntry, LogWriter};
 use crate::serial::modem::{ModemController, ModemInfo, SignalQuality};
@@ -9,9 +9,9 @@ use crate::serial::native_transport::NativeTransport;
 use crate::serial::port_scanner::{self, ScanOptions, ScanResult};
 use crate::serial::session::{self, SerialSessionHandle, SessionCommand, SessionEvent};
 use crate::serial::types::*;
+use sorng_core::events::DynEventEmitter;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::Emitter;
 use tokio::sync::RwLock;
 
 /// Type alias used as Tauri managed state.
@@ -21,6 +21,7 @@ pub type SerialServiceState = Arc<SerialService>;
 pub struct SerialService {
     sessions: RwLock<HashMap<String, Arc<SerialSessionHandle>>>,
     log_writers: RwLock<HashMap<String, tokio::sync::Mutex<LogWriter>>>,
+    event_emitter: Option<DynEventEmitter>,
 }
 
 impl SerialService {
@@ -29,6 +30,16 @@ impl SerialService {
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
             log_writers: RwLock::new(HashMap::new()),
+            event_emitter: None,
+        })
+    }
+
+    /// Create a new service instance with an event emitter for frontend events.
+    pub fn new_with_emitter(emitter: DynEventEmitter) -> SerialServiceState {
+        Arc::new(Self {
+            sessions: RwLock::new(HashMap::new()),
+            log_writers: RwLock::new(HashMap::new()),
+            event_emitter: Some(emitter),
         })
     }
 
@@ -378,11 +389,11 @@ impl SerialService {
 
     // ── Event forwarding ──────────────────────────────────────────
 
-    /// Start forwarding events from a session to a Tauri app handle.
+    /// Start forwarding events from a session to the event emitter.
     /// Call this after `connect()`.
-    pub fn start_event_forwarder<R: tauri::Runtime>(
+    pub fn start_event_forwarder(
         &self,
-        app: tauri::AppHandle<R>,
+        emitter: DynEventEmitter,
         session_id: String,
         handle: Arc<SerialSessionHandle>,
     ) {
@@ -399,7 +410,7 @@ impl SerialService {
                             ),
                             text,
                         };
-                        let _ = app.emit("serial:output", &payload);
+                        let _ = emitter.emit_event("serial:output", serde_json::to_value(&payload).unwrap_or_default());
                     }
                     SessionEvent::Echo(data) => {
                         let text = String::from_utf8_lossy(&data).to_string();
@@ -411,7 +422,7 @@ impl SerialService {
                             ),
                             text,
                         };
-                        let _ = app.emit("serial:echo", &payload);
+                        let _ = emitter.emit_event("serial:echo", serde_json::to_value(&payload).unwrap_or_default());
                     }
                     SessionEvent::Error {
                         message,
@@ -422,43 +433,43 @@ impl SerialService {
                             message,
                             recoverable,
                         };
-                        let _ = app.emit("serial:error", &payload);
+                        let _ = emitter.emit_event("serial:error", serde_json::to_value(&payload).unwrap_or_default());
                     }
                     SessionEvent::ControlLineChange(lines) => {
                         let payload = ControlLineChangeEvent {
                             session_id: session_id.clone(),
                             lines,
                         };
-                        let _ = app.emit("serial:control-lines", &payload);
+                        let _ = emitter.emit_event("serial:control-lines", serde_json::to_value(&payload).unwrap_or_default());
                     }
                     SessionEvent::Disconnected { reason } => {
                         let payload = SerialClosedEvent {
                             session_id: session_id.clone(),
                             reason,
                         };
-                        let _ = app.emit("serial:closed", &payload);
+                        let _ = emitter.emit_event("serial:closed", serde_json::to_value(&payload).unwrap_or_default());
                         break;
                     }
                     SessionEvent::StatsUpdate(stats) => {
-                        let _ = app.emit("serial:stats", &stats);
+                        let _ = emitter.emit_event("serial:stats", serde_json::to_value(&stats).unwrap_or_default());
                     }
                 }
             }
         });
     }
 
-    /// Connect with Tauri event forwarding.
-    pub async fn connect_with_events<R: tauri::Runtime>(
+    /// Connect with event forwarding to the stored emitter.
+    pub async fn connect_with_events(
         &self,
-        app: tauri::AppHandle<R>,
         config: SerialConfig,
     ) -> Result<SerialSession, String> {
         let info = self.connect(config).await?;
-        let session_id = info.id.clone();
 
-        // Get the handle to start forwarding
-        let handle = self.get_session(&session_id).await?;
-        self.start_event_forwarder(app, session_id, handle);
+        if let Some(emitter) = &self.event_emitter {
+            let session_id = info.id.clone();
+            let handle = self.get_session(&session_id).await?;
+            self.start_event_forwarder(emitter.clone(), session_id, handle);
+        }
 
         Ok(info)
     }

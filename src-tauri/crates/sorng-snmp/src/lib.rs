@@ -21,7 +21,6 @@
 pub mod ber;
 pub mod bulk;
 pub mod client;
-pub mod commands;
 pub mod discovery;
 pub mod error;
 pub mod get;

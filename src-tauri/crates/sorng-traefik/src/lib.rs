@@ -1,7 +1,6 @@
 // ── sorng-traefik – Traefik reverse proxy integration ────────────────────────
 
 pub mod client;
-pub mod commands;
 pub mod entrypoints;
 pub mod error;
 pub mod middleware;

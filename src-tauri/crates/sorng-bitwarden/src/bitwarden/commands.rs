@@ -1,11 +1,11 @@
-//! Tauri commands for the Bitwarden integration.
-//!
-//! Each function is a `#[tauri::command]` that can be invoked
-//! from the frontend via `invoke("bw_command_name", { ... })`.
+// Tauri commands for the Bitwarden integration.
+//
+// Each function is a `#[tauri::command]` that can be invoked
+// from the frontend via `invoke("bw_command_name", { ... })`.
 
-use crate::bitwarden::service::BitwardenServiceState;
-use crate::bitwarden::sync::SyncResult;
-use crate::bitwarden::types::*;
+use super::service::BitwardenServiceState;
+use super::sync::SyncResult;
+use super::types::*;
 
 // ── Status & CLI ────────────────────────────────────────────────────
 

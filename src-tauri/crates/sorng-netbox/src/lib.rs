@@ -3,7 +3,6 @@
 pub mod cables;
 pub mod circuits;
 pub mod client;
-pub mod commands;
 pub mod contacts;
 pub mod devices;
 pub mod error;

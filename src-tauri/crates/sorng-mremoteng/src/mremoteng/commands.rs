@@ -1,7 +1,7 @@
-//! Tauri command bindings for the mRemoteNG crate.
-//!
-//! Thin wrappers that take `State<MremotengServiceState>`, lock the mutex,
-//! and delegate to the service.  Every command returns `Result<T, String>`.
+// Tauri command bindings for the mRemoteNG crate.
+//
+// Thin wrappers that take `State<MremotengServiceState>`, lock the mutex,
+// and delegate to the service.  Every command returns `Result<T, String>`.
 
 use serde_json::Value;
 

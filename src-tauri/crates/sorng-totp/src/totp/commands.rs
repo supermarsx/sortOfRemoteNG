@@ -1,10 +1,10 @@
-//! Tauri command bindings for the TOTP crate.
-//!
-//! Thin wrappers that take `State<TotpServiceState>`, lock the mutex,
-//! and delegate to the service.  Every command returns `Result<T, String>`.
+// Tauri command bindings for the TOTP crate.
+//
+// Thin wrappers that take `State<TotpServiceState>`, lock the mutex,
+// and delegate to the service.  Every command returns `Result<T, String>`.
 
-use crate::totp::service::{TotpServiceState, VaultStats};
-use crate::totp::types::*;
+use super::service::{TotpServiceState, VaultStats};
+use super::types::*;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Entry CRUD
@@ -340,8 +340,8 @@ pub async fn totp_password_strength(
     _state: tauri::State<'_, TotpServiceState>,
     password: String,
 ) -> Result<(u8, String), String> {
-    let score = crate::totp::crypto::password_strength(&password);
-    let label = crate::totp::crypto::strength_label(score);
+    let score = super::crypto::password_strength(&password);
+    let label = super::crypto::strength_label(score);
     Ok((score, label.to_string()))
 }
 

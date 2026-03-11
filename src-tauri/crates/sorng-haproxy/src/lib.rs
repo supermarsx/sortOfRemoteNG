@@ -3,7 +3,6 @@
 pub mod acls;
 pub mod backends;
 pub mod client;
-pub mod commands;
 pub mod config;
 pub mod error;
 pub mod frontends;

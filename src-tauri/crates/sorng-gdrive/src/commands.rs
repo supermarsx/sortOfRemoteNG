@@ -1,12 +1,12 @@
-//! Tauri command handlers for Google Drive integration.
-//!
-//! All commands follow the `gdrive_*` naming convention and accept
-//! `State<'_, GDriveServiceState>` as their first parameter.
+// Tauri command handlers for Google Drive integration.
+//
+// All commands follow the `gdrive_*` naming convention and accept
+// `State<'_, GDriveServiceState>` as their first parameter.
 
 use tauri::State;
 
-use crate::service::GDriveServiceState;
-use crate::types::*;
+use super::service::GDriveServiceState;
+use super::types::*;
 
 // Helper: convert GDriveError to a String for Tauri error channel.
 fn err_str(e: GDriveError) -> String {

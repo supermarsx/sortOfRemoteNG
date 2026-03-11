@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use log::{info, warn};
 use std::collections::HashMap;
 
+use sorng_core::events::DynEventEmitter;
+
 use crate::types::{BackupNotification, ChannelConfig, FindingSeverity, NotifyChannel, SmtpConfig};
 
 // ─── Dispatch result ────────────────────────────────────────────────────────
@@ -33,7 +35,7 @@ pub struct NotificationDispatcher {
     channel_configs: HashMap<String, ChannelConfig>,
     smtp_config: Option<SmtpConfig>,
     history: Vec<DispatchResult>,
-    tauri_app_handle: Option<tauri::AppHandle>,
+    event_emitter: Option<DynEventEmitter>,
 }
 
 impl NotificationDispatcher {
@@ -42,17 +44,17 @@ impl NotificationDispatcher {
             channel_configs: HashMap::new(),
             smtp_config: None,
             history: Vec::new(),
-            tauri_app_handle: None,
+            event_emitter: None,
         }
     }
 
-    /// Create with a Tauri app handle for emitting frontend events.
-    pub fn with_app_handle(app_handle: tauri::AppHandle) -> Self {
+    /// Create with an event emitter for emitting frontend events.
+    pub fn with_event_emitter(emitter: DynEventEmitter) -> Self {
         Self {
             channel_configs: HashMap::new(),
             smtp_config: None,
             history: Vec::new(),
-            tauri_app_handle: Some(app_handle),
+            event_emitter: Some(emitter),
         }
     }
 
@@ -315,9 +317,9 @@ impl NotificationDispatcher {
         }
     }
 
-    /// Emit a Tauri event to the frontend.
+    /// Emit an event to the frontend.
     pub fn emit_tauri_event(&self, notification: &BackupNotification) -> DispatchResult {
-        if let Some(ref app) = self.tauri_app_handle {
+        if let Some(ref emitter) = self.event_emitter {
             let payload = serde_json::json!({
                 "event": notification.event.to_string(),
                 "severity": notification.severity.to_string(),
@@ -327,36 +329,36 @@ impl NotificationDispatcher {
                 "timestamp": notification.timestamp.to_rfc3339(),
             });
 
-            match tauri::Emitter::emit(app, "backup-verify-notification", &payload) {
+            match emitter.emit_event("backup-verify-notification", payload) {
                 Ok(_) => {
                     return DispatchResult {
                         channel: NotifyChannel::Tauri,
                         success: true,
-                        message: "Tauri event emitted".into(),
+                        message: "Event emitted".into(),
                         sent_at: Utc::now(),
                     };
                 }
                 Err(e) => {
-                    warn!("Tauri emit failed: {}", e);
+                    warn!("Event emit failed: {}", e);
                     return DispatchResult {
                         channel: NotifyChannel::Tauri,
                         success: false,
-                        message: format!("Tauri emit error: {}", e),
+                        message: format!("Event emit error: {}", e),
                         sent_at: Utc::now(),
                     };
                 }
             }
         }
 
-        // No app handle — log only
+        // No emitter — log only
         info!(
-            "Tauri event (no handle): {} — {}",
+            "Event (no emitter): {} — {}",
             notification.event, notification.message
         );
         DispatchResult {
             channel: NotifyChannel::Tauri,
             success: true,
-            message: "Tauri event logged (no app handle)".into(),
+            message: "Event logged (no emitter)".into(),
             sent_at: Utc::now(),
         }
     }
@@ -466,9 +468,9 @@ impl NotificationDispatcher {
         self.history.clear();
     }
 
-    /// Set the Tauri app handle after construction.
-    pub fn set_app_handle(&mut self, app_handle: tauri::AppHandle) {
-        self.tauri_app_handle = Some(app_handle);
+    /// Set the event emitter after construction.
+    pub fn set_event_emitter(&mut self, emitter: DynEventEmitter) {
+        self.event_emitter = Some(emitter);
     }
 }
 

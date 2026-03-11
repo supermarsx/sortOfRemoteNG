@@ -1,6 +1,6 @@
-use crate::error::AiAssistError;
-use crate::service::AiAssistServiceState;
-use crate::types::*;
+use super::error::AiAssistError;
+use super::service::AiAssistServiceState;
+use super::types::*;
 
 use std::collections::HashMap;
 use tauri::State;

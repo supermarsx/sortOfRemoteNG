@@ -4,8 +4,8 @@
 // All are async, take `tauri::State<RecordingServiceState>`, and return
 // `Result<T, String>` for Tauri bridge compatibility.
 
-use crate::service::RecordingServiceState;
-use crate::types::*;
+use super::service::RecordingServiceState;
+use super::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Config

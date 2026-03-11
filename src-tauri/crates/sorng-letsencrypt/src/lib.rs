@@ -52,7 +52,6 @@
 
 pub mod acme;
 pub mod challenges;
-pub mod commands;
 pub mod dns_providers;
 pub mod monitor;
 pub mod ocsp;

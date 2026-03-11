@@ -1,11 +1,11 @@
 // ── sorng-prometheus/src/commands.rs ─────────────────────────────────────────
-//! Tauri commands – thin wrappers around `PrometheusService`.
+// Tauri commands – thin wrappers around `PrometheusService`.
 
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::service::PrometheusServiceState;
-use crate::types::*;
+use super::service::PrometheusServiceState;
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

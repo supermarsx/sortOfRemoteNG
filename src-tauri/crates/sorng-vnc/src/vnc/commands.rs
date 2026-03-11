@@ -1,10 +1,10 @@
-//! Tauri command wrappers for the VNC service.
-//!
-//! These are the `#[tauri::command]` functions registered in the app's
-//! command handler. They delegate to `VncService` methods.
+// Tauri command wrappers for the VNC service.
+//
+// These are the `#[tauri::command]` functions registered in the app's
+// command handler. They delegate to `VncService` methods.
 
-use crate::vnc::service::VncServiceState;
-use crate::vnc::types::*;
+use super::service::VncServiceState;
+use super::types::*;
 
 // ── Connection management ───────────────────────────────────────────────
 

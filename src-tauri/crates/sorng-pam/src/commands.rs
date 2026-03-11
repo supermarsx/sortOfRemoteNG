@@ -1,11 +1,11 @@
 // ── sorng-pam/src/commands.rs ─────────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `PamService_` and host-scoped operations.
+// Tauri commands – thin wrappers around `PamService_` and host-scoped operations.
 
 use std::collections::HashMap;
 use tauri::State;
 
-use crate::service::{self, PamServiceState};
-use crate::types::*;
+use super::service::{self, PamServiceState};
+use super::types::*;
 
 type CmdResult<T> = Result<T, String>;
 

@@ -5,10 +5,10 @@ edition = "2021"
 description = "Serial / RS-232 port communication — port discovery, session management, modem AT commands, line protocols (XMODEM, YMODEM, ZMODEM), and data logging."
 
 [dependencies]
+sorng-core = { path = "../sorng-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

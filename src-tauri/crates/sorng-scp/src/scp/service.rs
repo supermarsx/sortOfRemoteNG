@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 // ── Internal session handle ──────────────────────────────────────────────────
 
-pub(crate) struct ScpSessionHandle {
+pub struct ScpSessionHandle {
     pub info: ScpSessionInfo,
     pub session: Session,
     #[allow(dead_code)]
@@ -25,9 +25,9 @@ pub(crate) struct ScpSessionHandle {
 // ── Service struct ───────────────────────────────────────────────────────────
 
 pub struct ScpService {
-    pub(crate) sessions: HashMap<String, ScpSessionHandle>,
-    pub(crate) queue: Vec<ScpQueueEntry>,
-    pub(crate) queue_running: bool,
+    pub sessions: HashMap<String, ScpSessionHandle>,
+    pub queue: Vec<ScpQueueEntry>,
+    pub queue_running: bool,
 }
 
 impl ScpService {
@@ -207,7 +207,7 @@ impl ScpService {
 
     // ── Authentication ───────────────────────────────────────────────────────
 
-    pub(crate) fn authenticate(
+    pub fn authenticate(
         &self,
         session: &mut Session,
         config: &ScpConnectionConfig,
@@ -310,7 +310,7 @@ impl ScpService {
 
     // ── Execute remote command (helper) ──────────────────────────────────────
 
-    pub(crate) fn exec_remote(&self, session_id: &str, command: &str) -> Result<String, String> {
+    pub fn exec_remote(&self, session_id: &str, command: &str) -> Result<String, String> {
         let handle = self
             .sessions
             .get(session_id)
@@ -557,7 +557,7 @@ impl ScpService {
 
     // ── Update session activity stats ────────────────────────────────────────
 
-    pub(crate) fn update_activity(&mut self, session_id: &str, uploaded: u64, downloaded: u64) {
+    pub fn update_activity(&mut self, session_id: &str, uploaded: u64, downloaded: u64) {
         if let Some(handle) = self.sessions.get_mut(session_id) {
             handle.info.last_activity = Utc::now();
             handle.info.bytes_uploaded += uploaded;
@@ -568,7 +568,7 @@ impl ScpService {
 
     // ── Get raw SSH session (for transfer engine) ────────────────────────────
 
-    pub(crate) fn get_session(&self, session_id: &str) -> Result<&Session, String> {
+    pub fn get_session(&self, session_id: &str) -> Result<&Session, String> {
         self.sessions
             .get(session_id)
             .map(|h| &h.session)
@@ -578,7 +578,7 @@ impl ScpService {
 
 // ── Utility: shell-escape a path for remote commands ─────────────────────────
 
-pub(crate) fn shell_escape(s: &str) -> String {
+pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 

@@ -3,7 +3,6 @@
 pub mod accounts;
 pub mod backups;
 pub mod client;
-pub mod commands;
 pub mod cron;
 pub mod databases;
 pub mod dns;

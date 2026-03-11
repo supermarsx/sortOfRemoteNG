@@ -9,7 +9,6 @@ description = "Zabbix monitoring integration for SortOfRemote NG — hosts, temp
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }

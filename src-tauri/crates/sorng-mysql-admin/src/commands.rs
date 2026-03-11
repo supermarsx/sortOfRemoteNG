@@ -1,8 +1,8 @@
 // ── sorng-mysql-admin/src/commands.rs ─────────────────────────────────────────
-//! Tauri commands – thin wrappers around `MysqlService`.
+// Tauri commands – thin wrappers around `MysqlService`.
 
-use crate::service::MysqlServiceState;
-use crate::types::*;
+use super::service::MysqlServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

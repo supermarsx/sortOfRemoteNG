@@ -8,7 +8,6 @@ description = "YubiKey hardware token support for SortOfRemote NG — PIV, FIDO2
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

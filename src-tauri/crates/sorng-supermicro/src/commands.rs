@@ -1,7 +1,7 @@
-//! Tauri command handlers for Supermicro BMC management.
+// Tauri command handlers for Supermicro BMC management.
 
-use crate::service::SmcServiceState;
-use crate::types::*;
+use super::service::SmcServiceState;
+use super::types::*;
 use sorng_bmc_common::power::PowerAction;
 use tauri::State;
 

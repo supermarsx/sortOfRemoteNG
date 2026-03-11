@@ -1,13 +1,13 @@
-//! Tauri command handlers for the PowerShell Remoting crate.
-//!
-//! Every public function here is a `#[tauri::command]` that delegates
-//! to `PsRemotingService` behind the `PsRemotingServiceState` mutex.
+// Tauri command handlers for the PowerShell Remoting crate.
+//
+// Every public function here is a `#[tauri::command]` that delegates
+// to `PsRemotingService` behind the `PsRemotingServiceState` mutex.
 
-use crate::configuration::{NewSessionConfigurationParams, SetSessionConfigurationParams};
-use crate::diagnostics::{FirewallRuleInfo, LatencyResult, WinRmServiceStatus};
-use crate::direct::HyperVVmInfo;
-use crate::service::{PsRemotingServiceState, PsRemotingStats};
-use crate::types::*;
+use super::configuration::{NewSessionConfigurationParams, SetSessionConfigurationParams};
+use super::diagnostics::{FirewallRuleInfo, LatencyResult, WinRmServiceStatus};
+use super::direct::HyperVVmInfo;
+use super::service::{PsRemotingServiceState, PsRemotingStats};
+use super::types::*;
 use tauri::State;
 
 // ─── Session Commands ────────────────────────────────────────────────
@@ -377,7 +377,7 @@ pub async fn ps_register_session_configuration(
     config: NewSessionConfigurationParams,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    crate::configuration::PsConfigurationManager::register_configuration(
+    super::configuration::PsConfigurationManager::register_configuration(
         &svc.sessions,
         &session_id,
         &config,
@@ -392,7 +392,7 @@ pub async fn ps_unregister_session_configuration(
     config_name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    crate::configuration::PsConfigurationManager::unregister_configuration(
+    super::configuration::PsConfigurationManager::unregister_configuration(
         &svc.sessions,
         &session_id,
         &config_name,
@@ -407,7 +407,7 @@ pub async fn ps_enable_session_configuration(
     config_name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    crate::configuration::PsConfigurationManager::enable_configuration(
+    super::configuration::PsConfigurationManager::enable_configuration(
         &svc.sessions,
         &session_id,
         &config_name,
@@ -422,7 +422,7 @@ pub async fn ps_disable_session_configuration(
     config_name: String,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    crate::configuration::PsConfigurationManager::disable_configuration(
+    super::configuration::PsConfigurationManager::disable_configuration(
         &svc.sessions,
         &session_id,
         &config_name,
@@ -438,7 +438,7 @@ pub async fn ps_set_session_configuration(
     params: SetSessionConfigurationParams,
 ) -> Result<(), String> {
     let svc = state.lock().await;
-    crate::configuration::PsConfigurationManager::set_configuration(
+    super::configuration::PsConfigurationManager::set_configuration(
         &svc.sessions,
         &session_id,
         &config_name,

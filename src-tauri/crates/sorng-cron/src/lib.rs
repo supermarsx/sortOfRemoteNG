@@ -43,7 +43,6 @@ pub mod access;
 pub mod anacron;
 pub mod at_jobs;
 pub mod client;
-pub mod commands;
 pub mod crontab;
 pub mod error;
 pub mod expression;

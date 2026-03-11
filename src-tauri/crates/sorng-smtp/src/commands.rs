@@ -1,7 +1,7 @@
-//! Tauri command handlers for SMTP integration.
-//!
-//! All commands follow the `smtp_*` naming convention and accept
-//! `State<'_, SmtpServiceState>` as their first parameter.
+// Tauri command handlers for SMTP integration.
+//
+// All commands follow the `smtp_*` naming convention and accept
+// `State<'_, SmtpServiceState>` as their first parameter.
 
 use std::collections::HashMap;
 
@@ -672,7 +672,7 @@ pub async fn smtp_stats(state: State<'_, SmtpServiceState>) -> Result<SmtpStats,
 
 #[tauri::command]
 pub async fn smtp_build_message(message: EmailMessage) -> Result<String, String> {
-    crate::message::build_message(&message).map_err(err_str)
+    super::message::build_message(&message).map_err(err_str)
 }
 
 #[tauri::command]
@@ -687,5 +687,5 @@ pub async fn smtp_parse_email_address(input: String) -> Result<EmailAddress, Str
 
 #[tauri::command]
 pub async fn smtp_reverse_dns(host: String) -> Result<Option<String>, String> {
-    Ok(crate::diagnostics::reverse_lookup(&host))
+    Ok(super::diagnostics::reverse_lookup(&host))
 }

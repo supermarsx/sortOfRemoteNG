@@ -17,7 +17,6 @@
 
 pub mod attachments;
 pub mod autotype;
-pub mod commands;
 pub mod crypto;
 pub mod database;
 pub mod entries;
@@ -27,6 +26,5 @@ pub mod search;
 pub mod service;
 pub mod types;
 
-pub use commands::*;
 pub use service::KeePassService;
 pub use types::*;

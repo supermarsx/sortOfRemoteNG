@@ -1,8 +1,8 @@
 // ── sorng-budibase/src/commands.rs ─────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `BudibaseService`.
+// Tauri commands – thin wrappers around `BudibaseService`.
 
-use crate::service::BudibaseServiceState;
-use crate::types::*;
+use super::service::BudibaseServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

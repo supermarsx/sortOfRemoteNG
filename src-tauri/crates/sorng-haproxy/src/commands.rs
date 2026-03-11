@@ -1,8 +1,8 @@
 // ── sorng-haproxy/src/commands.rs ────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `HaproxyService`.
+// Tauri commands – thin wrappers around `HaproxyService`.
 
-use crate::service::HaproxyServiceState;
-use crate::types::*;
+use super::service::HaproxyServiceState;
+use super::types::*;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;

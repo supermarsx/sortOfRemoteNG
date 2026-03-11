@@ -8,7 +8,6 @@ description = "Cross-platform biometric authentication — Windows Hello, macOS 
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tauri = { workspace = true }
 log = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }

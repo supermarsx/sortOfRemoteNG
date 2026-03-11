@@ -27,7 +27,6 @@ pub mod analytics;
 pub mod api_client;
 pub mod auth;
 pub mod business_profile;
-pub mod commands;
 pub mod contacts;
 pub mod error;
 pub mod flows;
@@ -43,7 +42,6 @@ pub mod unofficial;
 pub mod webhooks;
 
 // Re-exports
-pub use commands::*;
 pub use error::{WhatsAppError, WhatsAppResult};
 pub use service::{WhatsAppService, WhatsAppServiceState};
 pub use types::*;

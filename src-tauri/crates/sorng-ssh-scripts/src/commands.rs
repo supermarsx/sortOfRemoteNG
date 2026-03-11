@@ -1,12 +1,12 @@
 // ── sorng-ssh-scripts/src/commands.rs ────────────────────────────────────────
-//! Tauri IPC commands for SSH event script management.
+// Tauri IPC commands for SSH event script management.
 
 use std::collections::HashMap;
 use tauri::{command, State};
 
-use crate::engine::SshScriptEngineState;
-use crate::error::SshScriptError;
-use crate::types::*;
+use super::engine::SshScriptEngineState;
+use super::error::SshScriptError;
+use super::types::*;
 
 type Res<T> = Result<T, String>;
 fn e(err: SshScriptError) -> String {
@@ -154,7 +154,7 @@ pub async fn ssh_scripts_toggle_chain(
 pub async fn ssh_scripts_run_script(
     state: State<'_, SshScriptEngineState>,
     request: RunScriptRequest,
-) -> Res<crate::engine::PendingExecution> {
+) -> Res<super::engine::PendingExecution> {
     let mut eng = state.lock().await;
     eng.run_script(&request).map_err(e)
 }
@@ -163,7 +163,7 @@ pub async fn ssh_scripts_run_script(
 pub async fn ssh_scripts_run_chain(
     state: State<'_, SshScriptEngineState>,
     request: RunChainRequest,
-) -> Res<Vec<crate::engine::PendingExecution>> {
+) -> Res<Vec<super::engine::PendingExecution>> {
     let mut eng = state.lock().await;
     eng.run_chain(&request).map_err(e)
 }
@@ -184,7 +184,7 @@ pub async fn ssh_scripts_record_execution(
 pub async fn ssh_scripts_notify_event(
     state: State<'_, SshScriptEngineState>,
     event: SshLifecycleEvent,
-) -> Res<Vec<crate::engine::PendingExecution>> {
+) -> Res<Vec<super::engine::PendingExecution>> {
     let mut eng = state.lock().await;
     Ok(eng.process_event(&event))
 }
@@ -194,7 +194,7 @@ pub async fn ssh_scripts_notify_output(
     state: State<'_, SshScriptEngineState>,
     session_id: String,
     data: String,
-) -> Res<Vec<crate::engine::PendingExecution>> {
+) -> Res<Vec<super::engine::PendingExecution>> {
     let mut eng = state.lock().await;
     Ok(eng.process_output(&session_id, &data))
 }
@@ -202,7 +202,7 @@ pub async fn ssh_scripts_notify_output(
 #[command]
 pub async fn ssh_scripts_scheduler_tick(
     state: State<'_, SshScriptEngineState>,
-) -> Res<Vec<crate::engine::PendingExecution>> {
+) -> Res<Vec<super::engine::PendingExecution>> {
     let mut eng = state.lock().await;
     let mut execs = eng.tick();
     execs.extend(eng.check_idle());
@@ -285,7 +285,7 @@ pub async fn ssh_scripts_get_script_stats(
 #[command]
 pub async fn ssh_scripts_get_all_stats(
     state: State<'_, SshScriptEngineState>,
-) -> Res<Vec<crate::types::ScriptStats>> {
+) -> Res<Vec<super::types::ScriptStats>> {
     let eng = state.lock().await;
     Ok(eng.history.get_all_stats())
 }
@@ -312,7 +312,7 @@ pub async fn ssh_scripts_clear_script_history(
 #[command]
 pub async fn ssh_scripts_list_timers(
     state: State<'_, SshScriptEngineState>,
-) -> Res<Vec<crate::types::SchedulerEntry>> {
+) -> Res<Vec<super::types::SchedulerEntry>> {
     let eng = state.lock().await;
     Ok(eng.scheduler.get_entries())
 }
@@ -321,7 +321,7 @@ pub async fn ssh_scripts_list_timers(
 pub async fn ssh_scripts_list_session_timers(
     state: State<'_, SshScriptEngineState>,
     session_id: String,
-) -> Res<Vec<crate::types::SchedulerEntry>> {
+) -> Res<Vec<super::types::SchedulerEntry>> {
     let eng = state.lock().await;
     Ok(eng.scheduler.get_session_entries(&session_id))
 }
@@ -466,7 +466,7 @@ pub async fn ssh_scripts_get_summary(
 
     let mut trigger_counts: HashMap<String, u32> = HashMap::new();
     for s in &scripts {
-        let key = crate::store::trigger_type_name(&s.trigger).to_string();
+        let key = super::store::trigger_type_name(&s.trigger).to_string();
         *trigger_counts.entry(key).or_insert(0) += 1;
     }
 

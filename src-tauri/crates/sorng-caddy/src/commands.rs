@@ -1,8 +1,8 @@
 // ── sorng-caddy/src/commands.rs ──────────────────────────────────────────────
-//! Tauri commands – thin wrappers around `CaddyService`.
+// Tauri commands – thin wrappers around `CaddyService`.
 
-use crate::service::CaddyServiceState;
-use crate::types::*;
+use super::service::CaddyServiceState;
+use super::types::*;
 use std::collections::HashMap;
 use tauri::State;
 
