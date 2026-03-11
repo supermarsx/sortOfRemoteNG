@@ -237,6 +237,7 @@ export interface GlobalSettings {
   showPerformanceMonitorIcon: boolean;
   showActionLogIcon: boolean;
   showDevtoolsIcon: boolean;
+  showDebugPanelIcon: boolean;
   showSecurityIcon: boolean;
   showProxyMenuIcon: boolean;
   showInternalProxyIcon: boolean;

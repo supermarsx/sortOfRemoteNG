@@ -7,6 +7,11 @@ pub fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
+pub fn open_devtools(app: tauri::AppHandle) {
+    sorng_app_shell::commands::open_devtools(app);
+}
+
+#[tauri::command]
 pub fn open_url_external(url: String) -> Result<(), String> {
     sorng_app_shell::commands::open_url_external(url)
 }

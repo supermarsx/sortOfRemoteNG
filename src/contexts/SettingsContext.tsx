@@ -120,6 +120,7 @@ const defaultSettings: GlobalSettings = {
   showPerformanceMonitorIcon: true,
   showActionLogIcon: true,
   showDevtoolsIcon: true,
+  showDebugPanelIcon: false,
   showSecurityIcon: true,
   showProxyMenuIcon: true,
   showInternalProxyIcon: true,

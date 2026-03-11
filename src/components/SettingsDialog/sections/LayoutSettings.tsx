@@ -31,6 +31,7 @@ import {
   Cpu,
   ListVideo,
   Disc,
+  FlaskConical,
 } from "lucide-react";
 import { Checkbox } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
@@ -214,6 +215,13 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             <Code className="w-4 h-4 text-warning group-hover:text-warning" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Devtools
+            </span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <Checkbox checked={settings.showDebugPanelIcon} onChange={(v: boolean) => updateSettings({ showDebugPanelIcon: v })} />
+            <FlaskConical className="w-4 h-4 text-accent group-hover:text-accent" />
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Debug Panel
             </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">

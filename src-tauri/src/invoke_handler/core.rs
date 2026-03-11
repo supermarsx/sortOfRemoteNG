@@ -4,6 +4,7 @@ pub(crate) fn is_command(command: &str) -> bool {
     matches!(
         command,
         "greet"
+            | "open_devtools"
             | "open_url_external"
             | "get_launch_args"
             | "add_user"
@@ -520,6 +521,7 @@ pub(crate) fn is_command(command: &str) -> bool {
 pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         app_shell_commands::greet,
+        app_shell_commands::open_devtools,
         app_shell_commands::open_url_external,
         app_shell_commands::get_launch_args,
         app_auth_commands::add_user,

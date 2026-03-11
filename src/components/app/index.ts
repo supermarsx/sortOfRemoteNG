@@ -1,4 +1,5 @@
 export { AppDialogs } from "./AppDialogs";
+export { AppStatusBar } from "./AppStatusBar";
 export { AppToolbar } from "./AppToolbar";
 export { default as ErrorBoundary } from "./ErrorBoundary";
 export { ErrorLogBar } from "./ErrorLogBar";

@@ -24,6 +24,7 @@ import {
   ListVideo,
   Disc,
   Server,
+  FlaskConical,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -68,6 +69,7 @@ interface AppToolbarProps {
   handleOpenDevtools: () => void;
   handleShowPasswordDialog: () => void;
   performCloudSync: (provider?: CloudSyncProvider) => Promise<void>;
+  setShowDebugPanel: (v: boolean) => void;
 }
 
 export const AppToolbar: React.FC<AppToolbarProps> = ({
@@ -104,6 +106,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   handleOpenDevtools,
   handleShowPasswordDialog,
   performCloudSync,
+  setShowDebugPanel,
 }) => {
   const { t } = useTranslation();
 
@@ -366,6 +369,15 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               title="Open dev console"
             >
               <Terminal size={14} />
+            </button>
+          )}
+          {appSettings.showDebugPanelIcon && (
+            <button
+              onClick={() => setShowDebugPanel(true)}
+              className="app-bar-button p-2"
+              title="Debug Panel"
+            >
+              <FlaskConical size={14} />
             </button>
           )}
           {appSettings.showSecurityIcon && (

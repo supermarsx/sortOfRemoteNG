@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
-  Terminal,
   Info,
   Microscope,
   Clock,
@@ -17,6 +16,10 @@ import {
   AlertCircle,
   SkipForward,
   Loader2,
+  MonitorX,
+  Settings2,
+  Zap,
+  ArrowRight,
 } from 'lucide-react';
 import type { RDPConnectionSettings } from '../../types/connection/connection';
 import {
@@ -45,82 +48,65 @@ interface RDPErrorScreenProps {
 }
 
 const STEP_ICON: Record<string, React.ReactNode> = {
-  pass: <CheckCircle2 size={16} className="text-success" />,
-  fail: <XCircle size={16} className="text-error" />,
-  warn: <AlertCircle size={16} className="text-warning" />,
-  info: <Info size={16} className="text-info" />,
-  skip: <SkipForward size={16} className="text-[var(--color-textMuted)]" />,
+  pass: <CheckCircle2 size={14} className="text-success" />,
+  fail: <XCircle size={14} className="text-error" />,
+  warn: <AlertCircle size={14} className="text-warning" />,
+  info: <Info size={14} className="text-info" />,
+  skip: <SkipForward size={14} style={{ color: 'var(--color-textMuted)' }} />,
 };
 
-const HEADER_COLOR: Record<RDPErrorCategory, string> = {
-  duplicate_session: 'from-warning/40 to-warning/20',
-  negotiation_failure: 'from-warning/40 to-warning/20',
-  credssp_post_auth: 'from-error/40 to-error/20',
-  credssp_oracle: 'from-accent/40 to-accent/20',
-  credentials: 'from-warning/40 to-warning/20',
-  network: 'from-[var(--color-surfaceHover)]/60 to-[var(--color-surface)]/40',
-  tls: 'from-info/40 to-info/20',
-  unknown: 'from-[var(--color-surfaceHover)]/60 to-[var(--color-surface)]/40',
+const CATEGORY_ACCENT: Record<RDPErrorCategory, string> = {
+  duplicate_session: 'var(--color-warning)',
+  negotiation_failure: 'var(--color-warning)',
+  credssp_post_auth: 'var(--color-error)',
+  credssp_oracle: 'var(--color-accent, var(--color-primary))',
+  credentials: 'var(--color-warning)',
+  network: 'var(--color-textMuted)',
+  tls: 'var(--color-info)',
+  unknown: 'var(--color-textMuted)',
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  fail: 'var(--color-error)',
+  warn: 'var(--color-warning)',
+  info: 'var(--color-info)',
+  pass: 'var(--color-success)',
 };
 
 /* ── Sub-components ────────────────────────────────────────────────── */
 
-const HeaderBanner: React.FC<{ mgr: Mgr; hostname: string; sessionId: string }> = ({ mgr, hostname, sessionId }) => (
-  <div className={`flex-shrink-0 bg-gradient-to-r ${HEADER_COLOR[mgr.category]} border-b border-error/40 px-6 py-5`}>
-    <div className="flex items-start gap-4 max-w-3xl mx-auto">
-      <AlertTriangle size={36} className="text-error flex-shrink-0 mt-0.5" />
-      <div className="min-w-0">
-        <h2 className="text-lg font-semibold text-error">RDP Connection Failed</h2>
-        <p className="text-sm text-[var(--color-textSecondary)] mt-1 truncate">
-          {hostname} &mdash; {RDP_ERROR_CATEGORY_LABELS[mgr.category]}
-        </p>
-        <p className="text-xs text-[var(--color-textMuted)] mt-1 font-mono">Session {sessionId.slice(0, 8)}…</p>
+const HeaderBanner: React.FC<{ mgr: Mgr; hostname: string; sessionId: string }> = ({ mgr, hostname, sessionId }) => {
+  const accent = CATEGORY_ACCENT[mgr.category];
+  return (
+    <div
+      className="flex-shrink-0 px-6 py-5 border-b border-[var(--color-border)]"
+      style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 10%, var(--color-surface)) 0%, var(--color-surface) 100%)` }}
+    >
+      <div className="flex items-center gap-4 max-w-3xl mx-auto">
+        <div
+          className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{
+            background: `color-mix(in srgb, ${accent} 15%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${accent} 22%, transparent)`,
+          }}
+        >
+          <MonitorX size={20} style={{ color: accent }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-semibold text-[var(--color-text)]">Connection Failed</h2>
+          <p className="text-[13px] text-[var(--color-textSecondary)] mt-0.5 truncate">
+            {hostname}
+            <span className="mx-1.5 text-[var(--color-textMuted)]">&middot;</span>
+            <span style={{ color: accent }}>{RDP_ERROR_CATEGORY_LABELS[mgr.category]}</span>
+          </p>
+        </div>
+        <span className="text-[10px] text-[var(--color-textMuted)] font-mono tabular-nums flex-shrink-0 opacity-60">
+          {sessionId.slice(0, 8)}
+        </span>
       </div>
     </div>
-  </div>
-);
-
-const CauseAccordion: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <section>
-    <h3 className="text-sm font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider mb-3 flex items-center gap-2">
-      <Info size={14} />
-      Probable Causes &amp; Fixes
-    </h3>
-    <div className="space-y-2">
-      {mgr.diagnostics.map((cause, idx) => {
-        const isOpen = mgr.expandedCause === idx;
-        return (
-          <div key={idx} className={`rounded-lg border transition-colors ${isOpen ? 'border-[var(--color-border)] bg-[var(--color-background)]/80' : 'border-[var(--color-border)] bg-[var(--color-background)]/40 hover:border-[var(--color-border)]'}`}>
-            <button onClick={() => mgr.toggleCause(idx)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
-              {cause.icon}
-              <span className="flex-1 text-sm font-medium text-[var(--color-textSecondary)]">{cause.title}</span>
-              <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${cause.severity === 'high' ? 'bg-error/40 text-error' : cause.severity === 'medium' ? 'bg-warning/40 text-warning' : 'bg-[var(--color-surface)] text-[var(--color-textSecondary)]'}`}>
-                {cause.severity}
-              </span>
-              {isOpen ? <ChevronUp size={16} className="text-[var(--color-textMuted)]" /> : <ChevronDown size={16} className="text-[var(--color-textMuted)]" />}
-            </button>
-            {isOpen && (
-              <div className="px-4 pb-4 space-y-3">
-                <p className="text-sm text-[var(--color-textSecondary)] leading-relaxed">{cause.description}</p>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">How to fix</p>
-                  <ul className="space-y-1.5">
-                    {cause.remediation.map((step, si) => (
-                      <li key={si} className="flex items-start gap-2 text-sm text-[var(--color-textSecondary)]">
-                        <span className="text-[var(--color-textMuted)] select-none">{si + 1}.</span>
-                        {step}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  </section>
-);
+  );
+};
 
 const QuickActions: React.FC<{
   mgr: Mgr;
@@ -128,79 +114,210 @@ const QuickActions: React.FC<{
   onEditConnection?: () => void;
   hasConnectionDetails: boolean;
 }> = ({ mgr, onRetry, onEditConnection, hasConnectionDetails }) => (
-  <section className="flex flex-wrap gap-3">
+  <section className="flex flex-wrap gap-2">
     {onRetry && (
-      <button onClick={onRetry} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-[var(--color-text)] text-sm font-medium transition-colors">
-        <RefreshCw size={14} /> Retry Connection
+      <button onClick={onRetry} className="sor-btn sor-btn-primary">
+        <RefreshCw size={13} /> Retry Connection
       </button>
     )}
     {onEditConnection && (
-      <button onClick={onEditConnection} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] text-sm font-medium transition-colors">
-        <Terminal size={14} /> Edit Connection Settings
+      <button onClick={onEditConnection} className="sor-btn sor-btn-secondary">
+        <Settings2 size={13} /> Edit Settings
       </button>
     )}
     {hasConnectionDetails && (
-      <button onClick={mgr.runDeepDiagnostics} disabled={mgr.isRunningDiagnostics} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 disabled:bg-accent/50 disabled:opacity-60 text-[var(--color-text)] text-sm font-medium transition-colors">
-        {mgr.isRunningDiagnostics ? <Loader2 size={14} className="animate-spin" /> : <Microscope size={14} />}
-        {mgr.isRunningDiagnostics ? 'Running Diagnostics…' : 'Run Deep Diagnostics'}
+      <button onClick={mgr.runDeepDiagnostics} disabled={mgr.isRunningDiagnostics} className="sor-btn sor-btn-accent">
+        {mgr.isRunningDiagnostics ? <Loader2 size={13} className="animate-spin" /> : <Microscope size={13} />}
+        {mgr.isRunningDiagnostics ? 'Running…' : 'Deep Diagnostics'}
       </button>
     )}
-    <button onClick={mgr.handleCopy} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-surface)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] text-sm font-medium transition-colors">
-      {mgr.copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
-      {mgr.copied ? 'Copied!' : 'Copy Error'}
+    <button onClick={mgr.handleCopy} className="sor-btn sor-btn-ghost">
+      {mgr.copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+      {mgr.copied ? 'Copied' : 'Copy Error'}
     </button>
+  </section>
+);
+
+const CauseAccordion: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <section className="space-y-2">
+    <h3 className="sor-diag-section-title">
+      <Zap size={13} />
+      Probable Causes
+    </h3>
+    {mgr.diagnostics.map((cause, idx) => {
+      const isOpen = mgr.expandedCause === idx;
+      return (
+        <div
+          key={idx}
+          className="rounded-lg overflow-hidden transition-all"
+          style={{
+            background: isOpen
+              ? 'color-mix(in srgb, var(--color-border) 40%, transparent)'
+              : 'color-mix(in srgb, var(--color-border) 30%, transparent)',
+            border: isOpen ? '1px solid var(--color-border)' : '1px solid transparent',
+          }}
+        >
+          <button onClick={() => mgr.toggleCause(idx)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left group">
+            <span className="flex-shrink-0">{cause.icon}</span>
+            <span className="flex-1 text-[13px] text-[var(--color-text)] font-medium">{cause.title}</span>
+            <span className={`app-badge text-[9px] uppercase font-bold tracking-wider ${
+              cause.severity === 'high' ? 'app-badge--error' : cause.severity === 'medium' ? 'app-badge--warning' : 'app-badge--neutral'
+            }`}>
+              {cause.severity}
+            </span>
+            <span className="text-[var(--color-textMuted)] transition-transform" style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)' }}>
+              <ChevronDown size={14} />
+            </span>
+          </button>
+          {isOpen && (
+            <div className="px-3.5 pb-3.5 space-y-3 border-t border-[var(--color-border)]">
+              <p className="text-[13px] text-[var(--color-textSecondary)] leading-relaxed pt-3">{cause.description}</p>
+              <div className="rounded-md" style={{ background: 'color-mix(in srgb, var(--color-surface) 50%, transparent)', padding: '0.75rem' }}>
+                <p className="text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <ArrowRight size={10} /> Steps to Fix
+                </p>
+                <ol className="space-y-1.5">
+                  {cause.remediation.map((step, si) => (
+                    <li key={si} className="flex items-start gap-2 text-[13px] text-[var(--color-textSecondary)]">
+                      <span
+                        className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-semibold mt-0.5"
+                        style={{
+                          background: 'color-mix(in srgb, var(--color-primary) 15%, transparent)',
+                          color: 'var(--color-primary)',
+                        }}
+                      >
+                        {si + 1}
+                      </span>
+                      <span className="leading-snug">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })}
   </section>
 );
 
 const DiagnosticsReport: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.diagnosticReport && !mgr.diagnosticError) return null;
   return (
-    <section className="rounded-lg border border-accent/40 bg-[var(--color-background)]/60 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 bg-accent/20 border-b border-accent/40">
-        <Microscope size={16} className="text-accent" />
-        <h3 className="text-sm font-semibold text-accent">Deep Diagnostics Report</h3>
+    <section className="sor-settings-collapsible">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-2.5" style={{ background: 'var(--color-surfaceHover)', borderBottom: '1px solid var(--color-border)' }}>
+        <span
+          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+          style={{
+            background: 'color-mix(in srgb, var(--color-accent, var(--color-primary)) 15%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--color-accent, var(--color-primary)) 22%, transparent)',
+          }}
+        >
+          <Microscope size={13} style={{ color: 'var(--color-accent, var(--color-primary))' }} />
+        </span>
+        <h3 className="text-xs font-semibold text-[var(--color-text)]">Deep Diagnostics</h3>
         {mgr.diagnosticReport && (
-          <span className="ml-auto text-xs text-[var(--color-textMuted)]">
-            {mgr.diagnosticReport.protocol.toUpperCase()}{' '}
-            {mgr.diagnosticReport.resolvedIp && `${mgr.diagnosticReport.host} → ${mgr.diagnosticReport.resolvedIp}:${mgr.diagnosticReport.port}`}
-            {mgr.diagnosticReport.totalDurationMs > 0 && ` (${mgr.diagnosticReport.totalDurationMs}ms)`}
+          <span className="ml-auto text-[10px] text-[var(--color-textMuted)] font-mono tabular-nums flex items-center gap-1.5">
+            <span className="app-badge app-badge--info" style={{ padding: '1px 6px', fontSize: '9px' }}>
+              {mgr.diagnosticReport.protocol.toUpperCase()}
+            </span>
+            {mgr.diagnosticReport.resolvedIp && (
+              <span>{mgr.diagnosticReport.host} → {mgr.diagnosticReport.resolvedIp}:{mgr.diagnosticReport.port}</span>
+            )}
+            {mgr.diagnosticReport.totalDurationMs > 0 && (
+              <span className="flex items-center gap-0.5">
+                <Clock size={9} />{mgr.diagnosticReport.totalDurationMs}ms
+              </span>
+            )}
           </span>
         )}
       </div>
+
+      {/* Error state */}
       {mgr.diagnosticError && (
-        <div className="px-4 py-3 text-sm text-error">Diagnostics failed: {mgr.diagnosticError}</div>
+        <div className="px-4 py-3 text-[13px] flex items-center gap-2" style={{ background: 'color-mix(in srgb, var(--color-error) 10%, transparent)', color: 'var(--color-error)' }}>
+          <XCircle size={14} />
+          Diagnostics failed: {mgr.diagnosticError}
+        </div>
       )}
+
+      {/* Step list */}
       {mgr.diagnosticReport && (
-        <div className="divide-y divide-[var(--color-border)]/60">
+        <div>
           {mgr.diagnosticReport.steps.map((step, idx) => {
             const isExpanded = mgr.expandedStep === idx;
+            const stepColor = STATUS_COLOR[step.status] || 'var(--color-textMuted)';
             return (
-              <div key={idx}>
-                <button onClick={() => mgr.toggleStep(idx)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--color-surface)]/40 transition-colors">
+              <div
+                key={idx}
+                style={{
+                  borderBottom: idx < mgr.diagnosticReport!.steps.length - 1 ? '1px solid color-mix(in srgb, var(--color-border) 50%, transparent)' : undefined,
+                  background: isExpanded ? 'color-mix(in srgb, var(--color-border) 20%, transparent)' : undefined,
+                }}
+              >
+                <button
+                  onClick={() => mgr.toggleStep(idx)}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-left transition-colors"
+                  style={{ minHeight: '2.25rem' }}
+                >
                   {STEP_ICON[step.status] ?? STEP_ICON.skip}
-                  <span className="flex-1 text-sm text-[var(--color-textSecondary)]">{step.name}</span>
-                  <span className="flex items-center gap-1 text-xs text-[var(--color-textMuted)]"><Clock size={11} />{step.durationMs}ms</span>
-                  {step.detail && (isExpanded ? <ChevronUp size={14} className="text-[var(--color-textMuted)]" /> : <ChevronDown size={14} className="text-[var(--color-textMuted)]" />)}
+                  <span className="flex-1 text-[13px] text-[var(--color-text)]">{step.name}</span>
+                  <span className="flex items-center gap-1 text-[10px] font-mono tabular-nums" style={{ color: 'var(--color-textMuted)' }}>
+                    <Clock size={9} />{step.durationMs}ms
+                  </span>
+                  {step.detail && (
+                    <span className="text-[var(--color-textMuted)]" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 150ms' }}>
+                      <ChevronDown size={12} />
+                    </span>
+                  )}
                 </button>
-                <div className="px-4 pb-1 -mt-1 pl-11">
-                  <p className={`text-xs ${step.status === 'fail' ? 'text-error' : step.status === 'warn' ? 'text-warning' : step.status === 'info' ? 'text-info' : 'text-[var(--color-textMuted)]'}`}>{step.message}</p>
+
+                {/* Inline status message */}
+                <div className="px-4 pb-1.5 -mt-0.5" style={{ paddingLeft: '2.625rem' }}>
+                  <p className="text-xs leading-snug" style={{ color: stepColor }}>
+                    {step.message}
+                  </p>
                 </div>
+
+                {/* Expanded detail */}
                 {isExpanded && step.detail && (
-                  <div className="px-4 pb-3 pl-11">
-                    <pre className="text-xs text-[var(--color-textSecondary)] whitespace-pre-wrap bg-[var(--color-background)]/60 border border-[var(--color-border)] rounded p-2 mt-1">{step.detail}</pre>
+                  <div className="px-4 pb-3" style={{ paddingLeft: '2.625rem' }}>
+                    <pre
+                      className="text-xs whitespace-pre-wrap font-mono leading-relaxed rounded-md p-2.5 mt-1"
+                      style={{
+                        background: 'var(--color-background)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-textSecondary)',
+                      }}
+                    >
+                      {step.detail}
+                    </pre>
                   </div>
                 )}
               </div>
             );
           })}
-          <div className="px-4 py-3 space-y-2">
-            <p className="text-sm text-[var(--color-textSecondary)]">
-              <span className="font-semibold text-[var(--color-textSecondary)]">Summary: </span>{mgr.diagnosticReport.summary}
+
+          {/* Summary footer */}
+          <div className="px-4 py-3 space-y-2.5" style={{ background: 'color-mix(in srgb, var(--color-surface) 50%, transparent)', borderTop: '1px solid var(--color-border)' }}>
+            <p className="text-[13px] text-[var(--color-textSecondary)]">
+              <span className="font-medium text-[var(--color-text)]">Summary: </span>{mgr.diagnosticReport.summary}
             </p>
             {mgr.diagnosticReport.rootCauseHint && (
-              <div className="rounded-lg border border-warning/40 bg-warning/10 p-3">
-                <h4 className="text-xs font-semibold text-warning uppercase tracking-wider mb-1 flex items-center gap-1.5"><AlertCircle size={12} />Root Cause Analysis</h4>
-                <pre className="text-xs text-warning/80 whitespace-pre-wrap leading-relaxed">{mgr.diagnosticReport.rootCauseHint}</pre>
+              <div
+                className="rounded-lg p-3"
+                style={{
+                  background: 'color-mix(in srgb, var(--color-warning) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--color-warning) 25%, transparent)',
+                }}
+              >
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider mb-1 flex items-center gap-1.5" style={{ color: 'var(--color-warning)' }}>
+                  <AlertCircle size={11} />Root Cause
+                </h4>
+                <pre className="text-xs whitespace-pre-wrap leading-relaxed" style={{ color: 'color-mix(in srgb, var(--color-warning) 85%, var(--color-text))' }}>
+                  {mgr.diagnosticReport.rootCauseHint}
+                </pre>
               </div>
             )}
           </div>
@@ -214,10 +331,31 @@ const CredSspHelper: React.FC<{ category: RDPErrorCategory }> = ({ category }) =
   if (category !== 'credssp_post_auth' && category !== 'credssp_oracle') return null;
   return (
     <>
-      <section className="rounded-lg border border-accent/40 bg-accent/10 p-4 space-y-2">
-        <h4 className="text-sm font-semibold text-accent flex items-center gap-2"><ShieldAlert size={16} />CredSSP Quick-Fix Commands</h4>
-        <p className="text-xs text-[var(--color-textSecondary)]">Run these on the <em>target server</em> in an elevated PowerShell to temporarily allow connections while you investigate:</p>
-        <pre className="text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded p-3 overflow-x-auto text-success select-all">
+      <section className="sor-settings-collapsible">
+        <div className="flex items-center gap-2.5 px-4 py-2.5" style={{ background: 'var(--color-surfaceHover)', borderBottom: '1px solid var(--color-border)' }}>
+          <span
+            className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+            style={{
+              background: 'color-mix(in srgb, var(--color-warning) 15%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--color-warning) 22%, transparent)',
+            }}
+          >
+            <ShieldAlert size={13} style={{ color: 'var(--color-warning)' }} />
+          </span>
+          <h4 className="text-xs font-semibold text-[var(--color-text)]">CredSSP Quick-Fix</h4>
+        </div>
+        <div className="p-4 space-y-3" style={{ background: 'var(--color-surface)' }}>
+          <p className="text-xs text-[var(--color-textSecondary)]">
+            Run on the <em className="text-[var(--color-text)] not-italic font-medium">target server</em> in an elevated PowerShell:
+          </p>
+          <pre
+            className="text-xs overflow-x-auto select-all font-mono leading-relaxed rounded-md p-3"
+            style={{
+              background: 'var(--color-background)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-success)',
+            }}
+          >
 {`# Allow unpatched clients temporarily (revert after testing)
 reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\CredSSP\\Parameters" ^
   /v AllowEncryptionOracle /t REG_DWORD /d 2 /f
@@ -227,30 +365,54 @@ reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\C
 #   → Administrative Templates → System
 #   → Credentials Delegation
 #   → Encryption Oracle Remediation → Enabled → "Vulnerable"`}</pre>
-        <p className="text-[11px] text-warning flex items-center gap-1">
-          <AlertTriangle size={12} />Remember to revert to &quot;Mitigated&quot; or &quot;Force Updated Clients&quot; once patching is complete.
-        </p>
+          <p className="text-[11px] flex items-center gap-1.5" style={{ color: 'var(--color-warning)' }}>
+            <AlertTriangle size={11} />Revert to &quot;Mitigated&quot; once patching is complete.
+          </p>
+        </div>
       </section>
-      <section className="flex flex-wrap gap-3 text-xs">
-        <a href="https://learn.microsoft.com/en-us/troubleshoot/windows-server/remote/credssp-tspkg-ssp-errors-rds" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:text-primary/80 underline underline-offset-2">
-          <ExternalLink size={12} />Microsoft: CredSSP / TSPKG RDP errors
+      <div className="flex flex-wrap gap-3 text-xs">
+        <a
+          href="https://learn.microsoft.com/en-us/troubleshoot/windows-server/remote/credssp-tspkg-ssp-errors-rds"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 underline underline-offset-2 transition-colors"
+          style={{ color: 'var(--color-primary)' }}
+        >
+          <ExternalLink size={11} />CredSSP / TSPKG errors
         </a>
-        <a href="https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/clients/troubleshoot-remote-desktop-connections" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:text-primary/80 underline underline-offset-2">
-          <ExternalLink size={12} />Microsoft: Troubleshoot RDP connections
+        <a
+          href="https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/clients/troubleshoot-remote-desktop-connections"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 underline underline-offset-2 transition-colors"
+          style={{ color: 'var(--color-primary)' }}
+        >
+          <ExternalLink size={11} />Troubleshoot RDP connections
         </a>
-      </section>
+      </div>
     </>
   );
 };
 
 const RawErrorToggle: React.FC<{ mgr: Mgr; errorMessage: string }> = ({ mgr, errorMessage }) => (
   <section>
-    <button onClick={mgr.toggleRawError} className="flex items-center gap-2 text-xs text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] transition-colors">
-      {mgr.showRawError ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-      {mgr.showRawError ? 'Hide' : 'Show'} full error details
+    <button onClick={mgr.toggleRawError} className="flex items-center gap-1.5 text-xs transition-colors" style={{ color: 'var(--color-textMuted)' }}>
+      <span style={{ transform: mgr.showRawError ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 150ms' }}>
+        <ChevronDown size={12} />
+      </span>
+      {mgr.showRawError ? 'Hide' : 'Show'} raw error
     </button>
     {mgr.showRawError && (
-      <pre className="mt-2 text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded p-4 whitespace-pre-wrap break-all text-[var(--color-textSecondary)] max-h-48 overflow-y-auto font-mono">{errorMessage}</pre>
+      <pre
+        className="mt-2 text-xs whitespace-pre-wrap break-all max-h-48 overflow-y-auto font-mono leading-relaxed rounded-md p-3"
+        style={{
+          background: 'var(--color-background)',
+          border: '1px solid var(--color-border)',
+          color: 'var(--color-textSecondary)',
+        }}
+      >
+        {errorMessage}
+      </pre>
     )}
   </section>
 );
@@ -268,12 +430,12 @@ const RDPErrorScreen: React.FC<RDPErrorScreenProps> = ({
   const mgr = useRDPErrorScreen({ sessionId, hostname, errorMessage, connectionDetails });
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-[var(--color-background)] text-[var(--color-textSecondary)] overflow-auto">
+    <div className="absolute inset-0 flex flex-col bg-[var(--color-background)] overflow-hidden">
       <HeaderBanner mgr={mgr} hostname={hostname} sessionId={sessionId} />
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="max-w-3xl mx-auto space-y-6">
-          <CauseAccordion mgr={mgr} />
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-6 py-5 space-y-5">
           <QuickActions mgr={mgr} onRetry={onRetry} onEditConnection={onEditConnection} hasConnectionDetails={!!connectionDetails} />
+          <CauseAccordion mgr={mgr} />
           <DiagnosticsReport mgr={mgr} />
           <CredSspHelper category={mgr.category} />
           <RawErrorToggle mgr={mgr} errorMessage={errorMessage} />

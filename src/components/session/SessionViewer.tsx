@@ -1,6 +1,6 @@
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield } from 'lucide-react';
+import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield, RefreshCw } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection/connection';
 import { isToolProtocol } from '../app/toolSession';
 
@@ -24,11 +24,49 @@ const AnyDeskClient = dynamic(
   () => import('../protocol/AnyDeskClient').then((module) => module.AnyDeskClient),
   { ssr: false },
 );
+const RDPErrorScreen = dynamic(
+  () => import('../rdp/RDPErrorScreen'),
+  { ssr: false },
+);
 
 interface SessionViewerProps {
   session: ConnectionSession;
   onCloseSession?: (sessionId: string) => void;
 }
+
+/** Generic themed error view for non-RDP protocols. */
+const GenericErrorView: React.FC<{ session: ConnectionSession }> = ({ session }) => (
+  <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--color-background)]">
+    <div
+      className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+      style={{
+        background: 'color-mix(in srgb, var(--color-error) 14%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--color-error) 22%, transparent)',
+      }}
+    >
+      <AlertCircle size={28} style={{ color: 'var(--color-error)' }} />
+    </div>
+    <h3 className="text-base font-semibold text-[var(--color-text)] mb-1">Connection Failed</h3>
+    <p className="text-sm text-[var(--color-textSecondary)] mb-1">
+      {session.protocol.toUpperCase()} to {session.hostname}
+    </p>
+    {session.errorMessage && (
+      <pre
+        className="mt-3 mx-auto max-w-lg text-xs whitespace-pre-wrap break-all font-mono leading-relaxed rounded-lg p-3 text-center"
+        style={{
+          background: 'color-mix(in srgb, var(--color-error) 8%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--color-error) 18%, transparent)',
+          color: 'var(--color-textSecondary)',
+        }}
+      >
+        {session.errorMessage}
+      </pre>
+    )}
+    <p className="text-xs text-[var(--color-textMuted)] mt-4">
+      Check your network connection and server settings
+    </p>
+  </div>
+);
 
 export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSession }) => {
   const renderContent = () => {
@@ -47,6 +85,17 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
     // single stable component instance (no unmount/remount on status change).
     if (session.protocol === 'rdp' && (session.status === 'connecting' || session.status === 'connected')) {
       return <RDPClient session={session} />;
+    }
+
+    // Debug/mock RDP error sessions — render the rich RDP error screen directly
+    if (session.protocol === 'rdp' && session.status === 'error' && session.errorMessage) {
+      return (
+        <RDPErrorScreen
+          sessionId={session.id}
+          hostname={session.hostname}
+          errorMessage={session.errorMessage}
+        />
+      );
     }
 
     switch (session.status) {
@@ -72,7 +121,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
           case 'http':
           case 'https':
             return <WebBrowser session={session} />;
-          
+
           case 'anydesk':
             return <AnyDeskClient session={session} />;
 
@@ -141,7 +190,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
                 </div>
               </div>
             );
-          
+
           case 'vnc':
             return (
               <div className="flex flex-col items-center justify-center h-full text-primary">
@@ -163,7 +212,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
                 </div>
               </div>
             );
-          
+
           default:
             return (
               <div className="flex flex-col items-center justify-center h-full text-success">
@@ -177,23 +226,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
         }
 
       case 'error':
-        return (
-          <div className="flex flex-col items-center justify-center h-full text-error">
-            <AlertCircle size={48} className="mb-4" />
-            <h3 className="text-lg font-medium mb-2">Connection Failed</h3>
-            <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
-              Unable to connect to {session.hostname}
-            </p>
-            <div className="space-y-2">
-              <button className="px-4 py-2 bg-primary hover:bg-primary/90 text-[var(--color-text)] rounded transition-colors">
-                Retry Connection
-              </button>
-              <p className="text-xs text-[var(--color-textMuted)] text-center">
-                Check your network connection and server settings
-              </p>
-            </div>
-          </div>
-        );
+        return <GenericErrorView session={session} />;
 
       default:
         return (
