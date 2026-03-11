@@ -19,3 +19,6 @@ export type { StatusBarProps } from './StatusBar';
 
 export { TabBar } from './TabBar';
 export type { Tab, TabBarProps } from './TabBar';
+
+export { StatusBadge } from './StatusBadge';
+export type { StatusBadgeStatus, StatusBadgeProps } from './StatusBadge';

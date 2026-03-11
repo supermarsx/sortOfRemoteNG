@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-
-const cx = (...classes: Array<string | false | null | undefined>) =>
-  classes.filter(Boolean).join(' ');
+import { cx } from '../lib/cx';
 
 interface BaseSettingProps {
   settingKey?: string;
@@ -172,6 +170,75 @@ export const SettingsCollapsibleSection: React.FC<{
   );
 };
 
+interface SettingsTextRowProps extends BaseSettingProps {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}
+
+export const SettingsTextRow: React.FC<SettingsTextRowProps> = ({
+  label,
+  value,
+  placeholder,
+  onChange,
+  settingKey,
+  className,
+}) => (
+  <div
+    className={cx('sor-settings-select-row', className)}
+    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+  >
+    <span className="sor-settings-row-label">{label}</span>
+    <input
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className="sor-settings-input"
+    />
+  </div>
+);
+
+interface SettingsNumberRowProps extends BaseSettingProps {
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  onChange: (value: number) => void;
+}
+
+export const SettingsNumberRow: React.FC<SettingsNumberRowProps> = ({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  unit,
+  onChange,
+  settingKey,
+  className,
+}) => (
+  <div
+    className={cx('sor-settings-select-row', className)}
+    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
+  >
+    <span className="sor-settings-row-label">{label}{unit && ` (${unit})`}</span>
+    <input
+      type="number"
+      value={value}
+      min={min}
+      max={max}
+      step={step}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="sor-settings-input"
+      style={{ width: '5rem' }}
+    />
+  </div>
+);
+
 /* ── Short aliases (used by behavior/ sub-files) ── */
 export {
   SettingsCard as Card,
@@ -179,4 +246,6 @@ export {
   SettingsToggleRow as Toggle,
   SettingsSliderRow as SliderRow,
   SettingsSelectRow as SelectRow,
+  SettingsTextRow as TextRow,
+  SettingsNumberRow as NumberRow,
 };

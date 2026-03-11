@@ -5,4 +5,6 @@ export {
   SettingsSliderRow,
   SettingsSelectRow,
   SettingsCollapsibleSection,
+  SettingsTextRow,
+  SettingsNumberRow,
 } from "./SettingsPrimitives";
