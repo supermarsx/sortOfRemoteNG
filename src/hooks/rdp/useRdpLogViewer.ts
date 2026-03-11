@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 interface RDPLogEntry {
   timestamp: number;
@@ -20,6 +21,13 @@ export function useRDPLogViewer(
   const lastTimestamp = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const appendLog = useCallback((entry: RDPLogEntry) => {
+    setLogs((prev) => [...prev, entry].slice(-1000));
+    if (entry.timestamp > lastTimestamp.current) {
+      lastTimestamp.current = entry.timestamp;
+    }
+  }, []);
+
   const fetchLogs = useCallback(async () => {
     try {
       const newLogs = await invoke<RDPLogEntry[]>('get_rdp_logs', {
@@ -34,6 +42,7 @@ export function useRDPLogViewer(
     }
   }, []);
 
+  // Poll for logs from the backend buffer
   useEffect(() => {
     if (!isVisible) return;
     lastTimestamp.current = 0;
@@ -42,6 +51,16 @@ export function useRDPLogViewer(
     const timer = setInterval(fetchLogs, 2000);
     return () => clearInterval(timer);
   }, [isVisible, fetchLogs]);
+
+  // Listen for real-time rdp://log events from the session runner
+  useEffect(() => {
+    if (!isVisible) return;
+    let unlisten: UnlistenFn | undefined;
+    listen<RDPLogEntry>('rdp://log', (event) => {
+      appendLog(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [isVisible, appendLog]);
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {

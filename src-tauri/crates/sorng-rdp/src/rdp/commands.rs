@@ -8,7 +8,7 @@ pub use uuid::Uuid;
 
 pub use super::frame_store::SharedFrameStoreState;
 pub use super::input::convert_input;
-pub use super::session_runner::run_rdp_session;
+pub use super::session_runner::{run_rdp_session, LogSink};
 pub use super::settings::{RdpSettingsPayload, ResolvedSettings};
 pub use super::stats::RdpSessionStats;
 pub use super::types::*;

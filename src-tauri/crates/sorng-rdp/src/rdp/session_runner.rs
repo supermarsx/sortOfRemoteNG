@@ -21,9 +21,33 @@ use super::frame_store::SharedFrameStoreState;
 use super::network::{extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
 use super::settings::{build_bitmap_codecs, ResolvedSettings};
 use super::stats::RdpSessionStats;
-use super::types::{RdpCommand, RdpPointerEvent, RdpStatusEvent};
+use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
 use super::{RdpTlsConfig, RdpTlsStream};
 use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
+
+// ---- Session log helper ----
+
+/// A sink for RDP log entries — pushes to the backend log buffer via a channel
+/// so entries persist for polling, AND emits `rdp://log` for real-time UI.
+pub type LogSink = std::sync::mpsc::Sender<RdpLogEntry>;
+
+/// Emit a log entry to both the real-time event stream and the persistent log buffer.
+fn emit_log(emitter: &DynEventEmitter, log_sink: &LogSink, level: &str, message: String, session_id: &str) {
+    let entry = RdpLogEntry {
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+        session_id: Some(session_id.to_string()),
+        level: level.to_string(),
+        message,
+    };
+    let _ = emitter.emit_event(
+        "rdp://log",
+        serde_json::to_value(&entry).unwrap_or_default(),
+    );
+    let _ = log_sink.send(entry);
+}
 
 // ---- Deactivation-Reactivation Sequence handler ----
 
@@ -161,6 +185,7 @@ pub fn run_rdp_session(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: SharedFrameStoreState,
     frame_channel: DynFrameChannel,
+    log_sink: LogSink,
 ) {
     // Log CPU SIMD capabilities once (first session only).
     static LOG_FEATURES: std::sync::Once = std::sync::Once::new();
@@ -183,6 +208,7 @@ pub fn run_rdp_session(
             cached_http_client,
             &frame_store,
             &frame_channel,
+            &log_sink,
         )
     } else {
         run_rdp_session_inner(
@@ -200,6 +226,7 @@ pub fn run_rdp_session(
             cached_http_client,
             &frame_store,
             &frame_channel,
+            &log_sink,
         )
     };
 
@@ -323,6 +350,7 @@ fn run_rdp_session_auto_detect(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &DynFrameChannel,
+    log_sink: &LogSink,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
@@ -391,6 +419,7 @@ fn run_rdp_session_auto_detect(
             cached_http_client.clone(),
             frame_store,
             frame_channel,
+            log_sink,
         );
 
         match result {
@@ -422,6 +451,7 @@ fn run_rdp_session_auto_detect(
                     "RDP session {session_id}: auto-detect attempt {} failed: {e}",
                     i + 1
                 );
+                emit_log(event_emitter, log_sink, "warn", format!("Auto-detect attempt {} failed: {err_str}", i + 1), session_id);
                 last_error = Some(e);
 
                 if i + 1 < max_attempts {
@@ -501,6 +531,7 @@ fn run_rdp_session_auto_detect(
                     cached_http_client.clone(),
                     frame_store,
                     frame_channel,
+                    log_sink,
                 );
 
                 match result {
@@ -570,6 +601,7 @@ fn establish_rdp_connection(
     cached_tls_connector: Option<RdpTlsConfig>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
+    log_sink: &LogSink,
 ) -> Result<EstablishedSession, Box<dyn std::error::Error + Send + Sync>> {
     let conn_start = Instant::now();
 
@@ -900,6 +932,7 @@ fn establish_rdp_connection(
                  (6) Group Policy blocking session (e.g. max sessions, user restrictions)."
             );
         }
+        emit_log(event_emitter, log_sink, "error", msg.clone(), session_id);
         msg
     })?;
     let auth_ms = t_auth.elapsed().as_millis();
@@ -1006,6 +1039,7 @@ fn run_active_session_loop(
     stats: &Arc<RdpSessionStats>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &DynFrameChannel,
+    log_sink: &LogSink,
 ) -> SessionLoopExit {
     // Viewer channel management for session persistence.
     let mut viewer_detached = false;
@@ -1227,8 +1261,10 @@ fn run_active_session_loop(
                         ) {
                             let err_str = format!("{e}");
                             if is_network_error_str(&err_str) {
+                                emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {err_str}"), session_id);
                                 return SessionLoopExit::NetworkError(err_str);
                             }
+                            emit_log(event_emitter, log_sink, "error", format!("Output processing error: {err_str}"), session_id);
                             return SessionLoopExit::ProtocolError(err_str);
                         }
                     } else {
@@ -1240,9 +1276,9 @@ fn run_active_session_loop(
                                     .fetch_add(data.len() as u64, Ordering::Relaxed);
                                 stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
                                 if let Err(e) = est.tls_framed.write_all(data) {
-                                    return SessionLoopExit::NetworkError(format!(
-                                        "Write failed: {e}"
-                                    ));
+                                    let msg = format!("Write failed: {e}");
+                                    emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {msg}"), session_id);
+                                    return SessionLoopExit::NetworkError(msg);
                                 }
                             }
                         }
@@ -1250,6 +1286,7 @@ fn run_active_session_loop(
                 }
                 Err(e) => {
                     log::warn!("RDP {session_id}: input processing error: {e}");
+                    emit_log(event_emitter, log_sink, "warn", format!("Input processing error: {e}"), session_id);
                 }
             }
         }
@@ -1502,13 +1539,14 @@ fn run_active_session_loop(
                         Err(e) => {
                             let err_str = format!("{e}");
                             log::warn!("RDP session {session_id}: PDU processing error (recovering): {err_str}");
+                            emit_log(event_emitter, log_sink, "warn", format!("PDU error (recovering): {err_str}"), session_id);
                             // Stats-based consecutive error tracking.
                             let count = stats.record_pdu_error();
                             stats.set_last_error(&err_str);
                             if count as u32 >= max_consecutive_errors {
-                                return SessionLoopExit::ProtocolError(format!(
-                                    "Error threshold exceeded ({count}/{max_consecutive_errors}): {err_str}"
-                                ));
+                                let msg = format!("Error threshold exceeded ({count}/{max_consecutive_errors}): {err_str}");
+                                emit_log(event_emitter, log_sink, "error", msg.clone(), session_id);
+                                return SessionLoopExit::ProtocolError(msg);
                             }
                         }
                     }
@@ -1530,13 +1568,15 @@ fn run_active_session_loop(
                 }
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
-                        log::info!("RDP session {session_id}: server closed connection (EOF)");
-                        // If viewer is detached, this is a network-level issue
-                        // (the server timed out the idle session).  Try to reconnect.
+                        let msg = if viewer_detached {
+                            "Server closed connection (EOF) while detached"
+                        } else {
+                            "Server closed connection (EOF)"
+                        };
+                        log::info!("RDP session {session_id}: {msg}");
+                        emit_log(event_emitter, log_sink, "info", msg.to_string(), session_id);
                         if viewer_detached {
-                            return SessionLoopExit::NetworkError(
-                                "Server closed connection (EOF) while detached".to_string(),
-                            );
+                            return SessionLoopExit::NetworkError(msg.to_string());
                         }
                         return SessionLoopExit::ServerClosed;
                     }
@@ -1544,8 +1584,10 @@ fn run_active_session_loop(
                     log::error!("RDP session {session_id}: read error: {err_str}");
                     // Classify: network errors are recoverable
                     if is_network_error(&e) || is_network_error_str(&err_str) {
+                        emit_log(event_emitter, log_sink, "warn", format!("Network error (will reconnect): {err_str}"), session_id);
                         return SessionLoopExit::NetworkError(err_str);
                     }
+                    emit_log(event_emitter, log_sink, "error", format!("Protocol error: {err_str}"), session_id);
                     return SessionLoopExit::ProtocolError(err_str);
                 }
             }
@@ -1675,6 +1717,7 @@ fn run_rdp_session_inner(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &DynFrameChannel,
+    log_sink: &LogSink,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut reconnect_count: u32 = 0;
     let reconnect_enabled = settings.reconnect_on_network_loss;
@@ -1703,6 +1746,7 @@ fn run_rdp_session_inner(
             cached_tls_connector.clone(),
             cached_http_client.clone(),
             frame_store,
+            log_sink,
         ) {
             Ok(est) => {
                 // Successful connect — reset reconnect counter
@@ -1773,6 +1817,7 @@ fn run_rdp_session_inner(
             stats,
             frame_store,
             frame_channel,
+            log_sink,
         );
 
         // Drop compositor explicitly before potentially reconnecting
@@ -1786,26 +1831,32 @@ fn run_rdp_session_inner(
 
         match exit {
             SessionLoopExit::Shutdown => {
+                emit_log(&event_emitter, log_sink, "info", "Session shut down".to_string(), session_id);
                 return Ok(());
             }
             SessionLoopExit::ServerClosed => {
+                emit_log(&event_emitter, log_sink, "info", "Server closed connection".to_string(), session_id);
                 return Ok(());
             }
             SessionLoopExit::ProtocolError(msg) => {
+                emit_log(&event_emitter, log_sink, "error", format!("Fatal protocol error: {msg}"), session_id);
                 return Err(msg.into());
             }
             SessionLoopExit::NetworkError(msg) => {
                 if !reconnect_enabled {
+                    emit_log(&event_emitter, log_sink, "error", format!("Network error (reconnect disabled): {msg}"), session_id);
                     return Err(msg.into());
                 }
                 reconnect_count += 1;
                 log::info!("RDP session {session_id}: will reconnect ({reconnect_count}): {msg}");
+                emit_log(&event_emitter, log_sink, "warn", format!("Reconnecting ({reconnect_count}): {msg}"), session_id);
             }
             SessionLoopExit::ReconnectRequested => {
                 reconnect_count += 1;
                 log::info!(
                     "RDP session {session_id}: will reconnect ({reconnect_count}): manual reconnect"
                 );
+                emit_log(&event_emitter, log_sink, "info", format!("Manual reconnect ({reconnect_count})"), session_id);
             }
         }
 
@@ -1875,6 +1926,8 @@ fn is_network_error(e: &io::Error) -> bool {
             | io::ErrorKind::ConnectionAborted
             | io::ErrorKind::BrokenPipe
             | io::ErrorKind::TimedOut
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::NotConnected
     )
 }
 
@@ -1882,10 +1935,14 @@ fn is_network_error(e: &io::Error) -> bool {
 fn is_network_error_str(s: &str) -> bool {
     s.contains("10054")           // WSAECONNRESET (Windows)
         || s.contains("10053")    // WSAECONNABORTED (Windows)
+        || s.contains("os error 997")  // ERROR_IO_PENDING — overlapped I/O on Windows
+        || s.contains("Overlapped I/O")
         || s.contains("forcibly closed")
         || s.contains("connection reset")
         || s.contains("broken pipe")
         || s.contains("Connection reset")
         || s.contains("Write failed")
         || s.contains("Failed to send response frame")
+        || s.contains("InternalError")   // TLS fatal alert (transient)
+        || s.contains("received fatal alert")
 }

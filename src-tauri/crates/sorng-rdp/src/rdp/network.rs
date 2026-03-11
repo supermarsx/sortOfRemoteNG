@@ -182,7 +182,7 @@ impl ServerCertVerifier for NoCertificateVerification {
 pub fn build_tls_config(
     accept_invalid_certs: bool,
 ) -> Result<RdpTlsConfig, Box<dyn std::error::Error + Send + Sync>> {
-    let config = if accept_invalid_certs {
+    let mut config = if accept_invalid_certs {
         rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
@@ -198,6 +198,12 @@ pub fn build_tls_config(
             .with_root_certificates(roots)
             .with_no_client_auth()
     };
+
+    // Disable TLS session resumption.  RDP servers perform a non-standard
+    // TLS upgrade mid-protocol; when rustls tries to resume a cached session
+    // on the 2nd connection to the same host the server replies with a fatal
+    // InternalError alert during BasicSettingsExchange.
+    config.resumption = rustls::client::Resumption::disabled();
 
     Ok(Arc::new(config))
 }

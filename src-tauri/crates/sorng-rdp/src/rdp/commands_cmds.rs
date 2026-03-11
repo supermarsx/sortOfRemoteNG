@@ -136,6 +136,47 @@ pub async fn connect_rdp(
     // Wrap the Tauri Channel as a DynFrameChannel.
     let dyn_frame_channel: DynFrameChannel = std::sync::Arc::new(TauriFrameChannel(frame_channel));
 
+    // Log sink channel: the session runner pushes log entries through this
+    // channel and a background task drains them into the service's log buffer.
+    let (log_tx, log_rx) = std::sync::mpsc::channel::<RdpLogEntry>();
+    let log_state = Arc::clone(&*state);
+    tokio::spawn(async move {
+        // Drain in a non-blocking loop with small sleeps so we don't
+        // spin-lock.  Exits when the sender is dropped (session ends).
+        loop {
+            let mut batch = Vec::new();
+            loop {
+                match log_rx.try_recv() {
+                    Ok(entry) => batch.push(entry),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        // Drain remaining before exit
+                        if !batch.is_empty() {
+                            let mut svc = log_state.lock().await;
+                            for entry in batch {
+                                svc.log_buffer.push_back(entry);
+                                while svc.log_buffer.len() > 1000 {
+                                    svc.log_buffer.pop_front();
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+            if !batch.is_empty() {
+                let mut svc = log_state.lock().await;
+                for entry in batch {
+                    svc.log_buffer.push_back(entry);
+                    while svc.log_buffer.len() > 1000 {
+                        svc.log_buffer.pop_front();
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    });
+
     // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
     let handle = tokio::task::spawn_blocking(move || {
         run_rdp_session(
@@ -153,6 +194,7 @@ pub async fn connect_rdp(
             http_client,
             fs,
             dyn_frame_channel,
+            log_tx,
         );
     });
 
