@@ -29,7 +29,8 @@ import {
   ModalBody,
   ModalFooter,
 } from "../ui/overlays/Modal";
-import { EmptyState } from "../ui/display";
+import { EmptyState, StatusBadge, ErrorBanner } from "../ui/display";
+import type { StatusBadgeStatus } from "../ui/display";
 import { TextInput, Select } from "../ui/forms";
 import {
   useLetsEncryptManager,
@@ -50,42 +51,22 @@ interface LetsEncryptManagerProps {
 /*  Shared sub-components                                              */
 /* ------------------------------------------------------------------ */
 
-const ErrorBanner: React.FC<{ error: string | null }> = ({ error }) => {
-  if (!error) return null;
-  return (
-    <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm">
-      {error}
-    </div>
-  );
-};
-
-const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  const colours: Record<string, string> = {
-    Active:
-      "bg-success/20 text-success border-success/30",
-    Expired:
-      "bg-error/20 text-error border-error/30",
-    Revoked:
-      "bg-error/20 text-error border-error/30",
-    Pending:
-      "bg-warning/20 text-warning border-warning/30",
-    RenewalScheduled:
-      "bg-primary/20 text-primary border-primary/30",
-    Renewing:
-      "bg-primary/20 text-primary border-primary/30",
-    Failed:
-      "bg-error/20 text-error border-error/30",
-  };
-  const cls =
-    colours[status] ??
-    "bg-text-secondary/20 text-text-secondary border-theme-border/30";
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}
-    >
-      {status}
-    </span>
-  );
+const certStatusToSemantic = (status: string): StatusBadgeStatus => {
+  switch (status) {
+    case "Active":
+      return "success";
+    case "Expired":
+    case "Revoked":
+    case "Failed":
+      return "error";
+    case "Pending":
+      return "warning";
+    case "RenewalScheduled":
+    case "Renewing":
+      return "info";
+    default:
+      return "info";
+  }
 };
 
 /* ------------------------------------------------------------------ */
@@ -255,7 +236,7 @@ const CertificateCard: React.FC<{ cert: ManagedCertificate; mgr: Mgr }> = ({
             <span className="font-semibold text-[var(--color-text)] truncate">
               {cert.primary_domain}
             </span>
-            <StatusBadge status={cert.status} />
+            <StatusBadge status={certStatusToSemantic(cert.status)} label={cert.status} />
           </div>
           {cert.domains.length > 1 && (
             <p className="text-xs text-[var(--color-text-muted)] ml-6 mb-1">
@@ -431,7 +412,7 @@ const AccountCard: React.FC<{ account: AcmeAccount; mgr: Mgr }> = ({
           <span className="text-sm font-medium text-[var(--color-text)]">
             {account.id.substring(0, 12)}…
           </span>
-          <StatusBadge status={account.status} />
+          <StatusBadge status={certStatusToSemantic(account.status)} label={account.status} />
         </div>
         <div className="text-xs text-[var(--color-text-muted)] ml-6 space-y-0.5">
           <p>{account.contact.join(", ")}</p>
@@ -843,7 +824,7 @@ export const LetsEncryptManager: React.FC<LetsEncryptManagerProps> = ({
         </div>
       </ModalHeader>
       <ModalBody className="overflow-y-auto">
-        <ErrorBanner error={mgr.error} />
+        <ErrorBanner error={mgr.error} onClear={() => {}} />
         <TabBar mgr={mgr} />
 
         {mgr.loading ? (

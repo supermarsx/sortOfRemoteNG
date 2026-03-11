@@ -28,7 +28,7 @@ import {
   ModalBody,
   ModalFooter,
 } from "../ui/overlays/Modal";
-import { EmptyState } from "../ui/display";
+import { EmptyState, StatusBadge, ErrorBanner } from "../ui/display";
 import { PasswordInput } from "../ui/forms";
 import {
   useSSHAgentManager,
@@ -46,35 +46,6 @@ interface SSHAgentManagerProps {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
-  ok,
-  label,
-}) => (
-  <span
-    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-      ok
-        ? "bg-success/10 text-success"
-        : "bg-error/10 text-error"
-    }`}
-  >
-    {ok ? (
-      <CheckCircle2 className="w-3 h-3" />
-    ) : (
-      <XCircle className="w-3 h-3" />
-    )}
-    {label}
-  </span>
-);
-
-const ErrorBanner: React.FC<{ error: string | null }> = ({ error }) => {
-  if (!error) return null;
-  return (
-    <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-destructive text-sm flex items-center gap-2">
-      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-      {error}
-    </div>
-  );
-};
 
 /* ------------------------------------------------------------------ */
 /*  Tab Navigation                                                     */
@@ -131,7 +102,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("sshAgent.status.agentStatus", "Agent Status")}
           </div>
           <StatusBadge
-            ok={s?.running ?? false}
+            status={(s?.running ?? false) ? "success" : "error"}
             label={s?.running ? t("sshAgent.status.running", "Running") : t("sshAgent.status.stopped", "Stopped")}
           />
         </div>
@@ -146,7 +117,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("sshAgent.status.lockState", "Lock State")}
           </div>
           <StatusBadge
-            ok={!s?.locked}
+            status={!s?.locked ? "success" : "error"}
             label={s?.locked ? t("sshAgent.status.locked", "Locked") : t("sshAgent.status.unlocked", "Unlocked")}
           />
         </div>
@@ -155,7 +126,7 @@ const OverviewTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             {t("sshAgent.status.systemAgent", "System Agent")}
           </div>
           <StatusBadge
-            ok={s?.system_agent_connected ?? false}
+            status={(s?.system_agent_connected ?? false) ? "success" : "error"}
             label={
               s?.system_agent_connected
                 ? t("sshAgent.status.connected", "Connected")
@@ -443,7 +414,7 @@ const SystemAgentTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
 
       <StatusBadge
-        ok={mgr.status?.system_agent_connected ?? false}
+        status={(mgr.status?.system_agent_connected ?? false) ? "success" : "error"}
         label={
           mgr.status?.system_agent_connected
             ? t("sshAgent.systemAgent.bridgeActive", "Bridge Active — system keys merged")
@@ -769,7 +740,7 @@ export const SSHAgentManager: React.FC<SSHAgentManagerProps> = ({
         </div>
       </ModalHeader>
       <ModalBody>
-        <ErrorBanner error={mgr.error} />
+        <ErrorBanner error={mgr.error} onClear={() => {}} />
         <TabBar active={mgr.activeTab} onChange={mgr.setActiveTab} />
 
         {mgr.activeTab === "overview" && <OverviewTab mgr={mgr} />}

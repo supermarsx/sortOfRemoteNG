@@ -1,18 +1,23 @@
-
 import React from "react";
-const StatusBadge: React.FC<{ state: string }> = ({ state }) => {
-  const colors: Record<string, string> = {
-    active: "bg-success",
-    tokenExpired: "bg-warning",
-    disconnected: "bg-[var(--color-secondary)]",
-    error: "bg-error",
-  };
-  return (
-    <span
-      className={`inline-block w-2 h-2 rounded-full ${colors[state] ?? "bg-[var(--color-secondary)]"}`}
-      title={state}
-    />
-  );
+import { StatusBadge as SharedStatusBadge } from "../../ui/display";
+import type { StatusBadgeStatus } from "../../ui/display";
+
+const stateToStatus = (state: string): StatusBadgeStatus => {
+  switch (state) {
+    case "active":
+      return "success";
+    case "tokenExpired":
+      return "warning";
+    case "error":
+      return "error";
+    case "disconnected":
+    default:
+      return "info";
+  }
 };
+
+const StatusBadge: React.FC<{ state: string }> = ({ state }) => (
+  <SharedStatusBadge status={stateToStatus(state)} label={state} />
+);
 
 export default StatusBadge;

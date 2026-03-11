@@ -37,7 +37,7 @@ import {
   ModalBody,
   ModalFooter,
 } from "../ui/overlays/Modal";
-import { EmptyState } from "../ui/display";
+import { EmptyState, StatusBadge, ErrorBanner } from "../ui/display";
 import { PasswordInput } from "../ui/forms";
 import { useDdnsManager } from "../../hooks/ddns/useDdnsManager";
 import type {
@@ -71,28 +71,6 @@ interface DdnsManagerProps {
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-const StatusBadge: React.FC<{ ok: boolean; label: string }> = ({
-  ok,
-  label,
-}) => (
-  <span
-    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-      ok ? "bg-success/10 text-success" : "bg-error/10 text-error"
-    }`}
-  >
-    {ok ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-    {label}
-  </span>
-);
-
-const ErrorBanner: React.FC<{ error: string | null }> = ({ error }) =>
-  error ? (
-    <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded bg-error/10 text-error text-sm">
-      <AlertTriangle size={14} />
-      {error}
-    </div>
-  ) : null;
 
 const DangerConfirm: React.FC<{
   action: string;
@@ -210,7 +188,7 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             <div className="flex items-center gap-2 mb-1">
               <span className="font-medium text-sm truncate">{p.name}</span>
               <ProviderBadge provider={p.provider} />
-              <StatusBadge ok={p.enabled} label={p.enabled ? "Enabled" : "Disabled"} />
+              <StatusBadge status={p.enabled ? "success" : "error"} label={p.enabled ? "Enabled" : "Disabled"} />
             </div>
             <div className="text-xs text-text-muted truncate">
               {p.hostname && p.hostname !== "@"
@@ -437,7 +415,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             >
               <Globe size={14} />
               <span className="font-mono">{z.name}</span>
-              <StatusBadge ok={z.status === "active"} label={z.status} />
+              <StatusBadge status={z.status === "active" ? "success" : "error"} label={z.status} />
             </button>
           ))}
         </div>
@@ -629,7 +607,7 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         <div className="p-4 rounded bg-surface/50 space-y-3">
           <div className="flex items-center gap-3">
             <StatusBadge
-              ok={mgr.schedulerStatus.running}
+              status={mgr.schedulerStatus.running ? "success" : "error"}
               label={mgr.schedulerStatus.running ? "Running" : "Stopped"}
             />
             <span className="text-xs text-text-secondary">
@@ -665,7 +643,7 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                       </td>
                       <td className="py-1.5 px-2">
                         <StatusBadge
-                          ok={!e.paused}
+                          status={!e.paused ? "success" : "error"}
                           label={e.paused ? "Paused" : "Active"}
                         />
                       </td>
@@ -738,15 +716,15 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           </div>
           <div className="flex items-center gap-4 text-sm">
             <StatusBadge
-              ok={mgr.config.auto_start_scheduler}
+              status={mgr.config.auto_start_scheduler ? "success" : "error"}
               label={t("ddns.config.autoStart", "Auto-start scheduler")}
             />
             <StatusBadge
-              ok={mgr.config.notify_on_ip_change}
+              status={mgr.config.notify_on_ip_change ? "success" : "error"}
               label={t("ddns.config.notifyIp", "Notify IP change")}
             />
             <StatusBadge
-              ok={mgr.config.notify_on_failure}
+              status={mgr.config.notify_on_failure ? "success" : "error"}
               label={t("ddns.config.notifyFail", "Notify on failure")}
             />
           </div>
@@ -959,7 +937,7 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
     <Modal isOpen={isOpen} onClose={onClose}>
       <ModalHeader title={t("ddns.title", "DDNS Manager")} />
       <ModalBody>
-        <ErrorBanner error={mgr.error} />
+        <ErrorBanner error={mgr.error} onClear={() => {}} />
         <TabBar active={activeTab} onSelect={setActiveTab} t={t} />
         {renderTab()}
       </ModalBody>
