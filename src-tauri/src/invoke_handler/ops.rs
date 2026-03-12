@@ -1,6 +1,6 @@
 use crate::*;
 
-pub(crate) fn is_command(command: &str) -> bool {
+fn is_command_a(command: &str) -> bool {
     matches!(
         command,
         "os_detect_add_host"
@@ -532,7 +532,13 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "pfsense_list_backups"
             | "pfsense_create_backup"
             | "pfsense_delete_backup"
-            | "mysql_admin_connect"
+    )
+}
+
+fn is_command_b(command: &str) -> bool {
+    matches!(
+        command,
+        "mysql_admin_connect"
             | "mysql_admin_disconnect"
             | "mysql_admin_list_connections"
             | "mysql_admin_list_users"
@@ -964,7 +970,11 @@ pub(crate) fn is_command(command: &str) -> bool {
     )
 }
 
-pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+pub(crate) fn is_command(command: &str) -> bool {
+    is_command_a(command) || is_command_b(command)
+}
+
+fn build_a() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // OS Detection
         os_detect_commands::os_detect_add_host,
@@ -1505,6 +1515,11 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         pfsense_commands::pfsense_list_backups,
         pfsense_commands::pfsense_create_backup,
         pfsense_commands::pfsense_delete_backup,
+    ]
+}
+
+fn build_b() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
         // MySQL admin commands
         mysql_admin_commands::mysql_admin_connect,
         mysql_admin_commands::mysql_admin_disconnect,
@@ -1943,4 +1958,15 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         about_commands::about_search_deps,
         about_commands::about_get_deps_by_license,
     ]
+}
+
+pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    let a = build_a();
+    let b = build_b();
+    move |invoke| {
+        let cmd = invoke.message.command();
+        if is_command_a(cmd) { return a(invoke); }
+        if is_command_b(cmd) { return b(invoke); }
+        false
+    }
 }

@@ -1,6 +1,6 @@
 use crate::*;
 
-pub(crate) fn is_command(command: &str) -> bool {
+fn is_command_a(command: &str) -> bool {
     matches!(
         command,
         "budibase_connect"
@@ -376,7 +376,13 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "yk_audit_clear"
             | "yk_factory_reset_all"
             | "yk_export_report"
-            | "warpgate_connect"
+    )
+}
+
+fn is_command_b(command: &str) -> bool {
+    matches!(
+        command,
+        "warpgate_connect"
             | "warpgate_disconnect"
             | "warpgate_list_connections"
             | "warpgate_ping"
@@ -798,7 +804,13 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "sched_get_next_occurrences"
             | "sched_pause_all"
             | "sched_resume_all"
-            | "lxd_connect"
+    )
+}
+
+fn is_command_c(command: &str) -> bool {
+    matches!(
+        command,
+        "lxd_connect"
             | "lxd_disconnect"
             | "lxd_is_connected"
             | "lxd_get_server"
@@ -1274,7 +1286,11 @@ pub(crate) fn is_command(command: &str) -> bool {
     )
 }
 
-pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+pub(crate) fn is_command(command: &str) -> bool {
+    is_command_a(command) || is_command_b(command) || is_command_c(command)
+}
+
+fn build_a() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // Budibase commands
         budibase_commands::budibase_connect,
@@ -1658,6 +1674,11 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         yubikey_commands::yk_audit_clear,
         yubikey_commands::yk_factory_reset_all,
         yubikey_commands::yk_export_report,
+    ]
+}
+
+fn build_b() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
         // Warpgate bastion host admin commands
         warpgate_commands::warpgate_connect,
         warpgate_commands::warpgate_disconnect,
@@ -2097,6 +2118,11 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         scheduler_commands::sched_get_next_occurrences,
         scheduler_commands::sched_pause_all,
         scheduler_commands::sched_resume_all,
+    ]
+}
+
+fn build_c() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
         // ── LXD / Incus commands ─────────────────────────────────────
         lxd_commands::lxd_connect,
         lxd_commands::lxd_disconnect,
@@ -2604,4 +2630,17 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         ddns_commands::ddns_process_scheduled,
         // Postfix
     ]
+}
+
+pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    let a = build_a();
+    let b = build_b();
+    let c = build_c();
+    move |invoke| {
+        let cmd = invoke.message.command();
+        if is_command_a(cmd) { return a(invoke); }
+        if is_command_b(cmd) { return b(invoke); }
+        if is_command_c(cmd) { return c(invoke); }
+        false
+    }
 }
