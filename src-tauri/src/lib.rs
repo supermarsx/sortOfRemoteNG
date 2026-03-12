@@ -47,6 +47,7 @@ mod google_passwords_commands;
 mod hooks_commands;
 mod i18n_commands;
 mod invoke_handler;
+mod splash;
 mod keepass_commands;
 mod lastpass_commands;
 mod mongodb_commands;
@@ -278,7 +279,11 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .setup(|app| Ok(state_registry::register(app)?))
+        .setup(|app| {
+            state_registry::register(app)?;
+            splash::show(app)?;
+            Ok(())
+        })
         .invoke_handler(invoke_handler::build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

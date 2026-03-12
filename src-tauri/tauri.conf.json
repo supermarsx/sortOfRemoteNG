@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "sortOfRemoteNG",
         "width": 1280,
         "height": 720,
@@ -22,7 +23,8 @@
         "decorations": false,
         "transparent": true,
         "center": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "visible": false
       }
     ],
     "security": {

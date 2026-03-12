@@ -203,7 +203,7 @@ futures = "0.3"
 async-trait = "0.1"
 
 # ── Framework ─────────────────────────────────────────────────────────
-tauri = { version = "=2.10.3", features = ["devtools"] }
+tauri = { version = "=2.10.3", features = ["devtools", "webview-data-url"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }
