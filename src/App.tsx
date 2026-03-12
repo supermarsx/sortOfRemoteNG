@@ -849,17 +849,17 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!appSettings) return;
     const root = document.documentElement;
-    
+
     // Determine glow color: either from color scheme or custom setting
     let glowColor = appSettings.backgroundGlowColor || "#2563eb";
     if (appSettings.backgroundGlowFollowsColorScheme) {
-      // Get the primary color from CSS variable set by theme manager
-      const computedPrimary = getComputedStyle(root).getPropertyValue("--color-primary").trim();
+      // Read --color-primary from <body> where ThemeManager sets it
+      const computedPrimary = getComputedStyle(document.body).getPropertyValue("--color-primary").trim();
       if (computedPrimary) {
         glowColor = computedPrimary;
       }
     }
-    
+
     root.style.setProperty("--app-glow-color", glowColor);
     root.style.setProperty(
       "--app-glow-opacity",
@@ -881,6 +881,8 @@ const AppContent: React.FC = () => {
     appSettings.backgroundGlowOpacity,
     appSettings.backgroundGlowRadius,
     appSettings.colorScheme,
+    appSettings.primaryAccentColor,
+    appSettings.useCustomAccent,
   ]);
 
   // Tooltip system is in useTooltipSystem hook

@@ -351,7 +351,7 @@ export function useWebTerminal(
     if (typeof window === "undefined") {
       return { background: "#0b1120", foreground: "#e2e8f0", cursor: "#7dd3fc", selectionBackground: "#1e293b" };
     }
-    const styles = getComputedStyle(document.documentElement);
+    const styles = getComputedStyle(document.body);
     const background = styles.getPropertyValue("--color-background").trim() || "#0b1120";
     const foreground = styles.getPropertyValue("--color-text").trim() || "#e2e8f0";
     const cursor = styles.getPropertyValue("--color-primary").trim() || "#7dd3fc";

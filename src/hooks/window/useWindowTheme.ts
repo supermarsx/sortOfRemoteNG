@@ -16,9 +16,8 @@ export function useWindowTheme(
       ? Math.min(1, Math.max(0, appSettings.windowTransparencyOpacity || 1))
       : 1;
     const root = document.documentElement;
-
-    // Get the current theme colors from CSS variables (set by ThemeManager)
-    const computedStyle = getComputedStyle(root);
+    // Get the current theme colors from CSS variables (set by ThemeManager on body)
+    const computedStyle = getComputedStyle(document.body);
     const background = computedStyle.getPropertyValue('--color-background').trim() || '#111827';
     const surface = computedStyle.getPropertyValue('--color-surface').trim() || '#1f2937';
     const border = computedStyle.getPropertyValue('--color-border').trim() || '#374151';

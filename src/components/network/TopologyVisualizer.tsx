@@ -15,7 +15,7 @@ const MINIMAP_H = 110;
 /** Read a CSS variable from the document root, with a fallback */
 function cssVar(name: string, fallback: string): string {
   if (typeof document === "undefined") return fallback;
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  return getComputedStyle(document.body).getPropertyValue(name).trim() || fallback;
 }
 
 /** Build canvas-friendly theme color maps from CSS variables */
