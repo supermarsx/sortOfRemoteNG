@@ -639,9 +639,20 @@ export function useRDPClient(session: ConnectionSession) {
   // ─── Event listeners ───────────────────────────────────────────────
 
   useEffect(() => {
+    // Track whether this effect has been cleaned up.  Tauri's listen() is
+    // async, so in StrictMode the cleanup runs before the promise resolves.
+    // We use this flag to immediately unlisten when the promise does resolve.
+    let cleaned = false;
     const unlisteners: UnlistenFn[] = [];
 
-    listen<RDPStatusEvent>('rdp://status', (event) => {
+    const track = (p: Promise<UnlistenFn>) => {
+      p.then(fn => {
+        if (cleaned) { fn(); return; } // already unmounted — unregister immediately
+        unlisteners.push(fn);
+      });
+    };
+
+    track(listen<RDPStatusEvent>('rdp://status', (event) => {
       const status = event.payload;
       if (status.session_id !== sessionIdRef.current) return;
 
@@ -681,9 +692,9 @@ export function useRDPClient(session: ConnectionSession) {
           });
           break;
       }
-    }).then(fn => unlisteners.push(fn));
+    }));
 
-    listen<RDPPointerEvent>('rdp://pointer', (event) => {
+    track(listen<RDPPointerEvent>('rdp://pointer', (event) => {
       const ptr = event.payload;
       if (ptr.session_id !== sessionIdRef.current) return;
 
@@ -697,15 +708,15 @@ export function useRDPClient(session: ConnectionSession) {
         case 'position':
           break;
       }
-    }).then(fn => unlisteners.push(fn));
+    }));
 
-    listen<RDPStatsEvent>('rdp://stats', (event) => {
+    track(listen<RDPStatsEvent>('rdp://stats', (event) => {
       const s = event.payload;
       if (s.session_id !== sessionIdRef.current) return;
       setStats(s);
-    }).then(fn => unlisteners.push(fn));
+    }));
 
-    listen<RdpCertFingerprintEvent>('rdp://cert-fingerprint', (event) => {
+    track(listen<RdpCertFingerprintEvent>('rdp://cert-fingerprint', (event) => {
       const fp = event.payload;
       if (fp.session_id !== sessionIdRef.current) return;
       setCertFingerprint(fp.fingerprint);
@@ -737,33 +748,33 @@ export function useRDPClient(session: ConnectionSession) {
       }
 
       setTrustPrompt(result);
-    }).then(fn => unlisteners.push(fn));
+    }));
 
-    listen<RDPTimingEvent>('rdp://timing', (event) => {
+    track(listen<RDPTimingEvent>('rdp://timing', (event) => {
       const t = event.payload;
       if (t.session_id !== sessionIdRef.current) return;
       setConnectTiming(t);
-    }).then(fn => unlisteners.push(fn));
+    }));
 
-    listen<{ session_id: string; backend: string }>('rdp://render-backend', (event) => {
+    track(listen<{ session_id: string; backend: string }>('rdp://render-backend', (event) => {
       const rb = event.payload;
       if (rb.session_id !== sessionIdRef.current) return;
       setActiveRenderBackend(rb.backend);
       debugLog(`Render backend: ${rb.backend}`);
-    }).then(fn => unlisteners.push(fn));
+    }));
 
     // CLIPRDR: when remote copies text, auto-request it
-    listen<{ session_id: string; has_text: boolean }>('rdp://clipboard-formats', (event) => {
+    track(listen<{ session_id: string; has_text: boolean }>('rdp://clipboard-formats', (event) => {
       const cf = event.payload;
       if (cf.session_id !== sessionIdRef.current) return;
       if (cf.has_text) {
         // Auto-request the text data from the remote clipboard
         invoke('rdp_clipboard_paste', { sessionId: cf.session_id }).catch(() => {});
       }
-    }).then(fn => unlisteners.push(fn));
+    }));
 
     // CLIPRDR: when remote clipboard data arrives, write to local clipboard
-    listen<{ session_id: string; text: string }>('rdp://clipboard-data', (event) => {
+    track(listen<{ session_id: string; text: string }>('rdp://clipboard-data', (event) => {
       const cd = event.payload;
       if (cd.session_id !== sessionIdRef.current) return;
       if (cd.text) {
@@ -771,9 +782,10 @@ export function useRDPClient(session: ConnectionSession) {
           console.warn('Failed to write remote clipboard to local:', e);
         });
       }
-    }).then(fn => unlisteners.push(fn));
+    }));
 
     return () => {
+      cleaned = true;
       unlisteners.forEach(fn => fn());
     };
   }, []);
