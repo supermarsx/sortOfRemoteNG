@@ -8,7 +8,7 @@ const ToolbarButtons: React.FC<{ p: RDPClientHeaderProps }> = ({ p }) => (
       <button
         onClick={() => p.setMagnifierActive(!p.magnifierActive)}
         className={p.magnifierActive ? btnActive : btnDefault}
-        title="Magnifier Glass"
+        data-tooltip="Magnifier Glass"
       >
         <Search size={14} />
       </button>
@@ -16,28 +16,28 @@ const ToolbarButtons: React.FC<{ p: RDPClientHeaderProps }> = ({ p }) => (
     <button
       onClick={() => p.setShowInternals(!p.showInternals)}
       className={p.showInternals ? btnActive : btnDefault}
-      title="RDP Internals"
+      data-tooltip="RDP Internals"
     >
       <Activity size={14} />
     </button>
     <button
       onClick={() => p.setShowSettings(!p.showSettings)}
       className={btnDefault}
-      title="RDP Settings"
+      data-tooltip="RDP Settings"
     >
       <Settings size={14} />
     </button>
     <button
       onClick={p.handleScreenshot}
       className={btnDefault}
-      title="Save screenshot to file"
+      data-tooltip="Save screenshot to file"
     >
       <Camera size={14} />
     </button>
     <button
       onClick={p.handleScreenshotToClipboard}
       className={btnDefault}
-      title="Copy screenshot to clipboard"
+      data-tooltip="Copy screenshot to clipboard"
     >
       <ClipboardCopy size={14} />
     </button>

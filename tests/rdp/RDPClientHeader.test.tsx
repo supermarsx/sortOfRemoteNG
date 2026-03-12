@@ -56,7 +56,8 @@ describe("RDPClientHeader", () => {
     const { props, handleSendKeys } = buildProps();
     render(<RDPClientHeader {...props} />);
 
-    fireEvent.click(screen.getByTitle("Send key combination"));
+    const sendKeysBtn = document.querySelector('[data-tooltip="Send key combination"]') as HTMLElement;
+    fireEvent.click(sendKeysBtn);
     expect(screen.getByTestId("rdp-send-keys-popover")).toBeInTheDocument();
     expect(screen.getByText("Send Key Sequence")).toBeInTheDocument();
 
@@ -71,7 +72,8 @@ describe("RDPClientHeader", () => {
     const { props } = buildProps();
     render(<RDPClientHeader {...props} />);
 
-    fireEvent.click(screen.getByTitle("Host info & certificate"));
+    const hostInfoBtn = document.querySelector('[data-tooltip="Host info & certificate"]') as HTMLElement;
+    fireEvent.click(hostInfoBtn);
     expect(screen.getByTestId("rdp-host-info-popover")).toBeInTheDocument();
     expect(screen.getByText("Friendly Name")).toBeInTheDocument();
 

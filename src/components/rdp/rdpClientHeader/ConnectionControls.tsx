@@ -11,7 +11,7 @@ const ConnectionControls: React.FC<{
       onClick={p.handleReconnect}
       className={mgr.canReconnect ? btnDefault : btnDisabled}
       disabled={!mgr.canReconnect}
-      title="Reconnect"
+      data-tooltip="Reconnect"
     >
       <RefreshCw size={14} />
     </button>
@@ -19,7 +19,7 @@ const ConnectionControls: React.FC<{
       onClick={p.handleDisconnect}
       className={mgr.canDisconnect ? btnDefault : btnDisabled}
       disabled={!mgr.canDisconnect}
-      title="Disconnect"
+      data-tooltip="Disconnect"
     >
       <Unplug size={14} />
     </button>
@@ -27,7 +27,7 @@ const ConnectionControls: React.FC<{
       onClick={p.handleSignOut}
       className={mgr.isConnected ? btnDefault : btnDisabled}
       disabled={!mgr.isConnected}
-      title="Sign out remote session"
+      data-tooltip="Sign out remote session"
     >
       <LogOut size={14} />
     </button>
@@ -35,7 +35,7 @@ const ConnectionControls: React.FC<{
       onClick={() => mgr.setShowRebootConfirm(true)}
       className={mgr.isConnected ? btnDefault : btnDisabled}
       disabled={!mgr.isConnected}
-      title="Reboot remote machine"
+      data-tooltip="Reboot remote machine"
     >
       <Power size={14} />
     </button>

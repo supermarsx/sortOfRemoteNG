@@ -28,7 +28,7 @@ const HostInfoPopover: React.FC<{
       <button
         onClick={() => mgr.setShowHostInfo(!mgr.showHostInfo)}
         className={mgr.showHostInfo ? btnActive : btnDefault}
-        title="Host info &amp; certificate"
+        data-tooltip="Host info &amp; certificate"
       >
         <Info size={14} />
       </button>
@@ -79,7 +79,7 @@ const HostInfoPopover: React.FC<{
                 <button
                   onClick={mgr.startEditing}
                   className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                  title="Edit name"
+                  data-tooltip="Edit name"
                 >
                   <Pencil size={11} />
                 </button>
@@ -153,7 +153,7 @@ const HostInfoPopover: React.FC<{
                           color: isActive ? mode.color : "var(--color-textMuted)",
                           border: `1px solid ${isActive ? `color-mix(in srgb, ${mode.color} 35%, transparent)` : "var(--color-border)"}`,
                         }}
-                        title={`${mode.label} server certificate`}
+                        data-tooltip={`${mode.label} server certificate`}
                       >
                         <Icon size={11} />
                         {mode.label}
@@ -180,7 +180,7 @@ const HostInfoPopover: React.FC<{
                 <button
                   onClick={() => setEditingCert(true)}
                   className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                  title="Edit certificate validation"
+                  data-tooltip="Edit certificate validation"
                 >
                   <Pencil size={11} />
                 </button>

@@ -12,7 +12,7 @@ const SendKeysPopover: React.FC<{
     <button
       onClick={() => mgr.setShowSendKeys(!mgr.showSendKeys)}
       className={mgr.showSendKeys ? btnActive : btnDefault}
-      title="Send key combination"
+      data-tooltip="Send key combination"
     >
       <Keyboard size={14} />
     </button>

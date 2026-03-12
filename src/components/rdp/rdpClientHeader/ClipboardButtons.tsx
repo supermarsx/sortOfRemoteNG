@@ -12,7 +12,7 @@ const ClipboardButtons: React.FC<{
       onClick={onCopy}
       className={isConnected ? btnDefault : btnDisabled}
       disabled={!isConnected}
-      title="Copy to clipboard"
+      data-tooltip="Copy to clipboard"
     >
       <Copy size={14} />
     </button>
@@ -20,7 +20,7 @@ const ClipboardButtons: React.FC<{
       onClick={onPaste}
       className={isConnected ? btnDefault : btnDisabled}
       disabled={!isConnected}
-      title="Paste from clipboard"
+      data-tooltip="Paste from clipboard"
     >
       <ClipboardPaste size={14} />
     </button>

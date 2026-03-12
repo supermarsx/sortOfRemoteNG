@@ -25,7 +25,7 @@ const NameDisplay: React.FC<{
     <span
       className="text-sm text-[var(--color-textSecondary)] cursor-pointer hover:text-[var(--color-text)] transition-colors"
       onDoubleClick={mgr.startEditing}
-      title="Double-click to rename"
+      data-tooltip="Double-click to rename"
     >
       RDP -{" "}
       {sessionName !== sessionHostname

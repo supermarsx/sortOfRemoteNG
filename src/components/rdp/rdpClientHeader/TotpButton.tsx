@@ -13,7 +13,7 @@ const TotpButton: React.FC<{
       <button
         onClick={() => mgr.setShowTotpPanel(!mgr.showTotpPanel)}
         className={`${mgr.showTotpPanel ? btnActive : btnDefault} relative`}
-        title="2FA Codes"
+        data-tooltip="2FA Codes"
       >
         <Shield size={14} />
         {configs.length > 0 && (

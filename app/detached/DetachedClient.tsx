@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import "../../src/i18n";
 import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
+import { SettingsProvider } from "../../src/contexts/SettingsContext";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import { Connection, ConnectionSession } from "../../src/types/connection/connection";
 import { SessionViewer } from "../../src/components/session/SessionViewer";
@@ -15,6 +17,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { CornerUpLeft, Minus, Monitor, Pin, Square, X } from "lucide-react";
+import { useTooltipSystem } from "../../src/hooks/window/useTooltipSystem";
 
 const reviveSession = (session: ConnectionSession): ConnectionSession => ({
   ...session,
@@ -32,6 +35,7 @@ const reviveConnection = (connection: Connection): Connection => ({
 const DetachedSessionContent: React.FC<{
   onRegisterDisconnect: (handler: () => Promise<boolean>) => void;
 }> = ({ onRegisterDisconnect }) => {
+  useTooltipSystem();
   const { t } = useTranslation();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
@@ -506,12 +510,16 @@ const DetachedClient: React.FC = () => {
   );
 
   return (
-    <ConnectionProvider>
-      {disconnectHandler && (
-        <DetachedWindowLifecycle onBeforeClose={disconnectHandler} />
-      )}
-      <DetachedSessionContent onRegisterDisconnect={handleRegisterDisconnect} />
-    </ConnectionProvider>
+    <SettingsProvider>
+      <ConnectionProvider>
+        <ToastProvider>
+          {disconnectHandler && (
+            <DetachedWindowLifecycle onBeforeClose={disconnectHandler} />
+          )}
+          <DetachedSessionContent onRegisterDisconnect={handleRegisterDisconnect} />
+        </ToastProvider>
+      </ConnectionProvider>
+    </SettingsProvider>
   );
 };
 

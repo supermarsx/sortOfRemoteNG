@@ -19,7 +19,7 @@ const RecordingControls: React.FC<{
     <button
       onClick={() => startRecording("webm")}
       className={btnDefault}
-      title="Start recording"
+      data-tooltip="Start recording"
     >
       <Circle size={14} className="fill-current" />
     </button>
@@ -32,7 +32,7 @@ const RecordingControls: React.FC<{
         <button
           onClick={resumeRecording}
           className={btnDefault}
-          title="Resume recording"
+          data-tooltip="Resume recording"
         >
           <Play size={12} />
         </button>
@@ -40,7 +40,7 @@ const RecordingControls: React.FC<{
         <button
           onClick={pauseRecording}
           className={btnDefault}
-          title="Pause recording"
+          data-tooltip="Pause recording"
         >
           <Pause size={12} />
         </button>
@@ -48,7 +48,7 @@ const RecordingControls: React.FC<{
       <button
         onClick={handleStopRecording}
         className={btnDefault}
-        title="Stop and save recording"
+        data-tooltip="Stop and save recording"
       >
         <Square size={12} className="fill-current" />
       </button>

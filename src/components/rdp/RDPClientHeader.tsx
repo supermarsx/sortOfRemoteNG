@@ -74,7 +74,7 @@ export default function RDPClientHeader(p: RDPClientHeaderProps) {
         <button
           onClick={p.toggleFullscreen}
           className={btnDefault}
-          title={p.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          data-tooltip={p.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
         >
           {p.isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
