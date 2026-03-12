@@ -60,6 +60,9 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   // avoid the effect re-running and resetting the timeline (which caused the
   // bar to flash back to full right before the toast disappeared).
   useEffect(() => {
+    // Reset on effect re-run (React StrictMode double-invokes effects:
+    // cleanup sets removedRef=true, so we must reset it here).
+    removedRef.current = false;
     startRef.current = Date.now();
 
     const tick = () => {
