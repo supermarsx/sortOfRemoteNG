@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Columns,
   Grid3X3,
@@ -8,7 +8,6 @@ import {
   Settings2,
 } from "lucide-react";
 import { ConnectionSession, TabLayout } from "../../types/connection/connection";
-import { Resizable } from "react-resizable";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
 import { useTabLayoutManager } from "../../hooks/session/useTabLayoutManager";
 import { Slider } from '../ui/forms';
@@ -91,116 +90,109 @@ const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number }> = ({ mgr, 
   </div>
 );
 
-const TabsLayout: React.FC<{
-  sessions: ConnectionSession[];
-  activeSessionId?: string;
-  showTabBar: boolean;
-  mgr: Mgr;
-  onSessionSelect: (id: string) => void;
-  onSessionDetach: (id: string) => void;
-  onSessionClose: (id: string) => void;
-  renderSession: (session: ConnectionSession) => React.ReactNode;
-}> = ({ sessions, activeSessionId, showTabBar, mgr, onSessionSelect, onSessionDetach, onSessionClose, renderSession }) => (
-  <div className="flex flex-col h-full">
-    {showTabBar && (
-      <div className="flex bg-[var(--color-surface)] border-b border-[var(--color-border)] overflow-x-auto">
-        {sessions.map((session) => (
-          <div
-            key={session.id}
-            className={`flex items-center px-4 py-2 border-r border-[var(--color-border)] cursor-pointer min-w-0 ${
-              session.id === activeSessionId
-                ? "bg-[var(--color-border)] text-[var(--color-text)]"
-                : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
-            }`}
-            onClick={() => onSessionSelect(session.id)}
-            onAuxClick={(e) => mgr.handleMiddleClick(session.id, e)}
-          >
-            <span className="truncate mr-2">{session.name}</span>
-            <button onClick={(ev) => { ev.stopPropagation(); onSessionDetach(session.id); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)] mr-2" title="Detach">↗</button>
-            <button onClick={(ev) => { ev.stopPropagation(); onSessionClose(session.id); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">x</button>
-          </div>
-        ))}
-      </div>
-    )}
-    <div className="flex-1 overflow-hidden relative">
-      {sessions.map((session) => (
-        <div key={session.id} className="absolute inset-0" style={{ visibility: session.id === activeSessionId ? "visible" : "hidden", zIndex: session.id === activeSessionId ? 1 : 0 }}>
-          {renderSession(session)}
-        </div>
-      ))}
+/* ── Tile header overlay for mosaic modes ─────────────── */
+
+const TileHeader: React.FC<{
+  session: ConnectionSession;
+  isActive: boolean;
+  onSelect: () => void;
+  onDetach: () => void;
+  onClose: () => void;
+}> = ({ session, isActive, onSelect, onDetach, onClose }) => (
+  <div
+    className={`absolute top-0 left-0 right-0 z-10 bg-[var(--color-surface)] border-b px-2 py-1 flex items-center justify-between cursor-pointer ${
+      isActive ? "border-primary" : "border-[var(--color-border)]"
+    }`}
+    onClick={onSelect}
+  >
+    <span className="text-[var(--color-text)] text-sm truncate">{session.name}</span>
+    <div className="flex items-center space-x-1">
+      <button onClick={(ev) => { ev.stopPropagation(); onDetach(); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]" title="Detach">↗</button>
+      <button onClick={(ev) => { ev.stopPropagation(); onClose(); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">x</button>
     </div>
   </div>
 );
 
-const MosaicLayout: React.FC<{
-  sessions: ConnectionSession[];
-  activeSessionId?: string;
-  layout: TabLayout;
-  mgr: Mgr;
-  onSessionSelect: (id: string) => void;
-  onSessionDetach: (id: string) => void;
-  onSessionClose: (id: string) => void;
-  renderSession: (session: ConnectionSession) => React.ReactNode;
-}> = ({ sessions, activeSessionId, layout, mgr, onSessionSelect, onSessionDetach, onSessionClose, renderSession }) => (
-  <div ref={mgr.containerRef} className="relative h-full">
-    {layout.sessions.map((sessionLayout) => {
-      const session = sessions.find((s) => s.id === sessionLayout.sessionId);
-      if (!session) return null;
-      const isActive = session.id === activeSessionId;
-      const style = {
-        position: "absolute" as const,
-        left: `${sessionLayout.position.x}%`,
-        top: `${sessionLayout.position.y}%`,
-        width: `${sessionLayout.position.width}%`,
-        height: `${sessionLayout.position.height}%`,
-        zIndex: isActive ? 10 : 1,
-      };
-      return (
-        <Resizable
-          key={session.id}
-          width={(sessionLayout.position.width / 100) * (mgr.containerRef.current?.clientWidth || 1)}
-          height={(sessionLayout.position.height / 100) * (mgr.containerRef.current?.clientHeight || 1)}
-          onResize={(_event, { size }) => { mgr.handleSessionResize(session.id, size.width, size.height); }}
-          minConstraints={[200, 150]}
-        >
-          <div style={style} className={`border-2 transition-all ${isActive ? "border-primary" : "border-[var(--color-border)]"}`} onClick={() => onSessionSelect(session.id)}>
-            <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-2 py-1 flex items-center justify-between">
-              <span className="text-[var(--color-text)] text-sm truncate">{session.name}</span>
-              <div className="flex items-center space-x-1">
-                <button onClick={(ev) => { ev.stopPropagation(); onSessionDetach(session.id); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]" title="Detach">↗</button>
-                <button onClick={(ev) => { ev.stopPropagation(); onSessionClose(session.id); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">x</button>
-              </div>
-            </div>
-            <div className="h-full">{renderSession(session)}</div>
-          </div>
-        </Resizable>
-      );
-    })}
-  </div>
-);
+/* ── Compute per-session CSS from layout ──────────────── */
 
-const MiniMosaicLayout: React.FC<{
-  sessions: ConnectionSession[];
-  activeSessionId?: string;
-  onSessionSelect: (id: string) => void;
-}> = ({ sessions, activeSessionId, onSessionSelect }) => (
-  <div className="grid grid-cols-4 gap-2 h-full p-2">
-    {sessions.map((session) => (
-      <div
-        key={session.id}
-        className={`border-2 rounded cursor-pointer transition-all ${
-          session.id === activeSessionId ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"
-        }`}
-        onClick={() => onSessionSelect(session.id)}
-      >
-        <div className="bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] truncate">{session.name}</div>
-        <div className="h-full bg-[var(--color-background)] flex items-center justify-center">
-          <span className="text-[var(--color-textMuted)] text-xs">Preview</span>
-        </div>
-      </div>
-    ))}
-  </div>
-);
+interface SessionStyle {
+  position: 'absolute';
+  left: string;
+  top: string;
+  width: string;
+  height: string;
+  visibility: 'visible' | 'hidden';
+  zIndex: number;
+}
+
+function computeSessionStyles(
+  sessions: ConnectionSession[],
+  layout: TabLayout,
+  activeSessionId?: string,
+): Map<string, SessionStyle> {
+  const styles = new Map<string, SessionStyle>();
+  const isTabsMode = layout.mode === 'tabs';
+  const isMiniMosaic = layout.mode === 'miniMosaic';
+
+  if (isTabsMode) {
+    // Tabs: all sessions fill the container, only active is visible
+    for (const session of sessions) {
+      const isActive = session.id === activeSessionId;
+      styles.set(session.id, {
+        position: 'absolute',
+        left: '0',
+        top: '0',
+        width: '100%',
+        height: '100%',
+        visibility: isActive ? 'visible' : 'hidden',
+        zIndex: isActive ? 1 : 0,
+      });
+    }
+  } else if (isMiniMosaic) {
+    // Mini mosaic: hide all real sessions (preview grid is separate)
+    for (const session of sessions) {
+      styles.set(session.id, {
+        position: 'absolute',
+        left: '0',
+        top: '0',
+        width: '0',
+        height: '0',
+        visibility: 'hidden',
+        zIndex: 0,
+      });
+    }
+  } else {
+    // Mosaic / grid / split modes: position from layout.sessions
+    const layoutMap = new Map(layout.sessions.map((s) => [s.sessionId, s.position]));
+    for (const session of sessions) {
+      const pos = layoutMap.get(session.id);
+      const isActive = session.id === activeSessionId;
+      if (pos) {
+        styles.set(session.id, {
+          position: 'absolute',
+          left: `${pos.x}%`,
+          top: `${pos.y}%`,
+          width: `${pos.width}%`,
+          height: `${pos.height}%`,
+          visibility: 'visible',
+          zIndex: isActive ? 10 : 1,
+        });
+      } else {
+        // Session not in layout — hide but keep mounted
+        styles.set(session.id, {
+          position: 'absolute',
+          left: '0',
+          top: '0',
+          width: '0',
+          height: '0',
+          visibility: 'hidden',
+          zIndex: 0,
+        });
+      }
+    }
+  }
+  return styles;
+}
 
 /* ── Main Component ──────────────────────────────────── */
 
@@ -231,10 +223,18 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
 }) => {
   const mgr = useTabLayoutManager(sessions, activeSessionId, layout, onLayoutChange, onSessionClose, middleClickCloseTab);
 
-  const isMosaicMode = layout.mode === "sideBySide" || layout.mode === "mosaic" || layout.mode === "splitVertical" || layout.mode === "splitHorizontal" || layout.mode === "grid2" || layout.mode === "grid4" || layout.mode === "grid6";
+  const isTabsMode = layout.mode === "tabs";
+  const isMiniMosaic = layout.mode === "miniMosaic";
+  const isMosaicMode = !isTabsMode && !isMiniMosaic;
+
+  const sessionStyles = useMemo(
+    () => computeSessionStyles(sessions, layout, activeSessionId),
+    [sessions, layout, activeSessionId],
+  );
 
   return (
     <div className="flex flex-col h-full">
+      {/* ── Layout toolbar ───────────────────────────── */}
       <div className="sor-toolbar-row">
         <div className="flex items-center space-x-2">
           <LayoutModeButton mode="tabs" currentMode={layout.mode} title="Tabs" icon={<Minimize2 size={16} />} onClick={mgr.handleLayoutModeChange} />
@@ -250,15 +250,81 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        {layout.mode === "tabs" && (
-          <TabsLayout sessions={sessions} activeSessionId={activeSessionId} showTabBar={showTabBar} mgr={mgr} onSessionSelect={onSessionSelect} onSessionDetach={onSessionDetach} onSessionClose={onSessionClose} renderSession={renderSession} />
-        )}
-        {isMosaicMode && (
-          <MosaicLayout sessions={sessions} activeSessionId={activeSessionId} layout={layout} mgr={mgr} onSessionSelect={onSessionSelect} onSessionDetach={onSessionDetach} onSessionClose={onSessionClose} renderSession={renderSession} />
-        )}
-        {layout.mode === "miniMosaic" && (
-          <MiniMosaicLayout sessions={sessions} activeSessionId={activeSessionId} onSessionSelect={onSessionSelect} />
+      {/* ── Tab bar (tabs mode only) ─────────────────── */}
+      {isTabsMode && showTabBar && (
+        <div className="flex bg-[var(--color-surface)] border-b border-[var(--color-border)] overflow-x-auto">
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              className={`flex items-center px-4 py-2 border-r border-[var(--color-border)] cursor-pointer min-w-0 ${
+                session.id === activeSessionId
+                  ? "bg-[var(--color-border)] text-[var(--color-text)]"
+                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
+              }`}
+              onClick={() => onSessionSelect(session.id)}
+              onAuxClick={(e) => mgr.handleMiddleClick(session.id, e)}
+            >
+              <span className="truncate mr-2">{session.name}</span>
+              <button onClick={(ev) => { ev.stopPropagation(); onSessionDetach(session.id); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)] mr-2" title="Detach">↗</button>
+              <button onClick={(ev) => { ev.stopPropagation(); onSessionClose(session.id); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">x</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Stable session container ─────────────────── */}
+      {/*
+        ALL sessions are always rendered here. Layout mode only
+        changes the CSS positioning. Sessions never unmount on
+        layout changes — this preserves RDP/SSH connections.
+      */}
+      <div ref={mgr.containerRef} className="flex-1 overflow-hidden relative">
+        {sessions.map((session) => {
+          const style = sessionStyles.get(session.id);
+          if (!style) return null;
+          const isActive = session.id === activeSessionId;
+          return (
+            <div
+              key={session.id}
+              className={isMosaicMode && style.visibility === 'visible' ? `border-2 transition-colors ${isActive ? "border-primary" : "border-[var(--color-border)]"}` : ''}
+              style={style}
+            >
+              {/* Tile header for mosaic modes */}
+              {isMosaicMode && style.visibility === 'visible' && (
+                <TileHeader
+                  session={session}
+                  isActive={isActive}
+                  onSelect={() => onSessionSelect(session.id)}
+                  onDetach={() => onSessionDetach(session.id)}
+                  onClose={() => onSessionClose(session.id)}
+                />
+              )}
+              {/* Session content — stable, never remounts */}
+              <div className={isMosaicMode && style.visibility === 'visible' ? "absolute inset-0 top-[29px]" : "h-full"}>
+                {renderSession(session)}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Mini mosaic preview grid (sessions are hidden, just show previews) */}
+        {isMiniMosaic && (
+          <div className="grid grid-cols-4 gap-2 h-full p-2">
+            {sessions.map((session) => (
+              <div
+                key={`preview-${session.id}`}
+                className={`border-2 rounded cursor-pointer transition-all ${
+                  session.id === activeSessionId ? "border-primary bg-primary/20" : "border-[var(--color-border)] hover:border-[var(--color-border)]"
+                }`}
+                onClick={() => onSessionSelect(session.id)}
+              >
+                <div className="bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] truncate">{session.name}</div>
+                <div className="h-full bg-[var(--color-background)] flex items-center justify-center">
+                  <span className="text-[var(--color-textMuted)] text-xs">Preview</span>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
