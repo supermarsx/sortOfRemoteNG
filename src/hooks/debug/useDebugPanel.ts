@@ -58,6 +58,7 @@ export function useDebugPanel({
 }: UseDebugPanelParams) {
   const [filter, setFilter] = useState('');
   const [expandedCategory, setExpandedCategory] = useState<string | null>('sessions');
+  const [crashTrigger, setCrashTrigger] = useState(false);
 
   const createMockSession = useCallback(
     (protocol: string, status: SessionStatus, name?: string, errorMessage?: string): ConnectionSession => {
@@ -221,12 +222,32 @@ export function useDebugPanel({
     list.push({
       id: 'throw-unhandled',
       label: 'Throw Unhandled Exception',
-      description: 'Trigger an unhandled throw for ErrorBoundary testing',
+      description: 'Trigger an unhandled throw (caught by window.onerror, not ErrorBoundary)',
       category: 'ui',
       action: () => {
         setTimeout(() => {
           throw new Error('[Debug] Unhandled test exception');
         }, 0);
+      },
+    });
+
+    list.push({
+      id: 'trigger-bsod',
+      label: 'Trigger BSOD (Frontend Crash)',
+      description: 'Throw a React render error to trigger the full BSOD crash screen',
+      category: 'ui',
+      action: () => setCrashTrigger(true),
+    });
+
+    list.push({
+      id: 'trigger-bsod-chain',
+      label: 'Trigger BSOD (Multiple Errors)',
+      description: 'Throw two errors in quick succession to test multi-error accordion',
+      category: 'ui',
+      action: () => {
+        // First error will be caught, then the re-render will trigger a second
+        // via the same mechanism (state stays true across the boundary reset).
+        setCrashTrigger(true);
       },
     });
 
@@ -266,6 +287,15 @@ export function useDebugPanel({
   const toggleCategory = useCallback((cat: string) => {
     setExpandedCategory((prev) => (prev === cat ? null : cat));
   }, []);
+
+  // When crashTrigger is true, throw during render to be caught by ErrorBoundary
+  if (crashTrigger) {
+    throw new Error(
+      '[Debug] Intentional frontend crash triggered from Debug Panel.\n' +
+      'This is a test of the BSOD error recovery screen.\n' +
+      'Component: useDebugPanel → DebugPanel → AppContent'
+    );
+  }
 
   return {
     filter,

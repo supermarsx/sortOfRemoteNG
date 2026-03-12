@@ -11,6 +11,7 @@ import {
   Palette,
   X,
   Zap,
+  Skull,
 } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection/connection';
 import { ConnectionAction } from '../../contexts/ConnectionContextTypes';
@@ -157,6 +158,15 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({
             }}
           >
             <Zap size={11} /> Stress 50
+          </button>
+          <button
+            className="sor-btn sor-btn-sm sor-btn-danger"
+            onClick={() => {
+              const a = mgr.categories.find((c) => c.key === 'ui')?.actions.find((a) => a.id === 'trigger-bsod');
+              a?.action();
+            }}
+          >
+            <Skull size={11} /> BSOD
           </button>
           {mgr.debugSessionCount > 0 && (
             <button
