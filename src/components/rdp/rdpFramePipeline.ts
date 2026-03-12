@@ -2,12 +2,22 @@
  * RDP Frame Pipeline
  *
  * Encapsulates the entire frame rendering hot-path outside of React.
- * Owns the frame queue, rAF loop, renderer, and canvas context — none of
+ * Owns the frame queue, render loop, renderer, and canvas context — none of
  * which participate in React state or re-renders.
  *
- * The Channel callback pushes raw ArrayBuffers into the queue; the rAF
- * loop drains them and paints directly to the canvas.  React only interacts
- * via imperative calls (attach/detach canvas, resize, destroy).
+ * Scheduling modes:
+ *
+ * | Mode          | Interval | Mechanism                      | Best for            |
+ * |---------------|----------|--------------------------------|---------------------|
+ * | `vsync`       | ~16ms    | requestAnimationFrame          | Battery / idle      |
+ * | `low-latency` | ~1ms     | MessageChannel.postMessage     | Fast animations     |
+ * | `adaptive`    | dynamic  | Starts vsync, escalates on     | Default — balances  |
+ * |               |          | queue pressure, relaxes back   | latency vs. power   |
+ *
+ * Triple buffering:
+ * When the WebGL renderer is created with `tripleBuffering: true`, it uses
+ * ping-pong textures so the GPU never stalls reading a texture while the
+ * CPU is uploading dirty regions to the other.
  */
 
 import { FrameBuffer } from './rdpCanvas';
@@ -15,37 +25,109 @@ import {
   createFrameRenderer,
   type FrameRenderer,
   type FrontendRendererType,
+  type RendererOptions,
 } from './rdpRenderers';
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+export type FrameSchedulingMode = 'vsync' | 'low-latency' | 'adaptive';
+
+export interface PipelineOptions {
+  scheduling?: FrameSchedulingMode;
+  tripleBuffering?: boolean;
+}
+
+// ─── Pipeline ───────────────────────────────────────────────────────────────
 
 export class RdpFramePipeline {
   // ── Queue & scheduling ──────────────────────────────────────────────
   private queue: ArrayBuffer[] = [];
   private rafId = 0;
-  private rafPending = false;
+  private pending = false;
   private destroyed = false;
+
+  // ── Scheduling ──────────────────────────────────────────────────────
+  private readonly scheduleMode: FrameSchedulingMode;
+  private readonly msgChannel: MessageChannel | null = null;
+  private usingLowLatency = false; // current state for adaptive mode
+
+  // Adaptive mode: tracks queue depth to decide when to escalate
+  private static readonly ADAPTIVE_ESCALATE_THRESHOLD = 2;
+  private static readonly ADAPTIVE_RELAX_FRAMES = 60; // relax after N consecutive low-queue ticks
+  private adaptiveRelaxCounter = 0;
 
   // ── Rendering ───────────────────────────────────────────────────────
   private canvas: HTMLCanvasElement | null = null;
   private renderer: FrameRenderer | null = null;
   private visCtx: CanvasRenderingContext2D | null = null;
   private fb: FrameBuffer | null = null;
+  private readonly rendererOpts: RendererOptions;
 
   // ── Magnifier mirror (optional) ─────────────────────────────────────
   private magnifierActive = false;
   private offImgCache: { img: ImageData; w: number; h: number } | null = null;
 
-  // ── Bound rAF callback (stable identity) ────────────────────────────
+  // ── Bound callbacks (stable identity) ──────────────────────────────
   private readonly tick = () => this.renderFrames();
+
+  constructor(opts?: PipelineOptions) {
+    this.scheduleMode = opts?.scheduling ?? 'vsync';
+    this.rendererOpts = { tripleBuffering: opts?.tripleBuffering ?? false };
+
+    // Create the MessageChannel for low-latency / adaptive scheduling.
+    // The channel fires a micro-task on port1 when port2.postMessage() is
+    // called — ~0.5-1ms latency vs rAF's ~16ms.
+    if (this.scheduleMode !== 'vsync') {
+      this.msgChannel = new MessageChannel();
+      this.msgChannel.port1.onmessage = this.tick;
+    }
+
+    if (this.scheduleMode === 'low-latency') {
+      this.usingLowLatency = true;
+    }
+  }
 
   /** The callback to wire into `new Channel<ArrayBuffer>(cb)`. */
   readonly onFrame = (data: ArrayBuffer): void => {
     if (this.destroyed || data.byteLength < 8) return;
     this.queue.push(data);
-    if (!this.rafPending) {
-      this.rafPending = true;
+    this.scheduleRender();
+  };
+
+  // ── Scheduling ────────────────────────────────────────────────────
+
+  private scheduleRender(): void {
+    if (this.pending) return;
+    this.pending = true;
+
+    if (this.usingLowLatency && this.msgChannel) {
+      // Fire via MessageChannel — ~1ms latency, unbound from vsync
+      this.msgChannel.port2.postMessage(null);
+    } else {
+      // Standard vsync-aligned scheduling
       this.rafId = requestAnimationFrame(this.tick);
     }
-  };
+  }
+
+  /** Adaptive mode: check queue pressure and switch scheduling strategy. */
+  private adaptiveCheck(): void {
+    if (this.scheduleMode !== 'adaptive') return;
+
+    if (this.queue.length >= RdpFramePipeline.ADAPTIVE_ESCALATE_THRESHOLD) {
+      // Queue is building up — switch to low-latency to drain faster
+      if (!this.usingLowLatency) {
+        this.usingLowLatency = true;
+      }
+      this.adaptiveRelaxCounter = 0;
+    } else {
+      // Queue is healthy — count towards relaxing back to vsync
+      this.adaptiveRelaxCounter++;
+      if (this.usingLowLatency && this.adaptiveRelaxCounter >= RdpFramePipeline.ADAPTIVE_RELAX_FRAMES) {
+        this.usingLowLatency = false;
+        this.adaptiveRelaxCounter = 0;
+      }
+    }
+  }
 
   // ── Lifecycle ───────────────────────────────────────────────────────
 
@@ -60,13 +142,12 @@ export class RdpFramePipeline {
     canvas.width = width;
     canvas.height = height;
     this.fb = new FrameBuffer(width, height);
-    this.renderer = createFrameRenderer(rendererType, canvas);
-    this.visCtx = null; // lazily acquired if renderer is null (canvas2d fallback)
+    this.renderer = createFrameRenderer(rendererType, canvas, this.rendererOpts);
+    this.visCtx = null;
 
     // Flush any frames that arrived before the canvas was ready
-    if (this.queue.length > 0 && !this.rafPending) {
-      this.rafPending = true;
-      this.rafId = requestAnimationFrame(this.tick);
+    if (this.queue.length > 0 && !this.pending) {
+      this.scheduleRender();
     }
   }
 
@@ -94,12 +175,21 @@ export class RdpFramePipeline {
     return this.renderer;
   }
 
+  /** Current scheduling mode being used (for diagnostics). */
+  getActiveScheduling(): 'vsync' | 'low-latency' {
+    return this.usingLowLatency ? 'low-latency' : 'vsync';
+  }
+
   /** Tear down everything. */
   destroy(): void {
     this.destroyed = true;
-    if (this.rafPending) {
+    if (this.pending) {
       cancelAnimationFrame(this.rafId);
-      this.rafPending = false;
+      this.pending = false;
+    }
+    if (this.msgChannel) {
+      this.msgChannel.port1.close();
+      this.msgChannel.port2.close();
     }
     this.renderer?.destroy();
     this.renderer = null;
@@ -112,11 +202,14 @@ export class RdpFramePipeline {
   // ── Hot path ────────────────────────────────────────────────────────
 
   private renderFrames(): void {
-    this.rafPending = false;
+    this.pending = false;
     const queue = this.queue;
     const fb = this.fb;
     const canvas = this.canvas;
     const renderer = this.renderer;
+
+    // Adaptive scheduling decision (before we drain)
+    this.adaptiveCheck();
 
     if (queue.length === 0 || !fb || !canvas) {
       queue.length = 0;
@@ -179,5 +272,12 @@ export class RdpFramePipeline {
     }
 
     queue.length = 0;
+
+    // In low-latency mode, if new frames arrived while we were rendering,
+    // schedule another tick immediately instead of waiting for the next
+    // onFrame call.  This keeps the pipeline drained.
+    if (this.queue.length > 0 && !this.pending) {
+      this.scheduleRender();
+    }
   }
 }

@@ -614,6 +614,11 @@ export interface RdpGlobalDefaultsConfig {
    */
   frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker';
 
+  /** Frame scheduling mode: vsync (~16ms), low-latency (~1ms), or adaptive */
+  frameScheduling: 'vsync' | 'low-latency' | 'adaptive';
+  /** Enable triple buffering (ping-pong textures) in WebGL renderer */
+  tripleBuffering: boolean;
+
   // ─── Reconnection defaults ─────────────────────────────────
   /** Base delay in seconds between reconnection attempts */
   reconnectBaseDelaySecs: number;

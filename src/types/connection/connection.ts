@@ -370,6 +370,22 @@ export interface RdpPerformanceSettings {
    * - `offscreen-worker` — OffscreenCanvas in a Worker (off-main-thread)
    */
   frontendRenderer?: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker';
+
+  // ─── Frame Scheduling ──────────────────────────────────────────────
+  /**
+   * Controls how the frame pipeline schedules render ticks.
+   * - `vsync` — requestAnimationFrame (~16ms interval, synced to display refresh)
+   * - `low-latency` — MessageChannel.postMessage (~1ms interval, unbound from vsync)
+   * - `adaptive` — starts with vsync, switches to low-latency when queue pressure rises
+   */
+  frameScheduling?: 'vsync' | 'low-latency' | 'adaptive';
+
+  /**
+   * Enable triple buffering in the WebGL renderer.
+   * Uses ping-pong textures so the GPU never stalls reading a texture
+   * that is being written to.  Requires WebGL 2.
+   */
+  tripleBuffering?: boolean;
 }
 
 // ─── Bitmap Codec Negotiation ──────────────────────────────────────
@@ -651,6 +667,8 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     },
     renderBackend: 'webview',
     frontendRenderer: 'auto',
+    frameScheduling: 'adaptive',
+    tripleBuffering: true,
   },
   security: {
     enableTls: true,

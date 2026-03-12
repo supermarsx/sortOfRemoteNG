@@ -348,6 +348,8 @@ const defaultSettings: GlobalSettings = {
     // Render Backend
     renderBackend: 'webview' as const,
     frontendRenderer: 'auto' as const,
+    frameScheduling: 'adaptive' as const,
+    tripleBuffering: true,
     reconnectBaseDelaySecs: 3,
     reconnectMaxDelaySecs: 30,
     reconnectOnNetworkLoss: true,

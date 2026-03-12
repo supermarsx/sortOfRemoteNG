@@ -397,6 +397,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tcpSendBufferSize: 262144,
     renderBackend: 'webview',
     frontendRenderer: 'auto',
+    frameScheduling: 'adaptive',
+    tripleBuffering: true,
     targetFps: 30,
     frameBatching: false,
     frameBatchIntervalMs: 33,

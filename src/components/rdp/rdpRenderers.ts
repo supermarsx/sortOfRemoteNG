@@ -48,6 +48,8 @@ export interface FrameRenderer {
   readonly name: string;
   /** The resolved renderer type identifier. */
   readonly type: FrontendRendererType;
+  /** Whether this renderer uses triple buffering (for diagnostics). */
+  readonly tripleBuffered: boolean;
   /** Paint a dirty rectangle of RGBA data onto the canvas. */
   paintRegion(
     x: number,
@@ -67,6 +69,11 @@ export interface FrameRenderer {
   present(): void;
   /** Release all GPU / worker resources. */
   destroy(): void;
+}
+
+/** Options for renderer creation. */
+export interface RendererOptions {
+  tripleBuffering?: boolean;
 }
 
 // ─── Feature Detection ─────────────────────────────────────────────────────
@@ -98,6 +105,7 @@ export function detectCapabilities(): RendererCapabilities {
 class Canvas2DRenderer implements FrameRenderer {
   readonly name = 'Canvas 2D';
   readonly type: FrontendRendererType = 'canvas2d';
+  readonly tripleBuffered = false;
   private ctx: CanvasRenderingContext2D;
   /** Cached ImageData to avoid per-frame allocation. Reused when (w,h) matches. */
   private cachedImg: ImageData | null = null;
@@ -169,29 +177,38 @@ const GL_FRAG = `
 `;
 
 class WebGLRenderer implements FrameRenderer {
-  readonly name = 'WebGL';
+  readonly name: string;
   readonly type: FrontendRendererType = 'webgl';
+  readonly tripleBuffered: boolean;
   private gl: WebGLRenderingContext | WebGL2RenderingContext;
+  private program: WebGLProgram;
+  private dirty = false;
+
+  // ── Single-buffer mode ──
   private tex: WebGLTexture;
   private texW = 0;
   private texH = 0;
-  private dirty = false;
-  private program: WebGLProgram;
 
-  constructor(private canvas: HTMLCanvasElement) {
-    const gl =
-      (canvas.getContext('webgl2', {
-        antialias: false,
-        desynchronized: true,
-        preserveDrawingBuffer: false,
-      }) as WebGL2RenderingContext | null) ??
-      (canvas.getContext('webgl', {
-        antialias: false,
-        desynchronized: true,
-        preserveDrawingBuffer: false,
-      }) as WebGLRenderingContext | null);
+  // ── Triple-buffer (ping-pong) mode ──
+  private texPair: [WebGLTexture, WebGLTexture] | null = null;
+  private fboPair: [WebGLFramebuffer, WebGLFramebuffer] | null = null;
+  private writeIdx = 0; // index into texPair: which texture receives uploads
+  private isWebGL2 = false;
+
+  constructor(private canvas: HTMLCanvasElement, opts?: RendererOptions) {
+    const gl2 = canvas.getContext('webgl2', {
+      antialias: false,
+      desynchronized: true,
+      preserveDrawingBuffer: false,
+    }) as WebGL2RenderingContext | null;
+    const gl = gl2 ?? (canvas.getContext('webgl', {
+      antialias: false,
+      desynchronized: true,
+      preserveDrawingBuffer: false,
+    }) as WebGLRenderingContext | null);
     if (!gl) throw new Error('WebGL context unavailable');
     this.gl = gl;
+    this.isWebGL2 = !!gl2;
 
     // ── Compile shader program ──
     const vs = this.compileShader(gl.VERTEX_SHADER, GL_VERT);
@@ -206,10 +223,9 @@ class WebGLRenderer implements FrameRenderer {
     this.program = prog;
     gl.useProgram(prog);
 
-    // ── Fullscreen quad  (-1…1) ──
+    // ── Fullscreen quad (-1…1) ──
     const buf = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    /* eslint-disable-next-line @typescript-eslint/no-loss-of-precision */
     gl.bufferData(
       gl.ARRAY_BUFFER,
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
@@ -219,17 +235,47 @@ class WebGLRenderer implements FrameRenderer {
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-    // ── Texture ──
+    // ── Determine triple-buffer eligibility ──
+    const wantTriple = opts?.tripleBuffering ?? false;
+    this.tripleBuffered = wantTriple && this.isWebGL2;
+
+    if (this.tripleBuffered) {
+      // Create two textures + two FBOs for ping-pong
+      const tA = this.createTex(gl);
+      const tB = this.createTex(gl);
+      this.texPair = [tA, tB];
+      this.fboPair = [this.createFbo(gl, tA), this.createFbo(gl, tB)];
+      this.tex = tA; // alias for alloc helper
+      this.name = 'WebGL (triple-buffered)';
+    } else {
+      this.tex = this.createTex(gl);
+      this.name = 'WebGL';
+    }
+
+    // Allocate at current canvas size
+    const w = canvas.width || 1920;
+    const h = canvas.height || 1080;
+    this.allocTextures(w, h);
+  }
+
+  // ── Helpers ──
+
+  private createTex(gl: WebGLRenderingContext): WebGLTexture {
     const tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.tex = tex;
+    return tex;
+  }
 
-    // Allocate at current canvas size
-    this.allocTexture(canvas.width || 1920, canvas.height || 1080);
+  private createFbo(gl: WebGLRenderingContext, tex: WebGLTexture): WebGLFramebuffer {
+    const fbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return fbo;
   }
 
   private compileShader(type: number, src: string): WebGLShader {
@@ -243,25 +289,23 @@ class WebGLRenderer implements FrameRenderer {
     return s;
   }
 
-  private allocTexture(w: number, h: number): void {
+  private allocTextures(w: number, h: number): void {
     if (w === this.texW && h === this.texH) return;
     const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    // Allocate with zeroed RGBA data
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA,
-      w,
-      h,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      null,
-    );
+    if (this.tripleBuffered && this.texPair) {
+      for (const t of this.texPair) {
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
     this.texW = w;
     this.texH = h;
   }
+
+  // ── FrameRenderer interface ──
 
   paintRegion(
     x: number,
@@ -272,42 +316,71 @@ class WebGLRenderer implements FrameRenderer {
   ): void {
     if (w <= 0 || h <= 0 || rgba.length < w * h * 4) return;
     const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      x,
-      y,
-      w,
-      h,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      rgba,
-    );
+
+    if (this.tripleBuffered && this.texPair) {
+      // Upload to the WRITE texture only — the display texture is untouched,
+      // so the GPU can present it without stalling on our upload.
+      gl.bindTexture(gl.TEXTURE_2D, this.texPair[this.writeIdx]);
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    }
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
     this.dirty = true;
   }
 
-  /**
-   * Draw the texture to the canvas.
-   * Called once per rAF after all `paintRegion` calls for that frame.
-   */
   present(): void {
     if (!this.dirty) return;
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    if (this.tripleBuffered && this.texPair && this.fboPair) {
+      const gl2 = gl as WebGL2RenderingContext;
+
+      // 1. Draw the WRITE texture (has latest dirty rects) to the canvas
+      gl.bindTexture(gl.TEXTURE_2D, this.texPair[this.writeIdx]);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      // 2. Swap: the current write becomes the display, the old display
+      //    becomes the new write target.
+      const prevWrite = this.writeIdx;
+      this.writeIdx = 1 - this.writeIdx;
+
+      // 3. Blit prevWrite → newWrite so the new write texture starts with
+      //    the full current desktop state (needed for incremental dirty rects).
+      //    This is a pure GPU-to-GPU copy — no CPU involvement.
+      gl2.bindFramebuffer(gl2.READ_FRAMEBUFFER, this.fboPair[prevWrite]);
+      gl2.bindFramebuffer(gl2.DRAW_FRAMEBUFFER, this.fboPair[this.writeIdx]);
+      gl2.blitFramebuffer(
+        0, 0, this.texW, this.texH,
+        0, 0, this.texW, this.texH,
+        gl.COLOR_BUFFER_BIT, gl.NEAREST,
+      );
+      gl2.bindFramebuffer(gl2.READ_FRAMEBUFFER, null);
+      gl2.bindFramebuffer(gl2.DRAW_FRAMEBUFFER, null);
+    } else {
+      // Single-buffer: draw directly
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
     this.dirty = false;
   }
 
   resize(width: number, height: number): void {
     this.canvas.width = width;
     this.canvas.height = height;
-    this.allocTexture(width, height);
+    this.allocTextures(width, height);
   }
 
   destroy(): void {
     const gl = this.gl;
-    gl.deleteTexture(this.tex);
+    if (this.tripleBuffered && this.texPair && this.fboPair) {
+      gl.deleteTexture(this.texPair[0]);
+      gl.deleteTexture(this.texPair[1]);
+      gl.deleteFramebuffer(this.fboPair[0]);
+      gl.deleteFramebuffer(this.fboPair[1]);
+    } else {
+      gl.deleteTexture(this.tex);
+    }
     gl.deleteProgram(this.program);
     const ext = gl.getExtension('WEBGL_lose_context');
     ext?.loseContext();
@@ -346,6 +419,7 @@ const WGPU_FRAG = /* wgsl */ `
 class WebGPURenderer implements FrameRenderer {
   readonly name = 'WebGPU';
   readonly type: FrontendRendererType = 'webgpu';
+  readonly tripleBuffered = false; // WebGPU manages its own swap chain
   private device!: GPUDevice;
   private ctx!: GPUCanvasContext;
   private pipeline!: GPURenderPipeline;
@@ -575,6 +649,7 @@ function createPaintWorkerBlob(): Blob {
 class OffscreenWorkerRenderer implements FrameRenderer {
   readonly name = 'OffscreenCanvas Worker';
   readonly type: FrontendRendererType = 'offscreen-worker';
+  readonly tripleBuffered = false;
   private worker: Worker;
   private ready = false;
   private pendingFrames: ArrayBuffer[] = [];
@@ -664,6 +739,7 @@ function autoSelect(caps: RendererCapabilities): FrontendRendererType {
 export function createFrameRenderer(
   requested: FrontendRendererType,
   canvas: HTMLCanvasElement,
+  opts?: RendererOptions,
 ): FrameRenderer {
   const caps = detectCapabilities();
   const resolved = requested === 'auto' ? autoSelect(caps) : requested;
@@ -694,7 +770,7 @@ export function createFrameRenderer(
           if (caps.webgpu) return new WebGPURenderer(canvas);
           break;
         case 'webgl':
-          if (caps.webgl) return new WebGLRenderer(canvas);
+          if (caps.webgl) return new WebGLRenderer(canvas, opts);
           break;
         case 'offscreen-worker':
           if (caps.offscreenWorker)

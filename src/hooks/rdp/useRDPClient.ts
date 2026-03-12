@@ -18,7 +18,7 @@ import {
   type TrustVerifyResult,
 } from '../../utils/auth/trustStore';
 import type { FrontendRendererType } from '../../components/rdp/rdpRenderers';
-import { RdpFramePipeline } from '../../components/rdp/rdpFramePipeline';
+import { RdpFramePipeline, type FrameSchedulingMode } from '../../components/rdp/rdpFramePipeline';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
 import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
@@ -38,12 +38,27 @@ export function useRDPClient(session: ConnectionSession) {
   /** Stable ref for the configured renderer type (avoids stale closure in event listeners). */
   const frontendRendererTypeRef = useRef<FrontendRendererType>('auto');
 
+  // ─── Derived values (needed before pipeline init) ─────────────────
+
+  const connection = state.connections.find(c => c.id === session.connectionId);
+
+  const rdpSettings: RDPConnectionSettings = useMemo(
+    () => mergeRdpSettings(connection?.rdpSettings, settings.rdpDefaults),
+    [connection?.rdpSettings, settings.rdpDefaults],
+  );
+
   // ─── Frame pipeline (lives entirely outside React) ────────────────
 
-  /** The pipeline owns the frame queue, rAF loop, renderer, and canvas
+  /** The pipeline owns the frame queue, render loop, renderer, and canvas
    *  context.  It never triggers React re-renders. */
   const pipelineRef = useRef<RdpFramePipeline | null>(null);
-  if (!pipelineRef.current) pipelineRef.current = new RdpFramePipeline();
+  if (!pipelineRef.current) {
+    const perf = rdpSettings.performance;
+    pipelineRef.current = new RdpFramePipeline({
+      scheduling: (perf?.frameScheduling ?? 'adaptive') as FrameSchedulingMode,
+      tripleBuffering: perf?.tripleBuffering ?? true,
+    });
+  }
   const pipeline = pipelineRef.current;
 
   // Legacy compat shims so the rest of the hook can still reach these
@@ -81,14 +96,6 @@ export function useRDPClient(session: ConnectionSession) {
   // Session recording
   const { state: recState, startRecording, stopRecording, pauseRecording, resumeRecording } = useSessionRecorder(canvasRef);
 
-  // ─── Derived values ────────────────────────────────────────────────
-
-  const connection = state.connections.find(c => c.id === session.connectionId);
-
-  const rdpSettings: RDPConnectionSettings = useMemo(
-    () => mergeRdpSettings(connection?.rdpSettings, settings.rdpDefaults),
-    [connection?.rdpSettings, settings.rdpDefaults],
-  );
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
 
@@ -209,7 +216,13 @@ export function useRDPClient(session: ConnectionSession) {
     setConnectionStatus('disconnected');
     setStatusMessage('Disconnected by user');
     pipeline.destroy();
-    pipelineRef.current = new RdpFramePipeline();
+    {
+      const perf = rdpSettingsRef.current.performance;
+      pipelineRef.current = new RdpFramePipeline({
+        scheduling: (perf?.frameScheduling ?? 'adaptive') as FrameSchedulingMode,
+        tripleBuffering: perf?.tripleBuffering ?? true,
+      });
+    }
   }, []);
 
   const handleCopyToClipboard = useCallback(async () => {
@@ -532,7 +545,13 @@ export function useRDPClient(session: ConnectionSession) {
       sessionIdRef.current = null;
       setRdpSessionId(null);
       pipeline.destroy();
-      pipelineRef.current = new RdpFramePipeline();
+      {
+      const perf = rdpSettingsRef.current.performance;
+      pipelineRef.current = new RdpFramePipeline({
+        scheduling: (perf?.frameScheduling ?? 'adaptive') as FrameSchedulingMode,
+        tripleBuffering: perf?.tripleBuffering ?? true,
+      });
+    }
     }
     setConnectionStatus('connecting');
     setStatusMessage('Reconnecting...');
@@ -545,7 +564,13 @@ export function useRDPClient(session: ConnectionSession) {
     setConnectionStatus('disconnected');
     setRdpSessionId(null);
     pipeline.destroy();
-    pipelineRef.current = new RdpFramePipeline();
+    {
+      const perf = rdpSettingsRef.current.performance;
+      pipelineRef.current = new RdpFramePipeline({
+        scheduling: (perf?.frameScheduling ?? 'adaptive') as FrameSchedulingMode,
+        tripleBuffering: perf?.tripleBuffering ?? true,
+      });
+    }
     // Note: we intentionally do NOT call detach_rdp_session here.
     // The backend session keeps running so it can be reattached on
     // page reload, layout change, or window detach.  Explicit
@@ -1148,6 +1173,8 @@ export function useRDPClient(session: ConnectionSession) {
     connectTiming,
     activeRenderBackend,
     activeFrontendRenderer,
+    activeScheduling: pipeline.getActiveScheduling(),
+    tripleBuffered: pipeline.getRenderer()?.tripleBuffered ?? false,
     // Derived
     connection,
     rdpSettings,
