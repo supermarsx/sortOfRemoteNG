@@ -45,24 +45,31 @@ const TOAST_CONFIG: Record<ToastType, {
 
 export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
   const [isExiting, setIsExiting] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
   const remainingRef = useRef(toast.duration ?? 4000);
   const startRef = useRef(Date.now());
+  const pausedRef = useRef(false);
+  const exitingRef = useRef(false);
   const barRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
+  const removedRef = useRef(false);
 
   const duration = toast.duration ?? 4000;
   const config = TOAST_CONFIG[toast.type];
 
-  // Animate the expiry bar with rAF for smoothness
+  // Single rAF loop — runs once, never restarts.  All state is in refs to
+  // avoid the effect re-running and resetting the timeline (which caused the
+  // bar to flash back to full right before the toast disappeared).
   useEffect(() => {
     startRef.current = Date.now();
 
     const tick = () => {
-      if (isPaused) {
+      if (removedRef.current) return;
+
+      if (pausedRef.current) {
         rafRef.current = requestAnimationFrame(tick);
         return;
       }
+
       const elapsed = Date.now() - startRef.current;
       const remaining = remainingRef.current - elapsed;
       const pct = Math.max(0, remaining / duration);
@@ -71,30 +78,38 @@ export const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
         barRef.current.style.transform = `scaleX(${pct})`;
       }
 
-      if (remaining <= 300 && !isExiting) {
-        setIsExiting(true);
+      if (remaining <= 300 && !exitingRef.current) {
+        exitingRef.current = true;
+        setIsExiting(true); // only for CSS class — doesn't restart this effect
       }
+
       if (remaining <= 0) {
+        removedRef.current = true;
         onRemove(toast.id);
         return;
       }
+
       rafRef.current = requestAnimationFrame(tick);
     };
 
     rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [isPaused, isExiting, duration, toast.id, onRemove]);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      removedRef.current = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally stable: all state in refs
+  }, []);
 
   // When pausing/resuming, snapshot remaining time
   const handleMouseEnter = () => {
     const elapsed = Date.now() - startRef.current;
     remainingRef.current = Math.max(0, remainingRef.current - elapsed);
-    setIsPaused(true);
+    pausedRef.current = true;
   };
 
   const handleMouseLeave = () => {
     startRef.current = Date.now();
-    setIsPaused(false);
+    pausedRef.current = false;
   };
 
   const handleClose = () => {
