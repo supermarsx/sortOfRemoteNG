@@ -45,6 +45,9 @@ export class RdpFramePipeline {
   private rafId = 0;
   private pending = false;
   private destroyed = false;
+  private diagFrameCount = 0;
+  private diagRenderCount = 0;
+  private diagDropCount = 0;
 
   // ── Scheduling ──────────────────────────────────────────────────────
   private readonly scheduleMode: FrameSchedulingMode;
@@ -62,6 +65,10 @@ export class RdpFramePipeline {
   private visCtx: CanvasRenderingContext2D | null = null;
   private fb: FrameBuffer | null = null;
   private readonly rendererOpts: RendererOptions;
+  // Frames that arrived before attach() — replayed once a renderer exists.
+  private preAttachBuffer: ArrayBuffer[] = [];
+  private static readonly MAX_PRE_ATTACH_BYTES = 64 * 1024 * 1024; // 64 MB cap
+  private preAttachBytes = 0;
 
   // ── Magnifier mirror (optional) ─────────────────────────────────────
   private magnifierActive = false;
@@ -89,8 +96,17 @@ export class RdpFramePipeline {
 
   /** The callback to wire into `new Channel<ArrayBuffer>(cb)`. */
   readonly onFrame = (data: ArrayBuffer): void => {
-    if (this.destroyed || data.byteLength < 8) return;
+    if (this.destroyed) {
+      if (this.diagDropCount++ < 3) {
+        console.warn(`[RDP pipeline] onFrame called on DESTROYED pipeline (drop #${this.diagDropCount}, ${data.byteLength} bytes)`);
+      }
+      return;
+    }
+    if (data.byteLength < 8) return;
     this.queue.push(data);
+    if (this.diagFrameCount++ < 5) {
+      console.log(`[RDP pipeline] onFrame #${this.diagFrameCount}: ${data.byteLength} bytes, queue=${this.queue.length}, canvas=${!!this.canvas}, renderer=${this.renderer?.name ?? 'null'}, fb=${!!this.fb}`);
+    }
     this.scheduleRender();
   };
 
@@ -138,14 +154,22 @@ export class RdpFramePipeline {
     height: number,
     rendererType: FrontendRendererType = 'auto',
   ): void {
+    console.log(`[RDP pipeline] attach: ${width}x${height}, type=${rendererType}, destroyed=${this.destroyed}, queuedFrames=${this.queue.length}`);
     this.canvas = canvas;
     canvas.width = width;
     canvas.height = height;
     this.fb = new FrameBuffer(width, height);
     this.renderer = createFrameRenderer(rendererType, canvas, this.rendererOpts);
     this.visCtx = null;
+    console.log(`[RDP pipeline] attach complete: renderer=${this.renderer.name}, tripleBuffered=${this.renderer.tripleBuffered}, buffered=${this.preAttachBuffer.length} (${(this.preAttachBytes / 1024).toFixed(0)} KB)`);
 
-    // Flush any frames that arrived before the canvas was ready
+    // Replay frames that arrived before the canvas was ready
+    if (this.preAttachBuffer.length > 0) {
+      console.log(`[RDP pipeline] replaying ${this.preAttachBuffer.length} buffered frames`);
+      this.queue.unshift(...this.preAttachBuffer);
+      this.preAttachBuffer = [];
+      this.preAttachBytes = 0;
+    }
     if (this.queue.length > 0 && !this.pending) {
       this.scheduleRender();
     }
@@ -197,6 +221,8 @@ export class RdpFramePipeline {
     this.canvas = null;
     this.visCtx = null;
     this.queue.length = 0;
+    this.preAttachBuffer = [];
+    this.preAttachBytes = 0;
   }
 
   // ── Hot path ────────────────────────────────────────────────────────
@@ -211,9 +237,25 @@ export class RdpFramePipeline {
     // Adaptive scheduling decision (before we drain)
     this.adaptiveCheck();
 
-    if (queue.length === 0 || !fb || !canvas) {
+    if (queue.length === 0) return;
+
+    if (!fb || !canvas || !renderer) {
+      // Not yet attached — buffer frames for replay after attach().
+      for (const buf of queue) {
+        if (this.preAttachBytes < RdpFramePipeline.MAX_PRE_ATTACH_BYTES) {
+          this.preAttachBuffer.push(buf);
+          this.preAttachBytes += buf.byteLength;
+        }
+      }
+      if (this.diagRenderCount < 3) {
+        console.warn(`[RDP pipeline] renderFrames: not attached yet, buffering ${queue.length} frames (total=${this.preAttachBuffer.length}, ${(this.preAttachBytes / 1024).toFixed(0)} KB)`);
+      }
       queue.length = 0;
       return;
+    }
+
+    if (this.diagRenderCount++ < 5) {
+      console.log(`[RDP pipeline] renderFrames #${this.diagRenderCount}: ${queue.length} buffers, renderer=${renderer.name}`);
     }
 
     if (renderer) {
