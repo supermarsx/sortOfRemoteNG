@@ -59,11 +59,10 @@ export function useRDPClient(session: ConnectionSession) {
       tripleBuffering: perf?.tripleBuffering ?? true,
     });
   }
-  const pipeline = pipelineRef.current;
-
-  // Legacy compat shims so the rest of the hook can still reach these
-  const frameBufferRef = { get current() { return pipeline.getFrameBuffer(); } };
-  const rendererRef = { get current() { return pipeline.getRenderer(); } };
+  // Legacy compat shims so the rest of the hook can still reach these.
+  // Always go through pipelineRef so we never read from a stale/destroyed pipeline.
+  const frameBufferRef = { get current() { return pipelineRef.current?.getFrameBuffer() ?? null; } };
+  const rendererRef = { get current() { return pipelineRef.current?.getRenderer() ?? null; } };
 
   // ─── State ─────────────────────────────────────────────────────────
 
@@ -79,7 +78,7 @@ export function useRDPClient(session: ConnectionSession) {
   const [stats, setStats] = useState<RDPStatsEvent | null>(null);
   const [magnifierActive, setMagnifierActive] = useState(false);
   // Sync magnifier state into the pipeline (outside React render cycle).
-  pipeline.setMagnifierActive(magnifierActive);
+  pipelineRef.current?.setMagnifierActive(magnifierActive);
   const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
   const [certFingerprint, setCertFingerprint] = useState<string | null>(null);
   const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
@@ -215,7 +214,7 @@ export function useRDPClient(session: ConnectionSession) {
     setIsConnected(false);
     setConnectionStatus('disconnected');
     setStatusMessage('Disconnected by user');
-    pipeline.destroy();
+    pipelineRef.current!.destroy();
     {
       const perf = rdpSettingsRef.current.performance;
       pipelineRef.current = new RdpFramePipeline({
@@ -369,7 +368,8 @@ export function useRDPClient(session: ConnectionSession) {
       setConnectionStatus('connecting');
       setStatusMessage('Initiating connection...');
 
-      const frameChannel = new Channel<ArrayBuffer>(pipeline.onFrame);
+      const currentPipeline = pipelineRef.current!;
+      const frameChannel = new Channel<ArrayBuffer>(currentPipeline.onFrame);
 
       // Check for existing backend session to re-attach.
       // Try by backendSessionId first (carried through detach/reattach), then
@@ -432,8 +432,8 @@ export function useRDPClient(session: ConnectionSession) {
           const canvas = canvasRef.current;
           if (canvas) {
             const rendererType = (rdpCfg.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
-            pipeline.attach(canvas, sessionInfo.desktopWidth, sessionInfo.desktopHeight, rendererType);
-            setActiveFrontendRenderer(pipeline.getRenderer()?.name ?? 'canvas2d');
+            currentPipeline.attach(canvas, sessionInfo.desktopWidth, sessionInfo.desktopHeight, rendererType);
+            setActiveFrontendRenderer(currentPipeline.getRenderer()?.name ?? 'canvas2d');
           }
 
           setIsConnected(true);
@@ -544,7 +544,7 @@ export function useRDPClient(session: ConnectionSession) {
       } catch { /* ignore */ }
       sessionIdRef.current = null;
       setRdpSessionId(null);
-      pipeline.destroy();
+      pipelineRef.current!.destroy();
       {
       const perf = rdpSettingsRef.current.performance;
       pipelineRef.current = new RdpFramePipeline({
@@ -563,7 +563,7 @@ export function useRDPClient(session: ConnectionSession) {
     setIsConnected(false);
     setConnectionStatus('disconnected');
     setRdpSessionId(null);
-    pipeline.destroy();
+    pipelineRef.current!.destroy();
     {
       const perf = rdpSettingsRef.current.performance;
       pipelineRef.current = new RdpFramePipeline({
@@ -626,8 +626,8 @@ export function useRDPClient(session: ConnectionSession) {
             const canvas = canvasRef.current;
             if (canvas) {
               canvas.focus();
-              pipeline.attach(canvas, status.desktop_width, status.desktop_height, frontendRendererTypeRef.current);
-              setActiveFrontendRenderer(pipeline.getRenderer()?.name ?? 'canvas2d');
+              pipelineRef.current!.attach(canvas, status.desktop_width, status.desktop_height, frontendRendererTypeRef.current);
+              setActiveFrontendRenderer(pipelineRef.current!.getRenderer()?.name ?? 'canvas2d');
             }
           }
           break;
@@ -762,7 +762,7 @@ export function useRDPClient(session: ConnectionSession) {
 
   useEffect(() => {
     return () => {
-      pipeline.destroy();
+      pipelineRef.current?.destroy();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -805,9 +805,9 @@ export function useRDPClient(session: ConnectionSession) {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         setDesktopSize({ width: w, height: h });
-        pipeline.resize(w, h);
+        pipelineRef.current!.resize(w, h);
         const c = canvasRef.current;
-        const fb = pipeline.getFrameBuffer();
+        const fb = pipelineRef.current!.getFrameBuffer();
         if (c && fb) fb.blitFull(c);
       }, 150);
     });
@@ -1173,8 +1173,8 @@ export function useRDPClient(session: ConnectionSession) {
     connectTiming,
     activeRenderBackend,
     activeFrontendRenderer,
-    activeScheduling: pipeline.getActiveScheduling(),
-    tripleBuffered: pipeline.getRenderer()?.tripleBuffered ?? false,
+    activeScheduling: pipelineRef.current?.getActiveScheduling() ?? 'vsync',
+    tripleBuffered: pipelineRef.current?.getRenderer()?.tripleBuffered ?? false,
     // Derived
     connection,
     rdpSettings,
