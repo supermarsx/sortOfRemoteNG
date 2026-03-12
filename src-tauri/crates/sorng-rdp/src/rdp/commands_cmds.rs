@@ -579,3 +579,41 @@ pub async fn get_rdp_logs(
         Ok(service.log_buffer.iter().cloned().collect())
     }
 }
+
+/// Advertise local clipboard text to the remote RDP session via CLIPRDR.
+/// The text is stored and will be sent to the server when it requests
+/// the clipboard contents.
+#[tauri::command]
+pub async fn rdp_clipboard_copy(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+    text: String,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    if let Some(conn) = service.connections.get(&session_id) {
+        conn.cmd_tx
+            .send(RdpCommand::ClipboardCopy(text))
+            .map_err(|_| "Session command channel closed".to_string())?;
+        Ok(())
+    } else {
+        Err(format!("RDP session {session_id} not found"))
+    }
+}
+
+/// Request clipboard text from the remote RDP session via CLIPRDR.
+/// The response will arrive asynchronously as an `rdp://clipboard-data` event.
+#[tauri::command]
+pub async fn rdp_clipboard_paste(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    if let Some(conn) = service.connections.get(&session_id) {
+        conn.cmd_tx
+            .send(RdpCommand::ClipboardPaste)
+            .map_err(|_| "Session command channel closed".to_string())?;
+        Ok(())
+    } else {
+        Err(format!("RDP session {session_id} not found"))
+    }
+}

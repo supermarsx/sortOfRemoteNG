@@ -1,7 +1,7 @@
 use std::io;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ironrdp::connector::connection_activation::ConnectionActivationState;
@@ -13,6 +13,7 @@ use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 use ironrdp_blocking::Framed;
 use sorng_core::events::DynEventEmitter;
+use super::clipboard::{self, SharedClipboardState};
 use super::frame_channel::DynFrameChannel;
 use tokio::sync::mpsc;
 
@@ -165,6 +166,7 @@ struct EstablishedSession {
     compositor: Option<Box<dyn FrameCompositor>>,
     active_render_backend: String,
     gfx_frame_rx: Option<std::sync::mpsc::Receiver<crate::gfx::processor::GfxFrame>>,
+    clipboard_state: Option<SharedClipboardState>,
 }
 
 // ---- Blocking RDP session runner ----
@@ -791,6 +793,22 @@ fn establish_rdp_connection(
         None
     };
 
+    // -- Register CLIPRDR Static Virtual Channel (clipboard redirection) --
+    let clipboard_state: Option<SharedClipboardState> = if settings.clipboard_enabled {
+        let clip_state = Arc::new(Mutex::new(clipboard::ClipboardState::new()));
+        let backend = clipboard::AppCliprdrBackend::new(
+            session_id.to_string(),
+            event_emitter.clone(),
+            clip_state.clone(),
+        );
+        let cliprdr = ironrdp_cliprdr::CliprdrClient::new(Box::new(backend));
+        connector.attach_static_channel(cliprdr);
+        log::info!("RDP session {session_id}: CLIPRDR SVC registered (clipboard enabled)");
+        Some(clip_state)
+    } else {
+        None
+    };
+
     // Log gateway / Hyper-V / negotiation settings
     if settings.gateway_enabled {
         log::info!(
@@ -1022,6 +1040,7 @@ fn establish_rdp_connection(
         compositor,
         active_render_backend,
         gfx_frame_rx,
+        clipboard_state,
     })
 }
 
@@ -1209,6 +1228,50 @@ fn run_active_session_loop(
                     let enter_release =
                         FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
                     merged_inputs.extend([enter_press, enter_release]);
+                }
+                Ok(RdpCommand::ClipboardCopy(text)) => {
+                    if let Some(ref clip_state) = est.clipboard_state {
+                        if let Ok(mut state) = clip_state.lock() {
+                            state.local_text = Some(text);
+                        }
+                        // Advertise CF_UNICODETEXT to the server
+                        if let Some(cliprdr) = est.active_stage
+                            .get_svc_processor_mut::<ironrdp_cliprdr::CliprdrClient>()
+                        {
+                            let format = ironrdp_cliprdr::pdu::ClipboardFormat::new(
+                                ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT),
+                            );
+                            match cliprdr.initiate_copy(&[format]) {
+                                Ok(messages) => {
+                                    match est.active_stage.process_svc_processor_messages(messages) {
+                                        Ok(data) => {
+                                            let _ = est.tls_framed.write_all(&data);
+                                        }
+                                        Err(e) => log::warn!("CLIPRDR copy encode error: {e}"),
+                                    }
+                                }
+                                Err(e) => log::warn!("CLIPRDR initiate_copy error: {e}"),
+                            }
+                        }
+                    }
+                }
+                Ok(RdpCommand::ClipboardPaste) => {
+                    if let Some(cliprdr) = est.active_stage
+                        .get_svc_processor_mut::<ironrdp_cliprdr::CliprdrClient>()
+                    {
+                        let format_id = ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT);
+                        match cliprdr.initiate_paste(format_id) {
+                            Ok(messages) => {
+                                match est.active_stage.process_svc_processor_messages(messages) {
+                                    Ok(data) => {
+                                        let _ = est.tls_framed.write_all(&data);
+                                    }
+                                    Err(e) => log::warn!("CLIPRDR paste encode error: {e}"),
+                                }
+                            }
+                            Err(e) => log::warn!("CLIPRDR initiate_paste error: {e}"),
+                        }
+                    }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -1592,6 +1655,42 @@ fn run_active_session_loop(
                 }
             }
         } // end inner PDU drain loop
+
+        // -- Fulfil pending CLIPRDR format data requests --
+        // The backend's on_format_data_request() stored the request; we
+        // respond here via submit_format_data() because we can't call it
+        // during process() (the SVC processor is borrowed).
+        if let Some(ref clip_state) = est.clipboard_state {
+            let pending = {
+                let mut state = clip_state.lock().unwrap();
+                state.pending_data_request.take()
+            };
+            if let Some(_request) = pending {
+                let local_text = clip_state.lock().unwrap().local_text.clone();
+                if let Some(cliprdr) = est.active_stage
+                    .get_svc_processor_mut::<ironrdp_cliprdr::CliprdrClient>()
+                {
+                    let response = if let Some(ref text) = local_text {
+                        ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_data(
+                            clipboard::encode_utf16le(text),
+                        )
+                    } else {
+                        ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_error()
+                    };
+                    match cliprdr.submit_format_data(response) {
+                        Ok(messages) => {
+                            match est.active_stage.process_svc_processor_messages(messages) {
+                                Ok(data) => {
+                                    let _ = est.tls_framed.write_all(&data);
+                                }
+                                Err(e) => log::warn!("CLIPRDR submit_format_data encode error: {e}"),
+                            }
+                        }
+                        Err(e) => log::warn!("CLIPRDR submit_format_data error: {e}"),
+                    }
+                }
+            }
+        }
 
         // Flush accumulated dirty rects from this batch.
         if batch_had_graphics && !frame_batching {

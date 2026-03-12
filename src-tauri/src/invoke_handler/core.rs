@@ -69,6 +69,8 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "reconnect_rdp_session"
             | "rdp_get_thumbnail"
             | "rdp_save_screenshot"
+            | "rdp_clipboard_copy"
+            | "rdp_clipboard_paste"
             | "get_rdp_logs"
             | "connect_vnc"
             | "disconnect_vnc"
@@ -515,6 +517,7 @@ pub(crate) fn is_command(command: &str) -> bool {
             | "serial_get_baud_rates"
             | "serial_hex_to_bytes"
             | "serial_bytes_to_hex"
+            | "close_splash"
     )
 }
 
@@ -587,6 +590,8 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         rdp_commands::reconnect_rdp_session,
         rdp_commands::rdp_get_thumbnail,
         rdp_commands::rdp_save_screenshot,
+        rdp_commands::rdp_clipboard_copy,
+        rdp_commands::rdp_clipboard_paste,
         rdp_commands::get_rdp_logs,
         vnc_commands::connect_vnc,
         vnc_commands::disconnect_vnc,
@@ -1077,6 +1082,7 @@ pub(crate) fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send 
         serial_commands::serial_get_baud_rates,
         serial_commands::serial_hex_to_bytes,
         serial_commands::serial_bytes_to_hex,
+        splash::close_splash,
         // rlogin::connect_rlogin,
         // rlogin::disconnect_rlogin,
         // rlogin::send_rlogin_command,

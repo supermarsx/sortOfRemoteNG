@@ -1801,6 +1801,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
+name = "data-url"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3968,6 +3974,31 @@ dependencies = [
  "ironrdp-core",
  "ironrdp-pdu",
  "tracing",
+]
+
+[[package]]
+name = "ironrdp-cliprdr"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c9b4286b677b65b57bb1d5c4453ef46c1cf3858f30515b2016465978b4b1e2b"
+dependencies = [
+ "bitflags 2.11.0",
+ "ironrdp-core",
+ "ironrdp-pdu",
+ "ironrdp-svc",
+ "tracing",
+]
+
+[[package]]
+name = "ironrdp-cliprdr-native"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c409ea5fce689c3a5a3138e267392d621c751b9aeadcc31bad3b7ae6ed3bf2aa"
+dependencies = [
+ "ironrdp-cliprdr",
+ "ironrdp-core",
+ "tracing",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -10423,6 +10454,8 @@ dependencies = [
  "chrono",
  "ironrdp",
  "ironrdp-blocking",
+ "ironrdp-cliprdr",
+ "ironrdp-cliprdr-native",
  "ironrdp-core",
  "ironrdp-dvc",
  "ironrdp-svc",
@@ -12043,6 +12076,7 @@ dependencies = [
  "anyhow",
  "bytes 1.11.1",
  "cookie",
+ "data-url",
  "dirs 6.0.0",
  "dunce",
  "embed_plist",

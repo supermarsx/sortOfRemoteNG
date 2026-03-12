@@ -128,6 +128,10 @@ pub enum RdpCommand {
     /// Trigger a manual reconnect — drops the current TCP connection and
     /// re-establishes TCP + TLS + CredSSP from scratch.
     Reconnect,
+    /// Advertise local clipboard text to the remote server (CF_UNICODETEXT).
+    ClipboardCopy(String),
+    /// Request clipboard text from the remote server.
+    ClipboardPaste,
 }
 
 pub struct RdpActiveConnection {

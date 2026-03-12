@@ -365,6 +365,8 @@ pub struct ResolvedSettings {
     pub reconnect_base_delay: Duration,
     pub reconnect_max_delay: Duration,
     pub reconnect_on_network_loss: bool,
+    // Device redirection
+    pub clipboard_enabled: bool,
 }
 
 impl ResolvedSettings {
@@ -550,6 +552,12 @@ impl ResolvedSettings {
             ),
             reconnect_on_network_loss: adv
                 .and_then(|a| a.reconnect_on_network_loss)
+                .unwrap_or(true),
+            // Device redirection
+            clipboard_enabled: payload
+                .device_redirection
+                .as_ref()
+                .and_then(|d| d.clipboard)
                 .unwrap_or(true),
         }
     }

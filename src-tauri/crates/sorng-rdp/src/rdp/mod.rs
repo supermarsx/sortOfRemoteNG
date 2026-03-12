@@ -1,3 +1,4 @@
+pub mod clipboard;
 pub mod errors;
 pub mod frame_channel;
 mod frame_delivery;
