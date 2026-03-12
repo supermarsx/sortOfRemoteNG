@@ -91,6 +91,10 @@ export function useRDPClient(session: ConnectionSession) {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
+  // Generation counter to detect stale async continuations (StrictMode double-mount).
+  // Each initializeRDPConnection call increments this; after every await, we check
+  // if it still matches to avoid overwriting state from a newer init.
+  const initGenRef = useRef(0);
 
   // Session recording
   const { state: recState, startRecording, stopRecording, pauseRecording, resumeRecording } = useSessionRecorder(canvasRef);
@@ -202,6 +206,7 @@ export function useRDPClient(session: ConnectionSession) {
   }, [stopRecording, recState.format, session]);
 
   const handleDisconnect = useCallback(async () => {
+    initGenRef.current++; // abort any in-flight init
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
@@ -356,10 +361,16 @@ export function useRDPClient(session: ConnectionSession) {
   // ─── Connection lifecycle ──────────────────────────────────────────
 
   const initializeRDPConnection = useCallback(async () => {
+    // Generation counter: if another init starts while we're awaiting, bail
+    // out to avoid clobbering its state (happens with React StrictMode
+    // double-mount in dev mode).
+    const gen = ++initGenRef.current;
+    const stale = () => initGenRef.current !== gen;
+
     const conn = connectionRef.current;
     const sess = sessionRef.current;
     const rdpCfg = rdpSettingsRef.current;
-    console.log(`[RDP init] session=${sess?.id}, backendSessionId=${sess?.backendSessionId}, connectionId=${sess?.connectionId}, conn=${conn?.id ?? 'NULL'}`);
+    console.log(`[RDP init gen=${gen}] session=${sess?.id}, backendSessionId=${sess?.backendSessionId}, connectionId=${sess?.connectionId}, conn=${conn?.id ?? 'NULL'}`);
     // For reattach-only scenarios (e.g. RDP sessions panel), conn may be
     // null but backendSessionId is set.  We still proceed to attempt reattach.
     if (!conn && !sess.backendSessionId) return;
@@ -383,8 +394,9 @@ export function useRDPClient(session: ConnectionSession) {
           connected: boolean;
         }>>('list_rdp_sessions');
 
-        console.log(`[RDP reattach] list_rdp_sessions: ${existingSessions.length} session(s)`, existingSessions.map(s => ({ id: s.id, cid: s.connectionId, connected: s.connected })));
-        console.log(`[RDP reattach] looking for backendSessionId=${sess.backendSessionId}, connectionId=${conn?.id ?? sess.connectionId}`);
+        if (stale()) { console.log(`[RDP init gen=${gen}] STALE after list_rdp_sessions, aborting`); return; }
+
+        console.log(`[RDP reattach gen=${gen}] list_rdp_sessions: ${existingSessions.length} session(s)`, existingSessions.map(s => ({ id: s.id, cid: s.connectionId, connected: s.connected })));
 
         // Prefer exact match by backend session ID
         const byBackend = sess.backendSessionId
@@ -399,13 +411,15 @@ export function useRDPClient(session: ConnectionSession) {
         reattachId = byBackend?.id ?? byConnection?.id;
 
         if (reattachId) {
-          console.log(`[RDP reattach] found target: ${reattachId}`);
+          console.log(`[RDP reattach gen=${gen}] found target: ${reattachId}`);
         } else {
-          console.log('[RDP reattach] no existing backend session found');
+          console.log(`[RDP reattach gen=${gen}] no existing backend session found`);
         }
       } catch (listErr) {
         console.error('[RDP reattach] list_rdp_sessions failed:', listErr);
       }
+
+      if (stale()) { console.log(`[RDP init gen=${gen}] STALE before connect/reattach, aborting`); return; }
 
       if (reattachId) {
         debugLog(`Re-attaching to existing session ${reattachId} for ${conn?.id ?? sess.connectionId}`);
@@ -421,6 +435,8 @@ export function useRDPClient(session: ConnectionSession) {
             connectionId: conn?.id ?? sess.connectionId,
             frameChannel,
           });
+
+          if (stale()) { console.log(`[RDP init gen=${gen}] STALE after attach, aborting`); return; }
 
           setRdpSessionId(sessionInfo.id);
           sessionIdRef.current = sessionInfo.id;
@@ -464,11 +480,14 @@ export function useRDPClient(session: ConnectionSession) {
         return;
       }
 
+      if (stale()) { console.log(`[RDP init gen=${gen}] STALE before connect, aborting`); return; }
+
       // Auto-detect keyboard layout from the OS if configured
       let effectiveSettings = rdpCfg;
       if (rdpCfg.input?.autoDetectLayout !== false) {
         try {
           const detectedLayout = await invoke<number>('detect_keyboard_layout');
+          if (stale()) return;
           const langId = detectedLayout & 0xFFFF;
           if (langId && langId !== 0) {
             effectiveSettings = {
@@ -499,9 +518,17 @@ export function useRDPClient(session: ConnectionSession) {
         frameChannel,
       };
 
-      console.log(`[RDP init] creating NEW connection to ${connectionDetails.host}:${connectionDetails.port} (reattach was not possible)`);
+      console.log(`[RDP init gen=${gen}] creating NEW connection to ${connectionDetails.host}:${connectionDetails.port}`);
 
       const sessionId = await invoke('connect_rdp', connectionDetails) as string;
+
+      if (stale()) {
+        // A newer init is running — we must NOT overwrite sessionIdRef.
+        // Try to clean up this orphaned backend session.
+        console.log(`[RDP init gen=${gen}] STALE after connect_rdp (sessionId=${sessionId}), aborting`);
+        invoke('disconnect_rdp', { sessionId }).catch(() => {});
+        return;
+      }
 
       debugLog(`RDP session created: ${sessionId}`);
       setRdpSessionId(sessionId);
@@ -523,6 +550,7 @@ export function useRDPClient(session: ConnectionSession) {
         canvas.height = resH;
       }
     } catch (error) {
+      if (stale()) return; // Don't clobber error state from a newer init
       setConnectionStatus('error');
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
@@ -559,6 +587,8 @@ export function useRDPClient(session: ConnectionSession) {
   }, [initializeRDPConnection, connectionStatus]);
 
   const cleanup = useCallback(async () => {
+    // Bump generation so any in-flight initializeRDPConnection aborts
+    initGenRef.current++;
     sessionIdRef.current = null;
     setIsConnected(false);
     setConnectionStatus('disconnected');
