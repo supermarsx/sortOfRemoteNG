@@ -1095,7 +1095,7 @@ const AppContent: React.FC = () => {
         />
         {!state.sidebarCollapsed && (
           <div
-            className={`absolute top-0 ${resizerEdge} w-1 h-full cursor-col-resize hover:w-1.5 bg-gray-700/30 hover:bg-blue-500/60 transition-all duration-150`}
+            className={`absolute top-0 ${resizerEdge} w-1 h-full cursor-col-resize hover:w-1.5 bg-[var(--color-border)]/30 hover:bg-primary/60 transition-all duration-150`}
             onMouseDown={handleMouseDown}
           />
         )}
@@ -1105,12 +1105,12 @@ const AppContent: React.FC = () => {
 
   return (
     <div
-      className={`h-full text-white flex flex-col overflow-hidden app-shell ${
+      className={`h-full text-[var(--color-text)] flex flex-col overflow-hidden app-shell ${
         appSettings.backgroundGlowEnabled ? "app-glow" : ""
       } ${
         appSettings.windowTransparencyEnabled
           ? "app-transparent bg-transparent"
-          : "bg-gray-900"
+          : "bg-background"
       } ${!appSettings.animationsEnabled ? "animations-disabled" : ""} ${
         appSettings.reduceMotion ? "reduce-motion" : ""
       }`}
@@ -1195,31 +1195,33 @@ const AppContent: React.FC = () => {
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-gray-400">
+              <div className="welcome-screen h-full flex flex-col items-center justify-center text-[var(--color-textSecondary)] relative overflow-hidden">
+                {/* Accent background glow */}
+                <div className="welcome-glow pointer-events-none absolute inset-0" />
                 {!appSettings.hideQuickStartMessage && (
                   <>
-                    <Monitor size={64} className="mb-4" />
-                    <h2 className="text-xl font-medium mb-2">
+                    <Monitor size={64} className="mb-4 text-primary/60 relative z-10" />
+                    <h2 className="text-xl font-medium mb-2 text-[var(--color-text)] relative z-10">
                       {appSettings.welcomeScreenTitle || `Welcome to ${t("app.title")}`}
                     </h2>
-                    <p className="text-center max-w-md mb-6 whitespace-pre-wrap">
-                      {appSettings.welcomeScreenMessage || 
+                    <p className="text-center max-w-md mb-6 whitespace-pre-wrap text-[var(--color-textMuted)] relative z-10">
+                      {appSettings.welcomeScreenMessage ||
                         `Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.`}
                     </p>
                   </>
                 )}
                 {!appSettings.hideQuickStartButtons && (
-                  <div className="flex space-x-4">
+                  <div className="flex space-x-4 relative z-10">
                     <button
                       onClick={handleNewConnection}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                      className="sor-btn sor-btn-primary flex items-center space-x-2"
                     >
                       <Plus size={16} />
                       <span>{t("connections.new")} Connection</span>
                     </button>
                     <button
                       onClick={() => setShowQuickConnect(true)}
-                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                      className="sor-btn sor-btn-ghost flex items-center space-x-2"
                     >
                       <Zap size={16} />
                       <span>{t("connections.quickConnect")}</span>
@@ -1257,7 +1259,7 @@ const AppContent: React.FC = () => {
             />
             {/* Resize handle on left edge */}
             <div
-              className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:w-1.5 bg-gray-700/30 hover:bg-blue-500/60 transition-all duration-150"
+              className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:w-1.5 bg-[var(--color-border)]/30 hover:bg-primary/60 transition-all duration-150"
               onMouseDown={handleRdpPanelMouseDown}
             />
           </div>
