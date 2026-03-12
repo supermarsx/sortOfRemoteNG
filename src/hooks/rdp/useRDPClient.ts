@@ -17,8 +17,8 @@ import {
   type CertIdentity,
   type TrustVerifyResult,
 } from '../../utils/auth/trustStore';
-import { FrameBuffer } from '../../components/rdp/rdpCanvas';
-import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from '../../components/rdp/rdpRenderers';
+import type { FrontendRendererType } from '../../components/rdp/rdpRenderers';
+import { RdpFramePipeline } from '../../components/rdp/rdpFramePipeline';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
 import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
@@ -35,98 +35,20 @@ export function useRDPClient(session: ConnectionSession) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  /** Offscreen double-buffer / wallpaper cache */
-  const frameBufferRef = useRef<FrameBuffer | null>(null);
-  /** Pluggable GPU/CPU frame renderer (Canvas 2D, WebGL, WebGPU, Worker). */
-  const rendererRef = useRef<FrameRenderer | null>(null);
   /** Stable ref for the configured renderer type (avoids stale closure in event listeners). */
   const frontendRendererTypeRef = useRef<FrontendRendererType>('auto');
-  /** rAF handle for the blit loop */
-  const rafIdRef = useRef<number>(0);
-  /** Whether a rAF callback is already scheduled (avoids redundant requests). */
-  const rafPendingRef = useRef(false);
-  /**
-   * Incoming frame queue: Channel pushes raw ArrayBuffer messages here.
-   * The rAF loop drains the queue, applies all pending paints, and blits
-   * once per vsync.
-   */
-  const frameQueueRef = useRef<ArrayBuffer[]>([]);
 
-  /** Cached visible-canvas 2D context (set on first render). */
-  const visCtxRef = useRef<CanvasRenderingContext2D | null>(null);
-  /** Cached ImageData for offscreen mirror (avoids per-frame allocation). */
-  const offImgCacheRef = useRef<{ img: ImageData; w: number; h: number } | null>(null);
+  // ─── Frame pipeline (lives entirely outside React) ────────────────
 
-  // ─── Render callback (ref-stable) ─────────────────────────────────
+  /** The pipeline owns the frame queue, rAF loop, renderer, and canvas
+   *  context.  It never triggers React re-renders. */
+  const pipelineRef = useRef<RdpFramePipeline | null>(null);
+  if (!pipelineRef.current) pipelineRef.current = new RdpFramePipeline();
+  const pipeline = pipelineRef.current;
 
-  /** Render callback stored in a ref so the Channel closure (created once
-   *  during connect) can always reach it via stable indirection. */
-  const renderFramesRef = useRef<() => void>(() => {});
-  renderFramesRef.current = () => {
-    rafPendingRef.current = false;
-    const queue = frameQueueRef.current;
-    const fb = frameBufferRef.current;
-    const canvas = canvasRef.current;
-    const renderer = rendererRef.current;
-
-    if (queue.length > 0 && fb && canvas) {
-      if (renderer) {
-        const needsOffscreen = magnifierActiveRef.current;
-        const offCtx = needsOffscreen ? fb.offscreen.getContext('2d') : null;
-        for (let i = 0; i < queue.length; i++) {
-          const data = queue[i];
-          const view = new DataView(data);
-          let offset = 0;
-          while (offset + 8 <= data.byteLength) {
-            const x = view.getUint16(offset, true);
-            const y = view.getUint16(offset + 2, true);
-            const w = view.getUint16(offset + 4, true);
-            const h = view.getUint16(offset + 6, true);
-            const pixelBytes = w * h * 4;
-            if (offset + 8 + pixelBytes > data.byteLength) break;
-            const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
-            renderer.paintRegion(x, y, w, h, rgba);
-            if (offCtx && w > 0 && h > 0) {
-              let cache = offImgCacheRef.current;
-              if (!cache || cache.w !== w || cache.h !== h) {
-                cache = { img: new ImageData(w, h), w, h };
-                offImgCacheRef.current = cache;
-              }
-              cache.img.data.set(rgba);
-              offCtx.putImageData(cache.img, x, y);
-              fb.hasPainted = true;
-            }
-            offset += 8 + pixelBytes;
-          }
-        }
-        renderer.present();
-      } else {
-        if (!visCtxRef.current) visCtxRef.current = canvas.getContext('2d');
-        const ctx = visCtxRef.current;
-        if (ctx) {
-          for (let i = 0; i < queue.length; i++) {
-            const data = queue[i];
-            const view = new DataView(data);
-            let offset = 0;
-            while (offset + 8 <= data.byteLength) {
-              const x = view.getUint16(offset, true);
-              const y = view.getUint16(offset + 2, true);
-              const w = view.getUint16(offset + 4, true);
-              const h = view.getUint16(offset + 6, true);
-              const pixelBytes = w * h * 4;
-              if (offset + 8 + pixelBytes > data.byteLength) break;
-              const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
-              fb.paintDirect(ctx, x, y, w, h, rgba);
-              offset += 8 + pixelBytes;
-            }
-          }
-        }
-      }
-      queue.length = 0;
-    }
-  };
-  /** Stable wrapper that never changes identity — safe to pass to rAF. */
-  const renderFrames = useCallback(() => renderFramesRef.current(), []);
+  // Legacy compat shims so the rest of the hook can still reach these
+  const frameBufferRef = { get current() { return pipeline.getFrameBuffer(); } };
+  const rendererRef = { get current() { return pipeline.getRenderer(); } };
 
   // ─── State ─────────────────────────────────────────────────────────
 
@@ -141,9 +63,8 @@ export function useRDPClient(session: ConnectionSession) {
   const [showInternals, setShowInternals] = useState(false);
   const [stats, setStats] = useState<RDPStatsEvent | null>(null);
   const [magnifierActive, setMagnifierActive] = useState(false);
-  /** Ref mirror of magnifierActive — accessible in the render callback closure. */
-  const magnifierActiveRef = useRef(false);
-  magnifierActiveRef.current = magnifierActive;
+  // Sync magnifier state into the pipeline (outside React render cycle).
+  pipeline.setMagnifierActive(magnifierActive);
   const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
   const [certFingerprint, setCertFingerprint] = useState<string | null>(null);
   const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
@@ -287,13 +208,8 @@ export function useRDPClient(session: ConnectionSession) {
     setIsConnected(false);
     setConnectionStatus('disconnected');
     setStatusMessage('Disconnected by user');
-    if (rafPendingRef.current) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafPendingRef.current = false;
-    }
-    visCtxRef.current = null;
-    rendererRef.current?.destroy();
-    rendererRef.current = null;
+    pipeline.destroy();
+    pipelineRef.current = new RdpFramePipeline();
   }, []);
 
   const handleCopyToClipboard = useCallback(async () => {
@@ -440,15 +356,7 @@ export function useRDPClient(session: ConnectionSession) {
       setConnectionStatus('connecting');
       setStatusMessage('Initiating connection...');
 
-      const frameChannel = new Channel<ArrayBuffer>((data: ArrayBuffer) => {
-        if (data.byteLength >= 8) {
-          frameQueueRef.current.push(data);
-          if (!rafPendingRef.current) {
-            rafPendingRef.current = true;
-            rafIdRef.current = requestAnimationFrame(renderFrames);
-          }
-        }
-      });
+      const frameChannel = new Channel<ArrayBuffer>(pipeline.onFrame);
 
       // Check for existing backend session to re-attach.
       // Try by backendSessionId first (carried through detach/reattach), then
@@ -510,23 +418,9 @@ export function useRDPClient(session: ConnectionSession) {
 
           const canvas = canvasRef.current;
           if (canvas) {
-            canvas.width = sessionInfo.desktopWidth;
-            canvas.height = sessionInfo.desktopHeight;
-            frameBufferRef.current = new FrameBuffer(
-              sessionInfo.desktopWidth,
-              sessionInfo.desktopHeight
-            );
             const rendererType = (rdpCfg.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
-            rendererRef.current?.destroy();
-            rendererRef.current = createFrameRenderer(rendererType, canvas);
-            setActiveFrontendRenderer(rendererRef.current.name);
-          }
-
-          // Flush any frames that arrived via the channel before the
-          // renderer was ready (the full framebuffer sent during attach).
-          if (frameQueueRef.current.length > 0 && !rafPendingRef.current) {
-            rafPendingRef.current = true;
-            rafIdRef.current = requestAnimationFrame(renderFrames);
+            pipeline.attach(canvas, sessionInfo.desktopWidth, sessionInfo.desktopHeight, rendererType);
+            setActiveFrontendRenderer(pipeline.getRenderer()?.name ?? 'canvas2d');
           }
 
           setIsConnected(true);
@@ -637,9 +531,8 @@ export function useRDPClient(session: ConnectionSession) {
       } catch { /* ignore */ }
       sessionIdRef.current = null;
       setRdpSessionId(null);
-      rendererRef.current?.destroy();
-      rendererRef.current = null;
-      visCtxRef.current = null;
+      pipeline.destroy();
+      pipelineRef.current = new RdpFramePipeline();
     }
     setConnectionStatus('connecting');
     setStatusMessage('Reconnecting...');
@@ -651,13 +544,8 @@ export function useRDPClient(session: ConnectionSession) {
     setIsConnected(false);
     setConnectionStatus('disconnected');
     setRdpSessionId(null);
-    if (rafPendingRef.current) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafPendingRef.current = false;
-    }
-    visCtxRef.current = null;
-    rendererRef.current?.destroy();
-    rendererRef.current = null;
+    pipeline.destroy();
+    pipelineRef.current = new RdpFramePipeline();
     // Note: we intentionally do NOT call detach_rdp_session here.
     // The backend session keeps running so it can be reattached on
     // page reload, layout change, or window detach.  Explicit
@@ -712,20 +600,9 @@ export function useRDPClient(session: ConnectionSession) {
             setDesktopSize({ width: status.desktop_width, height: status.desktop_height });
             const canvas = canvasRef.current;
             if (canvas) {
-              canvas.width = status.desktop_width;
-              canvas.height = status.desktop_height;
               canvas.focus();
-            }
-            frameBufferRef.current = new FrameBuffer(status.desktop_width, status.desktop_height);
-            rendererRef.current?.destroy();
-            if (canvas) {
-              rendererRef.current = createFrameRenderer(frontendRendererTypeRef.current, canvas);
-              setActiveFrontendRenderer(rendererRef.current.name);
-            }
-            // Flush any frames queued before renderer was ready
-            if (frameQueueRef.current.length > 0 && !rafPendingRef.current) {
-              rafPendingRef.current = true;
-              rafIdRef.current = requestAnimationFrame(renderFrames);
+              pipeline.attach(canvas, status.desktop_width, status.desktop_height, frontendRendererTypeRef.current);
+              setActiveFrontendRenderer(pipeline.getRenderer()?.name ?? 'canvas2d');
             }
           }
           break;
@@ -860,11 +737,9 @@ export function useRDPClient(session: ConnectionSession) {
 
   useEffect(() => {
     return () => {
-      if (rafPendingRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafPendingRef.current = false;
-      }
+      pipeline.destroy();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── Resize to window ──────────────────────────────────────────────
@@ -905,16 +780,10 @@ export function useRDPClient(session: ConnectionSession) {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         setDesktopSize({ width: w, height: h });
+        pipeline.resize(w, h);
         const c = canvasRef.current;
-        if (c) {
-          c.width = w;
-          c.height = h;
-        }
-        if (frameBufferRef.current) {
-          frameBufferRef.current.resize(w, h, c || undefined);
-          if (c) frameBufferRef.current.blitFull(c);
-        }
-        rendererRef.current?.resize(w, h);
+        const fb = pipeline.getFrameBuffer();
+        if (c && fb) fb.blitFull(c);
       }, 150);
     });
 
