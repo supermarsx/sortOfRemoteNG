@@ -297,14 +297,37 @@ export function useRDPClient(session: ConnectionSession) {
   }, []);
 
   const handleCopyToClipboard = useCallback(async () => {
+    // If CLIPRDR is active, request clipboard text from the remote session.
+    // The response arrives as an rdp://clipboard-data event which writes to
+    // navigator.clipboard automatically.  Fall back to screenshot capture.
+    if (isConnected && sessionIdRef.current && clipboardEnabled) {
+      try {
+        await invoke('rdp_clipboard_paste', { sessionId: sessionIdRef.current });
+        return;
+      } catch {
+        // CLIPRDR not available — fall back to screenshot
+      }
+    }
     await handleScreenshotToClipboard();
-  }, [handleScreenshotToClipboard]);
+  }, [handleScreenshotToClipboard, isConnected, clipboardEnabled]);
 
   const handlePasteFromClipboard = useCallback(async () => {
     if (!isConnected || !sessionIdRef.current) return;
     try {
       const text = await navigator.clipboard.readText();
       if (!text) return;
+
+      // Use CLIPRDR protocol when available (proper clipboard redirection)
+      if (clipboardEnabled) {
+        try {
+          await invoke('rdp_clipboard_copy', { sessionId: sessionIdRef.current, text });
+          return;
+        } catch {
+          // CLIPRDR not available — fall back to Unicode keyboard injection
+        }
+      }
+
+      // Fallback: inject text as Unicode keyboard events
       const events: Record<string, unknown>[] = [];
       for (let i = 0; i < text.length; i++) {
         const code = text.charCodeAt(i);
@@ -317,7 +340,7 @@ export function useRDPClient(session: ConnectionSession) {
     } catch (e) {
       console.error('Paste from clipboard failed:', e);
     }
-  }, [isConnected]);
+  }, [isConnected, clipboardEnabled]);
 
   const handleSendKeys = useCallback((combo: string) => {
     if (!isConnected || !sessionIdRef.current) return;
@@ -408,7 +431,10 @@ export function useRDPClient(session: ConnectionSession) {
     const conn = connectionRef.current;
     const sess = sessionRef.current;
     const rdpCfg = rdpSettingsRef.current;
-    if (!conn) return;
+    console.log(`[RDP init] session=${sess?.id}, backendSessionId=${sess?.backendSessionId}, connectionId=${sess?.connectionId}, conn=${conn?.id ?? 'NULL'}`);
+    // For reattach-only scenarios (e.g. RDP sessions panel), conn may be
+    // null but backendSessionId is set.  We still proceed to attempt reattach.
+    if (!conn && !sess.backendSessionId) return;
 
     try {
       setConnectionStatus('connecting');
@@ -424,49 +450,71 @@ export function useRDPClient(session: ConnectionSession) {
         }
       });
 
-      // Check for existing backend session to re-attach
+      // Check for existing backend session to re-attach.
+      // Try by backendSessionId first (carried through detach/reattach), then
+      // fall back to scanning by connection_id.
+      let reattachId: string | undefined;
+
       try {
         const existingSessions = await invoke<Array<{
           id: string;
-          connection_id?: string;
-          host: string;
-          port: number;
+          connectionId?: string;
           connected: boolean;
-          desktop_width: number;
-          desktop_height: number;
         }>>('list_rdp_sessions');
 
-        const existing = existingSessions.find(
-          s => s.connection_id === conn.id && s.connected
-        );
+        console.log(`[RDP reattach] list_rdp_sessions: ${existingSessions.length} session(s)`, existingSessions.map(s => ({ id: s.id, cid: s.connectionId, connected: s.connected })));
+        console.log(`[RDP reattach] looking for backendSessionId=${sess.backendSessionId}, connectionId=${conn?.id ?? sess.connectionId}`);
 
-        if (existing) {
-          debugLog(`Re-attaching to existing session ${existing.id} for ${conn.id}`);
-          setStatusMessage('Re-attaching to existing session...');
+        // Prefer exact match by backend session ID
+        const byBackend = sess.backendSessionId
+          ? existingSessions.find(s => s.id === sess.backendSessionId && s.connected)
+          : undefined;
+        // Fall back to connectionId match
+        const connId = conn?.id ?? sess.connectionId;
+        const byConnection = connId
+          ? existingSessions.find(s => s.connectionId === connId && s.connected)
+          : undefined;
 
+        reattachId = byBackend?.id ?? byConnection?.id;
+
+        if (reattachId) {
+          console.log(`[RDP reattach] found target: ${reattachId}`);
+        } else {
+          console.log('[RDP reattach] no existing backend session found');
+        }
+      } catch (listErr) {
+        console.error('[RDP reattach] list_rdp_sessions failed:', listErr);
+      }
+
+      if (reattachId) {
+        debugLog(`Re-attaching to existing session ${reattachId} for ${conn?.id ?? sess.connectionId}`);
+        setStatusMessage('Re-attaching to existing session...');
+
+        try {
           const sessionInfo = await invoke<{
             id: string;
-            desktop_width: number;
-            desktop_height: number;
+            desktopWidth: number;
+            desktopHeight: number;
           }>('attach_rdp_session', {
-            connectionId: conn.id,
+            sessionId: reattachId,
+            connectionId: conn?.id ?? sess.connectionId,
             frameChannel,
           });
 
           setRdpSessionId(sessionInfo.id);
           sessionIdRef.current = sessionInfo.id;
           setDesktopSize({
-            width: sessionInfo.desktop_width,
-            height: sessionInfo.desktop_height,
+            width: sessionInfo.desktopWidth,
+            height: sessionInfo.desktopHeight,
           });
 
           const canvas = canvasRef.current;
           if (canvas) {
-            canvas.width = sessionInfo.desktop_width;
-            canvas.height = sessionInfo.desktop_height;
+            canvas.width = sessionInfo.desktopWidth;
+            canvas.height = sessionInfo.desktopHeight;
             frameBufferRef.current = new FrameBuffer(
-              sessionInfo.desktop_width,
-              sessionInfo.desktop_height
+              sessionInfo.desktopWidth,
+              sessionInfo.desktopHeight
             );
             const rendererType = (rdpCfg.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
             rendererRef.current?.destroy();
@@ -474,23 +522,39 @@ export function useRDPClient(session: ConnectionSession) {
             setActiveFrontendRenderer(rendererRef.current.name);
           }
 
+          // Flush any frames that arrived via the channel before the
+          // renderer was ready (the full framebuffer sent during attach).
+          if (frameQueueRef.current.length > 0 && !rafPendingRef.current) {
+            rafPendingRef.current = true;
+            rafIdRef.current = requestAnimationFrame(renderFrames);
+          }
+
           setIsConnected(true);
           setConnectionStatus('connected');
-          setStatusMessage(`Re-attached (${sessionInfo.desktop_width}x${sessionInfo.desktop_height})`);
+          setStatusMessage(`Re-attached (${sessionInfo.desktopWidth}x${sessionInfo.desktopHeight})`);
 
           dispatch({
             type: 'UPDATE_SESSION',
             payload: {
               ...sess,
               backendSessionId: sessionInfo.id,
-              name: conn.name || sess.name,
+              name: conn?.name || sess.name,
               status: 'connected',
             },
           });
           return;
+        } catch (attachErr) {
+          console.error(`RDP reattach failed for session ${reattachId}:`, attachErr);
+          // Fall through to new connection (if connection details available)
         }
-      } catch {
-        // No existing session or list failed — proceed with new connection
+      }
+
+      // If we have no connection definition, we can't create a new session
+      // (reattach-only scenario where the original connection isn't in the tree).
+      if (!conn) {
+        setConnectionStatus('error');
+        setStatusMessage('Reattach failed — backend session not found');
+        return;
       }
 
       // Auto-detect keyboard layout from the OS if configured
@@ -528,7 +592,7 @@ export function useRDPClient(session: ConnectionSession) {
         frameChannel,
       };
 
-      debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port}`);
+      console.log(`[RDP init] creating NEW connection to ${connectionDetails.host}:${connectionDetails.port} (reattach was not possible)`);
 
       const sessionId = await invoke('connect_rdp', connectionDetails) as string;
 
@@ -594,14 +658,12 @@ export function useRDPClient(session: ConnectionSession) {
     visCtxRef.current = null;
     rendererRef.current?.destroy();
     rendererRef.current = null;
-    const conn = connectionRef.current;
-    if (conn) {
-      try {
-        await invoke('detach_rdp_session', { connectionId: conn.id });
-      } catch {
-        // ignore — session may already have ended
-      }
-    }
+    // Note: we intentionally do NOT call detach_rdp_session here.
+    // The backend session keeps running so it can be reattached on
+    // page reload, layout change, or window detach.  Explicit
+    // disconnect is handled by handleDisconnect, and window detach
+    // is handled by useSessionDetach which calls detach_rdp_session
+    // before opening the new window.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reads connection from ref
   }, []);
 
@@ -659,6 +721,11 @@ export function useRDPClient(session: ConnectionSession) {
             if (canvas) {
               rendererRef.current = createFrameRenderer(frontendRendererTypeRef.current, canvas);
               setActiveFrontendRenderer(rendererRef.current.name);
+            }
+            // Flush any frames queued before renderer was ready
+            if (frameQueueRef.current.length > 0 && !rafPendingRef.current) {
+              rafPendingRef.current = true;
+              rafIdRef.current = requestAnimationFrame(renderFrames);
             }
           }
           break;
@@ -751,6 +818,27 @@ export function useRDPClient(session: ConnectionSession) {
       if (rb.session_id !== sessionIdRef.current) return;
       setActiveRenderBackend(rb.backend);
       debugLog(`Render backend: ${rb.backend}`);
+    }).then(fn => unlisteners.push(fn));
+
+    // CLIPRDR: when remote copies text, auto-request it
+    listen<{ session_id: string; has_text: boolean }>('rdp://clipboard-formats', (event) => {
+      const cf = event.payload;
+      if (cf.session_id !== sessionIdRef.current) return;
+      if (cf.has_text) {
+        // Auto-request the text data from the remote clipboard
+        invoke('rdp_clipboard_paste', { sessionId: cf.session_id }).catch(() => {});
+      }
+    }).then(fn => unlisteners.push(fn));
+
+    // CLIPRDR: when remote clipboard data arrives, write to local clipboard
+    listen<{ session_id: string; text: string }>('rdp://clipboard-data', (event) => {
+      const cd = event.payload;
+      if (cd.session_id !== sessionIdRef.current) return;
+      if (cd.text) {
+        navigator.clipboard.writeText(cd.text).catch((e) => {
+          console.warn('Failed to write remote clipboard to local:', e);
+        });
+      }
     }).then(fn => unlisteners.push(fn));
 
     return () => {

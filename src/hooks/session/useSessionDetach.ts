@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { listen, emit } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 import { Connection, ConnectionSession } from '../../types/connection/connection';
@@ -22,32 +23,45 @@ export function useSessionDetach(
       );
       const windowLabel = `detached-${session.id}`;
 
-      // Request terminal buffer before detaching
+      console.log(`[detach] session=${session.id}, protocol=${session.protocol}, backendSessionId=${session.backendSessionId}, connectionId=${session.connectionId}`);
+
+      // For RDP sessions, explicitly detach the viewer from the backend
+      // *before* opening the new window. This ensures the backend session
+      // is in "detached" state so the new window can reattach without a
+      // race against the main window's component cleanup.
+      if (session.protocol === 'rdp' && connection) {
+        try {
+          await invoke('detach_rdp_session', { connectionId: connection.id });
+          console.log('[detach] detach_rdp_session succeeded');
+        } catch (err) {
+          console.warn('[detach] detach_rdp_session failed:', err);
+        }
+      }
+
+      // Request terminal buffer before detaching (only for terminal-based protocols)
       let terminalBuffer = "";
-      try {
-        const bufferPromise = new Promise<string>((resolve) => {
-          const timeout = setTimeout(() => {
-            console.log("Buffer request timed out for detach");
-            resolve("");
-          }, 1000);
+      if (session.protocol !== 'rdp') {
+        try {
+          const bufferPromise = new Promise<string>((resolve) => {
+            const timeout = setTimeout(() => {
+              resolve("");
+            }, 1000);
 
-          listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
-            if (event.payload.sessionId === sessionId) {
-              clearTimeout(timeout);
-              console.log("Received buffer for detach:", event.payload.buffer?.length || 0, "chars");
-              resolve(event.payload.buffer);
-            }
-          }).then(unlisten => {
-            setTimeout(() => unlisten(), 1200);
+            listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
+              if (event.payload.sessionId === sessionId) {
+                clearTimeout(timeout);
+                resolve(event.payload.buffer);
+              }
+            }).then(unlisten => {
+              setTimeout(() => unlisten(), 1200);
+            });
           });
-        });
 
-        console.log("Requesting terminal buffer for detach:", sessionId);
-        await emit("request-terminal-buffer", { sessionId });
-        terminalBuffer = await bufferPromise;
-        console.log("Got terminal buffer for detach:", terminalBuffer?.length || 0, "chars");
-      } catch (error) {
-        console.warn("Failed to get terminal buffer:", error);
+          await emit("request-terminal-buffer", { sessionId });
+          terminalBuffer = await bufferPromise;
+        } catch (error) {
+          console.warn("Failed to get terminal buffer:", error);
+        }
       }
 
       try {
@@ -64,6 +78,7 @@ export function useSessionDetach(
           `detached-session-${session.id}`,
           JSON.stringify(payload),
         );
+        console.log(`[detach] saved to localStorage, backendSessionId=${sessionWithBuffer.backendSessionId}`);
       } catch (error) {
         console.error("Failed to persist detached session payload:", error);
       }
@@ -175,6 +190,7 @@ export function useSessionDetach(
       const newSession: ConnectionSession = {
         id: generateId(),
         connectionId: connectionId || backendSessionId,
+        backendSessionId,
         name: connection?.name || connectionId || backendSessionId.slice(0, 8),
         status: 'connecting',
         startTime: new Date(),

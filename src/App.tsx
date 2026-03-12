@@ -293,6 +293,8 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (isInitialized && !appReady) {
       setAppReady(true);
+      // Close the native splash screen now that the frontend is ready
+      invoke("close_splash").catch(() => {});
     }
   }, [isInitialized, appReady]);
 
@@ -308,12 +310,12 @@ const AppContent: React.FC = () => {
       try {
         const backendSessions = await invoke<Array<{
           id: string;
-          connection_id?: string;
+          connectionId?: string;
           host: string;
           port: number;
           connected: boolean;
-          desktop_width: number;
-          desktop_height: number;
+          desktopWidth: number;
+          desktopHeight: number;
         }>>('list_rdp_sessions');
 
         const connectedSessions = backendSessions.filter(s => s.connected);
@@ -323,21 +325,21 @@ const AppContent: React.FC = () => {
           // Skip if a frontend session already exists for this backend session
           const existing = state.sessions.find(
             s => s.protocol === 'rdp' && (
-              s.connectionId === bs.connection_id ||
+              s.connectionId === bs.connectionId ||
               s.backendSessionId === bs.id
             )
           );
           if (existing) continue;
 
-          const connection = bs.connection_id
-            ? state.connections.find(c => c.id === bs.connection_id)
+          const connection = bs.connectionId
+            ? state.connections.find(c => c.id === bs.connectionId)
             : state.connections.find(c =>
                 c.hostname === bs.host && (c.port || 3389) === bs.port && c.protocol === 'rdp'
               );
 
           const newSession: ConnectionSession = {
             id: generateId(),
-            connectionId: connection?.id || bs.connection_id || bs.id,
+            connectionId: connection?.id || bs.connectionId || bs.id,
             name: connection?.name || `${bs.host}:${bs.port}`,
             status: 'connected',
             startTime: new Date(),

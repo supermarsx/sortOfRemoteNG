@@ -26,6 +26,9 @@ export const useSessionManager = () => {
   // const scriptEngine = ScriptEngine.getInstance(); // Disabled for Tauri
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
+  // Keep a ref to the latest state so timer callbacks can read current sessions
+  const stateRef = useRef(state);
+  stateRef.current = state;
   // Store active timeout IDs so they can be cleared on unmount
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [dialogState, setDialogState] = useState<{
@@ -102,19 +105,26 @@ export const useSessionManager = () => {
           timestamp: Date.now(),
         });
 
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: {
-            ...session,
-            status: "connected",
-            metrics: {
-              connectionTime,
-              dataTransferred: 0,
-              latency: Math.random() * 50 + 10,
-              throughput: Math.random() * 1000 + 500,
+        // Read the CURRENT session from state to avoid overwriting
+        // fields set by protocol hooks (e.g. backendSessionId).
+        const currentSession = stateRef.current.sessions.find(
+          (s) => s.id === session.id,
+        );
+        if (currentSession) {
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: {
+              ...currentSession,
+              status: "connected",
+              metrics: {
+                connectionTime,
+                dataTransferred: 0,
+                latency: Math.random() * 50 + 10,
+                throughput: Math.random() * 1000 + 500,
+              },
             },
-          },
-        });
+          });
+        }
 
         dispatch({
           type: "UPDATE_CONNECTION",
@@ -151,10 +161,13 @@ export const useSessionManager = () => {
     try {
       await raced;
     } catch (error) {
-      dispatch({
-        type: "UPDATE_SESSION",
-        payload: { ...session, status: "error" },
-      });
+      const cur = stateRef.current.sessions.find((s) => s.id === session.id);
+      if (cur) {
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: { ...cur, status: "error" },
+        });
+      }
 
       settingsManager.logAction(
         "error",
