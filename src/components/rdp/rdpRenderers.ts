@@ -426,17 +426,45 @@ class WebGPURenderer implements FrameRenderer {
   private sampler!: GPUSampler;
   private tex!: GPUTexture;
   private bindGroup!: GPUBindGroup;
+  private diagPaintCount = 0;
+  private diagPresentCount = 0;
   private bindGroupLayout!: GPUBindGroupLayout;
   private texW = 0;
   private texH = 0;
   private dirty = false;
   private ready = false;
-  // Queued paints that arrive before async init completes
-  private pendingPaints: { x: number; y: number; w: number; h: number; rgba: Uint8ClampedArray }[] = [];
+  private initFailed = false;
+  // Fallback renderer used when async init fails
+  private fallback: Canvas2DRenderer | null = null;
+  // Queued paints that arrive before async init completes (no cap — init
+  // takes ~50-200ms so the queue stays small)
+  private pendingPaints: { x: number; y: number; w: number; h: number; rgba: Uint8Array }[] = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     this.initAsync().catch((e) => {
-      console.error('WebGPU init failed:', e);
+      console.error('WebGPU init failed, falling back to Canvas2D:', e);
+      this.initFailed = true;
+      try {
+        // Unconfigure WebGPU context if it was acquired, so Canvas2D can work
+        if (this.ctx) {
+          try { this.ctx.unconfigure(); } catch { /* ignore */ }
+        }
+        // Force a fresh context by resetting canvas dimensions
+        const w = canvas.width;
+        const h = canvas.height;
+        canvas.width = 0;
+        canvas.width = w;
+        canvas.height = h;
+        this.fallback = new Canvas2DRenderer(canvas);
+        // Flush pending paints to the fallback
+        for (const p of this.pendingPaints) {
+          this.fallback.paintRegion(p.x, p.y, p.w, p.h, new Uint8ClampedArray(p.rgba.buffer, p.rgba.byteOffset, p.rgba.byteLength));
+        }
+        this.fallback.present();
+      } catch (e2) {
+        console.error('Canvas2D fallback also failed:', e2);
+      }
+      this.pendingPaints = [];
     });
   }
 
@@ -493,12 +521,18 @@ class WebGPURenderer implements FrameRenderer {
 
     this.allocTexture(this.canvas.width || 1920, this.canvas.height || 1080);
     this.ready = true;
+    console.log(`[WebGPU] initAsync OK: tex=${this.texW}x${this.texH}, canvas=${this.canvas.width}x${this.canvas.height}, pending=${this.pendingPaints.length}, format=${format}`);
 
-    // Flush any queued paints
+    // Flush any queued paints and present immediately
     for (const p of this.pendingPaints) {
-      this.paintRegion(p.x, p.y, p.w, p.h, p.rgba);
+      this.paintRegion(p.x, p.y, p.w, p.h, new Uint8ClampedArray(p.rgba.buffer, p.rgba.byteOffset, p.rgba.byteLength));
     }
+    const hadPending = this.pendingPaints.length;
     this.pendingPaints = [];
+    if (hadPending > 0) {
+      this.present();
+      console.log(`[WebGPU] flushed ${hadPending} pending paints, dirty=${this.dirty}`);
+    }
   }
 
   private allocTexture(w: number, h: number): void {
@@ -532,17 +566,32 @@ class WebGPURenderer implements FrameRenderer {
     rgba: Uint8ClampedArray,
   ): void {
     if (w <= 0 || h <= 0 || rgba.length < w * h * 4) return;
-    if (!this.ready) {
-      // Backpressure: cap pending queue to 2 entries (keep most recent frames).
-      if (this.pendingPaints.length >= 2) {
-        this.pendingPaints.shift();
-      }
-      this.pendingPaints.push({ x, y, w, h, rgba: new Uint8ClampedArray(rgba) });
+    if (this.fallback) {
+      this.fallback.paintRegion(x, y, w, h, rgba);
       return;
+    }
+    if (!this.ready) {
+      // Queue all paints until async init completes (no cap — init is fast,
+      // ~50-200ms, so the queue stays small).  We copy to a fresh Uint8Array
+      // since the source view may be into a shared ArrayBuffer that gets reused.
+      this.pendingPaints.push({ x, y, w, h, rgba: new Uint8Array(rgba) });
+      return;
+    }
+    // writeTexture needs the data as a contiguous buffer.  The incoming rgba
+    // is often a Uint8ClampedArray *view* with a non-zero byteOffset into a
+    // larger ArrayBuffer.  Some WebGPU implementations don't correctly handle
+    // the view's byteOffset, so we ensure a zero-offset buffer.
+    const data: Uint8Array = rgba.byteOffset === 0
+      ? new Uint8Array(rgba.buffer, 0, rgba.byteLength)
+      : new Uint8Array(rgba);
+    if (this.diagPaintCount++ < 5) {
+      // Sample first 16 bytes to verify non-zero pixel data
+      const sample = Array.from(data.subarray(0, Math.min(16, data.length)));
+      console.log(`[WebGPU] paintRegion #${this.diagPaintCount}: (${x},${y}) ${w}x${h}, ${data.length} bytes, offset=${rgba.byteOffset}, texSize=${this.texW}x${this.texH}, sample=${sample.join(',')}`);
     }
     this.device.queue.writeTexture(
       { texture: this.tex, origin: [x, y] },
-      rgba as Uint8ClampedArray<ArrayBuffer>,
+      data,
       { bytesPerRow: w * 4, rowsPerImage: h },
       [w, h],
     );
@@ -550,28 +599,37 @@ class WebGPURenderer implements FrameRenderer {
   }
 
   present(): void {
+    if (this.fallback) { this.fallback.present(); return; }
     if (!this.dirty || !this.ready) return;
-    const target = this.ctx.getCurrentTexture().createView();
-    const enc = this.device.createCommandEncoder();
-    const pass = enc.beginRenderPass({
-      colorAttachments: [
-        {
-          view: target,
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-        },
-      ],
-    });
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.bindGroup);
-    pass.draw(4);
-    pass.end();
-    this.device.queue.submit([enc.finish()]);
-    this.dirty = false;
+    if (this.diagPresentCount++ < 5) {
+      console.log(`[WebGPU] present #${this.diagPresentCount}: canvas=${this.canvas.width}x${this.canvas.height}, tex=${this.texW}x${this.texH}`);
+    }
+    try {
+      const target = this.ctx.getCurrentTexture().createView();
+      const enc = this.device.createCommandEncoder();
+      const pass = enc.beginRenderPass({
+        colorAttachments: [
+          {
+            view: target,
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          },
+        ],
+      });
+      pass.setPipeline(this.pipeline);
+      pass.setBindGroup(0, this.bindGroup);
+      pass.draw(4);
+      pass.end();
+      this.device.queue.submit([enc.finish()]);
+      this.dirty = false;
+    } catch (e) {
+      console.error('WebGPU present failed:', e);
+    }
   }
 
   resize(width: number, height: number): void {
+    if (this.fallback) { this.fallback.resize(width, height); return; }
     this.canvas.width = width;
     this.canvas.height = height;
     if (this.ready) {
@@ -580,6 +638,7 @@ class WebGPURenderer implements FrameRenderer {
   }
 
   destroy(): void {
+    if (this.fallback) { this.fallback.destroy(); return; }
     if (this.tex) this.tex.destroy();
     if (this.device) this.device.destroy();
   }
