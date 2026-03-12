@@ -544,11 +544,10 @@ export function useRDPClient(session: ConnectionSession) {
         },
       });
 
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.width = resW;
-        canvas.height = resH;
-      }
+      // Don't attach the pipeline here — the rdp://status 'connected'
+      // handler is the single canonical attach point.  Attaching early
+      // caused a double-attach race: the status handler would create a
+      // *new* blank renderer, discarding any frames already painted.
     } catch (error) {
       if (stale()) return; // Don't clobber error state from a newer init
       setConnectionStatus('error');
@@ -800,14 +799,10 @@ export function useRDPClient(session: ConnectionSession) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- session.id is the only meaningful trigger
   }, [session.id]);
 
-  // ─── Cancel pending rAF on unmount ─────────────────────────────────
-
-  useEffect(() => {
-    return () => {
-      pipelineRef.current?.destroy();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Pipeline cleanup is handled by the cleanup() call in the
+  // connect-on-mount effect above — no separate unmount effect needed.
+  // A second destroy-without-recreate was causing StrictMode to use a
+  // dead pipeline on re-mount.
 
   // ─── Resize to window ──────────────────────────────────────────────
 
