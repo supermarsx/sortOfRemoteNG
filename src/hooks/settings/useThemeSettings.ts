@@ -42,7 +42,24 @@ export function useThemeSettings(
     (value: string) => {
       updateSettings({
         primaryAccentColor: value,
-        colorScheme: 'custom',
+        useCustomAccent: true,
+      });
+    },
+    [updateSettings],
+  );
+
+  const handleToggleCustomAccent = useCallback(
+    (enabled: boolean) => {
+      updateSettings({ useCustomAccent: enabled });
+    },
+    [updateSettings],
+  );
+
+  const handleSchemeChange = useCallback(
+    (scheme: string) => {
+      updateSettings({
+        colorScheme: scheme as ColorScheme,
+        useCustomAccent: false,
       });
     },
     [updateSettings],
@@ -96,6 +113,8 @@ export function useThemeSettings(
     cssHighlightRef,
     schemeOptions,
     handleAccentChange,
+    handleToggleCustomAccent,
+    handleSchemeChange,
     highlightedCss,
     handleCssScroll,
     opacityValue,

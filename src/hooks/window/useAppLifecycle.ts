@@ -103,7 +103,7 @@ export const useAppLifecycle = ({
           themeManager.applyTheme(
             settings.theme,
             settings.colorScheme,
-            settings.primaryAccentColor,
+            settings.useCustomAccent ? settings.primaryAccentColor : undefined,
           );
           console.log("Theme manager initialized");
         }),

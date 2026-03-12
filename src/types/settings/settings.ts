@@ -69,6 +69,7 @@ export interface GlobalSettings {
   theme: Theme;
   colorScheme: ColorScheme;
   primaryAccentColor?: string;
+  useCustomAccent?: boolean;
   customCss?: string;
   autoSaveEnabled: boolean;
   autoSaveIntervalMinutes: number;

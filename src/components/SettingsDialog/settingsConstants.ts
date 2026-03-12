@@ -146,6 +146,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "theme",
     "colorScheme",
     "primaryAccentColor",
+    "useCustomAccent",
     "backgroundGlowEnabled",
     "backgroundGlowColor",
     "backgroundGlowOpacity",

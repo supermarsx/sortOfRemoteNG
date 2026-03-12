@@ -234,23 +234,23 @@ export class ThemeManager {
     colorScheme: string,
     customAccent?: string,
   ): void {
-    const theme = this.getAllThemes()[themeName];
-    const colors = this.getAllColorSchemes()[colorScheme];
+    const allThemes = this.getAllThemes();
+    const allSchemes = this.getAllColorSchemes();
+
+    const theme = allThemes[themeName] ?? allThemes["dark"];
+    // When custom accent is active, the color scheme may not exist in the map;
+    // fall back to "blue" so we always have valid base colors.
+    const colors = allSchemes[colorScheme] ?? allSchemes["blue"];
 
     if (!theme || !colors) {
-      console.error("Invalid theme or color scheme:", themeName, colorScheme);
-      // Fallback to defaults
-      const fallbackTheme = this.getAllThemes()["dark"];
-      const fallbackColors = this.getAllColorSchemes()["blue"];
-      if (fallbackTheme && fallbackColors) {
-        this.currentTheme = "dark" as Theme;
-        this.currentColorScheme = "blue" as ColorScheme;
-        this.applyResolvedTheme("dark", "blue", customAccent);
-      }
+      console.error("No fallback theme available");
       return;
     }
 
-    const root = document.documentElement;
+    // Apply CSS variables on <body> so inline styles take priority over the
+    // generated .scheme-* class (which also lives on body). Using
+    // documentElement would lose to body-level class declarations.
+    const root = document.body;
 
     Object.entries(theme.colors).forEach(([key, value]) => {
       root.style.setProperty(`--color-${key}`, value);

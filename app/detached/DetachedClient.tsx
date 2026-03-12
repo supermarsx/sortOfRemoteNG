@@ -163,7 +163,7 @@ const DetachedSessionContent: React.FC<{
         themeManager.applyTheme(
           settings.theme,
           settings.colorScheme,
-          settings.primaryAccentColor,
+          settings.useCustomAccent ? settings.primaryAccentColor : undefined,
         );
         // Dispatch settings-updated event so WebTerminal can sync xterm theme on initial load
         window.dispatchEvent(new CustomEvent("settings-updated"));

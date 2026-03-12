@@ -172,7 +172,7 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
       themeManager.applyTheme(
         settings.theme,
         settings.colorScheme,
-        settings.primaryAccentColor,
+        settings.useCustomAccent ? settings.primaryAccentColor : undefined,
       );
       onClose();
     } catch (error) {
@@ -214,7 +214,7 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
         themeManager.applyTheme(
           newSettings.theme,
           newSettings.colorScheme,
-          newSettings.primaryAccentColor,
+          newSettings.useCustomAccent ? newSettings.primaryAccentColor : undefined,
         );
       }
 
@@ -257,12 +257,13 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
       if (
         updates.theme ||
         updates.colorScheme ||
-        typeof updates.primaryAccentColor !== "undefined"
+        typeof updates.primaryAccentColor !== "undefined" ||
+        typeof updates.useCustomAccent !== "undefined"
       ) {
         themeManager.applyTheme(
           newSettings.theme,
           newSettings.colorScheme,
-          newSettings.primaryAccentColor,
+          newSettings.useCustomAccent ? newSettings.primaryAccentColor : undefined,
         );
       }
 
