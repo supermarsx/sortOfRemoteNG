@@ -13,16 +13,11 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 base64 = { workspace = true }
-# AWS SigV4 signing
-hmac = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
-# XML response parsing (EC2, S3, IAM, STS, CloudWatch, Route53, SNS, SQS, CloudFormation)
-quick-xml = { version = "0.31", features = ["serialize"] }
 # URL manipulation
 url = { workspace = true }
-percent-encoding = "2.3"
 # Binary data
 bytes = { workspace = true }
 # Jitter for retry backoff
 rand = { workspace = true }
+# Vendor dylib (quick-xml, percent-encoding, hmac, sha2, hex)
+sorng-aws-vendor = { path = "../sorng-aws-vendor" }

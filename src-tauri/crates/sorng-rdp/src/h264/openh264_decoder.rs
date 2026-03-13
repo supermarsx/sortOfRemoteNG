@@ -1,8 +1,8 @@
 //! Software H.264 decoder using Cisco's openh264 (BSD-licensed).
 
 use super::{DecodedFrame, FrameBufferPool, H264Decoder, H264Error};
-use openh264::decoder::Decoder;
-use openh264::formats::YUVSource;
+use crate::openh264::decoder::Decoder;
+use crate::openh264::formats::YUVSource;
 
 pub struct OpenH264SoftDecoder {
     decoder: Decoder,

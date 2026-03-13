@@ -2,8 +2,8 @@
 //!
 //! All wire formats are little-endian.
 
-use ironrdp_core::{Encode, EncodeResult, WriteCursor};
-use ironrdp_dvc::DvcEncode;
+use crate::ironrdp_core::{Encode, EncodeResult, WriteCursor};
+use crate::ironrdp_dvc::DvcEncode;
 
 // ─── RDPGFX Header ─────────────────────────────────────────────────────
 

@@ -2,6 +2,10 @@
 //
 // Re-exports everything the app crate needs.
 
+// ── Vendor dylib re-exports ──────────────────────────────────────────────
+pub(crate) use sorng_compression_vendor::flate2;
+pub(crate) use sorng_compression_vendor::zstd;
+
 pub mod compression;
 pub mod encoders;
 pub mod engine;

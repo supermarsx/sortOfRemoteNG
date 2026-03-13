@@ -1,8 +1,10 @@
 //! H.264 decoder abstraction with hardware (Media Foundation) and software (openh264) backends.
 
+#[cfg(all(windows, feature = "mf-decode"))]
 pub mod mf_decoder;
+#[cfg(feature = "software-decode")]
 pub mod openh264_decoder;
-pub mod yuv_convert;
+pub use sorng_rdp_vendor::yuv_convert;
 
 use std::fmt;
 
@@ -130,25 +132,58 @@ impl FrameBufferPool {
 }
 
 /// Create an H.264 decoder based on preference.
+///
+/// Returns `Err` if the requested backend is not compiled in.  When no
+/// decode features are enabled, all backend paths are unavailable and
+/// callers should use NAL passthrough instead.
 pub fn create_decoder(
     preference: H264DecoderPreference,
 ) -> Result<(Box<dyn H264Decoder>, &'static str), H264Error> {
     match preference {
         H264DecoderPreference::MediaFoundation => {
-            let dec = mf_decoder::MfH264Decoder::new()?;
-            Ok((Box::new(dec), "media-foundation"))
+            #[cfg(all(windows, feature = "mf-decode"))]
+            {
+                let dec = mf_decoder::MfH264Decoder::new()?;
+                return Ok((Box::new(dec), "media-foundation"));
+            }
+            #[allow(unreachable_code)]
+            Err(H264Error::InitFailed(
+                "Media Foundation decoder not compiled (enable `mf-decode` feature)".into(),
+            ))
         }
         H264DecoderPreference::OpenH264 => {
-            let dec = openh264_decoder::OpenH264SoftDecoder::new()?;
-            Ok((Box::new(dec), "openh264"))
-        }
-        H264DecoderPreference::Auto => match mf_decoder::MfH264Decoder::new() {
-            Ok(dec) => Ok((Box::new(dec), "media-foundation")),
-            Err(e) => {
-                log::warn!("MF H264 decoder init failed ({e}), falling back to openh264");
+            #[cfg(feature = "software-decode")]
+            {
                 let dec = openh264_decoder::OpenH264SoftDecoder::new()?;
-                Ok((Box::new(dec), "openh264"))
+                return Ok((Box::new(dec), "openh264"));
             }
-        },
+            #[allow(unreachable_code)]
+            Err(H264Error::InitFailed(
+                "openh264 decoder not compiled (enable `software-decode` feature)".into(),
+            ))
+        }
+        H264DecoderPreference::Auto => {
+            // Try MF first (if compiled), then openh264 (if compiled).
+            #[cfg(all(windows, feature = "mf-decode"))]
+            match mf_decoder::MfH264Decoder::new() {
+                Ok(dec) => return Ok((Box::new(dec), "media-foundation")),
+                Err(e) => {
+                    log::warn!("MF H264 decoder init failed ({e}), trying fallback");
+                }
+            }
+
+            #[cfg(feature = "software-decode")]
+            {
+                let dec = openh264_decoder::OpenH264SoftDecoder::new()?;
+                return Ok((Box::new(dec), "openh264"));
+            }
+
+            #[allow(unreachable_code)]
+            Err(H264Error::InitFailed(
+                "No H.264 decoder available (enable `software-decode` or `mf-decode` feature, \
+                 or use NAL passthrough to decode on the frontend)"
+                    .into(),
+            ))
+        }
     }
 }

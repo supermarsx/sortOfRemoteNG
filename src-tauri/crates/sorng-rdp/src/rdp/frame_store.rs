@@ -54,7 +54,7 @@ impl SharedFrameStore {
         session_id: &str,
         source: &[u8],
         fb_width: u16,
-        region: &ironrdp::pdu::geometry::InclusiveRectangle,
+        region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
     ) {
         let slots = self.slots.read().unwrap();
         if let Some(slot_arc) = slots.get(session_id) {

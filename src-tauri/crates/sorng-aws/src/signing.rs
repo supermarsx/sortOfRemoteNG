@@ -12,8 +12,8 @@
 //! 4. Add the signature to the request
 
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256};
+use crate::hmac::{Hmac, Mac};
+use crate::sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -121,7 +121,7 @@ impl SigV4Signer {
         let signing_key = self.derive_signing_key(&date_stamp);
 
         // Step 4: Calculate signature
-        let signature = hex::encode(hmac_sha256(&signing_key, string_to_sign.as_bytes()));
+        let signature = crate::hex::encode(hmac_sha256(&signing_key, string_to_sign.as_bytes()));
 
         // Build Authorization header
         let signed_header_names = self.signed_header_names(&signed_headers);
@@ -239,14 +239,14 @@ impl SigV4Signer {
 pub fn sha256_hex(data: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data.as_bytes());
-    hex::encode(hasher.finalize())
+    crate::hex::encode(hasher.finalize())
 }
 
 /// Compute SHA-256 hash of bytes and return hex-encoded string.
 pub fn sha256_hex_bytes(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
-    hex::encode(hasher.finalize())
+    crate::hex::encode(hasher.finalize())
 }
 
 /// Compute HMAC-SHA256.
@@ -286,7 +286,7 @@ fn parse_url_components(url: &str) -> (String, String) {
 
 /// URI-encode a string per AWS SigV4 spec (RFC 3986, except '/' in paths).
 pub fn uri_encode(input: &str) -> String {
-    use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+    use crate::percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
     // AWS SigV4: encode everything except unreserved characters
     const AWS_ENCODE_SET: &AsciiSet = &CONTROLS
         .add(b' ')

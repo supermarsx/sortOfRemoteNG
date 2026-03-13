@@ -7,12 +7,12 @@
 use std::sync::{Arc, Mutex};
 use std::fmt;
 
-use ironrdp_cliprdr::backend::CliprdrBackend;
-use ironrdp_cliprdr::pdu::{
+use crate::ironrdp_cliprdr::backend::CliprdrBackend;
+use crate::ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FileContentsRequest,
     FileContentsResponse, FormatDataRequest, FormatDataResponse, LockDataId,
 };
-use ironrdp_core::impl_as_any;
+use crate::ironrdp_core::impl_as_any;
 use sorng_core::events::DynEventEmitter;
 
 /// Standard Windows CF_UNICODETEXT format ID.

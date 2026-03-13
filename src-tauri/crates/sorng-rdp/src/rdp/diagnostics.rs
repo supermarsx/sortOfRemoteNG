@@ -2,8 +2,8 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Instant;
 
-use ironrdp::connector::{self, ClientConnector, State as _};
-use ironrdp_blocking::Framed;
+use crate::ironrdp::connector::{self, ClientConnector, State as _};
+use crate::ironrdp_blocking::Framed;
 
 use super::network::{extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
 use super::settings::ResolvedSettings;
@@ -85,12 +85,12 @@ pub fn run_diagnostics(
         bitmap: Some(connector::BitmapConfig {
             lossy_compression: false,
             color_depth: 32,
-            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+            codecs: crate::ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
         }),
         client_build: settings.client_build,
         client_name: settings.client_name.clone(),
         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
-        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+        platform: crate::ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
         hardware_id: None,
         request_data: None,
         autologon: false,
@@ -107,7 +107,7 @@ pub fn run_diagnostics(
     let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
     let mut connector = ClientConnector::new(probe_config, server_socket_addr);
 
-    match ironrdp_blocking::connect_begin(&mut framed, &mut connector) {
+    match crate::ironrdp_blocking::connect_begin(&mut framed, &mut connector) {
         Ok(should_upgrade) => {
             let negotiate_ms = t.elapsed().as_millis() as u64;
             let negotiated_proto = connector.state.name();
@@ -149,15 +149,15 @@ pub fn run_diagnostics(
                     });
 
                     let upgraded =
-                        ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
+                        crate::ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
                     // -- Step 5: CredSSP / NLA + Session Setup --
 
                     let t = Instant::now();
                     let mut network_client = BlockingNetworkClient::new(cached_http_client.clone());
-                    let server_name = ironrdp::connector::ServerName::new(host);
+                    let server_name = crate::ironrdp::connector::ServerName::new(host);
 
-                    match ironrdp_blocking::connect_finalize(
+                    match crate::ironrdp_blocking::connect_finalize(
                         upgraded,
                         connector,
                         &mut tls_framed,
@@ -362,12 +362,12 @@ fn probe_color_depth(
         bitmap: Some(connector::BitmapConfig {
             lossy_compression: false,
             color_depth: depth,
-            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+            codecs: crate::ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
         }),
         client_build: settings.client_build,
         client_name: settings.client_name.clone(),
         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
-        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+        platform: crate::ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
         hardware_id: None,
         request_data: None,
         autologon: false,
@@ -384,7 +384,7 @@ fn probe_color_depth(
     let server_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
     let mut conn = ClientConnector::new(config, server_addr);
 
-    let should_upgrade = match ironrdp_blocking::connect_begin(&mut framed, &mut conn) {
+    let should_upgrade = match crate::ironrdp_blocking::connect_begin(&mut framed, &mut conn) {
         Ok(u) => u,
         Err(e) => {
             return DiagnosticStep {
@@ -411,11 +411,11 @@ fn probe_color_depth(
         }
     };
 
-    let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut conn);
+    let upgraded = crate::ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut conn);
     let mut net_client = BlockingNetworkClient::new(cached_http_client);
-    let sn = ironrdp::connector::ServerName::new(host);
+    let sn = crate::ironrdp::connector::ServerName::new(host);
 
-    match ironrdp_blocking::connect_finalize(
+    match crate::ironrdp_blocking::connect_finalize(
         upgraded,
         conn,
         &mut tls_framed,
@@ -589,12 +589,12 @@ fn probe_alternative_protocols(
                         bitmap: Some(connector::BitmapConfig {
                             lossy_compression: false,
                             color_depth: 32,
-                            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+                            codecs: crate::ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
                         }),
                         client_build: settings.client_build,
                         client_name: settings.client_name.clone(),
                         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
-                        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+                        platform: crate::ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
                         hardware_id: None,
                         request_data: None,
                         autologon: false,
@@ -611,7 +611,7 @@ fn probe_alternative_protocols(
                     let server_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
                     let mut conn = ClientConnector::new(config, server_addr);
 
-                    match ironrdp_blocking::connect_begin(&mut framed, &mut conn) {
+                    match crate::ironrdp_blocking::connect_begin(&mut framed, &mut conn) {
                         Ok(_) => (label, true),
                         Err(_) => (label, false),
                     }

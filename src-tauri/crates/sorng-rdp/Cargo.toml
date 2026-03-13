@@ -4,24 +4,44 @@ version = "0.1.0"
 edition = "2021"
 description = "RDP connectivity, graphics pipeline, and H.264 decoding"
 
+# ═══════════════════════════════════════════════════════════════════════
+# Feature flags — all RDP decode features are on by default.  Disable
+# with `default-features = false` for fast dev builds (NAL passthrough
+# only — no vendor recompilation needed).
+# ═══════════════════════════════════════════════════════════════════════
+[features]
+default = ["software-decode", "mf-decode", "snapshot"]
+# Software H.264 decode via Cisco openh264 (downloads ~1.5 MB prebuilt library).
+# Activates the openh264 dep inside the vendor dylib.
+software-decode = ["sorng-rdp-vendor/software-decode"]
+# Windows Media Foundation hardware-accelerated H.264 decode (DXVA2).
+# Activates the heavy Win32 COM / Direct3D / MF feature flags on the
+# `windows` crate — only meaningful on Windows targets.
+mf-decode = [
+  "windows/Win32_System_Com",
+  "windows/Win32_Media_MediaFoundation",
+  "windows/Win32_Graphics_Direct3D11",
+  "windows/Win32_Graphics_Dxgi",
+  "windows/Win32_Graphics_Direct3D",
+]
+# PNG snapshot encoding (rdp_get_frame_data as PNG)
+snapshot = ["dep:png"]
+
 [dependencies]
+# ── sorng crates (always statically linked) ──────────────────────────
 sorng-core = { path = "../sorng-core" }
 sorng-dns = { path = "../sorng-dns" }
+
+# ── Vendor dylib (ironrdp ecosystem — dynamically linked) ───────────
+sorng-rdp-vendor = { path = "../sorng-rdp-vendor", default-features = false }
+
+# ── Lightweight always-needed deps ───────────────────────────────────
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input", "core"] }
-ironrdp-blocking = "0.8"
-ironrdp-svc = "0.6"
-ironrdp-dvc = "0.5"
-ironrdp-core = "0.1"
-openh264 = "0.6"
 bytes = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-softbuffer = "0.4"
-wgpu = { version = "24", default-features = false, features = ["dx12", "wgsl"] }
-raw-window-handle = "0.6"
 log = { workspace = true }
 x509-cert = { version = "0.2", features = ["std"] }
 sha2 = { workspace = true }
@@ -31,10 +51,9 @@ rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 smallvec = "1"
 base64 = { workspace = true }
-png = "0.17"
-ironrdp-cliprdr = "0.5"
-ironrdp-cliprdr-native = "0.5"
+
+# ── Heavy optional deps (backend decode / snapshot) ──────────────────
+png = { version = "0.17", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows = { workspace = true, features = ["Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Com", "Win32_Media_MediaFoundation", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi", "Win32_Graphics_Direct3D", "Win32_Foundation"] }
-
+windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_Foundation"] }

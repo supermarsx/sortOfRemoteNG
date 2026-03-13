@@ -4,8 +4,8 @@
 // All work is CPU-bound so they should be spawned on
 // `tokio::task::spawn_blocking`.
 
-use flate2::read::{DeflateDecoder, DeflateEncoder, GzDecoder, GzEncoder};
-use flate2::Compression;
+use crate::flate2::read::{DeflateDecoder, DeflateEncoder, GzDecoder, GzEncoder};
+use crate::flate2::Compression;
 use std::io::Read;
 
 use crate::error::{RecordingError, RecordingResult};
@@ -58,12 +58,12 @@ fn decompress_gzip(data: &[u8]) -> RecordingResult<Vec<u8>> {
 // ── Zstd ──────────────────────────────────────────────────────────────
 
 fn compress_zstd(data: &[u8]) -> RecordingResult<Vec<u8>> {
-    zstd::encode_all(data, 3)
+    crate::zstd::encode_all(data, 3)
         .map_err(|e| RecordingError::CompressionError(format!("zstd compress: {}", e)))
 }
 
 fn decompress_zstd(data: &[u8]) -> RecordingResult<Vec<u8>> {
-    zstd::decode_all(data)
+    crate::zstd::decode_all(data)
         .map_err(|e| RecordingError::CompressionError(format!("zstd decompress: {}", e)))
 }
 

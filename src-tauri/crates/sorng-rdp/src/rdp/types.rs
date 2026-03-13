@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
-use ironrdp::pdu::input::fast_path::FastPathInputEvent;
+use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use serde::{Deserialize, Serialize};
 use super::frame_channel::DynFrameChannel;
 use tokio::sync::mpsc;

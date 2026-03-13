@@ -2,9 +2,9 @@
 
 use std::sync::mpsc;
 
-use ironrdp_core::impl_as_any;
-use ironrdp_dvc::ironrdp_pdu::PduResult;
-use ironrdp_dvc::{DvcClientProcessor, DvcMessage, DvcProcessor};
+use crate::ironrdp_core::impl_as_any;
+use crate::ironrdp_dvc::ironrdp_pdu::PduResult;
+use crate::ironrdp_dvc::{DvcClientProcessor, DvcMessage, DvcProcessor};
 
 use crate::h264::{self, DecodedFrame, H264Decoder, H264DecoderPreference};
 

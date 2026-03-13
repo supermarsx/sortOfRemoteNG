@@ -1,0 +1,26 @@
+[package]
+name = "sorng-rdp-vendor"
+version = "0.1.0"
+edition = "2021"
+description = "Dynamically linked vendor dependencies for the RDP stack"
+
+[lib]
+# dylib-only — forces dynamic linking so the ironrdp ecosystem is compiled
+# once into a shared library (.dll / .so) and NOT re-linked into every
+# downstream consumer.  Rebuilds of sorng-rdp skip the entire vendor tree.
+crate-type = ["dylib", "rlib"]
+
+[features]
+default = ["software-decode"]
+software-decode = ["dep:openh264"]
+
+[dependencies]
+ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input", "core"] }
+ironrdp-blocking = "0.8"
+ironrdp-svc = "0.6"
+ironrdp-dvc = "0.5"
+ironrdp-core = "0.1"
+ironrdp-cliprdr = "0.5"
+ironrdp-cliprdr-native = "0.5"
+log = "0.4"
+openh264 = { version = "0.6", optional = true }

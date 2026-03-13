@@ -2,7 +2,7 @@
 pub use std::sync::Arc;
 pub use std::time::Duration;
 
-pub use ironrdp::pdu::input::fast_path::FastPathInputEvent;
+pub use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 pub use tokio::sync::mpsc;
 pub use uuid::Uuid;
 
@@ -43,6 +43,7 @@ pub fn resize_rgba_nearest(
     Ok(out)
 }
 
+#[cfg(feature = "snapshot")]
 pub fn encode_rgba_png(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
     if pixels.len() != (width as usize) * (height as usize) * 4 {
         return Err("Invalid RGBA buffer for PNG encoding".to_string());
@@ -59,6 +60,11 @@ pub fn encode_rgba_png(pixels: &[u8], width: u32, height: u32) -> Result<Vec<u8>
         .map_err(|e| format!("Failed to encode PNG: {e}"))?;
 
     Ok(buf)
+}
+
+#[cfg(not(feature = "snapshot"))]
+pub fn encode_rgba_png(_pixels: &[u8], _width: u32, _height: u32) -> Result<Vec<u8>, String> {
+    Err("PNG encoding not available (enable `snapshot` feature)".to_string())
 }
 
 // ---- Tauri commands ----

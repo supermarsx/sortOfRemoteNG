@@ -1,4 +1,4 @@
-use ironrdp::pdu::input::fast_path::FastPathInputEvent;
+use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use smallvec::{smallvec, SmallVec};
 
 use super::types::RdpInputAction;
@@ -9,10 +9,10 @@ pub type InputEvents = SmallVec<[FastPathInputEvent; 2]>;
 // ---- Convert frontend input to IronRDP FastPathInputEvent ----
 
 pub fn convert_input(action: &RdpInputAction) -> InputEvents {
-    use ironrdp::pdu::input::fast_path::KeyboardFlags;
-    use ironrdp::pdu::input::mouse::PointerFlags;
-    use ironrdp::pdu::input::mouse_x::PointerXFlags;
-    use ironrdp::pdu::input::{MousePdu, MouseXPdu};
+    use crate::ironrdp::pdu::input::fast_path::KeyboardFlags;
+    use crate::ironrdp::pdu::input::mouse::PointerFlags;
+    use crate::ironrdp::pdu::input::mouse_x::PointerXFlags;
+    use crate::ironrdp::pdu::input::{MousePdu, MouseXPdu};
 
     match action {
         RdpInputAction::MouseMove { x, y } => {

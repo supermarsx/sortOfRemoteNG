@@ -2,7 +2,7 @@ use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ironrdp_blocking::Framed;
+use crate::ironrdp_blocking::Framed;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{DigitallySignedStruct, SignatureScheme};
@@ -33,12 +33,12 @@ impl BlockingNetworkClient {
     }
 }
 
-impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetworkClient {
+impl crate::ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetworkClient {
     fn send(
         &self,
-        request: &ironrdp::connector::sspi::generator::NetworkRequest,
-    ) -> ironrdp::connector::sspi::Result<Vec<u8>> {
-        use ironrdp::connector::sspi::network_client::NetworkProtocol;
+        request: &crate::ironrdp::connector::sspi::generator::NetworkRequest,
+    ) -> crate::ironrdp::connector::sspi::Result<Vec<u8>> {
+        use crate::ironrdp::connector::sspi::network_client::NetworkProtocol;
         use std::net::ToSocketAddrs;
 
         let url = request.url.to_string();
@@ -47,15 +47,15 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
         let response_bytes = match request.protocol {
             NetworkProtocol::Http | NetworkProtocol::Https => {
                 let resp = self.client.post(&url).body(data).send().map_err(|e| {
-                    ironrdp::connector::sspi::Error::new(
-                        ironrdp::connector::sspi::ErrorKind::InternalError,
+                    crate::ironrdp::connector::sspi::Error::new(
+                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
                         format!("HTTP request failed: {e}"),
                     )
                 })?;
                 resp.bytes()
                     .map_err(|e| {
-                        ironrdp::connector::sspi::Error::new(
-                            ironrdp::connector::sspi::ErrorKind::InternalError,
+                        crate::ironrdp::connector::sspi::Error::new(
+                            crate::ironrdp::connector::sspi::ErrorKind::InternalError,
                             format!("Failed to read response body: {e}"),
                         )
                     })?
@@ -79,15 +79,15 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
                     &addr_str
                         .to_socket_addrs()
                         .map_err(|e| {
-                            ironrdp::connector::sspi::Error::new(
-                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                            crate::ironrdp::connector::sspi::Error::new(
+                                crate::ironrdp::connector::sspi::ErrorKind::NoCredentials,
                                 format!("KDC address resolution failed: {e}"),
                             )
                         })?
                         .next()
                         .ok_or_else(|| {
-                            ironrdp::connector::sspi::Error::new(
-                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                            crate::ironrdp::connector::sspi::Error::new(
+                                crate::ironrdp::connector::sspi::ErrorKind::NoCredentials,
                                 "KDC address resolved to nothing".to_string(),
                             )
                         })?,
@@ -99,15 +99,15 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
                         let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
                         let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
                         stream.write_all(&data).map_err(|e| {
-                            ironrdp::connector::sspi::Error::new(
-                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                            crate::ironrdp::connector::sspi::Error::new(
+                                crate::ironrdp::connector::sspi::ErrorKind::NoCredentials,
                                 format!("KDC write failed: {e}"),
                             )
                         })?;
                         let mut buf = vec![0u8; 65536];
                         let n = stream.read(&mut buf).map_err(|e| {
-                            ironrdp::connector::sspi::Error::new(
-                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                            crate::ironrdp::connector::sspi::Error::new(
+                                crate::ironrdp::connector::sspi::ErrorKind::NoCredentials,
                                 format!("KDC read failed: {e}"),
                             )
                         })?;
@@ -116,8 +116,8 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
                     }
                     Err(e) => {
                         log::debug!("KDC connection failed (expected): {e}");
-                        return Err(ironrdp::connector::sspi::Error::new(
-                            ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                        return Err(crate::ironrdp::connector::sspi::Error::new(
+                            crate::ironrdp::connector::sspi::ErrorKind::NoCredentials,
                             format!("KDC unreachable: {e}"),
                         ));
                     }

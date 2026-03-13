@@ -1,9 +1,9 @@
 use std::io;
 use std::time::Duration;
 
-use ironrdp::session::image::DecodedImage;
-use ironrdp::session::ActiveStageOutput;
-use ironrdp_blocking::Framed;
+use crate::ironrdp::session::image::DecodedImage;
+use crate::ironrdp::session::ActiveStageOutput;
+use crate::ironrdp_blocking::Framed;
 use super::frame_channel::DynFrameChannel;
 
 use super::frame_store::SharedFrameStore;
@@ -198,7 +198,7 @@ pub fn push_multi_rect_via_channel(
 pub fn push_frame_via_channel(
     image_data: &[u8],
     fb_width: u16,
-    region: &ironrdp::pdu::geometry::InclusiveRectangle,
+    region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
     frame_channel: &DynFrameChannel,
 ) {
     let bpp = 4usize;
@@ -322,7 +322,7 @@ pub fn send_full_frame_via_channel(
     frame_channel: &DynFrameChannel,
     frame_store: &SharedFrameStore,
 ) {
-    let region = ironrdp::pdu::geometry::InclusiveRectangle {
+    let region = crate::ironrdp::pdu::geometry::InclusiveRectangle {
         left: 0,
         top: 0,
         right: width.saturating_sub(1),
@@ -340,7 +340,7 @@ pub fn send_full_frame_via_channel(
 pub fn extract_region_rgba(
     framebuffer: &[u8],
     fb_width: u16,
-    region: &ironrdp::pdu::geometry::InclusiveRectangle,
+    region: &crate::ironrdp::pdu::geometry::InclusiveRectangle,
 ) -> Vec<u8> {
     let bytes_per_pixel = 4usize;
     let stride = fb_width as usize * bytes_per_pixel;

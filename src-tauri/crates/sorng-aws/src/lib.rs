@@ -36,6 +36,12 @@
 //! | REST + JSON | Lambda, ECS, SSM, Secrets Manager, CloudWatch Logs |
 //! | REST + XML  | S3, Route 53                                |
 
+// ── Vendor dylib re-exports ──────────────────────────────────────────────
+pub(crate) use sorng_aws_vendor::hmac;
+pub(crate) use sorng_aws_vendor::hex;
+pub(crate) use sorng_aws_vendor::percent_encoding;
+pub(crate) use sorng_aws_vendor::sha2;
+
 // ── Sub-modules ─────────────────────────────────────────────────────────
 
 pub mod client;

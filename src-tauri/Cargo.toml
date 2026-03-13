@@ -16,6 +16,9 @@ members = [
   "crates/sorng-network",
   "crates/sorng-ssh",
   "crates/sorng-rdp",
+  "crates/sorng-rdp-vendor",
+  "crates/sorng-aws-vendor",
+  "crates/sorng-compression-vendor",
   "crates/sorng-protocols",
   "crates/sorng-vpn",
   "crates/sorng-cloud",
@@ -308,7 +311,7 @@ serial_test = "2.0"
 
 [features]
 default = ["cloud", "collab", "ops", "platform", "rdp"]
-full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "ops", "platform", "rdp", "script-engine", "tls-cert-details"]
+full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "ops", "platform", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details"]
 cert-auth = ["sorng-app-domains/cert-auth"]
 cloud = ["sorng-app-domains/cloud"]
 collab = ["sorng-app-domains/collab"]
@@ -322,6 +325,9 @@ kafka = ["dep:sorng-kafka"]
 ops = ["sorng-app-domains/ops"]
 platform = ["sorng-app-domains/platform"]
 rdp = ["sorng-app-domains/rdp"]
+rdp-software-decode = ["sorng-app-domains/rdp-software-decode"]
+rdp-mf-decode = ["sorng-app-domains/rdp-mf-decode"]
+rdp-snapshot = ["sorng-app-domains/rdp-snapshot"]
 script-engine = ["sorng-app-domains/script-engine"]
 tls-cert-details = ["sorng-app-domains/tls-cert-details"]
 
@@ -345,9 +351,9 @@ split-debuginfo = "unpacked"
 # workspace crates in parallel.  Level 1 still gives usable backtraces.
 debug = 0
 
-# Reduce debuginfo for third-party crates — wgpu-core and openh264-sys2
-# OOM with full debuginfo.  Level 0 = no debuginfo for deps, freeing
-# significant memory during a 178-crate workspace build.
+# Reduce debuginfo for third-party crates — heavy deps can OOM with
+# full debuginfo.  Level 0 = no debuginfo for deps, freeing significant
+# memory during the workspace build.
 [profile.dev.package."*"]
 debug = 0
 # Optimise third-party crates in dev builds.  opt-level 1 gives the
@@ -392,11 +398,6 @@ codegen-units = 1
 opt-level = 1
 debug = 0
 
-[profile.dev.package.naga]
-codegen-units = 1
-opt-level = 1
-debug = 0
-
 [profile.dev.package.rustls]
 codegen-units = 1
 opt-level = 1
@@ -416,16 +417,6 @@ opt-level = 1
 debug = 0
 
 [profile.dev.package.windows-sys]
-codegen-units = 1
-opt-level = 1
-debug = 0
-
-[profile.dev.package.wgpu-core]
-codegen-units = 1
-opt-level = 1
-debug = 0
-
-[profile.dev.package.wgpu-hal]
 codegen-units = 1
 opt-level = 1
 debug = 0

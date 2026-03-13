@@ -777,8 +777,8 @@ impl S3Client {
         query.insert("delete".to_string(), String::new());
 
         let content_md5 = {
-            use sha2::Digest;
-            let hash = sha2::Sha256::digest(xml.as_bytes());
+            use crate::sha2::Digest;
+            let hash = crate::sha2::Sha256::digest(xml.as_bytes());
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash)
         };
         let mut headers = BTreeMap::new();

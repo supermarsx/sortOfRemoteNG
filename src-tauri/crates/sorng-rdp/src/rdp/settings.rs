@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use ironrdp::pdu::rdp::client_info::PerformanceFlags;
+use crate::ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use serde::{Deserialize, Serialize};
 
 // ---- Frontend RDP settings (mirrors TypeScript RdpConnectionSettings) ----
@@ -240,8 +240,8 @@ pub fn build_performance_flags(perf: &RdpPerformancePayload) -> PerformanceFlags
 /// When enabled, constructs the negotiation list based on individual codec toggles.
 pub fn build_bitmap_codecs(
     settings: &ResolvedSettings,
-) -> ironrdp::pdu::rdp::capability_sets::BitmapCodecs {
-    use ironrdp::pdu::rdp::capability_sets::{
+) -> crate::ironrdp::pdu::rdp::capability_sets::BitmapCodecs {
+    use crate::ironrdp::pdu::rdp::capability_sets::{
         BitmapCodecs, CaptureFlags, Codec, CodecProperty, EntropyBits, RemoteFxContainer, RfxCaps,
         RfxCapset, RfxClientCapsContainer, RfxICap, RfxICapFlags,
     };
@@ -276,16 +276,16 @@ pub fn build_bitmap_codecs(
 }
 
 /// Map frontend keyboard type string to IronRDP enum
-pub fn parse_keyboard_type(s: &str) -> ironrdp::pdu::gcc::KeyboardType {
+pub fn parse_keyboard_type(s: &str) -> crate::ironrdp::pdu::gcc::KeyboardType {
     match s {
-        "ibm-pc-xt" => ironrdp::pdu::gcc::KeyboardType::IbmPcXt,
-        "olivetti" => ironrdp::pdu::gcc::KeyboardType::OlivettiIco,
-        "ibm-pc-at" => ironrdp::pdu::gcc::KeyboardType::IbmPcAt,
-        "ibm-enhanced" => ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
-        "nokia1050" => ironrdp::pdu::gcc::KeyboardType::Nokia1050,
-        "nokia9140" => ironrdp::pdu::gcc::KeyboardType::Nokia9140,
-        "japanese" => ironrdp::pdu::gcc::KeyboardType::Japanese,
-        _ => ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
+        "ibm-pc-xt" => crate::ironrdp::pdu::gcc::KeyboardType::IbmPcXt,
+        "olivetti" => crate::ironrdp::pdu::gcc::KeyboardType::OlivettiIco,
+        "ibm-pc-at" => crate::ironrdp::pdu::gcc::KeyboardType::IbmPcAt,
+        "ibm-enhanced" => crate::ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
+        "nokia1050" => crate::ironrdp::pdu::gcc::KeyboardType::Nokia1050,
+        "nokia9140" => crate::ironrdp::pdu::gcc::KeyboardType::Nokia9140,
+        "japanese" => crate::ironrdp::pdu::gcc::KeyboardType::Japanese,
+        _ => crate::ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
     }
 }
 
@@ -302,7 +302,7 @@ pub struct ResolvedSettings {
     pub use_credssp: bool,
     pub autologon: bool,
     pub enable_audio_playback: bool,
-    pub keyboard_type: ironrdp::pdu::gcc::KeyboardType,
+    pub keyboard_type: crate::ironrdp::pdu::gcc::KeyboardType,
     pub keyboard_layout: u32,
     pub keyboard_subtype: u32,
     pub keyboard_functional_keys_count: u32,
@@ -421,7 +421,7 @@ impl ResolvedSettings {
             keyboard_type: input
                 .and_then(|i| i.keyboard_type.as_deref())
                 .map(parse_keyboard_type)
-                .unwrap_or(ironrdp::pdu::gcc::KeyboardType::IbmEnhanced),
+                .unwrap_or(crate::ironrdp::pdu::gcc::KeyboardType::IbmEnhanced),
             keyboard_layout: input.and_then(|i| i.keyboard_layout).unwrap_or(0x0409),
             keyboard_subtype: 0,
             keyboard_functional_keys_count: input

@@ -4,14 +4,14 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ironrdp::connector::connection_activation::ConnectionActivationState;
-use ironrdp::connector::{self, ClientConnector, ConnectionResult, Sequence, State as _};
-use ironrdp::core::WriteBuf;
-use ironrdp::graphics::image_processing::PixelFormat;
-use ironrdp::pdu::input::fast_path::FastPathInputEvent;
-use ironrdp::session::image::DecodedImage;
-use ironrdp::session::{ActiveStage, ActiveStageOutput};
-use ironrdp_blocking::Framed;
+use crate::ironrdp::connector::connection_activation::ConnectionActivationState;
+use crate::ironrdp::connector::{self, ClientConnector, ConnectionResult, Sequence, State as _};
+use crate::ironrdp::core::WriteBuf;
+use crate::ironrdp::graphics::image_processing::PixelFormat;
+use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
+use crate::ironrdp::session::image::DecodedImage;
+use crate::ironrdp::session::{ActiveStage, ActiveStageOutput};
+use crate::ironrdp_blocking::Framed;
 use sorng_core::events::DynEventEmitter;
 use super::clipboard::{self, SharedClipboardState};
 use super::frame_channel::DynFrameChannel;
@@ -57,7 +57,7 @@ fn emit_log(emitter: &DynEventEmitter, log_sink: &LogSink, level: &str, message:
 /// Finalization phases so the server can transition from the login screen
 /// to the user desktop (MS-RDPBCGR section 1.3.1.3).
 pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
-    mut cas: Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>,
+    mut cas: Box<crate::ironrdp::connector::connection_activation::ConnectionActivationSequence>,
     tls_framed: &mut Framed<S>,
     stats: &RdpSessionStats,
 ) -> Result<ConnectionResult, Box<dyn std::error::Error + Send + Sync>> {
@@ -121,7 +121,7 @@ pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
             Ok(ConnectionResult {
                 io_channel_id,
                 user_channel_id,
-                static_channels: ironrdp_svc::StaticChannelSet::new(),
+                static_channels: crate::ironrdp_svc::StaticChannelSet::new(),
                 desktop_size,
                 enable_server_pointer,
                 pointer_software_rendering,
@@ -724,20 +724,20 @@ fn establish_rdp_connection(
         client_build: settings.client_build,
         client_name: settings.client_name.clone(),
         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
-        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+        platform: crate::ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
         hardware_id: None,
         request_data: {
             let lb = &settings.load_balancing_info;
             if !lb.is_empty() {
                 if settings.use_routing_token {
-                    Some(ironrdp::pdu::nego::NegoRequestData::routing_token(
+                    Some(crate::ironrdp::pdu::nego::NegoRequestData::routing_token(
                         lb.clone(),
                     ))
                 } else {
-                    Some(ironrdp::pdu::nego::NegoRequestData::cookie(lb.clone()))
+                    Some(crate::ironrdp::pdu::nego::NegoRequestData::cookie(lb.clone()))
                 }
             } else if settings.use_vm_id && !settings.vm_id.is_empty() {
-                Some(ironrdp::pdu::nego::NegoRequestData::cookie(format!(
+                Some(crate::ironrdp::pdu::nego::NegoRequestData::cookie(format!(
                     "vmconnect/{}",
                     settings.vm_id
                 )))
@@ -788,7 +788,7 @@ fn establish_rdp_connection(
             gfx_tx,
             settings.nal_passthrough,
         );
-        let drdynvc = ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(gfx_proc);
+        let drdynvc = crate::ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(gfx_proc);
         connector.attach_static_channel(drdynvc);
         log::info!(
             "RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled, nal_passthrough={})",
@@ -807,7 +807,7 @@ fn establish_rdp_connection(
             event_emitter.clone(),
             clip_state.clone(),
         );
-        let cliprdr = ironrdp_cliprdr::CliprdrClient::new(Box::new(backend));
+        let cliprdr = crate::ironrdp_cliprdr::CliprdrClient::new(Box::new(backend));
         connector.attach_static_channel(cliprdr);
         log::info!("RDP session {session_id}: CLIPRDR SVC registered (clipboard enabled)");
         Some(clip_state)
@@ -853,7 +853,7 @@ fn establish_rdp_connection(
     stats.set_phase("negotiating");
     log::info!("RDP session {session_id}: starting connection sequence");
     let t_negotiate = Instant::now();
-    let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
+    let should_upgrade = crate::ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("connect_begin failed: {e}"))?;
     let negotiate_ms = t_negotiate.elapsed().as_millis();
     log::info!("RDP session {session_id}: X.224/MCS negotiation took {negotiate_ms}ms");
@@ -891,7 +891,7 @@ fn establish_rdp_connection(
         }
     }
 
-    let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
+    let upgraded = crate::ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
     // -- Shutdown check before CredSSP/NLA --
     match cmd_rx.try_recv() {
@@ -921,9 +921,9 @@ fn establish_rdp_connection(
     let t_auth = Instant::now();
 
     let mut network_client = BlockingNetworkClient::new(cached_http_client);
-    let server_name = ironrdp::connector::ServerName::new(host);
+    let server_name = crate::ironrdp::connector::ServerName::new(host);
 
-    let connection_result: ConnectionResult = ironrdp_blocking::connect_finalize(
+    let connection_result: ConnectionResult = crate::ironrdp_blocking::connect_finalize(
         upgraded,
         connector,
         &mut tls_framed,
@@ -1181,7 +1181,7 @@ fn run_active_session_loop(
                 }
                 Ok(RdpCommand::SignOut) => {
                     log::info!("RDP session {session_id}: sign-out requested");
-                    use ironrdp::pdu::input::fast_path::KeyboardFlags;
+                    use crate::ironrdp::pdu::input::fast_path::KeyboardFlags;
                     let win_press =
                         FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
                     let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
@@ -1209,7 +1209,7 @@ fn run_active_session_loop(
                 }
                 Ok(RdpCommand::ForceReboot) => {
                     log::info!("RDP session {session_id}: force reboot requested");
-                    use ironrdp::pdu::input::fast_path::KeyboardFlags;
+                    use crate::ironrdp::pdu::input::fast_path::KeyboardFlags;
                     let win_press =
                         FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
                     let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
@@ -1242,10 +1242,10 @@ fn run_active_session_loop(
                         }
                         // Advertise CF_UNICODETEXT to the server
                         if let Some(cliprdr) = est.active_stage
-                            .get_svc_processor_mut::<ironrdp_cliprdr::CliprdrClient>()
+                            .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                         {
-                            let format = ironrdp_cliprdr::pdu::ClipboardFormat::new(
-                                ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT),
+                            let format = crate::ironrdp_cliprdr::pdu::ClipboardFormat::new(
+                                crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT),
                             );
                             match cliprdr.initiate_copy(&[format]) {
                                 Ok(messages) => {
@@ -1263,9 +1263,9 @@ fn run_active_session_loop(
                 }
                 Ok(RdpCommand::ClipboardPaste) => {
                     if let Some(cliprdr) = est.active_stage
-                        .get_svc_processor_mut::<ironrdp_cliprdr::CliprdrClient>()
+                        .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                     {
-                        let format_id = ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT);
+                        let format_id = crate::ironrdp_cliprdr::pdu::ClipboardFormatId::new(clipboard::CF_UNICODETEXT);
                         match cliprdr.initiate_paste(format_id) {
                             Ok(messages) => {
                                 match est.active_stage.process_svc_processor_messages(messages) {
@@ -1482,7 +1482,7 @@ fn run_active_session_loop(
         batch_dirty_rects.clear();
         let mut batch_had_graphics = false;
         let mut batch_should_reactivate: Option<
-            Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>,
+            Box<crate::ironrdp::connector::connection_activation::ConnectionActivationSequence>,
         > = None;
         let mut batch_should_terminate = false;
         let mut pdus_this_batch: u32 = 0;
@@ -1681,14 +1681,14 @@ fn run_active_session_loop(
             if let Some(_request) = pending {
                 let local_text = clip_state.lock().unwrap().local_text.clone();
                 if let Some(cliprdr) = est.active_stage
-                    .get_svc_processor_mut::<ironrdp_cliprdr::CliprdrClient>()
+                    .get_svc_processor_mut::<crate::ironrdp_cliprdr::CliprdrClient>()
                 {
                     let response = if let Some(ref text) = local_text {
-                        ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_data(
+                        crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_data(
                             clipboard::encode_utf16le(text),
                         )
                     } else {
-                        ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_error()
+                        crate::ironrdp_cliprdr::pdu::OwnedFormatDataResponse::new_error()
                     };
                     match cliprdr.submit_format_data(response) {
                         Ok(messages) => {
@@ -1731,7 +1731,7 @@ fn run_active_session_loop(
                     session_id,
                     est.image.data(),
                     est.desktop_width,
-                    &ironrdp::pdu::geometry::InclusiveRectangle {
+                    &crate::ironrdp::pdu::geometry::InclusiveRectangle {
                         left: 0,
                         top: 0,
                         right: est.desktop_width.saturating_sub(1),
