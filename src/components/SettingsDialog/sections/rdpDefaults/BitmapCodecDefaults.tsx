@@ -57,7 +57,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
             </span>
           </label>
 
-          {(rdp.gfxEnabled ?? false) && (
+          {(rdp.gfxEnabled ?? false) && (<>
             <div className="ml-11 flex items-center gap-2 mt-2">
               <span className="text-sm text-[var(--color-textSecondary)]">
                 H.264 Decoder:
@@ -69,7 +69,17 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
                       | "openh264",
                   })} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="selectClass" />
             </div>
-          )}
+
+            <label className="flex items-center space-x-3 cursor-pointer group ml-11 mt-2">
+              <Checkbox checked={rdp.nalPassthrough ?? false} onChange={(v: boolean) => update({ nalPassthrough: v })} />
+              <span className="sor-toggle-label">
+                NAL Passthrough (WebCodecs Decode)
+              </span>
+              <span className="text-xs text-[var(--color-textMuted)]">
+                — skip backend decode, send H.264 to frontend
+              </span>
+            </label>
+          </>)}
         </div>
       </>
     )}

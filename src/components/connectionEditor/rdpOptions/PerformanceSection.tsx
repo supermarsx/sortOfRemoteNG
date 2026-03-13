@@ -64,13 +64,14 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       JS entirely for lowest latency.
     </p>
     <div>
-      <Select value={rdp.performance?.renderBackend ?? "webview"} onChange={(v: string) => updateRdp("performance", {
+      <Select value={rdp.performance?.renderBackend ?? "inherit"} onChange={(v: string) => updateRdp("performance", {
             renderBackend: v as
+              | "inherit"
               | "auto"
               | "softbuffer"
               | "wgpu"
               | "webview",
-          })} options={[{ value: "webview", label: "Webview (JS Canvas) — default, most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32 child window, zero JS" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="CSS.select" />
+          })} options={[{ value: "inherit", label: "Inherit from global settings" }, { value: "webview", label: "Webview (JS Canvas) — default, most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32 child window, zero JS" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="CSS.select" />
     </div>
 
     {/* Frontend renderer */}
@@ -83,15 +84,17 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       rendering off the main thread.
     </p>
     <div>
-      <Select value={rdp.performance?.frontendRenderer ?? "auto"} onChange={(v: string) => updateRdp("performance", {
+      <Select value={rdp.performance?.frontendRenderer ?? "inherit"} onChange={(v: string) => updateRdp("performance", {
             frontendRenderer: v as
+              | "inherit"
               | "auto"
               | "canvas2d"
               | "webgl"
               | "webgpu"
               | "offscreen-worker"
-              | "webcodecs-worker",
-          })} options={[{ value: "auto", label: "Auto — best available (WebGPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }, { value: "webcodecs-worker", label: "WebCodecs Worker — H.264 GPU decode (requires GFX)" }]} className="CSS.select" />
+              | "webcodecs-worker"
+              | "webcodecs-cpu",
+          })} options={[{ value: "inherit", label: "Inherit from global settings" }, { value: "auto", label: "Auto — best available (WebCodecs GPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }, { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" }, { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" }]} className="CSS.select" />
     </div>
 
     {/* Frame delivery */}
