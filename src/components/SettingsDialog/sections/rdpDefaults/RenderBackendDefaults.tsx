@@ -52,18 +52,16 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
       <Select value={rdp.frontendRenderer ?? "auto"} onChange={(v: string) => {
             const isWebCodecs = v === "webcodecs-worker" || v === "webcodecs-cpu";
             const updates: Record<string, any> = { frontendRenderer: v };
-            // Selecting a WebCodecs renderer implies NAL passthrough + GFX
             if (isWebCodecs) {
+              // Selecting a WebCodecs renderer implies NAL passthrough + GFX
               updates.nalPassthrough = true;
               updates.gfxEnabled = true;
+            } else {
+              // Switching away from WebCodecs disables NAL passthrough
+              updates.nalPassthrough = false;
             }
             update(updates);
-          }} options={nalPassthrough
-            ? [
-                { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" },
-                { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" },
-              ]
-            : [
+          }} options={[
                 { value: "auto", label: "Auto — best available (WebCodecs GPU → WebGL → Canvas 2D)" },
                 { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" },
                 { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" },

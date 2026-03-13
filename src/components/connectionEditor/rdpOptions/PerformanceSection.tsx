@@ -100,21 +100,22 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
             const updates: Record<string, any> = {
               frontendRenderer: v as any,
             };
-            // Selecting a WebCodecs renderer implies NAL passthrough + GFX
             if (isWebCodecs) {
+              // Selecting a WebCodecs renderer implies NAL passthrough + GFX
               updates.codecs = {
                 ...rdp.performance?.codecs,
                 nalPassthrough: true,
                 enableGfx: true,
               };
+            } else {
+              // Switching away from WebCodecs disables NAL passthrough
+              updates.codecs = {
+                ...rdp.performance?.codecs,
+                nalPassthrough: false,
+              };
             }
             updateRdp("performance", updates);
-          }} options={nalPassthrough
-            ? [
-                { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" },
-                { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" },
-              ]
-            : [
+          }} options={[
                 { value: "inherit", label: "Inherit from global settings" },
                 { value: "auto", label: "Auto — best available (WebCodecs GPU → WebGL → Canvas 2D)" },
                 { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" },
