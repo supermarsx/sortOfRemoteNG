@@ -186,6 +186,103 @@
   box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 45%);
 }
 
+/* ── Custom Select trigger ─────────────────────────────────── */
+.sor-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  cursor: pointer;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.sor-select-trigger:focus-visible {
+  outline: none;
+}
+
+.sor-select-trigger-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sor-select-chevron {
+  flex-shrink: 0;
+  color: var(--color-textMuted);
+  transition: transform 150ms ease;
+}
+
+/* ── Custom Select dropdown ───────────────────────────────── */
+.sor-select-dropdown {
+  overflow: hidden;
+}
+
+.sor-select-dropdown-scroll {
+  max-height: 18rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
+.sor-select-dropdown-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sor-select-dropdown-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sor-select-dropdown-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+.sor-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--color-textSecondary);
+  cursor: pointer;
+  transition: background-color 80ms ease, color 80ms ease;
+  user-select: none;
+}
+
+.sor-select-option-highlighted {
+  background: var(--color-surfaceHover);
+  color: var(--color-text);
+}
+
+.sor-select-option-selected {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.sor-select-option-selected.sor-select-option-highlighted {
+  color: var(--color-primary);
+}
+
+.sor-select-option-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sor-select-option-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sor-select-option-check {
+  flex-shrink: 0;
+  color: var(--color-primary);
+}
+
 .sor-form-label {
   display: block;
   margin-bottom: 0.5rem;
