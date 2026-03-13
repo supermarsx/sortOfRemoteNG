@@ -14,7 +14,7 @@ use super::surfaces::SurfaceManager;
 /// Channel name for RDPGFX (MS-RDPEGFX).
 pub const GFX_CHANNEL_NAME: &str = "Microsoft::Windows::RDS::Graphics";
 
-/// A decoded GFX frame ready for display.
+/// A decoded GFX frame ready for display (RGBA dirty rect).
 pub struct GfxFrame {
     /// Screen X coordinate (from surface mapping).
     pub screen_x: u16,
@@ -28,6 +28,30 @@ pub struct GfxFrame {
     pub rgba: Vec<u8>,
 }
 
+/// A raw H.264 NAL unit for frontend WebCodecs decode.
+pub struct GfxNalFrame {
+    /// Surface ID (for multi-surface tracking).
+    pub surface_id: u16,
+    /// Screen X coordinate (from surface mapping).
+    pub screen_x: u16,
+    /// Screen Y coordinate.
+    pub screen_y: u16,
+    /// Destination width of the decoded frame region.
+    pub dest_w: u16,
+    /// Destination height of the decoded frame region.
+    pub dest_h: u16,
+    /// Raw H.264 NAL unit bytes (not decoded).
+    pub nal_data: Vec<u8>,
+}
+
+/// Output from the GFX processor — either decoded RGBA or raw NAL passthrough.
+pub enum GfxOutput {
+    /// Fully decoded RGBA dirty rect (legacy path).
+    Rgba(GfxFrame),
+    /// Raw H.264 NAL for frontend WebCodecs decode (zero-decode path).
+    Nal(GfxNalFrame),
+}
+
 /// GFX processor state.
 pub struct GfxProcessor {
     surfaces: SurfaceManager,
@@ -36,7 +60,9 @@ pub struct GfxProcessor {
     /// Negotiated capability version.
     cap_version: Option<u32>,
     /// Channel for sending decoded frames to the session loop.
-    frame_tx: mpsc::Sender<GfxFrame>,
+    frame_tx: mpsc::Sender<GfxOutput>,
+    /// When true, send raw H.264 NALs instead of decoded RGBA.
+    nal_passthrough: bool,
     /// Frame acknowledge tracking.
     total_frames_decoded: u32,
     current_frame_id: Option<u32>,
@@ -45,14 +71,19 @@ pub struct GfxProcessor {
 impl GfxProcessor {
     pub fn new(
         decoder_preference: H264DecoderPreference,
-        frame_tx: mpsc::Sender<GfxFrame>,
+        frame_tx: mpsc::Sender<GfxOutput>,
+        nal_passthrough: bool,
     ) -> Self {
+        if nal_passthrough {
+            log::info!("GFX: NAL passthrough enabled — H.264 will be decoded on frontend via WebCodecs");
+        }
         Self {
             surfaces: SurfaceManager::new(),
             h264_decoder: None,
             decoder_preference,
             cap_version: None,
             frame_tx,
+            nal_passthrough,
             total_frames_decoded: 0,
             current_frame_id: None,
         }
@@ -196,6 +227,29 @@ impl GfxProcessor {
             return;
         }
 
+        let dest_w = wts.dest_rect.right.saturating_sub(wts.dest_rect.left);
+        let dest_h = wts.dest_rect.bottom.saturating_sub(wts.dest_rect.top);
+
+        // ── NAL passthrough: send raw H.264 to frontend for WebCodecs decode ──
+        if self.nal_passthrough {
+            if let Some(surface) = self.surfaces.get_surface(wts.surface_id) {
+                if let Some((ox, oy)) = surface.output_origin {
+                    let screen_x = ox as u16 + wts.dest_rect.left;
+                    let screen_y = oy as u16 + wts.dest_rect.top;
+                    let _ = self.frame_tx.send(GfxOutput::Nal(GfxNalFrame {
+                        surface_id: wts.surface_id,
+                        screen_x,
+                        screen_y,
+                        dest_w,
+                        dest_h,
+                        nal_data: avc.h264_data.to_vec(),
+                    }));
+                }
+            }
+            return;
+        }
+
+        // ── Legacy path: decode H.264 on backend, send RGBA ──
         self.ensure_decoder();
         let decoder = match self.h264_decoder.as_mut() {
             Some(d) => d,
@@ -211,9 +265,6 @@ impl GfxProcessor {
         };
 
         for frame in frames {
-            let dest_w = wts.dest_rect.right.saturating_sub(wts.dest_rect.left);
-            let dest_h = wts.dest_rect.bottom.saturating_sub(wts.dest_rect.top);
-
             // Blit decoded RGBA into the target surface
             self.surfaces.blit_to_surface(
                 wts.surface_id,
@@ -230,13 +281,13 @@ impl GfxProcessor {
                 if let Some((ox, oy)) = surface.output_origin {
                     let screen_x = ox as u16 + wts.dest_rect.left;
                     let screen_y = oy as u16 + wts.dest_rect.top;
-                    let _ = self.frame_tx.send(GfxFrame {
+                    let _ = self.frame_tx.send(GfxOutput::Rgba(GfxFrame {
                         screen_x,
                         screen_y,
                         width: dest_w,
                         height: dest_h,
                         rgba: frame.rgba,
-                    });
+                    }));
                 }
             }
         }
@@ -274,13 +325,13 @@ impl GfxProcessor {
             if let Some((ox, oy)) = surface.output_origin {
                 let screen_x = ox as u16 + wts.dest_rect.left;
                 let screen_y = oy as u16 + wts.dest_rect.top;
-                let _ = self.frame_tx.send(GfxFrame {
+                let _ = self.frame_tx.send(GfxOutput::Rgba(GfxFrame {
                     screen_x,
                     screen_y,
                     width: dest_w,
                     height: dest_h,
                     rgba,
-                });
+                }));
             }
         }
     }

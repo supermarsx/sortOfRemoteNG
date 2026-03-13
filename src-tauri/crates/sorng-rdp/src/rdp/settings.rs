@@ -113,6 +113,9 @@ pub struct RdpCodecPayload {
     pub enable_gfx: Option<bool>,
     /// H.264 decoder preference: "auto" | "media-foundation" | "openh264"
     pub h264_decoder: Option<String>,
+    /// When true, send raw H.264 NALs to the frontend for WebCodecs GPU decode
+    /// instead of decoding on the backend. Requires GFX to be enabled.
+    pub nal_passthrough: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -350,6 +353,8 @@ pub struct ResolvedSettings {
     // RDPGFX / H.264
     pub gfx_enabled: bool,
     pub h264_decoder_preference: crate::h264::H264DecoderPreference,
+    /// Send raw H.264 NALs to frontend for WebCodecs decode (skip backend decode).
+    pub nal_passthrough: bool,
     // Session behaviour
     pub read_timeout: Duration,
     pub max_consecutive_errors: u32,
@@ -507,6 +512,10 @@ impl ResolvedSettings {
                 Some("openh264") => crate::h264::H264DecoderPreference::OpenH264,
                 _ => crate::h264::H264DecoderPreference::Auto,
             },
+            nal_passthrough: perf
+                .and_then(|p| p.codecs.as_ref())
+                .and_then(|c| c.nal_passthrough)
+                .unwrap_or(false),
             read_timeout: Duration::from_millis(adv.and_then(|a| a.read_timeout_ms).unwrap_or(16)),
             max_consecutive_errors: adv.and_then(|a| a.max_consecutive_errors).unwrap_or(50),
             stats_interval: Duration::from_secs(

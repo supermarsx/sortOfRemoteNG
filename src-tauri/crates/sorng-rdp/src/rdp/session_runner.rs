@@ -165,7 +165,7 @@ struct EstablishedSession {
     desktop_height: u16,
     compositor: Option<Box<dyn FrameCompositor>>,
     active_render_backend: String,
-    gfx_frame_rx: Option<std::sync::mpsc::Receiver<crate::gfx::processor::GfxFrame>>,
+    gfx_frame_rx: Option<std::sync::mpsc::Receiver<crate::gfx::processor::GfxOutput>>,
     clipboard_state: Option<SharedClipboardState>,
 }
 
@@ -782,12 +782,18 @@ fn establish_rdp_connection(
 
     // -- Register RDPGFX Dynamic Virtual Channel (H.264 hardware decode) --
     let gfx_frame_rx = if settings.gfx_enabled {
-        let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxFrame>();
-        let gfx_proc =
-            crate::gfx::processor::GfxProcessor::new(settings.h264_decoder_preference, gfx_tx);
+        let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxOutput>();
+        let gfx_proc = crate::gfx::processor::GfxProcessor::new(
+            settings.h264_decoder_preference,
+            gfx_tx,
+            settings.nal_passthrough,
+        );
         let drdynvc = ironrdp_dvc::DrdynvcClient::new().with_dynamic_channel(gfx_proc);
         connector.attach_static_channel(drdynvc);
-        log::info!("RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled)");
+        log::info!(
+            "RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled, nal_passthrough={})",
+            settings.nal_passthrough
+        );
         Some(gfx_rx)
     } else {
         None
@@ -1083,7 +1089,7 @@ fn run_active_session_loop(
     // Reusable buffers
     let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
     let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
-    let mut gfx_frames: Vec<crate::gfx::processor::GfxFrame> = Vec::new();
+    let mut gfx_frames: Vec<crate::gfx::processor::GfxOutput> = Vec::new();
 
     // Adaptive read timeout
     let timeout_active = Duration::from_millis(4);
@@ -1436,32 +1442,39 @@ fn run_active_session_loop(
                     "GFX frame queue depth: {queue_len} (high but not dropping — incremental codec)"
                 );
             }
-            for gfx_frame in gfx_frames.drain(..) {
+            for gfx_output in gfx_frames.drain(..) {
                 stats.record_frame();
                 if viewer_detached {
                     continue;
                 }
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                // Pre-reserve 8 bytes at the front of the RGBA buffer so
-                // we can write the header in-place — zero extra allocation
-                // and zero extra memcpy of the full RGBA payload.
-                let mut payload = gfx_frame.rgba;
-                let hdr_len = 8usize;
-                let rgba_len = payload.len();
-                payload.reserve(hdr_len);
-                // Shift existing RGBA data right by 8 bytes.
-                // SAFETY: we just reserved hdr_len extra bytes, and the
-                // source range [0..rgba_len] is valid.
-                unsafe {
-                    let ptr = payload.as_mut_ptr();
-                    std::ptr::copy(ptr, ptr.add(hdr_len), rgba_len);
-                    payload.set_len(rgba_len + hdr_len);
+                match gfx_output {
+                    crate::gfx::processor::GfxOutput::Rgba(gfx_frame) => {
+                        // Pre-reserve 8 bytes at the front of the RGBA buffer so
+                        // we can write the header in-place — zero extra allocation
+                        // and zero extra memcpy of the full RGBA payload.
+                        let mut payload = gfx_frame.rgba;
+                        let hdr_len = 8usize;
+                        let rgba_len = payload.len();
+                        payload.reserve(hdr_len);
+                        // Shift existing RGBA data right by 8 bytes.
+                        // SAFETY: we just reserved hdr_len extra bytes, and the
+                        // source range [0..rgba_len] is valid.
+                        unsafe {
+                            let ptr = payload.as_mut_ptr();
+                            std::ptr::copy(ptr, ptr.add(hdr_len), rgba_len);
+                            payload.set_len(rgba_len + hdr_len);
+                        }
+                        payload[0..2].copy_from_slice(&gfx_frame.screen_x.to_le_bytes());
+                        payload[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
+                        payload[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
+                        payload[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
+                        let _ = active_ch.send_raw(payload);
+                    }
+                    crate::gfx::processor::GfxOutput::Nal(nal_frame) => {
+                        push_nal_via_channel(&nal_frame, active_ch);
+                    }
                 }
-                payload[0..2].copy_from_slice(&gfx_frame.screen_x.to_le_bytes());
-                payload[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
-                payload[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
-                payload[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
-                let _ = active_ch.send_raw(payload);
             }
         }
 

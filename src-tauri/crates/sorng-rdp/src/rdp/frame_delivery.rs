@@ -277,6 +277,41 @@ pub fn push_compositor_frame_via_channel(
     let _ = frame_channel.send_raw(payload);
 }
 
+/// NAL header magic prefix — `0x4E414C48` ("NALH" in ASCII).
+/// The JS side checks the first 4 bytes of each IPC message: if they match
+/// this magic, it's an H.264 NAL passthrough payload; otherwise it's the
+/// standard RGBA dirty-rect format.
+pub const NAL_MAGIC: u32 = 0x4E41_4C48;
+
+/// Push a raw H.264 NAL unit through the frame channel for frontend WebCodecs decode.
+///
+/// Binary protocol (16-byte header + NAL data):
+/// ```text
+/// [magic:u32LE][surface_id:u16LE][screen_x:u16LE][screen_y:u16LE]
+/// [dest_w:u16LE][dest_h:u16LE][reserved:u16LE][NAL bytes...]
+/// ```
+#[inline]
+pub fn push_nal_via_channel(
+    nal: &crate::gfx::processor::GfxNalFrame,
+    frame_channel: &DynFrameChannel,
+) {
+    let hdr_len = 16usize;
+    let total = hdr_len + nal.nal_data.len();
+    let mut payload = Vec::with_capacity(total);
+
+    // 16-byte header
+    payload.extend_from_slice(&NAL_MAGIC.to_le_bytes()); // [0..4]  magic
+    payload.extend_from_slice(&nal.surface_id.to_le_bytes()); // [4..6]  surface_id
+    payload.extend_from_slice(&nal.screen_x.to_le_bytes()); // [6..8]  screen_x
+    payload.extend_from_slice(&nal.screen_y.to_le_bytes()); // [8..10] screen_y
+    payload.extend_from_slice(&nal.dest_w.to_le_bytes()); // [10..12] dest_w
+    payload.extend_from_slice(&nal.dest_h.to_le_bytes()); // [12..14] dest_h
+    payload.extend_from_slice(&0u16.to_le_bytes()); // [14..16] reserved
+    payload.extend_from_slice(&nal.nal_data); // [16..]  NAL data
+
+    let _ = frame_channel.send_raw(payload);
+}
+
 /// Push the entire desktop as a single full-frame through the channel
 /// and update the SharedFrameStore (for the rdp_get_frame_data fallback).
 pub fn send_full_frame_via_channel(
