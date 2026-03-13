@@ -6,6 +6,9 @@ import { Checkbox, Select } from "../../../ui/forms";
 
 const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
+  const currentFrontend = rdp.frontendRenderer ?? "auto";
+  const isWebCodecsFrontend = currentFrontend === "webcodecs-worker" || currentFrontend === "webcodecs-cpu";
+  const backendBypassed = nalPassthrough || isWebCodecsFrontend;
 
   return (
   <div className="sor-settings-card">
@@ -19,10 +22,10 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
       zero canvas overhead.
     </p>
 
-    <div className={nalPassthrough ? "opacity-50 pointer-events-none" : ""}>
+    <div className={backendBypassed ? "opacity-50 pointer-events-none" : ""}>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
         Default Render Backend
-        {nalPassthrough && <span className="text-xs text-[var(--color-textMuted)] ml-2">(disabled — NAL passthrough bypasses backend)</span>}
+        {backendBypassed && <span className="text-xs text-[var(--color-textMuted)] ml-2">(disabled — WebCodecs decoding bypasses backend)</span>}
       </label>
       <Select value={rdp.renderBackend ?? "webview"} onChange={(v: string) => update({
             renderBackend: v as
@@ -30,7 +33,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
               | "softbuffer"
               | "wgpu"
               | "webview",
-          })} disabled={nalPassthrough} options={[{ value: "webview", label: "Webview (JS Canvas) — most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32, zero JS overhead" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan, best throughput at high res" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="selectClass" />
+          })} disabled={backendBypassed} options={[{ value: "webview", label: "Webview (JS Canvas) — most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32, zero JS overhead" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan, best throughput at high res" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="selectClass" />
       <p className="text-xs text-[var(--color-textMuted)] mt-1">
         Per-connection settings override this default. &ldquo;Auto&rdquo; tries
         wgpu first, then falls back to softbuffer, then webview.
@@ -42,20 +45,20 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         Default Frontend Renderer
       </label>
       <p className="text-xs text-[var(--color-textMuted)] mb-1">
-        {nalPassthrough
-          ? "NAL passthrough requires a WebCodecs renderer to decode H.264 on the frontend."
+        {backendBypassed
+          ? "WebCodecs decoding bypasses the backend — raw H.264 NALs are decoded on the frontend."
           : "Controls how RGBA frames are painted onto the canvas. Connections inherit this setting unless overridden."}
       </p>
-      <Select value={rdp.frontendRenderer ?? "auto"} onChange={(v: string) => update({
-            frontendRenderer: v as
-              | "auto"
-              | "canvas2d"
-              | "webgl"
-              | "webgpu"
-              | "offscreen-worker"
-              | "webcodecs-worker"
-              | "webcodecs-cpu",
-          })} options={nalPassthrough
+      <Select value={rdp.frontendRenderer ?? "auto"} onChange={(v: string) => {
+            const isWebCodecs = v === "webcodecs-worker" || v === "webcodecs-cpu";
+            const updates: Record<string, any> = { frontendRenderer: v };
+            // Selecting a WebCodecs renderer implies NAL passthrough + GFX
+            if (isWebCodecs) {
+              updates.nalPassthrough = true;
+              updates.gfxEnabled = true;
+            }
+            update(updates);
+          }} options={nalPassthrough
             ? [
                 { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" },
                 { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" },

@@ -8,6 +8,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
   const currentFrontend = rdp.frontendRenderer ?? "auto";
   const isWebCodecsFrontend = currentFrontend === "webcodecs-worker" || currentFrontend === "webcodecs-cpu";
+  const backendBypassed = nalPassthrough || isWebCodecsFrontend;
 
   return (
   <div className="sor-settings-card">
@@ -63,16 +64,16 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           </label>
 
           {(rdp.gfxEnabled ?? false) && (<>
-            <div className={"ml-11 flex items-center gap-2 mt-2" + (nalPassthrough ? " opacity-50 pointer-events-none" : "")}>
+            <div className={"ml-11 flex items-center gap-2 mt-2" + (backendBypassed ? " opacity-50 pointer-events-none" : "")}>
               <span className="text-sm text-[var(--color-textSecondary)]">
-                H.264 Decoder{nalPassthrough ? " (N/A — passthrough)" : ""}:
+                H.264 Decoder{backendBypassed ? " (N/A — decoded on frontend)" : ""}:
               </span>
               <Select value={rdp.h264Decoder ?? "auto"} onChange={(v: string) => update({
                     h264Decoder: v as
                       | "auto"
                       | "media-foundation"
                       | "openh264",
-                  })} disabled={nalPassthrough} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="selectClass" />
+                  })} disabled={backendBypassed} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="selectClass" />
             </div>
 
             <label className="flex items-center space-x-3 cursor-pointer group ml-11 mt-2">
