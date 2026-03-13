@@ -592,6 +592,8 @@ export interface RdpGlobalDefaultsConfig {
   gfxEnabled: boolean;
   /** H.264 decoder preference */
   h264Decoder: 'auto' | 'media-foundation' | 'openh264';
+  /** Send raw H.264 NAL units to frontend for WebCodecs decode (skip backend decode) */
+  nalPassthrough: boolean;
 
   // ─── Server-side Compositor default ────────────────────────
   /**
@@ -612,8 +614,9 @@ export interface RdpGlobalDefaultsConfig {
    * - `webgpu` — WebGPU writeTexture (latest GPU API)
    * - `offscreen-worker` — OffscreenCanvas in a Worker
    * - `webcodecs-worker` — WebCodecs H.264 GPU decode in a Worker
+   * - `webcodecs-cpu` — WebCodecs H.264 software decode in a Worker
    */
-  frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker';
+  frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker' | 'webcodecs-cpu';
 
   /** Frame scheduling mode: vsync (~16ms), low-latency (~1ms), or adaptive */
   frameScheduling: 'vsync' | 'low-latency' | 'adaptive';

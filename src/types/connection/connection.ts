@@ -358,7 +358,7 @@ export interface RdpPerformanceSettings {
    * - `wgpu` — GPU compositor (CPU fallback currently)
    * - `auto` — try wgpu → softbuffer → webview
    */
-  renderBackend?: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
+  renderBackend?: 'inherit' | 'auto' | 'softbuffer' | 'wgpu' | 'webview';
 
   // ─── Client-side Renderer (JS frontend) ───────────────────────────
   /**
@@ -369,8 +369,10 @@ export interface RdpPerformanceSettings {
    * - `webgpu` — WebGPU writeTexture (latest GPU API)
    * - `offscreen-worker` — OffscreenCanvas in a Worker (off-main-thread)
    * - `webcodecs-worker` — WebCodecs H.264 GPU decode in a Worker
+   * - `webcodecs-cpu` — WebCodecs H.264 software decode in a Worker
+   * - `inherit` — use the global default from settings
    */
-  frontendRenderer?: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker';
+  frontendRenderer?: 'inherit' | 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker' | 'webcodecs-cpu';
 
   // ─── Frame Scheduling ──────────────────────────────────────────────
   /**

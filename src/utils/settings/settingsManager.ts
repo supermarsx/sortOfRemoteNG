@@ -409,6 +409,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     remoteFxEntropy: 'rlgr3' as const,
     gfxEnabled: false,
     h264Decoder: 'auto' as const,
+    nalPassthrough: false,
     reconnectBaseDelaySecs: 3,
     reconnectMaxDelaySecs: 30,
     reconnectOnNetworkLoss: true,

@@ -33,6 +33,8 @@ export function mergeRdpSettings(
       frameBatchIntervalMs: global.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
       renderBackend: global.renderBackend ?? base.performance?.renderBackend,
       frontendRenderer: (global.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType,
+      frameScheduling: global.frameScheduling ?? base.performance?.frameScheduling,
+      tripleBuffering: global.tripleBuffering ?? base.performance?.tripleBuffering,
       codecs: {
         ...base.performance?.codecs,
         enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
@@ -40,9 +42,13 @@ export function mergeRdpSettings(
         remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
         enableGfx: global.gfxEnabled ?? base.performance?.codecs?.enableGfx,
         h264Decoder: global.h264Decoder ?? base.performance?.codecs?.h264Decoder,
+        nalPassthrough: global.nalPassthrough ?? base.performance?.codecs?.nalPassthrough,
         ...conn?.performance?.codecs,
       },
       ...conn?.performance,
+      // Resolve 'inherit': replace with global default so downstream code never sees it
+      ...(conn?.performance?.renderBackend === 'inherit' ? { renderBackend: global.renderBackend ?? base.performance?.renderBackend } : {}),
+      ...(conn?.performance?.frontendRenderer === 'inherit' ? { frontendRenderer: (global.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType } : {}),
       ...(conn?.performance ? {
         codecs: {
           ...base.performance?.codecs,
@@ -51,6 +57,7 @@ export function mergeRdpSettings(
           remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
           enableGfx: global.gfxEnabled ?? base.performance?.codecs?.enableGfx,
           h264Decoder: global.h264Decoder ?? base.performance?.codecs?.h264Decoder,
+          nalPassthrough: global.nalPassthrough ?? base.performance?.codecs?.nalPassthrough,
           ...conn?.performance?.codecs,
         },
       } : {}),

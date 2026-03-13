@@ -345,6 +345,7 @@ const defaultSettings: GlobalSettings = {
     remoteFxEntropy: 'rlgr3' as const,
     gfxEnabled: false,
     h264Decoder: 'auto' as const,
+    nalPassthrough: false,
     // Render Backend
     renderBackend: 'webview' as const,
     frontendRenderer: 'auto' as const,
