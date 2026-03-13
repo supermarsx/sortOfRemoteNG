@@ -113,7 +113,11 @@ class Canvas2DRenderer implements FrameRenderer {
   private cachedH = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext('2d', { desynchronized: true });
+    // desynchronized: false — we use dirty-rect updates (only changed regions
+    // per frame), so the browser compositor must see a complete, consistent
+    // canvas.  desynchronized skips compositor sync and can display the canvas
+    // mid-paint, causing ghosting where old and new regions are mixed.
+    const ctx = canvas.getContext('2d', { desynchronized: false });
     if (!ctx) throw new Error('Canvas 2D context unavailable');
     this.ctx = ctx;
   }
@@ -140,7 +144,7 @@ class Canvas2DRenderer implements FrameRenderer {
     this.canvas.width = width;
     this.canvas.height = height;
     // Re-acquire context after resize (some browsers invalidate it).
-    const ctx = this.canvas.getContext('2d', { desynchronized: true });
+    const ctx = this.canvas.getContext('2d', { desynchronized: false });
     if (ctx) this.ctx = ctx;
   }
 
@@ -196,15 +200,23 @@ class WebGLRenderer implements FrameRenderer {
   private isWebGL2 = false;
 
   constructor(private canvas: HTMLCanvasElement, opts?: RendererOptions) {
+    // preserveDrawingBuffer MUST be true for dirty-rect rendering: we only
+    // update changed regions via texSubImage2D, so the browser must not clear
+    // unchanged areas between compositing frames.
+    //
+    // desynchronized MUST be false: dirty-rect rendering paints multiple
+    // sub-regions per frame via texSubImage2D before a single present().
+    // With desynchronized=true, the browser can display the canvas mid-paint,
+    // showing a mix of old and new regions — classic ghosting artifacts.
     const gl2 = canvas.getContext('webgl2', {
       antialias: false,
-      desynchronized: true,
-      preserveDrawingBuffer: false,
+      desynchronized: false,
+      preserveDrawingBuffer: true,
     }) as WebGL2RenderingContext | null;
     const gl = gl2 ?? (canvas.getContext('webgl', {
       antialias: false,
-      desynchronized: true,
-      preserveDrawingBuffer: false,
+      desynchronized: false,
+      preserveDrawingBuffer: true,
     }) as WebGLRenderingContext | null);
     if (!gl) throw new Error('WebGL context unavailable');
     this.gl = gl;
@@ -357,6 +369,12 @@ class WebGLRenderer implements FrameRenderer {
       );
       gl2.bindFramebuffer(gl2.READ_FRAMEBUFFER, null);
       gl2.bindFramebuffer(gl2.DRAW_FRAMEBUFFER, null);
+
+      // Ensure the blit completes before the next paintRegion() uploads to
+      // writeIdx.  Without this, the GPU may still be reading from the blit
+      // source while the CPU uploads dirty rects to the same texture, causing
+      // ghosting/trails from mixed old+new pixel data.
+      gl.flush();
     } else {
       // Single-buffer: draw directly
       gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -666,7 +684,7 @@ function createPaintWorkerBlob(): Blob {
         const canvas = msg.canvas;
         w = canvas.width;
         h = canvas.height;
-        ctx = canvas.getContext('2d', { desynchronized: true });
+        ctx = canvas.getContext('2d', { desynchronized: false });
         return;
       }
 
