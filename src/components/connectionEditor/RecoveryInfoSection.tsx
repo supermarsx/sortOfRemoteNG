@@ -61,66 +61,64 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
             Store recovery contact details and seed phrases for this connection's account.
           </p>
 
-          {/* Phone */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-[var(--color-textSecondary)] uppercase tracking-wider">
+          <div className="sor-recovery-grid">
+            {/* Phone */}
+            <label className="sor-form-label-xs" htmlFor="recovery-phone">
               Recovery Phone
             </label>
             <input
+              id="recovery-phone"
               type="tel"
               value={info.phone ?? ''}
               onChange={(e) => updateInfo({ phone: e.target.value })}
               placeholder="+1 (555) 123-4567"
-              className="sor-form-input-xs"
+              className="sor-form-input-sm w-full"
             />
-          </div>
 
-          {/* Alternative Email */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-[var(--color-textSecondary)] uppercase tracking-wider">
+            {/* Alternative Email */}
+            <label className="sor-form-label-xs" htmlFor="recovery-email">
               Alternative Email
             </label>
             <input
+              id="recovery-email"
               type="email"
               value={info.alternativeEmail ?? ''}
               onChange={(e) => updateInfo({ alternativeEmail: e.target.value })}
               placeholder="recovery@example.com"
-              className="sor-form-input-xs"
+              className="sor-form-input-sm w-full"
             />
-          </div>
 
-          {/* Alternative Phone */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-[var(--color-textSecondary)] uppercase tracking-wider">
+            {/* Alternative Phone */}
+            <label className="sor-form-label-xs" htmlFor="recovery-alt-phone">
               Alternative Phone
             </label>
             <input
+              id="recovery-alt-phone"
               type="tel"
               value={info.alternativePhone ?? ''}
               onChange={(e) => updateInfo({ alternativePhone: e.target.value })}
               placeholder="+1 (555) 987-6543"
-              className="sor-form-input-xs"
+              className="sor-form-input-sm w-full"
             />
-          </div>
 
-          {/* Alternative Equipment */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-[var(--color-textSecondary)] uppercase tracking-wider">
+            {/* Alternative Equipment */}
+            <label className="sor-form-label-xs" htmlFor="recovery-equipment">
               Alternative Equipment
             </label>
             <input
+              id="recovery-equipment"
               type="text"
               value={info.alternativeEquipment ?? ''}
               onChange={(e) => updateInfo({ alternativeEquipment: e.target.value })}
               placeholder="Hardware key, backup device, etc."
-              className="sor-form-input-xs"
+              className="sor-form-input-sm w-full"
             />
           </div>
 
           {/* Seed Phrase */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] font-medium text-[var(--color-textSecondary)] uppercase tracking-wider">
+              <label className="sor-form-label-xs mb-0" htmlFor="recovery-seed">
                 Recovery Seed Phrase
               </label>
               <button
@@ -129,14 +127,15 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
                 className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
                 title={showSeed ? 'Hide seed phrase' : 'Show seed phrase'}
               >
-                {showSeed ? <EyeOff size={11} /> : <Eye size={11} />}
+                {showSeed ? <EyeOff size={12} /> : <Eye size={12} />}
               </button>
             </div>
             <Textarea
+              id="recovery-seed"
               value={info.seedPhrase ?? ''}
               onChange={(e) => updateInfo({ seedPhrase: e.target.value })}
               placeholder="Enter recovery seed phrase words"
-              className={`w-full h-16 px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] resize-none ${!showSeed && info.seedPhrase ? 'blur-sm hover:blur-none focus:blur-none' : ''}`}
+              className={`sor-form-textarea-sm w-full h-16 font-mono resize-none ${!showSeed && info.seedPhrase ? 'blur-sm hover:blur-none focus:blur-none' : ''}`}
             />
           </div>
         </div>

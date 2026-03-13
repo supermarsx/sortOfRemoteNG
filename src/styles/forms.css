@@ -298,6 +298,19 @@
   font-size: 0.75rem;
 }
 
+/* ── Recovery info grid ─────────────────────────────────────── */
+.sor-recovery-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.sor-recovery-grid > .sor-form-label-xs {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .sor-form-inline-check {
   display: flex;
   align-items: center;
