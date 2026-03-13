@@ -32,7 +32,8 @@ export type FrontendRendererType =
   | 'canvas2d'
   | 'webgl'
   | 'webgpu'
-  | 'offscreen-worker';
+  | 'offscreen-worker'
+  | 'webcodecs-worker';
 
 /** Feature-test results exposed for UI / diagnostics. */
 export interface RendererCapabilities {
@@ -40,6 +41,7 @@ export interface RendererCapabilities {
   webgl: boolean;
   webgpu: boolean;
   offscreenWorker: boolean;
+  webcodecs: boolean;
 }
 
 /** Common interface that all renderers implement. */
@@ -94,6 +96,10 @@ export function detectCapabilities(): RendererCapabilities {
     offscreenWorker:
       typeof OffscreenCanvas !== 'undefined' &&
       typeof Worker !== 'undefined',
+    webcodecs:
+      typeof OffscreenCanvas !== 'undefined' &&
+      typeof Worker !== 'undefined' &&
+      typeof VideoDecoder !== 'undefined',
   };
   return _caps;
 }
@@ -788,6 +794,409 @@ class OffscreenWorkerRenderer implements FrameRenderer {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// WebCodecs Worker Renderer — H.264 GPU decode + WebGL2 present in a Worker
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * NAL magic prefix (little-endian u32 0x4E414C48 = "NALH").
+ * The Rust backend prefixes H.264 NAL payloads with this magic so the
+ * frontend can distinguish them from standard RGBA dirty-rect frames.
+ */
+const NAL_MAGIC = 0x4E414C48;
+
+/** NAL header size: magic(4) + surface_id(2) + screen_x(2) + screen_y(2) + dest_w(2) + dest_h(2) + reserved(2) = 16 */
+const NAL_HEADER_SIZE = 16;
+
+/** Check if an ArrayBuffer starts with the NAL magic prefix. */
+export function isNalPayload(data: ArrayBuffer): boolean {
+  if (data.byteLength < NAL_HEADER_SIZE) return false;
+  const view = new DataView(data);
+  return view.getUint32(0, true) === NAL_MAGIC;
+}
+
+/** Parse NAL header fields from an ArrayBuffer. */
+export function parseNalHeader(data: ArrayBuffer): {
+  surfaceId: number;
+  screenX: number;
+  screenY: number;
+  destW: number;
+  destH: number;
+  nalData: Uint8Array;
+} {
+  const view = new DataView(data);
+  return {
+    surfaceId: view.getUint16(4, true),
+    screenX: view.getUint16(6, true),
+    screenY: view.getUint16(8, true),
+    destW: view.getUint16(10, true),
+    destH: view.getUint16(12, true),
+    nalData: new Uint8Array(data, NAL_HEADER_SIZE),
+  };
+}
+
+/**
+ * Create the inline Worker blob for WebCodecs H.264 decode + WebGL2 present.
+ *
+ * The worker owns:
+ * - A VideoDecoder (WebCodecs) for hardware H.264 decode
+ * - A WebGL2 context on an OffscreenCanvas for GPU presentation
+ * - Fallback to Canvas2D for RGBA dirty-rect frames that arrive on the same channel
+ */
+function createWebCodecsWorkerBlob(): Blob {
+  const code = `
+    'use strict';
+
+    // ── State ──────────────────────────────────────────────────────────
+    let canvas = null;
+    let gl = null;           // WebGL2RenderingContext
+    let ctx2d = null;        // fallback Canvas2D (for RGBA rects when WebGL unavailable)
+    let decoder = null;      // VideoDecoder
+    let program = null;
+    let texture = null;
+    let vao = null;
+    let w = 0, h = 0;
+    let decoderConfigured = false;
+    let frameCount = 0;
+
+    // ── WebGL2 setup ───────────────────────────────────────────────────
+    const VS = \`#version 300 es
+      in vec2 a_pos;
+      out vec2 v_uv;
+      void main() {
+        v_uv = a_pos * 0.5 + 0.5;
+        v_uv.y = 1.0 - v_uv.y;
+        gl_Position = vec4(a_pos, 0.0, 1.0);
+      }
+    \`;
+    const FS = \`#version 300 es
+      precision mediump float;
+      in vec2 v_uv;
+      uniform sampler2D u_tex;
+      out vec4 fragColor;
+      void main() {
+        fragColor = texture(u_tex, v_uv);
+      }
+    \`;
+
+    function initGL(offscreen) {
+      gl = offscreen.getContext('webgl2', { alpha: false, desynchronized: false, antialias: false });
+      if (!gl) return false;
+
+      // Compile shaders
+      function compile(type, src) {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        return s;
+      }
+      const vs = compile(gl.VERTEX_SHADER, VS);
+      const fs = compile(gl.FRAGMENT_SHADER, FS);
+      program = gl.createProgram();
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+      gl.useProgram(program);
+
+      // Fullscreen quad VAO
+      vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(program, 'a_pos');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+      // Texture
+      texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      // Allocate initial texture
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+      gl.viewport(0, 0, w, h);
+      return true;
+    }
+
+    function presentGL() {
+      if (!gl || !program) return;
+      gl.useProgram(program);
+      gl.bindVertexArray(vao);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    // ── VideoDecoder (WebCodecs) ───────────────────────────────────────
+    function initDecoder() {
+      if (typeof VideoDecoder === 'undefined') {
+        console.warn('[WebCodecs worker] VideoDecoder not available');
+        return;
+      }
+
+      decoder = new VideoDecoder({
+        output: (frame) => {
+          frameCount++;
+          if (gl) {
+            // Upload VideoFrame directly as WebGL texture (GPU→GPU, zero CPU copy)
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+            presentGL();
+          } else if (ctx2d) {
+            ctx2d.drawImage(frame, 0, 0);
+          }
+          frame.close();
+        },
+        error: (e) => {
+          console.error('[WebCodecs worker] decode error:', e);
+        },
+      });
+    }
+
+    function configureDecoder(width, height) {
+      if (!decoder || decoderConfigured) return;
+      decoder.configure({
+        codec: 'avc1.42001f', // Baseline profile, level 3.1
+        codedWidth: width,
+        codedHeight: height,
+        hardwareAcceleration: 'prefer-hardware',
+        optimizeForLatency: true,
+      });
+      decoderConfigured = true;
+      console.log('[WebCodecs worker] decoder configured:', width, 'x', height);
+    }
+
+    // ── RGBA dirty-rect fallback (for uncompressed/bitmap frames) ─────
+    let rgbaImgCache = null;
+
+    function paintRgbaRect(data) {
+      const view = new DataView(data);
+      let offset = 0;
+      while (offset + 8 <= data.byteLength) {
+        const x = view.getUint16(offset, true);
+        const y = view.getUint16(offset + 2, true);
+        const rw = view.getUint16(offset + 4, true);
+        const rh = view.getUint16(offset + 6, true);
+        const pixelBytes = rw * rh * 4;
+        if (offset + 8 + pixelBytes > data.byteLength) break;
+        const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
+
+        if (gl) {
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE,
+            new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength));
+        } else if (ctx2d && rw > 0 && rh > 0) {
+          if (!rgbaImgCache || rgbaImgCache.width !== rw || rgbaImgCache.height !== rh) {
+            rgbaImgCache = new ImageData(rw, rh);
+          }
+          rgbaImgCache.data.set(rgba);
+          ctx2d.putImageData(rgbaImgCache, x, y);
+        }
+        offset += 8 + pixelBytes;
+      }
+      if (gl) presentGL();
+    }
+
+    // ── Message handler ────────────────────────────────────────────────
+    const NAL_MAGIC = 0x4E414C48;
+
+    self.onmessage = (e) => {
+      const msg = e.data;
+
+      if (msg.type === 'init') {
+        canvas = msg.canvas;
+        w = msg.width;
+        h = msg.height;
+        canvas.width = w;
+        canvas.height = h;
+
+        if (!initGL(canvas)) {
+          console.warn('[WebCodecs worker] WebGL2 unavailable, falling back to Canvas2D');
+          ctx2d = canvas.getContext('2d');
+        }
+
+        initDecoder();
+        self.postMessage({ type: 'ready' });
+        return;
+      }
+
+      if (msg.type === 'resize') {
+        w = msg.width;
+        h = msg.height;
+        canvas.width = w;
+        canvas.height = h;
+        if (gl) {
+          gl.viewport(0, 0, w, h);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+        // Reset decoder for new resolution
+        if (decoder && decoderConfigured) {
+          decoderConfigured = false;
+        }
+        return;
+      }
+
+      if (msg.type === 'frame') {
+        const data = msg.data; // ArrayBuffer
+        if (data.byteLength < 4) return;
+
+        const magic = new DataView(data).getUint32(0, true);
+        if (magic === NAL_MAGIC && decoder) {
+          // H.264 NAL passthrough
+          const view = new DataView(data);
+          const destW = view.getUint16(10, true);
+          const destH = view.getUint16(12, true);
+          const nalData = new Uint8Array(data, 16);
+
+          if (!decoderConfigured && destW > 0 && destH > 0) {
+            configureDecoder(destW, destH);
+          }
+
+          const chunk = new EncodedVideoChunk({
+            type: frameCount === 0 ? 'key' : 'delta',
+            timestamp: frameCount * 33333,  // ~30fps timing
+            data: nalData,
+          });
+          decoder.decode(chunk);
+        } else {
+          // Standard RGBA dirty-rect
+          paintRgbaRect(data);
+        }
+        return;
+      }
+
+      if (msg.type === 'frames') {
+        // Batch of frame ArrayBuffers
+        const buffers = msg.buffers;
+        for (let i = 0; i < buffers.length; i++) {
+          const data = buffers[i];
+          if (data.byteLength < 4) continue;
+          const magic = new DataView(data).getUint32(0, true);
+          if (magic === NAL_MAGIC && decoder) {
+            const view = new DataView(data);
+            const destW = view.getUint16(10, true);
+            const destH = view.getUint16(12, true);
+            const nalData = new Uint8Array(data, 16);
+            if (!decoderConfigured && destW > 0 && destH > 0) {
+              configureDecoder(destW, destH);
+            }
+            const chunk = new EncodedVideoChunk({
+              type: frameCount === 0 ? 'key' : 'delta',
+              timestamp: frameCount * 33333,
+              data: nalData,
+            });
+            decoder.decode(chunk);
+          } else {
+            paintRgbaRect(data);
+          }
+        }
+        return;
+      }
+    };
+  `;
+  return new Blob([code], { type: 'application/javascript' });
+}
+
+/**
+ * WebCodecs Worker Renderer
+ *
+ * Sends raw IPC frame buffers (both RGBA dirty-rects and H.264 NAL payloads)
+ * to a Web Worker that uses WebCodecs VideoDecoder for GPU H.264 decode
+ * and WebGL2 on an OffscreenCanvas for presentation.
+ *
+ * This renderer bypasses the normal paintRegion() hot path — instead,
+ * raw ArrayBuffers from the Tauri Channel are forwarded directly to the worker
+ * via `pushRawBuffer()`, avoiding any main-thread parsing or copying.
+ */
+class WebCodecsWorkerRenderer implements FrameRenderer {
+  readonly name = 'WebCodecs Worker (H.264 GPU)';
+  readonly type: FrontendRendererType = 'webcodecs-worker';
+  readonly tripleBuffered = false;
+  private worker: Worker;
+  private ready = false;
+  private pendingBuffers: ArrayBuffer[] = [];
+
+  constructor(private canvas: HTMLCanvasElement, width: number, height: number) {
+    const offscreen = canvas.transferControlToOffscreen();
+    const blob = createWebCodecsWorkerBlob();
+    const url = URL.createObjectURL(blob);
+    this.worker = new Worker(url);
+    URL.revokeObjectURL(url);
+
+    this.worker.onmessage = (e) => {
+      if (e.data.type === 'ready') {
+        this.ready = true;
+        // Flush any buffers that arrived before worker was ready
+        if (this.pendingBuffers.length > 0) {
+          const bufs = this.pendingBuffers;
+          this.pendingBuffers = [];
+          this.worker.postMessage(
+            { type: 'frames', buffers: bufs },
+            bufs,
+          );
+        }
+      }
+    };
+
+    this.worker.postMessage(
+      { type: 'init', canvas: offscreen, width, height },
+      [offscreen],
+    );
+  }
+
+  /**
+   * Push a raw IPC ArrayBuffer directly to the worker.
+   * This is the fast path — the pipeline calls this instead of paintRegion()
+   * when using the WebCodecs renderer, avoiding main-thread RGBA parsing.
+   */
+  pushRawBuffer(data: ArrayBuffer): void {
+    if (!this.ready) {
+      this.pendingBuffers.push(data);
+      return;
+    }
+    // Transfer ownership for zero-copy
+    this.worker.postMessage({ type: 'frame', data }, [data]);
+  }
+
+  /** Legacy paintRegion — used for any RGBA rects that bypass the raw path. */
+  paintRegion(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    rgba: Uint8ClampedArray,
+  ): void {
+    if (w <= 0 || h <= 0 || rgba.length < w * h * 4) return;
+    const byteLen = 8 + rgba.byteLength;
+    const buf = new ArrayBuffer(byteLen);
+    const view = new DataView(buf);
+    view.setUint16(0, x, true);
+    view.setUint16(2, y, true);
+    view.setUint16(4, w, true);
+    view.setUint16(6, h, true);
+    new Uint8ClampedArray(buf, 8).set(rgba);
+    this.pushRawBuffer(buf);
+  }
+
+  present(): void {
+    /* Worker presents after each frame decode / RGBA paint */
+  }
+
+  resize(width: number, height: number): void {
+    this.worker.postMessage({ type: 'resize', width, height });
+  }
+
+  destroy(): void {
+    this.worker.terminate();
+  }
+}
+
+
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Factory
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -816,7 +1225,7 @@ function autoSelect(caps: RendererCapabilities): FrontendRendererType {
 export function createFrameRenderer(
   requested: FrontendRendererType,
   canvas: HTMLCanvasElement,
-  opts?: RendererOptions,
+  opts?: RendererOptions & { width?: number; height?: number },
 ): FrameRenderer {
   const caps = detectCapabilities();
   const resolved = requested === 'auto' ? autoSelect(caps) : requested;
@@ -833,6 +1242,9 @@ export function createFrameRenderer(
       break;
     case 'offscreen-worker':
       order.push('offscreen-worker', 'canvas2d');
+      break;
+    case 'webcodecs-worker':
+      order.push('webcodecs-worker', 'webgl', 'canvas2d');
       break;
     case 'canvas2d':
     default:
@@ -852,6 +1264,10 @@ export function createFrameRenderer(
         case 'offscreen-worker':
           if (caps.offscreenWorker)
             return new OffscreenWorkerRenderer(canvas);
+          break;
+        case 'webcodecs-worker':
+          if (caps.webcodecs)
+            return new WebCodecsWorkerRenderer(canvas, opts?.width ?? canvas.width, opts?.height ?? canvas.height);
           break;
         case 'canvas2d':
           return new Canvas2DRenderer(canvas);
