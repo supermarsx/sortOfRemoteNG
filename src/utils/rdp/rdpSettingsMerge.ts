@@ -14,6 +14,17 @@ export function mergeRdpSettings(
   const conn = connSettings;
   const global = globalDefaults;
 
+  // Build merged codec settings (used twice: base merge + conn override)
+  const mergedCodecs = {
+    ...base.performance?.codecs,
+    enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
+    remoteFx: global.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
+    remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
+    enableGfx: global.gfxEnabled ?? base.performance?.codecs?.enableGfx,
+    h264Decoder: global.h264Decoder ?? base.performance?.codecs?.h264Decoder,
+    nalPassthrough: global.nalPassthrough ?? base.performance?.codecs?.nalPassthrough,
+  };
+
   return {
     display: {
       ...base.display,
@@ -21,13 +32,49 @@ export function mergeRdpSettings(
       height: global.defaultHeight ?? base.display?.height,
       colorDepth: global.defaultColorDepth ?? base.display?.colorDepth,
       smartSizing: global.smartSizing ?? base.display?.smartSizing,
+      resizeToWindow: global.resizeToWindow ?? base.display?.resizeToWindow,
+      desktopScaleFactor: global.desktopScaleFactor ?? base.display?.desktopScaleFactor,
+      lossyCompression: global.lossyCompression ?? base.display?.lossyCompression,
       ...conn?.display,
     },
-    audio: { ...base.audio, ...conn?.audio },
-    input: { ...base.input, ...conn?.input },
-    deviceRedirection: { ...base.deviceRedirection, ...conn?.deviceRedirection },
+    audio: {
+      ...base.audio,
+      playbackMode: global.audioPlaybackMode ?? base.audio?.playbackMode,
+      recordingMode: global.audioRecordingMode ?? base.audio?.recordingMode,
+      audioQuality: global.audioQuality ?? base.audio?.audioQuality,
+      ...conn?.audio,
+    },
+    input: {
+      ...base.input,
+      mouseMode: global.mouseMode ?? base.input?.mouseMode,
+      enableUnicodeInput: global.enableUnicodeInput ?? base.input?.enableUnicodeInput,
+      autoDetectLayout: global.autoDetectKeyboardLayout ?? base.input?.autoDetectLayout,
+      ...conn?.input,
+    },
+    deviceRedirection: {
+      ...base.deviceRedirection,
+      clipboard: global.clipboardRedirection ?? base.deviceRedirection?.clipboard,
+      printers: global.printerRedirection ?? base.deviceRedirection?.printers,
+      ports: global.portRedirection ?? base.deviceRedirection?.ports,
+      smartCards: global.smartCardRedirection ?? base.deviceRedirection?.smartCards,
+      webAuthn: global.webAuthnRedirection ?? base.deviceRedirection?.webAuthn,
+      videoCapture: global.videoCaptureRedirection ?? base.deviceRedirection?.videoCapture,
+      usbDevices: global.usbRedirection ?? base.deviceRedirection?.usbDevices,
+      audioInput: global.audioInputRedirection ?? base.deviceRedirection?.audioInput,
+      ...conn?.deviceRedirection,
+    },
     performance: {
       ...base.performance,
+      connectionSpeed: global.connectionSpeed ?? base.performance?.connectionSpeed,
+      disableWallpaper: global.disableWallpaper ?? base.performance?.disableWallpaper,
+      disableFullWindowDrag: global.disableFullWindowDrag ?? base.performance?.disableFullWindowDrag,
+      disableMenuAnimations: global.disableMenuAnimations ?? base.performance?.disableMenuAnimations,
+      disableTheming: global.disableTheming ?? base.performance?.disableTheming,
+      disableCursorShadow: global.disableCursorShadow ?? base.performance?.disableCursorShadow,
+      disableCursorSettings: global.disableCursorSettings ?? base.performance?.disableCursorSettings,
+      enableFontSmoothing: global.enableFontSmoothing ?? base.performance?.enableFontSmoothing,
+      enableDesktopComposition: global.enableDesktopComposition ?? base.performance?.enableDesktopComposition,
+      persistentBitmapCaching: global.persistentBitmapCaching ?? base.performance?.persistentBitmapCaching,
       targetFps: global.targetFps ?? base.performance?.targetFps,
       frameBatching: global.frameBatching ?? base.performance?.frameBatching,
       frameBatchIntervalMs: global.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
@@ -35,32 +82,13 @@ export function mergeRdpSettings(
       frontendRenderer: (global.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType,
       frameScheduling: global.frameScheduling ?? base.performance?.frameScheduling,
       tripleBuffering: global.tripleBuffering ?? base.performance?.tripleBuffering,
-      codecs: {
-        ...base.performance?.codecs,
-        enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
-        remoteFx: global.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
-        remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
-        enableGfx: global.gfxEnabled ?? base.performance?.codecs?.enableGfx,
-        h264Decoder: global.h264Decoder ?? base.performance?.codecs?.h264Decoder,
-        nalPassthrough: global.nalPassthrough ?? base.performance?.codecs?.nalPassthrough,
-        ...conn?.performance?.codecs,
-      },
+      codecs: { ...mergedCodecs },
       ...conn?.performance,
       // Resolve 'inherit': replace with global default so downstream code never sees it
       ...(conn?.performance?.renderBackend === 'inherit' ? { renderBackend: global.renderBackend ?? base.performance?.renderBackend } : {}),
       ...(conn?.performance?.frontendRenderer === 'inherit' ? { frontendRenderer: (global.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType } : {}),
-      ...(conn?.performance ? {
-        codecs: {
-          ...base.performance?.codecs,
-          enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
-          remoteFx: global.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
-          remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
-          enableGfx: global.gfxEnabled ?? base.performance?.codecs?.enableGfx,
-          h264Decoder: global.h264Decoder ?? base.performance?.codecs?.h264Decoder,
-          nalPassthrough: global.nalPassthrough ?? base.performance?.codecs?.nalPassthrough,
-          ...conn?.performance?.codecs,
-        },
-      } : {}),
+      // Re-apply codec merge after conn?.performance spread to ensure global defaults underlay
+      ...(conn?.performance ? { codecs: { ...mergedCodecs, ...conn?.performance?.codecs } } : {}),
     },
     security: {
       ...base.security,

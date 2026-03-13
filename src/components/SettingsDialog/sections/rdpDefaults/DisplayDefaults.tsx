@@ -69,6 +69,20 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           Smart Sizing (scale remote desktop to fit window)
         </span>
       </label>
+
+      <label className="flex items-center space-x-3 cursor-pointer group">
+        <Checkbox checked={rdp.resizeToWindow ?? true} onChange={(v: boolean) => update({ resizeToWindow: v })} />
+        <span className="sor-toggle-label">
+          Resize to Window (dynamically match window dimensions)
+        </span>
+      </label>
+
+      <label className="flex items-center space-x-3 cursor-pointer group">
+        <Checkbox checked={rdp.lossyCompression ?? true} onChange={(v: boolean) => update({ lossyCompression: v })} />
+        <span className="sor-toggle-label">
+          Lossy Compression (reduce bandwidth)
+        </span>
+      </label>
     </div>
   );
 };

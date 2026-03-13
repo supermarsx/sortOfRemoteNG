@@ -5,6 +5,9 @@ import { selectClass, type RDPDefaultSettingsProps, type Rdp } from "./rdpDefaul
 import SessionManagement from "./rdpDefaults/SessionManagement";
 import SecurityDefaults from "./rdpDefaults/SecurityDefaults";
 import DisplayDefaults from "./rdpDefaults/DisplayDefaults";
+import AudioDefaults from "./rdpDefaults/AudioDefaults";
+import InputDefaults from "./rdpDefaults/InputDefaults";
+import DeviceRedirectionDefaults from "./rdpDefaults/DeviceRedirectionDefaults";
 import GatewayDefaults from "./rdpDefaults/GatewayDefaults";
 import HyperVDefaults from "./rdpDefaults/HyperVDefaults";
 import NegotiationDefaults from "./rdpDefaults/NegotiationDefaults";
@@ -32,6 +35,9 @@ export const RDPDefaultSettings: React.FC<RDPDefaultSettingsProps> = ({
       <SessionManagement settings={settings} updateSettings={updateSettings} />
       <SecurityDefaults rdp={rdp} update={update} />
       <DisplayDefaults rdp={rdp} update={update} />
+      <AudioDefaults rdp={rdp} update={update} />
+      <InputDefaults rdp={rdp} update={update} />
+      <DeviceRedirectionDefaults rdp={rdp} update={update} />
       <GatewayDefaults rdp={rdp} update={update} />
       <HyperVDefaults rdp={rdp} update={update} />
       <NegotiationDefaults rdp={rdp} update={update} />

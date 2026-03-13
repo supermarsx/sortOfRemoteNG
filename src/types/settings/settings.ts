@@ -569,6 +569,70 @@ export interface RdpGlobalDefaultsConfig {
   /** Socket send buffer size in bytes */
   tcpSendBufferSize: number;
 
+  // ─── Display extras ──────────────────────────────────────
+  /** Resize remote desktop to match the local window */
+  resizeToWindow: boolean;
+  /** Desktop scale factor (100-500%) */
+  desktopScaleFactor: number;
+  /** Enable lossy bitmap compression (reduces bandwidth) */
+  lossyCompression: boolean;
+
+  // ─── Audio defaults ──────────────────────────────────────
+  /** Default audio playback mode */
+  audioPlaybackMode: 'local' | 'remote' | 'disabled';
+  /** Default audio recording mode */
+  audioRecordingMode: 'enabled' | 'disabled';
+  /** Default audio quality */
+  audioQuality: 'dynamic' | 'medium' | 'high';
+
+  // ─── Input defaults ──────────────────────────────────────
+  /** Default mouse input mode */
+  mouseMode: 'relative' | 'absolute';
+  /** Enable Unicode keyboard input by default */
+  enableUnicodeInput: boolean;
+  /** Auto-detect keyboard layout on connect */
+  autoDetectKeyboardLayout: boolean;
+
+  // ─── Device redirection defaults ─────────────────────────
+  /** Enable clipboard redirection by default */
+  clipboardRedirection: boolean;
+  /** Enable printer redirection by default */
+  printerRedirection: boolean;
+  /** Enable serial/COM port redirection by default */
+  portRedirection: boolean;
+  /** Enable smart card redirection by default */
+  smartCardRedirection: boolean;
+  /** Enable WebAuthn/FIDO redirection by default */
+  webAuthnRedirection: boolean;
+  /** Enable video capture redirection by default */
+  videoCaptureRedirection: boolean;
+  /** Enable USB device redirection by default */
+  usbRedirection: boolean;
+  /** Enable audio input (microphone) redirection by default */
+  audioInputRedirection: boolean;
+
+  // ─── Performance / Visual Experience defaults ─────────────
+  /** Default connection speed preset */
+  connectionSpeed: 'modem' | 'broadband-low' | 'broadband-high' | 'wan' | 'lan' | 'auto-detect';
+  /** Disable desktop wallpaper */
+  disableWallpaper: boolean;
+  /** Disable full-window drag */
+  disableFullWindowDrag: boolean;
+  /** Disable menu/window animations */
+  disableMenuAnimations: boolean;
+  /** Disable visual themes */
+  disableTheming: boolean;
+  /** Disable cursor shadow */
+  disableCursorShadow: boolean;
+  /** Disable cursor blinking/settings */
+  disableCursorSettings: boolean;
+  /** Enable ClearType font smoothing */
+  enableFontSmoothing: boolean;
+  /** Enable desktop composition (Aero) */
+  enableDesktopComposition: boolean;
+  /** Enable persistent bitmap caching */
+  persistentBitmapCaching: boolean;
+
   // ─── Performance / Frame Delivery defaults ─────────────────
   /** Target frame rate limit (0 = unlimited) */
   targetFps: number;

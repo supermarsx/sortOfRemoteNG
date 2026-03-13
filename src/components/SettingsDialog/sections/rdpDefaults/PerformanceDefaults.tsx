@@ -2,7 +2,78 @@ import { selectClass } from "./selectClass";
 import type { SectionProps } from "./selectClass";
 import React from "react";
 import { Zap } from "lucide-react";
-import { Checkbox, Slider } from "../../../ui/forms";
+import { Checkbox, Select, Slider } from "../../../ui/forms";
+
+const SPEED_PRESETS: Record<
+  string,
+  {
+    disableWallpaper: boolean;
+    disableFullWindowDrag: boolean;
+    disableMenuAnimations: boolean;
+    disableTheming: boolean;
+    disableCursorShadow: boolean;
+    enableFontSmoothing: boolean;
+    enableDesktopComposition: boolean;
+    targetFps: number;
+    frameBatchIntervalMs: number;
+  }
+> = {
+  modem: {
+    disableWallpaper: true,
+    disableFullWindowDrag: true,
+    disableMenuAnimations: true,
+    disableTheming: true,
+    disableCursorShadow: true,
+    enableFontSmoothing: false,
+    enableDesktopComposition: false,
+    targetFps: 15,
+    frameBatchIntervalMs: 66,
+  },
+  "broadband-low": {
+    disableWallpaper: true,
+    disableFullWindowDrag: true,
+    disableMenuAnimations: true,
+    disableTheming: false,
+    disableCursorShadow: true,
+    enableFontSmoothing: true,
+    enableDesktopComposition: false,
+    targetFps: 24,
+    frameBatchIntervalMs: 42,
+  },
+  "broadband-high": {
+    disableWallpaper: true,
+    disableFullWindowDrag: true,
+    disableMenuAnimations: true,
+    disableTheming: false,
+    disableCursorShadow: true,
+    enableFontSmoothing: true,
+    enableDesktopComposition: false,
+    targetFps: 30,
+    frameBatchIntervalMs: 33,
+  },
+  wan: {
+    disableWallpaper: false,
+    disableFullWindowDrag: false,
+    disableMenuAnimations: false,
+    disableTheming: false,
+    disableCursorShadow: false,
+    enableFontSmoothing: true,
+    enableDesktopComposition: true,
+    targetFps: 60,
+    frameBatchIntervalMs: 16,
+  },
+  lan: {
+    disableWallpaper: false,
+    disableFullWindowDrag: false,
+    disableMenuAnimations: false,
+    disableTheming: false,
+    disableCursorShadow: false,
+    enableFontSmoothing: true,
+    enableDesktopComposition: true,
+    targetFps: 60,
+    frameBatchIntervalMs: 16,
+  },
+};
 
 const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
@@ -10,6 +81,62 @@ const PerformanceDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       <Zap className="w-4 h-4 text-warning" />
       Performance / Frame Delivery Defaults
     </h4>
+
+    {/* Connection Speed Preset */}
+    <div>
+      <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
+        Connection Speed Preset
+      </label>
+      <Select value={rdp.connectionSpeed ?? "broadband-high"} onChange={(v: string) => {
+          const preset = SPEED_PRESETS[v];
+          if (preset) {
+            update({ connectionSpeed: v as typeof rdp.connectionSpeed, ...preset });
+          } else {
+            update({ connectionSpeed: v as typeof rdp.connectionSpeed });
+          }
+        }} options={[
+          { value: "modem", label: "Modem (56 Kbps)" },
+          { value: "broadband-low", label: "Broadband (Low)" },
+          { value: "broadband-high", label: "Broadband (High)" },
+          { value: "wan", label: "WAN" },
+          { value: "lan", label: "LAN (10 Mbps+)" },
+          { value: "auto-detect", label: "Auto-detect" },
+        ]} className={selectClass} />
+      <p className="text-xs text-[var(--color-textMuted)] mt-1">
+        Selecting a preset adjusts visual experience and frame delivery settings below.
+      </p>
+    </div>
+
+    {/* Visual Experience */}
+    <div className="text-sm text-[var(--color-textMuted)] font-medium pt-2">
+      Visual Experience
+    </div>
+
+    {([
+      ["disableWallpaper", true, "Disable wallpaper"],
+      ["disableFullWindowDrag", true, "Disable full-window drag"],
+      ["disableMenuAnimations", true, "Disable menu animations"],
+      ["disableTheming", false, "Disable visual themes"],
+      ["disableCursorShadow", true, "Disable cursor shadow"],
+      ["disableCursorSettings", false, "Disable cursor settings"],
+      ["enableFontSmoothing", true, "Enable font smoothing (ClearType)"],
+      ["enableDesktopComposition", false, "Enable desktop composition (Aero)"],
+    ] as [string, boolean, string][]).map(([key, def, label]) => (
+      <label key={key} className="flex items-center space-x-3 cursor-pointer group">
+        <Checkbox checked={(rdp[key as keyof typeof rdp] as boolean | undefined) ?? def} onChange={(v: boolean) => update({ [key]: v } as any)} />
+        <span className="sor-toggle-label">{label}</span>
+      </label>
+    ))}
+
+    <label className="flex items-center space-x-3 cursor-pointer group">
+      <Checkbox checked={rdp.persistentBitmapCaching ?? false} onChange={(v: boolean) => update({ persistentBitmapCaching: v })} />
+      <span className="sor-toggle-label">Persistent bitmap caching</span>
+    </label>
+
+    {/* Frame Delivery */}
+    <div className="text-sm text-[var(--color-textMuted)] font-medium pt-2">
+      Frame Delivery
+    </div>
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
