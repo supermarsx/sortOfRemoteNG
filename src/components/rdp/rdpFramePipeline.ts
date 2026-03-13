@@ -23,6 +23,7 @@
 import { FrameBuffer } from './rdpCanvas';
 import {
   createFrameRenderer,
+  isNalPayload,
   type FrameRenderer,
   type FrontendRendererType,
   type RendererOptions,
@@ -185,7 +186,7 @@ export class RdpFramePipeline {
     canvas.width = width;
     canvas.height = height;
     this.fb = new FrameBuffer(width, height);
-    this.renderer = createFrameRenderer(rendererType, canvas, this.rendererOpts);
+    this.renderer = createFrameRenderer(rendererType, canvas, { ...this.rendererOpts, width, height });
     this.visCtx = null;
     console.log(`[RDP pipeline] attach complete: renderer=${this.renderer.name}, tripleBuffered=${this.renderer.tripleBuffered}, buffered=${this.preAttachBuffer.length} (${(this.preAttachBytes / 1024).toFixed(0)} KB)`);
 
@@ -285,36 +286,54 @@ export class RdpFramePipeline {
     }
 
     if (renderer) {
-      const needsOffscreen = this.magnifierActive;
-      const offCtx = needsOffscreen ? fb.offscreen.getContext('2d') : null;
+      // ── WebCodecs fast path: forward raw buffers directly to the worker ──
+      const isWebCodecs = renderer.type === 'webcodecs-worker';
+      const pushRaw = isWebCodecs
+        ? (renderer as unknown as { pushRawBuffer(data: ArrayBuffer): void }).pushRawBuffer.bind(renderer)
+        : null;
 
-      for (let i = 0; i < queue.length; i++) {
-        const data = queue[i];
-        const view = new DataView(data);
-        let offset = 0;
-        while (offset + 8 <= data.byteLength) {
-          const x = view.getUint16(offset, true);
-          const y = view.getUint16(offset + 2, true);
-          const w = view.getUint16(offset + 4, true);
-          const h = view.getUint16(offset + 6, true);
-          const pixelBytes = w * h * 4;
-          if (offset + 8 + pixelBytes > data.byteLength) break;
-          const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
-          renderer.paintRegion(x, y, w, h, rgba);
-          if (offCtx && w > 0 && h > 0) {
-            let cache = this.offImgCache;
-            if (!cache || cache.w !== w || cache.h !== h) {
-              cache = { img: new ImageData(w, h), w, h };
-              this.offImgCache = cache;
-            }
-            cache.img.data.set(rgba);
-            offCtx.putImageData(cache.img, x, y);
-            fb.hasPainted = true;
-          }
-          offset += 8 + pixelBytes;
+      if (isWebCodecs && pushRaw) {
+        for (let i = 0; i < queue.length; i++) {
+          pushRaw(queue[i]);
         }
+      } else {
+        // ── Standard RGBA dirty-rect rendering path ──
+        const needsOffscreen = this.magnifierActive;
+        const offCtx = needsOffscreen ? fb.offscreen.getContext('2d') : null;
+
+        for (let i = 0; i < queue.length; i++) {
+          const data = queue[i];
+
+          // Check if this is a NAL payload (shouldn't happen on non-WebCodecs
+          // renderers, but skip gracefully if the backend sends one)
+          if (isNalPayload(data)) continue;
+
+          const view = new DataView(data);
+          let offset = 0;
+          while (offset + 8 <= data.byteLength) {
+            const x = view.getUint16(offset, true);
+            const y = view.getUint16(offset + 2, true);
+            const w = view.getUint16(offset + 4, true);
+            const h = view.getUint16(offset + 6, true);
+            const pixelBytes = w * h * 4;
+            if (offset + 8 + pixelBytes > data.byteLength) break;
+            const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
+            renderer.paintRegion(x, y, w, h, rgba);
+            if (offCtx && w > 0 && h > 0) {
+              let cache = this.offImgCache;
+              if (!cache || cache.w !== w || cache.h !== h) {
+                cache = { img: new ImageData(w, h), w, h };
+                this.offImgCache = cache;
+              }
+              cache.img.data.set(rgba);
+              offCtx.putImageData(cache.img, x, y);
+              fb.hasPainted = true;
+            }
+            offset += 8 + pixelBytes;
+          }
+        }
+        renderer.present();
       }
-      renderer.present();
     } else {
       // Canvas 2D fallback (no pluggable renderer)
       if (!this.visCtx) this.visCtx = canvas.getContext('2d');
