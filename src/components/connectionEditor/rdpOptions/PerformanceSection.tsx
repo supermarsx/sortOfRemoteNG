@@ -89,8 +89,9 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
               | "canvas2d"
               | "webgl"
               | "webgpu"
-              | "offscreen-worker",
-          })} options={[{ value: "auto", label: "Auto — best available (WebGPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }]} className="CSS.select" />
+              | "offscreen-worker"
+              | "webcodecs-worker",
+          })} options={[{ value: "auto", label: "Auto — best available (WebGPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }, { value: "webcodecs-worker", label: "WebCodecs Worker — H.264 GPU decode (requires GFX)" }]} className="CSS.select" />
     </div>
 
     {/* Frame delivery */}
@@ -187,7 +188,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
             </span>
           </label>
 
-          {(rdp.performance?.codecs?.enableGfx ?? false) && (
+          {(rdp.performance?.codecs?.enableGfx ?? false) && (<>
             <div className="ml-8 flex items-center gap-2 mt-1">
               <span className="text-xs text-[var(--color-textSecondary)]">
                 H.264 Decoder:
@@ -202,7 +203,17 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
                     },
                   })} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-[var(--color-textSecondary)]" />
             </div>
-          )}
+
+            <label className={CSS.label + " mt-1 ml-8"}>
+              <Checkbox checked={rdp.performance?.codecs?.nalPassthrough ?? false} onChange={(v: boolean) => updateRdp("performance", {
+                    codecs: { ...rdp.performance?.codecs, nalPassthrough: v },
+                  })} className="CSS.checkbox" />
+              <span>NAL Passthrough (WebCodecs GPU Decode)</span>
+              <span className="text-xs text-[var(--color-textMuted)] ml-1">
+                — skip backend decode, send H.264 to frontend
+              </span>
+            </label>
+          </>)}
         </div>
       </>
     )}

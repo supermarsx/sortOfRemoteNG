@@ -43,8 +43,9 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
               | "canvas2d"
               | "webgl"
               | "webgpu"
-              | "offscreen-worker",
-          })} options={[{ value: "auto", label: "Auto — best available (WebGPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }]} className="selectClass" />
+              | "offscreen-worker"
+              | "webcodecs-worker",
+          })} options={[{ value: "auto", label: "Auto — best available (WebGPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }, { value: "webcodecs-worker", label: "WebCodecs Worker — H.264 GPU decode (requires GFX)" }]} className="selectClass" />
       <p className="text-xs text-[var(--color-textMuted)] mt-1">
         Controls how RGBA frames are painted onto the canvas. WebGL and WebGPU
         upload textures to the GPU for lower latency. OffscreenCanvas Worker

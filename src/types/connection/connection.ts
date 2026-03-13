@@ -368,8 +368,9 @@ export interface RdpPerformanceSettings {
    * - `webgl` — WebGL texSubImage2D (GPU texture upload)
    * - `webgpu` — WebGPU writeTexture (latest GPU API)
    * - `offscreen-worker` — OffscreenCanvas in a Worker (off-main-thread)
+   * - `webcodecs-worker` — WebCodecs H.264 GPU decode in a Worker
    */
-  frontendRenderer?: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker';
+  frontendRenderer?: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker';
 
   // ─── Frame Scheduling ──────────────────────────────────────────────
   /**
@@ -408,6 +409,11 @@ export interface RdpCodecSettings {
   enableGfx?: boolean;
   /** H.264 decoder preference: auto tries MF hardware first, then openh264 software */
   h264Decoder?: 'auto' | 'media-foundation' | 'openh264';
+  /**
+   * When true, send raw H.264 NAL units to the frontend for WebCodecs GPU decode
+   * instead of decoding on the backend. Requires enableGfx + webcodecs-worker renderer.
+   */
+  nalPassthrough?: boolean;
 }
 
 // ─── CredSSP Oracle Remediation Policy ─────────────────────────────

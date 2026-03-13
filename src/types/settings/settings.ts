@@ -611,8 +611,9 @@ export interface RdpGlobalDefaultsConfig {
    * - `webgl` — WebGL texSubImage2D (GPU texture upload)
    * - `webgpu` — WebGPU writeTexture (latest GPU API)
    * - `offscreen-worker` — OffscreenCanvas in a Worker
+   * - `webcodecs-worker` — WebCodecs H.264 GPU decode in a Worker
    */
-  frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker';
+  frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' | 'webcodecs-worker';
 
   /** Frame scheduling mode: vsync (~16ms), low-latency (~1ms), or adaptive */
   frameScheduling: 'vsync' | 'low-latency' | 'adaptive';
