@@ -15,6 +15,7 @@ import {
 import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useToastContext } from "../../contexts/ToastContext";
 import { getDefaultPort } from "../../utils/discovery/defaultPorts";
 import { generateId } from "../../utils/core/id";
 import {
@@ -119,6 +120,7 @@ export function useConnectionEditor(
 ) {
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
+  const { toast } = useToastContext();
 
   const [formData, setFormData] = useState<Partial<Connection>>(DEFAULT_FORM);
   const [expandedSections, setExpandedSections] = useState({
@@ -128,6 +130,7 @@ export function useConnectionEditor(
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "pending" | "saved">("idle");
   const autoSaveTimerRef = useRef<number | null>(null);
   const isInitializedRef = useRef(false);
+  const originalDataRef = useRef<string>("");
 
   // ── Derived ───────────────────────────────────────────────────
   const allTags = useMemo(
@@ -193,7 +196,7 @@ export function useConnectionEditor(
   // ── Effects ───────────────────────────────────────────────────
   useEffect(() => {
     if (connection) {
-      setFormData({
+      const resolved = {
         ...connection,
         privateKey: connection.privateKey || "",
         passphrase: connection.passphrase || "",
@@ -206,15 +209,16 @@ export function useConnectionEditor(
         basicAuthPassword: connection.basicAuthPassword || "",
         basicAuthRealm: connection.basicAuthRealm || "",
         httpHeaders: connection.httpHeaders || {},
-      });
+      };
+      setFormData(resolved);
+      originalDataRef.current = JSON.stringify(resolved);
       setTimeout(() => {
         isInitializedRef.current = true;
       }, 100);
     } else {
-      setFormData({
-        ...DEFAULT_FORM,
-        cloudProvider: undefined,
-      });
+      const initial = { ...DEFAULT_FORM, cloudProvider: undefined };
+      setFormData(initial);
+      originalDataRef.current = JSON.stringify(initial);
       isInitializedRef.current = false;
     }
     setAutoSaveStatus("idle");
@@ -234,6 +238,7 @@ export function useConnectionEditor(
       privateKey: formData.privateKey,
       passphrase: formData.passphrase,
       domain: formData.domain,
+      osType: formData.osType,
       description: formData.description || "",
       isGroup: formData.isGroup || false,
       tags: formData.tags || [],
@@ -287,16 +292,27 @@ export function useConnectionEditor(
     (e: React.FormEvent) => {
       e.preventDefault();
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      const connectionData = buildConnectionData();
+
+      // Detect whether anything actually changed
+      const hasChanges = JSON.stringify(formData) !== originalDataRef.current;
 
       if (connection) {
+        if (!hasChanges) {
+          toast.info("No changes to save");
+          onClose();
+          return;
+        }
+        const connectionData = buildConnectionData();
         dispatch({ type: "UPDATE_CONNECTION", payload: connectionData });
+        toast.success(`"${connectionData.name}" saved`);
       } else {
+        const connectionData = buildConnectionData();
         dispatch({ type: "ADD_CONNECTION", payload: connectionData });
+        toast.success(`"${connectionData.name}" created`);
       }
       onClose();
     },
-    [buildConnectionData, connection, dispatch, onClose],
+    [buildConnectionData, connection, dispatch, onClose, formData, toast],
   );
 
   const handleTagsChange = useCallback(

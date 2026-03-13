@@ -9,6 +9,7 @@ import {
   Server,
 } from "lucide-react";
 import type { OpksshMgr } from "./types";
+import { Select } from "../../ui/forms";
 
 interface AuditTabProps {
   mgr: OpksshMgr;
@@ -43,7 +44,7 @@ export const AuditTab: React.FC<AuditTabProps> = ({ mgr }) => {
           <Filter size={11} className="text-[var(--color-text-secondary)]" />
           <input
             type="text"
-            className="px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-xs w-40"
+            className="sor-form-input-xs w-40"
             placeholder={t("opkssh.filterPrincipal", "Filter by principal")}
             value={principal}
             onChange={(e) => setPrincipal(e.target.value)}
@@ -53,17 +54,15 @@ export const AuditTab: React.FC<AuditTabProps> = ({ mgr }) => {
           <label className="text-[var(--color-text-secondary)]">
             {t("opkssh.limit", "Limit")}:
           </label>
-          <select
-            className="px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] text-xs"
-            value={limit}
-            onChange={(e) => setLimit(Number(e.target.value))}
-          >
-            {[25, 50, 100, 250, 500].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={String(limit)}
+            onChange={(v) => setLimit(Number(v))}
+            variant="form-sm"
+            options={[25, 50, 100, 250, 500].map((n) => ({
+              value: String(n),
+              label: String(n),
+            }))}
+          />
         </div>
         <button
           className="flex items-center gap-1 text-xs px-3 py-1 rounded bg-success hover:bg-success/90 text-white disabled:opacity-50 transition-colors"

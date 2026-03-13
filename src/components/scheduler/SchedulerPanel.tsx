@@ -21,6 +21,7 @@ import {
   Zap,
   Settings,
 } from "lucide-react";
+import { Select } from "../ui/forms";
 import { useScheduler } from "../../hooks/scheduler/useScheduler";
 import type {
   ScheduledTask,
@@ -508,20 +509,19 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
               />
             </label>
             {/* Kind */}
-            <label className="block text-[11px] text-[var(--color-text-secondary)]">
+            <div className="block text-[11px] text-[var(--color-text-secondary)]">
               {t("scheduler.type", "Type")}
-              <select
+              <Select
                 value={form.kind}
-                onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as TaskKind }))}
-                className="mt-1 w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)]"
-              >
-                {AVAILABLE_KINDS.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={(v) => setForm((f) => ({ ...f, kind: v as TaskKind }))}
+                variant="form-sm"
+                className="mt-1 w-full"
+                options={AVAILABLE_KINDS.map((k) => ({
+                  value: k,
+                  label: k,
+                }))}
+              />
+            </div>
             {/* Cron */}
             <label className="block text-[11px] text-[var(--color-text-secondary)]">
               {t("scheduler.cron", "Cron Expression")}

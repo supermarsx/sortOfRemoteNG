@@ -9,6 +9,7 @@ import {
   X,
   List,
 } from "lucide-react";
+import { Select } from "../../ui/forms";
 import type { HistoryPanelProps } from "./types";
 import type { HistoryExportFormat } from "../../../types/ssh/sshCommandHistory";
 import HistorySearchBar from "./HistorySearchBar";
@@ -204,17 +205,16 @@ function SSHCommandHistoryPanel({
       {showExport && (
         <div className="px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <select
+            <Select
               value={exportFormat}
-              onChange={(e) =>
-                setExportFormat(e.target.value as HistoryExportFormat)
-              }
-              className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
-            >
-              <option value="json">JSON</option>
-              <option value="shell">Shell Script</option>
-              <option value="csv">CSV</option>
-            </select>
+              onChange={(v) => setExportFormat(v as HistoryExportFormat)}
+              variant="form-sm"
+              options={[
+                { value: "json", label: "JSON" },
+                { value: "shell", label: "Shell Script" },
+                { value: "csv", label: "CSV" },
+              ]}
+            />
             <label className="flex items-center gap-1 text-xs text-[var(--color-textSecondary)]">
               <input
                 type="checkbox"

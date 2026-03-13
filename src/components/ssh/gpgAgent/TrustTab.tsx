@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { RefreshCw, UserCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
 const TrustTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -68,24 +69,25 @@ const TrustTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               value={trustKeyId}
               onChange={(e) => setTrustKeyId(e.target.value)}
               placeholder="0x..."
-              className="w-full px-3 py-1.5 bg-muted border border-border rounded text-sm font-mono"
+              className="sor-form-input-sm w-full font-mono"
             />
           </div>
           <div>
             <label className="text-xs text-muted-foreground block mb-1">
               {t("gpgAgent.trust.level", "Trust level")}
             </label>
-            <select
+            <Select
               value={trustLevel}
-              onChange={(e) => setTrustLevel(e.target.value)}
-              className="px-3 py-1.5 bg-muted border border-border rounded text-sm"
-            >
-              <option value="unknown">Unknown</option>
-              <option value="never">Never</option>
-              <option value="marginal">Marginal</option>
-              <option value="full">Full</option>
-              <option value="ultimate">Ultimate</option>
-            </select>
+              onChange={(v) => setTrustLevel(v)}
+              variant="form-sm"
+              options={[
+                { value: "unknown", label: "Unknown" },
+                { value: "never", label: "Never" },
+                { value: "marginal", label: "Marginal" },
+                { value: "full", label: "Full" },
+                { value: "ultimate", label: "Ultimate" },
+              ]}
+            />
           </div>
           <button
             onClick={() => {

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Image, Layers, Sparkles } from "lucide-react";
+import { Select } from "../../../ui/forms";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import Toggle from "./Toggle";
 import {
@@ -75,17 +76,13 @@ function SelectField({
   return (
     <div className="space-y-1">
       <label className={labelClass}>{label}</label>
-      <select
+      <Select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={selectClass}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        onChange={(v) => onChange(v)}
+        variant="form-sm"
+        className="w-full"
+        options={options}
+      />
     </div>
   );
 }

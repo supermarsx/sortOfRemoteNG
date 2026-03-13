@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "../../ui/display";
-import { PasswordInput } from "../../ui/forms";
+import { PasswordInput, Select } from "../../ui/forms";
 import { DangerConfirm } from "./helpers";
 import type { Mgr } from "./types";
 
@@ -185,7 +185,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               setAddForm((f) => ({ ...f, issuer: e.target.value }))
             }
             placeholder={t("yubikey.oath.issuer", "Issuer")}
-            className="px-2 py-1.5 text-xs bg-background border border-border rounded"
+            className="sor-form-input-xs"
           />
           <input
             value={addForm.name}
@@ -193,7 +193,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               setAddForm((f) => ({ ...f, name: e.target.value }))
             }
             placeholder={t("yubikey.oath.name", "Account Name")}
-            className="px-2 py-1.5 text-xs bg-background border border-border rounded"
+            className="sor-form-input-xs"
           />
         </div>
         <div className="relative">
@@ -204,7 +204,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               setAddForm((f) => ({ ...f, secret: e.target.value }))
             }
             placeholder={t("yubikey.oath.secret", "Secret (Base32)")}
-            className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded pr-8"
+            className="sor-form-input-xs w-full pr-8"
           />
           <button
             onClick={() => setShowSecret(!showSecret)}
@@ -218,27 +218,29 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </button>
         </div>
         <div className="grid grid-cols-4 gap-2">
-          <select
+          <Select
             value={addForm.type}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, type: e.target.value }))
+            onChange={(v) =>
+              setAddForm((f) => ({ ...f, type: v }))
             }
-            className="px-2 py-1.5 text-xs bg-background border border-border rounded"
-          >
-            <option value="TOTP">TOTP</option>
-            <option value="HOTP">HOTP</option>
-          </select>
-          <select
+            variant="form-sm"
+            options={[
+              { value: "TOTP", label: "TOTP" },
+              { value: "HOTP", label: "HOTP" },
+            ]}
+          />
+          <Select
             value={addForm.algorithm}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, algorithm: e.target.value }))
+            onChange={(v) =>
+              setAddForm((f) => ({ ...f, algorithm: v }))
             }
-            className="px-2 py-1.5 text-xs bg-background border border-border rounded"
-          >
-            <option value="SHA1">SHA1</option>
-            <option value="SHA256">SHA256</option>
-            <option value="SHA512">SHA512</option>
-          </select>
+            variant="form-sm"
+            options={[
+              { value: "SHA1", label: "SHA1" },
+              { value: "SHA256", label: "SHA256" },
+              { value: "SHA512", label: "SHA512" },
+            ]}
+          />
           <input
             type="number"
             value={addForm.digits}
@@ -247,7 +249,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             }
             min={6}
             max={8}
-            className="px-2 py-1.5 text-xs bg-background border border-border rounded"
+            className="sor-form-input-xs"
           />
           <input
             type="number"
@@ -257,7 +259,7 @@ export const OathTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             }
             min={15}
             max={60}
-            className="px-2 py-1.5 text-xs bg-background border border-border rounded"
+            className="sor-form-input-xs"
           />
         </div>
         <div className="flex items-center gap-4">

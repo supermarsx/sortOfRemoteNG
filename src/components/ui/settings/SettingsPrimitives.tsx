@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cx } from '../lib/cx';
+import { Select } from '../forms/Select';
 
 interface BaseSettingProps {
   settingKey?: string;
@@ -129,17 +130,12 @@ export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
     <span className="sor-settings-row-label">{label}</span>
-    <select
+    <Select
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="sor-settings-select"
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={options}
+      variant="settings"
+    />
   </div>
 );
 

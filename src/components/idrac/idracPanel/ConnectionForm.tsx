@@ -8,6 +8,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import type { SubProps } from "./types";
+import { Select } from "../../ui/forms";
 
 const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -46,7 +47,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("idrac.host", "iDRAC Host / IP")}
             </label>
             <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
+              className="sor-form-input-xs w-full"
               value={mgr.host}
               onChange={(e) => mgr.setHost(e.target.value)}
               placeholder="192.168.1.100"
@@ -60,7 +61,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("idrac.port", "Port")}
             </label>
             <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
+              className="sor-form-input-xs w-full"
               type="number"
               value={mgr.port}
               onChange={(e) => mgr.setPort(Number(e.target.value))}
@@ -74,7 +75,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
               {t("idrac.username", "Username")}
             </label>
             <input
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
+              className="sor-form-input-xs w-full"
               value={mgr.username}
               onChange={(e) => mgr.setUsername(e.target.value)}
               placeholder="root"
@@ -89,7 +90,7 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             </label>
             <div className="relative">
               <input
-                className="w-full px-3 py-2 pr-10 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
+                className="sor-form-input-xs w-full pr-10"
                 type={showPassword ? "text" : "password"}
                 value={mgr.password}
                 onChange={(e) => mgr.setPassword(e.target.value)}
@@ -114,17 +115,19 @@ const ConnectionForm: React.FC<SubProps> = ({ mgr }) => {
             <label className="block text-[10px] font-medium text-[var(--color-text-secondary)] mb-1">
               {t("idrac.protocol", "Protocol (auto-detect if blank)")}
             </label>
-            <select
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-warning/50"
+            <Select
               value={mgr.forceProtocol}
-              onChange={(e) => mgr.setForceProtocol(e.target.value)}
+              onChange={(v) => mgr.setForceProtocol(v)}
               disabled={isConnecting}
-            >
-              <option value="">Auto-detect</option>
-              <option value="redfish">Redfish (iDRAC 7/8/9)</option>
-              <option value="wsman">WS-Management (iDRAC 6/7 Legacy)</option>
-              <option value="ipmi">IPMI (Very Old BMC)</option>
-            </select>
+              variant="form-sm"
+              className="w-full"
+              options={[
+                { value: '', label: 'Auto-detect' },
+                { value: 'redfish', label: 'Redfish (iDRAC 7/8/9)' },
+                { value: 'wsman', label: 'WS-Management (iDRAC 6/7 Legacy)' },
+                { value: 'ipmi', label: 'IPMI (Very Old BMC)' },
+              ]}
+            />
           </div>
 
           {/* Insecure */}

@@ -71,7 +71,7 @@ const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionS
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mode === 'setup' ? 'Create Password' : 'Enter Password'}</label>
       <div className="relative">
-        <input type={mgr.showPassword ? 'text' : 'password'} required value={mgr.password} onChange={(e) => mgr.setPassword(e.target.value)} disabled={noCollectionSelected} className="w-full px-3 py-2 pr-10 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50" placeholder="Enter password" minLength={4} autoFocus />
+        <input type={mgr.showPassword ? 'text' : 'password'} required value={mgr.password} onChange={(e) => mgr.setPassword(e.target.value)} disabled={noCollectionSelected} className="sor-form-input w-full pr-10 disabled:opacity-50" placeholder="Enter password" minLength={4} autoFocus />
         <button type="button" onClick={() => mgr.setShowPassword(!mgr.showPassword)} className="sor-search-clear">
           {mgr.showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
@@ -81,7 +81,7 @@ const PasswordForm: React.FC<{ mgr: Mgr; mode: 'setup' | 'unlock'; noCollectionS
       <div>
         <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Confirm Password</label>
         <div className="relative">
-          <input type={mgr.showConfirmPassword ? 'text' : 'password'} required value={mgr.confirmPassword} onChange={(e) => mgr.setConfirmPassword(e.target.value)} disabled={noCollectionSelected} className="w-full px-3 py-2 pr-10 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50" placeholder="Confirm password" minLength={4} />
+          <input type={mgr.showConfirmPassword ? 'text' : 'password'} required value={mgr.confirmPassword} onChange={(e) => mgr.setConfirmPassword(e.target.value)} disabled={noCollectionSelected} className="sor-form-input w-full pr-10 disabled:opacity-50" placeholder="Confirm password" minLength={4} />
           <button type="button" onClick={() => mgr.setShowConfirmPassword(!mgr.showConfirmPassword)} className="sor-search-clear">
             {mgr.showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>

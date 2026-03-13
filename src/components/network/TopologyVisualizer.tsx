@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../ui/forms";
 import { useTopology } from "../../hooks/network/useTopology";
 import type {
   TopologyNode,
@@ -443,16 +444,15 @@ const TopologyVisualizer: React.FC<TopologyVisualizerProps> = ({
         <label className="sor-topology-layout-label text-xs font-medium mr-1">
           {t("topology.layout", "Layout")}:
         </label>
-        <select
-          className="sor-topology-layout-select text-xs rounded border border-[var(--color-border)] bg-[var(--color-input)] px-2 py-1"
-          onChange={(e) => handleLayoutChange(e.target.value as LayoutAlgorithm)}
-        >
-          {LAYOUT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {t(o.labelKey, o.value.replace("_", " "))}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={LAYOUT_OPTIONS[0].value}
+          onChange={(v) => handleLayoutChange(v as LayoutAlgorithm)}
+          variant="form-sm"
+          options={LAYOUT_OPTIONS.map((o) => ({
+            value: o.value,
+            label: t(o.labelKey, o.value.replace("_", " ")),
+          }))}
+        />
 
         <span className="sor-topology-sep mx-1 text-[var(--color-border)]">|</span>
 

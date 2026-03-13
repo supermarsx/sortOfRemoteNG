@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { McpTabProps } from "./types";
 import type { McpLogLevel } from "../../../types/mcp/mcpServer";
+import { Select } from "../../ui/forms";
 
 const levelIcons: Record<string, React.ElementType> = {
   debug: Bug,
@@ -60,22 +61,24 @@ export const LogsTab: React.FC<McpTabProps> = ({ mgr }) => {
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1 flex-1">
           <Filter size={12} className="text-[var(--color-text-secondary)]" />
-          <select
+          <Select
             value={filterLevel}
-            onChange={(e) => setFilterLevel(e.target.value as McpLogLevel | "")}
-            className="bg-[var(--color-surface-secondary)] border border-[var(--color-border)] rounded px-2 py-1 text-[10px] text-[var(--color-text-primary)] outline-none"
-          >
-            <option value="">{t("mcpServer.logs.allLevels", "All levels")}</option>
-            {["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"].map((l) => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
+            onChange={(v) => setFilterLevel(v as McpLogLevel | "")}
+            variant="form-sm"
+            options={[
+              { value: "", label: t("mcpServer.logs.allLevels", "All levels") },
+              ...["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"].map((l) => ({
+                value: l,
+                label: l,
+              })),
+            ]}
+          />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t("mcpServer.logs.search", "Search logs...")}
-            className="flex-1 bg-[var(--color-surface-secondary)] border border-[var(--color-border)] rounded px-2 py-1 text-[10px] text-[var(--color-text-primary)] outline-none"
+            className="sor-form-input-xs flex-1"
           />
         </div>
         <button

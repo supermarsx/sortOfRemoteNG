@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { OpksshMgr } from "./types";
 import { EXPIRATION_POLICIES, type ExpirationPolicy } from "../../../types/security/opkssh";
+import { Select } from "../../ui/forms";
 
 interface ServerConfigTabProps {
   mgr: OpksshMgr;
@@ -192,29 +193,27 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
           <div className="flex items-center gap-2 text-xs">
             <input
               type="text"
-              className="flex-1 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+              className="sor-form-input-xs flex-1"
               placeholder={t("opkssh.issuerUrl", "Issuer URL")}
               value={newProvIssuer}
               onChange={(e) => setNewProvIssuer(e.target.value)}
             />
             <input
               type="text"
-              className="flex-1 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+              className="sor-form-input-xs flex-1"
               placeholder={t("opkssh.clientId", "Client ID")}
               value={newProvClientId}
               onChange={(e) => setNewProvClientId(e.target.value)}
             />
-            <select
-              className="px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+            <Select
               value={newProvExpiry}
-              onChange={(e) => setNewProvExpiry(e.target.value as ExpirationPolicy)}
-            >
-              {EXPIRATION_POLICIES.map((ep) => (
-                <option key={ep.value} value={ep.value}>
-                  {ep.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setNewProvExpiry(v as ExpirationPolicy)}
+              variant="form-sm"
+              options={EXPIRATION_POLICIES.map((ep) => ({
+                value: ep.value,
+                label: ep.label,
+              }))}
+            />
             <button
               className="flex items-center gap-1 px-2 py-1 rounded bg-accent hover:bg-accent/90 text-white transition-colors disabled:opacity-50"
               onClick={handleAddProvider}
@@ -274,21 +273,21 @@ export const ServerConfigTab: React.FC<ServerConfigTabProps> = ({ mgr }) => {
           <div className="flex items-center gap-2 text-xs">
             <input
               type="text"
-              className="flex-1 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+              className="sor-form-input-xs flex-1"
               placeholder={t("opkssh.principal", "Principal (e.g. root)")}
               value={newPrincipal}
               onChange={(e) => setNewPrincipal(e.target.value)}
             />
             <input
               type="text"
-              className="flex-1 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+              className="sor-form-input-xs flex-1"
               placeholder={t("opkssh.email", "Identity (email)")}
               value={newIdentity}
               onChange={(e) => setNewIdentity(e.target.value)}
             />
             <input
               type="text"
-              className="flex-1 px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+              className="sor-form-input-xs flex-1"
               placeholder={t("opkssh.issuerUrl", "Issuer URL")}
               value={newIssuer}
               onChange={(e) => setNewIssuer(e.target.value)}

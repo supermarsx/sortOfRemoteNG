@@ -7,6 +7,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
 const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -44,7 +45,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 type="text"
                 value={(c as any)[field.key] ?? ""}
                 onChange={(e) => update({ [field.key]: e.target.value })}
-                className="w-full px-2 py-1 bg-muted border border-border rounded text-sm font-mono"
+                className="sor-form-input-xs w-full font-mono"
               />
             </div>
           ))}
@@ -62,17 +63,19 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className="text-xs text-muted-foreground block mb-1">
               {t("gpgAgent.config.pinentryMode", "Pinentry mode")}
             </label>
-            <select
+            <Select
               value={c.pinentry_mode ?? "Default"}
-              onChange={(e) => update({ pinentry_mode: e.target.value as any })}
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm"
-            >
-              <option value="Default">Default</option>
-              <option value="Ask">Ask</option>
-              <option value="Cancel">Cancel</option>
-              <option value="Error">Error</option>
-              <option value="Loopback">Loopback</option>
-            </select>
+              onChange={(v) => update({ pinentry_mode: v as any })}
+              variant="form-sm"
+              className="w-full"
+              options={[
+                { value: 'Default', label: 'Default' },
+                { value: 'Ask', label: 'Ask' },
+                { value: 'Cancel', label: 'Cancel' },
+                { value: 'Error', label: 'Error' },
+                { value: 'Loopback', label: 'Loopback' },
+              ]}
+            />
           </div>
           <div>
             <label className="text-xs text-muted-foreground block mb-1">
@@ -82,7 +85,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={c.default_cache_ttl ?? 600}
               onChange={(e) => update({ default_cache_ttl: parseInt(e.target.value) || 0 })}
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm"
+              className="sor-form-input-xs w-full"
             />
           </div>
           <div>
@@ -93,7 +96,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={c.max_cache_ttl ?? 7200}
               onChange={(e) => update({ max_cache_ttl: parseInt(e.target.value) || 0 })}
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm"
+              className="sor-form-input-xs w-full"
             />
           </div>
           <label className="flex items-center gap-2 self-end">
@@ -132,7 +135,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="text"
               value={c.extra_socket ?? ""}
               onChange={(e) => update({ extra_socket: e.target.value })}
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm font-mono"
+              className="sor-form-input-xs w-full font-mono"
             />
           </div>
         </div>
@@ -153,7 +156,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="text"
               value={c.default_key ?? ""}
               onChange={(e) => update({ default_key: e.target.value })}
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm font-mono"
+              className="sor-form-input-xs w-full font-mono"
             />
           </div>
           <div>
@@ -164,7 +167,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="text"
               value={(c.auto_key_locate ?? []).join(", ")}
               onChange={(e) => update({ auto_key_locate: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm font-mono"
+              className="sor-form-input-xs w-full font-mono"
             />
           </div>
           <div>
@@ -176,7 +179,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               value={c.keyserver ?? ""}
               onChange={(e) => update({ keyserver: e.target.value })}
               placeholder="hkps://keys.openpgp.org"
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm font-mono"
+              className="sor-form-input-xs w-full font-mono"
             />
           </div>
           <div>
@@ -187,7 +190,7 @@ const ConfigTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="text"
               value={(c.keyserver_options ?? []).join(", ")}
               onChange={(e) => update({ keyserver_options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-              className="w-full px-2 py-1 bg-muted border border-border rounded text-sm font-mono"
+              className="sor-form-input-xs w-full font-mono"
             />
           </div>
         </div>

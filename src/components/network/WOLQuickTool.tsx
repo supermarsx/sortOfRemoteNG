@@ -88,7 +88,7 @@ function QuickWakeSection({ mgr }: { mgr: WOLQuickToolMgr }) {
             value={mgr.macAddress}
             onChange={mgr.handleMacChange}
             placeholder="00:11:22:33:44:55"
-            className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-success focus:border-transparent transition-all font-mono text-lg"
+            className="sor-form-input w-full font-mono text-lg"
           />
           {mgr.currentVendor && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2 py-1 bg-[var(--color-surfaceHover)] rounded text-xs text-[var(--color-textSecondary)]">
@@ -128,14 +128,14 @@ function AdvancedOptions({ mgr }: { mgr: WOLQuickToolMgr }) {
             value={mgr.broadcastAddress}
             onChange={(e) => mgr.setBroadcastAddress(e.target.value)}
             placeholder="255.255.255.255"
-            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-success transition-all font-mono"
+            className="sor-form-input-sm w-full font-mono"
           />
         </div>
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
             {t('wake.port', 'UDP Port')}
           </label>
-          <NumberInput value={mgr.port} onChange={(v: number) => mgr.setPort(v)} className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-success transition-all" />
+          <NumberInput value={mgr.port} onChange={(v: number) => mgr.setPort(v)} className="sor-form-input-sm w-full" />
         </div>
         <div className="col-span-2">
           <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)] cursor-pointer">
@@ -148,7 +148,7 @@ function AdvancedOptions({ mgr }: { mgr: WOLQuickToolMgr }) {
               value={mgr.password}
               onChange={mgr.handlePasswordChange}
               placeholder="00:00:00:00:00:00"
-              className="mt-2 w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] font-mono focus:outline-none focus:ring-2 focus:ring-success transition-all animate-fade-in"
+              className="sor-form-input-sm w-full mt-2 font-mono animate-fade-in"
             />
           )}
         </div>

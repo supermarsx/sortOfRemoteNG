@@ -1,6 +1,7 @@
 import React from "react";
 import { Search, Filter, X, ArrowUpDown, Star } from "lucide-react";
 import { SSHCommandCategories } from "../../../types/ssh/sshCommandHistory";
+import { Select } from "../../ui/forms";
 import type { HistoryMgr, TFunc } from "./types";
 
 function HistorySearchBar({
@@ -31,7 +32,7 @@ function HistorySearchBar({
               "sshHistory.searchPlaceholder",
               "Search commands, tags, notes...",
             )}
-            className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-success/50 font-mono"
+            className="sor-form-input-sm w-full pl-8 pr-8 font-mono"
           />
           {mgr.filter.searchQuery && (
             <button
@@ -87,84 +88,52 @@ function HistorySearchBar({
       {showAdvanced && (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-[var(--color-border)]/50 bg-[var(--color-surfaceHover)]/30">
           {/* Category filter */}
-          <select
+          <Select
             value={mgr.filter.category}
-            onChange={(e) =>
-              mgr.updateFilter({
-                category: e.target.value as typeof mgr.filter.category,
-              })
-            }
-            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
-          >
-            <option value="all">
-              {t("sshHistory.allCategories", "All Categories")}
-            </option>
-            {SSHCommandCategories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat.charAt(0).toUpperCase() + cat.slice(1)}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => mgr.updateFilter({ category: v as typeof mgr.filter.category })}
+            variant="form-sm"
+            options={[
+              { value: 'all', label: t("sshHistory.allCategories", "All Categories") },
+              ...SSHCommandCategories.map((cat) => ({ value: cat, label: cat.charAt(0).toUpperCase() + cat.slice(1) })),
+            ]}
+          />
 
           {/* Session filter */}
-          <select
+          <Select
             value={mgr.filter.sessionId}
-            onChange={(e) =>
-              mgr.updateFilter({ sessionId: e.target.value })
-            }
-            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
-          >
-            <option value="all">
-              {t("sshHistory.allSessions", "All Sessions")}
-            </option>
-            {mgr.availableSessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => mgr.updateFilter({ sessionId: v })}
+            variant="form-sm"
+            options={[
+              { value: 'all', label: t("sshHistory.allSessions", "All Sessions") },
+              ...mgr.availableSessions.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
 
           {/* Status filter */}
-          <select
+          <Select
             value={mgr.filter.statusFilter}
-            onChange={(e) =>
-              mgr.updateFilter({
-                statusFilter: e.target.value as typeof mgr.filter.statusFilter,
-              })
-            }
-            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
-          >
-            <option value="all">
-              {t("sshHistory.allStatuses", "All Statuses")}
-            </option>
-            <option value="success">{t("sshHistory.success", "Success")}</option>
-            <option value="error">{t("sshHistory.error", "Error")}</option>
-            <option value="pending">{t("sshHistory.pending", "Pending")}</option>
-          </select>
+            onChange={(v) => mgr.updateFilter({ statusFilter: v as typeof mgr.filter.statusFilter })}
+            variant="form-sm"
+            options={[
+              { value: 'all', label: t("sshHistory.allStatuses", "All Statuses") },
+              { value: 'success', label: t("sshHistory.success", "Success") },
+              { value: 'error', label: t("sshHistory.error", "Error") },
+              { value: 'pending', label: t("sshHistory.pending", "Pending") },
+            ]}
+          />
 
           {/* Sort by */}
-          <select
+          <Select
             value={mgr.filter.sortBy}
-            onChange={(e) =>
-              mgr.updateFilter({
-                sortBy: e.target.value as typeof mgr.filter.sortBy,
-              })
-            }
-            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
-          >
-            <option value="lastExecutedAt">
-              {t("sshHistory.sortByRecent", "Most Recent")}
-            </option>
-            <option value="executionCount">
-              {t("sshHistory.sortByFrequency", "Most Frequent")}
-            </option>
-            <option value="command">
-              {t("sshHistory.sortByCommand", "Alphabetical")}
-            </option>
-            <option value="createdAt">
-              {t("sshHistory.sortByCreated", "Date Created")}
-            </option>
-          </select>
+            onChange={(v) => mgr.updateFilter({ sortBy: v as typeof mgr.filter.sortBy })}
+            variant="form-sm"
+            options={[
+              { value: 'lastExecutedAt', label: t("sshHistory.sortByRecent", "Most Recent") },
+              { value: 'executionCount', label: t("sshHistory.sortByFrequency", "Most Frequent") },
+              { value: 'command', label: t("sshHistory.sortByCommand", "Alphabetical") },
+              { value: 'createdAt', label: t("sshHistory.sortByCreated", "Date Created") },
+            ]}
+          />
 
           {/* Reset button */}
           <button

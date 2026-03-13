@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { Select } from "../ui/forms";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -429,7 +430,7 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
         </h3>
 
         <label className="sor-tpl-label">{t("templates.name", "Name")}</label>
-        <input className="sor-tpl-input" value={formName} onChange={(e) => setFormName(e.target.value)} />
+        <input className="sor-form-input-sm" value={formName} onChange={(e) => setFormName(e.target.value)} />
 
         <label className="sor-tpl-label">{t("templates.description", "Description")}</label>
         <textarea className="sor-tpl-textarea" rows={2} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} />
@@ -437,33 +438,39 @@ export default function ConnectionTemplates({ onCreateFromTemplate, onClose }: C
         <div className="sor-tpl-row">
           <div className="sor-tpl-field">
             <label className="sor-tpl-label">{t("templates.protocol", "Protocol")}</label>
-            <select className="sor-tpl-select" value={formProtocol} onChange={(e) => setFormProtocol(e.target.value)}>
-              {PROTOCOL_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <Select
+              value={formProtocol}
+              onChange={(v) => setFormProtocol(v)}
+              variant="form-sm"
+              className="w-full"
+              options={PROTOCOL_OPTIONS.map((p) => ({ value: p, label: p }))}
+            />
           </div>
           <div className="sor-tpl-field">
             <label className="sor-tpl-label">{t("templates.port", "Port")}</label>
-            <input className="sor-tpl-input" type="number" value={formPort} onChange={(e) => setFormPort(Number(e.target.value))} />
+            <input className="sor-form-input-sm" type="number" value={formPort} onChange={(e) => setFormPort(Number(e.target.value))} />
           </div>
           <div className="sor-tpl-field">
             <label className="sor-tpl-label">{t("templates.category", "Category")}</label>
-            <select className="sor-tpl-select" value={formCategory} onChange={(e) => setFormCategory(e.target.value)}>
-              {CATEGORY_FILTERS.filter((c) => c.value !== "all").map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
+            <Select
+              value={formCategory}
+              onChange={(v) => setFormCategory(v)}
+              variant="form-sm"
+              className="w-full"
+              options={CATEGORY_FILTERS.filter((c) => c.value !== "all").map((c) => ({ value: c.value, label: c.label }))}
+            />
           </div>
         </div>
 
         <label className="sor-tpl-label">{t("templates.tags", "Tags (comma-separated)")}</label>
-        <input className="sor-tpl-input" value={formTags} onChange={(e) => setFormTags(e.target.value)} placeholder="tag1, tag2" />
+        <input className="sor-form-input-sm" value={formTags} onChange={(e) => setFormTags(e.target.value)} placeholder="tag1, tag2" />
 
         <label className="sor-tpl-label">{t("templates.settings", "Settings")}</label>
         <div className="sor-tpl-settings-editor">
           {formSettings.map((row, idx) => (
             <div key={idx} className="sor-tpl-setting-row">
-              <input className="sor-tpl-input" placeholder="key" value={row.key} onChange={(e) => updateSettingRow(idx, "key", e.target.value)} />
-              <input className="sor-tpl-input" placeholder="value" value={row.value} onChange={(e) => updateSettingRow(idx, "value", e.target.value)} />
+              <input className="sor-form-input-sm" placeholder="key" value={row.key} onChange={(e) => updateSettingRow(idx, "key", e.target.value)} />
+              <input className="sor-form-input-sm" placeholder="value" value={row.value} onChange={(e) => updateSettingRow(idx, "value", e.target.value)} />
               <button className="sor-tpl-btn-icon" onClick={() => removeSettingRow(idx)} title="Remove">✕</button>
             </div>
           ))}

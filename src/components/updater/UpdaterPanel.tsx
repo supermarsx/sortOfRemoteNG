@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../ui/forms";
 import { useUpdater } from "../../hooks/updater/useUpdater";
 import type {
   UpdateChannel,
@@ -453,15 +454,15 @@ export const UpdaterPanel: React.FC = () => {
           {/* Check interval */}
           <div className="sor-updater-select-row">
             <span className="sor-updater-select-label">{t("updater.checkInterval", "Check interval")}</span>
-            <select
-              className="sor-updater-select"
-              value={config.checkIntervalMs}
-              onChange={(e) => updateConfig({ checkIntervalMs: Number(e.target.value) })}
-            >
-              {CHECK_INTERVALS.map((ci) => (
-                <option key={ci.ms} value={ci.ms}>{ci.label}</option>
-              ))}
-            </select>
+            <Select
+              value={String(config.checkIntervalMs)}
+              onChange={(v) => updateConfig({ checkIntervalMs: Number(v) })}
+              variant="form-sm"
+              options={CHECK_INTERVALS.map((ci) => ({
+                value: String(ci.ms),
+                label: ci.label,
+              }))}
+            />
           </div>
 
           {/* Keep rollback count */}

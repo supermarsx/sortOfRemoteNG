@@ -3,12 +3,16 @@ import React from "react";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
 import type { Connection } from "../../../types/connection/connection";
-import { Activity, Copy, Edit, ExternalLink, FileDown, Play, Power, SlidersHorizontal, Star, Trash2, UserX } from "lucide-react";
+import {
+  Activity, ChevronRight, ClipboardList, Cog, Copy, Cpu, Edit,
+  ExternalLink, FileDown, FileText, HardDrive, Monitor, Play,
+  Power, SlidersHorizontal, Star, Terminal, Trash2, UserX,
+} from "lucide-react";
 function TreeItemMenu({
   connection, activeSession, showMenu, menuPosition, triggerRef, onClose,
   onConnect, onDisconnect, onEdit, onDelete, onCopyHostname, onRename,
   onExport, onConnectWithOptions, onConnectWithoutCredentials,
-  onExecuteScripts, onDiagnostics, onDetachSession, onDuplicate,
+  onExecuteScripts, onDiagnostics, onDetachSession, onDuplicate, onWindowsTool,
 }: {
   connection: Connection;
   activeSession: { id: string; status: string } | undefined;
@@ -29,6 +33,7 @@ function TreeItemMenu({
   onDiagnostics?: (c: Connection) => void;
   onDetachSession?: (sessionId: string) => void;
   onDuplicate: (c: Connection) => void;
+  onWindowsTool?: (c: Connection, tool: string) => void;
 }) {
   const { dispatch } = useConnections();
   const act = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); onClose(); };
@@ -67,6 +72,47 @@ function TreeItemMenu({
               <ExternalLink size={14} className="mr-2" />Detach window
             </button>
           )}
+        </>
+      )}
+      {/* Windows Management submenu */}
+      {!connection.isGroup && (connection.osType === 'windows' || (!connection.osType && connection.protocol === 'rdp')) && (
+        <>
+          <div className="sor-menu-divider" />
+          <div className="sor-menu-submenu">
+            <button className="sor-menu-submenu-trigger">
+              <Monitor size={14} className="mr-2" />
+              Windows Management
+              <ChevronRight size={12} className="ml-auto opacity-50" />
+            </button>
+            <div className="sor-menu-submenu-panel">
+              <div className="sor-menu-submenu-label">Remote Tools</div>
+              <button onClick={act(() => onWindowsTool?.(connection, 'services'))} className="sor-menu-item">
+                <Cog size={14} className="mr-2" />Services
+              </button>
+              <button onClick={act(() => onWindowsTool?.(connection, 'processes'))} className="sor-menu-item">
+                <Cpu size={14} className="mr-2" />Processes
+              </button>
+              <button onClick={act(() => onWindowsTool?.(connection, 'eventlog'))} className="sor-menu-item">
+                <FileText size={14} className="mr-2" />Event Viewer
+              </button>
+              <button onClick={act(() => onWindowsTool?.(connection, 'registry'))} className="sor-menu-item">
+                <HardDrive size={14} className="mr-2" />Registry
+              </button>
+              <button onClick={act(() => onWindowsTool?.(connection, 'tasks'))} className="sor-menu-item">
+                <ClipboardList size={14} className="mr-2" />Scheduled Tasks
+              </button>
+              <button onClick={act(() => onWindowsTool?.(connection, 'perfmon'))} className="sor-menu-item">
+                <Activity size={14} className="mr-2" />Performance
+              </button>
+              <div className="sor-menu-divider" />
+              <button onClick={act(() => onWindowsTool?.(connection, 'powershell'))} className="sor-menu-item">
+                <Terminal size={14} className="mr-2" />PowerShell
+              </button>
+              <button onClick={act(() => onWindowsTool?.(connection, 'sysinfo'))} className="sor-menu-item">
+                <Monitor size={14} className="mr-2" />System Info
+              </button>
+            </div>
+          </div>
         </>
       )}
       {!connection.isGroup && <div className="sor-menu-divider" />}

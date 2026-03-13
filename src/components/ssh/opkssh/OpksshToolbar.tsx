@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { OpksshMgr } from "./types";
 import type { OpksshTab } from "../../../types/security/opkssh";
+import { Select } from "../../ui/forms";
 
 interface OpksshToolbarProps {
   mgr: OpksshMgr;
@@ -35,23 +36,25 @@ export const OpksshToolbar: React.FC<OpksshToolbarProps> = ({ mgr }) => {
     <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-2 flex flex-wrap items-center gap-2">
       {/* Session selector (for server-side tabs) */}
       {(mgr.activeTab === "serverConfig" || mgr.activeTab === "audit") && (
-        <select
-          className="text-xs px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] min-w-[180px]"
+        <Select
           value={mgr.selectedSessionId ?? ""}
-          onChange={(e) => mgr.setSelectedSessionId(e.target.value || null)}
+          onChange={(v) => mgr.setSelectedSessionId(v || null)}
+          variant="form-sm"
+          className="min-w-[180px]"
           aria-label={t("opkssh.selectSession", "Select SSH session")}
-        >
-          <option value="">
-            {mgr.sshSessions.length === 0
-              ? t("opkssh.noSessions", "No SSH sessions")
-              : t("opkssh.selectSession", "Select SSH session")}
-          </option>
-          {mgr.sshSessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name || s.hostname || s.id}
-            </option>
-          ))}
-        </select>
+          options={[
+            {
+              value: "",
+              label: mgr.sshSessions.length === 0
+                ? t("opkssh.noSessions", "No SSH sessions")
+                : t("opkssh.selectSession", "Select SSH session"),
+            },
+            ...mgr.sshSessions.map((s) => ({
+              value: s.id,
+              label: s.name || s.hostname || s.id,
+            })),
+          ]}
+        />
       )}
 
       <div className="flex-1" />

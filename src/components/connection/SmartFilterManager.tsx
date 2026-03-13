@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../ui/forms";
 import { useFilters } from "../../hooks/connection/useFilters";
 import type {
   FilterCondition,
@@ -62,41 +63,29 @@ const ConditionRow: React.FC<ConditionRowProps> = ({
   t,
 }) => (
   <div className="sor-filter-condition-row">
-    <select
-      className="sor-filter-select"
+    <Select
       value={condition.field}
-      onChange={(e) =>
-        onChange(index, { ...condition, field: e.target.value as FilterField })
+      onChange={(v) =>
+        onChange(index, { ...condition, field: v as FilterField })
       }
-      aria-label={t("smartFilter.field")}
-    >
-      {FIELD_OPTIONS.map((f) => (
-        <option key={f} value={f}>
-          {f}
-        </option>
-      ))}
-    </select>
+      variant="form-sm"
+      options={FIELD_OPTIONS.map((f) => ({ value: f, label: f }))}
+    />
 
-    <select
-      className="sor-filter-select"
+    <Select
       value={condition.operator}
-      onChange={(e) =>
+      onChange={(v) =>
         onChange(index, {
           ...condition,
-          operator: e.target.value as FilterOperator,
+          operator: v as FilterOperator,
         })
       }
-      aria-label={t("smartFilter.operator")}
-    >
-      {OPERATOR_OPTIONS.map((o) => (
-        <option key={o} value={o}>
-          {o}
-        </option>
-      ))}
-    </select>
+      variant="form-sm"
+      options={OPERATOR_OPTIONS.map((o) => ({ value: o, label: o }))}
+    />
 
     <input
-      className="sor-filter-input"
+      className="sor-form-input-sm"
       type="text"
       placeholder={t("smartFilter.valuePlaceholder")}
       value={String(condition.value ?? "")}
@@ -350,7 +339,7 @@ export const SmartFilterManager: React.FC<SmartFilterManagerProps> = ({
             </label>
             <input
               id="sor-filter-name"
-              className={`sor-filter-input sor-filter-name-input ${nameError ? "sor-filter-input--error" : ""}`}
+              className={`sor-form-input-sm ${nameError ? "!border-error" : ""}`}
               type="text"
               value={filterName}
               onChange={(e) => {

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../ui/display";
+import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
 const SignVerifyTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -62,18 +63,19 @@ const SignVerifyTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <FileKey className="w-4 h-4" />
           {t("gpgAgent.sign.title", "Sign Data")}
         </h3>
-        <select
+        <Select
           value={signKeyId}
-          onChange={(e) => setSignKeyId(e.target.value)}
-          className="w-full px-3 py-1.5 bg-muted border border-border rounded text-sm"
-        >
-          <option value="">{t("gpgAgent.sign.selectKey", "\u2014 Select signing key \u2014")}</option>
-          {secretKeys.map((k) => (
-            <option key={k.fingerprint} value={k.fingerprint}>
-              {k.uid_list?.[0]?.name ?? k.fingerprint?.slice(-16)} ({k.algorithm})
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setSignKeyId(v)}
+          variant="form-sm"
+          className="w-full"
+          options={[
+            { value: "", label: t("gpgAgent.sign.selectKey", "\u2014 Select signing key \u2014") },
+            ...secretKeys.map((k) => ({
+              value: k.fingerprint,
+              label: `${k.uid_list?.[0]?.name ?? k.fingerprint?.slice(-16)} (${k.algorithm})`,
+            })),
+          ]}
+        />
         <textarea
           value={signText}
           onChange={(e) => setSignText(e.target.value)}

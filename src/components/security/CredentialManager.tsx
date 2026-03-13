@@ -21,6 +21,7 @@ import {
   Check,
   RotateCw,
 } from "lucide-react";
+import { Select } from "../ui/forms";
 import { useCredentials } from "../../hooks/security/useCredentials";
 import type {
   TrackedCredential,
@@ -117,11 +118,16 @@ function CredentialDialog({ credential, onSave, onClose }: CredDialogProps) {
           </label>
           <label className="block">
             <span className="text-sm text-[var(--color-textSecondary)]">{t("credentials.fields.kind")}</span>
-            <select value={form.kind} onChange={(e) => set("kind", e.target.value)} className="sor-select mt-1 w-full rounded border border-[var(--color-border)] bg-[var(--color-bgSecondary)] px-3 py-2 text-sm text-[var(--color-textPrimary)]">
-              {(["password", "ssh_key", "certificate", "api_key", "token", "totp_secret"] as CredentialKind[]).map((k) => (
-                <option key={k} value={k}>{k.replace(/_/g, " ")}</option>
-              ))}
-            </select>
+            <Select
+              value={form.kind}
+              onChange={(v) => set("kind", v)}
+              variant="form-sm"
+              className="mt-1 w-full"
+              options={(["password", "ssh_key", "certificate", "api_key", "token", "totp_secret"] as CredentialKind[]).map((k) => ({
+                value: k,
+                label: k.replace(/_/g, " "),
+              }))}
+            />
           </label>
           <label className="block">
             <span className="text-sm text-[var(--color-textSecondary)]">{t("credentials.fields.expiresAt")}</span>
@@ -483,12 +489,18 @@ export function CredentialManager() {
                             </ul>
                           )}
                           <div className="mt-2">
-                            <select onChange={(e) => { if (e.target.value) { creds.addToGroup(g.id, e.target.value); e.target.value = ""; } }} className="sor-select rounded border border-[var(--color-border)] bg-[var(--color-bgSecondary)] px-2 py-1 text-xs text-[var(--color-textPrimary)]" defaultValue="">
-                              <option value="" disabled>{t("credentials.groups.addMember")}</option>
-                              {creds.credentials.filter((c) => !g.credentialIds.includes(c.id)).map((c) => (
-                                <option key={c.id} value={c.id}>{c.label}</option>
-                              ))}
-                            </select>
+                            <Select
+                              value=""
+                              onChange={(v) => { if (v) creds.addToGroup(g.id, v); }}
+                              variant="form-sm"
+                              options={[
+                                { value: "", label: t("credentials.groups.addMember") },
+                                ...creds.credentials.filter((c) => !g.credentialIds.includes(c.id)).map((c) => ({
+                                  value: c.id,
+                                  label: c.label,
+                                })),
+                              ]}
+                            />
                           </div>
                         </div>
                       )}

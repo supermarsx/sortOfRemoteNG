@@ -18,6 +18,7 @@ import {
   LogOut,
   Copy,
 } from "lucide-react";
+import { Select } from "../ui/forms";
 import { useWindowsBackup, type BackupTab } from "../../hooks/sync/useWindowsBackup";
 import Modal from "../ui/overlays/Modal";
 import DialogHeader from "../ui/overlays/DialogHeader";
@@ -634,16 +635,17 @@ export const WindowsBackupPanel: React.FC<WindowsBackupPanelProps> = ({
               <div className="flex-1" />
 
               {/* Auto-refresh */}
-              <select
-                className="px-2 py-1 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-                value={mgr.autoRefresh}
-                onChange={(e) => mgr.setAutoRefresh(Number(e.target.value))}
-              >
-                <option value={0}>{t("windowsBackup.autoRefreshOff", "Auto: Off")}</option>
-                <option value={15}>15s</option>
-                <option value={30}>30s</option>
-                <option value={60}>60s</option>
-              </select>
+              <Select
+                value={String(mgr.autoRefresh)}
+                onChange={(v) => mgr.setAutoRefresh(Number(v))}
+                variant="form-sm"
+                options={[
+                  { value: "0", label: t("windowsBackup.autoRefreshOff", "Auto: Off") },
+                  { value: "15", label: "15s" },
+                  { value: "30", label: "30s" },
+                  { value: "60", label: "60s" },
+                ]}
+              />
 
               {/* Refresh */}
               <button

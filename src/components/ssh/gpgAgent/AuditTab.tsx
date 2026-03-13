@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "../../ui/display";
+import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
 const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -20,20 +21,21 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {t("gpgAgent.audit.title", "Audit Log")} ({mgr.auditEntries.length})
         </h3>
         <div className="flex gap-2 items-center">
-          <select
-            value={limit}
-            onChange={(e) => {
-              const v = parseInt(e.target.value);
-              setLimit(v);
-              mgr.fetchAuditLog(v);
+          <Select
+            value={String(limit)}
+            onChange={(v) => {
+              const n = parseInt(v);
+              setLimit(n);
+              mgr.fetchAuditLog(n);
             }}
-            className="px-2 py-1 text-xs bg-muted border border-border rounded"
-          >
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-            <option value={200}>200</option>
-            <option value={500}>500</option>
-          </select>
+            variant="form-sm"
+            options={[
+              { value: '50', label: '50' },
+              { value: '100', label: '100' },
+              { value: '200', label: '200' },
+              { value: '500', label: '500' },
+            ]}
+          />
           <button
             onClick={() => mgr.fetchAuditLog(limit)}
             className="flex items-center gap-1 px-2 py-1 text-xs bg-muted rounded hover:bg-muted/80"

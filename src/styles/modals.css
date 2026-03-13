@@ -131,6 +131,59 @@
   margin: 0.25rem 0;
 }
 
+/* ── Submenu (hover-reveal) ───────────────────────────────── */
+.sor-menu-submenu {
+  position: relative;
+}
+
+.sor-menu-submenu-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--color-textSecondary);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.sor-menu-submenu-trigger:hover {
+  background-color: var(--color-surfaceHover);
+  color: var(--color-text);
+}
+
+.sor-menu-submenu-panel {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -0.25rem;
+  min-width: 12rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  z-index: 1;
+}
+
+.sor-menu-submenu:hover > .sor-menu-submenu-panel {
+  display: block;
+}
+
+.sor-menu-submenu-label {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .sor-popover-surface {
   min-width: 10rem;
 }

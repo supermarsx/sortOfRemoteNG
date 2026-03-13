@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../ui/display";
-import { PasswordInput } from "../../ui/forms";
+import { PasswordInput, Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
 const OTP_SLOT_NAMES = ["Short Press (Slot 1)", "Long Press (Slot 2)"];
@@ -167,7 +167,7 @@ export const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   setYubicoForm((f) => ({ ...f, publicId: e.target.value }))
                 }
                 placeholder={t("yubikey.otp.publicId", "Public ID")}
-                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
+                className="sor-form-input-xs w-full"
               />
               <input
                 value={yubicoForm.privateId}
@@ -175,7 +175,7 @@ export const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                   setYubicoForm((f) => ({ ...f, privateId: e.target.value }))
                 }
                 placeholder={t("yubikey.otp.privateId", "Private ID")}
-                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
+                className="sor-form-input-xs w-full"
               />
               <PasswordInput
                 value={yubicoForm.key}
@@ -257,18 +257,20 @@ export const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 placeholder={t("yubikey.otp.password", "Password")}
                 className="w-full"
               />
-              <select
+              <Select
                 value={staticForm.layout}
-                onChange={(e) =>
-                  setStaticForm((f) => ({ ...f, layout: e.target.value }))
+                onChange={(v) =>
+                  setStaticForm((f) => ({ ...f, layout: v }))
                 }
-                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
-              >
-                <option value="US">US</option>
-                <option value="DE">DE</option>
-                <option value="FR">FR</option>
-                <option value="SE">SE</option>
-              </select>
+                variant="form-sm"
+                className="w-full"
+                options={[
+                  { value: "US", label: "US" },
+                  { value: "DE", label: "DE" },
+                  { value: "FR", label: "FR" },
+                  { value: "SE", label: "SE" },
+                ]}
+              />
               <button
                 onClick={() => {
                   mgr.otpConfigureStatic(
@@ -306,7 +308,7 @@ export const OtpTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 }
                 min={6}
                 max={8}
-                className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded"
+                className="sor-form-input-xs w-full"
               />
               <button
                 onClick={() => {

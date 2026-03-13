@@ -5,6 +5,7 @@ import {
   EXECUTION_MODES,
 } from "../../../types/ssh/sshScripts";
 import { FormField } from "../../ui/forms/FormField";
+import { Select } from "../../ui/forms";
 import type {
   CreateScriptFormProps,
   ScriptTrigger,
@@ -122,47 +123,40 @@ export const CreateScriptForm: React.FC<CreateScriptFormProps> = ({
         {/* Trigger + Language + Mode */}
         <div className="grid grid-cols-3 gap-4">
           <FormField label="Trigger">
-            <select
+            <Select
               value={triggerType}
-              onChange={(e) => setTriggerType(e.target.value)}
-              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
-            >
-              {TRIGGER_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setTriggerType(v)}
+              variant="form-sm"
+              className="w-full"
+              options={TRIGGER_TYPES.map((t) => ({
+                value: t.value,
+                label: t.label,
+              }))}
+            />
           </FormField>
           <FormField label="Language">
-            <select
+            <Select
               value={language}
-              onChange={(e) =>
-                setLanguage(e.target.value as ScriptLanguage)
-              }
-              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
-            >
-              {SCRIPT_LANGUAGES.map((l) => (
-                <option key={l.value} value={l.value}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setLanguage(v as ScriptLanguage)}
+              variant="form-sm"
+              className="w-full"
+              options={SCRIPT_LANGUAGES.map((l) => ({
+                value: l.value,
+                label: l.label,
+              }))}
+            />
           </FormField>
           <FormField label="Execution Mode">
-            <select
+            <Select
               value={executionMode}
-              onChange={(e) =>
-                setExecutionMode(e.target.value as ExecutionMode)
-              }
-              className="w-full rounded-lg border border-theme-border bg-surface px-3 py-2 text-sm text-white"
-            >
-              {EXECUTION_MODES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setExecutionMode(v as ExecutionMode)}
+              variant="form-sm"
+              className="w-full"
+              options={EXECUTION_MODES.map((m) => ({
+                value: m.value,
+                label: m.label,
+              }))}
+            />
           </FormField>
         </div>
 

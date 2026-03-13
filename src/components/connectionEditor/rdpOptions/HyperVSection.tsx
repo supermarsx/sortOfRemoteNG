@@ -50,12 +50,12 @@ const HyperVSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
       </div>
     )}
 
-    <div className="pt-2 mt-2 border-t border-[var(--color-border)]/60">
+    <div className="pt-2 mt-2 border-t border-[var(--color-border)]/60 space-y-1">
       <label className={CSS.label}>
         <Checkbox checked={rdp.hyperv?.enhancedSessionMode ?? false} onChange={(v: boolean) => updateRdp("hyperv", { enhancedSessionMode: v })} className="CSS.checkbox" />
         <span>Enhanced Session Mode</span>
       </label>
-      <p className="text-xs text-[var(--color-textMuted)] ml-5 -mt-1">
+      <p className="text-xs text-[var(--color-textMuted)] ml-5">
         Uses VMBus channel for better performance, clipboard, drive
         redirection and audio in Hyper-V VMs.
       </p>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../ui/forms";
 import { useMarketplace } from "../../hooks/marketplace/useMarketplace";
 import type {
   MarketplaceListing,
@@ -485,15 +486,15 @@ export default function MarketplacePanel() {
             >
               <h4>{t("marketplace.addReview")}</h4>
               <div className="sor-form-row">
-                <select
-                  className="sor-select"
-                  value={reviewRating}
-                  onChange={(e) => setReviewRating(Number(e.target.value))}
-                >
-                  {[5, 4, 3, 2, 1].map((v) => (
-                    <option key={v} value={v}>{"★".repeat(v)}</option>
-                  ))}
-                </select>
+                <Select
+                  value={String(reviewRating)}
+                  onChange={(v) => setReviewRating(Number(v))}
+                  variant="form-sm"
+                  options={[5, 4, 3, 2, 1].map((v) => ({
+                    value: String(v),
+                    label: "\u2605".repeat(v),
+                  }))}
+                />
                 <input
                   className="sor-input"
                   placeholder={t("marketplace.reviewTitlePlaceholder")}
@@ -559,15 +560,12 @@ export default function MarketplacePanel() {
             value={mkt.searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
           />
-          <select
-            className="sor-select sor-category-filter"
+          <Select
             value={mkt.selectedCategory ?? ""}
-            onChange={(e) => handleCategoryChange(e.target.value)}
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
+            onChange={(v) => handleCategoryChange(v)}
+            variant="form-sm"
+            options={CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
+          />
           <button className="sor-btn sor-btn-icon" onClick={handleRefresh} title={t("marketplace.refresh")}>
             ↻
           </button>

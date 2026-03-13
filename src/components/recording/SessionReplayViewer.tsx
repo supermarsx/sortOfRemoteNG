@@ -20,6 +20,7 @@ import {
   Loader2,
   FileQuestion,
 } from "lucide-react";
+import { Select } from "../ui/forms";
 import { useReplay } from "../../hooks/recording/useReplay";
 import type {
   ReplayAnnotation,
@@ -186,18 +187,15 @@ function PlaybackControls({
       </span>
 
       {/* Speed selector */}
-      <select
-        value={r.speed}
-        onChange={(e) => r.setSpeed(Number(e.target.value))}
-        className="px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/50"
-        title={t("replay.speed")}
-      >
-        {SPEEDS.map((s) => (
-          <option key={s} value={s}>
-            {s}x
-          </option>
-        ))}
-      </select>
+      <Select
+        value={String(r.speed)}
+        onChange={(v) => r.setSpeed(Number(v))}
+        variant="form-sm"
+        options={SPEEDS.map((s) => ({
+          value: String(s),
+          label: `${s}x`,
+        }))}
+      />
     </div>
   );
 }

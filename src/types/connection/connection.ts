@@ -28,7 +28,10 @@ export interface Connection {
   order?: number;
   createdAt: Date;
   updatedAt: Date;
-  
+
+  /** Target OS — determines available management tools and feature sets */
+  osType?: 'windows' | 'linux' | 'macos' | 'other';
+
   // Advanced Connection Settings
   timeout?: number;
   retryAttempts?: number;

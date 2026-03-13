@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { LogIn, RefreshCw, ChevronDown } from "lucide-react";
 import type { OpksshMgr } from "./types";
 import { WELL_KNOWN_PROVIDERS, type OpksshProviderAlias } from "../../../types/security/opkssh";
+import { Select } from "../../ui/forms";
 
 interface LoginTabProps {
   mgr: OpksshMgr;
@@ -36,20 +37,22 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
             <label className="block text-xs text-[var(--color-text-secondary)] mb-1">
               {t("opkssh.provider", "Provider")}
             </label>
-            <select
-              className="w-full text-xs px-2 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+            <Select
               value={selectedAlias}
-              onChange={(e) => setSelectedAlias(e.target.value as OpksshProviderAlias | "custom")}
-            >
-              {WELL_KNOWN_PROVIDERS.map((p) => (
-                <option key={p.alias} value={p.alias}>
-                  {p.label}
-                </option>
-              ))}
-              <option value="custom">
-                {t("opkssh.customProvider", "Custom Provider")}
-              </option>
-            </select>
+              onChange={(v) => setSelectedAlias(v as OpksshProviderAlias | "custom")}
+              variant="form-sm"
+              className="w-full"
+              options={[
+                ...WELL_KNOWN_PROVIDERS.map((p) => ({
+                  value: p.alias,
+                  label: p.label,
+                })),
+                {
+                  value: "custom",
+                  label: t("opkssh.customProvider", "Custom Provider"),
+                },
+              ]}
+            />
           </div>
 
           {/* Custom provider fields */}
@@ -61,7 +64,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
                 </label>
                 <input
                   type="text"
-                  className="w-full text-xs px-2 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+                  className="sor-form-input-sm w-full"
                   placeholder="https://your-idp.example.com"
                   value={mgr.loginOptions.issuer || ""}
                   onChange={(e) =>
@@ -78,7 +81,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
                 </label>
                 <input
                   type="text"
-                  className="w-full text-xs px-2 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+                  className="sor-form-input-sm w-full"
                   placeholder={t("opkssh.clientIdPlaceholder", "OIDC Client ID")}
                   value={mgr.loginOptions.clientId || ""}
                   onChange={(e) =>
@@ -95,7 +98,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
                 </label>
                 <input
                   type="password"
-                  className="w-full text-xs px-2 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+                  className="sor-form-input-sm w-full"
                   placeholder={t("opkssh.clientSecretPlaceholder", "Optional client secret")}
                   value={mgr.loginOptions.clientSecret || ""}
                   onChange={(e) =>
@@ -112,7 +115,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
                 </label>
                 <input
                   type="text"
-                  className="w-full text-xs px-2 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+                  className="sor-form-input-sm w-full"
                   placeholder="openid email"
                   value={mgr.loginOptions.scopes || ""}
                   onChange={(e) =>
@@ -146,7 +149,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
                 </label>
                 <input
                   type="text"
-                  className="w-full text-xs px-2 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+                  className="sor-form-input-sm w-full"
                   placeholder="id_ecdsa"
                   value={mgr.loginOptions.keyFileName || ""}
                   onChange={(e) =>
@@ -163,7 +166,7 @@ export const LoginTab: React.FC<LoginTabProps> = ({ mgr }) => {
                 </label>
                 <input
                   type="text"
-                  className="w-full text-xs px-2 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+                  className="sor-form-input-sm w-full"
                   placeholder="http://localhost:3000/callback"
                   value={mgr.loginOptions.remoteRedirectUri || ""}
                   onChange={(e) =>

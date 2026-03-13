@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { McpTabProps } from "./types";
 import type { McpEventType } from "../../../types/mcp/mcpServer";
+import { Select } from "../../ui/forms";
 
 const eventIcons: Record<McpEventType, React.ElementType> = {
   ServerStarted: Play,
@@ -65,16 +66,18 @@ export const EventsTab: React.FC<McpTabProps> = ({ mgr }) => {
       {/* Controls */}
       <div className="flex items-center gap-2">
         <Filter size={12} className="text-[var(--color-text-secondary)]" />
-        <select
+        <Select
           value={filterType}
-          onChange={(e) => setFilterType(e.target.value as McpEventType | "")}
-          className="bg-[var(--color-surface-secondary)] border border-[var(--color-border)] rounded px-2 py-1 text-[10px] text-[var(--color-text-primary)] outline-none"
-        >
-          <option value="">{t("mcpServer.events.allTypes", "All event types")}</option>
-          {Object.keys(eventIcons).map((type) => (
-            <option key={type} value={type}>{type}</option>
-          ))}
-        </select>
+          onChange={(v) => setFilterType(v as McpEventType | "")}
+          variant="form-sm"
+          options={[
+            { value: "", label: t("mcpServer.events.allTypes", "All event types") },
+            ...Object.keys(eventIcons).map((type) => ({
+              value: type,
+              label: type,
+            })),
+          ]}
+        />
         <div className="flex-1" />
         <button
           onClick={mgr.refreshEvents}

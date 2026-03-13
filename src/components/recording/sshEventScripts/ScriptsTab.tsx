@@ -1,5 +1,6 @@
 import React from "react";
 import { TRIGGER_TYPES } from "../../../types/ssh/sshScripts";
+import { Select } from "../../ui/forms";
 import type { ScriptsTabProps } from "./types";
 import { CreateScriptForm } from "./CreateScriptForm";
 import { ScriptDetail } from "./ScriptDetail";
@@ -65,30 +66,32 @@ export const ScriptsTab: React.FC<ScriptsTabProps> = ({
             </button>
           </div>
           <div className="flex gap-2">
-            <select
+            <Select
               value={triggerFilter}
-              onChange={(e) => setTriggerFilter(e.target.value)}
-              className="flex-1 rounded border border-theme-border bg-surface px-2 py-1 text-xs text-text-secondary"
-            >
-              <option value="">All Triggers</option>
-              {TRIGGER_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <select
+              onChange={(v) => setTriggerFilter(v)}
+              variant="form-sm"
+              className="flex-1"
+              options={[
+                { value: "", label: "All Triggers" },
+                ...TRIGGER_TYPES.map((t) => ({
+                  value: t.value,
+                  label: t.label,
+                })),
+              ]}
+            />
+            <Select
               value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="flex-1 rounded border border-theme-border bg-surface px-2 py-1 text-xs text-text-secondary"
-            >
-              <option value="">All Categories</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setCategoryFilter(v)}
+              variant="form-sm"
+              className="flex-1"
+              options={[
+                { value: "", label: "All Categories" },
+                ...categories.map((c) => ({
+                  value: c,
+                  label: c,
+                })),
+              ]}
+            />
           </div>
           {bulkSelected.size > 0 && (
             <div className="flex items-center gap-2 text-xs text-text-muted">

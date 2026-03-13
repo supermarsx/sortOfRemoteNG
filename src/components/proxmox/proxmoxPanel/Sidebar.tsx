@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../../ui/forms";
 import {
   LayoutDashboard,
   Server,
@@ -69,17 +70,16 @@ const Sidebar: React.FC<SubProps> = ({ mgr }) => {
           <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-secondary)] mb-1 font-medium">
             {t("proxmox.node", "Node")}
           </label>
-          <select
-            className="w-full px-2 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-xs text-[var(--color-text)]"
+          <Select
             value={mgr.selectedNode ?? ""}
-            onChange={(e) => mgr.selectNode(e.target.value)}
-          >
-            {mgr.nodes.map((n) => (
-              <option key={n.node} value={n.node}>
-                {n.node} ({n.status})
-              </option>
-            ))}
-          </select>
+            onChange={(v) => mgr.selectNode(v)}
+            variant="form-sm"
+            className="w-full"
+            options={mgr.nodes.map((n) => ({
+              value: n.node,
+              label: `${n.node} (${n.status})`,
+            }))}
+          />
         </div>
       )}
 

@@ -16,6 +16,7 @@ import {
 import type { McpTabProps } from "./types";
 import type { McpServerConfig, McpLogLevel } from "../../../types/mcp/mcpServer";
 import { MCP_LOG_LEVELS } from "../../../types/mcp/mcpServer";
+import { Select } from "../../ui/forms";
 
 export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   const { t } = useTranslation();
@@ -127,7 +128,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
                   type={showApiKey ? "text" : "password"}
                   value={draft.api_key}
                   readOnly
-                  className="flex-1 bg-transparent text-xs text-[var(--color-text-primary)] font-mono outline-none"
+                  className="sor-form-input-xs flex-1 font-mono"
                   data-testid="mcp-api-key-input"
                 />
                 <button
@@ -226,7 +227,7 @@ export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
         <textarea
           value={draft.server_instructions}
           onChange={(e) => update("server_instructions", e.target.value)}
-          className="w-full h-24 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md p-2 text-xs text-[var(--color-text-primary)] resize-none outline-none focus:border-[var(--color-accent)]"
+          className="sor-form-input-sm w-full h-24 resize-none"
           placeholder={t("mcpServer.config.instructionsPlaceholder", "Instructions sent to AI clients describing this server...")}
           data-testid="mcp-instructions-input"
         />
@@ -286,7 +287,7 @@ const TextInput: React.FC<{
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md px-2 py-1.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+      className="sor-form-input-sm w-full"
     />
   </div>
 );
@@ -306,7 +307,7 @@ const NumberInput: React.FC<{
       onChange={(e) => onChange(Number(e.target.value))}
       min={min}
       max={max}
-      className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md px-2 py-1.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
+      className="sor-form-input-sm w-full"
     />
   </div>
 );
@@ -319,16 +320,12 @@ const SelectInput: React.FC<{
 }> = ({ label, value, options, onChange }) => (
   <div>
     <label className="block text-[10px] font-medium text-[var(--color-text-secondary)] mb-1">{label}</label>
-    <select
+    <Select
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md px-2 py-1.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent)]"
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      onChange={(v) => onChange(v)}
+      variant="form-sm"
+      className="w-full"
+      options={options}
+    />
   </div>
 );

@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { Monitor } from "lucide-react";
 import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
+import { useToastContext } from "../../contexts/ToastContext";
 import type { Connection } from "../../types/connection/connection";
 import ConnectionTreeItem from "./connectionTree/ConnectionTreeItem";
 import RenameModal from "./connectionTree/RenameModal";
@@ -23,6 +24,12 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onSessionDetach, onOpenImport, enableReorder = true,
 }) => {
   const mgr = useConnectionTree(onConnect, enableReorder);
+  const { toast } = useToastContext();
+
+  const handleWindowsTool = useCallback((c: Connection, tool: string) => {
+    toast.info(`Opening ${tool} for ${c.hostname || c.name}…`);
+    // TODO: invoke Tauri backend winmgmt commands
+  }, [toast]);
 
   const renderTree = (connections: Connection[], level: number = 0): React.ReactNode => {
     return connections.map((connection) => (
@@ -43,6 +50,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onDiagnostics={onDiagnostics}
           onDetachSession={onSessionDetach}
           onDuplicate={mgr.handleDuplicate}
+          onWindowsTool={handleWindowsTool}
           enableReorder={enableReorder}
           isDragging={mgr.draggedId === connection.id}
           isDragOver={mgr.dragOverId === connection.id && mgr.draggedId !== connection.id}

@@ -6,6 +6,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
 const KeyserverTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -27,7 +28,7 @@ const KeyserverTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("gpgAgent.keyserver.searchPlaceholder", "Name, email, or key ID\u2026")}
-            className="flex-1 px-3 py-1.5 bg-muted border border-border rounded text-sm"
+            className="sor-form-input-sm flex-1"
             onKeyDown={(e) => {
               if (e.key === "Enter" && query) mgr.searchKeyserver(query);
             }}
@@ -78,18 +79,19 @@ const KeyserverTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {t("gpgAgent.keyserver.send", "Send Key to Keyserver")}
         </h3>
         <div className="flex gap-2">
-          <select
+          <Select
             value={sendKeyId}
-            onChange={(e) => setSendKeyId(e.target.value)}
-            className="flex-1 px-3 py-1.5 bg-muted border border-border rounded text-sm"
-          >
-            <option value="">{t("gpgAgent.keyserver.selectKey", "\u2014 Select key \u2014")}</option>
-            {mgr.keys.map((k) => (
-              <option key={k.fingerprint} value={k.fingerprint}>
-                {k.uid_list?.[0]?.name ?? k.fingerprint?.slice(-16)}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setSendKeyId(v)}
+            variant="form-sm"
+            className="flex-1"
+            options={[
+              { value: "", label: t("gpgAgent.keyserver.selectKey", "\u2014 Select key \u2014") },
+              ...mgr.keys.map((k) => ({
+                value: k.fingerprint,
+                label: k.uid_list?.[0]?.name ?? k.fingerprint?.slice(-16),
+              })),
+            ]}
+          />
           <button
             onClick={() => {
               if (sendKeyId) mgr.sendToKeyserver(sendKeyId);

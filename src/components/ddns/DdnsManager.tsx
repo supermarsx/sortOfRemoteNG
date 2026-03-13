@@ -38,7 +38,7 @@ import {
   ModalFooter,
 } from "../ui/overlays/Modal";
 import { EmptyState, StatusBadge, ErrorBanner } from "../ui/display";
-import { PasswordInput } from "../ui/forms";
+import { PasswordInput, Select } from "../ui/forms";
 import { useDdnsManager } from "../../hooks/ddns/useDdnsManager";
 import type {
   DdnsProfile,
@@ -367,20 +367,19 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
     <div className="space-y-4">
       {/* Profile selector */}
       <div className="flex items-center gap-3">
-        <select
+        <Select
           value={selectedCfProfile}
-          onChange={(e) => setSelectedCfProfile(e.target.value)}
-          className="flex-1 px-3 py-2 rounded bg-surface border border-theme-border text-sm"
-        >
-          <option value="">
-            {t("ddns.cloudflare.selectProfile", "Select profile...")}
-          </option>
-          {cfProfiles.map((p: DdnsProfile) => (
-            <option key={p.id} value={p.id}>
-              {p.name} ({p.domain})
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setSelectedCfProfile(v)}
+          variant="form-sm"
+          className="flex-1"
+          options={[
+            { value: "", label: t("ddns.cloudflare.selectProfile", "Select profile...") },
+            ...cfProfiles.map((p: DdnsProfile) => ({
+              value: p.id,
+              label: `${p.name} (${p.domain})`,
+            })),
+          ]}
+        />
         <button
           onClick={() =>
             selectedCfProfile && mgr.cfListZones(selectedCfProfile)

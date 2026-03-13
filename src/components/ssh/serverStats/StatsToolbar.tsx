@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Code,
 } from "lucide-react";
+import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
 interface StatsToolbarProps {
@@ -34,23 +35,19 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
   return (
     <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-2 flex flex-wrap items-center gap-2">
       {/* Session selector */}
-      <select
-        className="text-xs px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] min-w-[180px]"
+      <Select
         value={mgr.selectedSessionId ?? ""}
-        onChange={(e) => mgr.setSelectedSessionId(e.target.value || null)}
-        aria-label={t("serverStats.selectSession", "Select SSH session")}
-      >
-        <option value="">
-          {mgr.sshSessions.length === 0
-            ? t("serverStats.noSessions", "No SSH sessions")
-            : t("serverStats.selectSession", "Select SSH session")}
-        </option>
-        {mgr.sshSessions.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name || s.hostname || s.id}
-          </option>
-        ))}
-      </select>
+        onChange={(v) => mgr.setSelectedSessionId(v || null)}
+        variant="form-sm"
+        className="min-w-[180px]"
+        placeholder={mgr.sshSessions.length === 0
+          ? t("serverStats.noSessions", "No SSH sessions")
+          : t("serverStats.selectSession", "Select SSH session")}
+        options={[
+          { value: '', label: mgr.sshSessions.length === 0 ? t("serverStats.noSessions", "No SSH sessions") : t("serverStats.selectSession", "Select SSH session") },
+          ...mgr.sshSessions.map((s) => ({ value: s.id, label: s.name || s.hostname || s.id })),
+        ]}
+      />
 
       {/* Collect button */}
       <button
@@ -66,18 +63,15 @@ export const StatsToolbar: React.FC<StatsToolbarProps> = ({ mgr }) => {
       </button>
 
       {/* Auto-refresh dropdown */}
-      <select
-        className="text-xs px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-        value={mgr.autoRefreshInterval}
-        onChange={(e) => mgr.setAutoRefreshInterval(Number(e.target.value))}
-        aria-label={t("serverStats.autoRefresh", "Auto refresh")}
-      >
-        {mgr.refreshIntervals.map((r) => (
-          <option key={r.value} value={r.value}>
-            {r.value === 0 ? t("serverStats.autoRefreshOff", "Auto: Off") : `Auto: ${r.label}`}
-          </option>
-        ))}
-      </select>
+      <Select
+        value={String(mgr.autoRefreshInterval)}
+        onChange={(v) => mgr.setAutoRefreshInterval(Number(v))}
+        variant="form-sm"
+        options={mgr.refreshIntervals.map((r) => ({
+          value: String(r.value),
+          label: r.value === 0 ? t("serverStats.autoRefreshOff", "Auto: Off") : `Auto: ${r.label}`,
+        }))}
+      />
 
       {/* Spacer */}
       <div className="flex-1" />
