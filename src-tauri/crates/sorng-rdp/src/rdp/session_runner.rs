@@ -1425,15 +1425,15 @@ fn run_active_session_loop(
                 gfx_frames.push(gfx_frame);
             }
             let queue_len = gfx_frames.len();
-            const HIGH_WATERMARK: usize = 6;
-            if queue_len > HIGH_WATERMARK {
-                // Low watermark: keep (count / 3) + 1 recent frames
-                let keep = (queue_len / 3) + 1;
-                let skip = queue_len - keep;
-                gfx_frames.drain(..skip);
+            // NOTE: We no longer drop GFX frames via watermark flow control.
+            // H.264 uses incremental decoding — dropping older frames loses
+            // reference data and causes ghosting/corruption until the next
+            // keyframe.  RGBA dirty rects are also incremental (partial
+            // updates).  Instead, send all frames and let the frontend
+            // pipeline handle queue pressure via its adaptive scheduling.
+            if queue_len > 12 {
                 log::debug!(
-                    "GFX flow control: queue {queue_len} > HWM {HIGH_WATERMARK}, \
-                     dropped {skip}, kept {keep}"
+                    "GFX frame queue depth: {queue_len} (high but not dropping — incremental codec)"
                 );
             }
             for gfx_frame in gfx_frames.drain(..) {
