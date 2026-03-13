@@ -287,7 +287,7 @@ export class RdpFramePipeline {
 
     if (renderer) {
       // ── WebCodecs fast path: forward raw buffers directly to the worker ──
-      const isWebCodecs = renderer.type === 'webcodecs-worker';
+      const isWebCodecs = renderer.type === 'webcodecs-worker' || renderer.type === 'webcodecs-cpu';
       const pushRaw = isWebCodecs
         ? (renderer as unknown as { pushRawBuffer(data: ArrayBuffer): void }).pushRawBuffer.bind(renderer)
         : null;

@@ -33,7 +33,8 @@ export type FrontendRendererType =
   | 'webgl'
   | 'webgpu'
   | 'offscreen-worker'
-  | 'webcodecs-worker';
+  | 'webcodecs-worker'
+  | 'webcodecs-cpu';
 
 /** Feature-test results exposed for UI / diagnostics. */
 export interface RendererCapabilities {
@@ -842,7 +843,7 @@ export function parseNalHeader(data: ArrayBuffer): {
  * - A WebGL2 context on an OffscreenCanvas for GPU presentation
  * - Fallback to Canvas2D for RGBA dirty-rect frames that arrive on the same channel
  */
-function createWebCodecsWorkerBlob(): Blob {
+function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software' = 'prefer-hardware'): Blob {
   const code = `
     'use strict';
 
@@ -857,6 +858,7 @@ function createWebCodecsWorkerBlob(): Blob {
     let w = 0, h = 0;
     let decoderConfigured = false;
     let frameCount = 0;
+    const HW_ACCEL = '${hwAccel}';
 
     // ── WebGL2 setup ───────────────────────────────────────────────────
     const VS = \`#version 300 es
@@ -961,7 +963,7 @@ function createWebCodecsWorkerBlob(): Blob {
         codec: 'avc1.42001f', // Baseline profile, level 3.1
         codedWidth: width,
         codedHeight: height,
-        hardwareAcceleration: 'prefer-hardware',
+        hardwareAcceleration: HW_ACCEL,
         optimizeForLatency: true,
       });
       decoderConfigured = true;
@@ -1112,16 +1114,27 @@ function createWebCodecsWorkerBlob(): Blob {
  * via `pushRawBuffer()`, avoiding any main-thread parsing or copying.
  */
 class WebCodecsWorkerRenderer implements FrameRenderer {
-  readonly name = 'WebCodecs Worker (H.264 GPU)';
-  readonly type: FrontendRendererType = 'webcodecs-worker';
+  readonly name: string;
+  readonly type: FrontendRendererType;
   readonly tripleBuffered = false;
   private worker: Worker;
   private ready = false;
   private pendingBuffers: ArrayBuffer[] = [];
 
-  constructor(private canvas: HTMLCanvasElement, width: number, height: number) {
+  constructor(
+    private canvas: HTMLCanvasElement,
+    width: number,
+    height: number,
+    hwAccel: 'prefer-hardware' | 'prefer-software' = 'prefer-hardware',
+  ) {
+    this.name = hwAccel === 'prefer-hardware'
+      ? 'WebCodecs Worker (H.264 GPU)'
+      : 'WebCodecs Worker (H.264 CPU)';
+    this.type = hwAccel === 'prefer-hardware'
+      ? 'webcodecs-worker'
+      : 'webcodecs-cpu';
     const offscreen = canvas.transferControlToOffscreen();
-    const blob = createWebCodecsWorkerBlob();
+    const blob = createWebCodecsWorkerBlob(hwAccel);
     const url = URL.createObjectURL(blob);
     this.worker = new Worker(url);
     URL.revokeObjectURL(url);
@@ -1203,11 +1216,12 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
 /**
  * Auto-select the best available renderer.
  *
- * Priority: WebGPU → WebGL → Canvas 2D
+ * Priority: WebCodecs GPU → WebCodecs CPU → WebGPU → WebGL → Canvas 2D
  * (OffscreenWorker is intentionally not auto-selected because it has
  * limitations with canvas context ownership.)
  */
 function autoSelect(caps: RendererCapabilities): FrontendRendererType {
+  if (caps.webcodecs) return 'webcodecs-worker';
   if (caps.webgpu) return 'webgpu';
   if (caps.webgl) return 'webgl';
   return 'canvas2d';
@@ -1234,6 +1248,12 @@ export function createFrameRenderer(
   const order: FrontendRendererType[] = [];
 
   switch (resolved) {
+    case 'webcodecs-worker':
+      order.push('webcodecs-worker', 'webcodecs-cpu', 'webgl', 'canvas2d');
+      break;
+    case 'webcodecs-cpu':
+      order.push('webcodecs-cpu', 'webgl', 'canvas2d');
+      break;
     case 'webgpu':
       order.push('webgpu', 'webgl', 'canvas2d');
       break;
@@ -1242,9 +1262,6 @@ export function createFrameRenderer(
       break;
     case 'offscreen-worker':
       order.push('offscreen-worker', 'canvas2d');
-      break;
-    case 'webcodecs-worker':
-      order.push('webcodecs-worker', 'webgl', 'canvas2d');
       break;
     case 'canvas2d':
     default:
@@ -1255,6 +1272,14 @@ export function createFrameRenderer(
   for (const t of order) {
     try {
       switch (t) {
+        case 'webcodecs-worker':
+          if (caps.webcodecs)
+            return new WebCodecsWorkerRenderer(canvas, opts?.width ?? canvas.width, opts?.height ?? canvas.height, 'prefer-hardware');
+          break;
+        case 'webcodecs-cpu':
+          if (caps.webcodecs)
+            return new WebCodecsWorkerRenderer(canvas, opts?.width ?? canvas.width, opts?.height ?? canvas.height, 'prefer-software');
+          break;
         case 'webgpu':
           if (caps.webgpu) return new WebGPURenderer(canvas);
           break;
@@ -1264,10 +1289,6 @@ export function createFrameRenderer(
         case 'offscreen-worker':
           if (caps.offscreenWorker)
             return new OffscreenWorkerRenderer(canvas);
-          break;
-        case 'webcodecs-worker':
-          if (caps.webcodecs)
-            return new WebCodecsWorkerRenderer(canvas, opts?.width ?? canvas.width, opts?.height ?? canvas.height);
           break;
         case 'canvas2d':
           return new Canvas2DRenderer(canvas);
