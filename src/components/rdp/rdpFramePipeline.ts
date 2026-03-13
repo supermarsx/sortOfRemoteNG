@@ -54,10 +54,14 @@ export class RdpFramePipeline {
   private readonly msgChannel: MessageChannel | null = null;
   private usingLowLatency = false; // current state for adaptive mode
 
-  // Adaptive mode: tracks queue depth to decide when to escalate
+  // Adaptive mode: tracks queue depth to decide when to escalate/relax.
+  // Escalation requires ESCALATE_COUNT consecutive high-queue ticks to avoid
+  // oscillation from transient spikes.
   private static readonly ADAPTIVE_ESCALATE_THRESHOLD = 2;
+  private static readonly ADAPTIVE_ESCALATE_COUNT = 3; // require 3 consecutive high ticks
   private static readonly ADAPTIVE_RELAX_FRAMES = 60; // relax after N consecutive low-queue ticks
   private adaptiveRelaxCounter = 0;
+  private adaptiveEscalateCounter = 0;
 
   // ── Rendering ───────────────────────────────────────────────────────
   private canvas: HTMLCanvasElement | null = null;
@@ -130,13 +134,15 @@ export class RdpFramePipeline {
     if (this.scheduleMode !== 'adaptive') return;
 
     if (this.queue.length >= RdpFramePipeline.ADAPTIVE_ESCALATE_THRESHOLD) {
-      // Queue is building up — switch to low-latency to drain faster
-      if (!this.usingLowLatency) {
+      // Queue is building up — require sustained pressure before escalating
+      this.adaptiveEscalateCounter++;
+      this.adaptiveRelaxCounter = 0;
+      if (!this.usingLowLatency && this.adaptiveEscalateCounter >= RdpFramePipeline.ADAPTIVE_ESCALATE_COUNT) {
         this.usingLowLatency = true;
       }
-      this.adaptiveRelaxCounter = 0;
     } else {
       // Queue is healthy — count towards relaxing back to vsync
+      this.adaptiveEscalateCounter = 0;
       this.adaptiveRelaxCounter++;
       if (this.usingLowLatency && this.adaptiveRelaxCounter >= RdpFramePipeline.ADAPTIVE_RELAX_FRAMES) {
         this.usingLowLatency = false;
@@ -154,6 +160,26 @@ export class RdpFramePipeline {
     height: number,
     rendererType: FrontendRendererType = 'auto',
   ): void {
+    // Guard: if already attached with same canvas + dimensions + renderer type,
+    // skip re-creation to prevent flickering from redundant attach() calls.
+    if (
+      this.canvas === canvas &&
+      this.renderer !== null &&
+      this.fb !== null &&
+      canvas.width === width &&
+      canvas.height === height
+    ) {
+      console.log(`[RDP pipeline] attach: already attached ${width}x${height} (${this.renderer.name}), skipping`);
+      return;
+    }
+
+    // If we had a previous renderer, destroy it before creating a new one
+    if (this.renderer) {
+      console.log(`[RDP pipeline] attach: destroying previous renderer (${this.renderer.name}) before re-attach`);
+      this.renderer.destroy();
+      this.renderer = null;
+    }
+
     console.log(`[RDP pipeline] attach: ${width}x${height}, type=${rendererType}, destroyed=${this.destroyed}, queuedFrames=${this.queue.length}`);
     this.canvas = canvas;
     canvas.width = width;
