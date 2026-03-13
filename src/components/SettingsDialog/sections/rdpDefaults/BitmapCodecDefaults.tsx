@@ -4,7 +4,12 @@ import React from "react";
 import { Monitor } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
 
-const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
+const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
+  const nalPassthrough = rdp.nalPassthrough ?? false;
+  const currentFrontend = rdp.frontendRenderer ?? "auto";
+  const isWebCodecsFrontend = currentFrontend === "webcodecs-worker" || currentFrontend === "webcodecs-cpu";
+
+  return (
   <div className="sor-settings-card">
     <h4 className="sor-section-heading">
       <Monitor className="w-4 h-4 text-accent" />
@@ -58,20 +63,27 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
           </label>
 
           {(rdp.gfxEnabled ?? false) && (<>
-            <div className="ml-11 flex items-center gap-2 mt-2">
+            <div className={"ml-11 flex items-center gap-2 mt-2" + (nalPassthrough ? " opacity-50 pointer-events-none" : "")}>
               <span className="text-sm text-[var(--color-textSecondary)]">
-                H.264 Decoder:
+                H.264 Decoder{nalPassthrough ? " (N/A — passthrough)" : ""}:
               </span>
               <Select value={rdp.h264Decoder ?? "auto"} onChange={(v: string) => update({
                     h264Decoder: v as
                       | "auto"
                       | "media-foundation"
                       | "openh264",
-                  })} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="selectClass" />
+                  })} disabled={nalPassthrough} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="selectClass" />
             </div>
 
             <label className="flex items-center space-x-3 cursor-pointer group ml-11 mt-2">
-              <Checkbox checked={rdp.nalPassthrough ?? false} onChange={(v: boolean) => update({ nalPassthrough: v })} />
+              <Checkbox checked={nalPassthrough} onChange={(v: boolean) => {
+                    const updates: Record<string, any> = { nalPassthrough: v };
+                    // Auto-set frontend renderer to webcodecs-worker when enabling passthrough
+                    if (v && !isWebCodecsFrontend) {
+                      updates.frontendRenderer = "webcodecs-worker";
+                    }
+                    update(updates);
+                  }} />
               <span className="sor-toggle-label">
                 NAL Passthrough (WebCodecs Decode)
               </span>
@@ -84,6 +96,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
       </>
     )}
   </div>
-);
+  );
+};
 
 export default BitmapCodecDefaults;

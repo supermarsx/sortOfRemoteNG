@@ -4,10 +4,17 @@ import { Gauge } from "lucide-react";
 import { Connection, RDPConnectionSettings } from "../../../types/connection/connection";
 import { PERFORMANCE_PRESETS, CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox, Select, Slider } from "../../ui/forms";
+
 const PerformanceSection: React.FC<SectionBaseProps> = ({
   rdp,
   updateRdp,
-}) => (
+}) => {
+  const nalPassthrough = rdp.performance?.codecs?.nalPassthrough ?? false;
+  const gfxEnabled = rdp.performance?.codecs?.enableGfx ?? false;
+  const currentFrontend = rdp.performance?.frontendRenderer ?? "inherit";
+  const isWebCodecsFrontend = currentFrontend === "webcodecs-worker" || currentFrontend === "webcodecs-cpu";
+
+  return (
   <Section
     title="Performance"
     icon={<Gauge size={14} className="text-warning" />}
@@ -60,10 +67,11 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       Render Backend
     </div>
     <p className="text-xs text-[var(--color-textMuted)] mb-1">
-      Controls how decoded RDP frames are displayed. Native renderers bypass
-      JS entirely for lowest latency.
+      {nalPassthrough
+        ? "Disabled — NAL passthrough bypasses backend decoding entirely."
+        : "Controls how decoded RDP frames are displayed. Native renderers bypass JS entirely for lowest latency."}
     </p>
-    <div>
+    <div className={nalPassthrough ? "opacity-50 pointer-events-none" : ""}>
       <Select value={rdp.performance?.renderBackend ?? "inherit"} onChange={(v: string) => updateRdp("performance", {
             renderBackend: v as
               | "inherit"
@@ -71,7 +79,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
               | "softbuffer"
               | "wgpu"
               | "webview",
-          })} options={[{ value: "inherit", label: "Inherit from global settings" }, { value: "webview", label: "Webview (JS Canvas) — default, most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32 child window, zero JS" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="CSS.select" />
+          })} disabled={nalPassthrough} options={[{ value: "inherit", label: "Inherit from global settings" }, { value: "webview", label: "Webview (JS Canvas) — default, most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32 child window, zero JS" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="CSS.select" />
     </div>
 
     {/* Frontend renderer */}
@@ -79,9 +87,9 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       Frontend Renderer
     </div>
     <p className="text-xs text-[var(--color-textMuted)] mb-1">
-      Controls how RGBA frames are painted onto the canvas. WebGL/WebGPU use
-      GPU texture upload for lower latency; OffscreenCanvas Worker moves
-      rendering off the main thread.
+      {nalPassthrough
+        ? "NAL passthrough requires a WebCodecs renderer to decode H.264 on the frontend."
+        : "Controls how RGBA frames are painted onto the canvas. WebGL/WebGPU use GPU texture upload for lower latency."}
     </p>
     <div>
       <Select value={rdp.performance?.frontendRenderer ?? "inherit"} onChange={(v: string) => updateRdp("performance", {
@@ -94,7 +102,21 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
               | "offscreen-worker"
               | "webcodecs-worker"
               | "webcodecs-cpu",
-          })} options={[{ value: "inherit", label: "Inherit from global settings" }, { value: "auto", label: "Auto — best available (WebCodecs GPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }, { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" }, { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" }]} className="CSS.select" />
+          })} options={nalPassthrough
+            ? [
+                { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" },
+                { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" },
+              ]
+            : [
+                { value: "inherit", label: "Inherit from global settings" },
+                { value: "auto", label: "Auto — best available (WebCodecs GPU → WebGL → Canvas 2D)" },
+                { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" },
+                { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" },
+                { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" },
+                { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" },
+                { value: "webcodecs-worker", label: "WebCodecs Worker (GPU) — H.264 hardware decode" },
+                { value: "webcodecs-cpu", label: "WebCodecs Worker (CPU) — H.264 software decode" },
+              ]} className="CSS.select" />
     </div>
 
     {/* Frame delivery */}
@@ -182,7 +204,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
 
         <div className="border-t border-[var(--color-border)]/50 pt-2 mt-2">
           <label className={CSS.label}>
-            <Checkbox checked={rdp.performance?.codecs?.enableGfx ?? false} onChange={(v: boolean) => updateRdp("performance", {
+            <Checkbox checked={gfxEnabled} onChange={(v: boolean) => updateRdp("performance", {
                   codecs: { ...rdp.performance?.codecs, enableGfx: v },
                 })} className="CSS.checkbox" />
             <span>RDPGFX (H.264 Hardware Decode)</span>
@@ -191,10 +213,10 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
             </span>
           </label>
 
-          {(rdp.performance?.codecs?.enableGfx ?? false) && (<>
-            <div className="ml-8 flex items-center gap-2 mt-1">
+          {gfxEnabled && (<>
+            <div className={"ml-8 flex items-center gap-2 mt-1" + (nalPassthrough ? " opacity-50 pointer-events-none" : "")}>
               <span className="text-xs text-[var(--color-textSecondary)]">
-                H.264 Decoder:
+                H.264 Decoder{nalPassthrough ? " (N/A — passthrough)" : ""}:
               </span>
               <Select value={rdp.performance?.codecs?.h264Decoder ?? "auto"} onChange={(v: string) => updateRdp("performance", {
                     codecs: {
@@ -204,14 +226,21 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
                         | "media-foundation"
                         | "openh264",
                     },
-                  })} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-[var(--color-textSecondary)]" />
+                  })} disabled={nalPassthrough} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-[var(--color-textSecondary)]" />
             </div>
 
             <label className={CSS.label + " mt-1 ml-8"}>
-              <Checkbox checked={rdp.performance?.codecs?.nalPassthrough ?? false} onChange={(v: boolean) => updateRdp("performance", {
-                    codecs: { ...rdp.performance?.codecs, nalPassthrough: v },
-                  })} className="CSS.checkbox" />
-              <span>NAL Passthrough (WebCodecs GPU Decode)</span>
+              <Checkbox checked={nalPassthrough} onChange={(v: boolean) => {
+                    const updates: Record<string, any> = {
+                      codecs: { ...rdp.performance?.codecs, nalPassthrough: v },
+                    };
+                    // Auto-set frontend renderer to webcodecs-worker when enabling passthrough
+                    if (v && !isWebCodecsFrontend) {
+                      updates.frontendRenderer = "webcodecs-worker";
+                    }
+                    updateRdp("performance", updates);
+                  }} className="CSS.checkbox" />
+              <span>NAL Passthrough (WebCodecs Decode)</span>
               <span className="text-xs text-[var(--color-textMuted)] ml-1">
                 — skip backend decode, send H.264 to frontend
               </span>
@@ -221,6 +250,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       </>
     )}
   </Section>
-);
+  );
+};
 
 export default PerformanceSection;
