@@ -179,26 +179,30 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64 0.21.7",
- "chrono",
  "dirs 6.0.0",
- "hex 0.4.3",
  "log 0.4.29",
  "mockall",
- "regex",
- "reqwest 0.12.28",
  "rustls 0.23.37",
  "serde",
  "serde_json",
  "serial_test",
- "sha2 0.10.9",
  "sorng-app-auth",
  "sorng-app-domains",
  "sorng-app-shell",
- "sorng-bmc-common",
+ "sorng-commands-access",
+ "sorng-commands-cloud",
+ "sorng-commands-collab",
+ "sorng-commands-core",
+ "sorng-commands-infra",
+ "sorng-commands-mail",
+ "sorng-commands-ops",
+ "sorng-commands-platform",
+ "sorng-commands-services",
+ "sorng-commands-sessions",
+ "sorng-commands-tools",
+ "sorng-commands-webservers",
  "sorng-core",
  "sorng-kafka",
- "ssh2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -208,9 +212,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "tokio 1.50.0",
- "tokio-rustls 0.26.4",
  "tokio-test",
- "uuid",
  "windows 0.62.2",
 ]
 
@@ -8524,6 +8526,245 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-llm",
  "tokio 1.50.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-commands-access"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-app-domains",
+ "sorng-app-shell",
+ "tauri",
+ "tauri-plugin-autostart",
+]
+
+[[package]]
+name = "sorng-commands-cloud"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-app-domains",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-collab"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-app-domains",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-core"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.21.7",
+ "chrono",
+ "hex 0.4.3",
+ "log 0.4.29",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-app-domains",
+ "sorng-app-shell",
+ "sorng-core",
+ "ssh2",
+ "tauri",
+ "tauri-plugin-autostart",
+ "tokio 1.50.0",
+ "tokio-rustls 0.26.4",
+ "uuid",
+ "windows 0.62.2",
+]
+
+[[package]]
+name = "sorng-commands-infra"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-bmc-common",
+ "sorng-hyperv",
+ "sorng-idrac",
+ "sorng-ilo",
+ "sorng-lenovo",
+ "sorng-meshcentral",
+ "sorng-proxmox",
+ "sorng-supermicro",
+ "sorng-synology",
+ "sorng-vmware",
+ "tauri",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-commands-mail"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-amavis",
+ "sorng-clamav",
+ "sorng-cyrus-sasl",
+ "sorng-dovecot",
+ "sorng-mailcow",
+ "sorng-opendkim",
+ "sorng-postfix",
+ "sorng-procmail",
+ "sorng-roundcube",
+ "sorng-rspamd",
+ "sorng-spamassassin",
+ "tauri",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-commands-ops"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-about",
+ "sorng-bootloader",
+ "sorng-cpanel",
+ "sorng-cron",
+ "sorng-grafana",
+ "sorng-kernel",
+ "sorng-mysql-admin",
+ "sorng-netbox",
+ "sorng-os-detect",
+ "sorng-pam",
+ "sorng-pfsense",
+ "sorng-php",
+ "sorng-port-knock",
+ "sorng-postgres-admin",
+ "sorng-proc",
+ "sorng-prometheus",
+ "sorng-time-ntp",
+ "sorng-ups",
+ "tauri",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-commands-platform"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-app-domains",
+ "tauri",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-commands-services"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-budibase",
+ "sorng-gpg-agent",
+ "sorng-i18n",
+ "sorng-jira",
+ "sorng-letsencrypt",
+ "sorng-osticket",
+ "sorng-ssh-agent",
+ "sorng-yubikey",
+ "tauri",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-commands-sessions"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-app-domains",
+ "tauri",
+]
+
+[[package]]
+name = "sorng-commands-tools"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-credentials",
+ "sorng-dashboard",
+ "sorng-filters",
+ "sorng-hooks",
+ "sorng-marketplace",
+ "sorng-mcp",
+ "sorng-notifications",
+ "sorng-opkssh",
+ "sorng-portable",
+ "sorng-rdpfile",
+ "sorng-replay",
+ "sorng-scheduler",
+ "sorng-snmp",
+ "sorng-ssh-scripts",
+ "sorng-topology",
+ "sorng-updater",
+ "sorng-warpgate",
+ "tauri",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-commands-webservers"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "sorng-apache",
+ "sorng-caddy",
+ "sorng-ddns",
+ "sorng-haproxy",
+ "sorng-lxd",
+ "sorng-nginx",
+ "sorng-nginx-proxy-mgr",
+ "sorng-traefik",
+ "sorng-vmware-desktop",
+ "tauri",
  "uuid",
 ]
 

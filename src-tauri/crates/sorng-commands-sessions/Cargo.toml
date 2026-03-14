@@ -1,0 +1,21 @@
+[package]
+name = "sorng-commands-sessions"
+version = "0.1.0"
+edition = "2021"
+description = "Sessions command handlers — split from app crate to reduce coherence checking time"
+
+[features]
+default = []
+db-mongo = []
+db-mssql = []
+db-mysql = []
+db-postgres = []
+db-redis = []
+db-sqlite = []
+
+[dependencies]
+sorng-app-domains = { path = "../sorng-app-domains" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }

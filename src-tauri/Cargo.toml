@@ -191,6 +191,18 @@ members = [
   "crates/sorng-syslog",
   "crates/sorng-systemd",
   "crates/sorng-usermgmt",
+  "crates/sorng-commands-ops",
+  "crates/sorng-commands-infra",
+  "crates/sorng-commands-mail",
+  "crates/sorng-commands-services",
+  "crates/sorng-commands-tools",
+  "crates/sorng-commands-webservers",
+  "crates/sorng-commands-cloud",
+  "crates/sorng-commands-platform",
+  "crates/sorng-commands-collab",
+  "crates/sorng-commands-core",
+  "crates/sorng-commands-sessions",
+  "crates/sorng-commands-access",
 ]
 
 [workspace.dependencies]
@@ -273,6 +285,18 @@ sorng-app-domains = { path = "crates/sorng-app-domains", default-features = fals
 sorng-app-shell = { path = "crates/sorng-app-shell" }
 sorng-core = { path = "crates/sorng-core" }
 sorng-kafka = { path = "crates/sorng-kafka", optional = true }
+sorng-commands-ops = { path = "crates/sorng-commands-ops", optional = true }
+sorng-commands-infra = { path = "crates/sorng-commands-infra", optional = true }
+sorng-commands-mail = { path = "crates/sorng-commands-mail", optional = true }
+sorng-commands-services = { path = "crates/sorng-commands-services", optional = true }
+sorng-commands-tools = { path = "crates/sorng-commands-tools", optional = true }
+sorng-commands-webservers = { path = "crates/sorng-commands-webservers", optional = true }
+sorng-commands-cloud = { path = "crates/sorng-commands-cloud", optional = true }
+sorng-commands-platform = { path = "crates/sorng-commands-platform", optional = true }
+sorng-commands-collab = { path = "crates/sorng-commands-collab", optional = true }
+sorng-commands-core = { path = "crates/sorng-commands-core" }
+sorng-commands-sessions = { path = "crates/sorng-commands-sessions" }
+sorng-commands-access = { path = "crates/sorng-commands-access" }
 
 serde_json = { workspace = true }
 serde = { workspace = true }
@@ -287,18 +311,8 @@ dirs = { workspace = true }
 tauri-plugin-window-state = "=2.4.1"
 axum = "0.7"
 
-# ── Crates required by include!()'d leaf-crate command files ──────
-sha2 = { workspace = true }
-hex = { workspace = true }
-chrono = { workspace = true }
-uuid = { workspace = true }
-base64 = { workspace = true }
-ssh2 = { workspace = true }
-reqwest = { workspace = true }
-tokio-rustls = { workspace = true }
-regex = { workspace = true }
+# ── TLS provider (used in run() for rustls CryptoProvider) ──────
 rustls = { workspace = true, features = ["ring"] }
-sorng-bmc-common = { path = "crates/sorng-bmc-common" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
@@ -313,8 +327,8 @@ serial_test = "2.0"
 default = ["cloud", "collab", "ops", "platform", "rdp"]
 full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka", "ops", "platform", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details"]
 cert-auth = ["sorng-app-domains/cert-auth"]
-cloud = ["sorng-app-domains/cloud"]
-collab = ["sorng-app-domains/collab"]
+cloud = ["sorng-app-domains/cloud", "dep:sorng-commands-cloud"]
+collab = ["sorng-app-domains/collab", "dep:sorng-commands-collab"]
 db-mongo = ["sorng-app-domains/db-mongo"]
 db-mssql = ["sorng-app-domains/db-mssql"]
 db-mysql = ["sorng-app-domains/db-mysql"]
@@ -322,33 +336,29 @@ db-postgres = ["sorng-app-domains/db-postgres"]
 db-redis = ["sorng-app-domains/db-redis"]
 db-sqlite = ["sorng-app-domains/db-sqlite"]
 kafka = ["dep:sorng-kafka"]
-ops = ["sorng-app-domains/ops"]
-platform = ["sorng-app-domains/platform"]
-rdp = ["sorng-app-domains/rdp"]
+ops = ["sorng-app-domains/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
+platform = ["sorng-app-domains/platform", "dep:sorng-commands-platform"]
+rdp = ["sorng-app-domains/rdp", "sorng-commands-core/rdp"]
 rdp-software-decode = ["sorng-app-domains/rdp-software-decode"]
 rdp-mf-decode = ["sorng-app-domains/rdp-mf-decode"]
 rdp-snapshot = ["sorng-app-domains/rdp-snapshot"]
 script-engine = ["sorng-app-domains/script-engine"]
 tls-cert-details = ["sorng-app-domains/tls-cert-details"]
+# Feature used to opt-in dead command modules (modules not routed by any handler).
+# Always OFF by default — these modules compile but serve no purpose until wired.
+dead-code = []
 
 # ═══════════════════════════════════════════════════════════════════════
 # Build performance profiles
 # ═══════════════════════════════════════════════════════════════════════
 
 [profile.dev]
-# Keep codegen-units at 8 for the root app crate.  The app crate is
-# huge (9000+ lines, 170+ extern imports) but 8 CGUs is still needed
-# for reasonable incremental rebuild speed.  The heavy third-party crates
-# are individually pinned to codegen-units=1 below so they don't OOM.
-codegen-units = 256
 # Enable incremental compilation (default, but be explicit).
 incremental = true
 # "unpacked" avoids generating a monolithic .pdb on Windows, which
 # speeds up linking significantly.  Stabilised since Rust 1.73.
 split-debuginfo = "unpacked"
-# Line-tables-only for first-party code — full debuginfo (level 2)
-# causes OOM on machines with limited paging file when compiling 178
-# workspace crates in parallel.  Level 1 still gives usable backtraces.
+# No debuginfo for first-party code — saves significant memory.
 debug = 0
 
 # Reduce debuginfo for third-party crates — heavy deps can OOM with
@@ -358,10 +368,13 @@ debug = 0
 debug = 0
 # Optimise third-party crates in dev builds.  opt-level 1 gives the
 # majority of the performance benefit of -O2 but uses significantly
-# less memory during LLVM codegen.  With a 178-crate workspace,
-# -O2 caused OOM on heavy crates (mongodb, sqlx-postgres, naga, etc.)
-# because LLVM's pass pipeline at -O2 allocates ~2× more arena memory.
+# less memory during LLVM codegen.
 opt-level = 1
+
+# Optimise proc-macro / build-script crates at -O2.  These run on the
+# host during compilation — faster proc-macros = faster macro_expand_crate.
+[profile.dev.build-override]
+opt-level = 2
 
 # ── Per-crate overrides for memory-hungry deps ───────────────────────
 # These crates have extreme generic expansion during typeck/codegen.

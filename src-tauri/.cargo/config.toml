@@ -102,13 +102,16 @@ rustflags = [
 ]
 
 [target.x86_64-pc-windows-msvc]
-# Keep the same CPU feature tuning available for explicit MSVC builds.
 # We intentionally do NOT set linker = "rust-lld.exe" here.
 # While rust-lld ships with the toolchain, it hangs when linking this
 # project's 178-crate binary (~7 GB of rlibs). The default MSVC link.exe
 # handles it reliably when MSVC is selected on purpose.
+#
+# /threads:8 parallelises the MSVC linker (supported since VS 2019 16.6+).
+# This alone can halve link time on multi-core machines.
 rustflags = [
   "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+  "-C", "link-arg=/threads:8",
 ]
 
 [target.x86_64-unknown-linux-gnu]

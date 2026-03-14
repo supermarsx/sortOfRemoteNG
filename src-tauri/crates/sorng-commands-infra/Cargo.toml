@@ -1,0 +1,24 @@
+[package]
+name = "sorng-commands-infra"
+version = "0.1.0"
+edition = "2021"
+description = "Infra command handlers — split from ops to reduce coherence checking time"
+
+[dependencies]
+sorng-hyperv = { path = "../sorng-hyperv" }
+sorng-idrac = { path = "../sorng-idrac" }
+sorng-ilo = { path = "../sorng-ilo" }
+sorng-lenovo = { path = "../sorng-lenovo" }
+sorng-meshcentral = { path = "../sorng-meshcentral" }
+sorng-proxmox = { path = "../sorng-proxmox" }
+sorng-supermicro = { path = "../sorng-supermicro" }
+sorng-synology = { path = "../sorng-synology" }
+sorng-vmware = { path = "../sorng-vmware" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }
+sorng-bmc-common = { path = "../sorng-bmc-common" }

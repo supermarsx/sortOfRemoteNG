@@ -1,0 +1,31 @@
+[package]
+name = "sorng-commands-tools"
+version = "0.1.0"
+edition = "2021"
+description = "Tools command handlers — split from services to reduce coherence checking time"
+
+[dependencies]
+sorng-warpgate = { path = "../sorng-warpgate" }
+sorng-opkssh = { path = "../sorng-opkssh" }
+sorng-ssh-scripts = { path = "../sorng-ssh-scripts" }
+sorng-mcp = { path = "../sorng-mcp" }
+sorng-snmp = { path = "../sorng-snmp" }
+sorng-dashboard = { path = "../sorng-dashboard" }
+sorng-hooks = { path = "../sorng-hooks" }
+sorng-notifications = { path = "../sorng-notifications" }
+sorng-topology = { path = "../sorng-topology" }
+sorng-filters = { path = "../sorng-filters" }
+sorng-credentials = { path = "../sorng-credentials" }
+sorng-replay = { path = "../sorng-replay" }
+sorng-rdpfile = { path = "../sorng-rdpfile" }
+sorng-updater = { path = "../sorng-updater" }
+sorng-marketplace = { path = "../sorng-marketplace" }
+sorng-portable = { path = "../sorng-portable" }
+sorng-scheduler = { path = "../sorng-scheduler" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }

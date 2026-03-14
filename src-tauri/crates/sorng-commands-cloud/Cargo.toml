@@ -1,0 +1,12 @@
+[package]
+name = "sorng-commands-cloud"
+version = "0.1.0"
+edition = "2021"
+description = "Cloud command handlers — split from app crate to reduce coherence checking time"
+
+[dependencies]
+sorng-app-domains = { path = "../sorng-app-domains", features = ["cloud"] }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
