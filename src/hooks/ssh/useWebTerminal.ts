@@ -349,14 +349,29 @@ export function useWebTerminal(
 
   const getTerminalTheme = useCallback(() => {
     if (typeof window === "undefined") {
-      return { background: "#0b1120", foreground: "#e2e8f0", cursor: "#7dd3fc", selectionBackground: "#1e293b" };
+      return {
+        background: "#0b1120",
+        foreground: "#e2e8f0",
+        cursor: "#7dd3fc",
+        selectionBackground: "rgba(59, 130, 246, 0.4)",
+        selectionForeground: "#ffffff",
+        selectionInactiveBackground: "rgba(59, 130, 246, 0.2)",
+      };
     }
     const styles = getComputedStyle(document.body);
     const background = styles.getPropertyValue("--color-background").trim() || "#0b1120";
     const foreground = styles.getPropertyValue("--color-text").trim() || "#e2e8f0";
     const cursor = styles.getPropertyValue("--color-primary").trim() || "#7dd3fc";
-    const selectionBackground = styles.getPropertyValue("--color-border").trim() || "#1e293b";
-    return { background, foreground, cursor, selectionBackground };
+    const primaryRgb = styles.getPropertyValue("--color-primary-rgb").trim() || "59 130 246";
+    const rgb = primaryRgb.replace(/ /g, ", ");
+    return {
+      background,
+      foreground,
+      cursor,
+      selectionBackground: `rgba(${rgb}, 0.4)`,
+      selectionForeground: "#ffffff",
+      selectionInactiveBackground: `rgba(${rgb}, 0.2)`,
+    };
   }, []);
 
   const applyTerminalTheme = useCallback(() => {
@@ -702,9 +717,10 @@ export function useWebTerminal(
       scrollback: scrollbackLines,
       convertEol: sshTerminalConfig?.implicitCrInLf ?? false,
       rightClickSelectsWord: true,
+      altClickMovesCursor: true,
       macOptionIsMeta: true,
       disableStdin: false,
-      wordSeparator,
+      wordSeparator: wordSeparator || ' ()[]{}\'":;,.<>~!@#$%^&*|+=`',
       scrollOnUserInput: sshTerminalConfig?.scrollOnKeystroke ?? true,
       ...dimensionOptions,
       allowProposedApi: true,
