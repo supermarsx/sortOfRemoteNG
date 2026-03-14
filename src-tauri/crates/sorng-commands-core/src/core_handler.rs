@@ -38,8 +38,14 @@ pub fn is_command(command: &str) -> bool {
             | "trust_get_verification_stats"
             | "trust_get_summary"
             | "connect_ssh"
+            | "start_shell"
             | "execute_command"
             | "execute_command_interactive"
+            | "execute_script"
+            | "transfer_file_scp"
+            | "get_system_info"
+            | "monitor_process"
+            | "reattach_session"
             | "send_ssh_input"
             | "resize_ssh_shell"
             | "setup_port_forward"
@@ -384,6 +390,7 @@ pub fn is_command(command: &str) -> bool {
             | "list_session_vnc_tunnels"
             | "connect_ssh3"
             | "disconnect_ssh3"
+            | "start_ssh3_shell"
             | "send_ssh3_input"
             | "resize_ssh3_shell"
             | "execute_ssh3_command"
@@ -559,8 +566,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         trust_store_commands::trust_get_verification_stats,
         trust_store_commands::trust_get_summary,
         ssh_commands::connect_ssh,
+        ssh_commands::start_shell,
         ssh_commands::execute_command,
         ssh_commands::execute_command_interactive,
+        ssh_commands::execute_script,
+        ssh_commands::transfer_file_scp,
+        ssh_commands::get_system_info,
+        ssh_commands::monitor_process,
+        ssh_commands::reattach_session,
         ssh_commands::send_ssh_input,
         ssh_commands::resize_ssh_shell,
         ssh_commands::setup_port_forward,
@@ -914,6 +927,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         // SSH3 (SSH over HTTP/3 QUIC) commands
         ssh_commands::connect_ssh3,
         ssh_commands::disconnect_ssh3,
+        ssh_commands::start_ssh3_shell,
         ssh_commands::send_ssh3_input,
         ssh_commands::resize_ssh3_shell,
         ssh_commands::execute_ssh3_command,
