@@ -267,7 +267,8 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
         TrustStoreService::new(trust_store_path.to_string_lossy().to_string());
     app.manage(trust_store_service);
 
-    let ssh_service = SshService::new();
+    let emitter = crate::event_bridge::from_app_handle(app.handle());
+    let ssh_service = SshService::new_with_emitter(emitter);
     app.manage(ssh_service.clone());
 
     let sftp_service = SftpService::new();

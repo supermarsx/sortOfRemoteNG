@@ -39,6 +39,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 mod domains;
+pub(crate) mod event_bridge;
 mod invoke_handler;
 mod splash;
 mod state_registry;
