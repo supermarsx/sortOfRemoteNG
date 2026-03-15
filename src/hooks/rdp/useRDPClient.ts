@@ -38,6 +38,8 @@ export function useRDPClient(session: ConnectionSession) {
   const containerRef = useRef<HTMLDivElement>(null);
   /** Stable ref for the configured renderer type (avoids stale closure in event listeners). */
   const frontendRendererTypeRef = useRef<FrontendRendererType>('auto');
+  /** Accumulates fractional wheel deltas for smooth scrolling. */
+  const wheelAccumRef = useRef({ v: 0, h: 0 });
 
   // ─── Derived values (needed before pipeline init) ─────────────────
 
@@ -117,6 +119,8 @@ export function useRDPClient(session: ConnectionSession) {
 
   const mouseEnabled = rdpSettings.input?.mouseEnabled ?? true;
   const keyboardEnabled = rdpSettings.input?.keyboardEnabled ?? true;
+  const scrollSpeed = rdpSettings.input?.scrollSpeed ?? 1.0;
+  const smoothScroll = rdpSettings.input?.smoothScroll ?? true;
 
   const perfLabel = rdpSettings.performance?.connectionSpeed ?? 'broadband-high';
   const audioEnabled = rdpSettings.audio?.playbackMode !== 'disabled';
@@ -1114,9 +1118,41 @@ export function useRDPClient(session: ConnectionSession) {
     if (!isConnected || !mouseEnabled) return;
     e.preventDefault();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
-    const delta = Math.sign(e.deltaY) * -120;
-    sendInput([{ type: 'Wheel', x, y, delta, horizontal: e.shiftKey }], true);
-  }, [isConnected, mouseEnabled, scaleCoords, sendInput]);
+    const horizontal = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
+
+    // RDP wheel units: 120 = one notch.  Positive = scroll up / left.
+    // Browser deltaY: positive = scroll down, so we negate.
+    // Browser deltaX: positive = scroll right, so we negate for RDP convention.
+    const rawDelta = horizontal
+      ? -(e.deltaX || e.deltaY)
+      : -e.deltaY;
+
+    if (smoothScroll) {
+      // Accumulate fractional deltas (trackpads / high-res mice send many
+      // small events).  Send an RDP wheel event only when a full notch
+      // (120 units, scaled by scrollSpeed) has been accumulated.
+      const accum = wheelAccumRef.current;
+      const key = horizontal ? 'h' : 'v';
+      // Scale: browser pixel deltas typically range 1-150 per event.
+      // A standard mouse notch is ~100px in most browsers.
+      // We map browser pixels → RDP wheel units with the speed multiplier.
+      accum[key] += rawDelta * scrollSpeed;
+
+      const NOTCH = 120;
+      while (Math.abs(accum[key]) >= NOTCH) {
+        const sign = accum[key] > 0 ? 1 : -1;
+        sendInput([{ type: 'Wheel', x, y, delta: sign * NOTCH, horizontal }], true);
+        accum[key] -= sign * NOTCH;
+      }
+    } else {
+      // Legacy mode: snap each event to ±120, apply speed multiplier
+      // by scaling the number of notches sent.
+      const notches = Math.round((rawDelta * scrollSpeed) / 120) || Math.sign(rawDelta);
+      if (notches !== 0) {
+        sendInput([{ type: 'Wheel', x, y, delta: notches * 120, horizontal }], true);
+      }
+    }
+  }, [isConnected, mouseEnabled, scaleCoords, sendInput, scrollSpeed, smoothScroll]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!isConnected || !keyboardEnabled) return;

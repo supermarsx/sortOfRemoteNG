@@ -330,6 +330,19 @@ export interface RdpInputSettings {
   inputPriority?: 'realtime' | 'batched';
   /** Batch interval in ms when inputPriority is 'batched' */
   batchIntervalMs?: number;
+
+  // ─── Scroll / Mouse Wheel ──────────────────────────────────────
+  /**
+   * Scroll speed multiplier (0.1 – 5.0, default 1.0).
+   * Values < 1 slow down scrolling, > 1 speed it up.
+   */
+  scrollSpeed?: number;
+  /**
+   * Enable smooth scrolling — accumulates fractional wheel deltas
+   * (from trackpads / high-resolution mice) and sends them gradually
+   * instead of snapping to ±120 units per event.
+   */
+  smoothScroll?: boolean;
 }
 
 export interface RdpDeviceRedirection {
@@ -690,6 +703,8 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     autoDetectLayout: true,
     inputPriority: 'realtime',
     batchIntervalMs: 16,
+    scrollSpeed: 1.0,
+    smoothScroll: true,
   },
   deviceRedirection: {
     clipboard: true,
