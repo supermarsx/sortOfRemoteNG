@@ -517,6 +517,9 @@ pub async fn get_tls_certificate_info(
         .await
         .map_err(|e| format!("TLS handshake failed: {}", e))?;
 
+    // Capture the full certificate chain before extracting the leaf.
+    let chain_ders = peer_certificate_chain_der(&tls);
+
     let der = peer_certificate_der(&tls)?;
 
     // SHA-256 fingerprint
@@ -537,6 +540,12 @@ pub async fn get_tls_certificate_info(
         Some(pem_str)
     };
 
+    // Build chain entries from all certs in the TLS chain.
+    let chain: Vec<TlsCertificateChainEntry> = chain_ders
+        .iter()
+        .filter_map(|cert_der| parse_chain_entry_from_der(cert_der))
+        .collect();
+
     Ok(TlsCertificateInfo {
         fingerprint,
         subject: parsed.subject,
@@ -547,6 +556,24 @@ pub async fn get_tls_certificate_info(
         serial: parsed.serial,
         signature_algorithm: parsed.signature_algorithm,
         san: parsed.san,
+
+        subject_cn: parsed.subject_cn,
+        subject_org: parsed.subject_org,
+        subject_ou: parsed.subject_ou,
+        subject_country: parsed.subject_country,
+        subject_state: parsed.subject_state,
+        subject_locality: parsed.subject_locality,
+        subject_email: parsed.subject_email,
+
+        issuer_cn: parsed.issuer_cn,
+        issuer_org: parsed.issuer_org,
+        issuer_country: parsed.issuer_country,
+
+        key_algorithm: parsed.key_algorithm,
+        key_size: parsed.key_size,
+        version: parsed.version,
+
+        chain,
     })
 }
 

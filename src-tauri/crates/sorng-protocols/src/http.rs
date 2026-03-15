@@ -192,6 +192,51 @@ pub fn peer_certificate_der(
         .ok_or_else(|| "Server did not present a certificate".to_string())
 }
 
+/// Return the full certificate chain (all DER-encoded certificates).
+pub fn peer_certificate_chain_der(
+    tls: &tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+) -> Vec<Vec<u8>> {
+    tls.get_ref()
+        .1
+        .peer_certificates()
+        .map(|certs| certs.iter().map(|c| c.as_ref().to_vec()).collect())
+        .unwrap_or_default()
+}
+
+/// Build a `TlsCertificateChainEntry` from DER-encoded certificate bytes.
+#[cfg(feature = "tls-cert-details")]
+pub fn parse_chain_entry_from_der(der: &[u8]) -> Option<TlsCertificateChainEntry> {
+    let (_rem, cert) = x509_parser::parse_x509_certificate(der).ok()?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(der);
+    let fp = hex::encode(hasher.finalize());
+
+    Some(TlsCertificateChainEntry {
+        subject: cert.subject().to_string(),
+        issuer: cert.issuer().to_string(),
+        fingerprint: fp,
+        valid_from: cert.validity().not_before.to_rfc2822().unwrap_or_default(),
+        valid_to: cert.validity().not_after.to_rfc2822().unwrap_or_default(),
+    })
+}
+
+/// Fallback chain entry parser when tls-cert-details is disabled.
+#[cfg(not(feature = "tls-cert-details"))]
+pub fn parse_chain_entry_from_der(der: &[u8]) -> Option<TlsCertificateChainEntry> {
+    let mut hasher = Sha256::new();
+    hasher.update(der);
+    let fp = hex::encode(hasher.finalize());
+
+    Some(TlsCertificateChainEntry {
+        subject: String::new(),
+        issuer: String::new(),
+        fingerprint: fp,
+        valid_from: String::new(),
+        valid_to: String::new(),
+    })
+}
+
 /// Response from an HTTP request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpResponse {
@@ -882,14 +927,24 @@ pub struct ProxyHealthResult {
 // TLS Certificate Info
 // ---------------------------------------------------------------------------
 
+/// A single entry in the certificate chain.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsCertificateChainEntry {
+    pub subject: String,
+    pub issuer: String,
+    pub fingerprint: String,
+    pub valid_from: String,
+    pub valid_to: String,
+}
+
 /// Certificate information returned to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TlsCertificateInfo {
     /// SHA-256 fingerprint (hex-encoded)
     pub fingerprint: String,
-    /// Subject (from peer certificate)
+    /// Full subject DN string
     pub subject: Option<String>,
-    /// Issuer
+    /// Full issuer DN string
     pub issuer: Option<String>,
     /// PEM-encoded certificate
     pub pem: Option<String>,
@@ -903,6 +958,28 @@ pub struct TlsCertificateInfo {
     pub signature_algorithm: Option<String>,
     /// Subject Alternative Names
     pub san: Vec<String>,
+
+    // ── Parsed subject DN components ──
+    pub subject_cn: Option<String>,
+    pub subject_org: Option<String>,
+    pub subject_ou: Option<String>,
+    pub subject_country: Option<String>,
+    pub subject_state: Option<String>,
+    pub subject_locality: Option<String>,
+    pub subject_email: Option<String>,
+
+    // ── Parsed issuer DN components ──
+    pub issuer_cn: Option<String>,
+    pub issuer_org: Option<String>,
+    pub issuer_country: Option<String>,
+
+    // ── Key and version info ──
+    pub key_algorithm: Option<String>,
+    pub key_size: Option<u32>,
+    pub version: Option<u32>,
+
+    // ── Certificate chain ──
+    pub chain: Vec<TlsCertificateChainEntry>,
 }
 
 #[derive(Default)]
@@ -915,10 +992,89 @@ pub struct ParsedTlsCertificateDetails {
     pub signature_algorithm: Option<String>,
     pub san: Vec<String>,
     pub diagnostic_detail: Option<String>,
+
+    // ── Parsed subject DN components ──
+    pub subject_cn: Option<String>,
+    pub subject_org: Option<String>,
+    pub subject_ou: Option<String>,
+    pub subject_country: Option<String>,
+    pub subject_state: Option<String>,
+    pub subject_locality: Option<String>,
+    pub subject_email: Option<String>,
+
+    // ── Parsed issuer DN components ──
+    pub issuer_cn: Option<String>,
+    pub issuer_org: Option<String>,
+    pub issuer_country: Option<String>,
+
+    // ── Key and version info ──
+    pub key_algorithm: Option<String>,
+    pub key_size: Option<u32>,
+    pub version: Option<u32>,
+}
+
+#[cfg(feature = "tls-cert-details")]
+fn extract_dn_attr(name: &x509_parser::x509::X509Name<'_>, oid: &x509_parser::oid_registry::Oid) -> Option<String> {
+    name.iter()
+        .flat_map(|rdn| rdn.iter())
+        .find(|attr| attr.attr_type() == oid)
+        .and_then(|attr| attr.as_str().ok())
+        .map(|s| s.to_string())
+}
+
+#[cfg(feature = "tls-cert-details")]
+fn resolve_key_algorithm_and_size(cert: &x509_parser::certificate::X509Certificate<'_>) -> (Option<String>, Option<u32>) {
+    let spki = cert.public_key();
+    let algo_oid = spki.algorithm.algorithm.to_id_string();
+
+    // OIDs for public key algorithms
+    let (algo_name, key_size) = match algo_oid.as_str() {
+        // RSA
+        "1.2.840.113549.1.1.1" => {
+            let bit_len = spki.parsed().ok().and_then(|pk| {
+                if let x509_parser::public_key::PublicKey::RSA(rsa) = pk {
+                    Some(rsa.key_size() as u32)
+                } else {
+                    None
+                }
+            });
+            ("RSA".to_string(), bit_len)
+        }
+        // EC public key (the curve determines the size)
+        "1.2.840.10045.2.1" => {
+            let curve_size = spki.algorithm.parameters.as_ref().and_then(|params| {
+                // Try to read the curve OID from the algorithm parameters
+                params.as_oid().ok().map(|curve_oid| {
+                    let curve_str = curve_oid.to_id_string();
+                    match curve_str.as_str() {
+                        "1.2.840.10045.3.1.7" => ("ECDSA (P-256)".to_string(), 256u32),  // secp256r1 / prime256v1
+                        "1.3.132.0.34" => ("ECDSA (P-384)".to_string(), 384u32),          // secp384r1
+                        "1.3.132.0.35" => ("ECDSA (P-521)".to_string(), 521u32),          // secp521r1
+                        _ => (format!("ECDSA ({})", curve_str), 0u32),
+                    }
+                })
+            });
+            match curve_size {
+                Some((name, size)) => (name, if size > 0 { Some(size) } else { None }),
+                None => ("ECDSA".to_string(), None),
+            }
+        }
+        // Ed25519
+        "1.3.101.112" => ("Ed25519".to_string(), Some(256)),
+        // Ed448
+        "1.3.101.113" => ("Ed448".to_string(), Some(456)),
+        // DSA
+        "1.2.840.10040.4.1" => ("DSA".to_string(), None),
+        other => (other.to_string(), None),
+    };
+
+    (Some(algo_name), key_size)
 }
 
 #[cfg(feature = "tls-cert-details")]
 pub fn parse_tls_certificate_details(der: &[u8], fingerprint: &str) -> ParsedTlsCertificateDetails {
+    use x509_parser::oid_registry::Oid;
+
     let mut details = ParsedTlsCertificateDetails::default();
 
     if let Ok((_rem, cert)) = x509_parser::parse_x509_certificate(der) {
@@ -928,6 +1084,37 @@ pub fn parse_tls_certificate_details(der: &[u8], fingerprint: &str) -> ParsedTls
         details.valid_to = Some(cert.validity().not_after.to_rfc2822().unwrap_or_default());
         details.serial = Some(cert.raw_serial_as_string());
         details.signature_algorithm = Some(cert.signature_algorithm.algorithm.to_id_string());
+
+        // ── Subject DN components ──
+        // OIDs: CN=2.5.4.3, O=2.5.4.10, OU=2.5.4.11, C=2.5.4.6, ST=2.5.4.8, L=2.5.4.7, emailAddress=1.2.840.113549.1.9.1
+        let oid_cn = Oid::from(&[2, 5, 4, 3]).unwrap();
+        let oid_o = Oid::from(&[2, 5, 4, 10]).unwrap();
+        let oid_ou = Oid::from(&[2, 5, 4, 11]).unwrap();
+        let oid_c = Oid::from(&[2, 5, 4, 6]).unwrap();
+        let oid_st = Oid::from(&[2, 5, 4, 8]).unwrap();
+        let oid_l = Oid::from(&[2, 5, 4, 7]).unwrap();
+        let oid_email = Oid::from(&[1, 2, 840, 113549, 1, 9, 1]).unwrap();
+
+        details.subject_cn = extract_dn_attr(&cert.subject(), &oid_cn);
+        details.subject_org = extract_dn_attr(&cert.subject(), &oid_o);
+        details.subject_ou = extract_dn_attr(&cert.subject(), &oid_ou);
+        details.subject_country = extract_dn_attr(&cert.subject(), &oid_c);
+        details.subject_state = extract_dn_attr(&cert.subject(), &oid_st);
+        details.subject_locality = extract_dn_attr(&cert.subject(), &oid_l);
+        details.subject_email = extract_dn_attr(&cert.subject(), &oid_email);
+
+        // ── Issuer DN components ──
+        details.issuer_cn = extract_dn_attr(&cert.issuer(), &oid_cn);
+        details.issuer_org = extract_dn_attr(&cert.issuer(), &oid_o);
+        details.issuer_country = extract_dn_attr(&cert.issuer(), &oid_c);
+
+        // ── Key algorithm and size ──
+        let (key_algo, key_sz) = resolve_key_algorithm_and_size(&cert);
+        details.key_algorithm = key_algo;
+        details.key_size = key_sz;
+
+        // ── Certificate version (X.509 v1=0, v2=1, v3=2 internally; expose as 1/2/3) ──
+        details.version = Some(cert.version.0 + 1);
 
         if let Ok(Some(san_ext)) = cert.subject_alternative_name() {
             details.san = san_ext
