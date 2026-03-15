@@ -7,7 +7,7 @@
 use crate::transport::WmiTransport;
 use crate::types::*;
 use chrono::Utc;
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -122,11 +122,27 @@ impl WinMgmtService {
             transport.set_auth(header);
         }
 
-        // Test connectivity
+        // Test connectivity — Identify first (verifies WinRM is listening)
         transport
             .test_connection()
             .await
             .map_err(|e| format!("Connection test failed: {e}"))?;
+
+        // Probe with a real WQL query to verify credentials and WMI access.
+        // The Identify request is often allowed anonymously, so a session can
+        // appear connected even when credentials are wrong.  A lightweight
+        // query against Win32_OperatingSystem (always one row) catches 401 /
+        // access-denied errors early.
+        if let Err(e) = transport
+            .wql_query("SELECT Caption FROM Win32_OperatingSystem")
+            .await
+        {
+            warn!(
+                "WMI auth probe failed for {} — {e}",
+                config.computer_name
+            );
+            return Err(format!("Authentication/access check failed: {e}"));
+        }
 
         let now = Utc::now();
         let meta = WmiSession {
