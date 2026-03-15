@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   X,
   Shield,
@@ -13,6 +13,8 @@ import {
   Key,
   Pencil,
   Check,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import type {
   CertIdentity,
@@ -175,97 +177,12 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
 
               {/* TLS-specific cert details */}
               {mgr.isCertIdentity(mgr.identity) && (
-                <>
-                  {mgr.identity.subject && (
-                    <Row
-                      icon={<Server size={12} />}
-                      label="Subject"
-                      value={mgr.identity.subject}
-                    />
-                  )}
-                  {mgr.identity.issuer && (
-                    <Row
-                      icon={<FileKey size={12} />}
-                      label="Issuer"
-                      value={mgr.identity.issuer}
-                    />
-                  )}
-                  {mgr.identity.serial && (
-                    <Row
-                      icon={<Key size={12} />}
-                      label="Serial"
-                      value={mgr.identity.serial}
-                    />
-                  )}
-                  {mgr.identity.signatureAlgorithm && (
-                    <Row
-                      icon={<Shield size={12} />}
-                      label="Algorithm"
-                      value={mgr.identity.signatureAlgorithm}
-                    />
-                  )}
-                  {mgr.identity.san && mgr.identity.san.length > 0 && (
-                    <Row
-                      icon={<Globe size={12} />}
-                      label="SANs"
-                      value={mgr.identity.san.join(", ")}
-                    />
-                  )}
-
-                  {/* Validity */}
-                  <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
-                    <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
-                      <Clock size={12} />
-                      <span>Validity</span>
-                    </div>
-                    {mgr.identity.validFrom && (
-                      <p className="text-xs text-[var(--color-textSecondary)]">
-                        From:{" "}
-                        <span className="text-[var(--color-textSecondary)]">
-                          {new Date(mgr.identity.validFrom).toLocaleDateString()}
-                        </span>
-                      </p>
-                    )}
-                    {mgr.identity.validTo && (
-                      <p className="text-xs text-[var(--color-textSecondary)]">
-                        To:{" "}
-                        <span
-                          className={
-                            mgr.isExpired(mgr.identity)
-                              ? "text-error font-medium"
-                              : mgr.isExpiringSoon(mgr.identity)
-                                ? "text-warning font-medium"
-                                : "text-[var(--color-textSecondary)]"
-                          }
-                        >
-                          {new Date(mgr.identity.validTo).toLocaleDateString()}
-                          {mgr.isExpired(mgr.identity) && " (EXPIRED)"}
-                          {mgr.isExpiringSoon(mgr.identity) && " (expiring soon)"}
-                        </span>
-                      </p>
-                    )}
-                  </div>
-                </>
+                <TlsCertDetails identity={mgr.identity} isExpired={mgr.isExpired} isExpiringSoon={mgr.isExpiringSoon} />
               )}
 
               {/* SSH-specific host key details */}
               {!mgr.isCertIdentity(mgr.identity) && (
-                <>
-                  {(mgr.identity as SshHostKeyIdentity).keyType && (
-                    <Row
-                      icon={<Key size={12} />}
-                      label="Key Type"
-                      value={(mgr.identity as SshHostKeyIdentity).keyType!}
-                    />
-                  )}
-                  {(mgr.identity as SshHostKeyIdentity).keyBits && (
-                    <Row
-                      icon={<Shield size={12} />}
-                      label="Key Bits"
-                      value={String((mgr.identity as SshHostKeyIdentity).keyBits)}
-                    />
-                  )}
-                </>
+                <SshKeyDetails identity={mgr.identity as SshHostKeyIdentity} />
               )}
 
               {/* First / last seen */}
@@ -338,5 +255,148 @@ function Row({
         {value}
       </span>
     </div>
+  );
+}
+
+/** TLS certificate detail fields */
+function TlsCertDetails({
+  identity,
+  isExpired,
+  isExpiringSoon,
+}: {
+  identity: CertIdentity;
+  isExpired: (id: CertIdentity) => boolean;
+  isExpiringSoon: (id: CertIdentity) => boolean;
+}) {
+  const [showPem, setShowPem] = useState(false);
+
+  const expired = isExpired(identity);
+  const expiringSoon = isExpiringSoon(identity);
+  const isCurrentlyValid = !expired && !expiringSoon && !!identity.validFrom && !!identity.validTo;
+
+  return (
+    <>
+      {identity.subject && (
+        <Row icon={<Server size={12} />} label="Subject" value={identity.subject} />
+      )}
+      {identity.issuer && (
+        <Row icon={<FileKey size={12} />} label="Issuer" value={identity.issuer} />
+      )}
+      {identity.serial && (
+        <Row icon={<Key size={12} />} label="Serial" value={identity.serial} />
+      )}
+      {identity.signatureAlgorithm && (
+        <Row icon={<Shield size={12} />} label="Algorithm" value={identity.signatureAlgorithm} />
+      )}
+
+      {/* Subject Alternative Names — displayed as a list */}
+      {identity.san && identity.san.length > 0 && (
+        <div className="flex items-start gap-2 text-xs">
+          <span className="text-[var(--color-textMuted)] flex-shrink-0 mt-0.5">
+            <Globe size={12} />
+          </span>
+          <span className="text-[var(--color-textMuted)] flex-shrink-0 w-16">SANs</span>
+          <ul className="text-[var(--color-textSecondary)] break-all list-none m-0 p-0 space-y-0.5">
+            {identity.san.map((name, i) => (
+              <li key={i} className="font-mono">{name}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Validity with color coding */}
+      <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
+        <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
+          <Clock size={12} />
+          <span>Validity</span>
+        </div>
+        {identity.validFrom && (
+          <p className="text-xs">
+            From:{" "}
+            <span
+              className={
+                isCurrentlyValid
+                  ? "text-success font-medium"
+                  : "text-[var(--color-textSecondary)]"
+              }
+            >
+              {new Date(identity.validFrom).toLocaleDateString()}
+            </span>
+          </p>
+        )}
+        {identity.validTo && (
+          <p className="text-xs">
+            To:{" "}
+            <span
+              className={
+                expired
+                  ? "text-error font-medium"
+                  : expiringSoon
+                    ? "text-warning font-medium"
+                    : isCurrentlyValid
+                      ? "text-success font-medium"
+                      : "text-[var(--color-textSecondary)]"
+              }
+            >
+              {new Date(identity.validTo).toLocaleDateString()}
+              {expired && " (EXPIRED)"}
+              {expiringSoon && " (expiring soon)"}
+            </span>
+          </p>
+        )}
+      </div>
+
+      {/* PEM show/hide toggle */}
+      {identity.pem && (
+        <div className="space-y-1">
+          <button
+            onClick={() => setShowPem((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] transition-colors"
+          >
+            {showPem ? <EyeOff size={12} /> : <Eye size={12} />}
+            <span>{showPem ? "Hide" : "Show"} PEM Certificate</span>
+          </button>
+          {showPem && (
+            <pre className="text-[10px] font-mono text-[var(--color-textSecondary)] bg-[var(--color-background)] rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+              {identity.pem}
+            </pre>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** SSH host key detail fields */
+function SshKeyDetails({ identity }: { identity: SshHostKeyIdentity }) {
+  const [showPublicKey, setShowPublicKey] = useState(false);
+
+  return (
+    <>
+      {identity.keyType && (
+        <Row icon={<Key size={12} />} label="Key Type" value={identity.keyType} />
+      )}
+      {identity.keyBits != null && (
+        <Row icon={<Shield size={12} />} label="Key Bits" value={String(identity.keyBits)} />
+      )}
+
+      {/* Public key show/hide toggle */}
+      {identity.publicKey && (
+        <div className="space-y-1">
+          <button
+            onClick={() => setShowPublicKey((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] transition-colors"
+          >
+            {showPublicKey ? <EyeOff size={12} /> : <Eye size={12} />}
+            <span>{showPublicKey ? "Hide" : "Show"} Public Key</span>
+          </button>
+          {showPublicKey && (
+            <pre className="text-[10px] font-mono text-[var(--color-textSecondary)] bg-[var(--color-background)] rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+              {identity.publicKey}
+            </pre>
+          )}
+        </div>
+      )}
+    </>
   );
 }

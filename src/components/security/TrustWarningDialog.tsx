@@ -5,6 +5,12 @@ import {
   AlertTriangle,
   Fingerprint,
   ArrowRight,
+  Server,
+  FileKey,
+  Clock,
+  Globe,
+  Key,
+  Shield,
 } from "lucide-react";
 import type { CertIdentity, SshHostKeyIdentity } from "../../utils/auth/trustStore";
 import { formatFingerprint } from "../../utils/auth/trustStore";
@@ -114,23 +120,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                   <p className="text-xs text-[var(--color-textMuted)] font-medium mb-2">
                     Previously Stored
                   </p>
-                  <div className="flex items-center gap-1 mb-1">
-                    <Fingerprint size={10} className="text-[var(--color-textMuted)]" />
-                    <span className="text-[10px] text-[var(--color-textMuted)]">
-                      Fingerprint
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-mono text-[var(--color-textSecondary)] break-all">
-                    {storedIdentity
-                      ? formatFingerprint(storedIdentity.fingerprint)
-                      : "—"}
-                  </p>
-                  {storedIdentity?.lastSeen && (
-                    <p className="text-[10px] text-[var(--color-textMuted)] mt-2">
-                      Last seen:{" "}
-                      {new Date(storedIdentity.lastSeen).toLocaleDateString()}
-                    </p>
-                  )}
+                  <IdentitySummary identity={storedIdentity} isTls={isTls} />
                 </div>
 
                 {/* Received now */}
@@ -138,15 +128,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                   <p className="text-xs text-error font-medium mb-2">
                     Received Now
                   </p>
-                  <div className="flex items-center gap-1 mb-1">
-                    <Fingerprint size={10} className="text-[var(--color-textMuted)]" />
-                    <span className="text-[10px] text-[var(--color-textMuted)]">
-                      Fingerprint
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-mono text-error break-all">
-                    {formatFingerprint(receivedIdentity.fingerprint)}
-                  </p>
+                  <IdentitySummary identity={receivedIdentity} isTls={isTls} accentClass="text-error" />
                 </div>
               </div>
             </>
@@ -160,13 +142,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 presented a {identityLabel} that has not been seen before.
               </p>
               <div className="bg-[var(--color-background)] rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2 text-xs text-[var(--color-textMuted)]">
-                  <Fingerprint size={12} />
-                  <span>Fingerprint (SHA-256)</span>
-                </div>
-                <p className="text-xs font-mono text-[var(--color-textSecondary)] break-all">
-                  {formatFingerprint(receivedIdentity.fingerprint)}
-                </p>
+                <IdentitySummary identity={receivedIdentity} isTls={isTls} />
               </div>
               <p className="text-xs text-[var(--color-textSecondary)]">
                 If you trust this server, accept the {identityLabel} to remember
@@ -212,3 +188,149 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
     </Modal>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function isCertIdentity(
+  id: CertIdentity | SshHostKeyIdentity,
+): id is CertIdentity {
+  return "issuer" in id || "validFrom" in id || "serial" in id;
+}
+
+/** A compact, read-only summary of a TLS cert or SSH host key identity. */
+function IdentitySummary({
+  identity,
+  isTls,
+  accentClass,
+}: {
+  identity?: CertIdentity | SshHostKeyIdentity;
+  isTls: boolean;
+  accentClass?: string;
+}) {
+  if (!identity) {
+    return <p className="text-[11px] text-[var(--color-textMuted)]">--</p>;
+  }
+
+  const fpColor = accentClass ?? "text-[var(--color-textSecondary)]";
+
+  return (
+    <div className="space-y-2">
+      {/* Fingerprint */}
+      <div>
+        <div className="flex items-center gap-1 mb-0.5">
+          <Fingerprint size={10} className="text-[var(--color-textMuted)]" />
+          <span className="text-[10px] text-[var(--color-textMuted)]">
+            Fingerprint (SHA-256)
+          </span>
+        </div>
+        <p className={`text-[11px] font-mono break-all ${fpColor}`}>
+          {formatFingerprint(identity.fingerprint)}
+        </p>
+      </div>
+
+      {/* TLS-specific fields */}
+      {isTls && isCertIdentity(identity) && (
+        <>
+          {identity.subject && (
+            <SummaryRow icon={<Server size={10} />} label="Subject" value={identity.subject} />
+          )}
+          {identity.issuer && (
+            <SummaryRow icon={<FileKey size={10} />} label="Issuer" value={identity.issuer} />
+          )}
+          {identity.san && identity.san.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1 mb-0.5">
+                <Globe size={10} className="text-[var(--color-textMuted)]" />
+                <span className="text-[10px] text-[var(--color-textMuted)]">SANs</span>
+              </div>
+              <ul className="text-[11px] text-[var(--color-textSecondary)] list-none m-0 p-0 space-y-0.5">
+                {identity.san.map((name, i) => (
+                  <li key={i} className="font-mono break-all">{name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(identity.validFrom || identity.validTo) && (
+            <div>
+              <div className="flex items-center gap-1 mb-0.5">
+                <Clock size={10} className="text-[var(--color-textMuted)]" />
+                <span className="text-[10px] text-[var(--color-textMuted)]">Validity</span>
+              </div>
+              {identity.validFrom && (
+                <p className="text-[11px] text-[var(--color-textSecondary)]">
+                  From: {new Date(identity.validFrom).toLocaleDateString()}
+                </p>
+              )}
+              {identity.validTo && (
+                <p className={`text-[11px] ${validityColor(identity)}`}>
+                  To: {new Date(identity.validTo).toLocaleDateString()}
+                  {isExpired(identity) && " (EXPIRED)"}
+                  {isExpiringSoon(identity) && " (expiring soon)"}
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* SSH-specific fields */}
+      {!isTls && !isCertIdentity(identity) && (
+        <>
+          {(identity as SshHostKeyIdentity).keyType && (
+            <SummaryRow icon={<Key size={10} />} label="Key Type" value={(identity as SshHostKeyIdentity).keyType!} />
+          )}
+          {(identity as SshHostKeyIdentity).keyBits != null && (
+            <SummaryRow icon={<Shield size={10} />} label="Key Bits" value={String((identity as SshHostKeyIdentity).keyBits)} />
+          )}
+        </>
+      )}
+
+      {/* Last seen */}
+      {identity.lastSeen && (
+        <p className="text-[10px] text-[var(--color-textMuted)]">
+          Last seen: {new Date(identity.lastSeen).toLocaleDateString()}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SummaryRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-0.5">
+        <span className="text-[var(--color-textMuted)]">{icon}</span>
+        <span className="text-[10px] text-[var(--color-textMuted)]">{label}</span>
+      </div>
+      <p className="text-[11px] text-[var(--color-textSecondary)] break-all">{value}</p>
+    </div>
+  );
+}
+
+function isExpired(id: CertIdentity): boolean {
+  if (!id.validTo) return false;
+  return new Date(id.validTo).getTime() < Date.now();
+}
+
+function isExpiringSoon(id: CertIdentity): boolean {
+  if (!id.validTo) return false;
+  const daysLeft =
+    (new Date(id.validTo).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+  return daysLeft > 0 && daysLeft <= 5;
+}
+
+function validityColor(id: CertIdentity): string {
+  if (isExpired(id)) return "text-error font-medium";
+  if (isExpiringSoon(id)) return "text-warning font-medium";
+  return "text-success font-medium";
+}
