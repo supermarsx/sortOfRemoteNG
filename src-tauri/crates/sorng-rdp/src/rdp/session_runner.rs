@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 
 use super::frame_delivery::*;
 use super::frame_store::SharedFrameStoreState;
-use super::network::{extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
+use super::network::{extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient};
 use super::settings::{build_bitmap_codecs, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
@@ -875,10 +875,29 @@ fn establish_rdp_connection(
         &server_public_key[..server_public_key.len().min(16)]
     );
 
-    // Extract and emit server certificate fingerprint
+    // Extract and emit server certificate details (full X.509 info)
     {
         let (tls_stream, _) = tls_framed.get_inner();
-        if let Some(fp) = extract_cert_fingerprint(tls_stream) {
+        if let Some(details) = extract_cert_details(tls_stream) {
+            let _ = event_emitter.emit_event(
+                "rdp://cert-fingerprint",
+                serde_json::to_value(&serde_json::json!({
+                    "session_id": session_id,
+                    "fingerprint": details.fingerprint,
+                    "host": host,
+                    "port": port,
+                    "subject": details.subject,
+                    "issuer": details.issuer,
+                    "valid_from": details.valid_from,
+                    "valid_to": details.valid_to,
+                    "serial": details.serial,
+                    "signature_algorithm": details.signature_algorithm,
+                    "san": details.san,
+                    "pem": details.pem,
+                })).unwrap_or_default(),
+            );
+        } else if let Some(fp) = extract_cert_fingerprint(tls_stream) {
+            // Fallback: emit fingerprint-only if full parsing failed
             let _ = event_emitter.emit_event(
                 "rdp://cert-fingerprint",
                 serde_json::to_value(&serde_json::json!({

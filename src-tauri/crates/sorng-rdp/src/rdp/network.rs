@@ -276,3 +276,157 @@ pub fn extract_cert_fingerprint(tls_stream: &RdpTlsStream) -> Option<String> {
     let hex: Vec<String> = hash.iter().map(|b| format!("{b:02x}")).collect();
     Some(hex.join(":"))
 }
+
+/// Full certificate details extracted from the server's TLS certificate.
+#[derive(Clone, serde::Serialize)]
+pub struct RdpCertDetails {
+    pub fingerprint: String,
+    pub subject: String,
+    pub issuer: String,
+    pub valid_from: String,
+    pub valid_to: String,
+    pub serial: String,
+    pub signature_algorithm: String,
+    pub san: Vec<String>,
+    pub pem: String,
+}
+
+/// Extract full certificate details from the server's TLS certificate.
+pub fn extract_cert_details(tls_stream: &RdpTlsStream) -> Option<RdpCertDetails> {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    use x509_cert::der::Decode;
+
+    let der = tls_stream
+        .conn
+        .peer_certificates()
+        .and_then(|certs| certs.first())
+        .map(|cert| cert.as_ref().to_vec())?;
+
+    // Fingerprint
+    let hash = Sha256::digest(&der);
+    let fingerprint: String = hash.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":");
+
+    // PEM encode
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&der);
+    let pem = format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
+        b64.as_bytes()
+            .chunks(64)
+            .map(|c| std::str::from_utf8(c).unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    // Parse X.509
+    let cert = match x509_cert::Certificate::from_der(&der) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to parse X.509 certificate for details: {e}");
+            // Return minimal info with just the fingerprint and PEM
+            return Some(RdpCertDetails {
+                fingerprint,
+                subject: String::new(),
+                issuer: String::new(),
+                valid_from: String::new(),
+                valid_to: String::new(),
+                serial: String::new(),
+                signature_algorithm: String::new(),
+                san: Vec::new(),
+                pem,
+            });
+        }
+    };
+
+    let tbs = &cert.tbs_certificate;
+
+    // Subject and Issuer as RFC 4514 strings
+    let subject = tbs.subject.to_string();
+    let issuer = tbs.issuer.to_string();
+
+    // Validity — convert GeneralizedTime / UTCTime to ISO 8601
+    let valid_from = format_x509_time(&tbs.validity.not_before);
+    let valid_to = format_x509_time(&tbs.validity.not_after);
+
+    // Serial number as colon-separated hex
+    let serial = tbs
+        .serial_number
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(":");
+
+    // Signature algorithm OID
+    let signature_algorithm = cert.signature_algorithm.oid.to_string();
+
+    // Subject Alternative Names
+    let san = extract_san(tbs);
+
+    Some(RdpCertDetails {
+        fingerprint,
+        subject,
+        issuer,
+        valid_from,
+        valid_to,
+        serial,
+        signature_algorithm,
+        san,
+        pem,
+    })
+}
+
+/// Format an X.509 Time value to an ISO 8601 string.
+fn format_x509_time(time: &x509_cert::time::Time) -> String {
+    // x509_cert::time::Time implements Display as an RFC 3339 timestamp
+    // which is exactly the ISO 8601 format we need.
+    time.to_string()
+}
+
+/// Extract Subject Alternative Name entries from the certificate.
+fn extract_san(tbs: &x509_cert::TbsCertificate) -> Vec<String> {
+    use x509_cert::der::Decode;
+    use x509_cert::ext::pkix::name::GeneralName;
+    use x509_cert::ext::pkix::SubjectAltName;
+
+    let extensions = match &tbs.extensions {
+        Some(exts) => exts,
+        None => return Vec::new(),
+    };
+
+    // SAN OID: 2.5.29.17
+    let san_oid = x509_cert::der::oid::db::rfc5280::ID_CE_SUBJECT_ALT_NAME;
+
+    for ext in extensions.iter() {
+        if ext.extn_id == san_oid {
+            if let Ok(san) = SubjectAltName::from_der(ext.extn_value.as_bytes()) {
+                return san
+                    .0
+                    .iter()
+                    .filter_map(|name| match name {
+                        GeneralName::DnsName(dns) => Some(format!("DNS:{dns}")),
+                        GeneralName::Rfc822Name(email) => Some(format!("email:{email}")),
+                        GeneralName::UniformResourceIdentifier(uri) => Some(format!("URI:{uri}")),
+                        GeneralName::IpAddress(oct) => {
+                            let raw = oct.as_bytes();
+                            if raw.len() == 4 {
+                                Some(format!("IP:{}.{}.{}.{}", raw[0], raw[1], raw[2], raw[3]))
+                            } else if raw.len() == 16 {
+                                let parts: Vec<String> = raw.chunks(2)
+                                    .map(|c| format!("{:02x}{:02x}", c[0], c.get(1).copied().unwrap_or(0)))
+                                    .collect();
+                                Some(format!("IP:{}", parts.join(":")))
+                            } else {
+                                Some(format!("IP:<{} bytes>", raw.len()))
+                            }
+                        }
+                        GeneralName::DirectoryName(dn) => Some(format!("dirName:{dn}")),
+                        _ => Some("other".to_string()),
+                    })
+                    .collect();
+            }
+        }
+    }
+
+    Vec::new()
+}

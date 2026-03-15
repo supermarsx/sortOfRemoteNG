@@ -785,9 +785,16 @@ export function useRDPClient(session: ConnectionSession) {
       const now = new Date().toISOString();
       const identity: CertIdentity = {
         fingerprint: fp.fingerprint,
-        subject: fp.host,
+        subject: fp.subject || fp.host,
+        issuer: fp.issuer,
         firstSeen: now,
         lastSeen: now,
+        validFrom: fp.valid_from,
+        validTo: fp.valid_to,
+        serial: fp.serial,
+        signatureAlgorithm: fp.signature_algorithm,
+        san: fp.san,
+        pem: fp.pem,
       };
       setCertIdentity(identity);
 

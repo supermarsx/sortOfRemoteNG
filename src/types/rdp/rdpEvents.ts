@@ -34,6 +34,22 @@ export interface RdpCertFingerprintEvent {
   fingerprint: string;
   host: string;
   port: number;
+  /** X.509 Subject (RFC 4514 string) */
+  subject?: string;
+  /** X.509 Issuer (RFC 4514 string) */
+  issuer?: string;
+  /** Certificate validity start (ISO 8601) */
+  valid_from?: string;
+  /** Certificate validity end (ISO 8601) */
+  valid_to?: string;
+  /** Serial number (colon-separated hex) */
+  serial?: string;
+  /** Signature algorithm OID */
+  signature_algorithm?: string;
+  /** Subject Alternative Names */
+  san?: string[];
+  /** PEM-encoded certificate */
+  pem?: string;
 }
 
 export interface RDPTimingEvent {
