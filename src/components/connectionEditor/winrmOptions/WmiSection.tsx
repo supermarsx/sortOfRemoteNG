@@ -19,6 +19,7 @@ const WmiSection: React.FC<WinrmSectionProps> = ({ ws, update }) => (
   <CollapsibleSection
     title="WMI Namespace"
     icon={<Database size={14} className="text-accent" />}
+    defaultOpen
   >
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">

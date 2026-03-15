@@ -11,6 +11,7 @@ const TlsSection: React.FC<WinrmSectionProps> = ({ ws, update }) => (
   <CollapsibleSection
     title="TLS / Certificate Validation"
     icon={<Shield size={14} className="text-info" />}
+    defaultOpen
   >
     <label className={CSS.label}>
       <Checkbox
