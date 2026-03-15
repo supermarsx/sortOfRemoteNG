@@ -367,6 +367,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     autoHideSeconds: 0,
     showByDefault: false,
     maskIcon: false,
+    maskCharacter: '',
+    lockSavedPasswords: false,
   },
 
   // WinRM Global Defaults

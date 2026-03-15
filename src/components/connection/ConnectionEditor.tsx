@@ -35,7 +35,7 @@ import {
   PROTOCOL_COLOR_MAP,
   type ConnectionEditorMgr,
 } from "../../hooks/connection/useConnectionEditor";
-import { Checkbox, NumberInput, Select, Textarea} from '../ui/forms';
+import { Checkbox, NumberInput, PasswordInput, Select, Textarea} from '../ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -375,12 +375,12 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
         <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
           Password
         </label>
-        <input
-          type="password"
+        <PasswordInput
           value={mgr.formData.password || ""}
           onChange={(e) =>
             mgr.setFormData({ ...mgr.formData, password: e.target.value })
           }
+          isSaved={!mgr.isNewConnection && !!mgr.formData.password}
           className="w-full px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
           placeholder="••••••••"
         />

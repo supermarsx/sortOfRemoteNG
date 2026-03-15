@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback, InputHTMLAttributes } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, InputHTMLAttributes } from 'react';
+import { Eye, EyeOff, Lock } from 'lucide-react';
 import { useSettings } from '../../../contexts/SettingsContext';
 
 export interface PasswordInputProps
@@ -9,17 +9,26 @@ export interface PasswordInputProps
    * When `false`, the eye icon is never shown regardless of global setting.
    */
   revealable?: boolean;
+  /**
+   * Marks this field as containing a previously saved password.
+   * When `lockSavedPasswords` is enabled globally, the eye icon is
+   * replaced with a lock and reveal is blocked.
+   */
+  isSaved?: boolean;
 }
 
 /**
  * Drop-in replacement for `<input type="password" />` that adds a
  * configurable show/hide eye icon. Behaviour is governed by the global
- * `passwordReveal` settings (mode, autoHideSeconds, showByDefault, etc.)
- * but can be overridden per-instance via the `revealable` prop.
+ * `passwordReveal` settings (mode, autoHideSeconds, showByDefault,
+ * maskCharacter, lockSavedPasswords, etc.) but can be overridden
+ * per-instance via the `revealable` and `isSaved` props.
  */
 export const PasswordInput: React.FC<PasswordInputProps> = ({
   revealable,
+  isSaved,
   className,
+  style,
   ...rest
 }) => {
   const { settings } = useSettings();
@@ -29,12 +38,16 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
     autoHideSeconds: 0,
     showByDefault: false,
     maskIcon: false,
+    maskCharacter: '',
+    lockSavedPasswords: false,
   };
 
   const isRevealable = revealable ?? pr.enabled;
-  const [visible, setVisible] = useState(pr.showByDefault && isRevealable);
+  const isLocked = !!(isSaved && pr.lockSavedPasswords);
+  const canReveal = isRevealable && !isLocked;
+
+  const [visible, setVisible] = useState(pr.showByDefault && canReveal);
   const autoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdActive = useRef(false);
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -43,10 +56,10 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
     };
   }, []);
 
-  // Reset visibility when global settings change
+  // Reset visibility when global settings change or lock state changes
   useEffect(() => {
-    if (!isRevealable) setVisible(false);
-  }, [isRevealable]);
+    if (!canReveal) setVisible(false);
+  }, [canReveal]);
 
   const startAutoHide = useCallback(() => {
     if (autoHideTimer.current) clearTimeout(autoHideTimer.current);
@@ -59,7 +72,7 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
 
   // ── Toggle mode handlers ──────────────────────────────────────
   const handleToggleClick = useCallback(() => {
-    if (pr.mode !== 'toggle') return;
+    if (pr.mode !== 'toggle' || isLocked) return;
     const next = !visible;
     setVisible(next);
     if (next) {
@@ -67,24 +80,22 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
     } else if (autoHideTimer.current) {
       clearTimeout(autoHideTimer.current);
     }
-  }, [pr.mode, visible, startAutoHide]);
+  }, [pr.mode, visible, startAutoHide, isLocked]);
 
   // ── Hold mode handlers ────────────────────────────────────────
   const handlePointerDown = useCallback(() => {
-    if (pr.mode !== 'hold') return;
-    holdActive.current = true;
+    if (pr.mode !== 'hold' || isLocked) return;
     setVisible(true);
-  }, [pr.mode]);
+  }, [pr.mode, isLocked]);
 
   const handlePointerUp = useCallback(() => {
     if (pr.mode !== 'hold') return;
-    holdActive.current = false;
     setVisible(false);
   }, [pr.mode]);
 
   // Shared handler for mouse/pointer events on the button
   const buttonHandlers =
-    pr.mode === 'hold'
+    pr.mode === 'hold' && !isLocked
       ? {
           onPointerDown: handlePointerDown,
           onPointerUp: handlePointerUp,
@@ -95,25 +106,77 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
           onClick: handleToggleClick,
         };
 
-  const IconComponent = visible ? EyeOff : Eye;
-  const iconOpacity = !visible && pr.maskIcon ? 'opacity-30' : 'opacity-60';
+  // ── Custom mask character via CSS ─────────────────────────────
+  // Browsers use -webkit-text-security for the mask glyph.
+  // A custom character requires replacing the value with a masked
+  // string when not visible.  For simplicity we use CSS when the
+  // mask is one of the well-known values, and fall back to a visual
+  // overlay approach for custom characters.
+  const maskChar = pr.maskCharacter;
+  const useCustomMask = !visible && !!maskChar;
+
+  const mergedStyle = useMemo(() => {
+    if (!useCustomMask) return style;
+    // Use -webkit-text-security: none and render the mask ourselves
+    return {
+      ...style,
+      WebkitTextSecurity: 'none',
+      color: 'transparent',
+      caretColor: 'var(--color-text)',
+    } as React.CSSProperties;
+  }, [useCustomMask, style]);
+
+  // Build the masked overlay text
+  const maskedOverlay = useCustomMask && typeof rest.value === 'string'
+    ? maskChar.repeat(rest.value.length)
+    : null;
+
+  const showButton = isRevealable || isLocked;
+  const IconComponent = isLocked ? Lock : visible ? EyeOff : Eye;
+  const iconOpacity = isLocked
+    ? 'opacity-40'
+    : !visible && pr.maskIcon
+      ? 'opacity-30'
+      : 'opacity-60';
 
   return (
     <div className="relative w-full">
       <input
         {...rest}
         type={visible ? 'text' : 'password'}
-        className={`${className ?? ''} ${isRevealable ? 'pr-9' : ''}`}
+        className={`${className ?? ''} ${showButton ? 'pr-9' : ''}`}
+        style={mergedStyle}
       />
-      {isRevealable && (
+      {/* Custom mask character overlay */}
+      {maskedOverlay != null && (
+        <div
+          className="absolute inset-0 flex items-center pointer-events-none overflow-hidden"
+          style={{
+            paddingLeft: 'inherit',
+            paddingRight: showButton ? '2.25rem' : undefined,
+          }}
+        >
+          <span
+            className="text-[var(--color-text)] font-mono text-sm truncate"
+            style={{
+              paddingLeft: (rest as any).style?.paddingLeft ?? '0.75rem',
+              letterSpacing: '0.1em',
+            }}
+          >
+            {maskedOverlay}
+          </span>
+        </div>
+      )}
+      {showButton && (
         <button
           type="button"
           tabIndex={-1}
-          aria-label={visible ? 'Hide password' : 'Show password'}
+          aria-label={isLocked ? 'Password locked' : visible ? 'Hide password' : 'Show password'}
+          title={isLocked ? 'Saved passwords are locked (change in Settings → Security)' : undefined}
           className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded
             text-[var(--color-textSecondary)] hover:text-[var(--color-text)] focus:outline-none transition-colors
-            ${iconOpacity}`}
-          {...buttonHandlers}
+            ${iconOpacity} ${isLocked ? 'cursor-not-allowed' : ''}`}
+          {...(isLocked ? {} : buttonHandlers)}
         >
           <IconComponent size={16} strokeWidth={1.5} />
         </button>

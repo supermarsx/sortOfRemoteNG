@@ -512,6 +512,18 @@ export interface PasswordRevealConfig {
   showByDefault: boolean;
   /** Whether to mask the password icon itself when hidden */
   maskIcon: boolean;
+  /**
+   * Custom mask character when the password is hidden.
+   * Empty string = use browser default (disc/bullet).
+   * Examples: '*', '●', '•', '█'
+   */
+  maskCharacter: string;
+  /**
+   * Prevent revealing previously saved passwords.
+   * When true, the eye icon is disabled on fields that already have a
+   * stored value — the user can only replace, not view.
+   */
+  lockSavedPasswords: boolean;
 }
 
 /** Global default WinRM/WMI configuration applied to new connections */
