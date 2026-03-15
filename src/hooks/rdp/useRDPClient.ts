@@ -871,7 +871,8 @@ export function useRDPClient(session: ConnectionSession) {
 
       const canvas = canvasRef.current;
       const fb = frameBufferRef.current;
-      if (canvas && fb && fb.hasPainted) {
+      const transferred = pipelineRef.current?.isCanvasTransferred();
+      if (canvas && fb && fb.hasPainted && !transferred) {
         if (rendererRef.current && rendererRef.current.type !== 'canvas2d') {
           canvas.width = w;
           canvas.height = h;
@@ -890,9 +891,11 @@ export function useRDPClient(session: ConnectionSession) {
       resizeTimer = setTimeout(() => {
         setDesktopSize({ width: w, height: h });
         pipelineRef.current!.resize(w, h);
-        const c = canvasRef.current;
-        const fb = pipelineRef.current!.getFrameBuffer();
-        if (c && fb) fb.blitFull(c);
+        if (!pipelineRef.current!.isCanvasTransferred()) {
+          const c = canvasRef.current;
+          const fb = pipelineRef.current!.getFrameBuffer();
+          if (c && fb) fb.blitFull(c);
+        }
       }, 150);
     });
 

@@ -205,10 +205,20 @@ export class RdpFramePipeline {
   /** Resize the render surface (e.g. remote desktop resolution change). */
   resize(width: number, height: number): void {
     if (!this.canvas) return;
-    this.canvas.width = width;
-    this.canvas.height = height;
-    this.fb?.resize(width, height, this.canvas);
+    // Worker-based renderers transfer canvas control to an OffscreenCanvas —
+    // setting width/height on the DOM element after that throws InvalidStateError.
+    if (!this.isCanvasTransferred()) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
+    this.fb?.resize(width, height, this.isCanvasTransferred() ? undefined : this.canvas);
     this.renderer?.resize(width, height);
+  }
+
+  /** Whether the current renderer has transferred the canvas to an offscreen context. */
+  isCanvasTransferred(): boolean {
+    const t = this.renderer?.type;
+    return t === 'offscreen-worker' || t === 'webcodecs-worker' || t === 'webcodecs-cpu';
   }
 
   /** Enable/disable magnifier mirror painting. */
