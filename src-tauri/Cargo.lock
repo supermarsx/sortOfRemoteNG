@@ -8700,6 +8700,7 @@ dependencies = [
  "sorng-letsencrypt",
  "sorng-osticket",
  "sorng-ssh-agent",
+ "sorng-winmgmt",
  "sorng-yubikey",
  "tauri",
  "uuid",

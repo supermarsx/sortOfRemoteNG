@@ -5,6 +5,7 @@ pub use sorng_i18n as i18n;
 pub use sorng_letsencrypt as letsencrypt;
 pub use sorng_ssh_agent as ssh_agent;
 pub use sorng_gpg_agent as gpg_agent;
+pub use sorng_winmgmt as winmgmt;
 pub use sorng_yubikey as yubikey;
 
 // Use #[path] to reference the command files in the ops crate
@@ -24,6 +25,7 @@ mod ssh_agent_commands;
 mod gpg_agent_commands;
 #[path = "../../sorng-commands-ops/src/yubikey_commands.rs"]
 mod yubikey_commands;
+mod winmgmt_commands;
 
 mod services_handler;
 

@@ -220,6 +220,9 @@ pub(crate) use vmware_desktop::service::VmwDesktopServiceState;
 #[cfg(feature = "ops")]
 pub(crate) use warpgate::service::WarpgateServiceState;
 
+#[cfg(feature = "ops")]
+pub(crate) use winmgmt::service::WinMgmtServiceState;
+
 // State registered but no command handler wired yet — keep available
 // so state_registry::security_data still compiles.
 pub(crate) use heroku::HerokuService;

@@ -376,6 +376,105 @@ pub fn is_command(command: &str) -> bool {
             | "yk_audit_clear"
             | "yk_factory_reset_all"
             | "yk_export_report"
+            // Windows Management (WMI/WinRM)
+            | "winmgmt_connect"
+            | "winmgmt_disconnect"
+            | "winmgmt_disconnect_all"
+            | "winmgmt_list_sessions"
+            | "winmgmt_get_config"
+            | "winmgmt_set_config"
+            | "winmgmt_raw_query"
+            | "winmgmt_list_services"
+            | "winmgmt_get_service"
+            | "winmgmt_search_services"
+            | "winmgmt_start_service"
+            | "winmgmt_stop_service"
+            | "winmgmt_restart_service"
+            | "winmgmt_pause_service"
+            | "winmgmt_resume_service"
+            | "winmgmt_set_service_start_mode"
+            | "winmgmt_delete_service"
+            | "winmgmt_services_by_state"
+            | "winmgmt_get_service_dependencies"
+            | "winmgmt_list_event_logs"
+            | "winmgmt_query_events"
+            | "winmgmt_recent_events"
+            | "winmgmt_error_events"
+            | "winmgmt_events_by_source"
+            | "winmgmt_clear_event_log"
+            | "winmgmt_backup_event_log"
+            | "winmgmt_event_statistics"
+            | "winmgmt_export_events_csv"
+            | "winmgmt_export_events_json"
+            | "winmgmt_list_processes"
+            | "winmgmt_get_process"
+            | "winmgmt_processes_by_name"
+            | "winmgmt_search_processes"
+            | "winmgmt_create_process"
+            | "winmgmt_terminate_process"
+            | "winmgmt_terminate_by_name"
+            | "winmgmt_set_process_priority"
+            | "winmgmt_get_process_owner"
+            | "winmgmt_process_tree"
+            | "winmgmt_process_statistics"
+            | "winmgmt_perf_snapshot"
+            | "winmgmt_perf_cpu"
+            | "winmgmt_perf_memory"
+            | "winmgmt_perf_disks"
+            | "winmgmt_perf_network"
+            | "winmgmt_perf_quick_health"
+            | "winmgmt_registry_enum_keys"
+            | "winmgmt_registry_enum_values"
+            | "winmgmt_registry_get_value"
+            | "winmgmt_registry_get_key_info"
+            | "winmgmt_registry_set_string"
+            | "winmgmt_registry_set_dword"
+            | "winmgmt_registry_create_key"
+            | "winmgmt_registry_delete_key"
+            | "winmgmt_registry_delete_value"
+            | "winmgmt_registry_key_exists"
+            | "winmgmt_registry_set_qword"
+            | "winmgmt_registry_set_multi_string"
+            | "winmgmt_registry_set_binary"
+            | "winmgmt_registry_set_expand_string"
+            | "winmgmt_registry_recursive_enum"
+            | "winmgmt_registry_recursive_delete"
+            | "winmgmt_registry_search"
+            | "winmgmt_registry_export"
+            | "winmgmt_registry_import"
+            | "winmgmt_registry_snapshot"
+            | "winmgmt_registry_compare"
+            | "winmgmt_registry_bulk_set"
+            | "winmgmt_registry_copy_key"
+            | "winmgmt_registry_rename_value"
+            | "winmgmt_registry_get_security"
+            | "winmgmt_registry_check_access"
+            | "winmgmt_list_tasks"
+            | "winmgmt_get_task"
+            | "winmgmt_search_tasks"
+            | "winmgmt_enable_task"
+            | "winmgmt_disable_task"
+            | "winmgmt_run_task"
+            | "winmgmt_stop_task"
+            | "winmgmt_system_info"
+            | "winmgmt_quick_summary"
+            | "winmgmt_os_info"
+            | "winmgmt_processors_info"
+            | "winmgmt_logical_disks"
+            | "winmgmt_network_adapters"
+            | "winmgmt_list_shadow_copies"
+            | "winmgmt_get_shadow_copy"
+            | "winmgmt_shadow_copies_by_volume"
+            | "winmgmt_create_shadow_copy"
+            | "winmgmt_delete_shadow_copy"
+            | "winmgmt_list_shadow_storage"
+            | "winmgmt_backup_get_status"
+            | "winmgmt_backup_list_versions"
+            | "winmgmt_backup_get_policy"
+            | "winmgmt_backup_get_items"
+            | "winmgmt_backup_start"
+            | "winmgmt_backup_start_restore"
+            | "winmgmt_backup_list_volumes"
     )
 }
 
@@ -763,5 +862,104 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         yubikey_commands::yk_audit_clear,
         yubikey_commands::yk_factory_reset_all,
         yubikey_commands::yk_export_report,
+        // Windows Management (WMI/WinRM)
+        winmgmt_commands::winmgmt_connect,
+        winmgmt_commands::winmgmt_disconnect,
+        winmgmt_commands::winmgmt_disconnect_all,
+        winmgmt_commands::winmgmt_list_sessions,
+        winmgmt_commands::winmgmt_get_config,
+        winmgmt_commands::winmgmt_set_config,
+        winmgmt_commands::winmgmt_raw_query,
+        winmgmt_commands::winmgmt_list_services,
+        winmgmt_commands::winmgmt_get_service,
+        winmgmt_commands::winmgmt_search_services,
+        winmgmt_commands::winmgmt_start_service,
+        winmgmt_commands::winmgmt_stop_service,
+        winmgmt_commands::winmgmt_restart_service,
+        winmgmt_commands::winmgmt_pause_service,
+        winmgmt_commands::winmgmt_resume_service,
+        winmgmt_commands::winmgmt_set_service_start_mode,
+        winmgmt_commands::winmgmt_delete_service,
+        winmgmt_commands::winmgmt_services_by_state,
+        winmgmt_commands::winmgmt_get_service_dependencies,
+        winmgmt_commands::winmgmt_list_event_logs,
+        winmgmt_commands::winmgmt_query_events,
+        winmgmt_commands::winmgmt_recent_events,
+        winmgmt_commands::winmgmt_error_events,
+        winmgmt_commands::winmgmt_events_by_source,
+        winmgmt_commands::winmgmt_clear_event_log,
+        winmgmt_commands::winmgmt_backup_event_log,
+        winmgmt_commands::winmgmt_event_statistics,
+        winmgmt_commands::winmgmt_export_events_csv,
+        winmgmt_commands::winmgmt_export_events_json,
+        winmgmt_commands::winmgmt_list_processes,
+        winmgmt_commands::winmgmt_get_process,
+        winmgmt_commands::winmgmt_processes_by_name,
+        winmgmt_commands::winmgmt_search_processes,
+        winmgmt_commands::winmgmt_create_process,
+        winmgmt_commands::winmgmt_terminate_process,
+        winmgmt_commands::winmgmt_terminate_by_name,
+        winmgmt_commands::winmgmt_set_process_priority,
+        winmgmt_commands::winmgmt_get_process_owner,
+        winmgmt_commands::winmgmt_process_tree,
+        winmgmt_commands::winmgmt_process_statistics,
+        winmgmt_commands::winmgmt_perf_snapshot,
+        winmgmt_commands::winmgmt_perf_cpu,
+        winmgmt_commands::winmgmt_perf_memory,
+        winmgmt_commands::winmgmt_perf_disks,
+        winmgmt_commands::winmgmt_perf_network,
+        winmgmt_commands::winmgmt_perf_quick_health,
+        winmgmt_commands::winmgmt_registry_enum_keys,
+        winmgmt_commands::winmgmt_registry_enum_values,
+        winmgmt_commands::winmgmt_registry_get_value,
+        winmgmt_commands::winmgmt_registry_get_key_info,
+        winmgmt_commands::winmgmt_registry_set_string,
+        winmgmt_commands::winmgmt_registry_set_dword,
+        winmgmt_commands::winmgmt_registry_create_key,
+        winmgmt_commands::winmgmt_registry_delete_key,
+        winmgmt_commands::winmgmt_registry_delete_value,
+        winmgmt_commands::winmgmt_registry_key_exists,
+        winmgmt_commands::winmgmt_registry_set_qword,
+        winmgmt_commands::winmgmt_registry_set_multi_string,
+        winmgmt_commands::winmgmt_registry_set_binary,
+        winmgmt_commands::winmgmt_registry_set_expand_string,
+        winmgmt_commands::winmgmt_registry_recursive_enum,
+        winmgmt_commands::winmgmt_registry_recursive_delete,
+        winmgmt_commands::winmgmt_registry_search,
+        winmgmt_commands::winmgmt_registry_export,
+        winmgmt_commands::winmgmt_registry_import,
+        winmgmt_commands::winmgmt_registry_snapshot,
+        winmgmt_commands::winmgmt_registry_compare,
+        winmgmt_commands::winmgmt_registry_bulk_set,
+        winmgmt_commands::winmgmt_registry_copy_key,
+        winmgmt_commands::winmgmt_registry_rename_value,
+        winmgmt_commands::winmgmt_registry_get_security,
+        winmgmt_commands::winmgmt_registry_check_access,
+        winmgmt_commands::winmgmt_list_tasks,
+        winmgmt_commands::winmgmt_get_task,
+        winmgmt_commands::winmgmt_search_tasks,
+        winmgmt_commands::winmgmt_enable_task,
+        winmgmt_commands::winmgmt_disable_task,
+        winmgmt_commands::winmgmt_run_task,
+        winmgmt_commands::winmgmt_stop_task,
+        winmgmt_commands::winmgmt_system_info,
+        winmgmt_commands::winmgmt_quick_summary,
+        winmgmt_commands::winmgmt_os_info,
+        winmgmt_commands::winmgmt_processors_info,
+        winmgmt_commands::winmgmt_logical_disks,
+        winmgmt_commands::winmgmt_network_adapters,
+        winmgmt_commands::winmgmt_list_shadow_copies,
+        winmgmt_commands::winmgmt_get_shadow_copy,
+        winmgmt_commands::winmgmt_shadow_copies_by_volume,
+        winmgmt_commands::winmgmt_create_shadow_copy,
+        winmgmt_commands::winmgmt_delete_shadow_copy,
+        winmgmt_commands::winmgmt_list_shadow_storage,
+        winmgmt_commands::winmgmt_backup_get_status,
+        winmgmt_commands::winmgmt_backup_list_versions,
+        winmgmt_commands::winmgmt_backup_get_policy,
+        winmgmt_commands::winmgmt_backup_get_items,
+        winmgmt_commands::winmgmt_backup_start,
+        winmgmt_commands::winmgmt_backup_start_restore,
+        winmgmt_commands::winmgmt_backup_list_volumes,
     ]
 }

@@ -63,6 +63,10 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
         Arc::new(Mutex::new(yubikey::service::YubiKeyService::new()));
     app.manage(yubikey_state);
 
+    let winmgmt_state: WinMgmtServiceState =
+        Arc::new(Mutex::new(winmgmt::service::WinMgmtService::new()));
+    app.manage(winmgmt_state);
+
     let ddns_state: ddns::types::DdnsServiceState =
         Arc::new(Mutex::new(ddns::service::DdnsService::new()));
     app.manage(ddns_state);
