@@ -64,6 +64,8 @@ const getProtocolIcon = (protocol: string) => {
     case "telnet":
     case "rlogin":
       return Phone;
+    case "winrm":
+      return Server;
     default:
       return Monitor;
   }

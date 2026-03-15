@@ -9,6 +9,7 @@ export const getProtocolIcon = (protocol: string) => {
     case "http": case "https": return Globe;
     case "telnet": case "rlogin": return Phone;
     case "mysql": return Database;
+    case "winrm": return Server;
     default: return Monitor;
   }
 };

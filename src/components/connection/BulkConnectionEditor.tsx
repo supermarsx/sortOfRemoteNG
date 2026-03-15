@@ -30,6 +30,7 @@ const protocolIcons: Record<string, React.ReactNode> = {
   mysql: <Database size={14} className="text-info" />,
   ftp: <FolderOpen size={14} className="text-warning" />,
   sftp: <FolderOpen size={14} className="text-warning" />,
+  winrm: <Server size={14} className="text-amber-400" />,
 };
 
 // ── Sub-components ─────────────────────────────────────────────────

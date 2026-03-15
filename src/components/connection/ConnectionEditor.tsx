@@ -56,7 +56,7 @@ const EditorHeader: React.FC<{
   onClose: () => void;
 }> = ({ mgr, onClose }) => (
   <div
-    className="relative border-b border-[var(--color-border)] px-6 py-5"
+    className="relative border-b border-[var(--color-border)] px-5 py-3"
     style={{
       background: mgr.isNewConnection
         ? "linear-gradient(to right, rgb(var(--color-success-rgb) / 0.15), var(--color-surface))"
@@ -64,28 +64,28 @@ const EditorHeader: React.FC<{
     }}
   >
     <div className="flex items-center justify-between">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <div
-          className={`p-3 rounded-xl ${
+          className={`p-2 rounded-lg ${
             mgr.isNewConnection ? "bg-success/20" : "bg-primary/20"
           }`}
         >
           {mgr.isNewConnection ? (
-            <Plus size={22} className="text-success" />
+            <Plus size={18} className="text-success" />
           ) : (
-            <Settings2 size={22} className="text-primary" />
+            <Settings2 size={18} className="text-primary" />
           )}
         </div>
         <div>
-          <h2 className="text-xl font-semibold text-[var(--color-text)] flex items-center gap-2">
+          <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2">
             {mgr.isNewConnection ? "New Connection" : "Edit Connection"}
             {mgr.isNewConnection && (
-              <Sparkles size={16} className="text-success" />
+              <Sparkles size={14} className="text-success" />
             )}
           </h2>
-          <p className="text-sm text-[var(--color-textSecondary)] mt-0.5">
+          <p className="text-xs text-[var(--color-textSecondary)]">
             {mgr.isNewConnection
-              ? "Add a new server or service to your collection"
+              ? "Add a new server or service"
               : `Editing "${mgr.formData.name || "connection"}"`}
           </p>
         </div>
@@ -173,7 +173,7 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
 
 const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div>
-    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
       {mgr.formData.isGroup ? "Folder Name" : "Connection Name"}{" "}
       <span className="text-error">*</span>
     </label>
@@ -185,7 +185,7 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       onChange={(e) =>
         mgr.setFormData({ ...mgr.formData, name: e.target.value })
       }
-      className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] text-lg placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
       placeholder={mgr.formData.isGroup ? "My Servers" : "Production Server"}
       autoFocus
     />
@@ -200,7 +200,7 @@ const ParentSelector: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   if (mgr.availableGroups.length === 0) return null;
   return (
     <div>
-      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+      <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
         Parent Folder
       </label>
       <Select value={mgr.formData.parentId || ""} onChange={(v: string) =>
@@ -219,10 +219,10 @@ const ParentSelector: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 
 const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div>
-    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-3">
+    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1.5">
       Protocol
     </label>
-    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
       {PROTOCOL_OPTIONS.map(({ value, label, desc, icon: Icon, color }) => {
         const isActive = mgr.formData.protocol === value;
         return (
@@ -242,7 +242,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       })}
     </div>
 
-    <div className="mt-2 flex gap-2">
+    <div className="mt-1.5 flex gap-1.5">
       {CLOUD_OPTIONS.map(({ value, label, desc }) => {
         const isActive = mgr.formData.protocol === value;
         return (
@@ -271,30 +271,64 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
    ═══════════════════════════════════════════════════════════════ */
 
 const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-    <div className="sm:col-span-2">
-      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        Hostname / IP Address <span className="text-error">*</span>
-      </label>
-      <input
-        type="text"
-        required
-        value={mgr.formData.hostname || ""}
-        onChange={(e) =>
-          mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
-        }
-        className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono"
-        placeholder="192.168.1.100 or server.example.com"
-      />
+  <div className="space-y-2">
+    {/* Hostname + Port row */}
+    <div className="grid grid-cols-[1fr_100px] gap-2">
+      <div>
+        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+          Hostname / IP <span className="text-error">*</span>
+        </label>
+        <input
+          type="text"
+          required
+          value={mgr.formData.hostname || ""}
+          onChange={(e) =>
+            mgr.setFormData({ ...mgr.formData, hostname: e.target.value })
+          }
+          className="w-full px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono"
+          placeholder="192.168.1.100"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+          Port
+        </label>
+        <NumberInput value={mgr.formData.port || 0} onChange={(v: number) => mgr.setFormData({
+              ...mgr.formData,
+              port: v,
+            })} className="w-full px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono" min={1} max={65535} />
+      </div>
     </div>
-    <div>
-      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        Port
-      </label>
-      <NumberInput value={mgr.formData.port || 0} onChange={(v: number) => mgr.setFormData({
-            ...mgr.formData,
-            port: v,
-          })} className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-mono" min={1} max={65535} />
+    {/* Username + Password row */}
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+          Username
+        </label>
+        <input
+          type="text"
+          value={mgr.formData.username || ""}
+          onChange={(e) =>
+            mgr.setFormData({ ...mgr.formData, username: e.target.value })
+          }
+          className="w-full px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+          placeholder="admin"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+          Password
+        </label>
+        <input
+          type="password"
+          value={mgr.formData.password || ""}
+          onChange={(e) =>
+            mgr.setFormData({ ...mgr.formData, password: e.target.value })
+          }
+          className="w-full px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+          placeholder="••••••••"
+        />
+      </div>
     </div>
   </div>
 );
@@ -304,7 +338,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
    ═══════════════════════════════════════════════════════════════ */
 
 const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <>
+  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-3 space-y-2">
     <SSHOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <HTTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <CloudProviderOptions formData={mgr.formData} setFormData={mgr.setFormData} />
@@ -314,7 +348,7 @@ const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     <BackupCodesSection formData={mgr.formData} setFormData={mgr.setFormData} />
     <SecurityQuestionsSection formData={mgr.formData} setFormData={mgr.setFormData} />
     <RecoveryInfoSection formData={mgr.formData} setFormData={mgr.setFormData} />
-  </>
+  </div>
 );
 
 /* ═══════════════════════════════════════════════════════════════
@@ -331,13 +365,13 @@ const parseFocusBool = (v: string): boolean | undefined =>
   v === 'true' ? true : v === 'false' ? false : undefined;
 
 const BehaviorSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
-  const isWindows = mgr.formData.osType === 'windows' || (!mgr.formData.osType && mgr.formData.protocol === 'rdp');
+  const isWindows = mgr.formData.osType === 'windows' || (!mgr.formData.osType && (mgr.formData.protocol === 'rdp' || mgr.formData.protocol === 'winrm'));
   return (
-    <div className="space-y-4 border-t border-[var(--color-border)] pt-4">
-      <h3 className="text-sm font-semibold text-[var(--color-textSecondary)] flex items-center gap-2">
-        <Zap size={14} /> Focus Behavior
+    <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
+      <h3 className="text-xs font-semibold text-[var(--color-textSecondary)] flex items-center gap-1.5">
+        <Zap size={12} /> Focus Behavior
       </h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">On Connect</label>
           <Select
@@ -369,10 +403,10 @@ const BehaviorSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 
 const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div>
-    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
       Custom Icon
     </label>
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {ICON_OPTIONS.map(({ value, label, icon: Icon }) => {
         const isActive = (mgr.formData.icon || "") === value;
         return (
@@ -382,7 +416,7 @@ const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
             onClick={() =>
               mgr.setFormData({ ...mgr.formData, icon: value || undefined })
             }
-            className={`p-2.5 rounded-lg border transition-all ${
+            className={`p-2 rounded-lg border transition-all ${
               isActive
                 ? "border-primary/60 bg-primary/20 text-primary"
                 : "border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]"
@@ -403,9 +437,9 @@ const IconPicker: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
 
 const TagsSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
   <div>
-    <div className="flex items-center gap-2 mb-2">
-      <Tag size={14} className="text-[var(--color-textSecondary)]" />
-      <label className="text-sm font-medium text-[var(--color-textSecondary)]">
+    <div className="flex items-center gap-1.5 mb-1">
+      <Tag size={12} className="text-[var(--color-textSecondary)]" />
+      <label className="text-xs font-medium text-[var(--color-textSecondary)]">
         Tags
       </label>
     </div>
@@ -429,7 +463,7 @@ const DescriptionSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({
     <button
       type="button"
       onClick={() => mgr.toggleSection("description")}
-      className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-border)] hover:bg-[var(--color-border)] transition-colors"
+      className="w-full flex items-center justify-between px-3 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] transition-colors"
     >
       <div className="flex items-center gap-2 text-[var(--color-textSecondary)]">
         <FileText size={16} />
@@ -529,7 +563,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       >
         <EditorHeader mgr={mgr} onClose={onClose} />
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           <QuickToggles mgr={mgr} />
           <NameInput mgr={mgr} />
           <ParentSelector mgr={mgr} />

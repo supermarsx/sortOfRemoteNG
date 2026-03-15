@@ -42,6 +42,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
   { value: "vnc", label: "VNC", desc: "Virtual Network", icon: Server, color: "purple" },
   { value: "http", label: "HTTP", desc: "Web Service", icon: Globe, color: "orange" },
   { value: "https", label: "HTTPS", desc: "Secure Web", icon: Shield, color: "emerald" },
+  { value: "winrm", label: "WinRM", desc: "Win Remote Mgmt", icon: Server, color: "amber" },
   { value: "anydesk", label: "AnyDesk", desc: "Remote Access", icon: Monitor, color: "red" },
 ];
 
@@ -77,6 +78,7 @@ export const PROTOCOL_COLOR_MAP: Record<string, string> = {
   orange: "bg-orange-500/20 border-orange-500/60 text-orange-300",
   emerald: "bg-emerald-500/20 border-emerald-500/60 text-emerald-300",
   red: "bg-red-500/20 border-red-500/60 text-red-300",
+  amber: "bg-amber-500/20 border-amber-500/60 text-amber-300",
 };
 
 /* ═══════════════════════════════════════════════════════════════

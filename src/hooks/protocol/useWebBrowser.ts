@@ -175,6 +175,12 @@ export function useWebBrowser(session: ConnectionSession) {
       settings.tlsTrustPolicy,
     );
     if (policy === "always-trust") return true;
+
+    // Capture the navigation generation BEFORE the async gap so we can
+    // detect whether a newer navigation has superseded us after the
+    // await completes (e.g. React StrictMode double-mount race).
+    const genBefore = navGenRef.current;
+
     try {
       const info = await invoke<{
         fingerprint: string;
@@ -187,6 +193,12 @@ export function useWebBrowser(session: ConnectionSession) {
         signature_algorithm: string | null;
         san: string[];
       }>("get_tls_certificate_info", { host: session.hostname, port });
+
+      // If a newer navigation started while we were awaiting the cert,
+      // this call is stale — bail out so we don't overwrite the ref
+      // that the newer call will (or already did) set.
+      if (genBefore !== navGenRef.current) return false;
+
       const now = new Date().toISOString();
       const identity: CertIdentity = {
         fingerprint: info.fingerprint,
@@ -214,6 +226,13 @@ export function useWebBrowser(session: ConnectionSession) {
         policy === "always-ask" ||
         policy === "strict"
       ) {
+        // If a previous trust dialog is still pending (e.g. React StrictMode
+        // double-mount or rapid re-navigation), reject the old promise so
+        // the stale navigateToUrl() call doesn't hang forever.
+        if (trustResolveRef.current) {
+          trustResolveRef.current(false);
+          trustResolveRef.current = null;
+        }
         return new Promise<boolean>((resolve) => {
           trustResolveRef.current = resolve;
           setTrustPrompt(result);
