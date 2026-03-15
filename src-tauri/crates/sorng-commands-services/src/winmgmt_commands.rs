@@ -38,6 +38,10 @@ mod types {
     pub use sorng_winmgmt::types::*;
 }
 
+mod diagnostics {
+    pub use sorng_winmgmt::diagnostics::*;
+}
+
 #[allow(dead_code)]
 mod inner {
     include!("../../sorng-winmgmt/src/commands.rs");

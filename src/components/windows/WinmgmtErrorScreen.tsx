@@ -11,6 +11,14 @@ import {
   Terminal,
   AlertTriangle,
   ExternalLink,
+  Microscope,
+  Loader2,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  SkipForward,
+  Info,
 } from 'lucide-react';
 import {
   useWinmgmtErrorScreen,
@@ -26,9 +34,25 @@ interface WinmgmtErrorScreenProps {
   hostname: string;
   errorMessage: string;
   connectionId?: string;
+  connectionConfig?: Record<string, unknown>;
   onRetry?: () => void;
   onEditConnection?: () => void;
 }
+
+const STEP_ICON: Record<string, React.ReactNode> = {
+  pass: <CheckCircle2 size={14} className="text-success" />,
+  fail: <XCircle size={14} className="text-error" />,
+  warn: <AlertCircle size={14} className="text-warning" />,
+  info: <Info size={14} className="text-info" />,
+  skip: <SkipForward size={14} style={{ color: 'var(--color-textMuted)' }} />,
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  fail: 'var(--color-error)',
+  warn: 'var(--color-warning)',
+  info: 'var(--color-info)',
+  pass: 'var(--color-success)',
+};
 
 const CATEGORY_ACCENT: Record<WinmgmtErrorCategory, string> = {
   network: 'var(--color-textMuted)',
@@ -81,7 +105,8 @@ const QuickActions: React.FC<{
   mgr: Mgr;
   onRetry?: () => void;
   onEditConnection?: () => void;
-}> = ({ mgr, onRetry, onEditConnection }) => (
+  hasConnectionConfig: boolean;
+}> = ({ mgr, onRetry, onEditConnection, hasConnectionConfig }) => (
   <section className="flex flex-wrap gap-2">
     {onRetry && (
       <button onClick={onRetry} className="sor-btn sor-btn-primary">
@@ -91,6 +116,12 @@ const QuickActions: React.FC<{
     {onEditConnection && (
       <button onClick={onEditConnection} className="sor-btn sor-btn-secondary">
         <Settings2 size={13} /> Edit Settings
+      </button>
+    )}
+    {hasConnectionConfig && (
+      <button onClick={mgr.runDeepDiagnostics} disabled={mgr.isRunningDiagnostics} className="sor-btn sor-btn-accent">
+        {mgr.isRunningDiagnostics ? <Loader2 size={13} className="animate-spin" /> : <Microscope size={13} />}
+        {mgr.isRunningDiagnostics ? 'Running…' : 'Deep Diagnostics'}
       </button>
     )}
     <button onClick={mgr.handleCopy} className="sor-btn sor-btn-ghost">
@@ -366,6 +397,132 @@ winrm enumerate winrm/config/listener`}</pre>
   );
 };
 
+const DiagnosticsReport: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  if (!mgr.diagnosticReport && !mgr.diagnosticError) return null;
+  return (
+    <section className="sor-settings-collapsible">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-2.5" style={{ background: 'var(--color-surfaceHover)', borderBottom: '1px solid var(--color-border)' }}>
+        <span
+          className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+          style={{
+            background: 'color-mix(in srgb, var(--color-accent, var(--color-primary)) 15%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--color-accent, var(--color-primary)) 22%, transparent)',
+          }}
+        >
+          <Microscope size={13} style={{ color: 'var(--color-accent, var(--color-primary))' }} />
+        </span>
+        <h3 className="text-xs font-semibold text-[var(--color-text)]">Deep Diagnostics</h3>
+        {mgr.diagnosticReport && (
+          <span className="ml-auto text-[10px] text-[var(--color-textMuted)] font-mono tabular-nums flex items-center gap-1.5">
+            <span className="app-badge app-badge--info" style={{ padding: '1px 6px', fontSize: '9px' }}>
+              {mgr.diagnosticReport.protocol.toUpperCase()}
+            </span>
+            {mgr.diagnosticReport.resolvedIp && (
+              <span>{mgr.diagnosticReport.host} → {mgr.diagnosticReport.resolvedIp}:{mgr.diagnosticReport.port}</span>
+            )}
+            {mgr.diagnosticReport.totalDurationMs > 0 && (
+              <span className="flex items-center gap-0.5">
+                <Clock size={9} />{mgr.diagnosticReport.totalDurationMs}ms
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+
+      {/* Error state */}
+      {mgr.diagnosticError && (
+        <div className="px-4 py-3 text-[13px] flex items-center gap-2" style={{ background: 'color-mix(in srgb, var(--color-error) 10%, transparent)', color: 'var(--color-error)' }}>
+          <XCircle size={14} />
+          Diagnostics failed: {mgr.diagnosticError}
+        </div>
+      )}
+
+      {/* Step list */}
+      {mgr.diagnosticReport && (
+        <div>
+          {mgr.diagnosticReport.steps.map((step, idx) => {
+            const isExpanded = mgr.expandedStep === idx;
+            const stepColor = STATUS_COLOR[step.status] || 'var(--color-textMuted)';
+            return (
+              <div
+                key={idx}
+                style={{
+                  borderBottom: idx < mgr.diagnosticReport!.steps.length - 1 ? '1px solid color-mix(in srgb, var(--color-border) 50%, transparent)' : undefined,
+                  background: isExpanded ? 'color-mix(in srgb, var(--color-border) 20%, transparent)' : undefined,
+                }}
+              >
+                <button
+                  onClick={() => mgr.toggleStep(idx)}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-left transition-colors"
+                  style={{ minHeight: '2.25rem' }}
+                >
+                  {STEP_ICON[step.status] ?? STEP_ICON.skip}
+                  <span className="flex-1 text-[13px] text-[var(--color-text)]">{step.name}</span>
+                  <span className="flex items-center gap-1 text-[10px] font-mono tabular-nums" style={{ color: 'var(--color-textMuted)' }}>
+                    <Clock size={9} />{step.durationMs}ms
+                  </span>
+                  {step.detail && (
+                    <span className="text-[var(--color-textMuted)]" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 150ms' }}>
+                      <ChevronDown size={12} />
+                    </span>
+                  )}
+                </button>
+
+                {/* Inline status message */}
+                <div className="px-4 pb-1.5 -mt-0.5" style={{ paddingLeft: '2.625rem' }}>
+                  <p className="text-xs leading-snug" style={{ color: stepColor }}>
+                    {step.message}
+                  </p>
+                </div>
+
+                {/* Expanded detail */}
+                {isExpanded && step.detail && (
+                  <div className="px-4 pb-3" style={{ paddingLeft: '2.625rem' }}>
+                    <pre
+                      className="text-xs whitespace-pre-wrap font-mono leading-relaxed rounded-md p-2.5 mt-1"
+                      style={{
+                        background: 'var(--color-background)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-textSecondary)',
+                      }}
+                    >
+                      {step.detail}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Summary footer */}
+          <div className="px-4 py-3 space-y-2.5" style={{ background: 'color-mix(in srgb, var(--color-surface) 50%, transparent)', borderTop: '1px solid var(--color-border)' }}>
+            <p className="text-[13px] text-[var(--color-textSecondary)]">
+              <span className="font-medium text-[var(--color-text)]">Summary: </span>{mgr.diagnosticReport.summary}
+            </p>
+            {mgr.diagnosticReport.rootCauseHint && (
+              <div
+                className="rounded-lg p-3"
+                style={{
+                  background: 'color-mix(in srgb, var(--color-warning) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--color-warning) 25%, transparent)',
+                }}
+              >
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider mb-1 flex items-center gap-1.5" style={{ color: 'var(--color-warning)' }}>
+                  <AlertCircle size={11} />Root Cause
+                </h4>
+                <pre className="text-xs whitespace-pre-wrap leading-relaxed" style={{ color: 'color-mix(in srgb, var(--color-warning) 85%, var(--color-text))' }}>
+                  {mgr.diagnosticReport.rootCauseHint}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
 const RawErrorToggle: React.FC<{ mgr: Mgr; errorMessage: string }> = ({ mgr, errorMessage }) => (
   <section>
     <button onClick={mgr.toggleRawError} className="flex items-center gap-1.5 text-xs transition-colors" style={{ color: 'var(--color-textMuted)' }}>
@@ -395,18 +552,20 @@ const WinmgmtErrorScreen: React.FC<WinmgmtErrorScreenProps> = ({
   hostname,
   errorMessage,
   connectionId,
+  connectionConfig,
   onRetry,
   onEditConnection,
 }) => {
-  const mgr = useWinmgmtErrorScreen({ hostname, errorMessage, connectionId });
+  const mgr = useWinmgmtErrorScreen({ hostname, errorMessage, connectionId, connectionConfig });
 
   return (
     <div className="absolute inset-0 flex flex-col bg-[var(--color-background)] overflow-hidden">
       <HeaderBanner mgr={mgr} hostname={hostname} />
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-5 space-y-5">
-          <QuickActions mgr={mgr} onRetry={onRetry} onEditConnection={onEditConnection} />
+          <QuickActions mgr={mgr} onRetry={onRetry} onEditConnection={onEditConnection} hasConnectionConfig={!!connectionConfig} />
           <CauseAccordion mgr={mgr} />
+          <DiagnosticsReport mgr={mgr} />
           <WinRmQuickSetup category={mgr.category} />
           <AccessDeniedHelper category={mgr.category} />
           <TlsHelper category={mgr.category} />

@@ -475,6 +475,7 @@ pub fn is_command(command: &str) -> bool {
             | "winmgmt_backup_start"
             | "winmgmt_backup_start_restore"
             | "winmgmt_backup_list_volumes"
+            | "diagnose_winrm_connection"
     )
 }
 
@@ -961,5 +962,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         winmgmt_commands::winmgmt_backup_start,
         winmgmt_commands::winmgmt_backup_start_restore,
         winmgmt_commands::winmgmt_backup_list_volumes,
+        // WinRM deep diagnostics
+        winmgmt_commands::diagnose_winrm_connection,
     ]
 }

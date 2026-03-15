@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useWinmgmtSession } from "../../hooks/windows/useWinmgmtSession";
@@ -44,6 +44,19 @@ const WinmgmtWrapper: React.FC<WinmgmtWrapperProps> = ({
     connection?.domain,
   );
 
+  // Build the connection config for deep diagnostics
+  const connectionConfig = useMemo(() => {
+    const config: Record<string, unknown> = { computerName: session.hostname };
+    if (connection?.username && connection?.password) {
+      config.credential = {
+        username: connection.username,
+        password: connection.password,
+        domain: connection.domain || undefined,
+      };
+    }
+    return config;
+  }, [session.hostname, connection?.username, connection?.password, connection?.domain]);
+
   if (loading && !isConnected) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 bg-[var(--color-background)]">
@@ -62,6 +75,7 @@ const WinmgmtWrapper: React.FC<WinmgmtWrapperProps> = ({
           hostname={session.hostname}
           errorMessage={error}
           connectionId={session.connectionId}
+          connectionConfig={connectionConfig}
           onRetry={connect}
         />
       </div>

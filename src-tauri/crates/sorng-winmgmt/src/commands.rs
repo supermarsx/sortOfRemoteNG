@@ -4,6 +4,7 @@
 // appropriate transport, and delegates to the domain-specific manager.
 
 use super::backup::BackupManager;
+use super::diagnostics;
 use super::eventlog::EventLogManager;
 use super::perfmon::PerfMonManager;
 use super::processes::ProcessManager;
@@ -15,6 +16,9 @@ use super::system_info::{QuickSystemSummary, SystemInfoManager};
 use super::types::*;
 use std::collections::HashMap;
 use tauri::State;
+
+// Re-export for the command return type
+use sorng_core::diagnostics::DiagnosticReport;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Session management
@@ -1187,4 +1191,16 @@ pub async fn winmgmt_backup_list_volumes(
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     BackupManager::list_volumes(transport).await
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Deep Diagnostics
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn diagnose_winrm_connection(
+    config: WmiConnectionConfig,
+) -> Result<DiagnosticReport, String> {
+    let host = config.computer_name.clone();
+    Ok(diagnostics::run_diagnostics(&host, &config).await)
 }

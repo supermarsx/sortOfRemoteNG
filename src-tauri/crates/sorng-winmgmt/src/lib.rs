@@ -12,6 +12,7 @@
 //! - **System Information** – OS, hardware, disks, network adapters
 
 pub mod backup;
+pub mod diagnostics;
 pub mod eventlog;
 pub mod perfmon;
 pub mod processes;

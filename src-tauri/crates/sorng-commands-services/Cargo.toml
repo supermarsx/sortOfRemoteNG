@@ -13,6 +13,7 @@ sorng-letsencrypt = { path = "../sorng-letsencrypt" }
 sorng-ssh-agent = { path = "../sorng-ssh-agent" }
 sorng-gpg-agent = { path = "../sorng-gpg-agent" }
 sorng-winmgmt = { path = "../sorng-winmgmt" }
+sorng-core = { path = "../sorng-core" }
 sorng-yubikey = { path = "../sorng-yubikey" }
 tauri = { workspace = true }
 serde = { workspace = true }

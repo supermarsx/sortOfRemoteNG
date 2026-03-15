@@ -5,6 +5,7 @@ edition = "2021"
 description = "Remote Windows Management — Services, Event Viewer, Processes, Performance Monitoring via WMI/WinRM/DCOM"
 
 [dependencies]
+sorng-core = { path = "../sorng-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
