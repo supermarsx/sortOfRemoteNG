@@ -3,9 +3,14 @@ import dynamic from 'next/dynamic';
 import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield, RefreshCw } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection/connection';
 import { isToolProtocol } from '../app/toolSession';
+import { isWinmgmtProtocol } from '../windows/WindowsToolPanel';
 
 const ToolTabViewer = dynamic(
   () => import('../app/ToolPanel').then((module) => module.ToolTabViewer),
+  { ssr: false },
+);
+const WindowsToolPanel = dynamic(
+  () => import('../windows/WindowsToolPanel'),
   { ssr: false },
 );
 const WebTerminal = dynamic(
@@ -74,6 +79,16 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
     if (isToolProtocol(session.protocol)) {
       return (
         <ToolTabViewer
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    // Windows management tools (connection-scoped)
+    if (isWinmgmtProtocol(session.protocol)) {
+      return (
+        <WindowsToolPanel
           session={session}
           onClose={() => onCloseSession?.(session.id)}
         />

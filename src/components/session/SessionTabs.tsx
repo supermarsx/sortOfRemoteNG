@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useConnections } from "../../contexts/useConnections";
 import { getToolKeyFromProtocol, isToolProtocol } from "../app/toolSession";
+import { isWinmgmtProtocol, getWinmgmtToolId, getWindowsToolIcon } from "../windows/WindowsToolPanel";
 
 const getToolIcon = (toolKey: string) => {
   switch (toolKey) {
@@ -45,6 +46,10 @@ const getProtocolIcon = (protocol: string) => {
   if (isToolProtocol(protocol)) {
     const toolKey = getToolKeyFromProtocol(protocol);
     return toolKey ? getToolIcon(toolKey) : Wrench;
+  }
+  if (isWinmgmtProtocol(protocol)) {
+    const toolId = getWinmgmtToolId(protocol);
+    return toolId ? getWindowsToolIcon(toolId) : Monitor;
   }
   switch (protocol) {
     case "rdp":
@@ -238,7 +243,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               }
               return null;
             })()}
-            {!isToolProtocol(session.protocol) && (
+            {!isToolProtocol(session.protocol) && !isWinmgmtProtocol(session.protocol) && (
               <>
                 <StatusIcon
                   size={12}

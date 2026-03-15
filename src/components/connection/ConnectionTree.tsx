@@ -3,6 +3,7 @@ import { Monitor } from "lucide-react";
 import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
 import { useToastContext } from "../../contexts/ToastContext";
 import type { Connection } from "../../types/connection/connection";
+import { createWinmgmtSession, type WindowsToolId } from "../windows/WindowsToolPanel";
 import ConnectionTreeItem from "./connectionTree/ConnectionTreeItem";
 import RenameModal from "./connectionTree/RenameModal";
 import ConnectOptionsModal from "./connectionTree/ConnectOptionsModal";
@@ -27,9 +28,14 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   const { toast } = useToastContext();
 
   const handleWindowsTool = useCallback((c: Connection, tool: string) => {
-    toast.info(`Opening ${tool} for ${c.hostname || c.name}…`);
-    // TODO: invoke Tauri backend winmgmt commands
-  }, [toast]);
+    const session = createWinmgmtSession(
+      tool as WindowsToolId,
+      c.id,
+      c.name,
+      c.hostname || c.name,
+    );
+    mgr.dispatch({ type: 'ADD_SESSION', payload: session });
+  }, [mgr]);
 
   const renderTree = (connections: Connection[], level: number = 0): React.ReactNode => {
     return connections.map((connection) => (

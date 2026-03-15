@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { Connection, ConnectionSession } from "../../types/connection/connection";
 import { isToolProtocol } from "../../components/app/toolSession";
+import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { StatusChecker } from "../../utils/connection/statusChecker";
 // import { ScriptEngine } from "../../utils/recording/scriptEngine"; // Disabled for Tauri migration
@@ -354,8 +355,8 @@ export const useSessionManager = () => {
     const session = state.sessions.find((s) => s.id === sessionId);
     if (!session) return;
 
-    // Tool tabs just get removed — no connection lifecycle
-    if (isToolProtocol(session.protocol)) {
+    // Tool/winmgmt tabs just get removed — no connection lifecycle
+    if (isToolProtocol(session.protocol) || isWinmgmtProtocol(session.protocol)) {
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       return;
     }
