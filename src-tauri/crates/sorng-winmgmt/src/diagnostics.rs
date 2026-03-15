@@ -70,59 +70,138 @@ pub async fn run_diagnostics(
     // ── Step 3: WinRM Identify (anonymous) ──────────────────────────
     // This tests that WinRM is responding to SOAP requests,
     // independent of authentication.
+    // Try the configured protocol first, then the alternate.
     let identify_result = probe_winrm_identify(host, config).await;
-    match &identify_result {
+    let (identify_ok, identify_used_alt) = match &identify_result {
         Ok(product_info) => {
             steps.push(DiagnosticStep {
-                name: "WinRM Identify".into(),
+                name: format!("WinRM Identify ({})", protocol_label),
                 status: "pass".into(),
                 message: format!("WinRM service responded — {product_info}"),
-                duration_ms: 0, // filled by the probe
+                duration_ms: 0,
                 detail: None,
             });
+            (true, false)
         }
         Err((ms, err)) => {
             let is_auth_error = err.contains("401") || err.contains("403");
             if is_auth_error {
-                // 401 on Identify means the server requires auth for all requests.
-                // This is actually fine — it proves WinRM is listening.
                 steps.push(DiagnosticStep {
-                    name: "WinRM Identify".into(),
+                    name: format!("WinRM Identify ({})", protocol_label),
                     status: "pass".into(),
                     message: "WinRM service is listening (requires authentication for all requests)".into(),
                     duration_ms: *ms,
                     detail: Some(err.clone()),
                 });
+                (true, false)
             } else {
+                // Primary protocol failed — try alternate
                 steps.push(DiagnosticStep {
-                    name: "WinRM Identify".into(),
+                    name: format!("WinRM Identify ({})", protocol_label),
                     status: "fail".into(),
-                    message: format!("WinRM Identify failed: {err}"),
+                    message: format!("WinRM not responding on {protocol_label}: {err}"),
                     duration_ms: *ms,
-                    detail: Some(
-                        "The TCP port is open but WinRM did not respond with a valid \
-                         SOAP IdentifyResponse. The service may be misconfigured or \
-                         another HTTP service is running on this port."
-                            .into(),
-                    ),
+                    detail: None,
                 });
-                add_root_cause(
-                    "WinRM Identify failed — the service on port {} is not responding \
-                     as a WS-Management endpoint.\n\n\
-                     Fix: Verify WinRM is properly configured:\n\
-                     winrm enumerate winrm/config/listener",
-                    &mut steps,
-                    port,
-                );
-                return diagnostics::finish_report(
-                    host, port, "winrm", resolved_ip, steps, run_start,
-                );
+
+                let mut alt_config = config.clone();
+                alt_config.use_ssl = !config.use_ssl;
+                if alt_config.use_ssl {
+                    alt_config.skip_ca_check = true;
+                    alt_config.skip_cn_check = true;
+                }
+                let alt_label = if alt_config.use_ssl { "HTTPS" } else { "HTTP" };
+                let alt_port = alt_config.effective_port();
+
+                // Try TCP on the alternate port first
+                let alt_addr = {
+                    let mut a = socket_addr;
+                    a.set_port(alt_port);
+                    a
+                };
+                let alt_tcp = diagnostics::probe_tcp(alt_addr, tcp_timeout, true, &mut steps);
+                if alt_tcp.is_some() {
+                    drop(alt_tcp);
+                    let alt_identify = probe_winrm_identify(host, &alt_config).await;
+                    match alt_identify {
+                        Ok(info) => {
+                            steps.push(DiagnosticStep {
+                                name: format!("WinRM Identify ({alt_label})"),
+                                status: "pass".into(),
+                                message: format!("WinRM responded on {alt_label}:{alt_port} — {info}"),
+                                duration_ms: 0,
+                                detail: Some(format!(
+                                    "The target is listening on {alt_label} (port {alt_port}) \
+                                     instead of {protocol_label} (port {port}). Update the \
+                                     connection settings to use {alt_label}."
+                                )),
+                            });
+                            (true, true)
+                        }
+                        Err((ms2, err2)) => {
+                            let is_auth = err2.contains("401") || err2.contains("403");
+                            if is_auth {
+                                steps.push(DiagnosticStep {
+                                    name: format!("WinRM Identify ({alt_label})"),
+                                    status: "pass".into(),
+                                    message: format!("WinRM listening on {alt_label}:{alt_port} (requires auth)"),
+                                    duration_ms: ms2,
+                                    detail: Some(format!(
+                                        "The target has WinRM on {alt_label} (port {alt_port}). \
+                                         Update the connection settings."
+                                    )),
+                                });
+                                (true, true)
+                            } else {
+                                steps.push(DiagnosticStep {
+                                    name: format!("WinRM Identify ({alt_label})"),
+                                    status: "fail".into(),
+                                    message: format!("Also not responding on {alt_label}:{alt_port}"),
+                                    duration_ms: ms2,
+                                    detail: None,
+                                });
+                                (false, false)
+                            }
+                        }
+                    }
+                } else {
+                    (false, false)
+                }
             }
         }
+    };
+
+    if !identify_ok {
+        add_root_cause(
+            "WinRM Identify failed on both HTTP (5985) and HTTPS (5986).\n\n\
+             Fix: On the target, run `winrm quickconfig` in elevated PowerShell:\n\
+             winrm quickconfig -force\n\
+             winrm enumerate winrm/config/listener",
+            &mut steps,
+            port,
+        );
+        return diagnostics::finish_report(
+            host, port, "winrm", resolved_ip, steps, run_start,
+        );
     }
 
+    // If we found the service on the alternate protocol, use that config
+    // for the remaining probes
+    let effective_config = if identify_used_alt {
+        let mut alt = config.clone();
+        alt.use_ssl = !config.use_ssl;
+        if alt.use_ssl {
+            alt.skip_ca_check = true;
+            alt.skip_cn_check = true;
+        }
+        alt
+    } else {
+        config.clone()
+    };
+    let effective_port = effective_config.effective_port();
+
     // ── Step 4: HTTP Authentication ─────────────────────────────────
-    let auth_result = probe_winrm_auth(host, config).await;
+    let auth_result = probe_winrm_auth(host, &effective_config).await;
     match &auth_result {
         Ok((ms, response_snippet)) => {
             steps.push(DiagnosticStep {
@@ -204,7 +283,7 @@ pub async fn run_diagnostics(
     }
 
     // ── Step 5: WMI Namespace Access ────────────────────────────────
-    let wmi_result = probe_wmi_query(host, config).await;
+    let wmi_result = probe_wmi_query(host, &effective_config).await;
     match &wmi_result {
         Ok((ms, os_caption)) => {
             steps.push(DiagnosticStep {
@@ -212,7 +291,7 @@ pub async fn run_diagnostics(
                 status: "pass".into(),
                 message: format!(
                     "WQL query succeeded — namespace {} accessible",
-                    config.namespace
+                    effective_config.namespace
                 ),
                 duration_ms: *ms,
                 detail: if os_caption.is_empty() {
@@ -232,7 +311,7 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: "WMI Namespace Access".into(),
                     status: "fail".into(),
-                    message: format!("WMI access denied on namespace {}", config.namespace),
+                    message: format!("WMI access denied on namespace {}", effective_config.namespace),
                     duration_ms: *ms,
                     detail: Some(format!(
                         "{err}\n\n\
@@ -255,7 +334,7 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: "WMI Namespace Access".into(),
                     status: "fail".into(),
-                    message: format!("WMI namespace {} does not exist or is invalid", config.namespace),
+                    message: format!("WMI namespace {} does not exist or is invalid", effective_config.namespace),
                     duration_ms: *ms,
                     detail: Some(err.clone()),
                 });
@@ -283,7 +362,7 @@ pub async fn run_diagnostics(
     }
 
     // ── Step 6: WMI Enumeration (heavier query) ─────────────────────
-    let enum_result = probe_wmi_enum(host, config).await;
+    let enum_result = probe_wmi_enum(host, &effective_config).await;
     match &enum_result {
         Ok((ms, count)) => {
             steps.push(DiagnosticStep {
@@ -312,7 +391,7 @@ pub async fn run_diagnostics(
         }
     }
 
-    diagnostics::finish_report(host, port, "winrm", resolved_ip, steps, run_start)
+    diagnostics::finish_report(host, effective_port, "winrm", resolved_ip, steps, run_start)
 }
 
 // ── Individual probe implementations ────────────────────────────────────

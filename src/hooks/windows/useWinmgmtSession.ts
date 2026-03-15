@@ -46,6 +46,7 @@ export function useWinmgmtSession(
   username?: string,
   password?: string,
   domain?: string,
+  port?: number,
 ) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -71,7 +72,10 @@ export function useWinmgmtSession(
     try {
       const config: Record<string, unknown> = { computerName: hostname };
       if (username && password) {
-        config.credential = { username, password, domain: domain || undefined };
+        config.credential = { username, password, domain: domain || null };
+      }
+      if (port) {
+        config.port = port;
       }
       const id = await invoke<string>("winmgmt_connect", { config });
       if (mountedRef.current) {
@@ -82,7 +86,7 @@ export function useWinmgmtSession(
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [isTauri, hostname, username, password, domain]);
+  }, [isTauri, hostname, username, password, domain, port]);
 
   const disconnect = useCallback(async () => {
     if (!sessionId) return;

@@ -98,6 +98,11 @@ impl WinMgmtService {
     // ─── Session Management ──────────────────────────────────────────
 
     /// Connect to a remote host and create a new WMI session.
+    ///
+    /// If the caller did not explicitly set a port (`port == 0`) and the
+    /// initial attempt fails with a connection-level error, we automatically
+    /// retry with the opposite transport security (HTTP ↔ HTTPS) so that
+    /// users don't have to guess which one the target supports.
     pub async fn connect(&mut self, config: WmiConnectionConfig) -> Result<String, String> {
         if self.sessions.len() >= self.config.max_sessions {
             return Err(format!(
@@ -106,19 +111,88 @@ impl WinMgmtService {
             ));
         }
 
+        // Try primary config first
+        match self.try_connect(&config).await {
+            Ok((session_id, transport, effective_config)) => {
+                let id = session_id.clone();
+                self.finish_connect(session_id, transport, effective_config);
+                return Ok(id);
+            }
+            Err(primary_err) => {
+                // Only attempt fallback if port was auto-detected (not explicit)
+                // and the error looks like a transport/connection issue
+                let is_transport_err = {
+                    let lower = primary_err.to_lowercase();
+                    lower.contains("connection")
+                        || lower.contains("refused")
+                        || lower.contains("timed out")
+                        || lower.contains("timeout")
+                        || lower.contains("unreachable")
+                        || lower.contains("reset")
+                        || lower.contains("http request failed")
+                };
+
+                if config.port == 0 && is_transport_err {
+                    let mut fallback = config.clone();
+                    fallback.use_ssl = !config.use_ssl;
+                    // Also relax cert checks for the fallback attempt since
+                    // most self-signed HTTPS setups fail strict validation
+                    if fallback.use_ssl {
+                        fallback.skip_ca_check = true;
+                        fallback.skip_cn_check = true;
+                    }
+
+                    let alt_label = if fallback.use_ssl { "HTTPS" } else { "HTTP" };
+                    info!(
+                        "Primary {} connection to {} failed, trying {} fallback on port {}",
+                        if config.use_ssl { "HTTPS" } else { "HTTP" },
+                        config.computer_name,
+                        alt_label,
+                        fallback.effective_port(),
+                    );
+
+                    match self.try_connect(&fallback).await {
+                        Ok((session_id, transport, effective_config)) => {
+                            info!(
+                                "Fallback {} connection to {} succeeded (session {})",
+                                alt_label, config.computer_name, session_id,
+                            );
+                            self.finish_connect(session_id, transport, effective_config);
+                            return Ok(self.sessions.keys().last().unwrap().clone());
+                        }
+                        Err(_fallback_err) => {
+                            // Both failed — return the primary error as it's
+                            // more likely what the user intended
+                            return Err(primary_err);
+                        }
+                    }
+                }
+
+                Err(primary_err)
+            }
+        }
+    }
+
+    /// Attempt a single connect with the given config.  Returns the session
+    /// ID, connected transport, and the config that was actually used.
+    async fn try_connect(
+        &self,
+        config: &WmiConnectionConfig,
+    ) -> Result<(String, WmiTransport, WmiConnectionConfig), String> {
         let session_id = uuid::Uuid::new_v4().to_string();
 
         info!(
-            "Connecting to {} via {:?} (session {})",
-            config.computer_name, config.protocol, session_id
+            "Connecting to {} via {:?} {} (session {})",
+            config.computer_name,
+            config.protocol,
+            if config.use_ssl { "HTTPS" } else { "HTTP" },
+            session_id,
         );
 
-        // Build transport from connection config
         let mut transport =
-            WmiTransport::new(&config).map_err(|e| format!("Failed to create transport: {e}"))?;
+            WmiTransport::new(config).map_err(|e| format!("Failed to create transport: {e}"))?;
 
-        // Set auth if credentials provided
-        if let Some(header) = WmiTransport::build_auth_header(&config) {
+        if let Some(header) = WmiTransport::build_auth_header(config) {
             transport.set_auth(header);
         }
 
@@ -129,10 +203,6 @@ impl WinMgmtService {
             .map_err(|e| format!("Connection test failed: {e}"))?;
 
         // Probe with a real WQL query to verify credentials and WMI access.
-        // The Identify request is often allowed anonymously, so a session can
-        // appear connected even when credentials are wrong.  A lightweight
-        // query against Win32_OperatingSystem (always one row) catches 401 /
-        // access-denied errors early.
         if let Err(e) = transport
             .wql_query("SELECT Caption FROM Win32_OperatingSystem")
             .await
@@ -144,6 +214,16 @@ impl WinMgmtService {
             return Err(format!("Authentication/access check failed: {e}"));
         }
 
+        Ok((session_id, transport, config.clone()))
+    }
+
+    /// Finish connecting by storing the session.
+    fn finish_connect(
+        &mut self,
+        session_id: String,
+        transport: WmiTransport,
+        config: WmiConnectionConfig,
+    ) {
         let now = Utc::now();
         let meta = WmiSession {
             id: session_id.clone(),
@@ -168,8 +248,6 @@ impl WinMgmtService {
             "Session {} connected to {}",
             session_id, config.computer_name
         );
-
-        Ok(session_id)
     }
 
     /// Disconnect a session.

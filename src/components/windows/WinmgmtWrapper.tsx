@@ -42,20 +42,28 @@ const WinmgmtWrapper: React.FC<WinmgmtWrapperProps> = ({
     connection?.username,
     connection?.password,
     connection?.domain,
+    connection?.port,
   );
 
-  // Build the connection config for deep diagnostics
+  // Build the full WMI connection config passed to both connect and diagnostics.
+  // Maps fields from the parent Connection to WmiConnectionConfig's serde shape.
   const connectionConfig = useMemo(() => {
-    const config: Record<string, unknown> = { computerName: session.hostname };
+    const config: Record<string, unknown> = {
+      computerName: session.hostname,
+    };
     if (connection?.username && connection?.password) {
       config.credential = {
         username: connection.username,
         password: connection.password,
-        domain: connection.domain || undefined,
+        domain: connection.domain || null,
       };
     }
+    // Pass port if the connection has one (0 = auto-detect HTTP/HTTPS)
+    if (connection?.port) {
+      config.port = connection.port;
+    }
     return config;
-  }, [session.hostname, connection?.username, connection?.password, connection?.domain]);
+  }, [session.hostname, connection?.username, connection?.password, connection?.domain, connection?.port]);
 
   if (loading && !isConnected) {
     return (
