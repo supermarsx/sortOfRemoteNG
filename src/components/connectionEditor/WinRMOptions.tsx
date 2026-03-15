@@ -1,4 +1,6 @@
 import { useCallback } from "react";
+import { CollapsibleSection } from "../ui/CollapsibleSection";
+import { Monitor } from "lucide-react";
 import type { Connection, WinrmConnectionSettings } from "../../types/connection/connection";
 import TransportSection from "./winrmOptions/TransportSection";
 import AuthSection from "./winrmOptions/AuthSection";
@@ -22,12 +24,24 @@ const DEFAULT_WINRM: WinrmConnectionSettings = {
   timeoutSec: 30,
 };
 
+/** Show WinRM settings for:
+ *  - protocol === 'winrm' (dedicated WinRM connections)
+ *  - osType === 'windows' (RDP/SSH/etc. connections to Windows machines)
+ *  - protocol === 'rdp'  (always Windows)
+ */
+function shouldShow(formData: Partial<Connection>): boolean {
+  if (formData.isGroup) return false;
+  if (formData.protocol === "winrm") return true;
+  if (formData.protocol === "rdp") return true;
+  if (formData.osType === "windows") return true;
+  return false;
+}
+
 export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
   formData,
   setFormData,
 }) => {
-  // Only show for winrm protocol connections (not groups)
-  if (formData.isGroup || formData.protocol !== "winrm") return null;
+  if (!shouldShow(formData)) return null;
 
   const ws: WinrmConnectionSettings = formData.winrmSettings ?? DEFAULT_WINRM;
 
@@ -45,29 +59,37 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
   );
 
   return (
-    <div className="space-y-3">
-      {/* Domain field */}
-      <div>
-        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-          Domain
-        </label>
-        <input
-          type="text"
-          value={formData.domain || ""}
-          onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-          className="sor-form-input text-sm"
-          placeholder="CONTOSO (optional — for domain accounts)"
-        />
-        <p className="text-xs text-[var(--color-textMuted)] mt-1">
-          NetBIOS domain name. Leave empty for local accounts.
-        </p>
-      </div>
+    <CollapsibleSection
+      title="Windows Remote Management (WinRM)"
+      icon={<Monitor size={14} className="text-info" />}
+      defaultOpen
+    >
+      <div className="space-y-3">
+        {/* Domain — only show here if the parent protocol doesn't already have one */}
+        {formData.protocol !== "rdp" && (
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              Domain
+            </label>
+            <input
+              type="text"
+              value={formData.domain || ""}
+              onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+              className="sor-form-input text-sm"
+              placeholder="CONTOSO (optional — for domain accounts)"
+            />
+            <p className="text-xs text-[var(--color-textMuted)] mt-1">
+              NetBIOS domain name. Leave empty for local accounts.
+            </p>
+          </div>
+        )}
 
-      <TransportSection ws={ws} update={update} />
-      <AuthSection ws={ws} update={update} />
-      <TlsSection ws={ws} update={update} />
-      <WmiSection ws={ws} update={update} />
-    </div>
+        <TransportSection ws={ws} update={update} />
+        <AuthSection ws={ws} update={update} />
+        <TlsSection ws={ws} update={update} />
+        <WmiSection ws={ws} update={update} />
+      </div>
+    </CollapsibleSection>
   );
 };
 
