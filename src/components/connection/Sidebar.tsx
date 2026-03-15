@@ -134,6 +134,7 @@ interface SidebarProps {
   onDisconnect: (connection: Connection) => void;
   onDiagnostics: (connection: Connection) => void;
   onSessionDetach: (sessionId: string) => void;
+  onActivateSession?: (sessionId: string) => void;
   onShowPasswordDialog: () => void;
   enableConnectionReorder: boolean;
   onOpenImport?: () => void;
@@ -149,6 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDisconnect,
   onDiagnostics,
   onSessionDetach,
+  onActivateSession,
   enableConnectionReorder,
   onOpenImport,
 }) => {
@@ -172,6 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onDelete={onDeleteConnection}
               onDiagnostics={onDiagnostics}
               onSessionDetach={onSessionDetach}
+              onActivateSession={onActivateSession}
               enableReorder={enableConnectionReorder}
               onOpenImport={onOpenImport}
             />

@@ -37,6 +37,7 @@ const RDPErrorScreen = dynamic(
 interface SessionViewerProps {
   session: ConnectionSession;
   onCloseSession?: (sessionId: string) => void;
+  onActivateSession?: (sessionId: string) => void;
 }
 
 /** Generic themed error view for non-RDP protocols. */
@@ -73,7 +74,7 @@ const GenericErrorView: React.FC<{ session: ConnectionSession }> = ({ session })
   </div>
 );
 
-export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSession }) => {
+export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSession, onActivateSession }) => {
   const renderContent = () => {
     // Tool tabs render their own component
     if (isToolProtocol(session.protocol)) {
@@ -99,7 +100,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
     // client for both 'connecting' and 'connected' status so there is a
     // single stable component instance (no unmount/remount on status change).
     if (session.protocol === 'rdp' && (session.status === 'connecting' || session.status === 'connected')) {
-      return <RDPClient session={session} />;
+      return <RDPClient session={session} onActivateSession={onActivateSession} />;
     }
 
     // Debug/mock RDP error sessions — render the rich RDP error screen directly

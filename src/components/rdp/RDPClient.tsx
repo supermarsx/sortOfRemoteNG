@@ -20,6 +20,7 @@ import { useRDPClient, type RDPClientMgr } from '../../hooks/rdp/useRDPClient';
 
 interface RDPClientProps {
   session: ConnectionSession;
+  onActivateSession?: (sessionId: string) => void;
 }
 
 // ─── Status helpers ──────────────────────────────────────────────────
@@ -142,7 +143,7 @@ const CanvasArea: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = 
 
 // ─── Root component ──────────────────────────────────────────────────
 
-const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
+const RDPClient: React.FC<RDPClientProps> = ({ session, onActivateSession }) => {
   const mgr = useRDPClient(session);
 
   return (
@@ -222,6 +223,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           connectionId={session.connectionId}
           connectionName={mgr.connection?.name || session.name}
           hostname={session.hostname}
+          focusOnWinmgmtTool={mgr.connection?.focusOnWinmgmtTool}
+          onActivateSession={onActivateSession}
         />
       )}
 

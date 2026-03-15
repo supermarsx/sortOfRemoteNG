@@ -1088,6 +1088,7 @@ const AppContent: React.FC = () => {
           onDisconnect={handleDisconnectConnection}
           onDiagnostics={handleDiagnostics}
           onSessionDetach={handleSessionDetach}
+          onActivateSession={setActiveSessionId}
           onShowPasswordDialog={handleShowPasswordDialog}
           enableConnectionReorder={appSettings.enableConnectionReorder}
           onOpenImport={() => {
@@ -1192,7 +1193,7 @@ const AppContent: React.FC = () => {
                 onSessionSelect={setActiveSessionId}
                 onSessionClose={handleSessionClose}
                 onSessionDetach={handleSessionDetach}
-                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} />}
+                renderSession={(session) => <SessionViewer session={session} onCloseSession={handleSessionClose} onActivateSession={setActiveSessionId} />}
                 showTabBar={false}
                 middleClickCloseTab={appSettings.middleClickCloseTab}
               />

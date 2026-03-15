@@ -17,12 +17,13 @@ interface ConnectionTreeProps {
   onDiagnostics?: (connection: Connection) => void;
   onSessionDetach?: (id: string) => void;
   onOpenImport?: () => void;
+  onActivateSession?: (sessionId: string) => void;
   enableReorder?: boolean;
 }
 
 export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect, onDisconnect, onEdit, onDelete, onDiagnostics,
-  onSessionDetach, onOpenImport, enableReorder = true,
+  onSessionDetach, onOpenImport, onActivateSession, enableReorder = true,
 }) => {
   const mgr = useConnectionTree(onConnect, enableReorder);
   const { toast } = useToastContext();
@@ -35,7 +36,13 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       c.hostname || c.name,
     );
     mgr.dispatch({ type: 'ADD_SESSION', payload: session });
-  }, [mgr]);
+
+    // Per-connection focusOnWinmgmtTool overrides the global setting
+    const shouldFocus = c.focusOnWinmgmtTool ?? !mgr.settings.openWinmgmtToolInBackground;
+    if (shouldFocus && onActivateSession) {
+      onActivateSession(session.id);
+    }
+  }, [mgr, onActivateSession]);
 
   const renderTree = (connections: Connection[], level: number = 0): React.ReactNode => {
     return connections.map((connection) => (

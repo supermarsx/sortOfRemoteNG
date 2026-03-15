@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { useConnections } from '../../contexts/useConnections';
+import { useSettings } from '../../contexts/SettingsContext';
 import {
   WINDOWS_TOOLS,
   createWinmgmtSession,
@@ -10,15 +11,26 @@ interface WindowsToolsBarProps {
   connectionId: string;
   connectionName: string;
   hostname: string;
+  /** Per-connection override for focus behavior (undefined = use global) */
+  focusOnWinmgmtTool?: boolean;
+  onActivateSession?: (sessionId: string) => void;
 }
 
-const WindowsToolsBar: React.FC<WindowsToolsBarProps> = ({ connectionId, connectionName, hostname }) => {
+const WindowsToolsBar: React.FC<WindowsToolsBarProps> = ({
+  connectionId, connectionName, hostname, focusOnWinmgmtTool, onActivateSession,
+}) => {
   const { dispatch } = useConnections();
+  const { settings } = useSettings();
 
   const openTool = useCallback((toolId: WindowsToolId) => {
     const session = createWinmgmtSession(toolId, connectionId, connectionName, hostname);
     dispatch({ type: 'ADD_SESSION', payload: session });
-  }, [connectionId, connectionName, hostname, dispatch]);
+
+    const shouldFocus = focusOnWinmgmtTool ?? !settings.openWinmgmtToolInBackground;
+    if (shouldFocus && onActivateSession) {
+      onActivateSession(session.id);
+    }
+  }, [connectionId, connectionName, hostname, dispatch, focusOnWinmgmtTool, settings.openWinmgmtToolInBackground, onActivateSession]);
 
   return (
     <div className="flex items-center gap-0.5 px-2 py-0.5 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
