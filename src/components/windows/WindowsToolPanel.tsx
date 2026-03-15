@@ -48,7 +48,7 @@ export function createWinmgmtSession(
   return {
     id: `winmgmt-${toolId}-${connectionId}-${Date.now()}`,
     connectionId,
-    name: `${getWindowsToolLabel(toolId)} — ${connectionName}`,
+    name: `${connectionName} — ${getWindowsToolLabel(toolId)}`,
     status: 'connected',
     startTime: new Date(),
     protocol: getWinmgmtProtocol(toolId),

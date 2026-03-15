@@ -13,6 +13,7 @@ import { RDPInternalsPanel } from './RDPInternalsPanel';
 import { RDPStatusBar } from './RDPStatusBar';
 import RDPClientHeader from './RDPClientHeader';
 import { RDPSettingsPanel } from './RDPSettingsPanel';
+import WindowsToolsBar from './WindowsToolsBar';
 import { useRDPClient, type RDPClientMgr } from '../../hooks/rdp/useRDPClient';
 
 // ─── Props ───────────────────────────────────────────────────────────
@@ -213,6 +214,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           activeRenderBackend={mgr.activeRenderBackend}
           activeFrontendRenderer={mgr.activeFrontendRenderer}
           onClose={() => mgr.setShowInternals(false)}
+        />
+      )}
+
+      {(mgr.connection?.osType === 'windows' || (!mgr.connection?.osType && session.protocol === 'rdp')) && (
+        <WindowsToolsBar
+          connectionId={session.connectionId}
+          connectionName={mgr.connection?.name || session.name}
+          hostname={session.hostname}
         />
       )}
 
