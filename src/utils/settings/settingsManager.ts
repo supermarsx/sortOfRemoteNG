@@ -369,6 +369,17 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     maskIcon: false,
   },
 
+  // WinRM Global Defaults
+  winrmDefaults: {
+    useSsl: false,
+    authMethod: 'basic' as const,
+    namespace: 'root\\cimv2',
+    timeoutSec: 30,
+    skipCaCheck: false,
+    skipCnCheck: false,
+    autoFallbackProtocol: true,
+  },
+
   // RDP Global Defaults
   rdpDefaults: {
     useCredSsp: true,

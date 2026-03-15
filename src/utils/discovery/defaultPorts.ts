@@ -14,6 +14,7 @@ export const DEFAULT_PORTS: Record<string, number> = {
   vnc: 5900,
   http: 80,
   https: 443,
+  winrm: 5985,
   telnet: 23,
   rlogin: 513,
   gcp: 22,

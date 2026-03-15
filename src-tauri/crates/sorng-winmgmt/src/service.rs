@@ -111,7 +111,7 @@ impl WinMgmtService {
             ));
         }
 
-        // Try primary config first
+        // Try primary config first (default: HTTP on 5985)
         match self.try_connect(&config).await {
             Ok((session_id, transport, effective_config)) => {
                 let id = session_id.clone();
@@ -119,24 +119,14 @@ impl WinMgmtService {
                 return Ok(id);
             }
             Err(primary_err) => {
-                // Only attempt fallback if port was auto-detected (not explicit)
-                // and the error looks like a transport/connection issue
-                let is_transport_err = {
-                    let lower = primary_err.to_lowercase();
-                    lower.contains("connection")
-                        || lower.contains("refused")
-                        || lower.contains("timed out")
-                        || lower.contains("timeout")
-                        || lower.contains("unreachable")
-                        || lower.contains("reset")
-                        || lower.contains("http request failed")
-                };
-
-                if config.port == 0 && is_transport_err {
+                // Attempt fallback to the other protocol if port was
+                // auto-detected.  WinRM has two standard ports:
+                //   HTTP  = 5985
+                //   HTTPS = 5986
+                // We try the configured one first, then the other.
+                if config.port == 0 {
                     let mut fallback = config.clone();
                     fallback.use_ssl = !config.use_ssl;
-                    // Also relax cert checks for the fallback attempt since
-                    // most self-signed HTTPS setups fail strict validation
                     if fallback.use_ssl {
                         fallback.skip_ca_check = true;
                         fallback.skip_cn_check = true;
@@ -144,9 +134,10 @@ impl WinMgmtService {
 
                     let alt_label = if fallback.use_ssl { "HTTPS" } else { "HTTP" };
                     info!(
-                        "Primary {} connection to {} failed, trying {} fallback on port {}",
+                        "Primary {} connection to {} failed ({}), trying {} on port {}",
                         if config.use_ssl { "HTTPS" } else { "HTTP" },
                         config.computer_name,
+                        primary_err,
                         alt_label,
                         fallback.effective_port(),
                     );
@@ -157,13 +148,18 @@ impl WinMgmtService {
                                 "Fallback {} connection to {} succeeded (session {})",
                                 alt_label, config.computer_name, session_id,
                             );
+                            let id = session_id.clone();
                             self.finish_connect(session_id, transport, effective_config);
-                            return Ok(self.sessions.keys().last().unwrap().clone());
+                            return Ok(id);
                         }
-                        Err(_fallback_err) => {
-                            // Both failed — return the primary error as it's
-                            // more likely what the user intended
-                            return Err(primary_err);
+                        Err(fallback_err) => {
+                            // Both failed — combine errors so the user sees
+                            // what happened on each port
+                            return Err(format!(
+                                "HTTP (5985): {}\nHTTPS (5986): {}",
+                                if config.use_ssl { &fallback_err } else { &primary_err },
+                                if config.use_ssl { &primary_err } else { &fallback_err },
+                            ));
                         }
                     }
                 }

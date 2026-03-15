@@ -35,19 +35,15 @@ function isFatalError(err: string): boolean {
 
 /**
  * Shared hook for managing a WMI session lifecycle.
- * Each tool panel uses this to connect/disconnect using the parent connection's credentials.
  *
- * Fatal errors (401, access denied, session lost, etc.) automatically tear down
- * the session and surface the error to `WinmgmtWrapper`'s error screen.
+ * Accepts a pre-built WmiConnectionConfig object (matching the Rust serde
+ * shape) so that all WinRM-specific settings — useSsl, authMethod,
+ * namespace, skipCaCheck, etc. — are forwarded to the backend.
+ *
+ * Fatal errors (401, access denied, session lost, etc.) automatically
+ * tear down the session and surface the error to `WinmgmtWrapper`.
  */
-export function useWinmgmtSession(
-  hostname: string,
-  connectionId: string,
-  username?: string,
-  password?: string,
-  domain?: string,
-  port?: number,
-) {
+export function useWinmgmtSession(config: Record<string, unknown>) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +58,9 @@ export function useWinmgmtSession(
     [],
   );
 
+  // Stable stringified key so connect re-fires only when the config changes
+  const configKey = JSON.stringify(config);
+
   const connect = useCallback(async () => {
     if (!isTauri) {
       setError("Windows management requires the Tauri runtime.");
@@ -70,13 +69,6 @@ export function useWinmgmtSession(
     setLoading(true);
     setError(null);
     try {
-      const config: Record<string, unknown> = { computerName: hostname };
-      if (username && password) {
-        config.credential = { username, password, domain: domain || null };
-      }
-      if (port) {
-        config.port = port;
-      }
       const id = await invoke<string>("winmgmt_connect", { config });
       if (mountedRef.current) {
         setSessionId(id);
@@ -86,7 +78,8 @@ export function useWinmgmtSession(
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [isTauri, hostname, username, password, domain, port]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTauri, configKey]);
 
   const disconnect = useCallback(async () => {
     if (!sessionId) return;
@@ -103,10 +96,6 @@ export function useWinmgmtSession(
 
   /**
    * Invoke a winmgmt command with the current sessionId auto-injected.
-   *
-   * If the backend returns a fatal error (auth failure, session lost, etc.),
-   * the session is torn down and the error is surfaced to the wrapper so the
-   * full diagnostic error screen is shown instead of a tiny inline banner.
    */
   const cmd = useCallback(
     async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
@@ -117,7 +106,6 @@ export function useWinmgmtSession(
       } catch (err) {
         const msg = String(err);
         if (isFatalError(msg)) {
-          // Tear down the session so WinmgmtWrapper shows the error screen
           if (mountedRef.current) {
             setSessionId(null);
             setError(msg);
@@ -138,7 +126,7 @@ export function useWinmgmtSession(
     return () => {
       mountedRef.current = false;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connect]);
 
   // Disconnect on unmount
   useEffect(() => {

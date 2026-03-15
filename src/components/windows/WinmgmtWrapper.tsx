@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { ConnectionSession } from "../../types/connection/connection";
+import { ConnectionSession, WinrmConnectionSettings } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useWinmgmtSession } from "../../hooks/windows/useWinmgmtSession";
 import { Loader2, Wifi, WifiOff } from "lucide-react";
@@ -17,6 +17,42 @@ export interface WinmgmtContext {
 }
 
 /**
+ * Build a WmiConnectionConfig (matching Rust serde shape) from the parent
+ * Connection and its optional winrmSettings.
+ */
+function buildWinrmConfig(
+  hostname: string,
+  username?: string,
+  password?: string,
+  domain?: string,
+  port?: number,
+  ws?: WinrmConnectionSettings,
+): Record<string, unknown> {
+  const config: Record<string, unknown> = { computerName: hostname };
+
+  if (username && password) {
+    config.credential = {
+      username,
+      password,
+      domain: domain || null,
+    };
+  }
+
+  // Port: explicit connection port > 0 = auto
+  if (port) config.port = port;
+
+  // WinRM-specific overrides from per-connection settings
+  if (ws?.useSsl != null)       config.useSsl = ws.useSsl;
+  if (ws?.authMethod)           config.authMethod = ws.authMethod;
+  if (ws?.namespace)            config.namespace = ws.namespace;
+  if (ws?.timeoutSec != null)   config.timeoutSec = ws.timeoutSec;
+  if (ws?.skipCaCheck != null)  config.skipCaCheck = ws.skipCaCheck;
+  if (ws?.skipCnCheck != null)  config.skipCnCheck = ws.skipCnCheck;
+
+  return config;
+}
+
+/**
  * Wraps a Windows management tool panel with WMI session lifecycle.
  * Looks up the parent connection's credentials and auto-connects.
  */
@@ -29,6 +65,27 @@ const WinmgmtWrapper: React.FC<WinmgmtWrapperProps> = ({
     (c) => c.id === session.connectionId,
   );
 
+  // Build the full WMI connection config (shared by connect + diagnostics)
+  const connectionConfig = useMemo(
+    () =>
+      buildWinrmConfig(
+        session.hostname,
+        connection?.username,
+        connection?.password,
+        connection?.domain,
+        connection?.port,
+        connection?.winrmSettings,
+      ),
+    [
+      session.hostname,
+      connection?.username,
+      connection?.password,
+      connection?.domain,
+      connection?.port,
+      connection?.winrmSettings,
+    ],
+  );
+
   const {
     sessionId,
     isConnected,
@@ -36,34 +93,7 @@ const WinmgmtWrapper: React.FC<WinmgmtWrapperProps> = ({
     error,
     connect,
     cmd,
-  } = useWinmgmtSession(
-    session.hostname,
-    session.connectionId,
-    connection?.username,
-    connection?.password,
-    connection?.domain,
-    connection?.port,
-  );
-
-  // Build the full WMI connection config passed to both connect and diagnostics.
-  // Maps fields from the parent Connection to WmiConnectionConfig's serde shape.
-  const connectionConfig = useMemo(() => {
-    const config: Record<string, unknown> = {
-      computerName: session.hostname,
-    };
-    if (connection?.username && connection?.password) {
-      config.credential = {
-        username: connection.username,
-        password: connection.password,
-        domain: connection.domain || null,
-      };
-    }
-    // Pass port if the connection has one (0 = auto-detect HTTP/HTTPS)
-    if (connection?.port) {
-      config.port = connection.port;
-    }
-    return config;
-  }, [session.hostname, connection?.username, connection?.password, connection?.domain, connection?.port]);
+  } = useWinmgmtSession(connectionConfig);
 
   if (loading && !isConnected) {
     return (

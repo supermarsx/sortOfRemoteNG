@@ -193,6 +193,30 @@ export interface Connection {
 
   // RDP Connection Settings
   rdpSettings?: RDPConnectionSettings;
+
+  // WinRM Connection Settings
+  winrmSettings?: WinrmConnectionSettings;
+}
+
+/**
+ * Per-connection WinRM/WMI settings.  Falls back to global
+ * `winrmDefaults` in GlobalSettings when not set.
+ */
+export interface WinrmConnectionSettings {
+  /** Use HTTPS (port 5986) instead of HTTP (port 5985) */
+  useSsl?: boolean;
+  /** Authentication method */
+  authMethod?: 'basic' | 'negotiate' | 'ntlm' | 'kerberos' | 'credssp';
+  /** WMI namespace (default root\cimv2) */
+  namespace?: string;
+  /** Operation timeout in seconds */
+  timeoutSec?: number;
+  /** Skip CA certificate validation (for self-signed certs) */
+  skipCaCheck?: boolean;
+  /** Skip CN / hostname verification */
+  skipCnCheck?: boolean;
+  /** Try both HTTP and HTTPS if the primary fails */
+  autoFallbackProtocol?: boolean;
 }
 
 /**
