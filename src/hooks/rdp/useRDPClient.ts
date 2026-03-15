@@ -7,6 +7,7 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import * as macroService from '../../utils/recording/macroService';
 import { useConnections } from '../../contexts/useConnections';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -184,26 +185,54 @@ export function useRDPClient(session: ConnectionSession) {
     }
   }, [desktopSize, toast]);
 
+  const handleStartRecording = useCallback((format: string) => {
+    startRecording(format);
+    toast.info('Recording started', 2000);
+  }, [startRecording, toast]);
+
+  const handlePauseRecording = useCallback(() => {
+    pauseRecording();
+    toast.warning('Recording paused', 2000);
+  }, [pauseRecording, toast]);
+
+  const handleResumeRecording = useCallback(() => {
+    resumeRecording();
+    toast.info('Recording resumed', 2000);
+  }, [resumeRecording, toast]);
+
   const handleStopRecording = useCallback(async () => {
     const blob = await stopRecording();
     if (!blob) return;
     try {
-      const ext = recState.format || 'webm';
-      const filePath = await saveDialog({
-        defaultPath: `recording-${session.name || 'rdp'}-${Date.now()}.${ext}`,
-        filters: [
-          { name: 'WebM Video', extensions: ['webm'] },
-          { name: 'MP4 Video', extensions: ['mp4'] },
-        ],
+      const format = recState.format || 'webm';
+      const connName = connection?.name || session.name || 'RDP';
+      const host = session.hostname;
+      const name = `${connName} - ${new Date().toLocaleString()}`;
+
+      const saved = await macroService.blobToRdpRecording(blob, {
+        name,
+        connectionId: session.connectionId,
+        connectionName: connName,
+        host,
+        durationMs: recState.duration * 1000,
+        format,
+        width: desktopSize.width,
+        height: desktopSize.height,
       });
-      if (filePath) {
-        const buffer = await blob.arrayBuffer();
-        await writeFile(filePath, new Uint8Array(buffer));
+      await macroService.saveRdpRecording(saved);
+
+      // Enforce max recordings limit
+      const maxRecordings = settings.rdpRecording?.maxStoredRdpRecordings ?? 50;
+      if (maxRecordings > 0) {
+        await macroService.trimRdpRecordings(maxRecordings);
       }
+
+      toast.success('Recording saved to library', 3000);
     } catch (error) {
       console.error('Recording save failed:', error);
+      toast.error('Failed to save recording', 3000);
     }
-  }, [stopRecording, recState.format, session]);
+  }, [stopRecording, recState.format, recState.duration, session, connection, desktopSize, settings.rdpRecording, toast]);
 
   const handleDisconnect = useCallback(async () => {
     initGenRef.current++; // abort any in-flight init
@@ -430,6 +459,9 @@ export function useRDPClient(session: ConnectionSession) {
             id: string;
             desktopWidth: number;
             desktopHeight: number;
+            serverCertFingerprint?: string | null;
+            host: string;
+            port: number;
           }>('attach_rdp_session', {
             sessionId: reattachId,
             connectionId: conn?.id ?? sess.connectionId,
@@ -444,6 +476,18 @@ export function useRDPClient(session: ConnectionSession) {
             width: sessionInfo.desktopWidth,
             height: sessionInfo.desktopHeight,
           });
+
+          // Restore certificate state from the backend session
+          if (sessionInfo.serverCertFingerprint) {
+            setCertFingerprint(sessionInfo.serverCertFingerprint);
+            const now = new Date().toISOString();
+            setCertIdentity({
+              fingerprint: sessionInfo.serverCertFingerprint,
+              subject: sessionInfo.host,
+              firstSeen: now,
+              lastSeen: now,
+            });
+          }
 
           const canvas = canvasRef.current;
           if (canvas) {
@@ -1224,9 +1268,9 @@ export function useRDPClient(session: ConnectionSession) {
     settings,
     // Recording
     recState,
-    startRecording,
-    pauseRecording,
-    resumeRecording,
+    startRecording: handleStartRecording,
+    pauseRecording: handlePauseRecording,
+    resumeRecording: handleResumeRecording,
     // Handlers
     handleScreenshot,
     handleScreenshotToClipboard,
