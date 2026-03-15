@@ -58,6 +58,7 @@ export function classifyWinmgmtError(raw: string): WinmgmtErrorCategory {
     msg.includes('invalid credentials') ||
     msg.includes('logon failure') ||
     msg.includes('authentication failed') ||
+    msg.includes('authentication/access check failed') ||
     msg.includes('bad username or password') ||
     (msg.includes('http 403') && (msg.includes('credential') || msg.includes('logon')))
   ) {
@@ -129,7 +130,8 @@ export function classifyWinmgmtError(raw: string): WinmgmtErrorCategory {
     msg.includes('host not found') ||
     msg.includes('name or service not known') ||
     msg.includes('getaddrinfo') ||
-    msg.includes('connection reset')
+    msg.includes('connection reset') ||
+    msg.includes('wmi http request failed')
   ) {
     return 'network';
   }

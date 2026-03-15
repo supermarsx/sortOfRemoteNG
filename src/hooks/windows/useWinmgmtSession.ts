@@ -3,20 +3,29 @@ import { invoke } from "@tauri-apps/api/core";
 
 /** Error patterns that indicate the session is dead and cannot recover. */
 const FATAL_PATTERNS = [
+  // Auth / access
   "http 401",
   "http 403",
   "unauthorized",
   "access denied",
   "access is denied",
   "authentication failed",
+  // Transport / network
   "connection refused",
   "connection reset",
   "timed out",
+  "timeout",
+  "failed to create transport",
+  "connection test failed",
+  "wmi http request failed",
+  "wmi request failed",
+  // SOAP / WS-Man faults (transport-level, not query-level)
+  "soap fault",
+  "wsmanfault",
+  // Session lifecycle
   "session not found",
   "is disconnected",
   "is in error state",
-  "failed to create transport",
-  "connection test failed",
 ];
 
 function isFatalError(err: string): boolean {
