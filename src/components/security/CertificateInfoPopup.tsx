@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type {
   CertIdentity,
+  CertChainEntry,
   SshHostKeyIdentity,
   TrustRecord,
 } from "../../utils/auth/trustStore";
@@ -258,6 +259,15 @@ function Row({
   );
 }
 
+/** Section heading used between groups of rows */
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="pt-2 border-t border-[var(--color-border)]">
+      <span className="text-xs font-medium text-[var(--color-textMuted)]">{children}</span>
+    </div>
+  );
+}
+
 /** TLS certificate detail fields */
 function TlsCertDetails({
   identity,
@@ -269,99 +279,216 @@ function TlsCertDetails({
   isExpiringSoon: (id: CertIdentity) => boolean;
 }) {
   const [showPem, setShowPem] = useState(false);
+  const [showChain, setShowChain] = useState(false);
 
   const expired = isExpired(identity);
   const expiringSoon = isExpiringSoon(identity);
   const isCurrentlyValid = !expired && !expiringSoon && !!identity.validFrom && !!identity.validTo;
 
+  const hasSubjectDetails = identity.subjectCn || identity.subjectOrg || identity.subjectOu || identity.subjectCountry || identity.subjectState || identity.subjectLocality || identity.subjectEmail;
+  const hasIssuerDetails = identity.issuerCn || identity.issuerOrg || identity.issuerCountry;
+
   return (
     <>
-      {identity.subject && (
-        <Row icon={<Server size={12} />} label="Subject" value={identity.subject} />
-      )}
-      {identity.issuer && (
-        <Row icon={<FileKey size={12} />} label="Issuer" value={identity.issuer} />
-      )}
-      {identity.serial && (
-        <Row icon={<Key size={12} />} label="Serial" value={identity.serial} />
-      )}
-      {identity.signatureAlgorithm && (
-        <Row icon={<Shield size={12} />} label="Algorithm" value={identity.signatureAlgorithm} />
+      {/* ── Subject section ──────────────────────────────────── */}
+      {(hasSubjectDetails || identity.subject) && (
+        <>
+          <SectionHeading>Subject</SectionHeading>
+          {hasSubjectDetails ? (
+            <>
+              {identity.subjectCn && (
+                <Row icon={<Server size={12} />} label="CN" value={identity.subjectCn} />
+              )}
+              {identity.subjectOrg && (
+                <Row icon={<Server size={12} />} label="O" value={identity.subjectOrg} />
+              )}
+              {identity.subjectOu && (
+                <Row icon={<Server size={12} />} label="OU" value={identity.subjectOu} />
+              )}
+              {identity.subjectCountry && (
+                <Row icon={<Server size={12} />} label="C" value={identity.subjectCountry} />
+              )}
+              {identity.subjectState && (
+                <Row icon={<Server size={12} />} label="ST" value={identity.subjectState} />
+              )}
+              {identity.subjectLocality && (
+                <Row icon={<Server size={12} />} label="L" value={identity.subjectLocality} />
+              )}
+              {identity.subjectEmail && (
+                <Row icon={<Server size={12} />} label="Email" value={identity.subjectEmail} />
+              )}
+            </>
+          ) : (
+            identity.subject && (
+              <Row icon={<Server size={12} />} label="Subject" value={identity.subject} />
+            )
+          )}
+        </>
       )}
 
-      {/* Subject Alternative Names — displayed as a list */}
-      {identity.san && identity.san.length > 0 && (
-        <div className="flex items-start gap-2 text-xs">
-          <span className="text-[var(--color-textMuted)] flex-shrink-0 mt-0.5">
-            <Globe size={12} />
-          </span>
-          <span className="text-[var(--color-textMuted)] flex-shrink-0 w-16">SANs</span>
-          <ul className="text-[var(--color-textSecondary)] break-all list-none m-0 p-0 space-y-0.5">
-            {identity.san.map((name, i) => (
-              <li key={i} className="font-mono">{name}</li>
-            ))}
-          </ul>
-        </div>
+      {/* ── Issuer section ───────────────────────────────────── */}
+      {(hasIssuerDetails || identity.issuer) && (
+        <>
+          <SectionHeading>Issuer</SectionHeading>
+          {hasIssuerDetails ? (
+            <>
+              {identity.issuerCn && (
+                <Row icon={<FileKey size={12} />} label="CN" value={identity.issuerCn} />
+              )}
+              {identity.issuerOrg && (
+                <Row icon={<FileKey size={12} />} label="O" value={identity.issuerOrg} />
+              )}
+              {identity.issuerCountry && (
+                <Row icon={<FileKey size={12} />} label="C" value={identity.issuerCountry} />
+              )}
+            </>
+          ) : (
+            identity.issuer && (
+              <Row icon={<FileKey size={12} />} label="Issuer" value={identity.issuer} />
+            )
+          )}
+        </>
       )}
 
-      {/* Validity with color coding */}
-      <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
-        <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
-          <Clock size={12} />
-          <span>Validity</span>
-        </div>
-        {identity.validFrom && (
-          <p className="text-xs">
-            From:{" "}
-            <span
-              className={
-                isCurrentlyValid
-                  ? "text-success font-medium"
-                  : "text-[var(--color-textSecondary)]"
-              }
-            >
-              {new Date(identity.validFrom).toLocaleDateString()}
-            </span>
-          </p>
-        )}
-        {identity.validTo && (
-          <p className="text-xs">
-            To:{" "}
-            <span
-              className={
-                expired
-                  ? "text-error font-medium"
-                  : expiringSoon
-                    ? "text-warning font-medium"
-                    : isCurrentlyValid
+      {/* ── Validity section ─────────────────────────────────── */}
+      {(identity.validFrom || identity.validTo) && (
+        <>
+          <SectionHeading>Validity</SectionHeading>
+          <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
+            <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
+              <Clock size={12} />
+              <span>Validity Period</span>
+            </div>
+            {identity.validFrom && (
+              <p className="text-xs">
+                Not Before:{" "}
+                <span
+                  className={
+                    isCurrentlyValid
                       ? "text-success font-medium"
                       : "text-[var(--color-textSecondary)]"
-              }
-            >
-              {new Date(identity.validTo).toLocaleDateString()}
-              {expired && " (EXPIRED)"}
-              {expiringSoon && " (expiring soon)"}
-            </span>
-          </p>
-        )}
-      </div>
+                  }
+                >
+                  {new Date(identity.validFrom).toLocaleDateString()}
+                </span>
+              </p>
+            )}
+            {identity.validTo && (
+              <p className="text-xs">
+                Not After:{" "}
+                <span
+                  className={
+                    expired
+                      ? "text-error font-medium"
+                      : expiringSoon
+                        ? "text-warning font-medium"
+                        : isCurrentlyValid
+                          ? "text-success font-medium"
+                          : "text-[var(--color-textSecondary)]"
+                  }
+                >
+                  {new Date(identity.validTo).toLocaleDateString()}
+                  {expired && " (EXPIRED)"}
+                  {expiringSoon && " (expiring soon)"}
+                </span>
+              </p>
+            )}
+          </div>
+        </>
+      )}
 
-      {/* PEM show/hide toggle */}
-      {identity.pem && (
-        <div className="space-y-1">
-          <button
-            onClick={() => setShowPem((v) => !v)}
-            className="flex items-center gap-1.5 text-xs text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] transition-colors"
-          >
-            {showPem ? <EyeOff size={12} /> : <Eye size={12} />}
-            <span>{showPem ? "Hide" : "Show"} PEM Certificate</span>
-          </button>
-          {showPem && (
-            <pre className="text-[10px] font-mono text-[var(--color-textSecondary)] bg-[var(--color-background)] rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
-              {identity.pem}
-            </pre>
+      {/* ── Key & Algorithm section ──────────────────────────── */}
+      {(identity.version != null || identity.keyAlgorithm || identity.keySize != null || identity.signatureAlgorithm || identity.serial) && (
+        <>
+          <SectionHeading>Key & Algorithm</SectionHeading>
+          {identity.version != null && (
+            <Row icon={<Shield size={12} />} label="Version" value={`v${identity.version}`} />
           )}
-        </div>
+          {identity.keyAlgorithm && (
+            <Row icon={<Key size={12} />} label="Key Algo" value={identity.keyAlgorithm} />
+          )}
+          {identity.keySize != null && (
+            <Row icon={<Key size={12} />} label="Key Size" value={`${identity.keySize} bits`} />
+          )}
+          {identity.signatureAlgorithm && (
+            <Row icon={<Shield size={12} />} label="Sig Algo" value={identity.signatureAlgorithm} />
+          )}
+          {identity.serial && (
+            <Row icon={<Key size={12} />} label="Serial" value={identity.serial} />
+          )}
+        </>
+      )}
+
+      {/* ── Subject Alternative Names ────────────────────────── */}
+      {identity.san && identity.san.length > 0 && (
+        <>
+          <SectionHeading>Subject Alternative Names</SectionHeading>
+          <div className="flex items-start gap-2 text-xs">
+            <span className="text-[var(--color-textMuted)] flex-shrink-0 mt-0.5">
+              <Globe size={12} />
+            </span>
+            <span className="text-[var(--color-textMuted)] flex-shrink-0 w-16">SANs</span>
+            <ul className="text-[var(--color-textSecondary)] break-all list-none m-0 p-0 space-y-0.5">
+              {identity.san.map((name, i) => (
+                <li key={i} className="font-mono">{name}</li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+
+      {/* ── Certificate Chain section ────────────────────────── */}
+      {identity.chain && identity.chain.length > 0 && (
+        <>
+          <SectionHeading>Certificate Chain</SectionHeading>
+          <details open={showChain} onToggle={(e) => setShowChain((e.target as HTMLDetailsElement).open)}>
+            <summary className="text-xs text-[var(--color-textMuted)] cursor-pointer hover:text-[var(--color-textSecondary)] flex items-center gap-1">
+              <FileKey size={10} />
+              <span>{identity.chain.length} certificate{identity.chain.length !== 1 ? "s" : ""} in chain</span>
+            </summary>
+            <div className="mt-2 space-y-2">
+              {identity.chain.map((entry: CertChainEntry, i: number) => (
+                <div
+                  key={i}
+                  className="bg-[var(--color-background)]/50 rounded p-2 border border-[var(--color-border)]/50 space-y-1"
+                >
+                  <p className="text-xs text-[var(--color-textSecondary)]">
+                    <span className="font-medium">{entry.subject}</span>
+                    {" \u2192 "}
+                    <span className="text-[var(--color-textMuted)]">{entry.issuer}</span>
+                  </p>
+                  <p className="text-[10px] font-mono text-[var(--color-textMuted)] break-all">
+                    {formatFingerprint(entry.fingerprint)}
+                  </p>
+                  <p className="text-[10px] text-[var(--color-textMuted)]">
+                    {new Date(entry.validFrom).toLocaleDateString()} — {new Date(entry.validTo).toLocaleDateString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </details>
+        </>
+      )}
+
+      {/* ── PEM section ──────────────────────────────────────── */}
+      {identity.pem && (
+        <>
+          <SectionHeading>PEM Certificate</SectionHeading>
+          <div className="space-y-1">
+            <button
+              onClick={() => setShowPem((v) => !v)}
+              className="flex items-center gap-1.5 text-xs text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] transition-colors"
+            >
+              {showPem ? <EyeOff size={12} /> : <Eye size={12} />}
+              <span>{showPem ? "Hide" : "Show"} PEM Certificate</span>
+            </button>
+            {showPem && (
+              <pre className="text-[10px] font-mono text-[var(--color-textSecondary)] bg-[var(--color-background)] rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+                {identity.pem}
+              </pre>
+            )}
+          </div>
+        </>
       )}
     </>
   );

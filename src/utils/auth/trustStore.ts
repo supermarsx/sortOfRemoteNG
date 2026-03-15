@@ -20,12 +20,20 @@ export type TrustPolicy =
   | 'always-trust'    // Accept anything without checking
   | 'strict';         // Reject if not pre-approved (manual pinning)
 
+export interface CertChainEntry {
+  subject: string;
+  issuer: string;
+  fingerprint: string;
+  validFrom: string;
+  validTo: string;
+}
+
 export interface CertIdentity {
   /** SHA-256 fingerprint of the DER-encoded certificate */
   fingerprint: string;
-  /** Subject CN / SAN — informational */
+  /** Subject CN / SAN — informational (full DN string) */
   subject?: string;
-  /** Issuer CN — informational */
+  /** Issuer CN — informational (full DN string) */
   issuer?: string;
   /** ISO date string — when the cert was first seen */
   firstSeen: string;
@@ -43,6 +51,42 @@ export interface CertIdentity {
   signatureAlgorithm?: string;
   /** Subject Alternative Names */
   san?: string[];
+
+  // ── Subject DN components ──────────────────────────────────
+  /** Subject Common Name */
+  subjectCn?: string;
+  /** Subject Organization */
+  subjectOrg?: string;
+  /** Subject Organizational Unit */
+  subjectOu?: string;
+  /** Subject Country */
+  subjectCountry?: string;
+  /** Subject State / Province */
+  subjectState?: string;
+  /** Subject Locality */
+  subjectLocality?: string;
+  /** Subject Email */
+  subjectEmail?: string;
+
+  // ── Issuer DN components ───────────────────────────────────
+  /** Issuer Common Name */
+  issuerCn?: string;
+  /** Issuer Organization */
+  issuerOrg?: string;
+  /** Issuer Country */
+  issuerCountry?: string;
+
+  // ── Key & version info ─────────────────────────────────────
+  /** Key algorithm (e.g. "RSA", "ECDSA", "Ed25519") */
+  keyAlgorithm?: string;
+  /** Key size in bits (e.g. 2048, 4096, 256) */
+  keySize?: number;
+  /** Certificate version (1, 2, or 3) */
+  version?: number;
+
+  // ── Certificate chain ──────────────────────────────────────
+  /** Intermediate / root certificates in the chain */
+  chain?: CertChainEntry[];
 }
 
 export interface SshHostKeyIdentity {

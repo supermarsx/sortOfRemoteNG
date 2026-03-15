@@ -192,6 +192,26 @@ export function useWebBrowser(session: ConnectionSession) {
         serial: string | null;
         signature_algorithm: string | null;
         san: string[];
+        subject_cn: string | null;
+        subject_org: string | null;
+        subject_ou: string | null;
+        subject_country: string | null;
+        subject_state: string | null;
+        subject_locality: string | null;
+        subject_email: string | null;
+        issuer_cn: string | null;
+        issuer_org: string | null;
+        issuer_country: string | null;
+        key_algorithm: string | null;
+        key_size: number | null;
+        version: number | null;
+        chain: Array<{
+          subject: string;
+          issuer: string;
+          fingerprint: string;
+          valid_from: string;
+          valid_to: string;
+        }> | null;
       }>("get_tls_certificate_info", { host: session.hostname, port });
 
       // If a newer navigation started while we were awaiting the cert,
@@ -212,6 +232,26 @@ export function useWebBrowser(session: ConnectionSession) {
         serial: info.serial ?? undefined,
         signatureAlgorithm: info.signature_algorithm ?? undefined,
         san: info.san.length > 0 ? info.san : undefined,
+        subjectCn: info.subject_cn ?? undefined,
+        subjectOrg: info.subject_org ?? undefined,
+        subjectOu: info.subject_ou ?? undefined,
+        subjectCountry: info.subject_country ?? undefined,
+        subjectState: info.subject_state ?? undefined,
+        subjectLocality: info.subject_locality ?? undefined,
+        subjectEmail: info.subject_email ?? undefined,
+        issuerCn: info.issuer_cn ?? undefined,
+        issuerOrg: info.issuer_org ?? undefined,
+        issuerCountry: info.issuer_country ?? undefined,
+        keyAlgorithm: info.key_algorithm ?? undefined,
+        keySize: info.key_size ?? undefined,
+        version: info.version ?? undefined,
+        chain: info.chain?.map((c) => ({
+          subject: c.subject,
+          issuer: c.issuer,
+          fingerprint: c.fingerprint,
+          validFrom: c.valid_from,
+          validTo: c.valid_to,
+        })),
       };
       setCertIdentity(identity);
       const connId = connection?.id;
