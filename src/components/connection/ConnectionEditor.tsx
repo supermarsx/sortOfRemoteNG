@@ -316,6 +316,52 @@ const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════
+   BehaviorSection — per-connection focus behaviors
+   ═══════════════════════════════════════════════════════════════ */
+
+const FOCUS_OPTIONS = [
+  { value: '', label: 'Use global setting' },
+  { value: 'true', label: 'Focus tab' },
+  { value: 'false', label: 'Open in background' },
+] as const;
+
+const parseFocusBool = (v: string): boolean | undefined =>
+  v === 'true' ? true : v === 'false' ? false : undefined;
+
+const BehaviorSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const isWindows = mgr.formData.osType === 'windows' || (!mgr.formData.osType && mgr.formData.protocol === 'rdp');
+  return (
+    <div className="space-y-4 border-t border-[var(--color-border)] pt-4">
+      <h3 className="text-sm font-semibold text-[var(--color-textSecondary)] flex items-center gap-2">
+        <Zap size={14} /> Focus Behavior
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">On Connect</label>
+          <Select
+            value={mgr.formData.focusOnConnect === true ? 'true' : mgr.formData.focusOnConnect === false ? 'false' : ''}
+            onChange={(v: string) => mgr.setFormData({ ...mgr.formData, focusOnConnect: parseFocusBool(v) })}
+            options={FOCUS_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+            variant="form"
+          />
+        </div>
+        {isWindows && (
+          <div>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">On Windows Management Tool</label>
+            <Select
+              value={mgr.formData.focusOnWinmgmtTool === true ? 'true' : mgr.formData.focusOnWinmgmtTool === false ? 'false' : ''}
+              onChange={(v: string) => mgr.setFormData({ ...mgr.formData, focusOnWinmgmtTool: parseFocusBool(v) })}
+              options={FOCUS_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+              variant="form"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════
    IconPicker
    ═══════════════════════════════════════════════════════════════ */
 
@@ -493,6 +539,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
               <ProtocolSections mgr={mgr} />
             </>
           )}
+
+          {!mgr.formData.isGroup && <BehaviorSection mgr={mgr} />}
 
           <IconPicker mgr={mgr} />
           <TagsSection mgr={mgr} />

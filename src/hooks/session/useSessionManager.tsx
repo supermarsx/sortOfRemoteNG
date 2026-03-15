@@ -246,7 +246,12 @@ export const useSessionManager = () => {
     };
 
     dispatch({ type: "ADD_SESSION", payload: session });
-    setActiveSessionId(session.id);
+
+    // Per-connection focusOnConnect overrides the global setting
+    const shouldFocus = connection.focusOnConnect ?? !settings.openConnectionInBackground;
+    if (shouldFocus) {
+      setActiveSessionId(session.id);
+    }
 
     await connectSession(session, connection);
   };
