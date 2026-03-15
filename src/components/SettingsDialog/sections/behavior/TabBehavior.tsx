@@ -1,6 +1,6 @@
 import type { SectionProps } from "./types";
 import React from "react";
-import { Layers, Clock, ShieldAlert, Zap } from "lucide-react";
+import { Layers, Clock, Monitor, ShieldAlert, Zap } from "lucide-react";
 import { Card, SectionHeader, SliderRow, Toggle } from "../../../ui/settings/SettingsPrimitives";
 const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
   <div className="space-y-4">
@@ -16,6 +16,14 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         label="Open new connections in background"
         description="New tabs open without switching to them"
         settingKey="openConnectionInBackground"
+      />
+      <Toggle
+        checked={s.openWinmgmtToolInBackground}
+        onChange={(v) => u({ openWinmgmtToolInBackground: v })}
+        icon={<Monitor size={16} />}
+        label="Open Windows management tools in background"
+        description="Windows tools (Services, Registry, etc.) open without switching"
+        settingKey="openWinmgmtToolInBackground"
       />
       <Toggle
         checked={s.switchTabOnActivity}
