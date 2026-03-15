@@ -175,20 +175,31 @@ export class RdpFramePipeline {
     }
 
     // If we had a previous renderer, destroy it before creating a new one.
-    // Track whether the canvas was transferred to an OffscreenCanvas — once
-    // transferred, the browser permanently forbids setting width/height on
-    // the DOM element (InvalidStateError).
-    const wasTransferred = this.isCanvasTransferred();
+    const wasOurs = this.isCanvasTransferred();
     if (this.renderer) {
-      console.log(`[RDP pipeline] attach: destroying previous renderer (${this.renderer.name}, transferred=${wasTransferred}) before re-attach`);
+      console.log(`[RDP pipeline] attach: destroying previous renderer (${this.renderer.name}, transferred=${wasOurs}) before re-attach`);
       this.renderer.destroy();
       this.renderer = null;
     }
 
-    // Replace a transferred canvas with a fresh DOM element so the new
-    // renderer starts clean. This handles tab reorder / React remount
-    // where the same canvas element is re-used but can no longer be resized.
-    if (wasTransferred && canvas.parentElement) {
+    // Detect if the canvas was EVER transferred to an OffscreenCanvas
+    // (by this pipeline or a previous one that was destroyed).  Once
+    // transferred, the browser permanently forbids setting width/height
+    // on the DOM element — we must replace it with a fresh canvas.
+    // We detect this by trying a harmless property probe: if the canvas
+    // has been transferred, any width/height set throws InvalidStateError.
+    let canvasIsTransferred = wasOurs;
+    if (!canvasIsTransferred) {
+      try {
+        // Read-then-write with same value — throws if transferred
+        const w = canvas.width;
+        canvas.width = w;
+      } catch {
+        canvasIsTransferred = true;
+      }
+    }
+
+    if (canvasIsTransferred && canvas.parentElement) {
       console.log('[RDP pipeline] attach: replacing transferred canvas with fresh element');
       const fresh = document.createElement('canvas');
       for (const attr of Array.from(canvas.attributes)) {

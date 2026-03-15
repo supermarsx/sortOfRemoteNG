@@ -498,6 +498,11 @@ export function useRDPClient(session: ConnectionSession) {
           if (canvas) {
             const rendererType = (rdpCfg.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
             currentPipeline.attach(canvas, sessionInfo.desktopWidth, sessionInfo.desktopHeight, rendererType);
+            // If the pipeline replaced a transferred canvas, sync our ref
+            const currentCanvas = currentPipeline.getCanvas();
+            if (currentCanvas && currentCanvas !== canvasRef.current) {
+              (canvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = currentCanvas;
+            }
             setActiveFrontendRenderer(currentPipeline.getRenderer()?.name ?? 'canvas2d');
           }
 
