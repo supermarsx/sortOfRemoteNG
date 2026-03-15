@@ -312,7 +312,7 @@ const defaultSettings: GlobalSettings = {
     httpPort: 5985,
     httpsPort: 5986,
     preferSsl: false,
-    authMethod: 'basic' as const,
+    authMethod: 'negotiate' as const,
     skipCaCheck: false,
     skipCnCheck: false,
     autoFallback: true,
