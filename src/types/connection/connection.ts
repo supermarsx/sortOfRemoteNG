@@ -32,6 +32,12 @@ export interface Connection {
   /** Target OS — determines available management tools and feature sets */
   osType?: 'windows' | 'linux' | 'macos' | 'other';
 
+  // ─── Focus Behavior ──────────────────────────────────────────────
+  /** Focus tab on connect: true = focus, false = background, undefined = use global */
+  focusOnConnect?: boolean;
+  /** Focus tab when opening a Windows management tool: true = focus, false = background, undefined = use global */
+  focusOnWinmgmtTool?: boolean;
+
   // Advanced Connection Settings
   timeout?: number;
   retryAttempts?: number;

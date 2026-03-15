@@ -113,6 +113,8 @@ export interface GlobalSettings {
   // ─── Tab Behavior ───────────────────────────────────────────
   /** Open new connections in a background tab (don't auto-switch) */
   openConnectionInBackground: boolean;
+  /** Open Windows management tools in a background tab */
+  openWinmgmtToolInBackground: boolean;
   /** Switch to a tab when it receives new output/activity */
   switchTabOnActivity: boolean;
   /** Close the tab automatically when the session disconnects */

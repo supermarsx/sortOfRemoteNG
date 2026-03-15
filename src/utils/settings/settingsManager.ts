@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // Tab Behavior
   openConnectionInBackground: false,
+  openWinmgmtToolInBackground: false,
   switchTabOnActivity: false,
   closeTabOnDisconnect: false,
   confirmCloseActiveTab: true,
