@@ -719,7 +719,7 @@ export function useWebTerminal(
       scrollback: scrollbackLines,
       convertEol: sshTerminalConfig?.implicitCrInLf ?? false,
       rightClickSelectsWord: true,
-      altClickMovesCursor: true,
+      altClickMovesCursor: false,
       macOptionIsMeta: true,
       disableStdin: false,
       wordSeparator: wordSeparator || ' ()[]{}\'":;,.<>~!@#$%^&*|+=`',
