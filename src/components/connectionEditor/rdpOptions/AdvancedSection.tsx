@@ -3,6 +3,13 @@ import Section from "./Section";
 import { Settings2 } from "lucide-react";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Slider } from "../../ui/forms";
+const CLOSE_POLICIES = [
+  { value: 'global', label: 'Use global setting' },
+  { value: 'ask', label: 'Ask before closing' },
+  { value: 'detach', label: 'Background (keep session alive)' },
+  { value: 'disconnect', label: 'Disconnect (end session)' },
+] as const;
+
 const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
   <Section
     title="Advanced"
@@ -10,6 +17,21 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
       <Settings2 size={14} className="text-[var(--color-textSecondary)]" />
     }
   >
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+        On Tab Close
+      </label>
+      <select
+        value={rdp.advanced?.sessionClosePolicy ?? "global"}
+        onChange={(e) => updateRdp("advanced", { sessionClosePolicy: e.target.value as 'disconnect' | 'detach' | 'ask' | 'global' })}
+        className={CSS.input}
+      >
+        {CLOSE_POLICIES.map((p) => (
+          <option key={p.value} value={p.value}>{p.label}</option>
+        ))}
+      </select>
+    </div>
+
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Client Name

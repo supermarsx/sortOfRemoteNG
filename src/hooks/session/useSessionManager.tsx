@@ -366,8 +366,10 @@ export const useSessionManager = () => {
     const settings = settingsManager.getSettings();
 
     // RDP sessions use their own close policy instead of the generic warnOnClose.
+    // Per-connection override takes precedence over the global setting.
     if (session.protocol === "rdp") {
-      const closePolicy = settings.rdpSessionClosePolicy || "ask";
+      const perConn = connection?.rdpSettings?.advanced?.sessionClosePolicy;
+      const closePolicy = (perConn && perConn !== 'global') ? perConn : (settings.rdpSessionClosePolicy || "ask");
 
       if (closePolicy === "ask") {
         // Single confirmation — OK closes tab (session stays running), Cancel aborts.

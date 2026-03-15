@@ -584,6 +584,8 @@ export interface RdpNegotiationSettings {
 }
 
 export interface RdpAdvancedSettings {
+  /** What happens when the tab is closed: disconnect, detach (background), ask, or inherit global */
+  sessionClosePolicy?: 'disconnect' | 'detach' | 'ask' | 'global';
   /** Client name reported to server (max 15 chars) */
   clientName?: string;
   /** Client build number */
