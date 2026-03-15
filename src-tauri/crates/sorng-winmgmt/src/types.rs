@@ -66,9 +66,14 @@ pub struct WmiConnectionConfig {
     /// Use HTTPS / encrypted channel.
     #[serde(default)]
     pub use_ssl: bool,
-    /// Custom port (0 = auto: 5985 HTTP / 5986 HTTPS for WinRM, 135 DCOM).
+    /// Primary port (0 = auto: 5985 HTTP / 5986 HTTPS for WinRM, 135 DCOM).
     #[serde(default)]
     pub port: u16,
+    /// Alternate port for protocol fallback (e.g. 5986 when primary is 5985).
+    /// 0 = use standard alternate. Only used when `port` is non-zero and
+    /// fallback is attempted.
+    #[serde(default)]
+    pub alt_port: u16,
     /// Skip CA certificate validation.
     #[serde(default)]
     pub skip_ca_check: bool,

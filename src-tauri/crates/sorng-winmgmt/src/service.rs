@@ -119,52 +119,64 @@ impl WinMgmtService {
                 return Ok(id);
             }
             Err(primary_err) => {
-                // Attempt fallback to the other protocol if port was
-                // auto-detected.  WinRM has two standard ports:
-                //   HTTP  = 5985
-                //   HTTPS = 5986
-                // We try the configured one first, then the other.
-                if config.port == 0 {
-                    let mut fallback = config.clone();
-                    fallback.use_ssl = !config.use_ssl;
-                    if fallback.use_ssl {
-                        fallback.skip_ca_check = true;
-                        fallback.skip_cn_check = true;
-                    }
+                // Attempt fallback to the other protocol.
+                // WinRM has two standard ports:
+                //   HTTP  = 5985 (or config.port when use_ssl=false)
+                //   HTTPS = 5986 (or config.alt_port, or vice versa)
+                let mut fallback = config.clone();
+                fallback.use_ssl = !config.use_ssl;
 
-                    let alt_label = if fallback.use_ssl { "HTTPS" } else { "HTTP" };
-                    info!(
-                        "Primary {} connection to {} failed ({}), trying {} on port {}",
-                        if config.use_ssl { "HTTPS" } else { "HTTP" },
-                        config.computer_name,
-                        primary_err,
-                        alt_label,
-                        fallback.effective_port(),
-                    );
+                // Set the fallback port:
+                //   - If alt_port is explicitly set, use it
+                //   - Otherwise use the standard port for the alternate protocol
+                fallback.port = if config.alt_port > 0 {
+                    config.alt_port
+                } else if fallback.use_ssl {
+                    5986
+                } else {
+                    5985
+                };
+                fallback.alt_port = 0; // no further fallback
 
-                    match self.try_connect(&fallback).await {
-                        Ok((session_id, transport, effective_config)) => {
-                            info!(
-                                "Fallback {} connection to {} succeeded (session {})",
-                                alt_label, config.computer_name, session_id,
-                            );
-                            let id = session_id.clone();
-                            self.finish_connect(session_id, transport, effective_config);
-                            return Ok(id);
-                        }
-                        Err(fallback_err) => {
-                            // Both failed — combine errors so the user sees
-                            // what happened on each port
-                            return Err(format!(
-                                "HTTP (5985): {}\nHTTPS (5986): {}",
-                                if config.use_ssl { &fallback_err } else { &primary_err },
-                                if config.use_ssl { &primary_err } else { &fallback_err },
-                            ));
-                        }
-                    }
+                if fallback.use_ssl {
+                    fallback.skip_ca_check = true;
+                    fallback.skip_cn_check = true;
                 }
 
-                Err(primary_err)
+                let primary_port = config.effective_port();
+                let primary_label = if config.use_ssl { "HTTPS" } else { "HTTP" };
+                let alt_label = if fallback.use_ssl { "HTTPS" } else { "HTTP" };
+                let alt_port = fallback.port;
+
+                info!(
+                    "Primary {} connection to {}:{} failed ({}), trying {}:{}",
+                    primary_label, config.computer_name, primary_port,
+                    primary_err, alt_label, alt_port,
+                );
+
+                match self.try_connect(&fallback).await {
+                    Ok((session_id, transport, effective_config)) => {
+                        info!(
+                            "Fallback {}:{} connection to {} succeeded (session {})",
+                            alt_label, alt_port, config.computer_name, session_id,
+                        );
+                        let id = session_id.clone();
+                        self.finish_connect(session_id, transport, effective_config);
+                        return Ok(id);
+                    }
+                    Err(fallback_err) => {
+                        // Both failed — show what happened on each port
+                        let http_err = if config.use_ssl { &fallback_err } else { &primary_err };
+                        let https_err = if config.use_ssl { &primary_err } else { &fallback_err };
+                        let http_port = if config.use_ssl { alt_port } else { primary_port };
+                        let https_port = if config.use_ssl { primary_port } else { alt_port };
+                        return Err(format!(
+                            "HTTP ({}): {}\nHTTPS ({}): {}",
+                            http_port, http_err,
+                            https_port, https_err,
+                        ));
+                    }
+                }
             }
         }
     }

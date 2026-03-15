@@ -516,20 +516,31 @@ export interface PasswordRevealConfig {
 
 /** Global default WinRM/WMI configuration applied to new connections */
 export interface WinrmGlobalDefaultsConfig {
-  /** Use HTTPS (port 5986) instead of HTTP (port 5985) by default */
-  useSsl: boolean;
+  // ─── Ports ────────────────────────────────────────────────────
+  /** Default WinRM HTTP port */
+  httpPort: number;
+  /** Default WinRM HTTPS port */
+  httpsPort: number;
+
+  // ─── Protocol & Security ──────────────────────────────────────
+  /** Prefer HTTPS over HTTP by default */
+  preferSsl: boolean;
   /** Default authentication method */
   authMethod: 'basic' | 'negotiate' | 'ntlm' | 'kerberos' | 'credssp';
-  /** Default WMI namespace */
-  namespace: string;
-  /** Default operation timeout in seconds */
-  timeoutSec: number;
   /** Skip CA certificate validation for HTTPS by default */
   skipCaCheck: boolean;
   /** Skip CN / hostname verification for HTTPS by default */
   skipCnCheck: boolean;
-  /** Automatically try both HTTP and HTTPS when connecting */
-  autoFallbackProtocol: boolean;
+
+  // ─── Fallback Behavior ────────────────────────────────────────
+  /** Automatically try the other protocol if the preferred one fails */
+  autoFallback: boolean;
+
+  // ─── WMI ──────────────────────────────────────────────────────
+  /** Default WMI namespace */
+  namespace: string;
+  /** Default operation timeout in seconds */
+  timeoutSec: number;
 }
 
 /** Global default RDP configuration applied to new connections */

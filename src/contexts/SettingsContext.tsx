@@ -309,13 +309,15 @@ const defaultSettings: GlobalSettings = {
   },
   // WinRM Global Defaults
   winrmDefaults: {
-    useSsl: false,
+    httpPort: 5985,
+    httpsPort: 5986,
+    preferSsl: false,
     authMethod: 'basic' as const,
-    namespace: 'root\\cimv2',
-    timeoutSec: 30,
     skipCaCheck: false,
     skipCnCheck: false,
-    autoFallbackProtocol: true,
+    autoFallback: true,
+    namespace: 'root\\cimv2',
+    timeoutSec: 30,
   },
   // RDP Global Defaults
   rdpDefaults: {

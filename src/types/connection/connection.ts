@@ -201,22 +201,37 @@ export interface Connection {
 /**
  * Per-connection WinRM/WMI settings.  Falls back to global
  * `winrmDefaults` in GlobalSettings when not set.
+ *
+ * WinRM uses TWO standard ports — HTTP (5985) and HTTPS (5986) —
+ * which are independent of the connection's primary protocol port
+ * (e.g. RDP 3389, SSH 22).  Both are configurable here.
  */
 export interface WinrmConnectionSettings {
-  /** Use HTTPS (port 5986) instead of HTTP (port 5985) */
-  useSsl?: boolean;
+  // ─── Ports ────────────────────────────────────────────────────
+  /** WinRM HTTP port (default 5985) */
+  httpPort?: number;
+  /** WinRM HTTPS port (default 5986) */
+  httpsPort?: number;
+
+  // ─── Protocol & Security ──────────────────────────────────────
+  /** Preferred protocol: try this first */
+  preferSsl?: boolean;
   /** Authentication method */
   authMethod?: 'basic' | 'negotiate' | 'ntlm' | 'kerberos' | 'credssp';
-  /** WMI namespace (default root\cimv2) */
-  namespace?: string;
-  /** Operation timeout in seconds */
-  timeoutSec?: number;
   /** Skip CA certificate validation (for self-signed certs) */
   skipCaCheck?: boolean;
   /** Skip CN / hostname verification */
   skipCnCheck?: boolean;
-  /** Try both HTTP and HTTPS if the primary fails */
-  autoFallbackProtocol?: boolean;
+
+  // ─── Fallback Behavior ────────────────────────────────────────
+  /** Try the other protocol (HTTP↔HTTPS) if the preferred one fails */
+  autoFallback?: boolean;
+
+  // ─── WMI ──────────────────────────────────────────────────────
+  /** WMI namespace (default root\cimv2) */
+  namespace?: string;
+  /** Operation timeout in seconds */
+  timeoutSec?: number;
 }
 
 /**
