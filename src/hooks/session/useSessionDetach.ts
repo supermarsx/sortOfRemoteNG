@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 import { Connection, ConnectionSession } from '../../types/connection/connection';
+import { isWinmgmtProtocol } from '../../components/windows/WindowsToolPanel';
 import { generateId } from '../../utils/core/id';
 
 export function useSessionDetach(
@@ -40,7 +41,7 @@ export function useSessionDetach(
 
       // Request terminal buffer before detaching (only for terminal-based protocols)
       let terminalBuffer = "";
-      if (session.protocol !== 'rdp') {
+      if (session.protocol !== 'rdp' && !isWinmgmtProtocol(session.protocol)) {
         try {
           const bufferPromise = new Promise<string>((resolve) => {
             const timeout = setTimeout(() => {

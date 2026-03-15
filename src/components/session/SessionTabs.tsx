@@ -243,7 +243,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               }
               return null;
             })()}
-            {!isToolProtocol(session.protocol) && !isWinmgmtProtocol(session.protocol) && (
+            {!isToolProtocol(session.protocol) && (
               <>
                 <StatusIcon
                   size={12}
