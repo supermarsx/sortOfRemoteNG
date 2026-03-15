@@ -15,7 +15,9 @@ interface RDPInternalsPanelProps {
 
 export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
   stats, connectTiming, rdpSettings, activeRenderBackend, activeFrontendRenderer, onClose,
-}) => (
+}) => {
+  const isWebCodecsFrontend = activeFrontendRenderer.toLowerCase().includes('webcodecs');
+  return (
   <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
     <div className="flex items-center justify-between mb-3">
       <h3 className="text-sm font-semibold text-[var(--color-textSecondary)] flex items-center gap-2">
@@ -115,10 +117,11 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         <div className="bg-[var(--color-background)] rounded p-2">
           <div className="text-[var(--color-textMuted)] mb-1">Render Backend</div>
           <div className={`font-mono font-bold ${
+            isWebCodecsFrontend ? 'text-[var(--color-warning)]' :
             activeRenderBackend === 'wgpu' ? 'text-accent' :
             activeRenderBackend === 'softbuffer' ? 'text-primary' : 'text-[var(--color-textSecondary)]'
           }`}>
-            {activeRenderBackend}
+            {isWebCodecsFrontend ? 'passthrough' : activeRenderBackend}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
@@ -184,6 +187,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
       </div>
     )}
   </div>
-);
+  );
+};
 
 export default RDPInternalsPanel;
