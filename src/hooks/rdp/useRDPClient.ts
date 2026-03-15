@@ -446,6 +446,7 @@ export function useRDPClient(session: ConnectionSession) {
         }
       } catch (listErr) {
         console.error('[RDP reattach] list_rdp_sessions failed:', listErr);
+        toast.error(`Failed to list RDP sessions: ${listErr instanceof Error ? listErr.message : String(listErr)}`, 4000);
       }
 
       if (stale()) { console.log(`[RDP init gen=${gen}] STALE before connect/reattach, aborting`); return; }
@@ -512,6 +513,7 @@ export function useRDPClient(session: ConnectionSession) {
           return;
         } catch (attachErr) {
           console.error(`RDP reattach failed for session ${reattachId}:`, attachErr);
+          toast.error(`Reattach failed: ${attachErr instanceof Error ? attachErr.message : String(attachErr)}`, 4000);
           // Fall through to new connection (if connection details available)
         }
       }
@@ -597,6 +599,7 @@ export function useRDPClient(session: ConnectionSession) {
       setConnectionStatus('error');
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
+      toast.error(`RDP connection failed: ${error instanceof Error ? error.message : String(error)}`, 5000);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- all mutable values read from refs
   }, []);
