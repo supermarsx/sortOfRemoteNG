@@ -417,7 +417,8 @@ async fn probe_winrm_identify(
 }
 
 /// Probe WinRM with authenticated Identify request.
-/// Returns Ok((duration_ms, response_snippet)) or Err((duration_ms, error)).
+/// Tries multiple credential formats adaptively.
+/// Returns Ok((duration_ms, accepted_format)) or Err((duration_ms, error)).
 async fn probe_winrm_auth(
     _host: &str,
     config: &WmiConnectionConfig,
@@ -426,17 +427,14 @@ async fn probe_winrm_auth(
     let mut transport = WmiTransport::new(config)
         .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
-    if let Some(header) = WmiTransport::build_auth_header(config) {
-        transport.set_auth(header);
-    }
-
-    match transport.test_connection().await {
+    // Try all credential format variants
+    match transport.try_auth_variants(config).await {
         Ok(_) => Ok((t.elapsed().as_millis() as u64, String::new())),
         Err(e) => Err((t.elapsed().as_millis() as u64, e)),
     }
 }
 
-/// Probe WMI with a lightweight query.
+/// Probe WMI with a lightweight query using adaptive auth.
 /// Returns Ok((duration_ms, os_caption)) or Err((duration_ms, error)).
 async fn probe_wmi_query(
     _host: &str,
@@ -446,9 +444,11 @@ async fn probe_wmi_query(
     let mut transport = WmiTransport::new(config)
         .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
-    if let Some(header) = WmiTransport::build_auth_header(config) {
-        transport.set_auth(header);
-    }
+    // Use adaptive auth to find the right credential format
+    transport
+        .try_auth_variants(config)
+        .await
+        .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
     match transport
         .wql_query("SELECT Caption FROM Win32_OperatingSystem")
@@ -466,7 +466,7 @@ async fn probe_wmi_query(
     }
 }
 
-/// Probe with a heavier WMI enumeration (Win32_Service, limited to 10 rows).
+/// Probe with a heavier WMI enumeration using adaptive auth.
 /// Returns Ok((duration_ms, service_count)) or Err((duration_ms, error)).
 async fn probe_wmi_enum(
     _host: &str,
@@ -476,9 +476,10 @@ async fn probe_wmi_enum(
     let mut transport = WmiTransport::new(config)
         .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
-    if let Some(header) = WmiTransport::build_auth_header(config) {
-        transport.set_auth(header);
-    }
+    transport
+        .try_auth_variants(config)
+        .await
+        .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
     match transport
         .wql_query("SELECT Name FROM Win32_Service")

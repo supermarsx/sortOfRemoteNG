@@ -84,37 +84,121 @@ impl WmiTransport {
     /// Build authentication header from credentials.
     pub fn build_auth_header(config: &WmiConnectionConfig) -> Option<String> {
         let cred = config.credential.as_ref()?;
+        Some(Self::encode_basic_auth(
+            &cred.username,
+            &cred.password,
+            cred.domain.as_deref(),
+        ))
+    }
 
-        match config.auth_method {
-            WmiAuthMethod::Basic => {
-                let user = if let Some(ref d) = cred.domain {
-                    format!("{}\\{}", d, cred.username)
-                } else {
-                    cred.username.clone()
-                };
-                let encoded = base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    format!("{}:{}", user, cred.password),
-                );
-                Some(format!("Basic {}", encoded))
-            }
-            _ => {
-                // NTLM / Negotiate / Kerberos / CredSSP negotiation requires
-                // multi-step challenge-response handled externally. Fall back to
-                // Basic for the transport layer. In production, the caller would
-                // handle the SPNEGO dance and supply the final auth header.
-                let user = if let Some(ref d) = cred.domain {
-                    format!("{}\\{}", d, cred.username)
-                } else {
-                    cred.username.clone()
-                };
-                let encoded = base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    format!("{}:{}", user, cred.password),
-                );
-                Some(format!("Basic {}", encoded))
+    /// Build all plausible Basic auth headers to try in order.
+    ///
+    /// WinRM servers are picky about credential format.  We generate
+    /// multiple variants so `try_auth_variants` can find the one that works:
+    ///
+    /// 1. `DOMAIN\user` — traditional Windows format
+    /// 2. `user@domain` — UPN format (Kerberos-style)
+    /// 3. `user`         — local account / no domain
+    /// 4. `.\user`       — explicit local account
+    pub fn build_auth_variants(config: &WmiConnectionConfig) -> Vec<(String, String)> {
+        let cred = match config.credential.as_ref() {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+
+        let mut variants: Vec<(String, String)> = Vec::new();
+        let user = &cred.username;
+        let pass = &cred.password;
+
+        if let Some(ref domain) = cred.domain {
+            if !domain.is_empty() && domain != "." {
+                // DOMAIN\user (most common for domain accounts)
+                variants.push((
+                    format!("{}\\{}", domain, user),
+                    Self::encode_basic_auth(user, pass, Some(domain)),
+                ));
+                // user@domain (UPN format)
+                variants.push((
+                    format!("{}@{}", user, domain),
+                    Self::encode_basic_auth_raw(&format!("{}@{}", user, domain), pass),
+                ));
             }
         }
+
+        // Plain username (local account or domain already in username)
+        variants.push((
+            user.clone(),
+            Self::encode_basic_auth(user, pass, None),
+        ));
+
+        // .\user (explicit local account)
+        if !user.contains('\\') && !user.contains('@') {
+            variants.push((
+                format!(".\\{}", user),
+                Self::encode_basic_auth(user, pass, Some(".")),
+            ));
+        }
+
+        // Deduplicate by header value
+        let mut seen = std::collections::HashSet::new();
+        variants.retain(|(_, header)| seen.insert(header.clone()));
+
+        variants
+    }
+
+    fn encode_basic_auth(user: &str, pass: &str, domain: Option<&str>) -> String {
+        let full_user = if let Some(d) = domain {
+            format!("{}\\{}", d, user)
+        } else {
+            user.to_string()
+        };
+        Self::encode_basic_auth_raw(&full_user, pass)
+    }
+
+    fn encode_basic_auth_raw(user: &str, pass: &str) -> String {
+        let encoded = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            format!("{}:{}", user, pass),
+        );
+        format!("Basic {}", encoded)
+    }
+
+    /// Try multiple credential formats and keep the one that succeeds.
+    ///
+    /// WinRM servers are picky about the username format in Basic auth.
+    /// This method sends a lightweight Identify request with each variant
+    /// and keeps the first one that doesn't return 401.
+    pub async fn try_auth_variants(
+        &mut self,
+        config: &WmiConnectionConfig,
+    ) -> Result<(), String> {
+        let variants = Self::build_auth_variants(config);
+        if variants.is_empty() {
+            return Ok(()); // no credentials to try
+        }
+
+        let mut last_err = String::new();
+        for (label, header) in &variants {
+            self.auth_header = Some(header.clone());
+            match self.test_connection().await {
+                Ok(_) => {
+                    debug!("Auth variant '{}' accepted", label);
+                    return Ok(());
+                }
+                Err(e) => {
+                    if e.contains("401") {
+                        debug!("Auth variant '{}' rejected (401)", label);
+                        last_err = e;
+                        continue; // try next variant
+                    }
+                    // Non-auth error — don't keep trying variants
+                    return Err(e);
+                }
+            }
+        }
+
+        // All variants failed
+        Err(last_err)
     }
 
     /// Test the transport by issuing an identify request.
@@ -565,6 +649,17 @@ impl WmiTransport {
             .map_err(|e| format!("WMI HTTP request failed: {}", e))?;
 
         let status = resp.status();
+
+        // Capture WWW-Authenticate header before consuming the response body.
+        // This tells us what auth methods the server actually supports.
+        let www_auth = resp
+            .headers()
+            .get_all(reqwest::header::WWW_AUTHENTICATE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .collect::<Vec<_>>()
+            .join(", ");
+
         let body = resp
             .text()
             .await
@@ -584,7 +679,8 @@ impl WmiTransport {
                 status.as_u16(),
                 if fault.is_empty() { &body } else { &fault }
             );
-            return Err(format!(
+
+            let mut msg = format!(
                 "WMI request failed (HTTP {}): {}",
                 status.as_u16(),
                 if fault.is_empty() {
@@ -592,7 +688,17 @@ impl WmiTransport {
                 } else {
                     fault
                 }
-            ));
+            );
+
+            // For 401, include the server's supported auth methods
+            if status.as_u16() == 401 && !www_auth.is_empty() {
+                msg.push_str(&format!(
+                    " [Server accepts: {}]",
+                    www_auth
+                ));
+            }
+
+            return Err(msg);
         }
 
         // Check for SOAP fault inside a 200 response

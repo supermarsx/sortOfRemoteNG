@@ -200,15 +200,28 @@ impl WinMgmtService {
         let mut transport =
             WmiTransport::new(config).map_err(|e| format!("Failed to create transport: {e}"))?;
 
-        if let Some(header) = WmiTransport::build_auth_header(config) {
-            transport.set_auth(header);
+        // Test connectivity — Identify without auth first (verifies WinRM is listening)
+        // Many servers allow anonymous Identify, so this is just a reachability check.
+        // If it fails with a non-auth error, bail early.
+        match transport.test_connection().await {
+            Ok(_) => {}
+            Err(e) if e.contains("401") || e.contains("403") => {
+                // Server requires auth even for Identify — that's fine, continue
+            }
+            Err(e) => {
+                return Err(format!("Connection test failed: {e}"));
+            }
         }
 
-        // Test connectivity — Identify first (verifies WinRM is listening)
-        transport
-            .test_connection()
-            .await
-            .map_err(|e| format!("Connection test failed: {e}"))?;
+        // Try credential variants adaptively (DOMAIN\user, user@domain, user, .\user).
+        // This handles the common case where the server accepts Basic auth but is
+        // picky about the username format.
+        if config.credential.is_some() {
+            transport
+                .try_auth_variants(config)
+                .await
+                .map_err(|e| format!("Authentication failed: {e}"))?;
+        }
 
         // Probe with a real WQL query to verify credentials and WMI access.
         if let Err(e) = transport

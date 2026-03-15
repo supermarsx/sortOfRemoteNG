@@ -60,6 +60,7 @@ export function classifyWinmgmtError(raw: string): WinmgmtErrorCategory {
     msg.includes('authentication failed') ||
     msg.includes('authentication/access check failed') ||
     msg.includes('bad username or password') ||
+    msg.includes('server accepts:') ||
     (msg.includes('http 403') && (msg.includes('credential') || msg.includes('logon')))
   ) {
     return 'auth_failure';
@@ -206,15 +207,17 @@ export function buildWinmgmtDiagnostics(category: WinmgmtErrorCategory): Diagnos
       return [
         {
           icon: <KeyRound size={20} className="text-[var(--color-error)]" />,
-          title: 'Invalid credentials',
+          title: 'Invalid credentials or auth method mismatch',
           description:
-            'The WinRM server rejected the supplied username/password. This is an HTTP 401 Unauthorized response.',
+            'The WinRM server rejected all credential format attempts (DOMAIN\\user, user@domain, user, .\\user). ' +
+            'Check the raw error for "[Server accepts: ...]" — this shows what authentication methods ' +
+            'the server supports. If it says "Negotiate" but not "Basic", Basic auth is disabled.',
           remediation: [
-            'Double-check the username, password, and domain.',
-            'For domain accounts, use the format DOMAIN\\username or username@domain.tld.',
-            'For local accounts, use .\\username or just the username without a domain.',
-            'Verify the account is not locked out or expired in Active Directory / local user management.',
-            'Test the credentials by logging into the target machine directly.',
+            'Double-check the username, password, and domain fields.',
+            'For domain accounts, set the domain field to the NetBIOS domain name (e.g. CONTOSO).',
+            'For local accounts, leave the domain field empty or set it to "." .',
+            'Verify the account is not locked out or expired.',
+            'Check the raw error below for "[Server accepts: ...]" to see what auth the server supports.',
           ],
           severity: 'high',
         },
@@ -222,13 +225,14 @@ export function buildWinmgmtDiagnostics(category: WinmgmtErrorCategory): Diagnos
           icon: <ShieldAlert size={20} className="text-[var(--color-warning)]" />,
           title: 'Basic auth not enabled on target',
           description:
-            'WinRM on the target may have Basic authentication disabled. By default, WinRM only allows Basic auth over HTTPS, ' +
-            'not plain HTTP.',
+            'WinRM on the target may have Basic authentication disabled. By default, WinRM only allows ' +
+            'Negotiate (NTLM/Kerberos), not Basic. If the error says "[Server accepts: Negotiate]", ' +
+            'Basic auth needs to be enabled on the server.',
           remediation: [
             'On the target, check: winrm get winrm/config/service/auth — look for Basic = true.',
             'To enable: winrm set winrm/config/service/auth @{Basic="true"} (elevated PS).',
-            'For better security, switch the connection to use HTTPS (port 5986) instead of enabling Basic over HTTP.',
-            'Consider using Negotiate/Kerberos auth if in a domain environment.',
+            'Also enable: winrm set winrm/config/service @{AllowUnencrypted="true"} for HTTP.',
+            'For better security, use HTTPS (port 5986) — Basic over HTTPS is encrypted.',
           ],
           severity: 'high',
         },

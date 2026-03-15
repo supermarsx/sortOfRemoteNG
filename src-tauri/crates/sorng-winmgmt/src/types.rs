@@ -26,13 +26,12 @@ pub enum WmiTransportProtocol {
 #[serde(rename_all = "camelCase")]
 #[derive(Default)]
 pub enum WmiAuthMethod {
+    #[default]
     Basic,
     Ntlm,
-    #[default]
     Negotiate,
     Kerberos,
     CredSsp,
-    Default,
 }
 
 /// Credentials for the remote host.
