@@ -28,6 +28,67 @@ pub async fn run_diagnostics(
         host, port, protocol_label
     );
 
+    // ── Step 0: Connection Configuration ────────────────────────────
+    // Show everything the diagnostic is using so the user can spot
+    // misconfigurations at a glance.
+    let cred_summary = match &config.credential {
+        Some(c) => {
+            let user_display = if let Some(ref d) = c.domain {
+                if d.is_empty() || d == "." {
+                    format!(".\\{}", c.username)
+                } else {
+                    format!("{}\\{}", d, c.username)
+                }
+            } else {
+                c.username.clone()
+            };
+            let pass_hint = if c.password.is_empty() {
+                "(empty password)".to_string()
+            } else {
+                format!("({}chars)", c.password.len())
+            };
+            format!("{} {}", user_display, pass_hint)
+        }
+        None => "(no credentials — anonymous / SSO)".to_string(),
+    };
+
+    let alt_port = if config.alt_port > 0 {
+        config.alt_port
+    } else if config.use_ssl { 5985 } else { 5986 }
+    ;
+
+    steps.push(DiagnosticStep {
+        name: "Connection Configuration".into(),
+        status: "info".into(),
+        message: format!(
+            "{} → {}:{} ({}) | Auth: {:?}",
+            cred_summary, host, port, protocol_label, config.auth_method,
+        ),
+        duration_ms: 0,
+        detail: Some(format!(
+            "Target:        {host}\n\
+             Primary:       {protocol_label} port {port}\n\
+             Alternate:     {} port {alt_port}\n\
+             Endpoint:      {}\n\
+             Auth method:   {:?}\n\
+             Username:      {}\n\
+             Domain:        {}\n\
+             Namespace:     {}\n\
+             Timeout:       {}s\n\
+             Skip CA check: {}\n\
+             Skip CN check: {}",
+            if config.use_ssl { "HTTP" } else { "HTTPS" },
+            config.endpoint_uri(),
+            config.auth_method,
+            config.credential.as_ref().map(|c| c.username.as_str()).unwrap_or("(none)"),
+            config.credential.as_ref().and_then(|c| c.domain.as_deref()).unwrap_or("(none)"),
+            config.namespace,
+            config.timeout_sec,
+            config.skip_ca_check,
+            config.skip_cn_check,
+        )),
+    });
+
     // ── Step 1: DNS Resolution ──────────────────────────────────────
     let (socket_addr, resolved_ip, _all_ips) = diagnostics::probe_dns(host, port, &mut steps);
 
@@ -53,10 +114,12 @@ pub async fn run_diagnostics(
             &mut steps,
         );
         add_root_cause(
-            "TCP connection failed. WinRM may not be running, the port may be \
-             firewalled, or the host is unreachable.\n\n\
-             Fix: On the target, run `winrm quickconfig` in elevated PowerShell \
-             and ensure the Windows Firewall allows TCP {} inbound.",
+            &format!(
+                "TCP connection failed to {host}:{port}. WinRM may not be running, \
+                 the port may be firewalled, or the host is unreachable.\n\n\
+                 Fix: On the target, run `winrm quickconfig` in elevated PowerShell \
+                 and ensure the Windows Firewall allows TCP {port} inbound."
+            ),
             &mut steps,
             port,
         );
@@ -201,18 +264,23 @@ pub async fn run_diagnostics(
     let effective_port = effective_config.effective_port();
 
     // ── Step 4: HTTP Authentication ─────────────────────────────────
+    let username = effective_config
+        .credential.as_ref().map(|c| c.username.as_str()).unwrap_or("(none)");
+    let domain = effective_config
+        .credential.as_ref().and_then(|c| c.domain.as_deref()).unwrap_or("(none)");
+
     let auth_result = probe_winrm_auth(host, &effective_config).await;
     match &auth_result {
-        Ok((ms, response_snippet)) => {
+        Ok((ms, tried_formats)) => {
             steps.push(DiagnosticStep {
                 name: "HTTP Authentication".into(),
                 status: "pass".into(),
-                message: "Credentials accepted by WinRM service".into(),
+                message: format!("Credentials accepted — user: {}", cred_summary),
                 duration_ms: *ms,
-                detail: if response_snippet.is_empty() {
+                detail: if tried_formats.is_empty() {
                     None
                 } else {
-                    Some(response_snippet.clone())
+                    Some(format!("Credential formats tried: {tried_formats}"))
                 },
             });
         }
@@ -223,24 +291,36 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: "HTTP Authentication".into(),
                     status: "fail".into(),
-                    message: "HTTP 401 Unauthorized — credentials rejected".into(),
+                    message: format!(
+                        "HTTP 401 Unauthorized — all credential formats rejected for '{username}'"
+                    ),
                     duration_ms: *ms,
                     detail: Some(format!(
                         "{err}\n\n\
+                         Username:  {username}\n\
+                         Domain:    {domain}\n\
+                         Auth:      {:?}\n\
+                         Endpoint:  {}\n\n\
                          Possible causes:\n\
                          • Wrong username or password\n\
-                         • Basic auth not enabled (winrm get winrm/config/service/auth)\n\
-                         • Domain/username format issue — try DOMAIN\\user or user@domain"
+                         • Basic auth not enabled on the server\n\
+                         • Account locked out or expired\n\
+                         • Domain trust issue (if domain account)",
+                        effective_config.auth_method,
+                        effective_config.endpoint_uri(),
                     )),
                 });
                 add_root_cause(
-                    "Authentication failed (HTTP 401). The WinRM service rejected the \
-                     credentials.\n\n\
-                     Fix:\n\
-                     1. Verify username/password are correct\n\
-                     2. Enable Basic auth: winrm set winrm/config/service/auth @{{Basic=\"true\"}}\n\
-                     3. For non-domain: try .\\username format\n\
-                     4. Check the account is not locked/expired",
+                    &format!(
+                        "Authentication failed for user '{username}' (domain: {domain}).\n\
+                         The WinRM service rejected all credential format variants.\n\n\
+                         Fix:\n\
+                         1. Verify the password is correct for '{username}'\n\
+                         2. Check: winrm get winrm/config/service/auth (look for Basic = true)\n\
+                         3. Enable: winrm set winrm/config/service/auth @{{Basic=\"true\"}}\n\
+                         4. For HTTP also: winrm set winrm/config/service @{{AllowUnencrypted=\"true\"}}\n\
+                         5. Verify the account is not locked: net user {username} /domain"
+                    ),
                     &mut steps,
                     port,
                 );
@@ -248,22 +328,29 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: "HTTP Authentication".into(),
                     status: "fail".into(),
-                    message: "HTTP 403 Forbidden — credentials accepted but access denied".into(),
+                    message: format!(
+                        "HTTP 403 Forbidden — '{username}' authenticated but access denied"
+                    ),
                     duration_ms: *ms,
                     detail: Some(format!(
                         "{err}\n\n\
-                         The user authenticated but lacks permission to use WinRM.\n\
-                         The account may need to be in the local Administrators group \
-                         or have explicit WinRM access."
+                         Username:  {username}\n\
+                         Domain:    {domain}\n\n\
+                         The user authenticated successfully but lacks permission to \
+                         use WinRM on the target. The account must be in the local \
+                         Administrators group or have explicit WinRM/WMI permissions."
                     )),
                 });
                 add_root_cause(
-                    "Access denied (HTTP 403). The account authenticated but is not \
-                     authorized to use WinRM.\n\n\
-                     Fix:\n\
-                     1. Add the user to the local Administrators group on the target\n\
-                     2. Or set LocalAccountTokenFilterPolicy = 1 (for non-domain admins)\n\
-                     3. Or grant WinRM permissions via WinRM security descriptor",
+                    &format!(
+                        "Access denied for '{username}' (domain: {domain}).\n\n\
+                         Fix:\n\
+                         1. Add '{username}' to Administrators: net localgroup Administrators {username} /add\n\
+                         2. Or set UAC filter policy:\n\
+                            reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System \
+                            /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f\n\
+                         3. Or grant WinRM permissions via WinRM security descriptor"
+                    ),
                     &mut steps,
                     port,
                 );
@@ -271,9 +358,12 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: "HTTP Authentication".into(),
                     status: "fail".into(),
-                    message: format!("Authentication request failed: {err}"),
+                    message: format!("Authentication failed for '{}': {}", username, err),
                     duration_ms: *ms,
-                    detail: None,
+                    detail: Some(format!(
+                        "Username: {username}\nDomain: {domain}\nEndpoint: {}",
+                        effective_config.endpoint_uri(),
+                    )),
                 });
             }
             return diagnostics::finish_report(
@@ -311,25 +401,37 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: "WMI Namespace Access".into(),
                     status: "fail".into(),
-                    message: format!("WMI access denied on namespace {}", effective_config.namespace),
+                    message: format!(
+                        "WMI access denied for '{}' on namespace {}",
+                        username, effective_config.namespace
+                    ),
                     duration_ms: *ms,
                     detail: Some(format!(
                         "{err}\n\n\
-                         The WinRM authentication succeeded but the account lacks WMI \
-                         remote access permissions on the target namespace."
+                         Username:  {username}\n\
+                         Domain:    {domain}\n\
+                         Namespace: {}\n\n\
+                         WinRM authentication succeeded but the account lacks WMI \
+                         remote access permissions on the target namespace.",
+                        effective_config.namespace,
                     )),
                 });
-                add_root_cause(
-                    "WMI access denied. The user can authenticate to WinRM but cannot \
-                     query the {ns} namespace.\n\n\
-                     Fix:\n\
-                     1. On target: wmimgmt.msc → WMI Control → Properties → Security\n\
-                     2. Navigate to {ns} → Add user → Enable Account + Remote Enable\n\
-                     3. Also grant DCOM permissions via dcomcnfg if needed\n\
-                     4. For local non-admin accounts: set LocalAccountTokenFilterPolicy = 1",
-                    &mut steps,
-                    port,
-                );
+                {
+                    let ns = &effective_config.namespace;
+                    add_root_cause(
+                        &format!(
+                            "WMI access denied for '{username}' (domain: {domain}).\n\
+                             WinRM auth passed but the account cannot query {ns}.\n\n\
+                             Fix:\n\
+                             1. wmimgmt.msc → WMI Control → Properties → Security\n\
+                             2. Navigate to {ns} → Add '{username}' → Enable Account + Remote Enable\n\
+                             3. Grant DCOM permissions: dcomcnfg → COM Security → add '{username}'\n\
+                             4. For local non-admin: set LocalAccountTokenFilterPolicy = 1"
+                        ),
+                        &mut steps,
+                        port,
+                    );
+                }
             } else if is_namespace {
                 steps.push(DiagnosticStep {
                     name: "WMI Namespace Access".into(),
@@ -339,10 +441,13 @@ pub async fn run_diagnostics(
                     detail: Some(err.clone()),
                 });
                 add_root_cause(
-                    "WMI namespace error. The namespace {ns} is not available on the \
-                     target machine.\n\n\
-                     Fix: Verify the namespace exists:\n\
-                     Get-WmiObject -Namespace root -Class __Namespace | Select-Object Name",
+                    &format!(
+                        "WMI namespace error. The namespace '{}' is not available on \
+                         the target machine.\n\n\
+                         Fix: Verify the namespace exists:\n\
+                         Get-WmiObject -Namespace root -Class __Namespace | Select-Object Name",
+                        effective_config.namespace,
+                    ),
                     &mut steps,
                     port,
                 );
@@ -418,7 +523,7 @@ async fn probe_winrm_identify(
 
 /// Probe WinRM with authenticated Identify request.
 /// Tries multiple credential formats adaptively.
-/// Returns Ok((duration_ms, accepted_format)) or Err((duration_ms, error)).
+/// Returns Ok((duration_ms, accepted_format_label)) or Err((duration_ms, error)).
 async fn probe_winrm_auth(
     _host: &str,
     config: &WmiConnectionConfig,
@@ -427,10 +532,23 @@ async fn probe_winrm_auth(
     let mut transport = WmiTransport::new(config)
         .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
-    // Try all credential format variants
+    let variants = WmiTransport::build_auth_variants(config);
+    let variant_labels: Vec<String> = variants.iter().map(|(l, _)| l.clone()).collect();
+
     match transport.try_auth_variants(config).await {
-        Ok(_) => Ok((t.elapsed().as_millis() as u64, String::new())),
-        Err(e) => Err((t.elapsed().as_millis() as u64, e)),
+        Ok(_) => {
+            // Figure out which format was accepted by checking what's
+            // set on the transport now — it kept the last successful one.
+            let tried = variant_labels.join(", ");
+            Ok((t.elapsed().as_millis() as u64, tried))
+        }
+        Err(e) => {
+            let tried = variant_labels.join(", ");
+            Err((
+                t.elapsed().as_millis() as u64,
+                format!("{e}\n\nCredential formats tried: {tried}"),
+            ))
+        }
     }
 }
 
@@ -490,20 +608,17 @@ async fn probe_wmi_enum(
     }
 }
 
-/// Add a "Root Cause Analysis" step with a formatted hint.
+/// Add a "Root Cause Analysis" step with the given hint text.
 fn add_root_cause(
-    hint_template: &str,
+    hint: &str,
     steps: &mut Vec<DiagnosticStep>,
-    port: u16,
+    _port: u16,
 ) {
-    let hint = hint_template
-        .replace("{}", &port.to_string())
-        .replace("{ns}", "root\\cimv2");
     steps.push(DiagnosticStep {
         name: "Root Cause Analysis".into(),
         status: "info".into(),
         message: "Analyzed failure pattern".into(),
         duration_ms: 0,
-        detail: Some(hint),
+        detail: Some(hint.to_string()),
     });
 }
