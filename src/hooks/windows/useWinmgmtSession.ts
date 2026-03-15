@@ -125,8 +125,11 @@ export function useWinmgmtSession(
     [isTauri, sessionId],
   );
 
-  // Auto-connect on mount
+  // Auto-connect on mount.
+  // Re-arm mountedRef on every effect run so React 18 StrictMode
+  // (mount → cleanup → remount) doesn't leave it permanently false.
   useEffect(() => {
+    mountedRef.current = true;
     connect();
     return () => {
       mountedRef.current = false;
