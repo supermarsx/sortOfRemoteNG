@@ -247,7 +247,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                 <button
                   onClick={(e) => handleDetachSession(session.id, e)}
                   className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
-                  title="Detach"
+                  data-tooltip="Detach"
                 >
                   <ExternalLink size={12} />
                 </button>
@@ -256,6 +256,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             <button
               onClick={(e) => handleCloseSession(session.id, e)}
               className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
+              data-tooltip="Close"
             >
               <X size={12} />
             </button>
