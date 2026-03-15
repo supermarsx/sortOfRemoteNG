@@ -106,30 +106,37 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
           onClick: handleToggleClick,
         };
 
+  // ── Locked: hide real character count ─────────────────────────
+  // When locked, we replace the displayed value with a fixed-length
+  // placeholder so the actual password length is not leaked.
+  const LOCKED_PLACEHOLDER = '••••••••••';
+  const hasValue = typeof rest.value === 'string' && rest.value.length > 0;
+  const showLockedPlaceholder = isLocked && hasValue && !visible;
+
   // ── Custom mask character via CSS ─────────────────────────────
-  // Browsers use -webkit-text-security for the mask glyph.
-  // A custom character requires replacing the value with a masked
-  // string when not visible.  For simplicity we use CSS when the
-  // mask is one of the well-known values, and fall back to a visual
-  // overlay approach for custom characters.
   const maskChar = pr.maskCharacter;
-  const useCustomMask = !visible && !!maskChar;
+  const useCustomMask = !visible && !showLockedPlaceholder && !!maskChar;
 
   const mergedStyle = useMemo(() => {
+    if (showLockedPlaceholder) {
+      // Hide the real value entirely — we render a fixed overlay instead
+      return { ...style, color: 'transparent', caretColor: 'transparent' } as React.CSSProperties;
+    }
     if (!useCustomMask) return style;
-    // Use -webkit-text-security: none and render the mask ourselves
     return {
       ...style,
       WebkitTextSecurity: 'none',
       color: 'transparent',
       caretColor: 'var(--color-text)',
     } as React.CSSProperties;
-  }, [useCustomMask, style]);
+  }, [useCustomMask, showLockedPlaceholder, style]);
 
   // Build the masked overlay text
-  const maskedOverlay = useCustomMask && typeof rest.value === 'string'
-    ? maskChar.repeat(rest.value.length)
-    : null;
+  const maskedOverlay = showLockedPlaceholder
+    ? (maskChar || '•').repeat(LOCKED_PLACEHOLDER.length)
+    : useCustomMask && typeof rest.value === 'string'
+      ? maskChar.repeat(rest.value.length)
+      : null;
 
   const showButton = isRevealable || isLocked;
   const IconComponent = isLocked ? Lock : visible ? EyeOff : Eye;
