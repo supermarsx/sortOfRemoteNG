@@ -214,57 +214,113 @@ const ParentSelector: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════
-   ProtocolGrid — protocol selection + cloud providers
+   ProtocolSelector — dropdown with icons
    ═══════════════════════════════════════════════════════════════ */
 
-const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div>
-    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1.5">
-      Protocol
-    </label>
-    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-      {PROTOCOL_OPTIONS.map(({ value, label, desc, icon: Icon, color }) => {
-        const isActive = mgr.formData.protocol === value;
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() => mgr.handleProtocolChange(value)}
-            className={`sor-option-card ${
-              isActive ? PROTOCOL_COLOR_MAP[color] || "" : ""
-            }`}
-          >
-            <Icon size={20} />
-            <span className="text-xs font-semibold">{label}</span>
-            <span className="text-[10px] opacity-70">{desc}</span>
-          </button>
-        );
-      })}
-    </div>
+const ALL_PROTOCOL_OPTIONS = [
+  ...PROTOCOL_OPTIONS.map((p) => ({ ...p, group: "protocol" as const })),
+  ...CLOUD_OPTIONS.map((c) => ({
+    value: c.value,
+    label: c.label,
+    desc: c.desc,
+    icon: Cloud,
+    color: "info",
+    group: "cloud" as const,
+  })),
+];
 
-    <div className="mt-1.5 flex gap-1.5">
-      {CLOUD_OPTIONS.map(({ value, label, desc }) => {
-        const isActive = mgr.formData.protocol === value;
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() => mgr.handleProtocolChange(value)}
-            className={`sor-option-chip text-xs ${
-              isActive
-                ? "sor-option-chip-active bg-info/20 border-info/60 text-info"
-                : ""
-            }`}
-          >
-            <Cloud size={14} />
-            <span className="font-medium">{label}</span>
-            <span className="opacity-60">{desc}</span>
-          </button>
-        );
-      })}
+const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const current = ALL_PROTOCOL_OPTIONS.find((p) => p.value === mgr.formData.protocol);
+  const CurrentIcon = current?.icon ?? Cloud;
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+        Protocol
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2.5 px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm hover:border-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+      >
+        <CurrentIcon size={16} className="text-[var(--color-textSecondary)] flex-shrink-0" />
+        <span className="font-medium">{current?.label ?? "Select"}</span>
+        <span className="text-[var(--color-textMuted)] text-xs">{current?.desc ?? ""}</span>
+        <ChevronDown
+          size={14}
+          className="ml-auto text-[var(--color-textMuted)] flex-shrink-0 transition-transform"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0)" }}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden max-h-72 overflow-y-auto">
+          {/* Main protocols */}
+          <div className="py-1">
+            {PROTOCOL_OPTIONS.map(({ value, label, desc, icon: Icon }) => {
+              const isActive = mgr.formData.protocol === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => { mgr.handleProtocolChange(value); setOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                    isActive
+                      ? "bg-primary/15 text-primary"
+                      : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+                  }`}
+                >
+                  <Icon size={16} className={isActive ? "text-primary" : "text-[var(--color-textSecondary)]"} />
+                  <span className="font-medium">{label}</span>
+                  <span className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}>{desc}</span>
+                  {isActive && <Check size={14} className="ml-auto text-primary" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Cloud providers */}
+          <div className="border-t border-[var(--color-border)] py-1">
+            <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">Cloud Providers</p>
+            {CLOUD_OPTIONS.map(({ value, label, desc }) => {
+              const isActive = mgr.formData.protocol === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => { mgr.handleProtocolChange(value); setOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                    isActive
+                      ? "bg-primary/15 text-primary"
+                      : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+                  }`}
+                >
+                  <Cloud size={16} className={isActive ? "text-primary" : "text-[var(--color-textSecondary)]"} />
+                  <span className="font-medium">{label}</span>
+                  <span className={`text-xs ${isActive ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}>{desc}</span>
+                  {isActive && <Check size={14} className="ml-auto text-primary" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════
    ConnectionFields — hostname / port inputs
