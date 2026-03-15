@@ -118,6 +118,13 @@ const BellSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       )}
     </div>
 
+    <Toggle
+      checked={cfg.blinkWindowOnActivity}
+      onChange={(v) => up({ blinkWindowOnActivity: v })}
+      label={t("settings.sshTerminal.blinkOnActivity", "Blink window on activity")}
+      description={t("settings.sshTerminal.blinkOnActivityDesc", "Flash the taskbar when SSH output arrives while the window is not focused")}
+    />
+
     <div className="border-t border-[var(--color-border)] pt-4 mt-4">
       <FormField label={t("settings.sshTerminal.taskbarFlash", "Taskbar Flashing")}>
         <Select

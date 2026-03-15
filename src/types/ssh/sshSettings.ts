@@ -266,6 +266,9 @@ export interface SSHTerminalConfig {
   bellOveruseProtection: BellOveruseProtection;
   taskbarFlash: TaskbarFlashMode;
 
+  /** Flash/blink the window taskbar when SSH output arrives while the window is not focused */
+  blinkWindowOnActivity: boolean;
+
   // Keypad mode
   disableKeypadMode: boolean;
   disableApplicationCursorKeys: boolean;
@@ -493,6 +496,7 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
     silenceDurationSeconds: 5,
   },
   taskbarFlash: 'disabled',
+  blinkWindowOnActivity: false,
 
   // Keypad mode
   disableKeypadMode: false,

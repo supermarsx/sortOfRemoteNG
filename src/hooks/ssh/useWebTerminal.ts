@@ -871,6 +871,10 @@ export function useWebTerminal(
           if (event.payload.session_id !== sshSessionId.current) return;
           outputBuffer.push(event.payload.data);
           scheduleFlush();
+          // Blink window when output arrives and window is not focused
+          if (sshTerminalConfig?.blinkWindowOnActivity && document.visibilityState === 'hidden') {
+            invoke("flash_window").catch(() => {});
+          }
         });
         if (!cancelled) outputUnlistenRef.current = unlistenOutput; else unlistenOutput();
 
