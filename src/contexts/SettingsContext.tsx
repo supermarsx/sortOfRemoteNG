@@ -358,6 +358,9 @@ const defaultSettings: GlobalSettings = {
     mouseMode: 'absolute' as const,
     enableUnicodeInput: true,
     autoDetectKeyboardLayout: true,
+    // Scroll / Mouse Wheel
+    scrollSpeed: 1.0,
+    smoothScroll: true,
     // Device redirection
     clipboardRedirection: true,
     printerRedirection: false,

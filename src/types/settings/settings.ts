@@ -631,6 +631,12 @@ export interface RdpGlobalDefaultsConfig {
   /** Auto-detect keyboard layout on connect */
   autoDetectKeyboardLayout: boolean;
 
+  // ─── Scroll / Mouse Wheel defaults ────────────────────────
+  /** Scroll speed multiplier (0.1 – 5.0, default 1.0) */
+  scrollSpeed: number;
+  /** Enable smooth scrolling (accumulate fractional deltas) */
+  smoothScroll: boolean;
+
   // ─── Device redirection defaults ─────────────────────────
   /** Enable clipboard redirection by default */
   clipboardRedirection: boolean;

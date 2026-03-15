@@ -49,6 +49,8 @@ export function mergeRdpSettings(
       mouseMode: global.mouseMode ?? base.input?.mouseMode,
       enableUnicodeInput: global.enableUnicodeInput ?? base.input?.enableUnicodeInput,
       autoDetectLayout: global.autoDetectKeyboardLayout ?? base.input?.autoDetectLayout,
+      scrollSpeed: global.scrollSpeed ?? base.input?.scrollSpeed,
+      smoothScroll: global.smoothScroll ?? base.input?.smoothScroll,
       ...conn?.input,
     },
     deviceRedirection: {
