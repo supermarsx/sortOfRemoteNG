@@ -148,8 +148,17 @@ export function verifyIdentity(
   }
 
   if (record.identity.fingerprint === received.fingerprint) {
-    // Fingerprint matches — update lastSeen and return trusted
+    // Fingerprint matches — update lastSeen and backfill any fields
+    // that were missing when the identity was first stored (e.g. certs
+    // stored before we started capturing subject/issuer/validity/SANs).
     record.identity.lastSeen = new Date().toISOString();
+    const stored = record.identity as Record<string, unknown>;
+    const recv = received as Record<string, unknown>;
+    for (const key of Object.keys(recv)) {
+      if (key !== 'firstSeen' && key !== 'lastSeen' && recv[key] != null && stored[key] == null) {
+        stored[key] = recv[key];
+      }
+    }
     saveStore(store, connectionId);
     return { status: 'trusted' };
   }
