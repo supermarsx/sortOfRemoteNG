@@ -21,6 +21,7 @@ import SSHOptions from "../connectionEditor/SSHOptions";
 import HTTPOptions from "../connectionEditor/HTTPOptions";
 import CloudProviderOptions from "../connectionEditor/CloudProviderOptions";
 import RDPOptions from "../connectionEditor/RDPOptions";
+import WinRMOptions from "../connectionEditor/WinRMOptions";
 import TOTPOptions from "../connectionEditor/TOTPOptions";
 import BackupCodesSection from "../connectionEditor/BackupCodesSection";
 import SecurityQuestionsSection from "../connectionEditor/SecurityQuestionsSection";
@@ -308,6 +309,7 @@ const ProtocolSections: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
     <HTTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <CloudProviderOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <RDPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
+    <WinRMOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <TOTPOptions formData={mgr.formData} setFormData={mgr.setFormData} />
     <BackupCodesSection formData={mgr.formData} setFormData={mgr.setFormData} />
     <SecurityQuestionsSection formData={mgr.formData} setFormData={mgr.setFormData} />
