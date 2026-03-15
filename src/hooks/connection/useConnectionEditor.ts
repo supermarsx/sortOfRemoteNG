@@ -42,7 +42,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
   { value: "vnc", label: "VNC", desc: "Virtual Network", icon: Server, color: "purple" },
   { value: "http", label: "HTTP", desc: "Web Service", icon: Globe, color: "orange" },
   { value: "https", label: "HTTPS", desc: "Secure Web", icon: Shield, color: "emerald" },
-  { value: "winrm", label: "WinRM", desc: "Win Remote Mgmt", icon: Server, color: "amber" },
+  { value: "winrm", label: "WinRM", desc: "Windows Remote Management", icon: Server, color: "amber" },
   { value: "anydesk", label: "AnyDesk", desc: "Remote Access", icon: Monitor, color: "red" },
 ];
 
