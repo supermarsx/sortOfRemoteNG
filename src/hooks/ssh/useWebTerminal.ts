@@ -17,6 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
+import { useToastContext } from "../../contexts/ToastContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { mergeSSHTerminalConfig, mergeSSHConnectionConfig, defaultSSHConnectionConfig } from "../../types/settings/settings";
 import { ManagedScript, getDefaultScripts, OSTag } from "../../components/recording/ScriptManager";
@@ -46,6 +47,7 @@ export function useWebTerminal(
 ) {
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
+  const { toast } = useToastContext();
 
   const connection = useMemo(
     () => state.connections.find((c) => c.id === session.connectionId),
@@ -965,8 +967,10 @@ export function useWebTerminal(
   const copySelection = useCallback(() => {
     const selection = termRef.current?.getSelection();
     if (!selection) return;
-    navigator.clipboard.writeText(selection).catch(() => undefined);
-  }, []);
+    navigator.clipboard.writeText(selection)
+      .then(() => toast.success("Copied to clipboard", 2000))
+      .catch(() => toast.error("Failed to copy to clipboard", 2000));
+  }, [toast]);
 
   const pasteFromClipboard = useCallback(async () => {
     try {
