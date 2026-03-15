@@ -90,7 +90,8 @@
     0 12px 28px rgba(0, 0, 0, 0.35),
     0 2px 6px rgba(0, 0, 0, 0.2);
   min-width: 10rem;
-  overflow: hidden;
+  padding-block: 0.25rem;
+  /* NOTE: no overflow:hidden — submenus position absolutely outside this box */
 }
 
 .sor-menu-item {
@@ -167,7 +168,7 @@
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.35),
     0 2px 6px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
+  padding-block: 0.25rem;
   z-index: 1;
 }
 
