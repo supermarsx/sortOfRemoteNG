@@ -716,8 +716,14 @@ export function useRDPClient(session: ConnectionSession) {
             setDesktopSize({ width: status.desktop_width, height: status.desktop_height });
             const canvas = canvasRef.current;
             if (canvas) {
-              canvas.focus();
               pipelineRef.current!.attach(canvas, status.desktop_width, status.desktop_height, frontendRendererTypeRef.current);
+              // If the pipeline replaced a transferred canvas with a fresh
+              // element (tab reorder after OffscreenCanvas), sync our ref.
+              const currentCanvas = pipelineRef.current!.getCanvas();
+              if (currentCanvas && currentCanvas !== canvasRef.current) {
+                (canvasRef as React.MutableRefObject<HTMLCanvasElement | null>).current = currentCanvas;
+              }
+              (canvasRef.current ?? canvas).focus();
               setActiveFrontendRenderer(pipelineRef.current!.getRenderer()?.name ?? 'canvas2d');
             }
           }

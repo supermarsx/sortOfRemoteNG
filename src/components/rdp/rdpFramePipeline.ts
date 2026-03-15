@@ -174,11 +174,28 @@ export class RdpFramePipeline {
       return;
     }
 
-    // If we had a previous renderer, destroy it before creating a new one
+    // If we had a previous renderer, destroy it before creating a new one.
+    // Track whether the canvas was transferred to an OffscreenCanvas — once
+    // transferred, the browser permanently forbids setting width/height on
+    // the DOM element (InvalidStateError).
+    const wasTransferred = this.isCanvasTransferred();
     if (this.renderer) {
-      console.log(`[RDP pipeline] attach: destroying previous renderer (${this.renderer.name}) before re-attach`);
+      console.log(`[RDP pipeline] attach: destroying previous renderer (${this.renderer.name}, transferred=${wasTransferred}) before re-attach`);
       this.renderer.destroy();
       this.renderer = null;
+    }
+
+    // Replace a transferred canvas with a fresh DOM element so the new
+    // renderer starts clean. This handles tab reorder / React remount
+    // where the same canvas element is re-used but can no longer be resized.
+    if (wasTransferred && canvas.parentElement) {
+      console.log('[RDP pipeline] attach: replacing transferred canvas with fresh element');
+      const fresh = document.createElement('canvas');
+      for (const attr of Array.from(canvas.attributes)) {
+        fresh.setAttribute(attr.name, attr.value);
+      }
+      canvas.parentElement.replaceChild(fresh, canvas);
+      canvas = fresh;
     }
 
     console.log(`[RDP pipeline] attach: ${width}x${height}, type=${rendererType}, destroyed=${this.destroyed}, queuedFrames=${this.queue.length}`);
@@ -219,6 +236,12 @@ export class RdpFramePipeline {
   isCanvasTransferred(): boolean {
     const t = this.renderer?.type;
     return t === 'offscreen-worker' || t === 'webcodecs-worker' || t === 'webcodecs-cpu';
+  }
+
+  /** Get the current canvas element (may differ from what was passed to attach
+   *  if the canvas was replaced due to a prior OffscreenCanvas transfer). */
+  getCanvas(): HTMLCanvasElement | null {
+    return this.canvas;
   }
 
   /** Enable/disable magnifier mirror painting. */
