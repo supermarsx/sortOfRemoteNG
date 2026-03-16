@@ -560,20 +560,13 @@ export function useRDPClient(session: ConnectionSession) {
         }
       }
 
-      // When the local cursor is rendered by the OS ('local' or 'dot'), disable
-      // the server-side pointer so it doesn't draw a second cursor into the
-      // frame buffer.  Only keep server pointer rendering in 'remote' mode.
-      const cursorMode = effectiveSettings.input?.localCursor ?? 'remote';
-      if (cursorMode === 'local' || cursorMode === 'dot') {
-        effectiveSettings = {
-          ...effectiveSettings,
-          security: {
-            ...effectiveSettings.security,
-            enableServerPointer: false,
-            pointerSoftwareRendering: false,
-          },
-        };
-      }
+      // Note: we deliberately keep enableServerPointer=true even in local
+      // cursor mode.  The server-rendered cursor provides shape context
+      // (loading, hand, text beam, resize handles) that the local CSS
+      // cursor cannot replicate.  The local cursor provides instant
+      // position feedback.  Both render simultaneously — the slight
+      // overlap is acceptable and gives the best user experience on
+      // high-latency links.
 
       const display = effectiveSettings.display ?? DEFAULT_RDP_SETTINGS.display;
       const resW = display?.width ?? 1920;
