@@ -90,6 +90,8 @@ export class FrameBuffer {
     const ctx = this.offscreen.getContext('2d');
     if (!ctx) throw new Error('Failed to get OffscreenCanvas 2D context');
     this.ctx = ctx;
+    // Ensure the offscreen canvas starts fully transparent (no stale content)
+    this.ctx.clearRect(0, 0, width, height);
   }
 
   // ── Primary path: paint directly to the visible canvas ───────────

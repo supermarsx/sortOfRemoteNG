@@ -245,10 +245,23 @@ export class RdpFramePipeline {
       canvas = fresh;
     }
 
+    // Clear any stale frames from before the reattach to prevent ghosting
+    this.queue.length = 0;
+    // Clear stale pre-attach buffers from a previous session
+    this.preAttachBuffer = [];
+    this.preAttachBytes = 0;
+
     console.log(`[RDP pipeline] attach: ${width}x${height}, type=${rendererType}, destroyed=${this.destroyed}, queuedFrames=${this.queue.length}`);
     this.canvas = canvas;
     canvas.width = width;
     canvas.height = height;
+
+    // Clear the canvas to prevent old content showing through
+    const clearCtx = canvas.getContext('2d');
+    if (clearCtx) {
+      clearCtx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
     this.fb = new FrameBuffer(width, height);
     this.renderer = createFrameRenderer(rendererType, canvas, { ...this.rendererOpts, width, height });
     this.visCtx = null;

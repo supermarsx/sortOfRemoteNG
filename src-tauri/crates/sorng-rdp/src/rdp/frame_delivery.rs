@@ -45,7 +45,7 @@ pub fn process_outputs(
                 // Push dirty region directly through the Channel (no event+invoke round-trip)
                 push_frame_via_channel(image.data(), desktop_width, region, frame_channel);
                 let fc = stats.frame_count.load(Ordering::Relaxed);
-                if fc > 0 && fc.is_multiple_of(full_frame_sync_interval) {
+                if fc > 0 && (fc == 1 || fc.is_multiple_of(full_frame_sync_interval)) {
                     send_full_frame_via_channel(
                         session_id,
                         image,

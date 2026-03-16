@@ -1213,6 +1213,8 @@ fn run_active_session_loop(
                     }
                     attached_channel = Some(new_channel);
                     viewer_detached = false;
+                    // Force next frame delivery to do a full-frame sync
+                    stats.frame_count.store(0, std::sync::atomic::Ordering::Relaxed);
 
                     // Emit "connected" status so the frontend knows the session is live
                     let _ = event_emitter.emit_event(
@@ -1775,7 +1777,7 @@ fn run_active_session_loop(
             }
 
             let fc = stats.frame_count.load(Ordering::Relaxed);
-            if fc > 0 && fc.is_multiple_of(full_frame_sync_interval) {
+            if fc > 0 && (fc == 1 || fc.is_multiple_of(full_frame_sync_interval)) {
                 frame_store.update_region(
                     session_id,
                     est.image.data(),
@@ -1824,6 +1826,7 @@ fn run_active_session_loop(
                     );
                     est.active_stage = ActiveStage::new(new_result);
                     frame_store.reinit(session_id, est.desktop_width, est.desktop_height);
+                    stats.frame_count.store(0, std::sync::atomic::Ordering::Relaxed);
                     stats.set_phase("active");
 
                     log::info!(
@@ -1970,6 +1973,9 @@ fn run_rdp_session_inner(
             }
         };
 
+        // Reset frame counter so the first frame triggers a full-frame sync
+        stats.frame_count.store(0, std::sync::atomic::Ordering::Relaxed);
+
         // Run the active session loop
         let exit = run_active_session_loop(
             session_id,
@@ -2036,7 +2042,9 @@ fn run_rdp_session_inner(
             }).unwrap_or_default(),
         );
 
-        // Preserve the framebuffer — don't remove it during reconnect.
+        // Preserve the framebuffer shape but clear stale pixel data so
+        // dirty-rect deltas from the new connection don't ghost over old content.
+        frame_store.reinit(session_id, 0, 0);
         // Sleep with exponential backoff, checking for shutdown.
         sleep_with_shutdown_check(
             cmd_rx,

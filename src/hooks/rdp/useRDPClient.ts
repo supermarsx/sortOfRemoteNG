@@ -497,6 +497,9 @@ export function useRDPClient(session: ConnectionSession) {
 
           const canvas = canvasRef.current;
           if (canvas) {
+            // Clear stale content before reattach to prevent ghosting
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
             const rendererType = (rdpCfg.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
             currentPipeline.attach(canvas, sessionInfo.desktopWidth, sessionInfo.desktopHeight, rendererType);
             // If the pipeline replaced a transferred canvas, sync our ref
@@ -643,14 +646,15 @@ export function useRDPClient(session: ConnectionSession) {
       } catch { /* ignore */ }
       sessionIdRef.current = null;
       setRdpSessionId(null);
-      pipelineRef.current!.destroy();
-      {
+    }
+    // Always destroy and recreate the pipeline to ensure no stale state carries over
+    pipelineRef.current!.destroy();
+    {
       const perf = rdpSettingsRef.current.performance;
       pipelineRef.current = new RdpFramePipeline({
         scheduling: (perf?.frameScheduling ?? 'adaptive') as FrameSchedulingMode,
         tripleBuffering: perf?.tripleBuffering ?? true,
       });
-    }
     }
     setConnectionStatus('connecting');
     setStatusMessage('Reconnecting...');
@@ -836,6 +840,9 @@ export function useRDPClient(session: ConnectionSession) {
             setDesktopSize({ width: status.desktop_width, height: status.desktop_height });
             const canvas = canvasRef.current;
             if (canvas) {
+              // Clear stale content before attach to prevent ghosting
+              const clearCtx = canvas.getContext('2d');
+              if (clearCtx) clearCtx.clearRect(0, 0, canvas.width, canvas.height);
               pipelineRef.current!.attach(canvas, status.desktop_width, status.desktop_height, frontendRendererTypeRef.current);
               // If the pipeline replaced a transferred canvas with a fresh
               // element (tab reorder after OffscreenCanvas), sync our ref.
