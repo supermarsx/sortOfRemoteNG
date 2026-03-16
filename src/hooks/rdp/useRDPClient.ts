@@ -766,18 +766,27 @@ export function useRDPClient(session: ConnectionSession) {
       );
     };
 
-    // Rebuild cursor when canvas resizes (scale ratio changes)
+    // Rebuild cursor when canvas resizes (scale ratio changes).
+    // Also re-observe when the canvas element changes (transferred canvas replacement).
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const observer = new ResizeObserver(() => {
+    const rebuildCursor = () => {
       const shape = lastCursorShapeRef.current;
       if (shape) {
         setPointerStyle(buildScaledCursorRef.current(shape));
       }
-    });
+    };
+    const observer = new ResizeObserver(rebuildCursor);
     observer.observe(canvas);
-    return () => observer.disconnect();
-  }, [desktopSize.width]);
+    // Also rebuild on window resize (catches fullscreen, zoom, etc.)
+    window.addEventListener('resize', rebuildCursor);
+    // Rebuild immediately in case size changed since last render
+    rebuildCursor();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', rebuildCursor);
+    };
+  }, [desktopSize.width, isConnected]);
 
   // Convenience wrapper for event listeners (always reads the latest ref)
   const buildScaledCursor = (shape: 'arrow' | 'dot') => buildScaledCursorRef.current(shape);
