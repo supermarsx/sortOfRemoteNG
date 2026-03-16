@@ -15,6 +15,7 @@ import {
   ServerCrash,
   Network,
   Shield,
+  Timer,
 } from 'lucide-react';
 
 /* ── Types ───────────────────────────────────────────────────────── */
@@ -25,6 +26,7 @@ export type RDPErrorCategory =
   | 'credssp_post_auth'
   | 'credssp_oracle'
   | 'credentials'
+  | 'timeout'
   | 'network'
   | 'tls'
   | 'unknown';
@@ -87,7 +89,16 @@ export function classifyRdpError(raw: string): RDPErrorCategory {
   if (msg.includes('tls') || msg.includes('ssl') || msg.includes('certificate')) {
     return 'tls';
   }
-  if (msg.includes('timeout') || msg.includes('refused') || msg.includes('unreachable') || msg.includes('dns')) {
+  if (
+    msg.includes('timed out') ||
+    msg.includes('timeout') ||
+    msg.includes('deadline') ||
+    msg.includes('elapsed') ||
+    (msg.includes('connect') && msg.includes('time'))
+  ) {
+    return 'timeout';
+  }
+  if (msg.includes('refused') || msg.includes('unreachable') || msg.includes('dns') || msg.includes('no route') || msg.includes('host not found')) {
     return 'network';
   }
   return 'unknown';
@@ -242,6 +253,40 @@ export function buildRdpDiagnostics(category: RDPErrorCategory): DiagnosticCause
         },
       ];
 
+    case 'timeout':
+      return [
+        {
+          icon: <Timer size={20} className="text-[var(--color-warning)]" />,
+          title: 'Connection timed out',
+          description:
+            'The connection attempt exceeded the configured timeout. The target machine may be unreachable, ' +
+            'a firewall may be silently dropping packets (instead of rejecting them), or the RDP service is overloaded.',
+          remediation: [
+            'Verify the target machine is powered on and reachable: try pinging the hostname or IP.',
+            'Check that port 3389 (or your custom RDP port) is not blocked by a firewall — silent drops cause timeouts, while active blocks cause "refused" errors.',
+            'Increase the TCP connect timeout in the connection\'s TCP / Socket settings (default is 10 seconds).',
+            'If connecting over a VPN, ensure the VPN tunnel is active and the remote subnet is routable.',
+            'Try connecting by IP address directly to rule out DNS resolution delays.',
+            'On the target, verify Remote Desktop is enabled: System Properties → Remote → Allow remote connections.',
+          ],
+          severity: 'high',
+        },
+        {
+          icon: <Network size={20} className="text-[var(--color-textMuted)]" />,
+          title: 'Firewall silently dropping traffic',
+          description:
+            'Unlike a "connection refused" error (which comes back instantly), a timeout usually indicates ' +
+            'a firewall is silently discarding packets without sending a rejection. This is common with ' +
+            'Windows Firewall, cloud security groups, or network ACLs.',
+          remediation: [
+            'On the target: ensure Windows Firewall allows inbound TCP 3389 — run: netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389.',
+            'In cloud environments (Azure, AWS, GCP): check the Network Security Group / Security Group rules allow TCP 3389 from your source IP.',
+            'Try running "Test-NetConnection <host> -Port 3389" from a machine on the same network to isolate the issue.',
+          ],
+          severity: 'medium',
+        },
+      ];
+
     case 'network':
       return [
         {
@@ -284,6 +329,7 @@ export const RDP_ERROR_CATEGORY_LABELS: Record<RDPErrorCategory, string> = {
   credssp_post_auth: 'Post-Authentication Rejection (NLA / CredSSP)',
   credssp_oracle: 'CredSSP Encryption Oracle Mismatch',
   credentials: 'Authentication Failure',
+  timeout: 'Connection Timed Out',
   network: 'Network / Connectivity',
   tls: 'TLS / Certificate',
   unknown: 'Connection Error',

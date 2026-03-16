@@ -61,6 +61,7 @@ const CATEGORY_ACCENT: Record<RDPErrorCategory, string> = {
   credssp_post_auth: 'var(--color-error)',
   credssp_oracle: 'var(--color-accent, var(--color-primary))',
   credentials: 'var(--color-warning)',
+  timeout: 'var(--color-warning)',
   network: 'var(--color-textMuted)',
   tls: 'var(--color-info)',
   unknown: 'var(--color-textMuted)',
