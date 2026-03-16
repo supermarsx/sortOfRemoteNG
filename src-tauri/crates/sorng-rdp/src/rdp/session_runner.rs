@@ -1020,7 +1020,40 @@ fn establish_rdp_connection(
     );
 
     let image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
-    let _active_stage = ActiveStage::new(connection_result);
+
+    // Save connection result fields before ActiveStage::new() consumes it.
+    let cr_enable_server_pointer = connection_result.enable_server_pointer;
+    let cr_pointer_software_rendering = connection_result.pointer_software_rendering;
+    let cr_io_channel_id = connection_result.io_channel_id;
+    let cr_user_channel_id = connection_result.user_channel_id;
+
+    log::info!(
+        "RDP session {session_id}: pointer config — server: enable={}, software={} | requested: enable={}, software={}",
+        cr_enable_server_pointer, cr_pointer_software_rendering,
+        settings.enable_server_pointer, settings.pointer_software_rendering,
+    );
+
+    let mut active_stage = ActiveStage::new(connection_result);
+
+    // Override pointer settings if the server negotiated different values
+    // than what we requested.  This is critical for local cursor mode
+    // where we need PointerBitmap events (requires software_rendering=false).
+    if settings.enable_server_pointer != cr_enable_server_pointer
+        || settings.pointer_software_rendering != cr_pointer_software_rendering
+    {
+        log::info!(
+            "RDP session {session_id}: overriding server pointer config to match requested values"
+        );
+        active_stage.set_enable_server_pointer(settings.enable_server_pointer);
+        let new_fp = crate::ironrdp::session::fast_path::ProcessorBuilder {
+            io_channel_id: cr_io_channel_id,
+            user_channel_id: cr_user_channel_id,
+            enable_server_pointer: settings.enable_server_pointer,
+            pointer_software_rendering: settings.pointer_software_rendering,
+        }
+        .build();
+        active_stage.set_fastpath_processor(new_fp);
+    }
 
     // Initialize the shared framebuffer slot for this session
     frame_store.init(session_id, desktop_width, desktop_height);
@@ -1058,7 +1091,7 @@ fn establish_rdp_connection(
 
     Ok(EstablishedSession {
         tls_framed,
-        active_stage: _active_stage,
+        active_stage,
         image,
         desktop_width,
         desktop_height,
