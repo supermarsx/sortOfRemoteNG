@@ -785,19 +785,23 @@ export function useRDPClient(session: ConnectionSession) {
     };
   }, [desktopSize.width]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rebuild cursor when connection state changes (canvas may have been
-  // replaced or resized during connect/reconnect).
+  // Set the initial cursor on connect.  When localCursor is 'local' or
+  // 'dot', the server pointer is disabled so no rdp://pointer events fire.
+  // We must set the scaled cursor proactively rather than waiting for an
+  // event that will never come.
   useEffect(() => {
     if (!isConnected) return;
-    const shape = lastCursorShapeRef.current;
-    if (shape) {
-      // Small delay to let the canvas settle after connect
+    const mode = localCursorMode;
+    if (mode === 'local' || mode === 'dot') {
+      const shape = mode === 'dot' ? 'dot' as const : 'arrow' as const;
+      lastCursorShapeRef.current = shape;
+      // Delay to let the canvas element settle (size may not be final yet)
       const timer = setTimeout(() => {
         setPointerStyle(buildScaledCursorRef.current(shape));
-      }, 100);
+      }, 150);
       return () => clearTimeout(timer);
     }
-  }, [isConnected]);
+  }, [isConnected, localCursorMode]);
 
   // Convenience wrapper for event listeners (always reads the latest ref)
   const buildScaledCursor = (shape: 'arrow' | 'dot') => buildScaledCursorRef.current(shape);
