@@ -516,7 +516,7 @@ impl ResolvedSettings {
                 .and_then(|p| p.codecs.as_ref())
                 .and_then(|c| c.nal_passthrough)
                 .unwrap_or(false),
-            read_timeout: Duration::from_millis(adv.and_then(|a| a.read_timeout_ms).unwrap_or(16)),
+            read_timeout: Duration::from_millis(adv.and_then(|a| a.read_timeout_ms).unwrap_or(2)),
             max_consecutive_errors: adv.and_then(|a| a.max_consecutive_errors).unwrap_or(50),
             stats_interval: Duration::from_secs(
                 adv.and_then(|a| a.stats_interval_secs).unwrap_or(1),

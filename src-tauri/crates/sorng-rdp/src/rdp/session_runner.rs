@@ -1110,10 +1110,13 @@ fn run_active_session_loop(
     let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
     let mut gfx_frames: Vec<crate::gfx::processor::GfxOutput> = Vec::new();
 
-    // Adaptive read timeout
-    let timeout_active = Duration::from_millis(4);
-    let timeout_idle = Duration::from_millis(50);
-    let idle_threshold = Duration::from_millis(500);
+    // Adaptive read timeout — controls how quickly the loop reacts to
+    // new input commands.  Lower = more responsive mouse but more CPU.
+    // The loop blocks on read_pdu() for up to this duration; input waits
+    // in the mpsc channel until the read times out or server data arrives.
+    let timeout_active = Duration::from_millis(1);   // 1ms when server is active
+    let timeout_idle = Duration::from_millis(16);    // 16ms when idle (saves CPU)
+    let idle_threshold = Duration::from_millis(200); // go idle after 200ms silence
     let mut last_data_received = Instant::now();
     let mut current_timeout = timeout_active;
 
