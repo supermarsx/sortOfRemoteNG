@@ -50,6 +50,15 @@ export class RdpFramePipeline {
   private diagRenderCount = 0;
   private diagDropCount = 0;
 
+  // ── Queue pressure management ─────────────────────────────────────
+  // Prevent unbounded queue growth which adds latency (N frames × 16ms
+  // at 60fps = seconds of accumulated lag).  When the queue exceeds
+  // MAX_QUEUE_SIZE, the oldest frames are dropped to keep latency bounded.
+  private static readonly MAX_QUEUE_SIZE = 12;
+  private queueDropCount = 0;
+  private queueDropBytes = 0;
+  private lastQueueWarning = 0;
+
   // ── Scheduling ──────────────────────────────────────────────────────
   private readonly scheduleMode: FrameSchedulingMode;
   private readonly msgChannel: MessageChannel | null = null;
@@ -108,6 +117,33 @@ export class RdpFramePipeline {
       return;
     }
     if (data.byteLength < 8) return;
+
+    // Queue pressure: drop oldest frames when the queue grows too deep.
+    // Each queued frame adds one render-cycle of latency (~16ms at 60fps).
+    // At MAX_QUEUE_SIZE=12, worst-case accumulated latency is ~200ms.
+    // NOTE: Only drop RGBA frames.  H.264 NAL frames use incremental
+    // decoding so dropping them corrupts the stream until the next keyframe.
+    while (this.queue.length >= RdpFramePipeline.MAX_QUEUE_SIZE) {
+      const oldest = this.queue[0];
+      // Skip NAL payloads (H.264) — they can't be safely dropped
+      if (oldest.byteLength >= 4) {
+        const magic = new DataView(oldest).getUint32(0, true);
+        if (magic === 0x4E414C48) break; // NAL — stop dropping
+      }
+      this.queue.shift();
+      this.queueDropCount++;
+      this.queueDropBytes += oldest.byteLength;
+      // Log periodically (not every frame — would flood)
+      const now = performance.now();
+      if (now - this.lastQueueWarning > 2000) {
+        console.warn(
+          `[RDP pipeline] Queue pressure: dropped ${this.queueDropCount} frames ` +
+          `(${(this.queueDropBytes / 1024).toFixed(0)} KB total), queue=${this.queue.length}`
+        );
+        this.lastQueueWarning = now;
+      }
+    }
+
     this.queue.push(data);
     if (this.diagFrameCount++ < 5) {
       console.log(`[RDP pipeline] onFrame #${this.diagFrameCount}: ${data.byteLength} bytes, queue=${this.queue.length}, canvas=${!!this.canvas}, renderer=${this.renderer?.name ?? 'null'}, fb=${!!this.fb}`);
@@ -273,6 +309,15 @@ export class RdpFramePipeline {
   /** Current scheduling mode being used (for diagnostics). */
   getActiveScheduling(): 'vsync' | 'low-latency' {
     return this.usingLowLatency ? 'low-latency' : 'vsync';
+  }
+
+  /** Queue stats for diagnostics / UI. */
+  getQueueStats(): { depth: number; droppedFrames: number; droppedBytes: number } {
+    return {
+      depth: this.queue.length,
+      droppedFrames: this.queueDropCount,
+      droppedBytes: this.queueDropBytes,
+    };
   }
 
   /** Tear down everything. */
