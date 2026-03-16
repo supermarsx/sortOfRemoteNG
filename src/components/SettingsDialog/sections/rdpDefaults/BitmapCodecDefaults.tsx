@@ -3,6 +3,7 @@ import { selectClass } from "./selectClass";
 import React from "react";
 import { Monitor } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
@@ -25,7 +26,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.codecsEnabled ?? true} onChange={(v: boolean) => update({ codecsEnabled: v })} />
       <span className="sor-toggle-label font-medium">
-        Enable Bitmap Codec Negotiation
+        Enable Bitmap Codec Negotiation <InfoTooltip text="Advertises advanced bitmap compression codecs to the server. When disabled, only raw/RLE bitmaps are used." />
       </span>
     </label>
 
@@ -34,7 +35,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         <label className="flex items-center space-x-3 cursor-pointer group ml-4">
           <Checkbox checked={rdp.remoteFxEnabled ?? true} onChange={(v: boolean) => update({ remoteFxEnabled: v })} />
           <span className="sor-toggle-label">
-            RemoteFX (RFX)
+            RemoteFX (RFX) <InfoTooltip text="Enables the RemoteFX codec which uses DWT and RLGR entropy coding for high-quality compression." />
           </span>
           <span className="text-xs text-[var(--color-textMuted)]">
             — DWT + RLGR entropy, best quality/compression
@@ -44,7 +45,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         {(rdp.remoteFxEnabled ?? true) && (
           <div className="ml-11 flex items-center gap-2">
             <span className="text-sm text-[var(--color-textSecondary)]">
-              Entropy Algorithm:
+              Entropy Algorithm: <InfoTooltip text="RLGR1 offers faster decoding; RLGR3 provides better compression at a slight CPU cost." />
             </span>
             <Select value={rdp.remoteFxEntropy ?? "rlgr3"} onChange={(v: string) => update({
                   remoteFxEntropy: v as "rlgr1" | "rlgr3",
@@ -56,7 +57,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={rdp.gfxEnabled ?? false} onChange={(v: boolean) => update({ gfxEnabled: v })} />
             <span className="sor-toggle-label">
-              RDPGFX (H.264 Hardware Decode)
+              RDPGFX (H.264 Hardware Decode) <InfoTooltip text="Enables the RDPGFX pipeline for H.264-based screen encoding with GPU hardware acceleration." />
             </span>
             <span className="text-xs text-[var(--color-textMuted)]">
               — lowest bandwidth &amp; CPU via GPU decode
@@ -66,7 +67,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           {(rdp.gfxEnabled ?? false) && (<>
             <div className={"ml-11 flex items-center gap-2 mt-2" + (backendBypassed ? " opacity-50 pointer-events-none" : "")}>
               <span className="text-sm text-[var(--color-textSecondary)]">
-                H.264 Decoder{backendBypassed ? " (N/A — decoded on frontend)" : ""}:
+                H.264 Decoder{backendBypassed ? " (N/A — decoded on frontend)" : ""}: <InfoTooltip text="Selects the backend H.264 decoder. Media Foundation uses GPU hardware; openh264 is a software fallback." />
               </span>
               <Select value={rdp.h264Decoder ?? "auto"} onChange={(v: string) => update({
                     h264Decoder: v as
@@ -86,7 +87,7 @@ const BitmapCodecDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
                     update(updates);
                   }} />
               <span className="sor-toggle-label">
-                NAL Passthrough (WebCodecs Decode)
+                NAL Passthrough (WebCodecs Decode) <InfoTooltip text="Skips backend H.264 decoding and sends raw NAL units to the frontend for WebCodecs-based decoding." />
               </span>
               <span className="text-xs text-[var(--color-textMuted)]">
                 — skip backend decode, send H.264 to frontend

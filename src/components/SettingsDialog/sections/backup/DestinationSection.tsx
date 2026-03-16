@@ -5,12 +5,13 @@ import { FolderOpen, Info, Cloud } from "lucide-react";
 import { BackupLocationPresets } from "../../../../types/settings/settings";
 import { locationPresetLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
       <FolderOpen className="w-4 h-4 inline mr-2" />
-      Backup Destination
+      Backup Destination <InfoTooltip text="The folder where backup files are saved. Choose a local folder or a cloud-synced location." />
     </label>
 
     {/* Location Presets */}
@@ -38,7 +39,7 @@ const DestinationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       mgr.backup.locationPreset !== "documents" && (
         <div className="space-y-2">
           <label className="block text-xs text-[var(--color-textSecondary)]">
-            Custom Subfolder (optional)
+            Custom Subfolder (optional) <InfoTooltip text="An optional subfolder path within the cloud storage location for organizing backups." />
           </label>
           <input
             type="text"

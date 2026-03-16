@@ -1,5 +1,6 @@
 import React from "react";
 import { Shield, ChevronDown, ChevronUp } from "lucide-react";
+import { InfoTooltip } from "../ui/InfoTooltip";
 import { TotpImportDialog } from "../security/TotpImportDialog";
 import { useTOTPOptions } from "../../hooks/security/useTOTPOptions";
 import type { Connection } from "../../types/connection/connection";
@@ -36,7 +37,7 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({
         <div className="flex items-center space-x-2">
           <Shield size={16} className="text-[var(--color-textSecondary)]" />
           <span className="text-sm font-medium text-[var(--color-textSecondary)]">
-            2FA / TOTP
+            2FA / TOTP <InfoTooltip text="Time-based One-Time Password configurations for two-factor authentication on this connection." />
           </span>
           {mgr.configs.length > 0 && (
             <span className="sor-micro-badge">

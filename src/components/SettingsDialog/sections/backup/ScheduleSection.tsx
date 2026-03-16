@@ -4,6 +4,7 @@ import { Clock } from "lucide-react";
 import { BackupFrequencies, DaysOfWeek, BackupFrequency, DayOfWeek } from "../../../../types/settings/settings";
 import { frequencyLabels, dayLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
@@ -15,7 +16,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="space-y-2">
         <label className="block text-sm text-[var(--color-textSecondary)]">
-          Frequency
+          Frequency <InfoTooltip text="How often automatic backups are created. Choose manual to only back up on demand." />
         </label>
         <Select value={mgr.backup.frequency} onChange={(v: string) =>
             mgr.updateBackup({
@@ -27,7 +28,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         mgr.backup.frequency !== "hourly" && (
           <div className="space-y-2">
             <label className="block text-sm text-[var(--color-textSecondary)]">
-              Time
+              Time <InfoTooltip text="The time of day when the scheduled backup will run." />
             </label>
             <input
               type="time"
@@ -43,7 +44,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       {mgr.backup.frequency === "weekly" && (
         <div className="space-y-2">
           <label className="block text-sm text-[var(--color-textSecondary)]">
-            Day of Week
+            Day of Week <InfoTooltip text="The day of the week on which the weekly backup will run." />
           </label>
           <Select value={mgr.backup.weeklyDay} onChange={(v: string) =>
               mgr.updateBackup({ weeklyDay: v as DayOfWeek })} options={[...DaysOfWeek.map((day) => ({ value: day, label: dayLabels[day] }))]} className="sor-settings-input" />
@@ -53,7 +54,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       {mgr.backup.frequency === "monthly" && (
         <div className="space-y-2">
           <label className="block text-sm text-[var(--color-textSecondary)]">
-            Day of Month
+            Day of Month <InfoTooltip text="The day of the month on which the monthly backup will run." />
           </label>
           <Select value={mgr.backup.monthlyDay} onChange={(v: string) =>
               mgr.updateBackup({ monthlyDay: parseInt(v) })} options={[...Array.from({ length: 28 }, (_, i) => i + 1).map((day) => ({ value: day, label: String(day) }))]} className="sor-settings-input" />

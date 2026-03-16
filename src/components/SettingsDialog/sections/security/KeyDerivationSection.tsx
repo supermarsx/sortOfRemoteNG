@@ -1,6 +1,7 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Key, Timer, Gauge, Loader2 } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 import type { TFunc } from "./types";
 function KeyDerivationSection({
   settings,
@@ -19,7 +20,7 @@ function KeyDerivationSection({
     <div className="space-y-4">
       <h4 className="sor-section-heading">
         <Key className="w-4 h-4 text-accent" />
-        Key Derivation (PBKDF2)
+        <span className="flex items-center gap-1">Key Derivation (PBKDF2) <InfoTooltip text="PBKDF2 derives encryption keys from your master password — more iterations make brute-force attacks harder but slow down unlock" /></span>
       </h4>
 
       <div className="sor-settings-card space-y-4">
@@ -27,7 +28,7 @@ function KeyDerivationSection({
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Gauge className="w-4 h-4" />
-              {t("security.iterations")}
+              <span className="flex items-center gap-1">{t("security.iterations")} <InfoTooltip text="Number of PBKDF2 hashing rounds — higher values increase security but require more time to derive the key" /></span>
             </label>
             <div className="flex space-x-2">
               <NumberInput value={settings.keyDerivationIterations} onChange={(v: number) => updateSettings({
@@ -60,7 +61,7 @@ function KeyDerivationSection({
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Timer className="w-4 h-4" />
-              {t("security.benchmarkTime")}
+              <span className="flex items-center gap-1">{t("security.benchmarkTime")} <InfoTooltip text="Target duration in seconds the benchmark should run to determine the optimal iteration count for your hardware" /></span>
             </label>
             <NumberInput value={settings.benchmarkTimeSeconds} onChange={(v: number) => updateSettings({
                   benchmarkTimeSeconds: v,
@@ -74,8 +75,8 @@ function KeyDerivationSection({
         <label className="flex items-center space-x-3 cursor-pointer group pt-2">
           <Checkbox checked={settings.autoBenchmarkIterations} onChange={(v: boolean) => updateSettings({ autoBenchmarkIterations: v })} />
           <Gauge className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-accent" />
-          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
-            {t("security.autoBenchmark")}
+          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
+            {t("security.autoBenchmark")} <InfoTooltip text="Automatically re-run the iteration benchmark on startup to keep the count optimal for the current machine" />
           </span>
         </label>
       </div>

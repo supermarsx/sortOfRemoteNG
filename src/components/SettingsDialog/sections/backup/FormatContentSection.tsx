@@ -4,6 +4,7 @@ import { Settings, FileArchive } from "lucide-react";
 import { BackupFormats, BackupFormat } from "../../../../types/settings/settings";
 import { formatLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
@@ -15,7 +16,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="space-y-2">
         <label className="block text-sm text-[var(--color-textSecondary)]">
-          Backup Format
+          Backup Format <InfoTooltip text="The file format used for backup archives. JSON is human-readable; binary formats are more compact." />
         </label>
         <Select value={mgr.backup.format} onChange={(v: string) =>
             mgr.updateBackup({ format: v as BackupFormat })} options={[...BackupFormats.map((fmt) => ({ value: fmt, label: formatLabels[fmt] }))]} className="sor-settings-input" />
@@ -23,7 +24,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
       <div className="space-y-2">
         <label className="block text-sm text-[var(--color-textSecondary)]">
-          Keep Last X Backups
+          Keep Last X Backups <InfoTooltip text="Maximum number of backup files to retain. Older backups are automatically deleted. Set to 0 to keep all." />
         </label>
         <div className="flex gap-2">
           <div className="flex flex-wrap gap-1.5 flex-1">
@@ -55,17 +56,17 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-4 space-y-3">
       {(
         [
-          ["includePasswords", "Include Passwords"],
-          ["includeSettings", "Include Settings"],
-          ["includeSSHKeys", "Include SSH Keys"],
-          ["compressBackups", "Compress Backups"],
+          ["includePasswords", "Include Passwords", "Include saved connection passwords in backups. Passwords are stored encrypted."],
+          ["includeSettings", "Include Settings", "Include application preferences and global settings in backup files."],
+          ["includeSSHKeys", "Include SSH Keys", "Include SSH private keys in backup files. Handle with care as these grant server access."],
+          ["compressBackups", "Compress Backups", "Compress backup files to reduce disk space usage at the cost of slightly longer backup times."],
         ] as const
-      ).map(([key, label]) => (
+      ).map(([key, label, tooltip]) => (
         <label
           key={key}
           className="flex items-center justify-between cursor-pointer"
         >
-          <span className="text-[var(--color-text)]">{label}</span>
+          <span className="text-[var(--color-text)]">{label} <InfoTooltip text={tooltip} /></span>
           <Checkbox checked={mgr.backup[key]} onChange={(v: boolean) => mgr.updateBackup({ [key]: v })} className="sor-checkbox-lg" />
         </label>
       ))}

@@ -18,6 +18,7 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
         unit="x"
         onChange={(v) => u({ terminalScrollSpeed: v })}
         settingKey="terminalScrollSpeed"
+        infoTooltip="Multiplier for terminal scroll speed. Higher values scroll faster per mouse wheel tick. The default is 1x."
       />
       <Toggle
         checked={s.terminalSmoothScroll}
@@ -26,6 +27,7 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Smooth scrolling in terminal"
         description="Enable smooth scroll animation instead of jumping"
         settingKey="terminalSmoothScroll"
+        infoTooltip="Enable smooth animated scrolling in the terminal instead of jumping line by line. May feel more natural but can use slightly more resources."
       />
       <SelectRow
         label="Right-click in tree"
@@ -40,6 +42,7 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
           })
         }
         settingKey="treeRightClickAction"
+        infoTooltip="Choose what happens when you right-click a connection in the sidebar tree: show a context menu or immediately open the Quick Connect dialog."
       />
       <SelectRow
         label="Mouse back button"
@@ -55,6 +58,7 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
           })
         }
         settingKey="mouseBackAction"
+        infoTooltip="Assign an action to the mouse back button (Button 4). Choose to switch to the previous tab, disconnect the current session, or do nothing."
       />
       <SelectRow
         label="Mouse forward button"
@@ -70,6 +74,7 @@ const ScrollInputSection: React.FC<SectionProps> = ({ s, u }) => (
           })
         }
         settingKey="mouseForwardAction"
+        infoTooltip="Assign an action to the mouse forward button (Button 5). Choose to switch to the next tab, reconnect the current session, or do nothing."
       />
     </Card>
   </div>

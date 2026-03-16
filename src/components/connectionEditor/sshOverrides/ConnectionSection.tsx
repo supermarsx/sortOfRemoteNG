@@ -2,15 +2,16 @@ import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { Connection } from "../../../types/connection/connection";
 import { Checkbox, NumberInput } from "../../ui/forms";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const ConnectionSection: React.FC<SectionProps> = ({ mgr }) => {
   const { globalConfig: g, updateOverride: u, isOverridden: ov, getValue: v } = mgr;
   return (
     <div className="space-y-3">
-      <h4 className="sor-form-section-heading">Connection</h4>
+      <h4 className="sor-form-section-heading">Connection <InfoTooltip text="Override the global SSH connection settings for this specific connection." /></h4>
 
       <OverrideToggle
-        label="Connect Timeout"
+        label={<>Connect Timeout <InfoTooltip text="Maximum time in seconds to wait for the SSH connection handshake to complete." /></>}
         isOverridden={ov("connectTimeout")}
         globalValue={`${g.connectTimeout}s`}
         onToggle={(on) => u("connectTimeout", on ? g.connectTimeout : undefined)}
@@ -22,7 +23,7 @@ const ConnectionSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="Keep Alive Interval"
+        label={<>Keep Alive Interval <InfoTooltip text="How often (in seconds) to send keep-alive packets. Set to 0 to disable." /></>}
         isOverridden={ov("keepAliveInterval")}
         globalValue={g.keepAliveInterval === 0 ? "Disabled" : `${g.keepAliveInterval}s`}
         onToggle={(on) => u("keepAliveInterval", on ? g.keepAliveInterval : undefined)}
@@ -34,7 +35,7 @@ const ConnectionSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="Host Key Checking"
+        label={<>Host Key Checking <InfoTooltip text="When strict, connections are rejected if the remote host key is unknown or has changed." /></>}
         isOverridden={ov("strictHostKeyChecking")}
         globalValue={g.strictHostKeyChecking ? "Strict" : "Disabled"}
         onToggle={(on) =>

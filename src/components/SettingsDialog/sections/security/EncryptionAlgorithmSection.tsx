@@ -2,6 +2,7 @@ import { GlobalSettings } from "../../../../types/settings/settings";
 import { Lock, ShieldCheck } from "lucide-react";
 import { ENCRYPTION_ALGORITHMS } from "../../../../hooks/settings/useSecuritySettings";
 import { Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 import type { Mgr, TFunc } from "./types";
 function EncryptionAlgorithmSection({
   settings,
@@ -22,7 +23,7 @@ function EncryptionAlgorithmSection({
     <div className="space-y-4">
       <h4 className="sor-section-heading">
         <Lock className="w-4 h-4 text-primary" />
-        {t("security.algorithm")}
+        <span className="flex items-center gap-1">{t("security.algorithm")} <InfoTooltip text="Choose the symmetric encryption algorithm used to protect stored credentials and connection files" /></span>
       </h4>
 
       <div className="sor-settings-card space-y-4">
@@ -52,8 +53,8 @@ function EncryptionAlgorithmSection({
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-5 h-5 text-accent flex-shrink-0" />
             <div className="flex-1 flex items-center gap-2">
-              <span className="text-sm text-[var(--color-textSecondary)] whitespace-nowrap">
-                Mode:
+              <span className="text-sm text-[var(--color-textSecondary)] whitespace-nowrap flex items-center gap-1">
+                Mode: <InfoTooltip text="Block cipher mode of operation — determines how plaintext blocks are chained together during encryption" />
               </span>
               <Select value={settings.blockCipherMode} onChange={(v: string) =>
                   updateSettings({ blockCipherMode: v as any })} options={[...mgr.validModes.map((mode) => ({ value: mode.value, label: mode.label }))]} className="sor-settings-select flex-1 text-sm" disabled={mgr.validModes.length === 1} />

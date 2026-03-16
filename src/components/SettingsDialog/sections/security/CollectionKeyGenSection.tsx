@@ -1,11 +1,12 @@
 import { Lock, Key, Loader2, FileKey, CheckCircle, Database } from "lucide-react";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 import type { Mgr } from "./types";
 function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
       <h4 className="sor-section-heading">
         <Database className="w-4 h-4 text-primary" />
-        Generate Collection Encryption Key File
+        <span className="flex items-center gap-1">Generate Collection Encryption Key File <InfoTooltip text="Create a cryptographic key file that can encrypt and decrypt your connection collections instead of using a password" /></span>
       </h4>
 
       <div className="sor-settings-card space-y-4">
@@ -22,7 +23,7 @@ function CollectionKeyGenSection({ mgr }: { mgr: Mgr }) {
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Key className="w-4 h-4" />
-            Key Strength
+            <span className="flex items-center gap-1">Key Strength <InfoTooltip text="Bit length of the generated key — 256-bit is sufficient for most uses, 512-bit provides extra margin for high-security environments" /></span>
           </label>
           <div className="flex space-x-3">
             <button

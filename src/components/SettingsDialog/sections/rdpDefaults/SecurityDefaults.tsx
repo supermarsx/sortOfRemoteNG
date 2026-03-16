@@ -3,6 +3,7 @@ import type { SectionProps } from "./selectClass";
 import React from "react";
 import { Shield, Network } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
@@ -14,7 +15,7 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.useCredSsp ?? true} onChange={(v: boolean) => update({ useCredSsp: v })} />
       <span className="sor-toggle-label font-medium">
-        Use CredSSP
+        Use CredSSP <InfoTooltip text="Enables Credential Security Support Provider for secure credential delegation during authentication." />
       </span>
     </label>
     <p className="text-xs text-[var(--color-textMuted)] ml-7 -mt-2">
@@ -25,7 +26,7 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.enableTls ?? true} onChange={(v: boolean) => update({ enableTls: v })} />
       <span className="sor-toggle-label">
-        Enable TLS
+        Enable TLS <InfoTooltip text="Encrypts the RDP connection using TLS to protect data in transit." />
       </span>
     </label>
 
@@ -38,14 +39,14 @@ const SecurityDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
             : "text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]"
         }`}
       >
-        Enable NLA (Network Level Authentication)
+        Enable NLA (Network Level Authentication) <InfoTooltip text="Requires authentication before establishing a full RDP session, reducing exposure to denial-of-service attacks." />
       </span>
     </label>
 
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.autoLogon ?? false} onChange={(v: boolean) => update({ autoLogon: v })} />
       <span className="sor-toggle-label">
-        Auto logon (send credentials in INFO packet)
+        Auto logon (send credentials in INFO packet) <InfoTooltip text="Automatically sends stored credentials during connection to bypass the remote login screen." />
       </span>
     </label>
   </div>

@@ -3,6 +3,7 @@ import NicknameEditButton from "./NicknameEditButton";
 import React from "react";
 import { Lock, Trash2 } from "lucide-react";
 import { Select } from "../../ui/forms";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 import { getAllTrustRecords, clearAllTrustRecords, formatFingerprint, removeIdentity } from "../../../utils/auth/trustStore";
 
 const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -10,7 +11,7 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="md:col-span-2">
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        Certificate Trust Policy
+        Certificate Trust Policy <InfoTooltip text="Controls how TLS certificate fingerprints are remembered and verified across connections to this host." />
       </label>
       <Select value={mgr.formData.tlsTrustPolicy ?? ""} onChange={(v: string) => mgr.setFormData({
             ...mgr.formData,

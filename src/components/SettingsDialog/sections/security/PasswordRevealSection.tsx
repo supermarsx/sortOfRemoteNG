@@ -1,6 +1,7 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Eye, EyeOff } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 function PasswordRevealSection({
   settings,
   updateSettings,
@@ -13,7 +14,7 @@ function PasswordRevealSection({
       <div>
         <h4 className="sor-section-heading">
           <Eye className="w-4 h-4 text-primary" />
-          Password Reveal
+          <span className="flex items-center gap-1">Password Reveal <InfoTooltip text="Controls the show/hide eye icon behavior on all password fields throughout the application" /></span>
         </h4>
         <p className="text-xs text-[var(--color-textMuted)] mt-1">
           Controls the show/hide eye icon on all password fields throughout the
@@ -28,8 +29,8 @@ function PasswordRevealSection({
                 enabled: v,
               },
             })} />
-        <span className="sor-toggle-label">
-          Enable password reveal icon on all password fields
+        <span className="sor-toggle-label flex items-center gap-1">
+          Enable password reveal icon on all password fields <InfoTooltip text="Show an eye icon next to password fields that lets you temporarily view the password in plain text" />
         </span>
       </label>
 
@@ -37,7 +38,7 @@ function PasswordRevealSection({
         <>
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-              Reveal Mode
+              <span className="flex items-center gap-1">Reveal Mode <InfoTooltip text="Toggle shows/hides on click; Hold reveals only while the mouse button is held down" /></span>
             </label>
             <Select value={settings.passwordReveal?.mode ?? "toggle"} onChange={(v: string) => updateSettings({
                   passwordReveal: {
@@ -49,7 +50,7 @@ function PasswordRevealSection({
 
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-              Auto-hide after (seconds):{" "}
+              <span className="flex items-center gap-1">Auto-hide after (seconds): <InfoTooltip text="Automatically re-mask the password after this many seconds — set to 0 to keep it visible until manually hidden" /></span>{" "}
               {settings.passwordReveal?.autoHideSeconds ?? 0}
               {(settings.passwordReveal?.autoHideSeconds ?? 0) === 0 &&
                 " (disabled)"}
@@ -73,8 +74,8 @@ function PasswordRevealSection({
                     showByDefault: v,
                   },
                 })} />
-            <span className="sor-toggle-label">
-              Show passwords by default (not recommended)
+            <span className="sor-toggle-label flex items-center gap-1">
+              Show passwords by default (not recommended) <InfoTooltip text="Start with passwords visible instead of masked — this is a security risk and not recommended" />
             </span>
           </label>
 
@@ -86,7 +87,7 @@ function PasswordRevealSection({
                   },
                 })} />
             <span className="sor-toggle-label flex items-center gap-2">
-              Dim eye icon when password is hidden
+              Dim eye icon when password is hidden <InfoTooltip text="Reduce the eye icon opacity when the password is masked, providing a visual cue of the current state" />
               <EyeOff className="w-3.5 h-3.5 opacity-40" />
             </span>
           </label>

@@ -14,7 +14,7 @@ import { Checkbox } from "./forms";
  *   </OverrideToggle>
  */
 export const OverrideToggle: React.FC<{
-  label: string;
+  label: React.ReactNode;
   isOverridden: boolean;
   globalValue: string;
   onToggle: (enabled: boolean) => void;

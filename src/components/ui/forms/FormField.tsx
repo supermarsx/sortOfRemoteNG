@@ -5,7 +5,7 @@ export type FormFieldLayout = 'stacked' | 'inline';
 
 export interface FormFieldProps {
   /** Label text displayed above (stacked) or beside (inline) the input */
-  label: string;
+  label: React.ReactNode;
   /** Associates the label with an input via htmlFor */
   htmlFor?: string;
   /** Error message shown below the input in red */

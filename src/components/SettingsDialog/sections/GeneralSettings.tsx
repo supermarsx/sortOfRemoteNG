@@ -20,6 +20,7 @@ import {
 } from "../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface GeneralSettingsProps {
   settings: GlobalSettings;
@@ -50,6 +51,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               <label className="flex items-center gap-2 sor-settings-row-label">
                 <Globe className="w-4 h-4" />
                 {t("settings.language")}
+                <InfoTooltip text="Choose the display language for the application interface. Changes take effect after restarting the app." />
               </label>
               <Select value={settings.language} onChange={(v: string) => updateSettings({ language: v })} options={[{ value: "en", label: "English" }, { value: "es", label: "Español (España)" }, { value: "fr", label: "Français (France)" }, { value: "de", label: "Deutsch (Deutschland)" }, { value: "pt-PT", label: "Português (Portugal)" }]} className="selectClass" />
             </div>
@@ -58,6 +60,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               <label className="flex items-center gap-2 sor-settings-row-label">
                 <Clock className="w-4 h-4" />
                 Connection Timeout (seconds)
+                <InfoTooltip text="Maximum time in seconds to wait for a connection to be established before giving up. Increase this for slow or high-latency networks." />
               </label>
               <NumberInput value={settings.connectionTimeout} onChange={(v: number) => updateSettings({
                     connectionTimeout: v,
@@ -79,6 +82,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             icon={<Save className="w-4 h-4" />}
             label="Enable autosave"
             settingKey="autoSaveEnabled"
+            infoTooltip="Automatically save your connection file at regular intervals so changes are not lost if the app closes unexpectedly."
           />
 
           <div
@@ -88,6 +92,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <label className="flex items-center gap-2 sor-settings-row-label">
               <Clock className="w-4 h-4" />
               Autosave Interval (minutes)
+              <InfoTooltip text="How often the connection file is automatically saved. Lower values save more frequently but may cause brief pauses on large files." />
             </label>
             <NumberInput value={settings.autoSaveIntervalMinutes} onChange={(v: number) => updateSettings({
                   autoSaveIntervalMinutes: v,
@@ -108,6 +113,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             icon={<AlertTriangle className="w-4 h-4" />}
             label={t("connections.warnOnClose")}
             settingKey="warnOnClose"
+            infoTooltip="Show a confirmation dialog when you attempt to close a tab that has an active connection, preventing accidental disconnections."
           />
 
           <Toggle
@@ -116,6 +122,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             icon={<ExternalLink className="w-4 h-4" />}
             label={t("connections.warnOnDetachClose")}
             settingKey="warnOnDetachClose"
+            infoTooltip="Show a confirmation dialog before closing a tab that has been detached into its own window."
           />
 
           <Toggle
@@ -124,6 +131,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             icon={<LogOut className="w-4 h-4" />}
             label={t("connections.warnOnExit")}
             settingKey="warnOnExit"
+            infoTooltip="Show a warning when you try to quit the application while there are still active connections open."
           />
 
           <Toggle
@@ -132,6 +140,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             icon={<MessageSquareWarning className="w-4 h-4" />}
             label="Confirm main app close"
             description="Show a confirmation dialog before closing the main window"
+            infoTooltip="Always prompt for confirmation before the main application window is closed, even if no connections are active."
           />
         </Card>
       </div>
@@ -152,6 +161,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               label="Save Quick Connect history"
               settingKey="quickConnectHistoryEnabled"
               className="min-w-[280px]"
+              infoTooltip="Remember previously used Quick Connect addresses so they can be quickly selected again. Disable to keep no history of ad-hoc connections."
             />
             <button
               type="button"

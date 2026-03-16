@@ -1,5 +1,6 @@
 import React from "react";
 import { PasswordInput, Textarea} from '../ui/forms';
+import { InfoTooltip } from '../ui/InfoTooltip';
 import { Connection } from "../../types/connection/connection";
 
 interface CloudProviderOptionsProps {
@@ -74,7 +75,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Project ID
+                Project ID <InfoTooltip text="The unique identifier for your Google Cloud Platform project." />
               </label>
               <input
                 type="text"
@@ -88,7 +89,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Zone
+                Zone <InfoTooltip text="The GCP zone where your compute instance is located (e.g. us-central1-a)." />
               </label>
               <input
                 type="text"
@@ -100,7 +101,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Service Account Key (JSON)
+                Service Account Key (JSON) <InfoTooltip text="The JSON key file contents for a GCP service account used to authenticate API requests." />
               </label>
               <Textarea
                 value={cloudProvider.serviceAccountKey || ""}
@@ -119,7 +120,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Subscription ID
+                Subscription ID <InfoTooltip text="The GUID of your Azure subscription that contains the target resources." />
               </label>
               <input
                 type="text"
@@ -133,7 +134,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Resource Group
+                Resource Group <InfoTooltip text="The Azure resource group that contains the target virtual machine or resource." />
               </label>
               <input
                 type="text"
@@ -147,7 +148,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Client ID
+                Client ID <InfoTooltip text="The application (client) ID from your Azure AD app registration used for authentication." />
               </label>
               <input
                 type="text"
@@ -161,7 +162,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Client Secret
+                Client Secret <InfoTooltip text="The secret key associated with the Azure AD app registration. Treat this like a password." />
               </label>
               <PasswordInput
                 value={cloudProvider.clientSecret || ""}
@@ -174,7 +175,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Tenant ID
+                Tenant ID <InfoTooltip text="The Azure Active Directory tenant ID (directory ID) for your organization." />
               </label>
               <input
                 type="text"
@@ -193,7 +194,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                API Key
+                API Key <InfoTooltip text="Your cloud provider API key used to authenticate management requests." />
               </label>
               <PasswordInput
                 value={cloudProvider.apiKey || ""}
@@ -206,7 +207,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Region
+                Region <InfoTooltip text="The data center region where your cloud resources are hosted." />
               </label>
               <input
                 type="text"
@@ -225,7 +226,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                API Key
+                API Key <InfoTooltip text="Your Heroku API key, found in the Heroku dashboard under Account Settings." />
               </label>
               <PasswordInput
                 value={cloudProvider.apiKey || ""}
@@ -238,7 +239,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                App Name
+                App Name <InfoTooltip text="The name of the Heroku application to connect to." />
               </label>
               <input
                 type="text"
@@ -252,7 +253,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Dyno Name (Optional)
+                Dyno Name (Optional) <InfoTooltip text="A specific Heroku dyno to target. Leave empty to connect to the default web dyno." />
               </label>
               <input
                 type="text"
@@ -273,7 +274,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                API Key
+                API Key <InfoTooltip text="Your cloud provider API key used to authenticate management requests." />
               </label>
               <PasswordInput
                 value={cloudProvider.apiKey || ""}
@@ -286,7 +287,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Region
+                Region <InfoTooltip text="The data center region where your cloud resources are hosted." />
               </label>
               <input
                 type="text"
@@ -307,7 +308,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             {provider === "scaleway" && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  Organization ID
+                  Organization ID <InfoTooltip text="Your Scaleway organization ID, used to scope API requests to the correct account." />
                 </label>
                 <input
                   type="text"
@@ -323,7 +324,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             {(provider === "scaleway" || provider === "ovhcloud") && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  Project Name
+                  Project Name <InfoTooltip text="The name of the project within your cloud provider account that contains the target resources." />
                 </label>
                 <input
                   type="text"
@@ -339,7 +340,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             {provider === "ovhcloud" && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  Service ID
+                  Service ID <InfoTooltip text="The OVHcloud service identifier for the target hosting or infrastructure resource." />
                 </label>
                 <input
                   type="text"
@@ -357,7 +358,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-            Instance ID/Name
+            Instance ID/Name <InfoTooltip text="The unique identifier or name of the cloud instance to connect to." />
           </label>
           <input
             type="text"

@@ -1,12 +1,13 @@
 import { Mgr } from "./types";
 import React from "react";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const CustomHeadersSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.formData.authType !== "header") return null;
   return (
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        Custom HTTP Headers
+        Custom HTTP Headers <InfoTooltip text="Additional HTTP headers sent with every request to this endpoint. Useful for API keys, authorization tokens, or custom routing headers." />
       </label>
       <div className="space-y-2">
         {Object.entries(mgr.formData.httpHeaders || {}).map(([key, value]) => (

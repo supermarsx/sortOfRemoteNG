@@ -19,6 +19,7 @@ const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
         label="Confirm before disconnecting"
         description="Ask before closing an active session"
         settingKey="confirmDisconnect"
+        infoTooltip="Show a confirmation dialog before disconnecting an active remote session, preventing accidental disconnections from a running terminal."
       />
       <Toggle
         checked={s.confirmDeleteConnection}
@@ -27,6 +28,7 @@ const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
         label="Confirm before deleting connections"
         description="Prompt before permanently removing a saved connection"
         settingKey="confirmDeleteConnection"
+        infoTooltip="Require confirmation before permanently deleting a saved connection entry from the connection tree. Helps prevent accidental data loss."
       />
       <Toggle
         checked={s.confirmBulkOperations}
@@ -35,6 +37,7 @@ const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
         label="Confirm bulk operations"
         description="Ask before multi-select actions like batch connect or delete"
         settingKey="confirmBulkOperations"
+        infoTooltip="Prompt for confirmation before executing actions on multiple selected connections at once, such as batch connect, disconnect, or delete."
       />
       <Toggle
         checked={s.confirmImport}
@@ -43,6 +46,7 @@ const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
         label="Confirm before importing"
         description="Show a summary before importing connections or settings"
         settingKey="confirmImport"
+        infoTooltip="Display a summary of what will be imported and ask for confirmation before adding imported connections or applying imported settings."
       />
       <Toggle
         checked={s.confirmDeleteAllBookmarks}
@@ -50,6 +54,7 @@ const ConfirmationDialogs: React.FC<SectionProps> = ({ s, u }) => (
         icon={<Trash2 size={16} />}
         label="Confirm before deleting all bookmarks"
         settingKey="confirmDeleteAllBookmarks"
+        infoTooltip="Require confirmation before clearing all saved bookmarks. This action cannot be undone."
       />
     </Card>
   </div>

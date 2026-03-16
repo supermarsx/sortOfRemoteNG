@@ -2,15 +2,16 @@ import type { SectionProps } from "./types";
 import AuthMethodSelector from "./AuthMethodSelector";
 import OverrideToggle from "./OverrideToggle";
 import { Checkbox } from "../../ui/forms";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const AuthSection: React.FC<SectionProps> = ({ mgr }) => {
   const { globalConfig: g, updateOverride: u, isOverridden: ov, getValue: v } = mgr;
   return (
     <div className="space-y-3">
-      <h4 className="sor-form-section-heading">Authentication</h4>
+      <h4 className="sor-form-section-heading">Authentication <InfoTooltip text="Override the global SSH authentication settings for this specific connection." /></h4>
 
       <OverrideToggle
-        label="Auth Methods"
+        label={<>Auth Methods <InfoTooltip text="The ordered list of SSH authentication methods to attempt (e.g. publickey, password, keyboard-interactive)." /></>}
         isOverridden={ov("preferredAuthMethods")}
         globalValue={g.preferredAuthMethods.join(", ")}
         onToggle={(on) =>
@@ -24,7 +25,7 @@ const AuthSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="Try Public Key First"
+        label={<>Try Public Key First <InfoTooltip text="When enabled, public key authentication is attempted before password authentication." /></>}
         isOverridden={ov("tryPublicKeyFirst")}
         globalValue={g.tryPublicKeyFirst ? "Yes" : "No"}
         onToggle={(on) =>
@@ -38,7 +39,7 @@ const AuthSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="Agent Forwarding"
+        label={<>Agent Forwarding <InfoTooltip text="Forward your local SSH agent to the remote host, allowing it to use your local keys for onward connections." /></>}
         isOverridden={ov("agentForwarding")}
         globalValue={g.agentForwarding ? "Enabled" : "Disabled"}
         onToggle={(on) =>

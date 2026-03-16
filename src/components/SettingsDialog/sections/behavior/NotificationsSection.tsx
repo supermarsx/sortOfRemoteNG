@@ -16,6 +16,7 @@ const NotificationsSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Notify on connect"
         description="Show an OS notification when a session is established"
         settingKey="notifyOnConnect"
+        infoTooltip="Display an operating system notification when a remote session is successfully connected. Useful when connections are opened in the background."
       />
       <Toggle
         checked={s.notifyOnDisconnect}
@@ -24,6 +25,7 @@ const NotificationsSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Notify on disconnect"
         description="Show an OS notification when a session ends"
         settingKey="notifyOnDisconnect"
+        infoTooltip="Display an operating system notification when a remote session ends, whether intentionally or due to a network interruption."
       />
       <Toggle
         checked={s.notifyOnError}
@@ -32,6 +34,7 @@ const NotificationsSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Notify on error"
         description="Show an OS notification when a connection fails"
         settingKey="notifyOnError"
+        infoTooltip="Display an operating system notification when a connection attempt fails or an active session encounters an error."
       />
       <Toggle
         checked={s.notificationSound}
@@ -39,6 +42,7 @@ const NotificationsSection: React.FC<SectionProps> = ({ s, u }) => (
         icon={<Volume2 size={16} />}
         label="Play sound with notifications"
         settingKey="notificationSound"
+        infoTooltip="Play an audible alert along with each OS notification. Disable for silent visual-only notifications."
       />
       <Toggle
         checked={s.flashTaskbarOnActivity}
@@ -47,6 +51,7 @@ const NotificationsSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Flash taskbar on background activity"
         description="Flash the app's taskbar icon when a background tab has activity"
         settingKey="flashTaskbarOnActivity"
+        infoTooltip="Flash the application icon in the Windows taskbar when a background tab receives new activity, drawing your attention without switching focus."
       />
     </Card>
   </div>

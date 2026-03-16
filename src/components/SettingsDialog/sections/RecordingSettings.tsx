@@ -23,6 +23,7 @@ import {
 import { useRecordingSettings } from "../../../hooks/settings/useRecordingSettings";
 import { Checkbox, NumberInput, Select, Slider } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 type Mgr = ReturnType<typeof useRecordingSettings>;
 

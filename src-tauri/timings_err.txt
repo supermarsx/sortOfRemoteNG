@@ -1,0 +1,611 @@
+warning: flag `-Z timings` has been stabilized in the 1.60 release, and is no longer necessary
+  The -Ztimings option has been stabilized as --timings.
+
+    Blocking waiting for file lock on artifact directory
+warning: unexpected `cfg` condition value: `script-engine`
+   --> crates\sorng-commands-core\src\..\..\..\src\ssh_commands.rs:123:7
+    |
+123 | #[cfg(feature = "script-engine")]
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `default` and `rdp`
+    = help: consider adding `script-engine` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+    = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `script-engine`
+   --> crates\sorng-commands-core\src\..\..\..\src\ssh_commands.rs:128:11
+    |
+128 | #[cfg(not(feature = "script-engine"))]
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `default` and `rdp`
+    = help: consider adding `script-engine` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `script-engine`
+   --> crates\sorng-commands-core\src\..\..\..\src\ssh_commands.rs:147:7
+    |
+147 | #[cfg(feature = "script-engine")]
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `default` and `rdp`
+    = help: consider adding `script-engine` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `script-engine`
+   --> crates\sorng-commands-core\src\..\..\..\src\ssh_commands.rs:149:11
+    |
+149 | #[cfg(not(feature = "script-engine"))]
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: expected values for `feature` are: `default` and `rdp`
+    = help: consider adding `script-engine` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: function `create_desktop_shortcut` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:25:14
+   |
+25 | pub async fn create_desktop_shortcut(
+   |              ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `set_autostart` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:43:14
+   |
+43 | pub async fn set_autostart<R: tauri::Runtime>(
+   |              ^^^^^^^^^^^^^
+
+warning: function `get_desktop_path` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:65:8
+   |
+65 | pub fn get_desktop_path() -> Result<String, String> {
+   |        ^^^^^^^^^^^^^^^^
+
+warning: function `get_documents_path` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:70:8
+   |
+70 | pub fn get_documents_path() -> Result<String, String> {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `get_appdata_path` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:75:8
+   |
+75 | pub fn get_appdata_path() -> Result<String, String> {
+   |        ^^^^^^^^^^^^^^^^
+
+warning: function `check_file_exists` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:80:8
+   |
+80 | pub fn check_file_exists(path: String) -> Result<bool, String> {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `delete_file` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:85:8
+   |
+85 | pub fn delete_file(path: String) -> Result<(), String> {
+   |        ^^^^^^^^^^^
+
+warning: function `open_folder` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:90:8
+   |
+90 | pub fn open_folder(path: String) -> Result<(), String> {
+   |        ^^^^^^^^^^^
+
+warning: function `flash_window` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:95:8
+   |
+95 | pub fn flash_window<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+   |        ^^^^^^^^^^^^
+
+warning: function `scan_shortcuts` is never used
+   --> crates\sorng-commands-core\src\..\..\..\src\app_shell_commands.rs:105:14
+    |
+105 | pub async fn scan_shortcuts(
+    |              ^^^^^^^^^^^^^^
+
+warning: constant `SPLASH_HTML` is never used
+ --> crates\sorng-commands-core\src\..\..\..\src\splash.rs:6:7
+  |
+6 | const SPLASH_HTML: &str = r#"<!DOCTYPE html>
+  |       ^^^^^^^^^^^
+
+warning: function `percent_encode` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\splash.rs:49:4
+   |
+49 | fn percent_encode(input: &str) -> String {
+   |    ^^^^^^^^^^^^^^
+
+warning: function `show` is never used
+  --> crates\sorng-commands-core\src\..\..\..\src\splash.rs:67:8
+   |
+67 | pub fn show(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+   |        ^^^^
+
+warning: `sorng-commands-core` (lib) generated 17 warnings
+warning: function `greet` is never used
+ --> crates\sorng-commands-access\src\..\..\..\src\app_shell_commands.rs:5:8
+  |
+5 | pub fn greet(name: &str) -> String {
+  |        ^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `open_devtools` is never used
+  --> crates\sorng-commands-access\src\..\..\..\src\app_shell_commands.rs:10:8
+   |
+10 | pub fn open_devtools(app: tauri::AppHandle) {
+   |        ^^^^^^^^^^^^^
+
+warning: function `open_url_external` is never used
+  --> crates\sorng-commands-access\src\..\..\..\src\app_shell_commands.rs:15:8
+   |
+15 | pub fn open_url_external(url: String) -> Result<(), String> {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `get_launch_args` is never used
+  --> crates\sorng-commands-access\src\..\..\..\src\app_shell_commands.rs:20:8
+   |
+20 | pub fn get_launch_args(state: tauri::State<'_, LaunchArgs>) -> LaunchArgs {
+   |        ^^^^^^^^^^^^^^^
+
+warning: `sorng-commands-access` (lib) generated 4 warnings
+warning: unexpected `cfg` condition value: `db-mongo`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:1:7
+  |
+1 | #[cfg(feature = "db-mongo")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+  = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `db-mongo`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:3:7
+  |
+3 | #[cfg(feature = "db-mongo")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:6:7
+  |
+6 | #[cfg(feature = "db-mongo")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:16:7
+   |
+16 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:26:7
+   |
+26 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:36:7
+   |
+36 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:45:7
+   |
+45 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:55:7
+   |
+55 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:65:7
+   |
+65 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:75:7
+   |
+75 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:88:7
+   |
+88 | #[cfg(feature = "db-mongo")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:101:7
+    |
+101 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:115:7
+    |
+115 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:129:7
+    |
+129 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:143:7
+    |
+143 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:153:7
+    |
+153 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:166:7
+    |
+166 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:178:7
+    |
+178 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:188:7
+    |
+188 | #[cfg(feature = "db-mongo")]
+    |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:199:11
+    |
+199 | #[cfg(not(feature = "db-mongo"))]
+    |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mongo`
+   --> crates\sorng-commands-sessions\src\..\..\..\src\mongodb_commands.rs:233:11
+    |
+233 | #[cfg(not(feature = "db-mongo"))]
+    |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `db-mongo` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mssql`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mssql_commands.rs:1:7
+  |
+1 | #[cfg(feature = "db-mssql")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mssql` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mssql`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mssql_commands.rs:6:7
+  |
+6 | #[cfg(feature = "db-mssql")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mssql` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mssql`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mssql_commands.rs:9:11
+  |
+9 | #[cfg(not(feature = "db-mssql"))]
+  |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mssql` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mssql`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mssql_commands.rs:57:11
+   |
+57 | #[cfg(not(feature = "db-mssql"))]
+   |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mssql` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mysql`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mysql_commands.rs:1:7
+  |
+1 | #[cfg(feature = "db-mysql")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mysql` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mysql`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mysql_commands.rs:6:7
+  |
+6 | #[cfg(feature = "db-mysql")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mysql` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mysql`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\mysql_commands.rs:9:11
+  |
+9 | #[cfg(not(feature = "db-mysql"))]
+  |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-mysql` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-mysql`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\mysql_commands.rs:61:11
+   |
+61 | #[cfg(not(feature = "db-mysql"))]
+   |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-mysql` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-postgres`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\postgres_commands.rs:1:7
+  |
+1 | #[cfg(feature = "db-postgres")]
+  |       ^^^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-postgres` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-postgres`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\postgres_commands.rs:6:7
+  |
+6 | #[cfg(feature = "db-postgres")]
+  |       ^^^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-postgres` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-postgres`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\postgres_commands.rs:9:11
+  |
+9 | #[cfg(not(feature = "db-postgres"))]
+  |           ^^^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-postgres` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-postgres`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\postgres_commands.rs:69:11
+   |
+69 | #[cfg(not(feature = "db-postgres"))]
+   |           ^^^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-postgres` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-redis`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\redis_commands.rs:1:7
+  |
+1 | #[cfg(feature = "db-redis")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-redis` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-redis`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\redis_commands.rs:6:7
+  |
+6 | #[cfg(feature = "db-redis")]
+  |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-redis` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-redis`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\redis_commands.rs:11:7
+   |
+11 | #[cfg(feature = "db-redis")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-redis` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-redis`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\redis_commands.rs:16:7
+   |
+16 | #[cfg(feature = "db-redis")]
+   |       ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-redis` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-redis`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\redis_commands.rs:19:11
+   |
+19 | #[cfg(not(feature = "db-redis"))]
+   |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-redis` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-redis`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\redis_commands.rs:80:11
+   |
+80 | #[cfg(not(feature = "db-redis"))]
+   |           ^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-redis` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-sqlite`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\sqlite_commands.rs:1:7
+  |
+1 | #[cfg(feature = "db-sqlite")]
+  |       ^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-sqlite` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-sqlite`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\sqlite_commands.rs:6:7
+  |
+6 | #[cfg(feature = "db-sqlite")]
+  |       ^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-sqlite` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-sqlite`
+ --> crates\sorng-commands-sessions\src\..\..\..\src\sqlite_commands.rs:9:11
+  |
+9 | #[cfg(not(feature = "db-sqlite"))]
+  |           ^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+  |
+  = note: no expected values for `feature`
+  = help: consider adding `db-sqlite` as a feature in `Cargo.toml`
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `db-sqlite`
+  --> crates\sorng-commands-sessions\src\..\..\..\src\sqlite_commands.rs:58:11
+   |
+58 | #[cfg(not(feature = "db-sqlite"))]
+   |           ^^^^^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `db-sqlite` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: `sorng-commands-sessions` (lib) generated 43 warnings
+   Compiling app v0.1.0 (C:\Projects\sortOfRemoteNG\src-tauri)
+warning: struct `TauriEventEmitter` is never constructed
+ --> src\event_bridge.rs:8:8
+  |
+8 | struct TauriEventEmitter(tauri::AppHandle);
+  |        ^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `from_app_handle` is never used
+  --> src\event_bridge.rs:18:8
+   |
+18 | pub fn from_app_handle(handle: &tauri::AppHandle) -> DynEventEmitter {
+   |        ^^^^^^^^^^^^^^^
+
+warning: function `close_splash` is never used
+  --> src\splash.rs:87:14
+   |
+87 | pub async fn close_splash(app: AppHandle) {
+   |              ^^^^^^^^^^^^
+
+warning: `app` (lib) generated 3 warnings
+error: failed to remove file `C:\Projects\sortOfRemoteNG\src-tauri\target\x86_64-pc-windows-msvc\debug\app.exe`
+
+Caused by:
+  Access is denied. (os error 5)

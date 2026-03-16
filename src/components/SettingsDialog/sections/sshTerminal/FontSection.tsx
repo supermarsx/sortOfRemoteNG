@@ -5,6 +5,7 @@ import { Type } from "lucide-react";
 import { TextInput, FormField } from "../../../ui/forms";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
   <SettingsCollapsibleSection
@@ -18,12 +19,12 @@ const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
       label={t("settings.sshTerminal.useCustomFont", "Use custom font")}
       description={t(
         "settings.sshTerminal.useCustomFontDesc",
-        "Override default terminal font settings",
+        "Override default terminal font settings — specify a custom font family, size, weight, and style",
       )}
     />
     {cfg.useCustomFont && (
       <div className="space-y-4 mt-3 ml-10">
-        <FormField label={t("settings.sshTerminal.fontFamily", "Font Family")}>
+        <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.fontFamily", "Font Family")} <InfoTooltip text="CSS font family stack used for the terminal — use monospace fonts for best results" /></span>}>
           <TextInput
             value={cfg.font.family}
             onChange={(v) => up({ font: { ...cfg.font, family: v } })}
@@ -31,7 +32,7 @@ const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
           />
         </FormField>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <FormField label={t("settings.sshTerminal.fontSize", "Size (px)")}>
+          <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.fontSize", "Size (px)")} <InfoTooltip text="Font size in pixels for the terminal text" /></span>}>
             <NumberInput
               value={cfg.font.size}
               onChange={(v) => up({ font: { ...cfg.font, size: v } })}
@@ -39,7 +40,7 @@ const FontSection: React.FC<SectionProps> = ({ cfg, up, t }) => (
               max={48}
             />
           </FormField>
-          <FormField label={t("settings.sshTerminal.fontWeight", "Weight")}>
+          <FormField label={<span className="flex items-center gap-1">{t("settings.sshTerminal.fontWeight", "Weight")} <InfoTooltip text="Font weight — controls how bold or light the terminal text appears" /></span>}>
             <Select
               value={String(cfg.font.weight)}
               onChange={(v) =>

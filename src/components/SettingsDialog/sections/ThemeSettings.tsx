@@ -1,4 +1,5 @@
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 import React from "react";
 import { GlobalSettings, Theme } from "../../../types/settings/settings";
 import { Palette, Droplets, Sparkles, Eye, Code, Zap } from "lucide-react";
@@ -25,11 +26,11 @@ const AppearanceSection: React.FC<{
       {mgr.t("settings.theme.appearance", "Appearance")}
     </h4>
     <div className="space-y-2">
-      <label className="text-sm text-[var(--color-textSecondary)]">{mgr.t("settings.theme")}</label>
+      <label className="text-sm text-[var(--color-textSecondary)]">{mgr.t("settings.theme")} <InfoTooltip text="Select the base theme that controls the overall look and feel of the application" /></label>
       <Select value={settings.theme} onChange={(v: string) => updateSettings({ theme: v as Theme })} options={[...mgr.themes.map((theme) => ({ value: theme, label: formatLabel(theme) }))]} className="sor-settings-select w-full" />
     </div>
     <div className="space-y-2">
-      <label className="text-sm text-[var(--color-textSecondary)]">Color Scheme</label>
+      <label className="text-sm text-[var(--color-textSecondary)]">Color Scheme <InfoTooltip text="Choose a preset color scheme that defines the primary accent colors used throughout the UI" /></label>
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
         {mgr.schemeOptions.map((option) => (
           <button key={option.value} onClick={() => mgr.handleSchemeChange(option.value)} className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all ${!settings.useCustomAccent && settings.colorScheme === option.value ? "border-primary bg-primary/20 text-[var(--color-text)] ring-1 ring-primary/50" : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"}`}>
@@ -43,7 +44,7 @@ const AppearanceSection: React.FC<{
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-2 cursor-pointer">
           <Checkbox checked={settings.useCustomAccent ?? false} onChange={(v: boolean) => mgr.handleToggleCustomAccent(v)} />
-          <span className="text-sm text-[var(--color-textSecondary)]">Custom Accent</span>
+          <span className="text-sm text-[var(--color-textSecondary)]">Custom Accent <InfoTooltip text="Override the color scheme with a custom accent color of your choice" /></span>
         </label>
         <div className={`flex items-center gap-2 ${!settings.useCustomAccent ? "opacity-40 pointer-events-none" : ""}`}>
           <input type="color" value={settings.primaryAccentColor || "#3b82f6"} onChange={(e) => mgr.handleAccentChange(e.target.value)} className="w-10 h-8 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md cursor-pointer" />
@@ -67,27 +68,27 @@ const GlowSection: React.FC<{
     <div className="sor-settings-card">
       <label className="flex items-center space-x-3 cursor-pointer">
         <Checkbox checked={settings.backgroundGlowEnabled} onChange={(v: boolean) => updateSettings({ backgroundGlowEnabled: v })} />
-        <span className="text-sm text-[var(--color-textSecondary)]">Enable background glow effect</span>
+        <span className="text-sm text-[var(--color-textSecondary)]">Enable background glow effect <InfoTooltip text="Add a soft radial glow effect behind the main content area" /></span>
       </label>
       <label className={`flex items-center space-x-3 cursor-pointer ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}>
         <Checkbox checked={settings.backgroundGlowFollowsColorScheme} onChange={(v: boolean) => updateSettings({ backgroundGlowFollowsColorScheme: v })} />
-        <span className="text-sm text-[var(--color-textSecondary)]">Glow follows color scheme</span>
+        <span className="text-sm text-[var(--color-textSecondary)]">Glow follows color scheme <InfoTooltip text="Automatically match the glow color to your selected color scheme" /></span>
       </label>
       <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}>
         <div className={`space-y-1 ${settings.backgroundGlowFollowsColorScheme ? "opacity-50 pointer-events-none" : ""}`}>
-          <label className="text-xs text-[var(--color-textSecondary)]">Color {settings.backgroundGlowFollowsColorScheme && "(auto)"}</label>
+          <label className="text-xs text-[var(--color-textSecondary)]">Color {settings.backgroundGlowFollowsColorScheme && "(auto)"} <InfoTooltip text="The color of the background glow effect" /></label>
           <input type="color" value={settings.backgroundGlowColor || "#2563eb"} onChange={(e) => updateSettings({ backgroundGlowColor: e.target.value })} className="w-full h-9 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md cursor-pointer" />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-[var(--color-textSecondary)]">Opacity</label>
+          <label className="text-xs text-[var(--color-textSecondary)]">Opacity <InfoTooltip text="How visible the glow effect is (0 = invisible, 1 = fully opaque)" /></label>
           <NumberInput value={settings.backgroundGlowOpacity} onChange={(v: number) => updateSettings({ backgroundGlowOpacity: v })} className="w-full" min={0} max={1} step={0.05} />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-[var(--color-textSecondary)]">Radius (px)</label>
+          <label className="text-xs text-[var(--color-textSecondary)]">Radius (px) <InfoTooltip text="The size of the glow circle in pixels" /></label>
           <NumberInput value={settings.backgroundGlowRadius} onChange={(v: number) => updateSettings({ backgroundGlowRadius: v })} className="w-full" min={200} max={1200} />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-[var(--color-textSecondary)]">Blur (px)</label>
+          <label className="text-xs text-[var(--color-textSecondary)]">Blur (px) <InfoTooltip text="How much the glow is blurred at the edges in pixels" /></label>
           <NumberInput value={settings.backgroundGlowBlur} onChange={(v: number) => updateSettings({ backgroundGlowBlur: v })} className="w-full" min={40} max={320} />
         </div>
       </div>
@@ -112,12 +113,12 @@ const TransparencySection: React.FC<{
       <label data-setting-key="windowTransparencyEnabled" className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={settings.windowTransparencyEnabled} onChange={(v: boolean) => updateSettings({ windowTransparencyEnabled: v })} />
         <div>
-          <span className="sor-toggle-label">Enable window transparency</span>
+          <span className="sor-toggle-label">Enable window transparency <InfoTooltip text="Make the application window semi-transparent so the desktop is visible behind it" /></span>
           <p className="text-[10px] text-[var(--color-textMuted)]">Make the application window semi-transparent</p>
         </div>
       </label>
       <div className={`space-y-2 ${!settings.windowTransparencyEnabled ? "opacity-50 pointer-events-none" : ""}`}>
-        <label data-setting-key="windowTransparencyOpacity" className="text-xs text-[var(--color-textSecondary)]">Opacity Level</label>
+        <label data-setting-key="windowTransparencyOpacity" className="text-xs text-[var(--color-textSecondary)]">Opacity Level <InfoTooltip text="Controls how transparent the window is (0 = fully transparent, 1 = fully opaque)" /></label>
         <div className="flex items-center gap-3">
           <Slider value={mgr.opacityValue} onChange={(v: number) => updateSettings({ windowTransparencyOpacity: v })} min={0} max={1} variant="full" className="flex-1" step={0.01} />
           <NumberInput value={mgr.opacityValue} onChange={(v: number) => updateSettings({ windowTransparencyOpacity: v })} className="w-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs" min={0} max={1} step={0.01} />
@@ -126,7 +127,7 @@ const TransparencySection: React.FC<{
       <label data-setting-key="showTransparencyToggle" className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={settings.showTransparencyToggle ?? false} onChange={(v: boolean) => updateSettings({ showTransparencyToggle: v })} />
         <div>
-          <span className="sor-toggle-label">Show transparency toggle in title bar</span>
+          <span className="sor-toggle-label">Show transparency toggle in title bar <InfoTooltip text="Add a button to the title bar for quickly toggling window transparency on and off" /></span>
           <p className="text-[10px] text-[var(--color-textMuted)]">Add a quick-toggle button to the window title bar</p>
         </div>
       </label>
@@ -147,14 +148,14 @@ const AnimationsSection: React.FC<{
     <div className="sor-settings-card">
       <label className="flex items-center space-x-3 cursor-pointer">
         <Checkbox checked={settings.animationsEnabled} onChange={(v: boolean) => updateSettings({ animationsEnabled: v })} />
-        <span className="text-sm text-[var(--color-textSecondary)]">{mgr.t("settings.theme.enableAnimations", "Enable animations and transitions")}</span>
+        <span className="text-sm text-[var(--color-textSecondary)]">{mgr.t("settings.theme.enableAnimations", "Enable animations and transitions")} <InfoTooltip text="Enable or disable all UI animations and transition effects globally" /></span>
       </label>
       <label className="flex items-center space-x-3 cursor-pointer">
         <Checkbox checked={settings.reduceMotion} onChange={(v: boolean) => updateSettings({ reduceMotion: v })} disabled={!settings.animationsEnabled} />
-        <span className={`text-sm text-[var(--color-textSecondary)] ${!settings.animationsEnabled ? "opacity-50" : ""}`}>{mgr.t("settings.theme.reduceMotion", "Reduce motion (minimal animations)")}</span>
+        <span className={`text-sm text-[var(--color-textSecondary)] ${!settings.animationsEnabled ? "opacity-50" : ""}`}>{mgr.t("settings.theme.reduceMotion", "Reduce motion (minimal animations)")} <InfoTooltip text="Use minimal, subtle animations instead of full motion effects for accessibility" /></span>
       </label>
       <div className={`space-y-2 ${!settings.animationsEnabled ? "opacity-50 pointer-events-none" : ""}`}>
-        <label className="text-xs text-[var(--color-textSecondary)]">{mgr.t("settings.theme.animationDuration", "Animation duration")}</label>
+        <label className="text-xs text-[var(--color-textSecondary)]">{mgr.t("settings.theme.animationDuration", "Animation duration")} <InfoTooltip text="Base duration for animations in milliseconds; lower values feel snappier" /></label>
         <div className="flex items-center space-x-4">
           <Slider value={settings.animationDuration || 200} onChange={(v: number) => updateSettings({ animationDuration: v })} min={50} max={500} variant="full" className="flex-1" step={25} />
           <span className="text-[var(--color-textSecondary)] text-sm w-16 text-right">{settings.animationDuration || 200}ms</span>
@@ -172,7 +173,7 @@ const CustomCssSection: React.FC<{
   <div className="space-y-4">
     <h4 className="sor-section-heading">
       <Code className="w-4 h-4" />
-      {mgr.t("settings.theme.customCss", "Custom CSS")}
+      {mgr.t("settings.theme.customCss", "Custom CSS")} <InfoTooltip text="Write custom CSS rules to override any application styles for advanced personalization" />
     </h4>
     <div className="css-editor">
       <pre ref={mgr.cssHighlightRef} className="css-editor-highlight" aria-hidden="true" dangerouslySetInnerHTML={{ __html: mgr.highlightedCss + (mgr.highlightedCss.endsWith("\n") ? "" : "\n") }} />

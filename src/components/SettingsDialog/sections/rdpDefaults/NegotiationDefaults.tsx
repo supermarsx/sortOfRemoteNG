@@ -4,6 +4,7 @@ import React from "react";
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Zap } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
@@ -15,7 +16,7 @@ const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.autoDetect ?? false} onChange={(v: boolean) => update({ autoDetect: v })} />
       <span className="sor-toggle-label">
-        Enable auto-detect negotiation by default
+        Enable auto-detect negotiation by default <InfoTooltip text="Automatically tries different protocol combinations until a working one is found." />
       </span>
     </label>
     <p className="text-xs text-[var(--color-textMuted)] ml-7 -mt-2">
@@ -25,7 +26,7 @@ const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Default Strategy
+        Default Strategy <InfoTooltip text="Determines the order in which security protocols are attempted when negotiating a connection." />
       </label>
       <Select value={rdp.negotiationStrategy ?? "nla-first"} onChange={(v: string) => update({
             negotiationStrategy: v as GlobalSettings["rdpDefaults"]["negotiationStrategy"],
@@ -34,7 +35,7 @@ const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Max Retries: {rdp.maxRetries ?? 3}
+        Max Retries: {rdp.maxRetries ?? 3} <InfoTooltip text="Maximum number of connection attempts before giving up on a failed negotiation." />
       </label>
       <Slider value={rdp.maxRetries ?? 3} onChange={(v: number) => update({ maxRetries: v })} min={1} max={10} variant="full" />
       <div className="flex justify-between text-xs text-[var(--color-textMuted)]">
@@ -45,7 +46,7 @@ const NegotiationDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Retry Delay: {rdp.retryDelayMs ?? 1000}ms
+        Retry Delay: {rdp.retryDelayMs ?? 1000}ms <InfoTooltip text="Wait time in milliseconds between consecutive connection retry attempts." />
       </label>
       <Slider value={rdp.retryDelayMs ?? 1000} onChange={(v: number) => update({ retryDelayMs: v })} min={100} max={5000} variant="full" step={100} />
       <div className="flex justify-between text-xs text-[var(--color-textMuted)]">

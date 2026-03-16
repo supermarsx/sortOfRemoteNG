@@ -2,15 +2,16 @@ import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { SSHVersion } from "../../../types/settings/settings";
 import { Checkbox, NumberInput, Select } from "../../ui/forms";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {
   const { globalConfig: g, updateOverride: u, isOverridden: ov, getValue: v } = mgr;
   return (
     <div className="space-y-3">
-      <h4 className="sor-form-section-heading">Protocol</h4>
+      <h4 className="sor-form-section-heading">Protocol <InfoTooltip text="Override the global SSH protocol settings for this connection." /></h4>
 
       <OverrideToggle
-        label="SSH Version"
+        label={<>SSH Version <InfoTooltip text="The SSH protocol version to use. SSH-2 is recommended; SSH-1 is legacy and insecure." /></>}
         isOverridden={ov("sshVersion")}
         globalValue={g.sshVersion}
         onToggle={(on) => u("sshVersion", on ? g.sshVersion : undefined)}
@@ -19,7 +20,7 @@ const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="Compression"
+        label={<>Compression <InfoTooltip text="Enable zlib compression to reduce bandwidth usage. Higher levels compress more but use more CPU." /></>}
         isOverridden={ov("enableCompression")}
         globalValue={
           g.enableCompression ? `Level ${g.compressionLevel}` : "Disabled"
@@ -45,7 +46,7 @@ const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="PTY Type"
+        label={<>PTY Type <InfoTooltip text="The terminal type reported to the remote server. xterm-256color provides the best color support." /></>}
         isOverridden={ov("ptyType")}
         globalValue={g.ptyType}
         onToggle={(on) => u("ptyType", on ? g.ptyType : undefined)}

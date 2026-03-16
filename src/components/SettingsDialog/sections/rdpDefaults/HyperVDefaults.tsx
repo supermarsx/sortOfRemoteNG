@@ -3,6 +3,7 @@ import type { SectionProps } from "./selectClass";
 import React from "react";
 import { Server } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const HyperVDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
@@ -14,7 +15,7 @@ const HyperVDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.enhancedSessionMode ?? false} onChange={(v: boolean) => update({ enhancedSessionMode: v })} />
       <span className="sor-toggle-label">
-        Use Enhanced Session Mode by default
+        Use Enhanced Session Mode by default <InfoTooltip text="Enables Enhanced Session Mode for Hyper-V VMs, providing clipboard sharing, drive redirection, and improved audio." />
       </span>
     </label>
     <p className="text-xs text-[var(--color-textMuted)] ml-7 -mt-2">

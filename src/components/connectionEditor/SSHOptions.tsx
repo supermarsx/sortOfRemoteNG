@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
 import { PasswordInput, Textarea} from '../ui/forms';
+import { InfoTooltip } from '../ui/InfoTooltip';
 import { Connection } from "../../types/connection/connection";
 import { SSHKeyManager } from "../ssh/SSHKeyManager";
 import { SSHTerminalOverrides } from "./SSHTerminalOverrides";
@@ -34,7 +35,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
   return (
     <>
       <div>
-        <label className="sor-form-label">Username</label>
+        <label className="sor-form-label">Username <InfoTooltip text="The SSH username used to authenticate with the remote host." /></label>
         <input
           type="text"
           value={formData.username || ""}
@@ -49,7 +50,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
       {formData.protocol === "ssh" && (
         <div className="space-y-3">
           <div>
-            <label className="sor-form-label">Authentication Type</label>
+            <label className="sor-form-label">Authentication Type <InfoTooltip text="Choose between password-based authentication or public key authentication." /></label>
             <Select value={formData.authType ?? "password"} onChange={(v: string) => setFormData({ ...formData, authType: v as any })} options={[{ value: "password", label: "Password" }, { value: "key", label: "Private Key" }]} variant="form" />
           </div>
           <label className="sor-form-inline-check">
@@ -57,10 +58,10 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                   ...formData,
                   ignoreSshSecurityErrors: v,
                 })} variant="form" />
-            <span>Ignore SSH security errors (host keys/certs)</span>
+            <span>Ignore SSH security errors (host keys/certs) <InfoTooltip text="When enabled, host key mismatches and certificate errors are silently ignored. Convenient but less secure." /></span>
           </label>
           <div>
-            <label className="sor-form-label">Host Key Trust Policy</label>
+            <label className="sor-form-label">Host Key Trust Policy <InfoTooltip text="Determines how unknown or changed host keys are handled for this connection." /></label>
             <Select value={formData.sshTrustPolicy ?? ""} onChange={(v: string) => setFormData({
                   ...formData,
                   sshTrustPolicy:
@@ -154,21 +155,21 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
             })()}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <label className="sor-form-label">Connect Timeout (sec)</label>
+              <label className="sor-form-label">Connect Timeout (sec) <InfoTooltip text="Maximum time in seconds to wait for the SSH connection to be established." /></label>
               <NumberInput value={formData.sshConnectTimeout ?? 30} onChange={(v: number) => setFormData({
                     ...formData,
                     sshConnectTimeout: v || 30,
                   })} variant="form" min={5} max={300} />
             </div>
             <div>
-              <label className="sor-form-label">Keep Alive (sec)</label>
+              <label className="sor-form-label">Keep Alive (sec) <InfoTooltip text="Interval in seconds between keep-alive messages sent to prevent idle disconnection." /></label>
               <NumberInput value={formData.sshKeepAliveInterval ?? 60} onChange={(v: number) => setFormData({
                     ...formData,
                     sshKeepAliveInterval: v || 60,
                   })} variant="form" min={10} max={600} />
             </div>
             <div>
-              <label className="sor-form-label">Known Hosts Path</label>
+              <label className="sor-form-label">Known Hosts Path <InfoTooltip text="Path to the known_hosts file used for host key verification. Leave empty to use the default location." /></label>
               <input
                 type="text"
                 value={formData.sshKnownHostsPath || ""}
@@ -188,7 +189,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
 
       {formData.authType === "password" && (
         <div>
-          <label className="sor-form-label">Password</label>
+          <label className="sor-form-label">Password <InfoTooltip text="The password used for SSH password authentication." /></label>
           <PasswordInput
             value={formData.password || ""}
             onChange={(e) =>
@@ -205,7 +206,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
-                Private Key
+                Private Key <InfoTooltip text="The PEM or PPK private key used for public key authentication." />
               </label>
               <button
                 type="button"
@@ -233,7 +234,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
             />
           </div>
           <div>
-            <label className="sor-form-label">Passphrase (optional)</label>
+            <label className="sor-form-label">Passphrase (optional) <InfoTooltip text="Decryption passphrase for the private key, if the key is encrypted." /></label>
             <PasswordInput
               value={formData.passphrase || ""}
               onChange={(e) =>

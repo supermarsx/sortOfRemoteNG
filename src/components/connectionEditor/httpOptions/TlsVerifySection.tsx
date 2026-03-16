@@ -2,6 +2,7 @@ import { Mgr } from "./types";
 import React from "react";
 import { AlertTriangle } from "lucide-react";
 import { Checkbox } from "../../ui/forms";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const TlsVerifySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.isHttps) return null;
@@ -12,7 +13,7 @@ const TlsVerifySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               ...mgr.formData,
               httpVerifySsl: v,
             })} variant="form" />
-        <span>Verify TLS certificates</span>
+        <span>Verify TLS certificates <InfoTooltip text="When enabled, the server's TLS certificate is validated against trusted Certificate Authorities. Disable only for self-signed certificates." /></span>
       </label>
       {(mgr.formData.httpVerifySsl ?? true) ? (
         <p className="text-xs text-[var(--color-textMuted)] mt-1">

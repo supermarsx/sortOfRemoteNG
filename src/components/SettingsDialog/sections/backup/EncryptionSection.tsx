@@ -5,6 +5,7 @@ import { Lock, Key, Shield } from "lucide-react";
 import { BackupEncryptionAlgorithms, BackupEncryptionAlgorithm } from "../../../../types/settings/settings";
 import { encryptionAlgorithmLabels, encryptionAlgorithmDescriptions } from "../../../../hooks/settings/useBackupSettings";
 import { Checkbox, Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
@@ -16,7 +17,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="sor-settings-sub-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div>
-          <span className="text-[var(--color-text)]">Encrypt Backups</span>
+          <span className="text-[var(--color-text)]">Encrypt Backups <InfoTooltip text="Encrypts backup files with a password so they cannot be read without the correct credentials." /></span>
           <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
             Password-protect backup files
           </p>
@@ -29,7 +30,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <div className="space-y-2">
             <label className="block text-sm text-[var(--color-textSecondary)]">
               <Shield className="w-4 h-4 inline mr-2" />
-              Encryption Algorithm
+              Encryption Algorithm <InfoTooltip text="The cipher used to encrypt backup files. AES-256-GCM is recommended for strong authenticated encryption." />
             </label>
             <Select value={mgr.backup.encryptionAlgorithm} onChange={(v: string) =>
                 mgr.updateBackup({
@@ -48,7 +49,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <div className="space-y-2">
             <label className="block text-sm text-[var(--color-textSecondary)]">
               <Key className="w-4 h-4 inline mr-2" />
-              Encryption Password
+              Encryption Password <InfoTooltip text="The password used to derive the encryption key. Keep this safe -- backups cannot be restored without it." />
             </label>
             <PasswordInput
               value={mgr.backup.encryptionPassword || ""}

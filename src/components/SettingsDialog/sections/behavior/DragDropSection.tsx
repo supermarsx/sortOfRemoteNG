@@ -16,6 +16,7 @@ const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Enable file drag-and-drop to terminal"
         description="Drop files onto an SSH session to upload via SCP/SFTP"
         settingKey="enableFileDragDropToTerminal"
+        infoTooltip="Allow dragging files from your desktop onto an SSH terminal session to upload them via SCP or SFTP. Disable if you find this triggers accidentally."
       />
       <Toggle
         checked={s.showDropPreview}
@@ -24,6 +25,7 @@ const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Show drop preview overlay"
         description="Display a visual indicator when dragging items over valid targets"
         settingKey="showDropPreview"
+        infoTooltip="Show a visual overlay highlight when dragging items over valid drop targets, so you can see where the drop will land."
       />
       <SliderRow
         label="Drag sensitivity"
@@ -33,6 +35,7 @@ const DragDropSection: React.FC<SectionProps> = ({ s, u }) => (
         unit="px"
         onChange={(v) => u({ dragSensitivityPx: v })}
         settingKey="dragSensitivityPx"
+        infoTooltip="Minimum number of pixels the mouse must move before a drag operation begins. Increase to prevent accidental drags on sensitive touchpads."
       />
     </Card>
   </div>

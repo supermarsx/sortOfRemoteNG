@@ -16,6 +16,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Copy on select"
         description="Selecting text in the terminal copies it to clipboard automatically"
         settingKey="copyOnSelect"
+        infoTooltip="Automatically copy text to the clipboard as soon as you select it in the terminal, without needing to press Ctrl+C."
       />
       <Toggle
         checked={s.pasteOnRightClick}
@@ -24,6 +25,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Paste on right-click"
         description="Right-click inside the terminal pastes from clipboard"
         settingKey="pasteOnRightClick"
+        infoTooltip="Right-clicking inside the terminal area will paste the current clipboard contents. When disabled, right-click opens a context menu instead."
       />
       <Toggle
         checked={s.trimPastedWhitespace}
@@ -32,6 +34,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Trim whitespace from pasted text"
         description="Strip leading and trailing whitespace when pasting"
         settingKey="trimPastedWhitespace"
+        infoTooltip="Remove leading and trailing spaces or newlines from clipboard text before pasting it into the terminal. Helps avoid accidental command execution."
       />
       <Toggle
         checked={s.warnOnMultiLinePaste}
@@ -40,6 +43,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Warn before pasting multi-line text"
         description="Show a confirmation when pasting text that contains newlines"
         settingKey="warnOnMultiLinePaste"
+        infoTooltip="Display a confirmation dialog when pasting text that contains newline characters, which could execute multiple commands at once."
       />
       <SliderRow
         label="Clear clipboard after paste"
@@ -50,6 +54,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
         unit="s"
         onChange={(v) => u({ clearClipboardAfterSeconds: v })}
         settingKey="clearClipboardAfterSeconds"
+        infoTooltip="Automatically clear the clipboard a set number of seconds after pasting a password. Set to 0 to disable this security feature."
       />
       <div className="text-[10px] text-[var(--color-textMuted)] pl-1">
         {s.clearClipboardAfterSeconds === 0
@@ -65,6 +70,7 @@ const ClipboardSection: React.FC<SectionProps> = ({ s, u }) => (
         unit=""
         onChange={(v) => u({ maxPasteLengthChars: v })}
         settingKey="maxPasteLengthChars"
+        infoTooltip="Show a confirmation prompt before pasting text longer than this many characters. Set to 0 for no limit."
       />
       <div className="text-[10px] text-[var(--color-textMuted)] pl-1">
         {s.maxPasteLengthChars === 0

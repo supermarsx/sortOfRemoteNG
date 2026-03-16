@@ -2,6 +2,7 @@ import type { Mgr } from './types';
 import React from "react";
 import { Archive } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const EnableBackup: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="sor-section-card">
@@ -12,7 +13,7 @@ const EnableBackup: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
         <div>
           <span className="text-[var(--color-text)] font-medium">
-            Enable Automatic Backups
+            Enable Automatic Backups <InfoTooltip text="When enabled, your connections and settings are automatically backed up on the configured schedule." />
           </span>
           <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
             Automatically backup your connections and settings on a schedule

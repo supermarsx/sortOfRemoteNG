@@ -1,6 +1,7 @@
 import type { WinrmSectionProps } from "./types";
 import { CollapsibleSection } from "../../ui/CollapsibleSection";
 import { Database } from "lucide-react";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const CSS = {
   input: "sor-form-input text-sm",
@@ -23,7 +24,7 @@ const WmiSection: React.FC<WinrmSectionProps> = ({ ws, update }) => (
   >
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-        Namespace
+        Namespace <InfoTooltip text="The WMI namespace to query. The default root\\cimv2 covers most Windows management classes such as services, processes, and event logs." />
       </label>
       <input
         type="text"

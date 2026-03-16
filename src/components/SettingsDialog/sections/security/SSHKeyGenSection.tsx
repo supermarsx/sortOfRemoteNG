@@ -1,11 +1,12 @@
 import { Lock, Key, Loader2, FileKey, Download, CheckCircle } from "lucide-react";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 import type { Mgr } from "./types";
 function SSHKeyGenSection({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
       <h4 className="sor-section-heading">
         <FileKey className="w-4 h-4 text-success" />
-        Generate SSH Key File
+        <span className="flex items-center gap-1">Generate SSH Key File <InfoTooltip text="Generate a new SSH public/private key pair and save both files to disk for use with SSH connections" /></span>
       </h4>
 
       <div className="sor-settings-card space-y-4">
@@ -18,7 +19,7 @@ function SSHKeyGenSection({ mgr }: { mgr: Mgr }) {
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Key className="w-4 h-4" />
-            Key Type
+            <span className="flex items-center gap-1">Key Type <InfoTooltip text="Ed25519 is modern, fast, and recommended for most uses. RSA 4096-bit offers broader compatibility with older servers." /></span>
           </label>
           <div className="flex space-x-3">
             <button

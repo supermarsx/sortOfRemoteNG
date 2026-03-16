@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Checkbox, Textarea} from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
+import { InfoTooltip } from '../../ui/InfoTooltip';
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -57,7 +58,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             <div className="flex items-center gap-2">
               <Play className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">
-                {t("settings.startup.startWithSystem", "Start with system")}
+                {t("settings.startup.startWithSystem", "Start with system")} <InfoTooltip text="Automatically launch the application when the operating system starts" />
               </span>
             </div>
           </label>
@@ -69,7 +70,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
               <span
                 className={`text-[var(--color-textSecondary)] ${settings.startMaximized ? "opacity-50" : ""}`}
               >
-                {t("settings.startup.startMinimized", "Start minimized")}
+                {t("settings.startup.startMinimized", "Start minimized")} <InfoTooltip text="Start the application minimized to the taskbar or system tray" />
               </span>
             </div>
           </label>
@@ -81,7 +82,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
               <span
                 className={`text-[var(--color-textSecondary)] ${settings.startMinimized ? "opacity-50" : ""}`}
               >
-                {t("settings.startup.startMaximized", "Start maximized")}
+                {t("settings.startup.startMaximized", "Start maximized")} <InfoTooltip text="Open the application window in maximized (full-screen) mode" />
               </span>
             </div>
           </label>
@@ -94,7 +95,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 {t(
                   "settings.startup.reconnectSessions",
                   "Reconnect previous sessions on startup",
-                )}
+                )} <InfoTooltip text="Automatically reconnect all sessions that were active when the application was last closed" />
               </span>
             </div>
           </label>
@@ -107,7 +108,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 {t(
                   "settings.startup.autoOpenLastCollection",
                   "Auto-open last used connection collection",
-                )}
+                )} <InfoTooltip text="Automatically load the most recently used connection collection on startup" />
               </span>
             </div>
           </label>
@@ -126,7 +127,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             <div className="flex items-center gap-2">
               <AppWindow className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">
-                {t("settings.startup.showTrayIcon", "Show system tray icon")}
+                {t("settings.startup.showTrayIcon", "Show system tray icon")} <InfoTooltip text="Display an icon in the system notification area for quick access" />
               </span>
             </div>
           </label>
@@ -141,7 +142,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 {t(
                   "settings.startup.minimizeToTray",
                   "Minimize to notification area",
-                )}
+                )} <InfoTooltip text="When minimizing, hide the window and keep it accessible from the system tray icon" />
               </span>
             </div>
           </label>
@@ -156,7 +157,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 {t(
                   "settings.startup.closeToTray",
                   "Close to notification area",
-                )}
+                )} <InfoTooltip text="When closing the window, minimize to the system tray instead of quitting the application" />
               </span>
             </div>
           </label>
@@ -178,7 +179,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 {t(
                   "settings.startup.hideQuickStartMessage",
                   "Hide welcome message",
-                )}
+                )} <InfoTooltip text="Hide the introductory welcome message shown on the start screen" />
               </span>
             </div>
           </label>
@@ -191,7 +192,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 {t(
                   "settings.startup.hideQuickStartButtons",
                   "Hide quick action buttons",
-                )}
+                )} <InfoTooltip text="Hide the shortcut buttons for common actions on the welcome screen" />
               </span>
             </div>
           </label>
@@ -230,7 +231,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Type className="w-4 h-4 text-[var(--color-textSecondary)]" />
-                {t("settings.startup.customTitle", "Custom Title")}
+                {t("settings.startup.customTitle", "Custom Title")} <InfoTooltip text="Set a custom title to display on the welcome screen instead of the default" />
               </label>
               <input
                 type="text"
@@ -251,7 +252,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <MessageSquare className="w-4 h-4 text-[var(--color-textSecondary)]" />
-                {t("settings.startup.customMessage", "Custom Message")}
+                {t("settings.startup.customMessage", "Custom Message")} <InfoTooltip text="Set a custom message to display on the welcome screen instead of the default" />
               </label>
               <Textarea
                 value={settings.welcomeScreenMessage ?? ""}

@@ -2,6 +2,7 @@ import type { WinrmSectionProps } from "./types";
 import { CollapsibleSection } from "../../ui/CollapsibleSection";
 import { KeyRound } from "lucide-react";
 import { Select } from "../../ui/forms";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const CSS = {
   select: "sor-form-select text-sm",
@@ -23,7 +24,7 @@ const AuthSection: React.FC<WinrmSectionProps> = ({ ws, update }) => (
   >
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-        Authentication Method
+        Authentication Method <InfoTooltip text="The authentication protocol used for WinRM connections. Negotiate is recommended as it auto-selects the best available method." />
       </label>
       <Select
         value={ws.authMethod ?? "negotiate"}

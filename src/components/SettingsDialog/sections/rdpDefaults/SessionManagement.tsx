@@ -3,6 +3,7 @@ import { selectClass } from "./selectClass";
 import React from "react";
 import { Layers } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const SessionManagement: React.FC<SessionSectionProps> = ({
   settings,
@@ -16,7 +17,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Session Panel Display Mode
+        Session Panel Display Mode <InfoTooltip text="Controls how the RDP Sessions manager is presented -- as a floating modal overlay or a docked sidebar panel." />
       </label>
       <Select value={settings.rdpSessionDisplayMode ?? "popup"} onChange={(v: string) => updateSettings({
             rdpSessionDisplayMode: v as "panel" | "popup",
@@ -29,7 +30,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Tab Close Policy
+        Tab Close Policy <InfoTooltip text="Determines what happens when you close an RDP tab -- ask, keep running in background, or fully disconnect." />
       </label>
       <Select value={settings.rdpSessionClosePolicy ?? "ask"} onChange={(v: string) => updateSettings({
             rdpSessionClosePolicy: v as
@@ -47,7 +48,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={settings.rdpSessionThumbnailsEnabled ?? true} onChange={(v: boolean) => updateSettings({ rdpSessionThumbnailsEnabled: v })} />
       <span className="sor-toggle-label">
-        Show session thumbnails
+        Show session thumbnails <InfoTooltip text="Displays live preview thumbnails of active RDP sessions in the session manager." />
       </span>
     </label>
 
@@ -55,7 +56,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
       <div className="ml-7 space-y-3">
         <div>
           <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-            Thumbnail Capture Policy
+            Thumbnail Capture Policy <InfoTooltip text="Controls when session thumbnails are captured -- continuously, on tab blur, on detach, or manually." />
           </label>
           <Select value={settings.rdpSessionThumbnailPolicy ?? "realtime"} onChange={(v: string) => updateSettings({
                 rdpSessionThumbnailPolicy: v as
@@ -67,7 +68,7 @@ const SessionManagement: React.FC<SessionSectionProps> = ({
         </div>
         <div>
           <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-            Thumbnail Refresh Interval:{" "}
+            Thumbnail Refresh Interval: <InfoTooltip text="How often session thumbnails are refreshed when using the realtime capture policy." />{" "}
             {settings.rdpSessionThumbnailInterval ?? 5}s
           </label>
           <Slider value={settings.rdpSessionThumbnailInterval ?? 5} onChange={(v: number) => updateSettings({

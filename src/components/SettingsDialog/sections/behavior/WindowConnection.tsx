@@ -16,6 +16,7 @@ const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
           icon={<AppWindow size={16} />}
           label="Disallow multiple instances"
           settingKey="singleWindowMode"
+          infoTooltip="Prevent opening more than one instance of the application. If another instance is already running, the existing window will be focused instead."
         />
         <Toggle
           checked={s.singleConnectionMode}
@@ -24,6 +25,7 @@ const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
           label={t("connections.singleConnection")}
           description="Only one connection can be active at a time"
           settingKey="singleConnectionMode"
+          infoTooltip="Restrict the application to one active connection at a time. Opening a new connection will close the current one first."
         />
         <Toggle
           checked={s.reconnectOnReload}
@@ -32,6 +34,7 @@ const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
           label={t("connections.reconnectOnReload")}
           description="Re-establish active sessions when the window reloads"
           settingKey="reconnectOnReload"
+          infoTooltip="Automatically reconnect to all previously active sessions when the application window is reloaded or restarted."
         />
         <Toggle
           checked={s.enableAutocomplete}
@@ -40,6 +43,7 @@ const WindowConnection: React.FC<SectionProps & { t: (k: string) => string }> =
           label="Enable browser autocomplete on input fields"
           description="Allow the browser to suggest previously entered values"
           settingKey="enableAutocomplete"
+          infoTooltip="Allow the browser's built-in autocomplete to suggest previously entered values in input fields like hostnames and usernames."
         />
       </Card>
     </div>

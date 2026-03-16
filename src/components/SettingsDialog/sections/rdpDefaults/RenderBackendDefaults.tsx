@@ -3,6 +3,7 @@ import { selectClass } from "./selectClass";
 import React from "react";
 import { Monitor } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const nalPassthrough = rdp.nalPassthrough ?? false;
@@ -24,7 +25,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
     <div className={backendBypassed ? "opacity-50 pointer-events-none" : ""}>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Default Render Backend
+        Default Render Backend <InfoTooltip text="Controls how decoded RDP frames are rendered. Native backends bypass JavaScript for maximum performance." />
         {backendBypassed && <span className="text-xs text-[var(--color-textMuted)] ml-2">(disabled — WebCodecs decoding bypasses backend)</span>}
       </label>
       <Select value={rdp.renderBackend ?? "webview"} onChange={(v: string) => update({
@@ -42,7 +43,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Default Frontend Renderer
+        Default Frontend Renderer <InfoTooltip text="Determines how RGBA frames or H.264 NALs are painted onto the browser canvas." />
       </label>
       <p className="text-xs text-[var(--color-textMuted)] mb-1">
         {backendBypassed
@@ -74,7 +75,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Default Frame Scheduling
+        Default Frame Scheduling <InfoTooltip text="Controls frame presentation timing. VSync aligns with display refresh; low-latency minimizes delay." />
       </label>
       <Select value={rdp.frameScheduling ?? "adaptive"} onChange={(v: string) => update({
             frameScheduling: v as "vsync" | "low-latency" | "adaptive",
@@ -84,7 +85,7 @@ const RenderBackendDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
     <label className="flex items-center space-x-3 cursor-pointer group">
       <Checkbox checked={rdp.tripleBuffering ?? true} onChange={(v: boolean) => update({ tripleBuffering: v })} />
       <span className="sor-toggle-label">
-        Triple Buffering (WebGL)
+        Triple Buffering (WebGL) <InfoTooltip text="Uses ping-pong textures to prevent GPU stalls during WebGL rendering, improving frame smoothness." />
       </span>
       <span className="text-xs text-[var(--color-textMuted)]">
         — ping-pong textures to avoid GPU stalls

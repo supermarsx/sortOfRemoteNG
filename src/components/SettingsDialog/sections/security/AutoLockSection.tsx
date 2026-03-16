@@ -1,6 +1,7 @@
 import { GlobalSettings } from "../../../../types/settings/settings";
 import { Lock, Timer, Clock } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 import type { Mgr } from "./types";
 function AutoLockSection({
   settings,
@@ -15,7 +16,7 @@ function AutoLockSection({
     <div className="space-y-4">
       <h4 className="sor-section-heading">
         <Clock className="w-4 h-4 text-warning" />
-        Auto Lock
+        <span className="flex items-center gap-1">Auto Lock <InfoTooltip text="Automatically lock the application after a period of inactivity, requiring the master password to resume" /></span>
       </h4>
 
       <div className="sor-settings-card space-y-4">
@@ -33,8 +34,8 @@ function AutoLockSection({
                 autoLock: { ...settings.autoLock, enabled: v },
               })} disabled={!mgr.hasPassword} />
           <Clock className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-warning" />
-          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
-            Enable auto lock after inactivity
+          <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-1">
+            Enable auto lock after inactivity <InfoTooltip text="When enabled, the app locks itself after the configured idle timeout elapses" />
           </span>
         </label>
 
@@ -43,7 +44,7 @@ function AutoLockSection({
         >
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
             <Timer className="w-4 h-4" />
-            Auto lock timeout (minutes)
+            <span className="flex items-center gap-1">Auto lock timeout (minutes) <InfoTooltip text="Number of minutes of inactivity before the application automatically locks" /></span>
           </label>
           <NumberInput value={settings.autoLock.timeoutMinutes} onChange={(v: number) => updateSettings({
                 autoLock: {

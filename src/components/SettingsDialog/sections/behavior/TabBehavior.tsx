@@ -16,6 +16,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         label="Open new connections in background"
         description="New tabs open without switching to them"
         settingKey="openConnectionInBackground"
+        infoTooltip="When enabled, new connection tabs open behind the current tab instead of immediately switching focus to them."
       />
       <Toggle
         checked={s.openWinmgmtToolInBackground}
@@ -24,6 +25,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         label="Open Windows management tools in background"
         description="Windows tools (Services, Registry, etc.) open without switching"
         settingKey="openWinmgmtToolInBackground"
+        infoTooltip="Open Windows management tool tabs (Services, Registry, Event Viewer, etc.) in the background without interrupting your current work."
       />
       <Toggle
         checked={s.switchTabOnActivity}
@@ -32,6 +34,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         label="Switch to tab on activity"
         description="Automatically focus a tab when it receives new output"
         settingKey="switchTabOnActivity"
+        infoTooltip="Automatically bring a background tab to the foreground when it receives new output or activity, such as incoming terminal data."
       />
       <Toggle
         checked={s.closeTabOnDisconnect}
@@ -40,6 +43,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         label="Close tab on disconnect"
         description="Automatically close the tab when the session ends"
         settingKey="closeTabOnDisconnect"
+        infoTooltip="Automatically remove the tab when a session disconnects. When disabled, disconnected tabs remain open so you can review output or reconnect."
       />
       <Toggle
         checked={s.confirmCloseActiveTab}
@@ -48,6 +52,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         label="Confirm before closing active tab"
         description="Show a warning before closing a tab with a live session"
         settingKey="confirmCloseActiveTab"
+        infoTooltip="Display a confirmation prompt before closing a tab that has an active, connected session to prevent accidental disconnections."
       />
       <Toggle
         checked={s.enableRecentlyClosedTabs}
@@ -56,6 +61,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
         label="Enable recently-closed tabs list"
         description="Keep a list of recently closed tabs so you can reopen them"
         settingKey="enableRecentlyClosedTabs"
+        infoTooltip="Maintain a history of recently closed tabs so you can quickly reopen them. Useful for recovering accidentally closed sessions."
       />
       {s.enableRecentlyClosedTabs && (
         <SliderRow
@@ -65,6 +71,7 @@ const TabBehavior: React.FC<SectionProps> = ({ s, u }) => (
           max={50}
           onChange={(v) => u({ recentlyClosedTabsMax: v })}
           settingKey="recentlyClosedTabsMax"
+          infoTooltip="The maximum number of recently closed tabs to remember. Older entries are discarded when this limit is reached."
         />
       )}
     </Card>

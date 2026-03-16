@@ -2,15 +2,16 @@ import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { IPProtocol } from "../../../types/settings/settings";
 import { Checkbox, Select } from "../../ui/forms";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const TcpIpSection: React.FC<SectionProps> = ({ mgr }) => {
   const { globalConfig: g, updateOverride: u, isOverridden: ov, getValue: v } = mgr;
   return (
     <div className="space-y-3">
-      <h4 className="sor-form-section-heading">TCP/IP</h4>
+      <h4 className="sor-form-section-heading">TCP/IP <InfoTooltip text="Override TCP/IP network-level settings for this SSH connection." /></h4>
 
       <OverrideToggle
-        label="TCP No Delay"
+        label={<>TCP No Delay <InfoTooltip text="Disable Nagle's algorithm to send data immediately without waiting to coalesce small packets. Reduces latency for interactive sessions." /></>}
         isOverridden={ov("tcpNoDelay")}
         globalValue={g.tcpNoDelay ? "Enabled" : "Disabled"}
         onToggle={(on) => u("tcpNoDelay", on ? !g.tcpNoDelay : undefined)}
@@ -22,7 +23,7 @@ const TcpIpSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="TCP Keep Alive"
+        label={<>TCP Keep Alive <InfoTooltip text="Send TCP-level keep-alive probes to detect broken connections even when the SSH layer is idle." /></>}
         isOverridden={ov("tcpKeepAlive")}
         globalValue={g.tcpKeepAlive ? "Enabled" : "Disabled"}
         onToggle={(on) => u("tcpKeepAlive", on ? !g.tcpKeepAlive : undefined)}
@@ -34,7 +35,7 @@ const TcpIpSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       <OverrideToggle
-        label="IP Protocol"
+        label={<>IP Protocol <InfoTooltip text="Force the connection to use IPv4, IPv6, or auto-detect based on DNS resolution." /></>}
         isOverridden={ov("ipProtocol")}
         globalValue={g.ipProtocol}
         onToggle={(on) => u("ipProtocol", on ? g.ipProtocol : undefined)}

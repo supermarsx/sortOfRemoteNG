@@ -4,6 +4,7 @@ import { selectClass, RESOLUTION_PRESETS } from "./selectClass";
 import React from "react";
 import { Monitor } from "lucide-react";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
   const currentW = rdp.defaultWidth ?? 1920;
@@ -24,7 +25,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
       <div>
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          Default Resolution
+          Default Resolution <InfoTooltip text="The screen resolution used when opening a new RDP connection." />
         </label>
         <Select value={selectedValue} onChange={(v: string) => {
             if (v === "custom") return;
@@ -37,7 +38,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-              Width
+              Width <InfoTooltip text="Custom horizontal resolution in pixels for the remote desktop." />
             </label>
             <NumberInput value={currentW} onChange={(v: number) => update({
                   defaultWidth: v,
@@ -45,7 +46,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
           </div>
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-              Height
+              Height <InfoTooltip text="Custom vertical resolution in pixels for the remote desktop." />
             </label>
             <NumberInput value={currentH} onChange={(v: number) => update({
                   defaultHeight: v,
@@ -56,7 +57,7 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
 
       <div>
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-          Default Color Depth
+          Default Color Depth <InfoTooltip text="The number of bits used per pixel for color rendering. Higher values produce better color fidelity." />
         </label>
         <Select value={rdp.defaultColorDepth ?? 32} onChange={(v: string) => update({
               defaultColorDepth: parseInt(v) as 16 | 24 | 32,
@@ -66,21 +67,21 @@ const DisplayDefaults: React.FC<SectionProps> = ({ rdp, update }) => {
       <label className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={rdp.smartSizing ?? true} onChange={(v: boolean) => update({ smartSizing: v })} />
         <span className="sor-toggle-label">
-          Smart Sizing (scale remote desktop to fit window)
+          Smart Sizing (scale remote desktop to fit window) <InfoTooltip text="Scales the remote desktop image to fit the local window without changing the remote resolution." />
         </span>
       </label>
 
       <label className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={rdp.resizeToWindow ?? true} onChange={(v: boolean) => update({ resizeToWindow: v })} />
         <span className="sor-toggle-label">
-          Resize to Window (dynamically match window dimensions)
+          Resize to Window (dynamically match window dimensions) <InfoTooltip text="Dynamically adjusts the remote desktop resolution to match the local window size when resized." />
         </span>
       </label>
 
       <label className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={rdp.lossyCompression ?? true} onChange={(v: boolean) => update({ lossyCompression: v })} />
         <span className="sor-toggle-label">
-          Lossy Compression (reduce bandwidth)
+          Lossy Compression (reduce bandwidth) <InfoTooltip text="Enables lossy image compression to reduce bandwidth usage at the cost of minor visual artifacts." />
         </span>
       </label>
     </div>

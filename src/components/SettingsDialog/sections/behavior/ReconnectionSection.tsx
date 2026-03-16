@@ -16,6 +16,7 @@ const ReconnectionSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Auto-reconnect on unexpected disconnect"
         description="Attempt to re-establish the connection if it drops"
         settingKey="autoReconnectOnDisconnect"
+        infoTooltip="Automatically attempt to re-establish a connection when it is unexpectedly lost, such as due to network issues or server restarts."
       />
       {s.autoReconnectOnDisconnect && (
         <>
@@ -26,6 +27,7 @@ const ReconnectionSection: React.FC<SectionProps> = ({ s, u }) => (
             max={50}
             onChange={(v) => u({ autoReconnectMaxAttempts: v })}
             settingKey="autoReconnectMaxAttempts"
+            infoTooltip="Maximum number of reconnection attempts before giving up. Set to 0 for unlimited attempts."
           />
           <div className="text-[10px] text-[var(--color-textMuted)] pl-1">
             {s.autoReconnectMaxAttempts === 0
@@ -40,6 +42,7 @@ const ReconnectionSection: React.FC<SectionProps> = ({ s, u }) => (
             unit="s"
             onChange={(v) => u({ autoReconnectDelaySecs: v })}
             settingKey="autoReconnectDelaySecs"
+            infoTooltip="Number of seconds to wait between each reconnection attempt. Longer delays reduce server load but take more time to recover."
           />
         </>
       )}
@@ -50,6 +53,7 @@ const ReconnectionSection: React.FC<SectionProps> = ({ s, u }) => (
         label="Notify on successful reconnect"
         description="Show a notification when a dropped session is restored"
         settingKey="notifyOnReconnect"
+        infoTooltip="Display a notification when an automatically reconnected session is successfully restored, so you know the connection is back."
       />
     </Card>
   </div>

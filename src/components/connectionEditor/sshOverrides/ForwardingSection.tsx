@@ -2,6 +2,7 @@ import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { Checkbox, NumberInput, TextInput, Select } from "../../ui/forms";
 import { ProxyCommandTemplates, type ProxyCommandTemplate } from "../../../types/ssh/sshSettings";
+import { InfoTooltip } from "../../ui/InfoTooltip";
 
 const proxyTemplateOptions = [
   { value: "", label: "None (custom command)" },
@@ -12,11 +13,11 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
   const { globalConfig: g, updateOverride: u, isOverridden: ov, getValue: v } = mgr;
   return (
     <div className="space-y-3">
-      <h4 className="sor-form-section-heading">Forwarding</h4>
+      <h4 className="sor-form-section-heading">Forwarding <InfoTooltip text="Override port forwarding, X11 forwarding, and agent forwarding settings for this connection." /></h4>
 
       {/* ── TCP Forwarding ── */}
       <OverrideToggle
-        label="TCP Forwarding"
+        label={<>TCP Forwarding <InfoTooltip text="Allow TCP port forwarding (local and remote tunnels) through this SSH connection." /></>}
         isOverridden={ov("enableTcpForwarding")}
         globalValue={g.enableTcpForwarding ? "Enabled" : "Disabled"}
         onToggle={(on) =>
@@ -31,7 +32,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
 
       {/* ── X11 Forwarding ── */}
       <OverrideToggle
-        label="X11 Forwarding"
+        label={<>X11 Forwarding <InfoTooltip text="Forward X11 graphical applications from the remote host to your local display." /></>}
         isOverridden={ov("enableX11Forwarding")}
         globalValue={g.enableX11Forwarding ? "Enabled" : "Disabled"}
         onToggle={(on) =>
@@ -72,7 +73,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
 
       {/* ── Agent Forwarding ── */}
       <OverrideToggle
-        label="Agent Forwarding"
+        label={<>Agent Forwarding <InfoTooltip text="Forward your local SSH agent to the remote host for onward connections using your local keys." /></>}
         isOverridden={ov("agentForwarding")}
         globalValue={g.agentForwarding ? "Enabled" : "Disabled"}
         onToggle={(on) =>
@@ -86,10 +87,10 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
       </OverrideToggle>
 
       {/* ── ProxyCommand ── */}
-      <h4 className="sor-form-section-heading mt-4">ProxyCommand</h4>
+      <h4 className="sor-form-section-heading mt-4">ProxyCommand <InfoTooltip text="Route the SSH connection through a proxy or jump host using a custom command." /></h4>
 
       <OverrideToggle
-        label="ProxyCommand"
+        label={<>ProxyCommand <InfoTooltip text="Specify a command used to establish the connection, such as an SSH jump host or SOCKS proxy." /></>}
         isOverridden={ov("proxyCommand") || ov("proxyCommandTemplate")}
         globalValue={g.proxyCommand || g.proxyCommandTemplate || "None"}
         onToggle={(on) => {

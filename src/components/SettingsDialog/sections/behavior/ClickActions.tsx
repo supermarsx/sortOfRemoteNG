@@ -19,6 +19,7 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
         label="Connect on single click"
         description="Immediately connect when clicking a connection in the tree"
         settingKey="singleClickConnect"
+        infoTooltip="A single click on a connection in the sidebar tree will immediately open and connect to it. Disable if you prefer single-click to only select."
       />
       <Toggle
         checked={s.singleClickDisconnect}
@@ -27,6 +28,7 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
         label="Disconnect on single click (active connections)"
         description="Click an active connection to disconnect it"
         settingKey="singleClickDisconnect"
+        infoTooltip="Single-clicking an already connected session in the tree will disconnect it. Useful for quick teardown but may cause accidental disconnects."
       />
       <Toggle
         checked={s.doubleClickConnect}
@@ -35,6 +37,7 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
         label="Connect on double click"
         description="Double-click a connection to open/connect it"
         settingKey="doubleClickConnect"
+        infoTooltip="Double-clicking a connection in the tree opens and connects to it. This is the traditional way to initiate a connection."
       />
       <Toggle
         checked={s.doubleClickRename}
@@ -43,6 +46,7 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
         label="Rename on double click"
         description="Double-click a connection name to rename it inline"
         settingKey="doubleClickRename"
+        infoTooltip="Double-clicking a connection name in the tree puts it into inline edit mode so you can rename it without opening a properties dialog."
       />
       <Toggle
         checked={s.middleClickCloseTab}
@@ -51,6 +55,7 @@ const ClickActions: React.FC<SectionProps> = ({ s, u }) => (
         label="Middle-click to close tab"
         description="Middle mouse button closes the clicked tab"
         settingKey="middleClickCloseTab"
+        infoTooltip="Clicking a tab with the middle mouse button will close it immediately, similar to browser tab behavior."
       />
     </Card>
   </div>

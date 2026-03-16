@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { CollapsibleSection } from "../ui/CollapsibleSection";
 import { Monitor } from "lucide-react";
+import { InfoTooltip } from "../ui/InfoTooltip";
 import type { Connection, WinrmConnectionSettings } from "../../types/connection/connection";
 import TransportSection from "./winrmOptions/TransportSection";
 import AuthSection from "./winrmOptions/AuthSection";
@@ -69,7 +70,7 @@ export const WinRMOptions: React.FC<WinRMOptionsProps> = ({
         {formData.protocol !== "rdp" && (
           <div>
             <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-              Domain
+              Domain <InfoTooltip text="NetBIOS domain name for domain-joined accounts. Leave empty for local accounts." />
             </label>
             <input
               type="text"

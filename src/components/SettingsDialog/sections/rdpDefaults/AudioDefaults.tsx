@@ -3,6 +3,7 @@ import type { SectionProps } from "./selectClass";
 import React from "react";
 import { Volume2 } from "lucide-react";
 import { Select } from "../../../ui/forms";
+import { InfoTooltip } from "../../../ui/InfoTooltip";
 
 const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
   <div className="sor-settings-card">
@@ -13,7 +14,7 @@ const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Audio Playback
+        Audio Playback <InfoTooltip text="Controls where remote session audio is played back -- locally, on the remote machine, or not at all." />
       </label>
       <Select value={rdp.audioPlaybackMode ?? "local"} onChange={(v: string) => update({
             audioPlaybackMode: v as "local" | "remote" | "disabled",
@@ -26,7 +27,7 @@ const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Audio Recording
+        Audio Recording <InfoTooltip text="When enabled, audio input from your local microphone is redirected to the remote session." />
       </label>
       <Select value={rdp.audioRecordingMode ?? "disabled"} onChange={(v: string) => update({
             audioRecordingMode: v as "enabled" | "disabled",
@@ -38,7 +39,7 @@ const AudioDefaults: React.FC<SectionProps> = ({ rdp, update }) => (
 
     <div>
       <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-        Audio Quality
+        Audio Quality <InfoTooltip text="Sets the audio codec quality level. Dynamic mode auto-adjusts based on available bandwidth." />
       </label>
       <Select value={rdp.audioQuality ?? "dynamic"} onChange={(v: string) => update({
             audioQuality: v as "dynamic" | "medium" | "high",
