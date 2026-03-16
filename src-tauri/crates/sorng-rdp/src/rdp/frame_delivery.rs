@@ -1,10 +1,12 @@
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::ironrdp::session::image::DecodedImage;
 use crate::ironrdp::session::ActiveStageOutput;
 use crate::ironrdp_blocking::Framed;
 use super::frame_channel::DynFrameChannel;
+use super::types::RdpPointerEvent;
 
 use super::frame_store::SharedFrameStore;
 use super::stats::RdpSessionStats;
@@ -23,7 +25,7 @@ pub fn process_outputs(
     image: &DecodedImage,
     desktop_width: u16,
     desktop_height: u16,
-    _event_emitter: &sorng_core::events::DynEventEmitter,
+    event_emitter: &sorng_core::events::DynEventEmitter,
     stats: &RdpSessionStats,
     full_frame_sync_interval: u64,
     frame_store: &SharedFrameStore,
@@ -42,7 +44,6 @@ pub fn process_outputs(
             }
             ActiveStageOutput::GraphicsUpdate(region) => {
                 stats.record_frame();
-                // Push dirty region directly through the Channel (no event+invoke round-trip)
                 push_frame_via_channel(image.data(), desktop_width, region, frame_channel);
                 let fc = stats.frame_count.load(Ordering::Relaxed);
                 if fc > 0 && (fc == 1 || fc.is_multiple_of(full_frame_sync_interval)) {
@@ -55,6 +56,61 @@ pub fn process_outputs(
                         frame_store,
                     );
                 }
+            }
+            ActiveStageOutput::PointerDefault => {
+                let _ = event_emitter.emit_event(
+                    "rdp://pointer",
+                    serde_json::to_value(&RdpPointerEvent {
+                        session_id: session_id.to_string(),
+                        pointer_type: "default",
+                        x: None, y: None,
+                        bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
+                        hotspot_x: None, hotspot_y: None,
+                    }).unwrap_or_default(),
+                );
+            }
+            ActiveStageOutput::PointerHidden => {
+                let _ = event_emitter.emit_event(
+                    "rdp://pointer",
+                    serde_json::to_value(&RdpPointerEvent {
+                        session_id: session_id.to_string(),
+                        pointer_type: "hidden",
+                        x: None, y: None,
+                        bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
+                        hotspot_x: None, hotspot_y: None,
+                    }).unwrap_or_default(),
+                );
+            }
+            ActiveStageOutput::PointerPosition { x, y } => {
+                let _ = event_emitter.emit_event(
+                    "rdp://pointer",
+                    serde_json::to_value(&RdpPointerEvent {
+                        session_id: session_id.to_string(),
+                        pointer_type: "position",
+                        x: Some(*x), y: Some(*y),
+                        bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
+                        hotspot_x: None, hotspot_y: None,
+                    }).unwrap_or_default(),
+                );
+            }
+            ActiveStageOutput::PointerBitmap(bitmap) => {
+                let rgba_b64 = base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    &bitmap.bitmap_data,
+                );
+                let _ = event_emitter.emit_event(
+                    "rdp://pointer",
+                    serde_json::to_value(&RdpPointerEvent {
+                        session_id: session_id.to_string(),
+                        pointer_type: "bitmap",
+                        x: None, y: None,
+                        bitmap_rgba: Some(rgba_b64),
+                        bitmap_width: Some(bitmap.width),
+                        bitmap_height: Some(bitmap.height),
+                        hotspot_x: Some(bitmap.hotspot_x),
+                        hotspot_y: Some(bitmap.hotspot_y),
+                    }).unwrap_or_default(),
+                );
             }
             _ => {}
         }
