@@ -713,104 +713,135 @@ export function useRDPClient(session: ConnectionSession) {
     initializeRDPConnection();
   }, [initializeRDPConnection]);
 
-  // ─── Scaled cursor builder ─────────────────────────────────────────
-  // Generates a CSS cursor value with an SVG cursor scaled to match the
-  // remote desktop's proportional size on the local canvas.  Stored in a
-  // ref so event listeners always get the latest version without stale
-  // closures.  Rebuilt on canvas resize and desktop size changes.
+  // ─── Unified cursor system ─────────────────────────────────────────
+  // Handles three cursor types: 'arrow' (scaled SVG), 'dot' (scaled SVG),
+  // and 'bitmap' (server RGBA scaled to canvas ratio).  All are rebuilt
+  // on canvas resize to maintain proportional sizing.
 
-  const buildScaledCursorRef = useRef<(shape: 'arrow' | 'dot') => string>(() => 'default');
+  // The current cursor state — either a named shape or a server bitmap.
+  const cursorStateRef = useRef<
+    | { type: 'arrow' | 'dot' }
+    | { type: 'bitmap'; rgba: Uint8ClampedArray; w: number; h: number; hx: number; hy: number }
+    | null
+  >(null);
 
-  // Keep the builder function up-to-date with current canvas/desktop size.
-  // Also tracks the last cursor shape so we can rebuild on resize.
-  const lastCursorShapeRef = useRef<'arrow' | 'dot' | null>(null);
-
-  useEffect(() => {
+  // Compute canvas-to-desktop scale ratio
+  const getScaleRatio = useCallback((): number => {
+    const canvas = canvasRef.current;
+    if (!canvas) return 1;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width < 10) return 1;
     const desktopW = desktopSize.width || 1920;
+    return Math.max(0.25, Math.min(2.0, rect.width / desktopW));
+  }, [desktopSize.width]);
 
-    buildScaledCursorRef.current = (shape: 'arrow' | 'dot'): string => {
-      lastCursorShapeRef.current = shape;
-      const canvas = canvasRef.current;
-      if (!canvas) return shape === 'dot' ? 'crosshair' : 'default';
+  // Build CSS cursor from the current cursorStateRef, applying scale.
+  const applyCursorRef = useRef<() => void>(() => {});
+  applyCursorRef.current = () => {
+    const state = cursorStateRef.current;
+    if (!state) return;
+    const scale = getScaleRatio();
 
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width < 10) return shape === 'dot' ? 'crosshair' : 'default';
-      const ratio = rect.width / desktopW;
-      const scale = Math.max(0.25, Math.min(2.0, ratio));
+    if (state.type === 'dot') {
+      const size = Math.round(7 * scale);
+      const r = Math.max(1.5, (size - 1) / 2);
+      const c = size / 2;
+      const hs = Math.round(c);
+      setPointerStyle(
+        'url("data:image/svg+xml,' +
+        encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+          `<circle cx="${c}" cy="${c}" r="${r}" fill="white" stroke="black" stroke-width="0.8"/>` +
+          '</svg>'
+        ) + `") ${hs} ${hs}, auto`
+      );
+      return;
+    }
 
-      if (shape === 'dot') {
-        const size = Math.round(7 * scale);
-        const r = Math.max(1.5, (size - 1) / 2);
-        const cx = size / 2;
-        const cy = size / 2;
-        const hotspot = Math.round(cx);
-        return (
-          'url("data:image/svg+xml,' +
-          encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
-            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" stroke="black" stroke-width="0.8"/>` +
-            '</svg>'
-          ) +
-          `") ${hotspot} ${hotspot}, auto`
-        );
-      }
-
+    if (state.type === 'arrow') {
       const w = Math.round(20 * scale);
       const h = Math.round(20 * scale);
-      if (w < 8 || w > 64) return 'default';
-      const hotX = Math.round(1 * scale);
-      const hotY = Math.round(1 * scale);
-      return (
+      if (w < 8 || w > 64) { setPointerStyle('default'); return; }
+      const hx = Math.round(1 * scale);
+      const hy = Math.round(1 * scale);
+      setPointerStyle(
         'url("data:image/svg+xml,' +
         encodeURIComponent(
           `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 20 20">` +
           '<path d="M2 1 L2 17 L6.5 12.5 L10 19 L12.5 18 L9 11.5 L15 11.5 Z" ' +
           'fill="white" stroke="black" stroke-width="1.2" stroke-linejoin="round"/>' +
           '</svg>'
-        ) +
-        `") ${hotX} ${hotY}, auto`
+        ) + `") ${hx} ${hy}, auto`
       );
-    };
+      return;
+    }
 
-    // Rebuild cursor when canvas resizes (scale ratio changes).
+    if (state.type === 'bitmap') {
+      // Scale the server bitmap to match canvas-to-desktop ratio
+      const sw = Math.max(1, Math.round(state.w * scale));
+      const sh = Math.max(1, Math.round(state.h * scale));
+      const shx = Math.min(Math.round(state.hx * scale), sw - 1);
+      const shy = Math.min(Math.round(state.hy * scale), sh - 1);
+      if (sw > 128 || sh > 128) { setPointerStyle('default'); return; }
+
+      try {
+        // Draw at original size then scale
+        const srcCanvas = document.createElement('canvas');
+        srcCanvas.width = state.w;
+        srcCanvas.height = state.h;
+        const srcCtx = srcCanvas.getContext('2d');
+        if (!srcCtx) { setPointerStyle('default'); return; }
+        srcCtx.putImageData(new ImageData(state.rgba, state.w, state.h), 0, 0);
+
+        // Scale to target size
+        const dstCanvas = document.createElement('canvas');
+        dstCanvas.width = sw;
+        dstCanvas.height = sh;
+        const dstCtx = dstCanvas.getContext('2d');
+        if (!dstCtx) { setPointerStyle('default'); return; }
+        dstCtx.imageSmoothingEnabled = true;
+        dstCtx.imageSmoothingQuality = 'high';
+        dstCtx.drawImage(srcCanvas, 0, 0, sw, sh);
+
+        const png = dstCanvas.toDataURL('image/png');
+        setPointerStyle(`url("${png}") ${shx} ${shy}, auto`);
+      } catch {
+        setPointerStyle('default');
+      }
+    }
+  };
+
+  // Rebuild cursor on canvas resize and desktop size change
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rebuildCursor = () => {
-      const shape = lastCursorShapeRef.current;
-      if (shape) {
-        setPointerStyle(buildScaledCursorRef.current(shape));
-      }
-    };
-    const observer = new ResizeObserver(rebuildCursor);
+    const rebuild = () => applyCursorRef.current();
+    const observer = new ResizeObserver(rebuild);
     observer.observe(canvas);
-    window.addEventListener('resize', rebuildCursor);
-    rebuildCursor();
+    window.addEventListener('resize', rebuild);
+    rebuild();
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', rebuildCursor);
+      window.removeEventListener('resize', rebuild);
     };
   }, [desktopSize.width]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Set the initial cursor on connect.  When localCursor is 'local' or
-  // 'dot', the server pointer is disabled so no rdp://pointer events fire.
-  // We must set the scaled cursor proactively rather than waiting for an
-  // event that will never come.
+  // Set initial cursor on connect
   useEffect(() => {
     if (!isConnected) return;
     const mode = localCursorMode;
     if (mode === 'local' || mode === 'dot') {
-      const shape = mode === 'dot' ? 'dot' as const : 'arrow' as const;
-      lastCursorShapeRef.current = shape;
-      // Delay to let the canvas element settle (size may not be final yet)
-      const timer = setTimeout(() => {
-        setPointerStyle(buildScaledCursorRef.current(shape));
-      }, 150);
+      cursorStateRef.current = { type: mode === 'dot' ? 'dot' : 'arrow' };
+      const timer = setTimeout(() => applyCursorRef.current(), 150);
       return () => clearTimeout(timer);
     }
   }, [isConnected, localCursorMode]);
 
-  // Convenience wrapper for event listeners (always reads the latest ref)
-  const buildScaledCursor = (shape: 'arrow' | 'dot') => buildScaledCursorRef.current(shape);
+  /** Set the cursor state and apply it immediately. */
+  const setCursor = (state: NonNullable<typeof cursorStateRef.current>) => {
+    cursorStateRef.current = state;
+    applyCursorRef.current();
+  };
 
   // ─── Event listeners ───────────────────────────────────────────────
 
@@ -887,73 +918,46 @@ export function useRDPClient(session: ConnectionSession) {
       switch (ptr.pointer_type) {
         case 'default':
           if (mode === 'local' || mode === 'dot') {
-            setPointerStyle(buildScaledCursor(mode === 'dot' ? 'dot' : 'arrow'));
+            setCursor({ type: mode === 'dot' ? 'dot' : 'arrow' });
           } else {
             setPointerStyle('default');
           }
           break;
         case 'hidden':
           if (mode === 'local') {
-            setPointerStyle(buildScaledCursor('arrow'));
+            setCursor({ type: 'arrow' });
           } else if (mode === 'dot') {
-            setPointerStyle(buildScaledCursor('dot'));
+            setCursor({ type: 'dot' });
           } else {
             setPointerStyle('none');
           }
           break;
         case 'bitmap':
-          // Server sent a cursor bitmap — convert RGBA to a CSS cursor.
           if (ptr.bitmap_rgba && ptr.bitmap_width && ptr.bitmap_height) {
             try {
               const w = ptr.bitmap_width;
               const h = ptr.bitmap_height;
               const hx = Math.min(ptr.hotspot_x ?? 0, w - 1);
               const hy = Math.min(ptr.hotspot_y ?? 0, h - 1);
-
-              // CSS cursors have a browser max size (typically 128x128).
-              // Skip bitmaps that are too large.
-              if (w > 128 || h > 128 || w < 1 || h < 1) break;
+              if (w > 256 || h > 256 || w < 1 || h < 1) break;
 
               const raw = atob(ptr.bitmap_rgba);
               const expectedLen = w * h * 4;
               if (raw.length !== expectedLen) break;
 
-              // Decode base64 RGBA. The server sends pre-multiplied alpha
-              // (Software rendering mode). ImageData expects straight alpha,
-              // so we un-premultiply: R = R_pm * 255 / A (when A > 0).
+              // Decode base64 to Uint8ClampedArray.
+              // We use Accelerated mode (pointerSoftwareRendering=false)
+              // which produces non-premultiplied alpha — no conversion needed.
               const rgba = new Uint8ClampedArray(expectedLen);
-              for (let i = 0; i < expectedLen; i += 4) {
-                const a = raw.charCodeAt(i + 3);
-                if (a === 0) {
-                  rgba[i] = rgba[i + 1] = rgba[i + 2] = rgba[i + 3] = 0;
-                } else if (a === 255) {
-                  rgba[i]     = raw.charCodeAt(i);
-                  rgba[i + 1] = raw.charCodeAt(i + 1);
-                  rgba[i + 2] = raw.charCodeAt(i + 2);
-                  rgba[i + 3] = 255;
-                } else {
-                  // Un-premultiply
-                  rgba[i]     = Math.min(255, Math.round(raw.charCodeAt(i) * 255 / a));
-                  rgba[i + 1] = Math.min(255, Math.round(raw.charCodeAt(i + 1) * 255 / a));
-                  rgba[i + 2] = Math.min(255, Math.round(raw.charCodeAt(i + 2) * 255 / a));
-                  rgba[i + 3] = a;
-                }
+              for (let i = 0; i < expectedLen; i++) {
+                rgba[i] = raw.charCodeAt(i);
               }
 
-              const tmpCanvas = document.createElement('canvas');
-              tmpCanvas.width = w;
-              tmpCanvas.height = h;
-              const ctx = tmpCanvas.getContext('2d');
-              if (ctx) {
-                const imgData = new ImageData(rgba, w, h);
-                ctx.putImageData(imgData, 0, 0);
-                const png = tmpCanvas.toDataURL('image/png');
-                setPointerStyle(`url("${png}") ${hx} ${hy}, auto`);
-                lastCursorShapeRef.current = null;
-              }
+              // Store bitmap and apply with scaling via the unified system
+              setCursor({ type: 'bitmap', rgba, w, h, hx, hy });
             } catch (e) {
               console.warn('[RDP cursor] Failed to decode pointer bitmap:', e);
-              setPointerStyle(mode === 'local' ? buildScaledCursor('arrow') : 'default');
+              setCursor({ type: mode === 'dot' ? 'dot' : 'arrow' });
             }
           }
           break;
