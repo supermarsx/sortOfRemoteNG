@@ -51,6 +51,7 @@ export function mergeRdpSettings(
       autoDetectLayout: global.autoDetectKeyboardLayout ?? base.input?.autoDetectLayout,
       scrollSpeed: global.scrollSpeed ?? base.input?.scrollSpeed,
       smoothScroll: global.smoothScroll ?? base.input?.smoothScroll,
+      localCursor: global.localCursor ?? base.input?.localCursor,
       ...conn?.input,
     },
     deviceRedirection: {

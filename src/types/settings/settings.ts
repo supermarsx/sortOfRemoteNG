@@ -649,6 +649,11 @@ export interface RdpGlobalDefaultsConfig {
   /** Enable smooth scrolling (accumulate fractional deltas) */
   smoothScroll: boolean;
 
+  // ─── Cursor defaults ─────────────────────────────────────
+  /** Local cursor mode: 'local' = always show, 'remote' = hide when
+   *  server takes control, 'dot' = small dot overlay */
+  localCursor: 'local' | 'remote' | 'dot';
+
   // ─── Device redirection defaults ─────────────────────────
   /** Enable clipboard redirection by default */
   clipboardRedirection: boolean;

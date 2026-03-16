@@ -343,6 +343,21 @@ export interface RdpInputSettings {
    * instead of snapping to ±120 units per event.
    */
   smoothScroll?: boolean;
+
+  // ─── Cursor ─────────────────────────────────────────────────────
+  /**
+   * Show the local OS cursor over the RDP canvas at all times.
+   *
+   * When enabled, the native cursor provides instant visual feedback
+   * while the remote-rendered cursor catches up over the network.
+   * This eliminates perceived mouse stuttering on high-latency links.
+   *
+   * - 'local':  Always show the local cursor (recommended for WAN)
+   * - 'remote': Hide local cursor when server takes control (default,
+   *             traditional RDP behavior)
+   * - 'dot':    Show a small dot as local cursor for minimal distraction
+   */
+  localCursor?: 'local' | 'remote' | 'dot';
 }
 
 export interface RdpDeviceRedirection {
@@ -705,6 +720,7 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     batchIntervalMs: 16,
     scrollSpeed: 1.0,
     smoothScroll: true,
+    localCursor: 'remote',
   },
   deviceRedirection: {
     clipboard: true,

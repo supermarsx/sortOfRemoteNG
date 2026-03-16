@@ -363,6 +363,8 @@ const defaultSettings: GlobalSettings = {
     // Scroll / Mouse Wheel
     scrollSpeed: 1.0,
     smoothScroll: true,
+    // Cursor
+    localCursor: 'remote' as const,
     // Device redirection
     clipboardRedirection: true,
     printerRedirection: false,

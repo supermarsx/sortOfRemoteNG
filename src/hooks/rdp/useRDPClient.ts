@@ -121,6 +121,7 @@ export function useRDPClient(session: ConnectionSession) {
   const keyboardEnabled = rdpSettings.input?.keyboardEnabled ?? true;
   const scrollSpeed = rdpSettings.input?.scrollSpeed ?? 1.0;
   const smoothScroll = rdpSettings.input?.smoothScroll ?? true;
+  const localCursorMode = rdpSettings.input?.localCursor ?? 'remote';
 
   const perfLabel = rdpSettings.performance?.connectionSpeed ?? 'broadband-high';
   const audioEnabled = rdpSettings.audio?.playbackMode !== 'disabled';
@@ -759,12 +760,32 @@ export function useRDPClient(session: ConnectionSession) {
       const ptr = event.payload;
       if (ptr.session_id !== sessionIdRef.current) return;
 
+      // Compute the effective cursor style based on local cursor mode.
+      // 'remote' = traditional (hide when server says hidden)
+      // 'local'  = always show the OS cursor for instant feedback
+      // 'dot'    = show a tiny dot so user sees position without clutter
+      const mode = rdpSettingsRef.current.input?.localCursor ?? 'remote';
       switch (ptr.pointer_type) {
         case 'default':
           setPointerStyle('default');
           break;
         case 'hidden':
-          setPointerStyle('none');
+          if (mode === 'local') {
+            setPointerStyle('default');
+          } else if (mode === 'dot') {
+            // 5x5 white dot with black outline, hotspot at center
+            setPointerStyle(
+              'url("data:image/svg+xml,' +
+              encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="7" height="7">' +
+                '<circle cx="3.5" cy="3.5" r="3" fill="white" stroke="black" stroke-width="1"/>' +
+                '</svg>'
+              ) +
+              '") 3 3, auto'
+            );
+          } else {
+            setPointerStyle('none');
+          }
           break;
         case 'position':
           break;
