@@ -1629,8 +1629,9 @@ fn run_active_session_loop(
                                             serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "default",
-                                                x: None,
-                                                y: None,
+                                                x: None, y: None,
+                                                bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
+                                                hotspot_x: None, hotspot_y: None,
                                             }).unwrap_or_default(),
                                         );
                                     }
@@ -1640,8 +1641,9 @@ fn run_active_session_loop(
                                             serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "hidden",
-                                                x: None,
-                                                y: None,
+                                                x: None, y: None,
+                                                bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
+                                                hotspot_x: None, hotspot_y: None,
                                             }).unwrap_or_default(),
                                         );
                                     }
@@ -1651,12 +1653,34 @@ fn run_active_session_loop(
                                             serde_json::to_value(&RdpPointerEvent {
                                                 session_id: session_id.to_string(),
                                                 pointer_type: "position",
-                                                x: Some(x),
-                                                y: Some(y),
+                                                x: Some(x), y: Some(y),
+                                                bitmap_rgba: None, bitmap_width: None, bitmap_height: None,
+                                                hotspot_x: None, hotspot_y: None,
                                             }).unwrap_or_default(),
                                         );
                                     }
-                                    ActiveStageOutput::PointerBitmap(_bitmap) => {}
+                                    ActiveStageOutput::PointerBitmap(bitmap) => {
+                                        // Encode the cursor bitmap as base64 RGBA and send
+                                        // to the frontend for CSS cursor rendering.
+                                        let rgba_b64 = base64::Engine::encode(
+                                            &base64::engine::general_purpose::STANDARD,
+                                            &bitmap.bitmap_data,
+                                        );
+                                        let _ = event_emitter.emit_event(
+                                            "rdp://pointer",
+                                            serde_json::to_value(&RdpPointerEvent {
+                                                session_id: session_id.to_string(),
+                                                pointer_type: "bitmap",
+                                                x: None,
+                                                y: None,
+                                                bitmap_rgba: Some(rgba_b64),
+                                                bitmap_width: Some(bitmap.width),
+                                                bitmap_height: Some(bitmap.height),
+                                                hotspot_x: Some(bitmap.hotspot_x),
+                                                hotspot_y: Some(bitmap.hotspot_y),
+                                            }).unwrap_or_default(),
+                                        );
+                                    }
                                     ActiveStageOutput::Terminate(reason) => {
                                         log::info!("RDP session {session_id}: server terminated: {reason:?}");
                                         stats.set_phase("terminated");

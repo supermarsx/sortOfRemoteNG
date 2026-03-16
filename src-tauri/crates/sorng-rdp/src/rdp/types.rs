@@ -33,6 +33,21 @@ pub struct RdpPointerEvent {
     pub x: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub y: Option<u16>,
+    /// Base64-encoded RGBA bitmap data (only for pointer_type="bitmap")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitmap_rgba: Option<String>,
+    /// Cursor bitmap width in pixels
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitmap_width: Option<u16>,
+    /// Cursor bitmap height in pixels
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitmap_height: Option<u16>,
+    /// Cursor hotspot X offset
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hotspot_x: Option<u16>,
+    /// Cursor hotspot Y offset
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hotspot_y: Option<u16>,
 }
 
 #[derive(Clone, Serialize)]

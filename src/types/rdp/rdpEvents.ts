@@ -11,6 +11,12 @@ export interface RDPPointerEvent {
   pointer_type: string;
   x?: number;
   y?: number;
+  /** Base64-encoded RGBA bitmap (for pointer_type="bitmap") */
+  bitmap_rgba?: string;
+  bitmap_width?: number;
+  bitmap_height?: number;
+  hotspot_x?: number;
+  hotspot_y?: number;
 }
 
 export interface RDPStatsEvent {

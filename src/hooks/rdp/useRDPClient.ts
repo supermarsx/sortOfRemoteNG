@@ -874,15 +874,11 @@ export function useRDPClient(session: ConnectionSession) {
       const ptr = event.payload;
       if (ptr.session_id !== sessionIdRef.current) return;
 
-      // Compute the effective cursor style based on local cursor mode.
-      // 'remote' = traditional (hide when server says hidden)
-      // 'local'  = always show a scaled cursor for instant feedback
-      // 'dot'    = show a tiny dot so user sees position without clutter
       const mode = rdpSettingsRef.current.input?.localCursor ?? 'local';
       switch (ptr.pointer_type) {
         case 'default':
-          if (mode === 'local') {
-            setPointerStyle(buildScaledCursor('arrow'));
+          if (mode === 'local' || mode === 'dot') {
+            setPointerStyle(buildScaledCursor(mode === 'dot' ? 'dot' : 'arrow'));
           } else {
             setPointerStyle('default');
           }
@@ -894,6 +890,37 @@ export function useRDPClient(session: ConnectionSession) {
             setPointerStyle(buildScaledCursor('dot'));
           } else {
             setPointerStyle('none');
+          }
+          break;
+        case 'bitmap':
+          // Server sent a cursor bitmap — convert RGBA to a CSS cursor.
+          // This gives us the exact cursor shape (hand, loading, text beam,
+          // resize handles, etc.) rendered locally with zero latency.
+          if (ptr.bitmap_rgba && ptr.bitmap_width && ptr.bitmap_height) {
+            try {
+              const w = ptr.bitmap_width;
+              const h = ptr.bitmap_height;
+              const hx = ptr.hotspot_x ?? 0;
+              const hy = ptr.hotspot_y ?? 0;
+              // Decode base64 RGBA → ImageData → Canvas → PNG data URL
+              const rgba = Uint8ClampedArray.from(atob(ptr.bitmap_rgba), c => c.charCodeAt(0));
+              if (rgba.length === w * h * 4) {
+                const tmpCanvas = document.createElement('canvas');
+                tmpCanvas.width = w;
+                tmpCanvas.height = h;
+                const ctx = tmpCanvas.getContext('2d');
+                if (ctx) {
+                  const imgData = new ImageData(rgba, w, h);
+                  ctx.putImageData(imgData, 0, 0);
+                  const png = tmpCanvas.toDataURL('image/png');
+                  setPointerStyle(`url("${png}") ${hx} ${hy}, auto`);
+                  lastCursorShapeRef.current = null; // not a scaled shape
+                }
+              }
+            } catch {
+              // Fallback to default on decode error
+              setPointerStyle(mode === 'local' ? buildScaledCursor('arrow') : 'default');
+            }
           }
           break;
         case 'position':
