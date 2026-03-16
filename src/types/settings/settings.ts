@@ -566,6 +566,34 @@ export interface RdpGlobalDefaultsConfig {
   enableNla: boolean;
   /** Auto logon (send credentials in INFO packet) */
   autoLogon: boolean;
+  /** Encryption Oracle Remediation policy */
+  credsspOracleRemediation: 'force-updated' | 'mitigated' | 'vulnerable';
+  /** Allow HYBRID_EX protocol (Early User Auth Result) */
+  allowHybridEx: boolean;
+  /** Allow fallback from NLA to TLS when NLA negotiation fails */
+  nlaFallbackToTls: boolean;
+  /** Minimum TLS version for RDP connections */
+  tlsMinVersion: '1.0' | '1.1' | '1.2' | '1.3';
+  /** Enable NTLM authentication */
+  ntlmEnabled: boolean;
+  /** Enable Kerberos authentication */
+  kerberosEnabled: boolean;
+  /** Enable PKU2U authentication */
+  pku2uEnabled: boolean;
+  /** Restricted Admin mode (no credential delegation) */
+  restrictedAdmin: boolean;
+  /** Remote Credential Guard */
+  remoteCredentialGuard: boolean;
+  /** Enforce server public key validation during CredSSP */
+  enforceServerPublicKeyValidation: boolean;
+  /** CredSSP TSRequest version to advertise */
+  credsspVersion: number;
+  /** Server certificate validation mode */
+  serverCertValidation: 'validate' | 'warn' | 'ignore';
+  /** Enable server-side pointer rendering */
+  enableServerPointer: boolean;
+  /** Use software rendering for pointer/cursor */
+  pointerSoftwareRendering: boolean;
 
   // ─── Gateway defaults ──────────────────────────────────────
   /** Enable RDP Gateway by default */
