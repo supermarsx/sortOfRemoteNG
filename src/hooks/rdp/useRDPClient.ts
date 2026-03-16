@@ -560,13 +560,22 @@ export function useRDPClient(session: ConnectionSession) {
         }
       }
 
-      // Note: we deliberately keep enableServerPointer=true even in local
-      // cursor mode.  The server-rendered cursor provides shape context
-      // (loading, hand, text beam, resize handles) that the local CSS
-      // cursor cannot replicate.  The local cursor provides instant
-      // position feedback.  Both render simultaneously — the slight
-      // overlap is acceptable and gives the best user experience on
-      // high-latency links.
+      // In local cursor mode, disable software pointer rendering so IronRDP
+      // emits PointerBitmap events instead of painting the cursor into the
+      // frame buffer. We convert these bitmaps to CSS cursors on the
+      // frontend for zero-latency cursor shape changes (hand, loading,
+      // text beam, etc.).  Server pointer stays enabled so we receive the
+      // shape change events.
+      const cursorMode = effectiveSettings.input?.localCursor ?? 'local';
+      if (cursorMode === 'local' || cursorMode === 'dot') {
+        effectiveSettings = {
+          ...effectiveSettings,
+          security: {
+            ...effectiveSettings.security,
+            pointerSoftwareRendering: false,
+          },
+        };
+      }
 
       const display = effectiveSettings.display ?? DEFAULT_RDP_SETTINGS.display;
       const resW = display?.width ?? 1920;
@@ -894,31 +903,56 @@ export function useRDPClient(session: ConnectionSession) {
           break;
         case 'bitmap':
           // Server sent a cursor bitmap — convert RGBA to a CSS cursor.
-          // This gives us the exact cursor shape (hand, loading, text beam,
-          // resize handles, etc.) rendered locally with zero latency.
           if (ptr.bitmap_rgba && ptr.bitmap_width && ptr.bitmap_height) {
             try {
               const w = ptr.bitmap_width;
               const h = ptr.bitmap_height;
-              const hx = ptr.hotspot_x ?? 0;
-              const hy = ptr.hotspot_y ?? 0;
-              // Decode base64 RGBA → ImageData → Canvas → PNG data URL
-              const rgba = Uint8ClampedArray.from(atob(ptr.bitmap_rgba), c => c.charCodeAt(0));
-              if (rgba.length === w * h * 4) {
-                const tmpCanvas = document.createElement('canvas');
-                tmpCanvas.width = w;
-                tmpCanvas.height = h;
-                const ctx = tmpCanvas.getContext('2d');
-                if (ctx) {
-                  const imgData = new ImageData(rgba, w, h);
-                  ctx.putImageData(imgData, 0, 0);
-                  const png = tmpCanvas.toDataURL('image/png');
-                  setPointerStyle(`url("${png}") ${hx} ${hy}, auto`);
-                  lastCursorShapeRef.current = null; // not a scaled shape
+              const hx = Math.min(ptr.hotspot_x ?? 0, w - 1);
+              const hy = Math.min(ptr.hotspot_y ?? 0, h - 1);
+
+              // CSS cursors have a browser max size (typically 128x128).
+              // Skip bitmaps that are too large.
+              if (w > 128 || h > 128 || w < 1 || h < 1) break;
+
+              const raw = atob(ptr.bitmap_rgba);
+              const expectedLen = w * h * 4;
+              if (raw.length !== expectedLen) break;
+
+              // Decode base64 RGBA. The server sends pre-multiplied alpha
+              // (Software rendering mode). ImageData expects straight alpha,
+              // so we un-premultiply: R = R_pm * 255 / A (when A > 0).
+              const rgba = new Uint8ClampedArray(expectedLen);
+              for (let i = 0; i < expectedLen; i += 4) {
+                const a = raw.charCodeAt(i + 3);
+                if (a === 0) {
+                  rgba[i] = rgba[i + 1] = rgba[i + 2] = rgba[i + 3] = 0;
+                } else if (a === 255) {
+                  rgba[i]     = raw.charCodeAt(i);
+                  rgba[i + 1] = raw.charCodeAt(i + 1);
+                  rgba[i + 2] = raw.charCodeAt(i + 2);
+                  rgba[i + 3] = 255;
+                } else {
+                  // Un-premultiply
+                  rgba[i]     = Math.min(255, Math.round(raw.charCodeAt(i) * 255 / a));
+                  rgba[i + 1] = Math.min(255, Math.round(raw.charCodeAt(i + 1) * 255 / a));
+                  rgba[i + 2] = Math.min(255, Math.round(raw.charCodeAt(i + 2) * 255 / a));
+                  rgba[i + 3] = a;
                 }
               }
-            } catch {
-              // Fallback to default on decode error
+
+              const tmpCanvas = document.createElement('canvas');
+              tmpCanvas.width = w;
+              tmpCanvas.height = h;
+              const ctx = tmpCanvas.getContext('2d');
+              if (ctx) {
+                const imgData = new ImageData(rgba, w, h);
+                ctx.putImageData(imgData, 0, 0);
+                const png = tmpCanvas.toDataURL('image/png');
+                setPointerStyle(`url("${png}") ${hx} ${hy}, auto`);
+                lastCursorShapeRef.current = null;
+              }
+            } catch (e) {
+              console.warn('[RDP cursor] Failed to decode pointer bitmap:', e);
               setPointerStyle(mode === 'local' ? buildScaledCursor('arrow') : 'default');
             }
           }
