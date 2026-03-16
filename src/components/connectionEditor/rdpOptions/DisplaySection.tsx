@@ -28,32 +28,38 @@ const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Color Depth
       </label>
-      <Select value={rdp.display?.colorDepth ?? 32} onChange={(v: string) => updateRdp("display", {
-            colorDepth: parseInt(v) as 16 | 24 | 32,
-          })} options={[{ value: "16", label: "16-bit (High Color)" }, { value: "24", label: "24-bit (True Color)" }, { value: "32", label: "32-bit (True Color + Alpha)" }]} className="CSS.select" />
+      <Select value={rdp.display?.colorDepth?.toString() ?? ""} onChange={(v: string) => updateRdp("display", {
+            colorDepth: v === "" ? undefined : (parseInt(v) as 16 | 24 | 32),
+          })} options={[{ value: "", label: "Use global default" }, { value: "16", label: "16-bit (High Color)" }, { value: "24", label: "24-bit (True Color)" }, { value: "32", label: "32-bit (True Color + Alpha)" }]} className="CSS.select" />
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Desktop Scale Factor: {rdp.display?.desktopScaleFactor ?? 100}%
       </label>
+      <label className="flex items-center gap-2 mb-1">
+        <Checkbox checked={rdp.display?.desktopScaleFactor != null} onChange={(v: boolean) => updateRdp("display", { desktopScaleFactor: v ? 100 : undefined })} className="CSS.checkbox" />
+        <span className="text-xs text-[var(--color-textMuted)]">Override</span>
+      </label>
+      {rdp.display?.desktopScaleFactor != null && (
       <Slider value={rdp.display?.desktopScaleFactor ?? 100} onChange={(v: number) => updateRdp("display", { desktopScaleFactor: v })} min={100} max={500} variant="full" step={25} />
+      )}
     </div>
 
-    <label className={CSS.label}>
-      <Checkbox checked={rdp.display?.resizeToWindow ?? false} onChange={(v: boolean) => updateRdp("display", { resizeToWindow: v })} className="CSS.checkbox" />
-      <span>Resize to window (dynamic resolution)</span>
-    </label>
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Resize to window (dynamic resolution)</label>
+      <Select value={rdp.display?.resizeToWindow === undefined ? "" : rdp.display.resizeToWindow ? "true" : "false"} onChange={(v: string) => updateRdp("display", { resizeToWindow: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+    </div>
 
-    <label className={CSS.label}>
-      <Checkbox checked={rdp.display?.smartSizing ?? true} onChange={(v: boolean) => updateRdp("display", { smartSizing: v })} className="CSS.checkbox" />
-      <span>Smart sizing (scale to fit)</span>
-    </label>
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Smart sizing (scale to fit)</label>
+      <Select value={rdp.display?.smartSizing === undefined ? "" : rdp.display.smartSizing ? "true" : "false"} onChange={(v: string) => updateRdp("display", { smartSizing: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+    </div>
 
-    <label className={CSS.label}>
-      <Checkbox checked={rdp.display?.lossyCompression ?? true} onChange={(v: boolean) => updateRdp("display", { lossyCompression: v })} className="CSS.checkbox" />
-      <span>Lossy bitmap compression</span>
-    </label>
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Lossy bitmap compression</label>
+      <Select value={rdp.display?.lossyCompression === undefined ? "" : rdp.display.lossyCompression ? "true" : "false"} onChange={(v: string) => updateRdp("display", { lossyCompression: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+    </div>
 
     <label className={CSS.label}>
       <Checkbox checked={rdp.display?.magnifierEnabled ?? false} onChange={(v: boolean) => updateRdp("display", { magnifierEnabled: v })} className="CSS.checkbox" />

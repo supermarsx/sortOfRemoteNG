@@ -13,25 +13,25 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
     title="Connection Negotiation"
     icon={<Zap size={14} className="text-warning" />}
   >
-    <label className={CSS.label}>
-      <Checkbox checked={rdp.negotiation?.autoDetect ?? false} onChange={(v: boolean) => updateRdp("negotiation", { autoDetect: v })} className="CSS.checkbox" />
-      <span className="font-medium">Auto-detect negotiation</span>
-    </label>
-    <p className="text-xs text-[var(--color-textMuted)] ml-5 -mt-1">
-      Automatically try different protocol combinations (CredSSP, TLS,
-      plain) until a working one is found.
-    </p>
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 font-medium">Auto-detect negotiation</label>
+      <Select value={rdp.negotiation?.autoDetect === undefined ? "" : rdp.negotiation.autoDetect ? "true" : "false"} onChange={(v: string) => updateRdp("negotiation", { autoDetect: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+      <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
+        Automatically try different protocol combinations (CredSSP, TLS,
+        plain) until a working one is found.
+      </p>
+    </div>
 
-    {(rdp.negotiation?.autoDetect ?? false) && (
+    {rdp.negotiation?.autoDetect === true && (
       <div className="space-y-3 mt-2">
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Negotiation Strategy
           </label>
-          <Select value={rdp.negotiation?.strategy ?? "nla-first"} onChange={(v: string) =>
+          <Select value={rdp.negotiation?.strategy ?? ""} onChange={(v: string) =>
               updateRdp("negotiation", {
-                strategy: v as (typeof NegotiationStrategies)[number],
-              })} options={[...NegotiationStrategies.map((s) => ({ value: s, label: s === "auto"
+                strategy: v === "" ? undefined : (v as (typeof NegotiationStrategies)[number]),
+              })} options={[{ value: "", label: "Use global default" }, ...NegotiationStrategies.map((s) => ({ value: s, label: s === "auto"
                   ? "Auto (try all combinations)"
                   : s === "nla-first"
                     ? "NLA First (CredSSP → TLS → Plain)"
@@ -46,8 +46,14 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-            Max Retries: {rdp.negotiation?.maxRetries ?? 3}
+            Max Retries{rdp.negotiation?.maxRetries != null ? `: ${rdp.negotiation.maxRetries}` : ""}
           </label>
+          <label className="flex items-center gap-2 mb-1">
+            <Checkbox checked={rdp.negotiation?.maxRetries != null} onChange={(v: boolean) => updateRdp("negotiation", { maxRetries: v ? 3 : undefined })} className="CSS.checkbox" />
+            <span className="text-xs text-[var(--color-textMuted)]">Override (uncheck to use global default)</span>
+          </label>
+          {rdp.negotiation?.maxRetries != null && (
+          <>
           <Slider value={rdp.negotiation?.maxRetries ?? 3} onChange={(v: number) => updateRdp("negotiation", {
                 maxRetries: v,
               })} min={1} max={10} variant="full" />
@@ -55,12 +61,20 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
             <span>1</span>
             <span>10</span>
           </div>
+          </>
+          )}
         </div>
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-            Retry Delay: {rdp.negotiation?.retryDelayMs ?? 1000}ms
+            Retry Delay{rdp.negotiation?.retryDelayMs != null ? `: ${rdp.negotiation.retryDelayMs}ms` : ""}
           </label>
+          <label className="flex items-center gap-2 mb-1">
+            <Checkbox checked={rdp.negotiation?.retryDelayMs != null} onChange={(v: boolean) => updateRdp("negotiation", { retryDelayMs: v ? 1000 : undefined })} className="CSS.checkbox" />
+            <span className="text-xs text-[var(--color-textMuted)]">Override (uncheck to use global default)</span>
+          </label>
+          {rdp.negotiation?.retryDelayMs != null && (
+          <>
           <Slider value={rdp.negotiation?.retryDelayMs ?? 1000} onChange={(v: number) => updateRdp("negotiation", {
                 retryDelayMs: v,
               })} min={100} max={5000} variant="full" step={100} />
@@ -68,6 +82,8 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
             <span>100ms</span>
             <span>5000ms</span>
           </div>
+          </>
+          )}
         </div>
       </div>
     )}

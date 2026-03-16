@@ -2,7 +2,7 @@ import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { Mouse, ScanSearch } from "lucide-react";
 import { KEYBOARD_LAYOUTS, CSS } from "../../../hooks/rdp/useRDPOptions";
-import { Checkbox, Select, Slider } from "../../ui/forms";
+import { Select, Slider } from "../../ui/forms";
 const InputSection: React.FC<
   SectionBaseProps & {
     detectingLayout: boolean;
@@ -17,15 +17,15 @@ const InputSection: React.FC<
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Mouse Mode
       </label>
-      <Select value={rdp.input?.mouseMode ?? "absolute"} onChange={(v: string) => updateRdp("input", {
-            mouseMode: v as "relative" | "absolute",
-          })} options={[{ value: "absolute", label: "Absolute (real mouse position)" }, { value: "relative", label: "Relative (virtual mouse delta)" }]} className="CSS.select" />
+      <Select value={rdp.input?.mouseMode ?? ""} onChange={(v: string) => updateRdp("input", {
+            mouseMode: v === "" ? undefined : (v as "relative" | "absolute"),
+          })} options={[{ value: "", label: "Use global default" }, { value: "absolute", label: "Absolute (real mouse position)" }, { value: "relative", label: "Relative (virtual mouse delta)" }]} className="CSS.select" />
     </div>
 
-    <label className={CSS.label}>
-      <Checkbox checked={rdp.input?.autoDetectLayout !== false} onChange={(v: boolean) => updateRdp("input", { autoDetectLayout: v })} className="CSS.checkbox" />
-      <span>Auto-detect keyboard layout on connect</span>
-    </label>
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Auto-detect keyboard layout on connect</label>
+      <Select value={rdp.input?.autoDetectLayout === undefined ? "" : rdp.input.autoDetectLayout ? "true" : "false"} onChange={(v: string) => updateRdp("input", { autoDetectLayout: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+    </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
@@ -79,10 +79,10 @@ const InputSection: React.FC<
       </div>
     )}
 
-    <label className={CSS.label}>
-      <Checkbox checked={rdp.input?.enableUnicodeInput ?? true} onChange={(v: boolean) => updateRdp("input", { enableUnicodeInput: v })} className="CSS.checkbox" />
-      <span>Enable Unicode keyboard input</span>
-    </label>
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Enable Unicode keyboard input</label>
+      <Select value={rdp.input?.enableUnicodeInput === undefined ? "" : rdp.input.enableUnicodeInput ? "true" : "false"} onChange={(v: string) => updateRdp("input", { enableUnicodeInput: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+    </div>
   </Section>
 );
 

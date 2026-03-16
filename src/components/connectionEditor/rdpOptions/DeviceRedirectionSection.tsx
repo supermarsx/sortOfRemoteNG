@@ -3,7 +3,7 @@ import Section from "./Section";
 import { HardDrive } from "lucide-react";
 import { RDPConnectionSettings } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
-import { Checkbox } from "../../ui/forms";
+import { Select } from "../../ui/forms";
 const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
   rdp,
   updateRdp,
@@ -24,12 +24,15 @@ const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
       title="Local Resources"
       icon={<HardDrive size={14} className="text-accent" />}
     >
-      {devices.map((d) => (
-        <label key={d.key} className={CSS.label}>
-          <Checkbox checked={(rdp.deviceRedirection?.[d.key] as boolean | undefined) ?? d.defaultVal} onChange={(v: boolean) => updateRdp("deviceRedirection", { [d.key]: v })} className="CSS.checkbox" />
-          <span>{d.label}</span>
-        </label>
-      ))}
+      {devices.map((d) => {
+        const raw = rdp.deviceRedirection?.[d.key] as boolean | undefined;
+        return (
+        <div key={d.key}>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">{d.label}</label>
+          <Select value={raw === undefined ? "" : raw ? "true" : "false"} onChange={(v: string) => updateRdp("deviceRedirection", { [d.key]: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+        </div>
+        );
+      })}
     </Section>
   );
 };

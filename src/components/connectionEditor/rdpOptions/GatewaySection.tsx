@@ -3,21 +3,21 @@ import Section from "./Section";
 import { Network } from "lucide-react";
 import { GatewayAuthMethods, GatewayCredentialSources, GatewayTransportModes } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
-import { Checkbox, NumberInput, Select } from "../../ui/forms";
+import { NumberInput, Select } from "../../ui/forms";
 const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
   <Section
     title="RDP Gateway"
     icon={<Network size={14} className="text-info" />}
   >
-    <label className={CSS.label}>
-      <Checkbox checked={rdp.gateway?.enabled ?? false} onChange={(v: boolean) => updateRdp("gateway", { enabled: v })} className="CSS.checkbox" />
-      <span className="font-medium">Enable RDP Gateway</span>
-    </label>
-    <p className="text-xs text-[var(--color-textMuted)] ml-5 -mt-1">
-      Tunnel the RDP session through an RD Gateway (HTTPS transport).
-    </p>
+    <div>
+      <label className="block text-xs text-[var(--color-textSecondary)] mb-1 font-medium">Enable RDP Gateway</label>
+      <Select value={rdp.gateway?.enabled === undefined ? "" : rdp.gateway.enabled ? "true" : "false"} onChange={(v: string) => updateRdp("gateway", { enabled: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+      <p className="text-xs text-[var(--color-textMuted)] mt-0.5">
+        Tunnel the RDP session through an RD Gateway (HTTPS transport).
+      </p>
+    </div>
 
-    {(rdp.gateway?.enabled ?? false) && (
+    {rdp.gateway?.enabled === true && (
       <div className="space-y-3 mt-2">
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
@@ -45,10 +45,10 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Authentication Method
           </label>
-          <Select value={rdp.gateway?.authMethod ?? "ntlm"} onChange={(v: string) =>
+          <Select value={rdp.gateway?.authMethod ?? ""} onChange={(v: string) =>
               updateRdp("gateway", {
-                authMethod: v as (typeof GatewayAuthMethods)[number],
-              })} options={[...GatewayAuthMethods.map((m) => ({ value: m, label: m === "ntlm"
+                authMethod: v === "" ? undefined : (v as (typeof GatewayAuthMethods)[number]),
+              })} options={[{ value: "", label: "Use global default" }, ...GatewayAuthMethods.map((m) => ({ value: m, label: m === "ntlm"
                   ? "NTLM"
                   : m === "basic"
                     ? "Basic"
@@ -123,16 +123,16 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Transport Mode
           </label>
-          <Select value={rdp.gateway?.transportMode ?? "auto"} onChange={(v: string) =>
+          <Select value={rdp.gateway?.transportMode ?? ""} onChange={(v: string) =>
               updateRdp("gateway", {
-                transportMode: v as (typeof GatewayTransportModes)[number],
-              })} options={[...GatewayTransportModes.map((m) => ({ value: m, label: m === "auto" ? "Auto" : m === "http" ? "HTTP" : "UDP" }))]} className={CSS.select} />
+                transportMode: v === "" ? undefined : (v as (typeof GatewayTransportModes)[number]),
+              })} options={[{ value: "", label: "Use global default" }, ...GatewayTransportModes.map((m) => ({ value: m, label: m === "auto" ? "Auto" : m === "http" ? "HTTP" : "UDP" }))]} className={CSS.select} />
         </div>
 
-        <label className={CSS.label}>
-          <Checkbox checked={rdp.gateway?.bypassForLocal ?? true} onChange={(v: boolean) => updateRdp("gateway", { bypassForLocal: v })} className="CSS.checkbox" />
-          <span>Bypass gateway for local addresses</span>
-        </label>
+        <div>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Bypass gateway for local addresses</label>
+          <Select value={rdp.gateway?.bypassForLocal === undefined ? "" : rdp.gateway.bypassForLocal ? "true" : "false"} onChange={(v: string) => updateRdp("gateway", { bypassForLocal: v === "" ? undefined : v === "true" })} options={[{ value: "", label: "Use global default" }, { value: "true", label: "Enabled" }, { value: "false", label: "Disabled" }]} className={CSS.select} />
+        </div>
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
