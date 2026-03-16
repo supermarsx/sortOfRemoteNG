@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cx } from '../lib/cx';
 import { Select } from '../forms/Select';
+import { InfoTooltip } from '../InfoTooltip';
 
 interface BaseSettingProps {
   settingKey?: string;
@@ -32,6 +33,7 @@ interface SettingsToggleRowProps extends BaseSettingProps {
   icon?: React.ReactNode;
   label: string;
   description?: string;
+  infoTooltip?: string;
 }
 
 export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
@@ -42,6 +44,7 @@ export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
   description,
   settingKey,
   className,
+  infoTooltip,
 }) => (
   <label
     className={cx('sor-settings-toggle-row', className)}
@@ -55,7 +58,7 @@ export const SettingsToggleRow: React.FC<SettingsToggleRowProps> = ({
     />
     {icon && <div className="sor-settings-toggle-icon">{icon}</div>}
     <div className="min-w-0">
-      <span className="sor-settings-toggle-label">{label}</span>
+      <span className="sor-settings-toggle-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
       {description && <p className="sor-settings-toggle-description">{description}</p>}
     </div>
   </label>
@@ -69,6 +72,7 @@ interface SettingsSliderRowProps extends BaseSettingProps {
   step?: number;
   unit?: string;
   onChange: (value: number) => void;
+  infoTooltip?: string;
 }
 
 export const SettingsSliderRow: React.FC<SettingsSliderRowProps> = ({
@@ -81,12 +85,13 @@ export const SettingsSliderRow: React.FC<SettingsSliderRowProps> = ({
   onChange,
   settingKey,
   className,
+  infoTooltip,
 }) => (
   <div
     className={cx('sor-settings-slider-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label">{label}</span>
+    <span className="sor-settings-row-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
     <div className="sor-settings-slider-controls">
       <input
         type="range"
@@ -115,6 +120,7 @@ interface SettingsSelectRowProps extends BaseSettingProps {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
+  infoTooltip?: string;
 }
 
 export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
@@ -124,12 +130,13 @@ export const SettingsSelectRow: React.FC<SettingsSelectRowProps> = ({
   onChange,
   settingKey,
   className,
+  infoTooltip,
 }) => (
   <div
     className={cx('sor-settings-select-row', className)}
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="sor-settings-row-label">{label}</span>
+    <span className="sor-settings-row-label flex items-center gap-1">{label}{infoTooltip && <InfoTooltip text={infoTooltip} />}</span>
     <Select
       value={value}
       onChange={onChange}
