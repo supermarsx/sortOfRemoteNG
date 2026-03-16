@@ -692,6 +692,58 @@ export function useRDPClient(session: ConnectionSession) {
     initializeRDPConnection();
   }, [initializeRDPConnection]);
 
+  // ─── Scaled cursor builder ─────────────────────────────────────────
+  // Generates a CSS cursor value with an SVG cursor scaled to match the
+  // remote desktop's proportional size on the local canvas.  A standard
+  // 32px system cursor on a 1920→960 scaled canvas would be 2× too large;
+  // we scale it down so it looks like a native remote cursor.
+
+  const buildScaledCursor = useCallback((shape: 'arrow' | 'dot'): string => {
+    const canvas = canvasRef.current;
+    if (!canvas) return shape === 'dot' ? 'crosshair' : 'default';
+
+    const rect = canvas.getBoundingClientRect();
+    // ratio = how much the canvas is scaled relative to the remote desktop
+    const ratio = rect.width / (desktopSize.width || 1920);
+    // Clamp to reasonable range
+    const scale = Math.max(0.25, Math.min(2.0, ratio));
+
+    if (shape === 'dot') {
+      const size = Math.round(7 * scale);
+      const r = Math.max(1.5, (size - 1) / 2);
+      const cx = size / 2;
+      const cy = size / 2;
+      const hotspot = Math.round(cx);
+      return (
+        'url("data:image/svg+xml,' +
+        encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+          `<circle cx="${cx}" cy="${cy}" r="${r}" fill="white" stroke="black" stroke-width="0.8"/>` +
+          '</svg>'
+        ) +
+        `") ${hotspot} ${hotspot}, auto`
+      );
+    }
+
+    // Arrow cursor: scale the standard Windows arrow proportionally.
+    // Base size: 20×20 at 1:1 scale (matches ~32px system cursor at 150% DPI).
+    const w = Math.round(20 * scale);
+    const h = Math.round(20 * scale);
+    if (w < 8 || w > 64) return 'default'; // too small/large — fall back to system
+    const hotX = Math.round(1 * scale);
+    const hotY = Math.round(1 * scale);
+    return (
+      'url("data:image/svg+xml,' +
+      encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 20 20">` +
+        '<path d="M2 1 L2 17 L6.5 12.5 L10 19 L12.5 18 L9 11.5 L15 11.5 Z" ' +
+        'fill="white" stroke="black" stroke-width="1.2" stroke-linejoin="round"/>' +
+        '</svg>'
+      ) +
+      `") ${hotX} ${hotY}, auto`
+    );
+  }, [desktopSize.width]);
+
   // ─── Event listeners ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -762,27 +814,22 @@ export function useRDPClient(session: ConnectionSession) {
 
       // Compute the effective cursor style based on local cursor mode.
       // 'remote' = traditional (hide when server says hidden)
-      // 'local'  = always show the OS cursor for instant feedback
+      // 'local'  = always show a scaled cursor for instant feedback
       // 'dot'    = show a tiny dot so user sees position without clutter
-      const mode = rdpSettingsRef.current.input?.localCursor ?? 'remote';
+      const mode = rdpSettingsRef.current.input?.localCursor ?? 'local';
       switch (ptr.pointer_type) {
         case 'default':
-          setPointerStyle('default');
+          if (mode === 'local') {
+            setPointerStyle(buildScaledCursor('arrow'));
+          } else {
+            setPointerStyle('default');
+          }
           break;
         case 'hidden':
           if (mode === 'local') {
-            setPointerStyle('default');
+            setPointerStyle(buildScaledCursor('arrow'));
           } else if (mode === 'dot') {
-            // 5x5 white dot with black outline, hotspot at center
-            setPointerStyle(
-              'url("data:image/svg+xml,' +
-              encodeURIComponent(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="7" height="7">' +
-                '<circle cx="3.5" cy="3.5" r="3" fill="white" stroke="black" stroke-width="1"/>' +
-                '</svg>'
-              ) +
-              '") 3 3, auto'
-            );
+            setPointerStyle(buildScaledCursor('dot'));
           } else {
             setPointerStyle('none');
           }

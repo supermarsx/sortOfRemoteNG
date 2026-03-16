@@ -364,7 +364,7 @@ const defaultSettings: GlobalSettings = {
     scrollSpeed: 1.0,
     smoothScroll: true,
     // Cursor
-    localCursor: 'remote' as const,
+    localCursor: 'local' as const,
     // Device redirection
     clipboardRedirection: true,
     printerRedirection: false,

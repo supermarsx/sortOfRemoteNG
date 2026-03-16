@@ -720,7 +720,7 @@ export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
     batchIntervalMs: 16,
     scrollSpeed: 1.0,
     smoothScroll: true,
-    localCursor: 'remote',
+    localCursor: 'local',
   },
   deviceRedirection: {
     clipboard: true,
